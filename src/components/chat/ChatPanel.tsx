@@ -16,9 +16,11 @@ import { ChatHistoryView } from './ChatHistoryView';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatFooter } from './ChatFooter';
 import type { ChatInputHandle } from './ChatInput';
-import type { ImageAttachment } from '@/lib/ai/types';
+import type { ChatMessage as ChatMessageType, ImageAttachment } from '@/lib/ai/types';
 import { supportsVision as checkVision, type VisionCheckContext } from '@/lib/ai/vision';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { getProjectLock } from '@/lib/ai/project-lock';
+import { ResendProviderDialog, type ResendProviderOption, type ResendProviderChoice } from './ResendProviderDialog';
 import {
   Tooltip,
   TooltipContent,
@@ -31,6 +33,13 @@ import {
 export interface EditContext {
   parentId: string | null;
   originalContent: string;
+  /**
+   * Connection ID the original message was routed to. Compared against the
+   * current connection at send-time to catch cross-provider edit-sends — if
+   * they differ, `<ResendProviderDialog>` gates the send. Undefined for legacy
+   * messages that predate connectionId recording.
+   */
+  originalConnectionId?: string;
 }
 
 export function ChatPanel() {
@@ -112,6 +121,24 @@ export function ChatPanel() {
   }, []);
   const clearEditContext = useCallback(() => updateEditContext(null), [updateEditContext]);
 
+  // Mismatch dialog state — opens when the message's recorded connectionId
+  // differs from the currently active connection, so the user can pick which
+  // provider receives it. `mode` tracks whether this came from the resend or
+  // edit-send path; the sent content may differ for edits.
+  interface ResendDialogState {
+    mode: 'resend' | 'edit';
+    content: string;
+    /** For resend: the message id to delete-and-resend. For edit: ignored. */
+    messageIdToDelete?: string;
+    originalConnectionId: string;
+    currentConnectionId: string | null;
+  }
+  const [resendDialog, setResendDialog] = useState<ResendDialogState | null>(null);
+
+  const setRouting = useRoutingStore((s) => s.setRouting);
+
+  const singleLock = singleProjectPath ? getProjectLock(singleProjectPath, metadataMap) : null;
+
   // Detect project selection changes → trigger context isolation prompt
   const prevProjectPathsRef = useRef<string[]>(selectedProjectPaths);
   useEffect(() => {
@@ -174,7 +201,10 @@ export function ChatPanel() {
     }
   }, [activeConversationId, conversations.length, createConversation]);
 
-  const handleSend = useCallback(async (content: string, attachments?: ImageAttachment[]) => {
+  // Core send — the previous `handleSend`. Renamed so we can gate the public
+  // handler on provider-mismatch confirmation without duplicating the full
+  // message-preparation pipeline.
+  const doSend = useCallback(async (content: string, attachments?: ImageAttachment[]) => {
     if (!hasAIProvider) {
       return;
     }
@@ -253,21 +283,167 @@ export function ChatPanel() {
     }
 
     await sendChatMessage(expandedContent, filteredMessages, sendOpts as Parameters<typeof sendChatMessage>[2]);
-  }, [hasAIProvider, setActiveAgent, sendChatMessage, attachedFilePaths, clearEditContext]);
+  }, [hasAIProvider, effectiveConnection, setActiveAgent, sendChatMessage, attachedFilePaths, clearEditContext]);
 
-  const handleResend = useCallback((message: { id?: string; parentId?: string | null; content: string }) => {
+  // Keep a fresh ref to `doSend` so post-reroute sends (scheduled via
+  // setTimeout after `setRouting`) pick up the new closure with the updated
+  // `effectiveConnection`. If we called `doSend` directly after `setRouting`
+  // it would still reference the pre-switch connection.
+  const doSendRef = useRef(doSend);
+  doSendRef.current = doSend;
+
+  // Public send handler — the edit-send check lives here so keyboard Enter
+  // inside an edit context goes through the dialog gate.
+  const handleSend = useCallback(async (content: string, attachments?: ImageAttachment[]) => {
+    const editCtx = editContextRef.current;
+    const currentId = effectiveConnection?.id ?? null;
+    if (editCtx?.originalConnectionId && editCtx.originalConnectionId !== currentId) {
+      // Cross-provider edit — gate on dialog confirmation. Keep the edit
+      // context until the user picks a provider so the dialog can re-fire
+      // on confirm (the edit's parentId must survive through the dialog).
+      setResendDialog({
+        mode: 'edit',
+        content,
+        originalConnectionId: editCtx.originalConnectionId,
+        currentConnectionId: currentId,
+      });
+      return;
+    }
+    await doSend(content, attachments);
+  }, [doSend, effectiveConnection?.id]);
+
+  const handleResend = useCallback((message: ChatMessageType) => {
     if (!hasAIProvider) return;
-    // Delete the message and all responses after it, then resend the same text
+    const currentId = effectiveConnection?.id ?? null;
+    const originalId = message.connectionId ?? null;
+
+    // Only prompt when the recorded original differs from the currently active
+    // connection. Unknown/legacy messages (no `connectionId`) fall through to
+    // the existing silent-resend path — we can't ask about a provider we
+    // weren't told about.
+    if (originalId && originalId !== currentId) {
+      setResendDialog({
+        mode: 'resend',
+        content: message.content,
+        messageIdToDelete: message.id,
+        originalConnectionId: originalId,
+        currentConnectionId: currentId,
+      });
+      return;
+    }
+
+    // Same-provider resend: delete-then-send as before
     if (message.id) {
       useChatStore.getState().deleteMessageAndDescendants(message.id);
     }
     handleSend(message.content);
-  }, [hasAIProvider, handleSend]);
+  }, [hasAIProvider, handleSend, effectiveConnection?.id]);
 
-  const handleEdit = useCallback((message: { parentId?: string | null; content: string }) => {
+  const handleEdit = useCallback((message: ChatMessageType) => {
     const parentId = message.parentId !== undefined ? message.parentId : null;
-    updateEditContext({ parentId, originalContent: message.content });
+    updateEditContext({
+      parentId,
+      originalContent: message.content,
+      // Track which provider this message was originally sent to so the
+      // edit-send path can detect cross-provider sends even after the user
+      // types new content. Absent for legacy messages — those fall through.
+      originalConnectionId: message.connectionId,
+    });
   }, [updateEditContext]);
+
+  // Dialog confirm handler. `setRouting` is synchronous (Zustand store write)
+  // but `doSend` captures `effectiveConnection` via closure, so we switch the
+  // routing and then schedule the send via `setTimeout(0)` — by the time the
+  // timer fires React has flushed and `doSendRef.current` points at the
+  // rebuilt closure with the new connection.
+  const handleResendDialogConfirm = useCallback((choice: ResendProviderChoice) => {
+    const dialog = resendDialog;
+    if (!dialog) return;
+    setResendDialog(null);
+
+    const targetId =
+      choice === 'original' ? dialog.originalConnectionId : dialog.currentConnectionId;
+
+    // Delete the original response (and its tree) only for the resend path;
+    // edit-send never deletes — it creates a new branch via `parentId`.
+    if (dialog.mode === 'resend' && dialog.messageIdToDelete) {
+      useChatStore.getState().deleteMessageAndDescendants(dialog.messageIdToDelete);
+    }
+
+    const runSend = () => {
+      // Edit context was established on handleSend entry; it carries the
+      // parentId the edit must branch from. Clear via doSend's internal
+      // clearEditContext — same path as a regular edit-send.
+      doSendRef.current(dialog.content);
+    };
+
+    if (targetId && targetId !== (effectiveConnection?.id ?? null)) {
+      // Reroute first, then send after React flush so the underlying send
+      // hooks pick up the rebuilt closure.
+      setRouting('interactive', targetId);
+      setTimeout(runSend, 0);
+    } else {
+      runSend();
+    }
+  }, [resendDialog, effectiveConnection?.id, setRouting]);
+
+  const handleResendDialogCancel = useCallback(() => {
+    setResendDialog(null);
+    // Intentional: on cancel we leave editContext in place so the user can
+    // adjust or abandon the edit themselves.
+  }, []);
+
+  // Derive the dialog's original/current options from the open dialog state.
+  // Memoized so the child doesn't re-render when unrelated store state moves.
+  const resendDialogOptions = useMemo<
+    | { original: ResendProviderOption; current: ResendProviderOption; isEdit: boolean }
+    | null
+  >(() => {
+    if (!resendDialog) return null;
+
+    const originalConn = allConnections.find((c) => c.id === resendDialog.originalConnectionId) ?? null;
+    const currentConn = resendDialog.currentConnectionId
+      ? allConnections.find((c) => c.id === resendDialog.currentConnectionId) ?? null
+      : null;
+
+    // If the project is locked, only the option matching the lock is enabled.
+    const lockedId = singleLock?.connectionId ?? null;
+
+    const originalDisabled =
+      !originalConn || (lockedId !== null && resendDialog.originalConnectionId !== lockedId);
+    const currentDisabled =
+      !currentConn || (lockedId !== null && resendDialog.currentConnectionId !== lockedId);
+
+    const originalDisabledReason = !originalConn
+      ? `Original provider (${resendDialog.originalConnectionId}) is no longer connected.`
+      : lockedId !== null && resendDialog.originalConnectionId !== lockedId
+      ? 'This project is locked to a different provider.'
+      : undefined;
+    const currentDisabledReason = !currentConn
+      ? 'No provider is currently selected. Configure one in Settings.'
+      : lockedId !== null && resendDialog.currentConnectionId !== lockedId
+      ? 'This project is locked to a different provider.'
+      : undefined;
+
+    const original: ResendProviderOption = {
+      id: resendDialog.originalConnectionId,
+      // Fall back to a short connection-id hint when the snapshot is gone so
+      // the user at least sees "which" provider is missing.
+      label: originalConn?.label ?? `Removed connection (${resendDialog.originalConnectionId.slice(0, 8)}…)`,
+      provider: originalConn?.provider ?? null,
+      disabled: originalDisabled,
+      disabledReason: originalDisabledReason,
+    };
+    const current: ResendProviderOption = {
+      id: resendDialog.currentConnectionId,
+      label: currentConn?.label ?? 'No provider selected',
+      provider: currentConn?.provider ?? null,
+      disabled: currentDisabled,
+      disabledReason: currentDisabledReason,
+    };
+
+    return { original, current, isEdit: resendDialog.mode === 'edit' };
+  }, [resendDialog, allConnections, singleLock?.connectionId]);
 
   const handleNewChat = useCallback(() => {
     createConversation();
@@ -383,6 +559,16 @@ export function ChatPanel() {
         supportsVision={visionSupported}
       />
       </>
+      )}
+      {resendDialogOptions && resendDialog && (
+        <ResendProviderDialog
+          open={!!resendDialog}
+          onOpenChange={(next) => { if (!next) handleResendDialogCancel(); }}
+          original={resendDialogOptions.original}
+          current={resendDialogOptions.current}
+          isEdit={resendDialogOptions.isEdit}
+          onConfirm={handleResendDialogConfirm}
+        />
       )}
     </div>
   );
