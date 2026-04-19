@@ -192,7 +192,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #6b — Project-scoped auto-allow lookup
+### #6b — Project-scoped auto-allow lookup ✅
 
 **Description:** Task #2 added scoped `ScopedApproval` data; the lookup site (`useAcpSessionListeners.ts`) still passes `(null, null)` so any persisted always-entry wildcard-matches every project. Pass the active connection + project into `isAutoAllowed` so an "always allow" granted in Project A does not auto-approve in Project B.
 
@@ -217,7 +217,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #6c — Kernel-level read denial for out-of-scope paths (Seatbelt)
+### #6c — Kernel-level read denial for out-of-scope paths (Seatbelt) ✅
 
 **Description:** True prevention of out-of-scope reads. The Seatbelt profile in `src-tauri/src/commands/sandbox.rs` currently uses `(allow file-read*)`, so the kernel imposes no read restriction. Switch to a selective allow-list so the kernel returns `EACCES` when the agent attempts a read outside scope, and the agent receives a normal tool-error result.
 

@@ -3,15 +3,16 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-19 |
-| **Status** | Not started |
+| **Status** | Done ✅ |
 | **Related** | [ACP protocol compliance PRD](../prds/2026-04-14-acp-protocol-compliance.md) (capability probe) |
 | **Total** | 1 task (S) |
+| **Commits** | `29013ce` (core fix), `f6b70b9` + `51209b0` (polish) |
 
 ## Background
 
 The ACP footer (`AcpSessionControls`) has three widgets: mode picker, dynamic config-option pickers (thinking effort etc.), and usage indicator. Each widget reads its data from `sessionInfo` — a module-level snapshot of the *live* session's response. That's the wrong source of truth for "what options are available."
 
-Capabilities — the set of modes and config options an agent supports — are **already** discovered at connection-registration time via `probeAcpCapabilities()` (`src/lib/ai/acp-agent-state.ts:392`) and persisted on the `Connection` record as `acpCapabilities.availableModes` and `acpCapabilities.configOptions`. Re-probed if stale (>24h).
+Capabilities — the set of modes and config options an agent supports — are **already** discovered at connection-registration time via `probeAcpCapabilities()` (`src/lib/ai/acp-agent-state.ts:392`) and persisted on the `Connection` record as `acpCapabilities.availableModes` and `acpCapabilities.configOptions`. Re-probed if stale (&gt;24h).
 
 But the footer ignores that and waits for a live `session/new` response before rendering anything. Until the user sends a message (which is what triggers session creation in most flows), the footer shows stale data from the previous agent.
 
@@ -30,7 +31,7 @@ Two connected bugs:
 
 1. **Wrong data source for "what's available."** Available modes/config options should come from `connection.acpCapabilities`, not from the live `sessionInfo`. The capability probe already answered this question at connection-add time; the footer should just display it.
 
-2. **Stale `sessionInfo` across agent switch.** `ensureAcpAgent` stops the old agent when the connection changes (line ~255 of `acp-agent-state.ts`), but does not call `clearSessionInfo()`. The previous agent's modes and `currentModeId` linger in the module-level state until a new `setSessionModes(...)` fires — which is not until session/new completes on the new agent. Needs an explicit clear on connection change.
+2. **Stale** `sessionInfo` **across agent switch.** `ensureAcpAgent` stops the old agent when the connection changes (line \~255 of `acp-agent-state.ts`), but does not call `clearSessionInfo()`. The previous agent's modes and `currentModeId` linger in the module-level state until a new `setSessionModes(...)` fires — which is not until session/new completes on the new agent. Needs an explicit clear on connection change.
 
 ## Division of responsibility after fix
 
@@ -57,7 +58,7 @@ Two connected bugs:
 - `src/components/chat/__tests__/AcpSessionControls.test.tsx` (new) — component tests feeding different connections to assert picker output
 - `src/lib/__tests__/acp-agent-state.test.ts` — add test that ensureAcpAgent clears sessionInfo on connection change
 
-## Complexity: S (~45 min focused work)
+## Complexity: S (\~45 min focused work)
 
 ## Non-goals
 
