@@ -39,6 +39,13 @@ interface SettingsStore {
   fimContextChars: number;
   /** Global toggle — disables inline completions across all documents */
   inlineCompletionsDisabled: boolean;
+  /**
+   * When true, inline completions are issued for files outside the chat
+   * footer's selected project scope (+ notes root) — the legacy behaviour
+   * prior to task #17. Default false: out-of-scope files see no completion
+   * traffic. Opt-in escape hatch for users who want completions everywhere.
+   */
+  completionsOnOutOfScope: boolean;
   chatHistoryLimit: number;
   skillManagement: boolean;
   /** Global toggle — controls whether tools are sent with direct API chat requests */
@@ -120,6 +127,7 @@ interface SettingsStore {
   setCopilotMaxCompletionChars: (chars: number) => void;
   setFimContextChars: (chars: number) => void;
   setInlineCompletionsDisabled: (disabled: boolean) => void;
+  setCompletionsOnOutOfScope: (enabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
   setSkillManagement: (enabled: boolean) => void;
   setToolCallingEnabled: (enabled: boolean) => void;
@@ -197,6 +205,7 @@ export const useSettingsStore = create<SettingsStore>()(
       copilotMaxCompletionChars: 80,
       fimContextChars: 500,
       inlineCompletionsDisabled: false,
+      completionsOnOutOfScope: false,
       chatHistoryLimit: 0,
       skillManagement: false,
       toolCallingEnabled: true,
@@ -311,6 +320,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setInlineCompletionsDisabled: (disabled: boolean) => {
         set({ inlineCompletionsDisabled: disabled });
+      },
+
+      setCompletionsOnOutOfScope: (enabled: boolean) => {
+        set({ completionsOnOutOfScope: enabled });
       },
 
       setChatHistoryLimit: (limit: number) => {

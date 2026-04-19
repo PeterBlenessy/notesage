@@ -131,8 +131,13 @@ export function useCopilotCompletion(editor: Editor | null) {
   // the selected projects (+ notes root) must produce NO LSP traffic — that
   // content is not the agent's to see. `notesRootPath` is included because
   // the user's personal notes library is a legitimate workspace location.
+  //
+  // Task #17 extends this with the `completionsOnOutOfScope` escape hatch:
+  // users who want the pre-isolation behaviour back can flip a single
+  // setting and the gate becomes a no-op.
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const homeDir = useSettingsStore((s) => s.homeDir);
+  const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
   const resolvedNotesRoot =
     notesRootPath && notesRootPath.startsWith('~')
       ? homeDir
@@ -143,6 +148,8 @@ export function useCopilotCompletion(editor: Editor | null) {
     projectRoots: selectedProjectPaths,
     notesRootPath: resolvedNotesRoot,
   };
+  const uriAllowed = (uri: string): boolean =>
+    completionsOnOutOfScope || isUriInScope(uri, scope);
 
   // Per-tab toast suppression — task #16 requires "once per tab" notice
   // when completions are disabled for an out-of-scope file. A Set of tab
@@ -184,7 +191,9 @@ export function useCopilotCompletion(editor: Editor | null) {
     }
 
     // Task #16 scope gate — no LSP traffic for out-of-scope tabs.
-    if (!isUriInScope(uri, scope)) {
+    // Task #17 — the `completionsOnOutOfScope` setting bypasses this gate
+    // (legacy behaviour). Gate short-circuits via `uriAllowed`.
+    if (!uriAllowed(uri)) {
       notifyOutOfScope(uri);
       // Also clear any stale ghost text — a leftover decoration from a
       // previous in-scope tab must not linger on the blocked one.
@@ -217,7 +226,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       clearGhostText(editor);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lspReady, activeTab?.filePath, isSourceMode, editor, selectedProjectPaths, resolvedNotesRoot]);
+  }, [lspReady, activeTab?.filePath, isSourceMode, editor, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]);
 
   // Cleanup: close doc on unmount
   useEffect(() => {
@@ -298,8 +307,9 @@ export function useCopilotCompletion(editor: Editor | null) {
       // is the primary enforcement (no in-scope didOpen → openDocUri stays
       // null → handleUpdate returns early on the check above). This check
       // covers the rare race where an in-flight tab's scope changed since
-      // didOpen was sent.
-      if (!isUriInScope(activeTab.filePath, scope)) {
+      // didOpen was sent. Task #17 — `completionsOnOutOfScope` restores the
+      // legacy behaviour via `uriAllowed`.
+      if (!uriAllowed(activeTab.filePath)) {
         return;
       }
 
@@ -336,7 +346,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion, selectedProjectPaths, resolvedNotesRoot]);
+  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab

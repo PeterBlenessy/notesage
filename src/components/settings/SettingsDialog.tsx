@@ -157,6 +157,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     showHiddenFiles, setShowHiddenFiles,
     showAgentModePicker, setShowAgentModePicker,
     crossProjectMode, setCrossProjectMode,
+    completionsOnOutOfScope, setCompletionsOnOutOfScope,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -1162,6 +1163,22 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Exposes <span className="font-medium text-foreground">all workspace folders</span> to the AI agent — disables project isolation. Only enable for power-user workflows that explicitly need multi-project visibility. A persistent banner appears in the chat panel while this is on.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="completions-on-out-of-scope" className="text-sm font-medium cursor-pointer">
+                          Allow completions for files outside the selected project (legacy behavior)
+                        </Label>
+                        <Switch
+                          id="completions-on-out-of-scope"
+                          checked={completionsOnOutOfScope}
+                          onCheckedChange={setCompletionsOnOutOfScope}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        By default, inline completions are suppressed when the active file sits outside the project scope selected in the chat footer — so the completion provider never sees unrelated file contents. Enable this to restore the pre-isolation behaviour and receive completions everywhere.
                       </p>
                     </div>
                   </div>

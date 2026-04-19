@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import {
@@ -11,6 +12,7 @@ import {
   hasActiveGhostText,
   hasActiveInlineDiff,
 } from '@/components/editor/extensions';
+import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -40,6 +42,21 @@ export function useLocalCompletion(editor: Editor | null) {
     connection?.authMethod === 'local' ||
     connection?.authMethod === 'local_bundled' ||
     (connection?.provider === 'openai_compatible' && connection?.authMethod === 'api_key');
+
+  // Task #17 — URI scope gate. Skip completion requests when the active
+  // tab's path falls outside the chat footer's selected projects + the
+  // resolved notes root. `completionsOnOutOfScope` (default false) restores
+  // the legacy "complete everywhere" behaviour when a user opts in.
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const homeDir = useSettingsStore((s) => s.homeDir);
+  const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
+  const resolvedNotesRoot =
+    notesRootPath && notesRootPath.startsWith('~')
+      ? homeDir
+        ? notesRootPath.replace('~', homeDir)
+        : null
+      : notesRootPath || null;
 
   const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRequestedPos = useRef<string | null>(null);
@@ -84,6 +101,20 @@ export function useLocalCompletion(editor: Editor | null) {
 
       // Don't request if completions disabled for this tab
       if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+
+      // Task #17 scope gate — skip requests for tabs outside the selected
+      // project scope (+ notes root). `completionsOnOutOfScope` bypasses the
+      // gate entirely for users who want legacy behaviour.
+      if (capturedTabPath && !completionsOnOutOfScope) {
+        const scope: UriScope = {
+          projectRoots: selectedProjectPaths,
+          notesRootPath: resolvedNotesRoot,
+        };
+        if (!isUriInScope(capturedTabPath, scope)) {
+          if (hasActiveGhostText(editor)) clearGhostText(editor);
+          return;
+        }
+      }
 
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
@@ -183,7 +214,7 @@ export function useLocalCompletion(editor: Editor | null) {
         }
       }
     },
-    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, connectionId, connection?.authMethod, fimContextChars]
+    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, connectionId, connection?.authMethod, fimContextChars, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]
   );
 
   // -------------------------------------------------------------------------

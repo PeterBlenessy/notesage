@@ -8,6 +8,8 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useChatStore } from '@/stores/chat-store';
+import type { Conversation } from '@/stores/chat-store';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -155,6 +157,30 @@ function setupEditorStore(filePath = '/test/file.md', tabId = 'tab-1') {
   });
 }
 
+/**
+ * Seed an active conversation scoped to the given project roots so the
+ * task #17 scope gate lets completion requests through for in-scope tabs.
+ * Pre-existing tests (authored before #17) rely on completions firing for
+ * the default `/test/file.md` fixture; we default scope to `/` so they
+ * continue to pass unchanged.
+ */
+function seedScope(projectPaths: string[] = ['/test']) {
+  const now = Date.now();
+  const conv: Conversation = {
+    id: 'conv-local-test',
+    title: 'test',
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    projectPaths,
+    segments: [{ projectPaths, sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+    activeSegmentIndex: 0,
+    pendingProjectSwitch: null,
+    activeLeafId: null,
+  };
+  useChatStore.setState({ conversations: [conv], activeConversationId: conv.id });
+}
+
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
@@ -174,8 +200,15 @@ describe('useLocalCompletion', () => {
     useSettingsStore.setState({
       inlineCompletionsDisabled: false,
       fimContextChars: 500,
+      completionsOnOutOfScope: false,
+      notesRootPath: '~/Notesage',
+      homeDir: null,
     });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     setupEditorStore();
+    // Default scope = `/test` so pre-isolation tests using `/test/file.md` remain in-scope.
+    // Tests that specifically exercise the scope gate override via `seedConversation`.
+    seedScope(['/test']);
   });
 
   afterEach(() => {
@@ -1097,6 +1130,195 @@ describe('useLocalCompletion', () => {
       rerender();
 
       expect(mockClearGhostText).toHaveBeenCalledWith(editor);
+
+      unmount();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Track 1 High leak — Task #17
+  //
+  // Regression lock: inline-completion requests must NOT fire when the
+  // active tab's path sits outside the chat footer's selected project scope
+  // (+ notes root). Local completion providers don't have a document-sync
+  // channel, so the gate lives inline in the request path. The
+  // `completionsOnOutOfScope` setting (default false) is an opt-out that
+  // restores the pre-isolation behaviour.
+  // -------------------------------------------------------------------------
+
+  describe('Track 1 leak #17 — completion-request scope gate', () => {
+    function seedConversation(projectPaths: string[]) {
+      const now = Date.now();
+      const conv: Conversation = {
+        id: 'conv-local-iso',
+        title: 'isolation',
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+        projectPaths,
+        segments: [{ projectPaths, sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+        activeLeafId: null,
+      };
+      useChatStore.setState({ conversations: [conv], activeConversationId: conv.id });
+    }
+
+    it('does NOT fire Ollama FIM for a tab outside the selected project scope', async () => {
+      seedConversation(['/workspace/project-A']);
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+
+      // Active tab is in a DIFFERENT project — must not be sent to the FIM endpoint.
+      setupEditorStore('/workspace/project-B/secrets.md', 'tab-leak');
+
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockOllamaFim.mockResolvedValue('leak');
+
+      const editor = makeMockEditor('secret', 6);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // INVARIANT: out-of-scope files must not be sent to the provider.
+      expect(mockOllamaFim).not.toHaveBeenCalled();
+      expect(mockSetGhostText).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('does NOT fire local bundled FIM for an out-of-scope tab', async () => {
+      seedConversation(['/workspace/project-A']);
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+      setupEditorStore('/workspace/project-B/secret.md', 'tab-leak');
+
+      const conn = makeLocalBundledConnection();
+      setupRouting(conn, 'qwen2.5-coder');
+      mockLocalBundledFim.mockResolvedValue('leak');
+
+      const editor = makeMockEditor('abc', 3);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockLocalBundledFim).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('does NOT fire OpenAI-compatible FIM for an out-of-scope tab', async () => {
+      seedConversation(['/workspace/project-A']);
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+      setupEditorStore('/workspace/project-B/secret.md', 'tab-leak');
+
+      const conn = makeOpenaiCompatibleConnection();
+      setupRouting(conn, 'llama-3-70b');
+      mockOpenaiCompatibleFim.mockResolvedValue('leak');
+
+      const editor = makeMockEditor('abc', 3);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockOpenaiCompatibleFim).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('ALLOWS Ollama FIM for a tab inside the selected project scope', async () => {
+      seedConversation(['/workspace/project-A']);
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+      setupEditorStore('/workspace/project-A/file.md', 'tab-ok');
+
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockOllamaFim.mockResolvedValue('ok');
+
+      const editor = makeMockEditor('Hello ', 6);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockOllamaFim).toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('ALLOWS FIM for files under the notes root even with no selected projects', async () => {
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+      // No conversation — selectedProjectPaths is empty.
+      setupEditorStore('/Users/tester/Notesage/journal.md', 'tab-notes');
+
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockOllamaFim.mockResolvedValue('ok');
+
+      const editor = makeMockEditor('hi', 2);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockOllamaFim).toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('opt-out: completionsOnOutOfScope=true restores legacy behaviour for out-of-scope tabs', async () => {
+      seedConversation(['/workspace/project-A']);
+      useSettingsStore.setState({
+        homeDir: '/Users/tester',
+        notesRootPath: '/Users/tester/Notesage',
+        completionsOnOutOfScope: true,
+      });
+      setupEditorStore('/workspace/project-B/file.md', 'tab-legacy');
+
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockOllamaFim.mockResolvedValue('legacy');
+
+      const editor = makeMockEditor('Hello ', 6);
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      const updateHandler = editor.on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'update',
+      )?.[1] as () => void;
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // With the escape hatch on, the provider IS called for an out-of-scope tab.
+      expect(mockOllamaFim).toHaveBeenCalled();
 
       unmount();
     });

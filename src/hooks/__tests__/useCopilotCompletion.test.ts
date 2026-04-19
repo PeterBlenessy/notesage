@@ -1440,4 +1440,147 @@ describe('useCopilotCompletion', () => {
       expect(didOpen).toHaveLength(0);
     });
   });
+
+  // =========================================================================
+  // Track 1 High leak — Task #17
+  //
+  // Regression lock: inline-completion requests must NOT fire when the
+  // active tab's path sits outside the chat footer's selected project
+  // scope (+ notes root). For Copilot the no-request outcome is achieved
+  // through the #16 doc-sync gate (no didOpen ⇒ handleUpdate returns early
+  // on its `openDocUri.current !== activeTab.filePath` guard). #17 adds
+  // the `completionsOnOutOfScope` opt-out so users who want the pre-
+  // isolation behaviour back can flip a single setting.
+  // =========================================================================
+
+  describe('Track 1 leak #17 — completion-request scope gate (Copilot LSP)', () => {
+    beforeEach(() => {
+      useSettingsStore.setState({
+        homeDir: '/Users/tester',
+        notesRootPath: '/Users/tester/Notesage',
+        completionsOnOutOfScope: false,
+      });
+    });
+
+    it('does NOT invoke copilot_lsp_request_completion for an out-of-scope tab', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-B/secrets.md' }));
+
+      mockRequestCopilotCompletion.mockResolvedValue({
+        text: 'leak',
+        command: undefined,
+      });
+
+      const editor = makeMockEditor('secret contents');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      mockRequestCopilotCompletion.mockClear();
+
+      // Simulate typing. With #16 in place the didChange path short-circuits,
+      // so no completion request is scheduled. The INVARIANT we lock here is
+      // end-to-end: no `requestCopilotCompletion` call reaches the LSP for an
+      // out-of-scope tab.
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockRequestCopilotCompletion).not.toHaveBeenCalled();
+      expect(mockSetGhostText).not.toHaveBeenCalled();
+    });
+
+    it('ALLOWS completion requests for an in-scope tab (positive control)', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [{ path: '/workspace/project-A', fileTree: [] }],
+      });
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-A/file.md' }));
+
+      mockRequestCopilotCompletion.mockResolvedValue({
+        text: ' suggestion',
+        command: undefined,
+      });
+
+      const editor = makeMockEditor('Hello world');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      mockRequestCopilotCompletion.mockClear();
+
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockRequestCopilotCompletion).toHaveBeenCalled();
+    });
+
+    it('opt-out: completionsOnOutOfScope=true allows completions on out-of-scope tabs (legacy)', async () => {
+      useSettingsStore.setState({ completionsOnOutOfScope: true });
+
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-B/file.md' }));
+
+      mockRequestCopilotCompletion.mockResolvedValue({
+        text: ' legacy',
+        command: undefined,
+      });
+
+      const editor = makeMockEditor('content');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // With the escape hatch on, didOpen must flow through to the LSP so a
+      // subsequent update can issue a completion request.
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_did_open', expect.objectContaining({
+        uri: '/workspace/project-B/file.md',
+      }));
+
+      mockRequestCopilotCompletion.mockClear();
+
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockRequestCopilotCompletion).toHaveBeenCalled();
+    });
+  });
 });

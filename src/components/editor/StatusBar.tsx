@@ -19,9 +19,12 @@ function InlineCompletionIcon({ className }: { className?: string }) {
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRecordingStore } from "@/stores/recording-store";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { Progress } from "@/components/ui/progress";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { isUriInScope, type UriScope } from "@/lib/ai/uri-scope";
 
 
 
@@ -262,6 +265,62 @@ function ModelDownloadIndicator() {
           </div>
         </PopoverContent>
       </Popover>
+      <span className="w-px h-2.5 bg-border" />
+    </>
+  );
+}
+
+/**
+ * Task #17 — surface the reason completions are suppressed when the user is
+ * editing a file outside the chat footer's selected project scope. Only
+ * renders when all four conditions hold:
+ *   - A completion provider is routed (otherwise "off" would be noise)
+ *   - Global inline completions aren't explicitly disabled
+ *   - The `completionsOnOutOfScope` escape hatch is off (legacy behaviour)
+ *   - The active tab path is actually out of scope
+ * This keeps the indicator unobtrusive — it appears only in the exact case
+ * where the user might wonder why ghost text stopped arriving.
+ */
+function OutOfScopeCompletionsIndicator({ copilotActive }: { copilotActive: boolean }) {
+  const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
+  const inlineCompletionsDisabled = useSettingsStore((s) => s.inlineCompletionsDisabled);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const homeDir = useSettingsStore((s) => s.homeDir);
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  if (!copilotActive || inlineCompletionsDisabled || completionsOnOutOfScope) return null;
+  if (!activeTab?.filePath) return null;
+
+  const resolvedNotesRoot =
+    notesRootPath && notesRootPath.startsWith("~")
+      ? homeDir
+        ? notesRootPath.replace("~", homeDir)
+        : null
+      : notesRootPath || null;
+  const scope: UriScope = {
+    projectRoots: selectedProjectPaths,
+    notesRootPath: resolvedNotesRoot,
+  };
+  if (isUriInScope(activeTab.filePath, scope)) return null;
+
+  return (
+    <>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center text-muted-foreground/70 cursor-default">
+              Completions: off (outside project)
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-xs">
+            Completions disabled for files outside the selected project scope.
+            Toggle in Settings &gt; Advanced.
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <span className="w-px h-2.5 bg-border" />
     </>
   );
@@ -526,6 +585,7 @@ export function StatusBar({
           </>
         )}
         <AgentInstructionsIndicator />
+        <OutOfScopeCompletionsIndicator copilotActive={copilotActive} />
         {copilotActive && (() => {
           const disabled = useSettingsStore.getState().inlineCompletionsDisabled;
           const toggle = () => useSettingsStore.getState().setInlineCompletionsDisabled(!disabled);
