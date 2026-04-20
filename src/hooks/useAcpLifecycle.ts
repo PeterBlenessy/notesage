@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
+import { isAuthError, canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
+import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -763,6 +765,29 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         stopAcpAgent();
         log.error('ai', 'ACP chat error', error);
         setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel));
+
+        // Offer an actionable Re-authenticate toast when the provider rejected
+        // our token (401 / auth-failed). Tokens in keychain can go stale while
+        // other Claude processes on the host refresh them; a single click here
+        // opens Terminal with the agent's login command. Users can also hit
+        // the key icon on the connection card in Settings → Connections.
+        if (
+          isAuthError(error) &&
+          effectiveConnection?.credentials.type === 'agent_managed'
+        ) {
+          const creds = effectiveConnection.credentials as { agentBinary: string };
+          if (canReauthenticate(creds.agentBinary)) {
+            toast.error(`Authentication failed for ${agentLabel}`, {
+              id: `reauth-${effectiveConnection.id}`,
+              duration: 12000,
+              action: {
+                label: 'Re-authenticate',
+                onClick: () => reauthenticateAgent(creds.agentBinary, agentLabel),
+              },
+            });
+          }
+        }
+
         setLoading(false);
         setActiveTool(null);
       }

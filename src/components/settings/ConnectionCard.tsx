@@ -6,9 +6,10 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
+import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -334,6 +335,21 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             {health === 'fail' && <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />}
             {health === 'idle' && <HeartPulse className="h-3.5 w-3.5" strokeWidth={1.5} />}
           </Button>
+          {connection.authMethod === 'agent_managed' && (() => {
+            const creds = connection.credentials as { agentBinary: string };
+            if (!canReauthenticate(creds.agentBinary)) return null;
+            return (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => reauthenticateAgent(creds.agentBinary, connection.label)}
+                title="Re-authenticate"
+              >
+                <KeyRound className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </Button>
+            );
+          })()}
           {onConfigure && (
             <Button
               variant="ghost"
