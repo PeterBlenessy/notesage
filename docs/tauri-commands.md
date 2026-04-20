@@ -272,7 +272,7 @@ if (folderPath) {
 
 ### run_in_terminal
 
-Opens Terminal.app (macOS) and runs a command. Used for agent authentication flows where the CLI needs interactive terminal access (e.g., Gemini CLI Google OAuth).
+Opens Terminal.app (macOS) and runs a command. Used for agent authentication flows where the CLI needs interactive terminal access: Gemini CLI Google OAuth at initial registration, and the re-authentication flow (`src/lib/ai/reauth.ts → reauthenticateAgent`) which uses the same `getAuthGuide()` command that drives initial sign-in. Graceful fallback: frontend copies the command to the clipboard if the invoke rejects.
 
 ```rust
 #[tauri::command]

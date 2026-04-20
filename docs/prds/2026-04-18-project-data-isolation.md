@@ -3,7 +3,8 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-18 |
-| **Status** | Draft |
+| **Status** | Shipped in v0.38.0 (2026-04-20) — all 24 leaks closed, red-team pass complete |
+| **Red-team** | [2026-04-20-red-team](../audits/2026-04-20-red-team.md) |
 | **Priority** | Critical — blocks commercial launch |
 | **Impact** | Enables Notesage to back a public data-separation promise: the agent only sees and writes within the project(s) the user has explicitly selected; provider locks are enforceable; approval persistence is scoped. Required for legal/compliance workloads. |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
@@ -314,51 +315,51 @@ None — isolation enforcement happens in Rust at the sandbox level (`sandbox.rs
 
 ### Track 1 (all must pass for commercial launch)
 
-- [ ] `acp_agent_spawn` is invoked with sandbox paths exactly matching `selectedProjectPaths + extraWritablePaths` (covered by new integration test)
+- [x] `acp_agent_spawn` is invoked with sandbox paths exactly matching `selectedProjectPaths + extraWritablePaths` — #4 + #7 integration test (`useAcpLifecycle.sandbox.test.ts`)
 
 - [x] An ACP chat scoped to project A cannot read/write files in project B at the kernel level (writes covered since launch via Seatbelt writable_paths; reads closed by #6c + #6d — see `tests/sandbox_isolation.rs::leak_6c_kernel_denies_reads_outside_writable_paths` and `::leak_6d_sibling_path_at_neutral_home_location_is_denied`. #6d switched to deny-by-default in `$HOME` with an explicit allow-list for agent runtime paths — closes the sibling-path leak `~/Code/A` vs `~/Code/B` that #6c's enumeration left open. Open risk: future agent updates may introduce new path dependencies we haven't enumerated, tracked in the agent-sandbox-observability PRD.)
 
 - [x] `isToolCallAllowed` fires for every ACP tool call in regular chat, not only comment delegation (#6 wired the permission-request path; #6c closes the read leak at the kernel via Seatbelt deny on user-data areas. Verified manually 2026-04-19: with Project A selected, agent reads in Project B return EACCES; adding Project B to the footer respawns the sandbox and reads succeed. #6d tracks future tightening to a full allow-list model)
 
-- [ ] Direct-API `read_file`/`list_directory`/`write_file` deny paths outside `selectedProjectPaths` (integration test)
+- [x] Direct-API `read_file`/`list_directory`/`write_file` deny paths outside `selectedProjectPaths` — #8, 18 red-team tests in `src/lib/__tests__/tool-executor.test.ts` covering the three primitive tools + four implicit-FS tools (`add_comments`, `list_comments`, `resolve_comments`, `generate_pptx`); IPC never reached on deny
 
-- [ ] Resending a message originally sent to Claude while the chat is set to OpenAI triggers a confirmation dialog
+- [x] Resending a message originally sent to Claude while the chat is set to OpenAI triggers a confirmation dialog — #10 + #11 + fix `253470a` stamping `connectionId` on user messages; 10 red-team tests in `ChatPanel.test.tsx`
 
-- [ ] A locked project (`aiLock.connectionId = X`) cannot send a chat message to any other connection (integration test at every send path)
+- [x] A locked project (`aiLock.connectionId = X`) cannot send a chat message to any other connection — #1 + #12 + #14 matrix; `useAIOperations.test.ts` covers 5 send paths × match/mismatch + comment delegation routes to the locked connection in `useAgentTaskOperations.ts`
 
-- [ ] Persisted "always allow" approvals are stored as scoped triples, and a UI exists to review and revoke
+- [x] Persisted "always allow" approvals are stored as scoped triples, and a UI exists to review and revoke — #2 `ScopedApproval` + #3 `ApprovalsSettings.tsx`
 
-- [ ] Existing flat approvals migrate to the legacy bucket with a user-visible toast
+- [x] Existing flat approvals migrate to the legacy bucket with a user-visible toast — `permission-store.ts` v→v migration + one-time review toast
 
-- [ ] Copilot LSP rejects `didOpen` / `didChange` / `context-request` for URIs outside `selectedProjectPaths`
+- [x] Copilot LSP rejects `didOpen` / `didChange` / `context-request` for URIs outside `selectedProjectPaths` — #16, 4 red-team tests each in `useCopilotCompletion.test.ts` / `useCopilotChat.test.ts`
 
-- [ ] Inline completions skip the LSP request for out-of-scope active tabs
+- [x] Inline completions skip the LSP request for out-of-scope active tabs — #17; Copilot LSP + Ollama FIM + local bundled + OpenAI-compatible all gated; StatusBar "Completions: off (outside project)" indicator + `completionsOnOutOfScope` opt-out
 
-- [~] Skills, agents, agent instructions, and MCP servers loaded into the chat system prompt match exactly `global ∪ selectedProjectPaths` (no union with other projects) — skills/agents/agent-instructions shipped via #18 + #19 (red-team tests in `src/stores/__tests__/skill-store.test.ts`, `src/hooks/__tests__/useSkillOperations.test.ts`, `src/hooks/__tests__/useAIContext.test.ts`); MCP servers pending #20
+- [x] Skills, agents, agent instructions, and MCP servers loaded into the chat system prompt match exactly `global ∪ selectedProjectPaths` (no union with other projects) — #18 + #19 (skill / agent / agent-instructions) + #20 (MCP `getActiveServers` / `getActiveTools`)
 
-- [x] Tauri `assetProtocol.scope.allow` is narrowed; `fs:allow-*` dropped; app still launches and all features work
+- [x] Tauri `assetProtocol.scope.allow` is narrowed; `fs:allow-*` dropped; app still launches and all features work — #21; regression lock in `tauri-capability-surface.test.ts`
 
-- [x] Activity panel shows an "auto-approved" badge on silent tool calls; path visible on hover
+- [x] Activity panel shows an "auto-approved" badge on silent tool calls; path visible on hover — #22 (`AgentActivity.approvalMode` + `ActivityStrip` / `ActivityTaskCard` rendering + `requireAllToolConfirmations` toggle)
 
 ### Track 2
 
-- [ ] Opening a non-project file does not auto-attach it to chats
+- [x] Opening a non-project file does not auto-attach it to chats — #23; explicit-attach chip surfaces for opt-in
 
-- [x] Each agent binary only has writable access to its own config subpath under `$HOME/.<agent>`
+- [x] Each agent binary only has writable access to its own config subpath under `$HOME/.<agent>` — #24 + basename-extraction fix (`081f535`)
 
-- [x] Command palette / History tab / autocomplete filter to selected projects by default
+- [x] Command palette / History tab / autocomplete filter to selected projects by default — #25 + #26
 
-- [ ] File-tree system-prompt injection is scoped to selected projects
+- [x] File-tree system-prompt injection is scoped to selected projects — #27 (with 200-file / 4-level caps)
 
 ### Track 3
 
-- [ ] Branching from a pre-switch message produces the correct segment slice
+- [x] Branching from a pre-switch message produces the correct segment slice — #28 (`sliceThreadBySegment` with LCA walk; red-team branching test in `chat-store.test.ts`)
 
-- [ ] Workspace changes cancel any in-flight ACP turn cleanly before respawn
+- [x] Workspace changes cancel any in-flight ACP turn cleanly before respawn — #29 (cancel → deny pending permissions → drain store → context-reset toast → stopAcpAgent)
 
-- [ ] Attachment paths are logged in the activity panel
+- [x] Attachment paths are logged in the activity panel — #30 (`kind: 'attachment'` activities + `AttachmentFileStrip` renderer)
 
-- [ ] Tray recent-files menu filters to selected projects by default
+- [x] Tray recent-files menu filters to selected projects by default — #31 (+ opt-in "All Recent" submenu)
 
 ## Out of Scope
 

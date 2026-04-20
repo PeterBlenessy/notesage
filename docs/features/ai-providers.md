@@ -72,6 +72,7 @@ interface AIProvider {
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents via ACP protocol, the LSP handles completions and chat via JSON-RPC
 - Full capabilities: `['interactive', 'inline_completion', 'agent_tasks']` — users can use their Copilot subscription for all AI features
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
+- **Project isolation.** `workingDir` reflects the chat footer's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
 - OAuth device flow authentication with two protocol variants:
   - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
   - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
@@ -126,6 +127,8 @@ Ghost text completions via the Copilot Language Server or local/compatible provi
 5. For OpenAI-compatible: `/v1/completions` endpoint
 6. Error backoff: stops after 5 consecutive failures; resets on connection/model/tab change
 
+**Project isolation.** Both flows check `isUriInScope(activeTabUri, { projectRoots, notesRootPath })` before firing a completion request. Out-of-scope tabs skip the request entirely — no LSP traffic for Copilot, no FIM call for local/compatible. The editor StatusBar shows a muted "Completions: off (outside project)" indicator when suppressed, with a tooltip linking to the Settings > Advanced toggle. `completionsOnOutOfScope: true` restores legacy behavior.
+
 ## Local AI (Bundled Inference)
 
 Privacy-focused offline AI with zero setup — no API keys, no external software, no accounts required.
@@ -149,6 +152,30 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 - Non-reasoning models: content passed through without tag parsing
 - Thinking content displayed in a collapsible section above the assistant response
 - Detection code: `detect_thinking_support()` in `segment_builder.rs`
+
+## Filesystem & Network Sandboxing
+
+Multi-layer defense: the Seatbelt profile denies reads and writes by default in `$HOME` and network by default, then re-allows a curated set of paths and the local proxy port.
+
+**Filesystem policy (read):**
+
+- `(deny default)` + `(allow file-read*)` for system paths (`/usr`, `/bin`, `/Library`, `/opt`, `/System`, `/private/var`, `/tmp`, etc.)
+- `(deny file-read* (subpath "$HOME"))` blocks every read inside `$HOME` by default
+- Curated re-allow list inside `$HOME`:
+  - **Bucket B (runtime):** `~/.npm`, `~/.nvm`, `~/.volta`, `~/.fnm`, `~/.asdf`, `~/.yarn`, `~/.pnpm`, `~/.bun`, `~/.deno`, `~/.cargo`, `~/.rustup`, `~/.local`, `~/.config`, `~/.cache`, `~/Library/Caches`, `~/Library/Application Support`, `~/Library/Preferences`, `~/.gitconfig`, `~/.gitignore_global`
+  - **Bucket C (per-agent config):** narrowed by agent binary — `claude-agent-acp` gets `~/.claude` + `~/.claude.json` + `~/.claude.json.backup` + `~/Library/Keychains/login.keychain-db`; `codex-acp` gets `~/.codex`; `copilot`/`copilot-language-server` get `~/.copilot` + keychain; `gemini` gets `~/.gemini`. Basename extraction means the match works whether the caller passes the bare command or the resolved absolute path.
+  - **Writable paths:** the chat footer's selected project(s) — plus any ancestor-literal reads required for `fs.watch` parent-chain traversal on nested iCloud paths
+- Ancestor directory literal-allows: each writable path's ancestor dirs up to `$HOME` are `(literal)`-allowed so `fs.watch` and workspace-marker discovery can `stat` / `readdir` the parents without exposing sibling contents
+- Explicit deny-last: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, and regex `\.env$` / `\.env\..*$` are denied after all the above (overrides any earlier allow)
+
+**Filesystem policy (write):**
+
+- Writable subpaths = chat footer's selected projects (respawn on change) — plus `/tmp`, `/private/tmp`, `/private/var/folders`, `~/.config`, agent's own config dir, and a short list of device nodes (`/dev/null`, `/dev/tty`, etc.)
+- Keychain literal is read-only — filtered out of the write-allow list
+
+**Writable scope:** `getChatSandboxScope(conv, connection, crossProjectMode)` computes the set. Default mode returns `conv.projectPaths ∪ connection.extraWritablePaths`. Cross-project mode (opt-in) unions all workspace folders. `sandboxScopeKey` in `acp-agent-state.ts` triggers a respawn when the scope changes.
+
+**Known residual:** two sibling projects at neutral paths (e.g. `~/Code/A` and `~/Code/B`) where neither is selected but both are outside the curated deny tree would not be mutually isolated if only one were selected. The `$HOME`-deny-by-default model closes this, but requires the allow list to grow with upstream agent updates — tracked in `docs/prds/2026-04-19-agent-sandbox-observability.md`.
 
 ## Network Sandboxing
 
@@ -310,6 +337,16 @@ Chat messages can include up to 5 image attachments, enabling multimodal convers
 | `src/components/chat/AttachmentStrip.tsx` | Thumbnail strip with remove buttons |
 | `src/components/editor/extensions/send-to-ai.ts` | ProseMirror plugin for "Add to chat" context menu |
 
+## Re-authentication
+
+Every ACP connection and the Copilot LSP connection expose a key-icon button in the connection card (Settings > Connections) that opens Terminal.app with the agent's sign-in command pre-filled — same command `getAuthGuide()` drives initial registration with, so there's a single source of truth per agent. For `claude-agent-acp` it's `claude auth login`; for `codex-acp` it's `codex login --device-auth`; for `copilot` it's `copilot auth login`; for `gemini` it's `cd /tmp && gemini`.
+
+Chat send errors that match an auth-failure pattern (`401`, `Unauthorized`, `Authentication required`, `Invalid authentication`, `Invalid api key`) fire a sonner toast with a "Re-authenticate" action button alongside the inline error on the assistant message. The action runs the same Terminal flow. Deduped per connection id via the toast's stable id so repeated failures don't stack.
+
+**Why this exists:** ACP agents read OAuth tokens from OS keychain at spawn time. Tokens can go stale asynchronously while other Claude/Copilot processes on the host refresh them, leaving Notesage's spawned agent with a cached-but-rejected token until respawn. The re-auth path handles both the stale-token and the truly-expired-token cases.
+
+Graceful fallback: if `run_in_terminal` fails (non-macOS, permission denied, etc.), the command is copied to the clipboard with a toast showing what to run.
+
 ## Web Search
 
 Web search is implemented as a client-side tool (`web_search`) available to all providers when tool calling is enabled. The backend `web_search` Tauri command queries DuckDuckGo's HTML endpoint — no API key needed. Results are returned to the model as tool call results with title, URL, and snippet for each hit.
@@ -325,7 +362,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src-tauri/src/commands/acp.rs` | ACP agent management |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |
-| `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny) |
+| `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny + $HOME read allow-list) |
 | `src-tauri/src/commands/copilot_lsp.rs` | Copilot Language Server (auth, completions, message logging) |
 | `src-tauri/src/commands/dialog.rs` | Native dialogs + `run_in_terminal` for agent auth |
 | `src-tauri/src/commands/local_inference.rs` | Bundled llama-server lifecycle |
@@ -346,9 +383,13 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/stores/permission-store.ts` | ACP tool call permissions, domain allowlists, tool call permissions |
 | `src/stores/local-ai-store.ts` | Local AI server state |
 | `src/components/chat/ToolCallPermissionCard.tsx` | Tool call permission approval UI |
-| `src/hooks/useDirectApiChat.ts` | Direct API chat with tool execution loop |
-| `src/lib/tool-executor.ts` | Tool call routing (built-in + `skill__` prefix routing with arg mapping) |
-| `src/stores/skill-store.ts` | Skills registry, agents, skill tool definitions, `getToolDefinitions()` |
+| `src/hooks/useDirectApiChat.ts` | Direct API chat with tool execution loop (scope-gated FS tools via #8) |
+| `src/lib/tool-executor.ts` | Tool call routing + scope gate (`ToolCallScope`, `FILESYSTEM_TOOLS`) |
+| `src/stores/skill-store.ts` | Skills registry, agents, skill tool definitions, `getToolDefinitions()`. Per-project registry (`byProject`) merged with `global` on demand |
+| `src/lib/ai/reauth.ts` | `canReauthenticate` + `reauthenticateAgent` — user-friendly re-auth flow |
+| `src/lib/ai/uri-scope.ts` | `isUriInScope(uri, scope)` — used by Copilot LSP doc sync, inline completion gate, active-tab auto-attach |
+| `src/lib/ai/project-lock.ts` | `ProjectLockViolation` error + `getProjectLock` / `findLockConflict` utilities |
+| `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
 
 ## Future Enhancements
 

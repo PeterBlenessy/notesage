@@ -210,16 +210,16 @@ All state stores use Zustand with the persist middleware for localStorage:
 | --- | --- | --- |
 | `editor-store` | Open tabs, active tab, per-tab flags | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
-| `project-metadata-store` | Project metadata from `.notesage/project.json` | Full |
-| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`) | Full (except `startupReady`) |
+| `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
+| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
-| `skill-store` | Skills registry, agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
+| `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
-| `permission-store` | ACP tool call permissions, domain allowlists, session domains, tool call permissions (`toolCallSession`, `toolCallAlways`) | Partial (`alwaysAllowed`, `alwaysAllowedDomains`, `toolCallAlways` only) |
-| `chat-store` | Chat conversations with tree-based branching (id/parentId/activeLeafId), memoized thread selectors, chronological message segments | Full |
+| `permission-store` | ACP tool call permissions, domain allowlists, session domains, tool call permissions. Scoped `ScopedApproval[]` triples: `{ toolName, connectionId, projectRoot, grantedAt }` | Partial (`alwaysAllowed`, `alwaysAllowedDomains`, `toolCallAlways`, `skillScriptAlways` only — all as `ScopedApproval[]`) |
+| `chat-store` | Chat conversations with tree-based branching (id/parentId/activeLeafId), memoized thread selectors, chronological message segments. `ConversationSegment.startMessageId` (stable id, v5+) replaces `startMessageIndex` (deprecated); `sliceThreadBySegment` uses LCA walk for branching-aware slicing | Full |
 | `comment-store` | Comments, replies, delegation | JSON sidecar files |
-| `mcp-store` | MCP server registry | Partial (enabled overrides) |
+| `mcp-store` | MCP server registry (`{ global, byProject }` with `projectRoot` per entry); scope-gated `getActiveServers` / `getActiveTools` | Partial (enabled overrides) |
 | `epub-store` | EPUB view mode + bookmarks | Full |
 | ~~`tag-store`~~ | ~~Workspace tag index~~ | Removed — replaced by SQLite document index |
 | `activity-store` | Agent task registry | Full |
@@ -327,6 +327,32 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 - Rust backend enforces filesystem boundaries
 - No direct frontend filesystem access
 - OS-level filesystem sandboxing (Seatbelt on macOS) with configurable writable paths per connection
+- **Chat agents:** writable paths = `getChatSandboxScope(conv, connection, crossProjectMode)` — the chat footer's selected projects (plus `extraWritablePaths`), or all workspace paths if cross-project mode is on. Scope change triggers agent respawn.
+- **Read policy (task #6d):** `(deny file-read* (subpath "$HOME"))` + curated allow-list for Bucket B (language tooling runtime) and Bucket C (per-agent config, narrowed by agent binary — `claude-agent-acp` gets `~/.claude`, `codex-acp` gets `~/.codex`, etc.). Sibling projects at neutral `$HOME` paths are no longer mutually readable when only one is selected.
+- **Direct-API tool executor:** `src/lib/tool-executor.ts` gates `read_file`, `list_directory`, `write_file`, and the implicit-FS tools (`add_comments`, `list_comments`, `resolve_comments`, `generate_pptx`) on `isToolCallAllowed(name, JSON.stringify(args), scope.projectRoots, scope.homeDir)`. Missing scope defaults to deny. Call sites pass scope from `selectProjectPaths(chat-store)`.
+- **Copilot LSP:** document sync (`didOpen`, `didChange`, `didFocus`), context requests (`copilot/context-request`), and inline completion requests (`textDocument/inlineCompletion`) all gate on `isUriInScope(uri, scope)` from `src/lib/ai/uri-scope.ts`. Out-of-scope tabs suppressed; per-tab toast explains. Opt out via `completionsOnOutOfScope: true`.
+
+**Project isolation enforcement points (summary):**
+
+| Surface | Gate | File |
+| --- | --- | --- |
+| ACP agent writable paths | Seatbelt writable block from `getChatSandboxScope` | `src/lib/ai/acp-utils.ts` → `src-tauri/src/commands/sandbox.rs` |
+| ACP kernel read policy | Deny `$HOME` + Bucket B/C re-allow + writable paths | `src-tauri/src/commands/sandbox.rs` |
+| ACP path filter | `isToolCallAllowed` on every tool call (auto-allow AND user-approve paths) | `src/lib/ai/path-filter.ts`, `useAcpSessionListeners.ts` |
+| Direct-API tool executor | `FILESYSTEM_TOOLS` + implicit-FS tools scope gate | `src/lib/tool-executor.ts` |
+| Copilot LSP document sync | `isUriInScope` on every doc event | `src/hooks/useCopilotChat.ts`, `useCopilotCompletion.ts` |
+| Inline completions (all providers) | `isUriInScope` before request | `src/hooks/useCopilotCompletion.ts`, `useLocalCompletion.ts` |
+| Active-tab auto-attach | `isUriInScope` or explicit opt-in | `src/hooks/useChatContext.ts` |
+| System-prompt "Currently editing" | `isUriInScope` on active tab path | `src/hooks/useAIContext.ts` |
+| System-prompt file tree | `isUriInScope` per entry + 200-file / 4-level cap | `src/lib/ai/context.ts`, `useAIContext.ts` |
+| Skills / agents / MCP injection | `{ global, byProject }` registries merged by `selectedProjectPaths` | `src/stores/skill-store.ts`, `mcp-store.ts`, `useSkillOperations.ts` |
+| Approvals persistence | `ScopedApproval` triples with migration from legacy flat strings | `src/stores/permission-store.ts` |
+| `aiLock` enforcement | `ProjectLockViolation` at every send path | `src/lib/ai/project-lock.ts`, `useAIOperations.ts`, `useAgentTaskOperations.ts`, `ChatFooter.tsx` |
+| Resend/edit provider mismatch | `ResendProviderDialog` on `ChatMessage.connectionId` mismatch | `src/components/chat/ChatPanel.tsx`, `ResendProviderDialog.tsx` |
+| Command palette / history / tray | Scope by `selectedProjectPaths` with "all" opt-in | `CommandPalette.tsx`, `HistoryTab.tsx`, `useTraySync.ts` |
+| Segment boundary slicing | `startMessageId` anchor + branching-aware LCA walk | `src/stores/chat-store.ts` (`sliceThreadBySegment`) |
+
+Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and its task breakdown. The 2026-04-20 red-team pass (`docs/audits/2026-04-20-red-team.md`) confirms every Critical and High leak from the audit is no longer reproducible, with permanent regression-lock tests for each.
 
 **Tauri capability surface (hardened 2026-04-19, task #21 in project-data-isolation):**
 

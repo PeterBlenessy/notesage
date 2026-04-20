@@ -6,10 +6,18 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 
 **Project metadata:**
 
-- `.notesage/` metadata directory auto-bootstrapped per project (name, description, AI overrides)
+- `.notesage/` metadata directory auto-bootstrapped per project (name, description, AI overrides, optional AI provider lock)
 - New Project dialog (Cmd+Shift+N) with templates (Default, Research, Writing, Blank)
 - New Note dialog (Cmd+N) with duplicate detection
 - Project Settings tab in settings dialog
+
+**AI provider lock (`aiLock`):**
+
+- Hard per-project lock on which AI provider can access the project. Soft `ai.provider` override is still supported as an advisory default; `aiLock` is hard enforcement.
+- Set from Settings > Project > "AI Provider Lock" section — pick a connection, optionally add a reason, confirm. Unlock from the same panel.
+- Enforced at every send path: new chat message, resend, edit, comment delegation, inline actions (ACP and direct-API bubble menu). A mismatch raises a `ProjectLockViolation` toast; the wrong-provider API is never called.
+- Chat footer multi-select refuses to mix projects with conflicting locks. A locked project drives the effective connection automatically — the provider picker becomes read-only with a Lock icon.
+- Visual affordances: padlock overlay on the project folder in the sidebar (tooltip lists the locked provider); clickable Lock icon in the chat footer opens an "explain lock" modal when any selected project is locked.
 
 **Project goals:**
 
@@ -18,6 +26,23 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 - Goals discovery by scanning for `type: goal` frontmatter
 - AI context injection — goals included in chat system prompt
 - Multi-select project selector in chat footer
+
+**Chat project isolation:**
+
+Every AI feature scopes to the chat footer's selected projects (plus the `~/Notesage` library root). The selection is the source of truth for:
+
+- ACP Seatbelt sandbox writable paths and kernel read deny-by-default allow-list
+- Direct-API tool executor — `read_file`, `list_directory`, `write_file`, and implicit-FS tools refuse out-of-scope paths
+- Copilot LSP `workingDir`, `textDocument/didOpen`/`didChange`/`didFocus`, and `copilot/context-request`
+- Inline completions (Copilot LSP, Ollama FIM, local bundled, OpenAI-compatible) — skipped for out-of-scope tabs unless `completionsOnOutOfScope` is on
+- Active-tab auto-attach, "Currently editing" system-prompt injection, and the injected workspace file tree
+- Per-project skill / agent / agent-instructions / MCP server registries — only `global ∪ selectedProjects` reach the system prompt
+- Command palette scopes (`@` mentions, `#` tags, `?` research) with an "all projects" opt-in toggle
+- History tab filters by project overlap with the selection
+- Tray "Recent" submenu filters to the selection (opt-in "All Recent" submenu shows everything)
+- Scoped persisted approvals — `alwaysAllowed`, `toolCallAlways`, `skillScriptAlways`, and `domainAlwaysAllowed` are stored as `(toolName, connectionId, projectRoot)` triples; legacy flat approvals migrate into a "legacy broad" bucket with a review toast
+
+**Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a persistent banner above the chat input flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
 ## Notesage Library & iCloud Sync
 
@@ -104,8 +129,12 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/hooks/useProjectMetadata.ts` | Auto-bootstrap `.notesage/project.json` |
 | `src/lib/scan-icloud-projects.ts` | iCloud project auto-discovery |
 | `src/stores/workspace-store.ts` | Explorer folders, projects, notes tree |
-| `src/stores/project-metadata-store.ts` | Project metadata |
+| `src/stores/project-metadata-store.ts` | Project metadata (incl. `aiLock`) |
 | `src/stores/external-change-store.ts` | Pending external changes |
+| `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
+| `src/lib/ai/uri-scope.ts` | `isUriInScope` for LSP doc sync / completion gate / active-tab attach |
+| `src/components/chat/ExplainLockDialog.tsx` | Chat footer "provider locked by project" modal |
+| `src/components/settings/LockProjectDialog.tsx` | Settings > Project lock-creation dialog |
 | `src-tauri/src/commands/file.rs` | File operations |
 | `src-tauri/src/commands/git.rs` | Git operations |
 | `src-tauri/src/commands/watcher.rs` | Filesystem watcher |

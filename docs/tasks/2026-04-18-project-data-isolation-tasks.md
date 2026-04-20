@@ -3,9 +3,10 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-18 |
-| **Status** | Not started |
+| **Status** | ✅ Complete — shipped in v0.38.0 (2026-04-20). All 37 tasks done, red-team pass complete, docs updated. |
 | **PRD** | [project-data-isolation](../prds/2026-04-18-project-data-isolation.md) |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
+| **Red-team** | [2026-04-20-red-team](../audits/2026-04-20-red-team.md) |
 | **Total** | 37 tasks: 16S, 16M, 5L (added #6b project-scoped auto-allow, #6c kernel deny-by-enumeration, #6d full deny-by-default allow-list — all landed 2026-04-19. See #6c for the research log on why the first deny-by-default attempt failed, and #6d for the allow-list discovery process.) |
 | **Suggested order** | Verification harness (#0) → Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
 
@@ -793,7 +794,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #33 — Documentation updates
+### #33 — Documentation updates ✅
 
 **Description:** Reflect the new isolation model in feature docs, architecture doc, and Tauri commands doc.
 

@@ -26,8 +26,8 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 
 **Features:**
 
-- Message resend: one-click resend of any user message, creates a new branch from the message's parent with the same content
-- Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape)
+- Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current chat footer provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
+- Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape). Same provider-mismatch dialog as resend fires at send time when the original `connectionId` differs.
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-ups
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
@@ -55,7 +55,22 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - When switching AI provider mid-conversation, an `AgentSwitchCard` prompts the user to start fresh or include previous history
 - Starting fresh creates a segment boundary — messages before the boundary are excluded from API calls to the new provider
 - Including history carries all messages forward to the new provider
-- Segment filtering applied at send time in `ChatPanel.tsx` using `ConversationSegment.startMessageIndex` and `historyIncluded`
+- Segment filtering applied at send time via `sliceThreadBySegment(baseThread, segment, conv.messages)` in `chat-store.ts`. The anchor is `ConversationSegment.startMessageId` (stable id); `startMessageIndex` is retained as a deprecated fallback until the v5 migration has settled on all users.
+- Branching-aware slicing: when the active leaf's thread doesn't contain the boundary message directly, `sliceThreadBySegment` finds the LCA of the thread and the boundary's lineage and drops everything up to and including the LCA (those messages were written post-switch on this branch). If no common ancestor exists, the thread is preserved unchanged.
+
+**Scoped persisted approvals:**
+
+- `alwaysAllowed`, `toolCallAlways`, and `skillScriptAlways` are persisted as `ScopedApproval[]` triples: `{ toolName, connectionId, projectRoot, grantedAt }`. Lookup is keyed by the active send context, so an "always allow write_file" granted in Project A under Claude does NOT auto-approve in Project B under Ollama.
+- `domainAlwaysAllowed` is scoped similarly: `Record<connectionId, Record<projectRoot | 'global', string[]>>`.
+- Legacy flat approvals (from pre-v38 persisted state) migrate into a `(connectionId: null, projectRoot: null)` bucket with a one-time toast inviting the user to review.
+- Settings > Privacy > Approvals panel lists every persisted approval with per-row revoke and bulk-revoke (all legacy, all for a connection, all for a project).
+- "Require confirmation for all tool calls" global toggle in Settings > Advanced (default off) disables auto-allow entirely; every tool call gets a permission card.
+
+**Activity panel visibility:**
+
+- `AgentActivity` carries an `approvalMode: 'auto' | 'user' | 'denied'` field. The activity strip / panel renders a badge — muted for auto-approved, solid for user-approved, destructive for denied.
+- Full path arguments surface in the tooltip (not just the basename).
+- File-path attachments are logged as `kind: 'attachment'` activities on the user message at send time and render as a `AttachmentFileStrip` above the user-typed text with a `Paperclip` icon. Image byte attachments remain displayed as thumbnails (unchanged).
 
 ## Addressable Agents
 
@@ -248,10 +263,13 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/hooks/useRecording.ts` | Audio recording lifecycle |
 | `src/hooks/useTranscription.ts` | Whisper transcription with progress |
 | `src/hooks/useSpeechRecognition.ts` | Live dictation |
-| `src/stores/chat-store.ts` | Chat conversation state (branching actions, tree selectors) |
+| `src/stores/chat-store.ts` | Chat conversation state, branching, `sliceThreadBySegment`, scoped approvals migration |
 | `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
+| `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
+| `src/components/chat/ResendProviderDialog.tsx` | Provider-mismatch confirmation dialog for resend / edit |
 | `src/components/chat/BranchSwitcher.tsx` | Branch switcher popover at branch points |
 | `src/components/chat/AttachmentStrip.tsx` | Image attachment thumbnails with remove buttons |
+| `src/components/settings/ApprovalsSettings.tsx` | Privacy > Approvals panel (revoke / bulk revoke) |
 | `src/lib/ai/vision.ts` | Vision capability detection + editor→chat image event bus |
 | `src/lib/image-compress.ts` | Client-side image compression pipeline |
 | `src/stores/skill-store.ts` | Skills registry, agents, instructions |
