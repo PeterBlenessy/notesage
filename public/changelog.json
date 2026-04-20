@@ -1,6 +1,489 @@
 {
   "releases": [
     {
+      "version": "0.38.1",
+      "date": "2026-04-20",
+      "previousVersion": "0.38.0",
+      "sections": {
+        "features": [
+          "A file tab outside your selected projects is no longer auto-attached to chats. An \"Add this file to chat\" chip appears next to the input so you can opt in explicitly",
+          "Attachments you send with a chat message are now visible in the activity panel with a paperclip icon and a full-path tooltip, so you can audit what got shipped to the provider after the fact"
+        ],
+        "improvements": [
+          "The workspace overview Notesage injects into AI prompts now stays within your selected projects (capped at 200 files / 4 directory levels). Filenames from unselected projects no longer appear in the model's context",
+          "Switching projects while an agent is responding now cleanly cancels the in-flight turn and clears any pending permission prompts. No more stale prompts from an agent that's been restarted"
+        ],
+        "fixes": [
+          "Conversation branching after a \"Start fresh\" provider switch now correctly slices history based on the branch's own thread, not the full conversation length"
+        ]
+      }
+    },
+    {
+      "version": "0.38.0",
+      "date": "2026-04-20",
+      "previousVersion": "0.37.0",
+      "sections": {
+        "features": [
+          "Lock a project to a specific AI provider — chats, inline actions, and agent tasks in that project can only use that provider",
+          "Resend or edit an older message while the chat footer is set to a different provider — a dialog asks whether to use the original provider or the current one",
+          "Chat footer shows a padlock on locked projects and refuses to mix projects locked to different providers in a multi-select",
+          "Re-authenticate any AI provider in one click via a new key icon on the connection card in Settings → Connections, or from the \"Authentication failed\" toast when a session dies",
+          "New **Settings → Privacy → Approvals** panel lists every \"always allow\" approval you've granted, with per-row revoke and bulk-revoke for legacy or out-of-scope approvals",
+          "New **Settings → Advanced → Cross-project mode** opt-in for power users who want the agent to access all workspace folders at once (default off — isolated)",
+          "New **Settings → Advanced → Require confirmation for all tool calls** disables auto-allow entirely",
+          "Activity panel now marks each tool call as auto-approved, user-approved, or denied, with the full path on hover"
+        ],
+        "improvements": [
+          "AI chats now only see files from the projects you've explicitly selected in the chat footer. Skill descriptions, agent instructions, and `CLAUDE.md` content from unselected projects no longer leak into prompts",
+          "Direct-API file operations (Anthropic, OpenAI, Ollama, local) refuse paths outside the selected projects instead of silently reading any file the model asks for",
+          "Project isolation is enforced at the kernel level on macOS. The OS itself blocks agent reads and writes outside the selected project(s) — not just the app",
+          "Copilot chat and inline completions now stay within the selected projects. Tabs from unselected projects no longer sync to Copilot's servers",
+          "Inline completions from Ollama, local AI, and any OpenAI-compatible provider also stay in scope; a status-bar indicator (\"Completions: off (outside project)\") shows when suppressed",
+          "\"Always allow\" tool approvals are now scoped to the specific provider and project they were granted in — approvals no longer leak across projects or providers",
+          "Tray \"Recent\" menu shows files from your selected projects only, with an opt-in \"All Recent\" submenu for the full list",
+          "Command palette and chat history filter to selected projects by default, with a \"search all projects\" toggle",
+          "Per-agent config directory isolation — Claude Code can no longer write to Codex's config, and vice versa"
+        ],
+        "fixes": [
+          "Claude Code, Codex, and Copilot now spawn correctly when installed at non-standard paths (previously failed with \"Authentication required\" or \"server shut down unexpectedly\")",
+          "Claude Code can authenticate on machines where the OAuth token lives in the macOS keychain",
+          "Resend / edit dialog correctly fires when the original message was sent to a different provider",
+          "Asset protocol no longer allows serving arbitrary files from anywhere on disk — hardened to the notes library, app data, and system resource paths only"
+        ]
+      }
+    },
+    {
+      "version": "0.37.0",
+      "date": "2026-04-18",
+      "previousVersion": "0.36.0",
+      "sections": {
+        "features": [
+          "**Task agent session parity.** Comment-delegated tasks (via `useAgentTaskOperations`) now use the same restoration chain as the main chat (resume → load → list → new). Reopening a delegated thread after an app restart restores the agent's prior context instead of starting fresh. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.",
+          "**EnvVar auth flow.** Enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` now drive a generic credential form — one password-style input per advertised variable, with the agent-provided \"Get yours at\" link as helper text. Replaces the hardcoded Gemini API-key panel.",
+          "**`resource_link` content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.",
+          "**`messageId` propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage)."
+        ],
+        "improvements": [
+          "`user_message_chunk` events are now recognized as a silent no-op instead of logging \"Unknown ACP session update type\" on every agent echo. No state mutation; we already have the user message locally.",
+          "Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines).",
+          "`credentials.envVars` retained as the storage layer for EnvVar auth (populated by the generic form, read at spawn time). Gemini connections with existing stored vars continue working without migration."
+        ]
+      }
+    },
+    {
+      "version": "0.36.0",
+      "date": "2026-04-18",
+      "previousVersion": "0.35.0",
+      "sections": {
+        "features": [
+          "Chats now resume their agent-side session across app restarts and conversation switches — prefers `session/resume` (live takeover), falls back to `session/load` (replay), then `session/list` (sanity check), then `session/new` (fresh)",
+          "Branching from the current leaf with a fork-capable agent calls `session/fork` — each branch gets isolated agent context going forward; historical branches continue to share the parent session (ACP has no primitive to rewind agent state)",
+          "Conversation delete fires best-effort `session/close` for the shared session and any forked branches so agents can free resources",
+          "Added four new Tauri commands: `acp_session_close`, `acp_session_list`, `acp_session_resume`, `acp_session_fork`",
+          "Per-branch `acpSessionId` tracking via `Conversation.branchSessions` with a `getSessionIdForLeaf` resolver; existing conversations continue to work without migration",
+          "File diffs render inline in chat as collapsible unified diffs with +/- coloring (via `--color-diff-*` CSS variables) — \"N additions, M deletions in filename.ext\" summary, click-to-open path header, new-file and deleted-file badges",
+          "Text content blocks from `tool_call_update` render as collapsible monospace output below the tool label",
+          "Terminal content blocks render as a muted placeholder (full terminal support requires the `terminal/create` client capability — out of scope)",
+          "Works in both the chat panel and the delegation activity panel"
+        ],
+        "improvements": [
+          "Capability checks now tolerate both camelCase (per ACP schema) and snake_case payloads — this fix uncovered that *every* capability check was silently returning false, including the pre-existing `session/load` restoration path",
+          "Eager session effect now gates on Zustand's `hasHydrated()` so async `tauri-storage` rehydration completes before the restoration chain runs",
+          "Eager session effect now uses a module-level in-flight lock to prevent React strict-mode + hydration-driven effect re-fires from creating duplicate sessions (previously fired four times at startup)",
+          "Conversation switches re-trigger the restoration chain so prompts route to the correct agent session (previously the agent kept the previous conversation's session ID)"
+        ]
+      }
+    },
+    {
+      "version": "0.35.0",
+      "date": "2026-04-17",
+      "previousVersion": "0.34.0",
+      "sections": {
+        "features": [
+          "Agent system simplification: removed 7 bundled prompt-only agents, replaced with 5 bundled custom prompts (Academic Tone, Creative Rewrite, Proofread, Marketing Copy, Technical Edit) in the BubbleMenu",
+          "`@agent-name` pass-through for ACP/Copilot connections — provider handles native subagent delegation instead of Notesage intercepting",
+          "Expanded agent discovery: project-level `.claude/agents/` and `.gemini/agents/` directories now scanned",
+          "Global provider agent directories (`~/.claude/agents/`, `~/.codex/agents/`, `~/.gemini/agents/`, `~/.copilot/agents/`) scanned unconditionally, not gated on active connections",
+          "Explorer folders now included in agent discovery (previously only projects were scanned)",
+          "Source badges in `@` autocomplete menu showing agent origin (claude, github, gemini, copilot, project, global)",
+          "ACP agent slash commands now appear in the `/` command menu (eager session listener for `available_commands_update`)"
+        ],
+        "improvements": [
+          "Simplified chat footer: removed agent picker and tools popover",
+          "ACP system prompt no longer injects `<role-instructions>` block — ACP agents manage their own subagent system",
+          "Default active agent changed from `general-assistant` to none (generic writing assistant fallback)",
+          "One-time cleanup of previously extracted bundled agents from `~/.notesage/agents/` on upgrade",
+          "Removed persona migration code (legacy from v0.20)",
+          "Added `.copilot` source attribution for GitHub Copilot home folder agents",
+          "Fixed global Copilot paths from `~/.github/` (incorrect) to `~/.copilot/`"
+        ]
+      }
+    },
+    {
+      "version": "0.34.0",
+      "date": "2026-04-15",
+      "previousVersion": "0.33.0",
+      "sections": {
+        "features": [
+          "**ACP thinking segments**: Agent reasoning output (`agent_thought_chunk`) displayed as collapsible thinking blocks in chat messages",
+          "**ACP session titles**: Agent-generated conversation titles (`session_info_update`) automatically applied to chat history",
+          "**ACP session modes**: Permission-level mode picker (Shield icon) in chat footer — Read Only / Agent / Full Access / Plan mapped from agent-specific mode IDs across Claude Code, Codex, Gemini CLI, and Copilot CLI",
+          "**ACP dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in chat footer with Brain icon",
+          "**ACP capability probing**: Lightweight spawn-session-read-stop cycle at connection registration discovers agent capabilities for the config dialog",
+          "**ACP connection defaults**: Default mode and thinking effort configurable per connection in settings, applied automatically to new sessions",
+          "**ACP eager session creation**: Session created when chat panel opens (before first message), so mode picker and config options are immediately available",
+          "**ACP session restoration**: `acpSessionId` stored per conversation; reopening existing chats attempts `session/load` to preserve agent-side history",
+          "**ACP mode-sandbox conflict dialog**: Selecting Full Access mode with active sandbox restrictions shows a confirmation dialog (keep restrictions / remove permanently / cancel)",
+          "**ACP usage tracking**: Live token count as circular progress icon in chat footer with cost tooltip on hover",
+          "**ACP plan display**: Agent execution plans rendered as collapsible PlanSegment cards with status icons and priority dots",
+          "**ACP rich tool call updates**: Status mapping, file locations as clickable links, label updates from `tool_call_update` events",
+          "**ACP agent slash commands**: Agent commands appear in `/` menu alongside Notesage skills, distinguished by Terminal icon",
+          "**ACP model selection**: Post-session `set_model` replaces hardcoded CLI arg injection"
+        ],
+        "fixes": [
+          "Fix conversation history leak across \"Start fresh\" boundaries (ACP session history block now respects segment boundaries)",
+          "Fix provider logo hidden on all previous messages during streaming (only hides on actively streaming message)",
+          "Fix mode/config dropdown duplication (filter config options with `category: \"mode\"`)",
+          "Fix config option values using `value` field per ACP schema (was using `id` which was undefined)",
+          "Fix chat footer layout: chips wrap naturally, action buttons stay last with `ml-auto`",
+          "Fix cancel contract compliance: Cancel handler now drains permission waiters before sending CancelNotification",
+          "Fix capability guards: `session/load` only attempted when agent advertises `loadSession` capability",
+          "Fix HTML nesting: AlertDialogDescription uses `asChild` to avoid `<p>` inside `<p>`"
+        ],
+        "improvements": [
+          "Graceful handling of unknown `SessionUpdate` types (logged at debug level instead of silently dropped)",
+          "Thinking effort migrated from hardcoded Codex `reasoningEffort` to dynamic ACP config options",
+          "Old Codex thinking effort slider removed from connection config (replaced by dynamic ACP controls)",
+          "Three new Tauri commands: `acp_session_set_mode`, `acp_session_set_config_option`, `acp_session_set_model`",
+          "`SessionResult` extended with `modes` and `config_options`, `SpawnResult` with `capabilities`",
+          "`AcpDiscoveredCapabilities` and `AcpDefaults` types on Connection for persistent config",
+          "Bump 1KB parse budget 34→38ms for PlanSegment type overhead"
+        ]
+      }
+    },
+    {
+      "version": "0.33.0",
+      "date": "2026-04-14",
+      "previousVersion": "0.32.1",
+      "sections": {
+        "features": [
+          "Subscript and superscript marks with `~sub~` / `^sup^` markdown syntax (via markdown-it-sub/sup plugins) and toolbar buttons",
+          "Focus mode dimming: non-focused blocks fade to 30% opacity when focus mode is active (Cmd+.), powered by @tiptap/extension-focus with `mode: 'all'`",
+          "Trailing node extension: ensures an empty paragraph exists after the last block so users can always click below to continue writing",
+          "UniqueID extension: stable UUIDs on block nodes for improved comment anchoring (in-memory only, not persisted to markdown)"
+        ],
+        "improvements": [
+          "Decoration plugin factory (`createDecorationPlugin`) reduces boilerplate across 4 decoration extensions (tag-highlight, mention-highlight, date-highlight, table-sparkline)",
+          "Migrated 14 `view.dispatch(tr)` calls to Tiptap `editor.chain()` API for consistency (ai-suggestion, comment-mark, search-highlight, link-preview, markdown utilities)",
+          "Comment anchoring refactored to use node ID + offset (falls back to position-based for existing comments)"
+        ],
+        "fixes": [
+          "Missing file tabs now show \"File not found\" instead of infinite \"Loading...\" (handles renamed/moved/deleted files gracefully)",
+          "Fixed panic in document indexer when truncating strings containing multi-byte characters (emojis)",
+          "Fixed tool calling for OpenAI-compatible and Ollama providers, improved Copilot LSP error handling",
+          "Updated rand 0.9.2 → 0.9.4 to fix Dependabot alert #32"
+        ]
+      }
+    },
+    {
+      "version": "0.32.1",
+      "date": "2026-04-13",
+      "previousVersion": "0.32.0",
+      "sections": {
+        "fixes": [
+          "Fix chat text truncation caused by selectMessages selector cache collision — replaced Date.now() with monotonic counter for conversation updatedAt to ensure every store mutation invalidates the selector cache",
+          "Fix ACP tool call progress: \"0/n\" counter and endless spinners caused by single-index tracking overwritten during parallel tool calls — replaced with FIFO queue",
+          "Fix tool call labels missing file paths and URLs for Claude Code agent — case-insensitive kind matching, path extraction from title field"
+        ],
+        "features": [
+          "Support inline base64 data URI images in the editor — enables displaying embedded images from Apple Notes imports",
+          "Preserve interrupted agent messages with \"Interrupted\" indicator instead of discarding partial content",
+          "Include conversation history in new ACP session system prompt after interruption for context restoration"
+        ],
+        "improvements": [
+          "Simplified tool call group counter to show total count instead of confusing doneCount/total format",
+          "Added icon mappings for websearch, webfetch, toolsearch tool kinds",
+          "buildAcpChatCleanup now calls finalizeSegments on cleanup so running spinners stop immediately"
+        ]
+      }
+    },
+    {
+      "version": "0.32.0",
+      "date": "2026-04-12",
+      "previousVersion": "0.31.0",
+      "sections": {
+        "features": [
+          "Per-document typography via `style:` YAML frontmatter — font, size, weight, lineHeight, color, alignment for body, headings, code, blockquote. Editor applies document styles on open, persists via \"Save to Document\" toolbar action",
+          "Table of Contents Tiptap extension — `/toc` slash command inserts live-updating clickable outline of H1-H3 headings, round-trips as `<!-- toc -->` in markdown",
+          "Slash command search now matches word starts and collapsed titles (e.g., `/toc` matches \"Table of Contents\")",
+          "Slash command menu scrollable with max height and flips upward near bottom of page"
+        ],
+        "fixes": [
+          "**Critical: Vite reload loop** — Tailwind v4 scanned the entire project for class names by default; any `.md` file change triggered a full page reload. Fixed with `source(none)` directive and Vite watcher ignore list",
+          "**Critical: Editor typing performance** — restored individual Zustand selectors in Editor.tsx (destructured store subscriptions caused full re-renders on every keystroke). Debounced `getMarkdownFromEditor` to 150ms. File watcher tree refresh now targets affected directory only (was refreshing all 10 sections / 682 files taking ~2s)",
+          "PDF viewer ReadableStream error suppressed (WKWebView compatibility)",
+          "File watcher skips binary file extensions (PDF, DOCX, PPTX, etc.) to prevent UTF-8 read errors",
+          "Stabilized `useActiveProject` hook — uses filePath selector instead of subscribing to full tabs array"
+        ]
+      }
+    },
+    {
+      "version": "0.31.0",
+      "date": "2026-04-10",
+      "previousVersion": "0.30.3",
+      "sections": {
+        "features": [
+          "**Inline attachments** — Charts and drawings are now embedded as fenced code blocks (`` ```chart `` / `` ```excalidraw ``) directly in the markdown file. Files are fully portable — copy a `.md` and all charts/drawings render without sidecar files or project registration.",
+          "**Chart feature expansion** — 4 new chart types (scatter, radial bar, composed, horizontal bar), multi-series data editing, chart annotations, reference lines, data labels, tick formatting, and editor UX improvements",
+          "**Auto-grow chat textarea** — Chat input grows up to 30% of panel height as content is typed"
+        ],
+        "improvements": [
+          "Suppress React 19 `flushSync` dev-mode warning from Tiptap's `ReactNodeViewRenderer` (upstream issue tiptap#3764)",
+          "Deprecation notices on `chart-storage.ts` and `drawing-storage.ts` sidecar modules"
+        ]
+      }
+    },
+    {
+      "version": "0.30.3",
+      "date": "2026-04-08",
+      "previousVersion": "0.30.2",
+      "sections": {
+        "features": [
+          "Full OOXML text property cascade: presentation defaultTextStyle, master txStyles (titleStyle/bodyStyle/otherStyle with per-level overrides), layout placeholder lstStyle, shape lstStyle, paragraph defRPr, run rPr",
+          "Bullet inheritance from master bodyStyle (character, font, color, size)",
+          "Layout placeholder text style inheritance (e.g., subtitle grey color from tint)",
+          "Shape autoFit (spAutoFit) — shapes grow to fit text via height:auto + minHeight",
+          "Persist PPTX slide position across tab switches",
+          "18 new diverse PPTX test fixtures from pptx-automizer and GitHub repos",
+          "PPTX viewer test matrix documentation"
+        ],
+        "fixes": [
+          "Fix resolveColor picking up shadow srgbClr instead of solidFill schemeClr",
+          "Fix text centering — only use flex layout when bullets are present (textAlign was ignored under display:flex)",
+          "Fix block arrow shapes (rightArrow, leftArrow, etc.) rendering as lines instead of filled preset geometry",
+          "Fix scatter chart data points not rendering (was using category data instead of XY pairs)",
+          "Fix bar chart direction — parse barDir for horizontal vs vertical layout",
+          "Fix pie chart slice direction — clockwise from 12 o'clock matching PowerPoint",
+          "Fix pie chart slice colors — use per-category accent colors instead of per-series",
+          "Fix chart default colors — Office accent palette instead of all greys",
+          "Fix chart legend text — dark grey instead of matching series color",
+          "Fix chart auto-titles and title parsing path (c:tx > c:rich)",
+          "Fix table rendering — explicit dimensions, no overflow clipping, width from column sum",
+          "Fix hyperlink styling — blue color and underline",
+          "Fix title/subtitle/ctrTitle default centering via cascade",
+          "Fix content alignment — don't inherit alignment from layout placeholder template text",
+          "Fix shape style references (p:style fillRef/lnRef) for shapes with theme fills",
+          "Fix built-in table style fallbacks for 12 common Office table style GUIDs",
+          "Skip rendering empty shapes without preset geometry (decorative background elements)",
+          "Skip p:style fills on shapes without text (background overlays, circles, arcs)"
+        ]
+      }
+    },
+    {
+      "version": "0.30.2",
+      "date": "2026-04-08",
+      "previousVersion": "0.30.1",
+      "sections": {
+        "features": [
+          "**PPTX generation tier 1-4** — 17 tasks implementing rich presentation generation: hyperlinks, metadata, slide numbers API, subscript/superscript, title shadows, chart YAML parser + rendering (bar, line, pie, doughnut, area, scatter, radar, bubble), slide master definitions, two-column layout, callout/highlight accent shapes, auto-page tables, content overflow with continuation slides, background images, image enhancements (alt text, shadow, cover/round sizing), table enhancements (per-side borders, colspan, alternating rows), YouTube embedding, HTML table import",
+          "**PPTX viewer v2** — 21 tasks implementing viewer quality improvements: color transforms (lumMod/lumOff/tint/shade), slide master/layout inheritance, body properties (autofit, anchoring, margins), line/paragraph spacing, auto-numbered bullets, table cell borders/margins, chart titles/legends/axes, shape shadows, image crop, hyperlinks, 44 preset geometries, strikethrough/superscript/subscript, flip transforms, dash styles, radar/bubble charts"
+        ],
+        "fixes": [
+          "**Fix exponential shadow value growth** — PptxGenJS mutates shadow option objects in place during XML generation; passing the same theme.titleShadow reference caused values to grow exponentially across slides (38100 → 483870000 → 6.1e12), corrupting the PPTX. Fixed by spreading fresh copies.",
+          "**Fix bundled skill/agent deployment** — write_bundled_file had a debug_assertions guard that skipped writing if files existed in dev builds, causing deployed skills at ~/.notesage/skills/ to go stale after source changes. Removed the guard so bundled files always overwrite on startup.",
+          "**Fix all tools available to all agents** — allowed-tools frontmatter in agent files was filtering which tools the AI model could see and call, causing agents like general-assistant to hide most skill tools. Removed filtering from three call sites; user permission system remains the access control mechanism."
+        ]
+      }
+    },
+    {
+      "version": "0.30.1",
+      "date": "2026-04-07",
+      "previousVersion": "0.30.0",
+      "sections": {
+        "fixes": [
+          "Fix speaker notes parsing for escaped brackets (`\\[!notes\\]`) and inline text on the same line as the tag — caused by Notesage's markdown serializer escaping brackets during editor round-tripping"
+        ]
+      }
+    },
+    {
+      "version": "0.30.0",
+      "date": "2026-04-06",
+      "previousVersion": "0.29.0",
+      "sections": {
+        "features": [
+          "Add PptxGenJS script skill for high-quality PPTX generation — three built-in styles (simple, business, report), user-provided template theme extraction (colors, fonts, backgrounds), markdown-to-slide parser",
+          "Add response image rendering in chat messages (ACP, Anthropic, OpenAI) with click-to-preview overlay",
+          "Add agent document tools: comments, drawings, diagrams, presentations",
+          "Add file type icons in sidebar, remove sync badges from files and sub-folders"
+        ],
+        "fixes": [
+          "Fix provider context isolation not filtering messages on \"Start Fresh\"",
+          "Fix main window white flash on startup"
+        ],
+        "improvements": [
+          "Change Resend to retry in place instead of branching",
+          "Reorder chat message actions: Edit, Resend, Branch, Copy",
+          "Enlarge chat history action buttons and align with header",
+          "Move chat history button next to new chat, icon only",
+          "Add hover effect to chat message action buttons",
+          "Improve sidebar UX — selective hover, clickable icons, denser menus",
+          "Remove Quick Capture feature",
+          "Update generate-presentation skill to be agent-driven and knowledge-only"
+        ]
+      }
+    },
+    {
+      "version": "0.29.0",
+      "date": "2026-04-05",
+      "previousVersion": "0.28.4",
+      "sections": {
+        "features": [
+          "System tray with menu bar icon (italic \"N\" template image, adapts to light/dark)",
+          "Tray menu: New Note, New Quick Note, Open Actions (badge count), Recent files, Show/Quit",
+          "Click tray icon to toggle main window visibility",
+          "Close-to-tray: hide window on close instead of quitting (opt-in setting)",
+          "Desktop notifications for agent task completion and errors (via tauri-plugin-notification)",
+          "Quick Capture floating window (Cmd+Shift+Space global shortcut) with destination picker",
+          "Start at login via tauri-plugin-autostart (macOS LaunchAgent)",
+          "Settings UI: System Tray + Notification sections in General tab",
+          "Badge count synced from activity store, recent files from editor store",
+          "Image attachments for multi-modal AI chat (paste, drag-drop, file picker, editor context menu)",
+          "Hidden file/folder visibility toggle in Settings > Advanced",
+          "Insert-chart bundled skill for AI agent chart generation"
+        ],
+        "fixes": [
+          "Fix Gemma 3 4B vision support — enable supports_vision and add mmproj",
+          "Fix Quick Capture white flash — create window hidden, show after render",
+          "Fix multi-series chart rendering and improve insert-chart skill docs",
+          "Fix cargo check on Linux — sidecar placeholder, RunEvent::Opened guard",
+          "Fix markdown formatting in docs (escaped entities, list spacing)",
+          "Replace window.confirm() with AlertDialog for destructive actions"
+        ],
+        "improvements": [
+          "Show combined model + mmproj size in Local AI settings",
+          "Improve sidebar empty state cards with descriptive text and proper buttons",
+          "Add ARIA tree view roles, keyboard accessibility, and aria-hidden attributes",
+          "Add empty states, discoverability, visual polish, and error handling (20 tasks)",
+          "UI/UX polish pass complete (20/20 tasks)",
+          "Audit v3 complete (39/40 tasks, 70+ new tests)"
+        ]
+      }
+    },
+    {
+      "version": "0.28.4",
+      "date": "2026-04-05",
+      "previousVersion": "0.28.3",
+      "sections": {
+        "fixes": [
+          "Fix stream listener registration race in useDirectApiChat — done event could fire before attachment",
+          "Fix ACP cancel escalation listener leak on timeout",
+          "Add recursion depth limit to ensureAcpAgent and ensureTaskAgent (max 3 retries)",
+          "Fix stale whisper listeners on rapid dictation toggle",
+          "Fix stale closure in useCommentDelegation capturing full comment object",
+          "Add abort signal to useDirectApiChat stream listeners for rapid cancel",
+          "Fix save failure not re-marking tab dirty — prevents silent data loss",
+          "Bound file watcher debounce map growth under extreme file churn"
+        ],
+        "improvements": [
+          "Add mounted guards to useMcpOperations and useActionScanner listeners",
+          "Add focus-visible styling to ChatMessage plain buttons",
+          "Improve disabled button contrast for AA compliance in soft light mode",
+          "Add aria-live to StatusBar index progress for screen reader announcements",
+          "Add guidance text to Activity panel empty state",
+          "Add actionable \"Ollama not running\" error message",
+          "Add retry UI for direct API chat failures",
+          "Show error state in CommandPalette on index query failure",
+          "Replace Tiptap storage `as any` casts with getEditorStorage<T>()",
+          "Define WebSpeechRecognition interface replacing 3 `as any` casts",
+          "Replace Rust stringly-typed APIs with enums (CopilotStatusKind, FileChangeKind, GitFileStatus, ActionSourceType, ActionStatus)",
+          "Add return types to public hooks (useEditor, useAIContext, useAgentTaskOperations, useCommentDelegation)",
+          "Memoize FileTreeItem destinations array and context menu callbacks",
+          "Memoize SidebarPanel conditional style objects",
+          "Memoize ExplorerFolderItem isProjectFolder check",
+          "Use selector factory for ProjectItem project lookup",
+          "Lift expensive store subscriptions from FileTreeItem to parent FileTree"
+        ]
+      }
+    },
+    {
+      "version": "0.28.3",
+      "date": "2026-04-03",
+      "previousVersion": "0.28.2",
+      "sections": {
+        "features": [
+          "Gemma 4 models (E4B, 26B MoE) added to curated model catalog",
+          "Hugging Face model search with rich metadata: architecture, context length, capabilities from chat_template, license, base model, author",
+          "Clickable author and capability filters with filter pills",
+          "Hide/restore models from catalog (persisted, restore defaults link)",
+          "Auto-start download when adding model from HF search",
+          "Custom models inherit full metadata and capability badges"
+        ],
+        "fixes": [
+          "Bump llama.cpp from b8261 to b8648 for Gemma 4 architecture support",
+          "Fix model switch not restarting server (was silently keeping old model)",
+          "Fix empty author in search results (use quantized_by / repo owner fallback)",
+          "Fix \"Unknown\" quantization labels (show filename instead)",
+          "Fix search dialog scroll overflow and card overlap"
+        ],
+        "improvements": [
+          "Human-friendly labels: \"context\" not \"ctx\", \"variants\" not \"quants\"",
+          "Model detail card with base model, architecture, context length, capabilities",
+          "Tooltip width fixed at 220px, displayed on left side",
+          "Dialog widened to max-w-lg for better search result display"
+        ]
+      }
+    },
+    {
+      "version": "0.28.2",
+      "date": "2026-04-02",
+      "previousVersion": "0.28.1",
+      "sections": {
+        "features": [
+          "ACP skill discovery via system prompt — agents now receive full paths to Notesage skill SKILL.md files with instructions to read them, enabling ACP agents (Claude Code) to find and use Notesage skills",
+          "Color tint system and moved Appearance to new General settings tab"
+        ],
+        "fixes": [
+          "Dependabot: upgrade lodash/lodash-es to 4.18.x (Code Injection via `_.template`, Prototype Pollution via `_.unset`/`_.omit`)",
+          "Dependabot: override nanoid to 5.1.7 (predictable output CVE)"
+        ]
+      }
+    },
+    {
+      "version": "0.28.1",
+      "date": "2026-04-02",
+      "previousVersion": "0.28.0",
+      "sections": {
+        "features": [
+          "Chronological chat message segments — assistant messages render text, thinking, tool calls, and tool results as an interleaved chronological stream matching Claude Code, Cursor, and Cline UX",
+          "Per-verb tool call grouping — consecutive tool calls with the same verb (Reading, Searching, Fetching) collapse into dark-background sections with expand/collapse",
+          "Descriptive tool labels — show file basenames, commands, search queries instead of generic verbs (e.g. \"Reading config.ts\" not \"Reading file\")",
+          "Conversation export renders segments chronologically (Markdown and JSON)"
+        ],
+        "fixes": [
+          "ACP session resilience — agents are never auto-killed while working; 5-minute unresponsive timer shows banner (Wait/Retry/Cancel) instead of killing",
+          "ACP retry uses `session/load` for context restoration, continues in same branch (no dead branches)",
+          "ACP prompt timeout increased from 5 minutes to 30 minutes for long research tasks",
+          "Fix crash when ACP rawInput is an object (TypeError: raw.match is not a function)",
+          "Fix `[object Object]` showing in tool call hover tooltips",
+          "Fix \"Fetching Fetch\", \"undefined\", \"{}\" appearing as tool labels",
+          "Fix spinners never stopping in tool call group headers",
+          "Fix false \"Project changed\" prompt on app refresh (Zustand rehydration race)",
+          "Strip `<quick-replies>` tags from segment text rendering",
+          "Fix ACP connection drops and hangs with Claude Code agent"
+        ],
+        "improvements": [
+          "Smart tool call group collapse — groups with no useful child details auto-collapse",
+          "Thinking segments auto-expand while streaming, collapse on completion",
+          "Tool result segments collapsible with smart summaries (line count, size)",
+          "`acp-agent-exited` Tauri event for instant process death detection",
+          "`acp_is_agent_alive` command for liveness checking",
+          "`AgentStatusBanner` component for unresponsive/exited agent UI",
+          "`agent-status-store` for banner state management",
+          "`resetAssistantMessage` store action for retry flow"
+        ]
+      }
+    },
+    {
       "version": "0.28.0",
       "date": "2026-04-01",
       "previousVersion": "0.27.0",

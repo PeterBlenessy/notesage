@@ -32,7 +32,24 @@ Bump the version, generate a changelog, and create a release history entry.
    - Read `docs/history/` to find the highest numbered file
    - Increment by 1 (e.g., if `008-*` is the latest, create `009-*`)
 
-6. **Create a release history entry** at `docs/history/NNN-release-vX.Y.Z.md`:
+6. **Create a release history entry** at `docs/history/NNN-release-vX.Y.Z.md`.
+
+   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json`, which is shipped to end users as the in-app "What's new". Write those bullets for a non-technical user scrolling through versions. Any other `###` heading (like `Under the hood`) is **not** extracted — put task numbers, file paths, commit hashes, and implementation jargon there.
+
+   **Before writing,** open the two most recent prior `docs/history/*.md` files and match their tone. Describe what the user will notice or can now do, not what file changed or which subsystem moved.
+
+   **Avoid in Features / Fixes / Improvements bullets:**
+   - Task numbers (`#12`, `#23`, etc.) — internal
+   - File paths (`useAIContext.ts`, `ChatFooter.tsx`) — internal
+   - Commit hashes, store names, type names, migration versions — internal
+   - Architecture jargon (`ScopedApproval triples`, `LCA walk`, `$HOME deny-by-default`, `Bucket C`) — opaque to users
+
+   **Prefer:**
+   - Verb-first user-visible behavior (`Lock a project to a specific AI provider…`, `Resend an older message…`)
+   - Where something lives, named by its menu path (`Settings → Privacy → Approvals`, `Settings → Advanced`)
+   - Concrete consequences (`No more stale prompts from an agent that's been restarted`, `Filenames from unselected projects no longer appear in the model's context`)
+
+   Template:
 
    ```markdown
    # Release vX.Y.Z
@@ -40,22 +57,36 @@ Bump the version, generate a changelog, and create a release history entry.
    **Date:** YYYY-MM-DD
    **Previous version:** X.Y.Z
 
+   Short 1-2 sentence summary of the release theme for the user.
+
    ## Changes
 
    ### Features
-   - ...
-
-   ### Fixes
-   - ...
+   - User-visible new capability, named in terms the user recognises
+   - Where to find it (Settings → X → Y) if non-obvious
 
    ### Improvements
-   - ...
+   - What got better that the user will notice
+   - Any opt-out / opt-in the user might care about
+
+   ### Fixes
+   - The symptom the user was seeing, not the mechanism that caused it
+   - Brief enough to scan at a glance
+
+   ## Under the hood
+
+   Optional. Internal notes, task numbers, commit refs, links to PRD/audit. Not shipped to users.
 
    ## Files Changed
-   - N files changed across M commits
+
+   - N files changed across M commits (+/- line counts if notable)
    ```
 
-7. **Update `docs/history/README.md`** with the new entry.
+   **Spot-check before confirming:** read each bullet in Features / Fixes / Improvements and ask "would a non-technical user understand this?" If no, rewrite. If the bullet requires a task number or file path to make sense, move it to `Under the hood`.
+
+7. **Update `docs/history/README.md`** with the new entry. The one-line summary there should also read as user-visible — the same tone rules apply.
+
+   After updating, regenerate `public/changelog.json` with `pnpm generate-changelog` and sanity-check a few bullets in the JSON to confirm the tone reads right.
 
 8. **Run performance baseline:**
    - Run `pnpm test:perf` — all synthetic benchmarks must pass within budget.
