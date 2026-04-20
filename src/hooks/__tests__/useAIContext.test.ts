@@ -25,6 +25,7 @@ import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useAIContext } from '@/hooks/useAIContext';
 import type { SkillEntry, AgentInstruction } from '@/stores/skill-store';
 
@@ -79,6 +80,17 @@ function resetAll() {
   useProjectMetadataStore.setState({ metadataMap: {} });
   useWorkspaceStore.setState({ projects: [], explorerFolders: [] });
   useEditorStore.setState({ tabs: [], activeTabId: null });
+  useSettingsStore.setState({ notesRootPath: '', homeDir: null });
+}
+
+function seedActiveTab(filePath: string, fileName: string) {
+  useEditorStore.setState({
+    tabs: [
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { id: 'tab-1', filePath, fileName, content: '', originalContent: '', dirty: false } as any,
+    ],
+    activeTabId: 'tab-1',
+  });
 }
 
 describe('useAIContext — per-project isolation (Task #18)', () => {
@@ -160,6 +172,63 @@ describe('useAIContext — per-project isolation (Task #18)', () => {
     expect(msg).toContain('a-skill');
     expect(msg).toContain('b-skill');
     expect(msg).not.toContain('c-skill');
+  });
+
+  it('does NOT include "Currently editing" for an out-of-scope active tab (Task #23)', () => {
+    // Red-team seed: editor has Project B's file open, chat scoped to A.
+    // Pre-fix: localSystemMessage unconditionally appended
+    // `Currently editing: /workspace/project-B/secrets.md`.
+    seedActiveTab('/workspace/project-B/secrets.md', 'secrets.md');
+    seedActiveConversation(['/workspace/project-A']);
+
+    const { result } = renderHook(() => useAIContext());
+
+    expect(result.current.localSystemMessage).not.toContain('/workspace/project-B/secrets.md');
+    // Composed (direct API) path via buildComposedSystemMessage() with no
+    // attachments also used to splice in the active tab path.
+    expect(result.current.composedSystemMessage).not.toContain('/workspace/project-B/secrets.md');
+  });
+
+  it('DOES include "Currently editing" for an in-scope active tab', () => {
+    seedActiveTab('/workspace/project-A/notes.md', 'notes.md');
+    seedActiveConversation(['/workspace/project-A']);
+
+    const { result } = renderHook(() => useAIContext());
+
+    expect(result.current.localSystemMessage).toContain('/workspace/project-A/notes.md');
+    expect(result.current.composedSystemMessage).toContain('/workspace/project-A/notes.md');
+  });
+
+  it('tab under the notes root is considered in scope (matches #16/#17)', () => {
+    useSettingsStore.setState({ notesRootPath: '~/Notesage', homeDir: '/Users/me' });
+    seedActiveTab('/Users/me/Notesage/thought.md', 'thought.md');
+    seedActiveConversation([]);
+
+    const { result } = renderHook(() => useAIContext());
+
+    expect(result.current.localSystemMessage).toContain('/Users/me/Notesage/thought.md');
+  });
+
+  it('empty scope + tab not under notes root → no "Currently editing" leak', () => {
+    seedActiveTab('/tmp/stray.md', 'stray.md');
+    seedActiveConversation([]);
+
+    const { result } = renderHook(() => useAIContext());
+
+    expect(result.current.localSystemMessage).not.toContain('/tmp/stray.md');
+    expect(result.current.composedSystemMessage).not.toContain('/tmp/stray.md');
+  });
+
+  it('an explicit attachedFilePaths entry is honoured regardless of scope', () => {
+    // User explicitly opted in via the "Add to chat" button (task #23 UX).
+    // The explicit attach must be respected even if the path is out-of-scope.
+    seedActiveTab('/workspace/project-A/notes.md', 'notes.md');
+    seedActiveConversation(['/workspace/project-A']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.buildComposedSystemMessage(['/workspace/project-B/secrets.md']);
+
+    expect(msg).toContain('File in context: /workspace/project-B/secrets.md');
   });
 
   it('empty conversation scope exposes only global skills (no project leaks)', () => {

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { ArrowUp, Square, Mic, MicOff, X, ImagePlus } from 'lucide-react';
+import { ArrowUp, Square, Mic, MicOff, X, ImagePlus, Plus } from 'lucide-react';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import type { EditContext } from './ChatPanel';
@@ -12,7 +12,7 @@ import { ContextPill } from './ContextPill';
 import { AttachmentStrip } from './AttachmentStrip';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
 import type { AcpAgentCommand } from '@/lib/ai/acp-agent-state';
-import type { ContextItem } from '@/hooks/useChatContext';
+import type { ContextItem, ExplicitAttachOffer } from '@/hooks/useChatContext';
 import type { ImageAttachment } from '@/lib/ai/types';
 import { compressImage } from '@/lib/image-compress';
 import { registerSendImageHandler, unregisterSendImageHandler } from '@/lib/ai/vision';
@@ -37,13 +37,21 @@ interface ChatInputProps {
   footer?: React.ReactNode;
   contextItems?: ContextItem[];
   onDismissContext?: (id: string) => void;
+  /**
+   * Task #23 — when the active tab is outside the scoped projects/notes
+   * root, it is NOT auto-attached. This offer lets the user opt in
+   * manually via a small "Add this file to chat" button rendered next to
+   * the context pill row.
+   */
+  explicitAttachOffer?: ExplicitAttachOffer | null;
+  onAttachExplicit?: (path: string, label: string) => void;
   editContext?: EditContext | null;
   onCancelEdit?: () => void;
   supportsVision?: boolean;
   maxTextareaHeight?: number;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit, supportsVision, maxTextareaHeight }, ref) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, explicitAttachOffer, onAttachExplicit, editContext, onCancelEdit, supportsVision, maxTextareaHeight }, ref) {
   const [message, setMessage] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<ImageAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -454,11 +462,23 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           </button>
         </div>
       )}
-      {contextItems && contextItems.length > 0 && onDismissContext && (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1">
-          {contextItems.map((item) => (
+      {((contextItems && contextItems.length > 0 && onDismissContext) || (explicitAttachOffer && onAttachExplicit)) && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
+          {contextItems && onDismissContext && contextItems.map((item) => (
             <ContextPill key={item.id} item={item} onDismiss={onDismissContext} />
           ))}
+          {explicitAttachOffer && onAttachExplicit && (
+            <button
+              type="button"
+              onClick={() => onAttachExplicit(explicitAttachOffer.path, explicitAttachOffer.label)}
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
+              aria-label={`Add ${explicitAttachOffer.label} to chat`}
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="truncate">Add {explicitAttachOffer.label} to chat</span>
+            </button>
+          )}
         </div>
       )}
       <AttachmentStrip attachments={pendingAttachments} onRemove={handleRemoveAttachment} />

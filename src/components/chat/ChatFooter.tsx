@@ -80,7 +80,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
 
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { cancelChat } = useAIOperations();
-  const { contextItems, dismissItem } = useChatContext();
+  const { contextItems, dismissItem, explicitAttachOffer, attachExplicit } = useChatContext();
 
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
 
@@ -201,6 +201,8 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
         onCancelEdit={onCancelEdit}
         contextItems={contextItems}
         onDismissContext={dismissItem}
+        explicitAttachOffer={explicitAttachOffer}
+        onAttachExplicit={attachExplicit}
         supportsVision={supportsVision}
         maxTextareaHeight={maxTextareaHeight}
         footer={
