@@ -507,7 +507,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, attachments: opts?.attachments, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
+      // Stamp the target connection on the user message so later resend/edit
+      // actions (ChatPanel.handleResend, handleEdit — task #10) can detect
+      // provider mismatch. See matching write in useDirectApiChat.ts.
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content,
+        timestamp: userTimestamp,
+        displayContent: opts?.displayContent,
+        skillName: opts?.skillName,
+        attachments: opts?.attachments,
+        ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
+        connectionId: effectiveConnection.id,
+      };
       addMessage(userMessage);
       // Resolve the UUID id that addMessage generated — we'll pass it as the outbound
       // ACP message_id so the agent can echo it back as `user_message_id`.

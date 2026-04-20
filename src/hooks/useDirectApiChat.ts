@@ -114,7 +114,21 @@ export function useDirectApiChat({
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, attachments: opts?.attachments, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
+      // Stamp the target connection on the user message so later resend/edit
+      // actions (ChatPanel.handleResend, handleEdit — task #10) can detect
+      // provider mismatch and open ResendProviderDialog. Without this the
+      // dialog never fires because the legacy fallback in handleResend skips
+      // when message.connectionId is absent.
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content,
+        timestamp: userTimestamp,
+        displayContent: opts?.displayContent,
+        skillName: opts?.skillName,
+        attachments: opts?.attachments,
+        ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
+        ...(effectiveConnection ? { connectionId: effectiveConnection.id } : {}),
+      };
       addMessage(userMessage);
 
       const assistantMessageId = userTimestamp + 1;

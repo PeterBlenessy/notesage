@@ -478,3 +478,51 @@ describe('useDirectApiChat — network timeout error', () => {
     expect(getListenerCount('ai-stream-done')).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression lock — task #10 resend/edit dialog needs message.connectionId
+//
+// Without connectionId on USER messages (not just assistant messages), the
+// ChatPanel resend dialog never fires because the mismatch check short-
+// circuits on the legacy-compat branch. Discovered 2026-04-20 in user
+// testing: resend of a Codex-era message from a local-AI session sent
+// silently with no dialog.
+// ---------------------------------------------------------------------------
+
+describe('useDirectApiChat — stamps connectionId on user messages (#10)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    });
+  });
+
+  it('stamps effectiveConnection.id on the user message', async () => {
+    const { result } = renderHook(() =>
+      useDirectApiChat({
+        resolved: defaultResolved,
+        effectiveConnection: {
+          id: 'conn-openai-123',
+          label: 'OpenAI',
+          provider: 'openai',
+          capabilities: ['interactive'],
+        } as unknown as Parameters<typeof useDirectApiChat>[0]['effectiveConnection'],
+        buildComposedSystemMessage: () => 'system',
+        composedSystemMessage: 'system',
+        localSystemMessage: 'local system',
+      })
+    );
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    const conv = useChatStore.getState().conversations.find(
+      (c) => c.id === useChatStore.getState().activeConversationId
+    );
+    const userMsg = conv?.messages.find((m) => m.role === 'user');
+    expect(userMsg?.connectionId).toBe('conn-openai-123');
+  });
+});
