@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+// Note: the thread-slicing helper `sliceThreadBySegment` is declared below and
+// exported for use by hooks/components that apply segment-based context isolation.
 import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
 import {
   appendTextSegment as appendTextSegmentUtil,
@@ -19,7 +21,19 @@ import type { PlanEntry } from '@/lib/ai/types';
 export interface ConversationSegment {
   projectPaths: string[];
   sessionId: string | null;
+  /**
+   * @deprecated Use `startMessageId` — numeric index is unstable under branching.
+   * Kept in the type for backward compatibility during migration (v4 → v5).
+   * New segments written by the store will still set this field (for safety if
+   * code rolls back) but all slicing should be driven by `startMessageId`.
+   */
   startMessageIndex: number;
+  /**
+   * Stable message-id anchor for the first post-boundary message. Walking the
+   * active-leaf thread and locating this id gives correct slicing under branching.
+   * When undefined, the segment boundary does not apply (slicing is a no-op).
+   */
+  startMessageId?: string;
   historyIncluded: boolean;
 }
 
@@ -335,6 +349,17 @@ export const useChatStore = create<ChatStore>()(
               branchSessions = { ...(c.branchSessions ?? {}), [msgId]: pendingBranchSession.sessionId };
               pendingBranchSession = null;
             }
+            // If the active segment was created with a future `startMessageIndex`
+            // and has no stable `startMessageId` yet, adopt this new message's id
+            // as the boundary anchor. (Task #28 — segment boundary as message id.)
+            let segments = c.segments;
+            const activeSegIdx = c.activeSegmentIndex;
+            const activeSeg = segments[activeSegIdx];
+            if (activeSeg && activeSeg.startMessageId === undefined && activeSegIdx > 0) {
+              segments = segments.map((s, i) =>
+                i === activeSegIdx ? { ...s, startMessageId: msgId } : s,
+              );
+            }
             return {
               ...c,
               messages,
@@ -343,6 +368,7 @@ export const useChatStore = create<ChatStore>()(
               activeLeafId: msgId,
               branchSessions,
               pendingBranchSession,
+              segments,
             };
           });
           return { conversations: pruneConversations(conversations, activeId, MAX_CONVERSATIONS) };
@@ -811,7 +837,7 @@ export const useChatStore = create<ChatStore>()(
     {
       name: 'notesage-chat-history',
       storage: createTauriStorage(),
-      version: 4,
+      version: 5,
       // Exclude transient UI state from persistence to avoid excessive
       // writes during streaming (isLoading/activeTool toggle rapidly).
       partialize: (state) => ({
@@ -898,6 +924,33 @@ export const useChatStore = create<ChatStore>()(
             });
           }
           data = old;
+          version = 4;
+        }
+
+        // v4 → v5: derive `startMessageId` on segments from the stored
+        // `startMessageIndex` lookup at migration time. Stable id anchors are
+        // required for correct slicing under branching (task #28).
+        if (version === 4) {
+          const old = data as { conversations?: Conversation[]; [key: string]: unknown };
+          if (old.conversations) {
+            old.conversations = old.conversations.map((c) => {
+              if (!c.segments || c.segments.length === 0) return c;
+              const segments = c.segments.map((seg) => {
+                if (seg.startMessageId) return seg;
+                const idx = seg.startMessageIndex;
+                if (typeof idx !== 'number' || idx < 0 || idx >= c.messages.length) {
+                  // No resolvable message — leave `startMessageId` undefined so
+                  // slicing is a no-op (conservative: preserves context).
+                  return seg;
+                }
+                const anchor = c.messages[idx]?.id;
+                if (!anchor) return seg;
+                return { ...seg, startMessageId: anchor };
+              });
+              return { ...c, segments };
+            });
+          }
+          data = old;
         }
 
         // Fixup: ensure all conversations have activeLeafId set (may be undefined
@@ -973,6 +1026,67 @@ export function selectAllMessages(state: Pick<ChatStore, 'conversations' | 'acti
 export function selectActiveLeafId(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): string | null {
   if (!state.activeConversationId) return null;
   return state.conversations.find((c) => c.id === state.activeConversationId)?.activeLeafId ?? null;
+}
+
+/**
+ * Slice a thread (ancestors-in-order, root → leaf) to drop pre-boundary messages
+ * according to a segment's `startMessageId` anchor.
+ *
+ * Semantics (branch-aware):
+ *   1. If the segment includes history (`historyIncluded` is true) or has no
+ *      boundary anchor, return the thread unchanged.
+ *   2. If `startMessageId` is found in the thread, drop all messages before it
+ *      and return the rest (matching the linear `slice(N)` behaviour where the
+ *      boundary message itself is included).
+ *   3. If `startMessageId` is not in the thread, look up the boundary message in
+ *      `allMessages` and find the lowest common ancestor (LCA) of the leaf's
+ *      thread and the boundary's lineage. Drop everything in the thread up to
+ *      and including the LCA — those messages were written pre-switch. Keep the
+ *      rest, which were written on this branch post-switch.
+ *   4. If the boundary message id can't be resolved at all (message deleted),
+ *      return the thread unchanged — conservative fallback preserves context.
+ */
+export function sliceThreadBySegment(
+  thread: ChatMessage[],
+  segment: ConversationSegment | undefined,
+  allMessages: ChatMessage[],
+): ChatMessage[] {
+  if (!segment) return thread;
+  if (segment.historyIncluded) return thread;
+  const anchorId = segment.startMessageId;
+  if (!anchorId) return thread;
+
+  // Case 1: boundary in thread
+  const idx = thread.findIndex((m) => m.id === anchorId);
+  if (idx >= 0) return thread.slice(idx);
+
+  // Case 2: boundary in sibling subtree — find LCA and drop ancestors.
+  const boundaryMsg = allMessages.find((m) => m.id === anchorId);
+  if (!boundaryMsg) return thread;
+
+  // Build boundary's ancestor set (all ids from boundary up to root).
+  const byId = new Map<string, ChatMessage>();
+  for (const m of allMessages) {
+    if (m.id) byId.set(m.id, m);
+  }
+  const boundaryAncestors = new Set<string>();
+  let cursor: ChatMessage | undefined = boundaryMsg;
+  while (cursor?.id) {
+    boundaryAncestors.add(cursor.id);
+    cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
+  }
+
+  // LCA = last (deepest) thread message whose id is in boundaryAncestors.
+  let lcaIdx = -1;
+  for (let i = thread.length - 1; i >= 0; i--) {
+    const tid = thread[i].id;
+    if (tid && boundaryAncestors.has(tid)) {
+      lcaIdx = i;
+      break;
+    }
+  }
+  if (lcaIdx === -1) return thread; // no common ancestor: unrelated branches
+  return thread.slice(lcaIdx + 1);
 }
 
 /**

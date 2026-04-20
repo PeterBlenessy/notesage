@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Plus, MessageSquare, History, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch, sliceThreadBySegment } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -272,15 +272,15 @@ export function ChatPanel() {
     const freshMessages = selectMessages(useChatStore.getState());
 
     // Apply provider context isolation: if the active segment says "start fresh",
-    // only include messages from the segment boundary onward.
+    // only include messages from the segment boundary onward. Slicing is
+    // branch-aware (task #28) — uses the stable `startMessageId` anchor and
+    // walks the active-leaf thread rather than positional indices.
     const segment = useChatStore.getState().getActiveSegment();
-    let filteredMessages = freshMessages;
-    if (segment && !segment.historyIncluded && segment.startMessageIndex > 0) {
-      // startMessageIndex is based on conversation.messages array length at the time
-      // of the switch. For branching threads, clamp to current thread length.
-      const dropCount = Math.min(segment.startMessageIndex, freshMessages.length);
-      filteredMessages = freshMessages.slice(dropCount);
-    }
+    const filteredMessages = sliceThreadBySegment(
+      freshMessages,
+      segment,
+      activeConv?.messages ?? [],
+    );
 
     await sendChatMessage(expandedContent, filteredMessages, sendOpts as Parameters<typeof sendChatMessage>[2]);
   }, [hasAIProvider, effectiveConnection, setActiveAgent, sendChatMessage, attachedFilePaths, clearEditContext]);

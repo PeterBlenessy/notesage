@@ -71,9 +71,10 @@ import {
   selectPendingAgentSwitch,
   selectSegments,
   selectActiveSegmentIndex,
+  sliceThreadBySegment,
 } from '../chat-store';
-import type { Conversation } from '../chat-store';
-import type { AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
+import type { Conversation, ConversationSegment } from '../chat-store';
+import type { AgentActivity, ChatMessage, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1313,5 +1314,371 @@ describe('image attachments', () => {
     expect(lastMsg.attachments).toHaveLength(2);
     expect(lastMsg.attachments![0].id).toBe('img-1');
     expect(lastMsg.attachments![1].id).toBe('img-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #28 — Segment boundary as message id (slicing under branching)
+// ---------------------------------------------------------------------------
+
+describe('sliceThreadBySegment (task #28)', () => {
+  beforeEach(reset);
+
+  // Convenience: build a thread-like array with explicit ids/parents.
+  function makeThread(specs: Array<{ id: string; parent: string | null; content?: string; ts?: number }>): ChatMessage[] {
+    return specs.map((s, i) => ({
+      role: 'user',
+      content: s.content ?? s.id,
+      id: s.id,
+      parentId: s.parent,
+      timestamp: s.ts ?? i + 1,
+    }));
+  }
+
+  it('returns thread unchanged when segment is undefined', () => {
+    const thread = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+    ]);
+    expect(sliceThreadBySegment(thread, undefined, thread)).toBe(thread);
+  });
+
+  it('returns thread unchanged when historyIncluded is true', () => {
+    const thread = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+    ]);
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 1,
+      startMessageId: 'b',
+      historyIncluded: true,
+    };
+    expect(sliceThreadBySegment(thread, seg, thread)).toBe(thread);
+  });
+
+  it('returns thread unchanged when startMessageId is undefined', () => {
+    const thread = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+    ]);
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 1,
+      historyIncluded: false,
+    };
+    expect(sliceThreadBySegment(thread, seg, thread)).toBe(thread);
+  });
+
+  it('slices linear thread from the boundary message id onward (boundary included)', () => {
+    const thread = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+      { id: 'c', parent: 'b' },
+      { id: 'd', parent: 'c' },
+    ]);
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 2,
+      startMessageId: 'c',
+      historyIncluded: false,
+    };
+    const out = sliceThreadBySegment(thread, seg, thread);
+    expect(out.map((m) => m.id)).toEqual(['c', 'd']);
+  });
+
+  // Attack / red-team: branching correctness — proves message-id slicing fixes
+  // a case where numeric-index slicing would be wrong.
+  it('RED-TEAM: branching — boundary in sibling subtree drops thread down to LCA', () => {
+    // Original linear: A -> B -> C -> D, boundary set at C (startMessageIndex: 2).
+    // Then user branched from B to create a sibling thread: A -> B -> X -> Y.
+    // Active thread is A-B-X-Y. C is in conv.messages but not in this thread.
+    const allMessages = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+      { id: 'c', parent: 'b' },
+      { id: 'd', parent: 'c' },
+      { id: 'x', parent: 'b' }, // sibling of c
+      { id: 'y', parent: 'x' },
+    ]);
+    const thread = allMessages.filter((m) => ['a', 'b', 'x', 'y'].includes(m.id!));
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 2, // used to point at c in the old linear thread
+      startMessageId: 'c',
+      historyIncluded: false,
+    };
+
+    // The legacy (numeric-index) behaviour would slice thread at index 2 and
+    // leak pre-boundary 'a','b' in-or-out depending on clamp. Message-id slicing
+    // locates the LCA (b — boundary's parent in thread) and drops up to+incl.
+    // LCA, keeping only post-fork messages (x, y).
+    const out = sliceThreadBySegment(thread, seg, allMessages);
+    expect(out.map((m) => m.id)).toEqual(['x', 'y']);
+  });
+
+  it('branching: fork happens before boundary — keeps only post-fork messages', () => {
+    // Linear A -> B -> C -> D (boundary at D)
+    // Branch from A creates A -> P -> Q. Active thread: A, P, Q.
+    // Boundary D is in sibling subtree; LCA is A. Drop A, keep P, Q.
+    const allMessages = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+      { id: 'c', parent: 'b' },
+      { id: 'd', parent: 'c' },
+      { id: 'p', parent: 'a' },
+      { id: 'q', parent: 'p' },
+    ]);
+    const thread = allMessages.filter((m) => ['a', 'p', 'q'].includes(m.id!));
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 3,
+      startMessageId: 'd',
+      historyIncluded: false,
+    };
+    const out = sliceThreadBySegment(thread, seg, allMessages);
+    expect(out.map((m) => m.id)).toEqual(['p', 'q']);
+  });
+
+  it('returns thread unchanged when boundary id cannot be resolved at all', () => {
+    const thread = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+    ]);
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 5,
+      startMessageId: 'deleted-id',
+      historyIncluded: false,
+    };
+    expect(sliceThreadBySegment(thread, seg, thread)).toBe(thread);
+  });
+
+  it('returns thread unchanged when boundary and thread have no common ancestor', () => {
+    // Two completely disjoint trees in `allMessages` — pathological, but defensive.
+    const allMessages = makeThread([
+      { id: 'a', parent: null },
+      { id: 'b', parent: 'a' },
+      { id: 'p', parent: null },
+      { id: 'q', parent: 'p' },
+    ]);
+    const thread = allMessages.filter((m) => ['a', 'b'].includes(m.id!));
+    const seg: ConversationSegment = {
+      projectPaths: [],
+      sessionId: null,
+      startMessageIndex: 3,
+      startMessageId: 'q',
+      historyIncluded: false,
+    };
+    // No common ancestor: conservative — return thread unchanged.
+    const out = sliceThreadBySegment(thread, seg, allMessages);
+    expect(out).toEqual(thread);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #28 — Store assigns startMessageId when first post-switch message lands
+// ---------------------------------------------------------------------------
+
+describe('Segment startMessageId assignment on addMessage (task #28)', () => {
+  beforeEach(reset);
+
+  it('resolveProjectSwitch creates segment with undefined startMessageId; addMessage fills it', () => {
+    const { createConversation, addMessage, setPendingProjectSwitch, resolveProjectSwitch } =
+      useChatStore.getState();
+    const id = createConversation({ projectPaths: ['/old'] });
+    addMessage({ role: 'user', content: 'm1', timestamp: 1 });
+    addMessage({ role: 'assistant', content: 'm2', timestamp: 2 });
+
+    setPendingProjectSwitch(['/new'], ['/old']);
+    resolveProjectSwitch(false); // no history carried
+
+    // New segment exists but has no startMessageId yet — no post-switch msg.
+    const conv1 = getConv(id)!;
+    expect(conv1.segments).toHaveLength(2);
+    expect(conv1.segments[1].startMessageIndex).toBe(2);
+    expect(conv1.segments[1].startMessageId).toBeUndefined();
+
+    // Add the first post-switch message — it should populate startMessageId.
+    addMessage({ role: 'user', content: 'post-switch', timestamp: 3 });
+    const conv2 = getConv(id)!;
+    const newMsg = conv2.messages.find((m) => m.content === 'post-switch')!;
+    expect(conv2.segments[1].startMessageId).toBe(newMsg.id);
+  });
+
+  it('does not stomp startMessageId on subsequent messages', () => {
+    const { createConversation, addMessage, setPendingProjectSwitch, resolveProjectSwitch } =
+      useChatStore.getState();
+    const id = createConversation({ projectPaths: ['/old'] });
+    addMessage({ role: 'user', content: 'm1', timestamp: 1 });
+    setPendingProjectSwitch(['/new'], ['/old']);
+    resolveProjectSwitch(false);
+
+    addMessage({ role: 'user', content: 'first-post', timestamp: 2 });
+    const firstPostId = getConv(id)!.segments[1].startMessageId;
+    expect(firstPostId).toBeTruthy();
+
+    addMessage({ role: 'assistant', content: 'second-post', timestamp: 3 });
+    expect(getConv(id)!.segments[1].startMessageId).toBe(firstPostId);
+  });
+
+  it('resolveAgentSwitch also leaves startMessageId to be filled by next addMessage', () => {
+    const { createConversation, addMessage, setPendingAgentSwitch, resolveAgentSwitch } =
+      useChatStore.getState();
+    const id = createConversation({ projectPaths: ['/p'] });
+    addMessage({ role: 'user', content: 'm1', timestamp: 1 });
+    setPendingAgentSwitch('claude', 'codex');
+    resolveAgentSwitch(false);
+
+    expect(getConv(id)!.segments[1].startMessageId).toBeUndefined();
+
+    addMessage({ role: 'user', content: 'with-claude', timestamp: 2 });
+    const anchor = getConv(id)!.segments[1].startMessageId;
+    const msg = getConv(id)!.messages.find((m) => m.content === 'with-claude');
+    expect(anchor).toBe(msg!.id);
+  });
+
+  it('first segment (index 0) never adopts a message as startMessageId', () => {
+    // The initial segment represents the conversation's starting context;
+    // there is no boundary to anchor, so startMessageId should stay undefined.
+    const { createConversation, addMessage } = useChatStore.getState();
+    const id = createConversation({ projectPaths: ['/p'] });
+    addMessage({ role: 'user', content: 'first', timestamp: 1 });
+    expect(getConv(id)!.segments[0].startMessageId).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #28 — Persist migration v4 → v5 derives startMessageId from index lookup
+// ---------------------------------------------------------------------------
+
+describe('Migration v4 → v5 (task #28)', () => {
+  type MigrateFn = (state: unknown, version: number) => unknown;
+  const migrate: MigrateFn =
+    (useChatStore as unknown as { persist: { getOptions: () => { migrate: MigrateFn } } })
+      .persist.getOptions().migrate;
+
+  it('derives startMessageId from startMessageIndex lookup in conv.messages', () => {
+    const v4State = {
+      conversations: [{
+        id: 'conv-1',
+        title: 'Test',
+        messages: [
+          { role: 'user', content: 'm1', timestamp: 1, id: 'id-1', parentId: null },
+          { role: 'assistant', content: 'm2', timestamp: 2, id: 'id-2', parentId: 'id-1' },
+          { role: 'user', content: 'm3', timestamp: 3, id: 'id-3', parentId: 'id-2' },
+          { role: 'assistant', content: 'm4', timestamp: 4, id: 'id-4', parentId: 'id-3' },
+        ],
+        createdAt: 1,
+        updatedAt: 4,
+        projectPaths: [],
+        segments: [
+          { projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false },
+          { projectPaths: ['/new'], sessionId: null, startMessageIndex: 2, historyIncluded: false },
+        ],
+        activeSegmentIndex: 1,
+        pendingProjectSwitch: null,
+        activeLeafId: 'id-4',
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+
+    const migrated = migrate(v4State, 4) as { conversations: Conversation[] };
+    const conv = migrated.conversations[0];
+    // First segment: startMessageIndex is 0 → points to 'id-1'.
+    expect(conv.segments[0].startMessageId).toBe('id-1');
+    // Second segment: startMessageIndex is 2 → points to 'id-3'.
+    expect(conv.segments[1].startMessageId).toBe('id-3');
+    // startMessageIndex preserved for backward compat.
+    expect(conv.segments[0].startMessageIndex).toBe(0);
+    expect(conv.segments[1].startMessageIndex).toBe(2);
+  });
+
+  it('leaves startMessageId undefined when startMessageIndex is out-of-range', () => {
+    const v4State = {
+      conversations: [{
+        id: 'conv-1',
+        title: 'Test',
+        messages: [
+          { role: 'user', content: 'm1', timestamp: 1, id: 'id-1', parentId: null },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        projectPaths: [],
+        segments: [
+          // Future index — the post-switch message hasn't been written yet.
+          { projectPaths: ['/new'], sessionId: null, startMessageIndex: 5, historyIncluded: false },
+        ],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+        activeLeafId: 'id-1',
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+
+    const migrated = migrate(v4State, 4) as { conversations: Conversation[] };
+    expect(migrated.conversations[0].segments[0].startMessageId).toBeUndefined();
+  });
+
+  it('does not overwrite existing startMessageId', () => {
+    // A v5-shaped state being fed through migration again should be idempotent.
+    const v5State = {
+      conversations: [{
+        id: 'conv-1',
+        title: 'Test',
+        messages: [
+          { role: 'user', content: 'm1', timestamp: 1, id: 'id-1', parentId: null },
+          { role: 'user', content: 'm2', timestamp: 2, id: 'id-2', parentId: 'id-1' },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+        projectPaths: [],
+        segments: [
+          {
+            projectPaths: [],
+            sessionId: null,
+            startMessageIndex: 0,
+            startMessageId: 'preserved',
+            historyIncluded: false,
+          },
+        ],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+        activeLeafId: 'id-2',
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+
+    const migrated = migrate(v5State, 4) as { conversations: Conversation[] };
+    expect(migrated.conversations[0].segments[0].startMessageId).toBe('preserved');
+  });
+
+  it('handles conversations with no segments gracefully', () => {
+    const v4State = {
+      conversations: [{
+        id: 'conv-1',
+        title: 'Test',
+        messages: [],
+        createdAt: 1,
+        updatedAt: 1,
+        projectPaths: [],
+        segments: [],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+        activeLeafId: null,
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+    expect(() => migrate(v4State, 4)).not.toThrow();
   });
 });

@@ -36,6 +36,10 @@ vi.mock('@/stores/chat-store', () => {
   const selectProjectPaths = () => mockSelectedProjectPaths;
   const selectPendingProjectSwitch = () => null;
   const selectPendingAgentSwitch = () => null;
+  // Simple pass-through for the mock — segment slicing is exercised via the
+  // real store in chat-store.test.ts. Here the mocked getActiveSegment returns
+  // null, so the slice is a no-op anyway.
+  const sliceThreadBySegment = <T,>(thread: T, _segment: unknown, _all: unknown): T => thread;
   return {
     useChatStore: Object.assign(
       vi.fn((selector: (s: typeof chatStoreState) => unknown) => selector(chatStoreState)),
@@ -45,6 +49,7 @@ vi.mock('@/stores/chat-store', () => {
     selectProjectPaths,
     selectPendingProjectSwitch,
     selectPendingAgentSwitch,
+    sliceThreadBySegment,
   };
 });
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf, sliceThreadBySegment } from '@/stores/chat-store';
+import { getThread } from '@/lib/chat-tree';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
@@ -671,15 +672,16 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           if (isNewSession) {
             // Build conversation history for context restoration after interruption.
             // Respect provider context isolation — when user chose "Start fresh",
-            // only include messages from the segment boundary onward.
+            // only include messages from the segment boundary onward. Uses the
+            // active-leaf thread (not raw `messages`) so branching stays correct
+            // (task #28 — segment boundary as message id).
             const conv = useChatStore.getState().conversations
               .find(c => c.id === useChatStore.getState().activeConversationId);
             const segment = useChatStore.getState().getActiveSegment();
-            let allMessages = conv?.messages ?? [];
-            if (segment && !segment.historyIncluded && segment.startMessageIndex > 0) {
-              const dropCount = Math.min(segment.startMessageIndex, allMessages.length);
-              allMessages = allMessages.slice(dropCount);
-            }
+            const baseThread: ChatMessage[] = conv?.activeLeafId
+              ? getThread(conv.messages, conv.activeLeafId)
+              : (conv?.messages ?? []);
+            const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
             const priorMessages = allMessages.filter(
               (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
                 && m.role !== 'system-status' && m.content
