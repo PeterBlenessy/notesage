@@ -776,7 +776,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ## Phase 11 — Verification & Documentation
 
-### #32 — Red-team pass on all leak repros
+### #32 — Red-team pass on all leak repros ✅
 
 **Description:** A disciplined walkthrough of every leak's repro steps from the two audits. Must be performed by a second engineer OR a solo run with the audits open and each repro confirmed not to reproduce.
 
