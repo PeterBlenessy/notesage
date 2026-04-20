@@ -106,3 +106,4 @@ Chronological log of major implementation milestones and changes.
 | 100 | [Release v0.35.0](100-release-v0.35.0.md) | Agent simplification — remove bundled agents, @ pass-through for ACP, expanded discovery, custom prompts |
 | 101 | [Release v0.36.0](101-release-v0.36.0.md) | ACP session lifecycle — resume/list/fork/close; inline diff + text content blocks; 4 race/casing fixes |
 | 102 | [Release v0.37.0](102-release-v0.37.0.md) | ACP Protocol Tail — task agent parity + close, EnvVar auth, resource_link, messageId; 5 security advisories closed |
+| 103 | [Release v0.38.0](103-release-v0.38.0.md) | Project & Data Isolation — aiLock enforcement, per-project scoped approvals, kernel-level sandbox allow-list, resend/edit dialog, LSP + completion scope gates, user-friendly re-auth; 22 leaks closed |

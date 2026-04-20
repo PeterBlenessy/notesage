@@ -293,6 +293,40 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.36.0:** phase1-ready 3,624→3,817ms (+5%, noise). Skills total 4,238→4,434ms (+5%, noise). Tree refresh 4,664→4,914ms (+5%, noise). Startup ready 5,246→5,999ms (+14%) and tabs restored 5,047→5,706ms (+13%) — both first-run only; second-run values are flat (5,812→6,052ms +4%, 5,556→5,802ms +4%). **Index init total 637→1,155ms on first run (+81%)** — the prior v0.36.0 first-run 637ms was an outlier good result (previous v0.35.0 was 1,128ms); v0.37.0's 1,155ms matches the v0.35.0 baseline and the second-run v0.36.0 number (1,190ms). Likely iCloud sync latency noise, not a code regression (Phase 3 auth consolidation and dep pruning don't touch the index or startup hot path). Rescan numbers are cleaner than before (27ms vs 81ms). No real regressions attributable to v0.37.0.
 
+### v0.38.0 — 2026-04-20 (uncommitted, base `a0abcb5`)
+
+Apple M3, 24GB. macOS.
+6 iCloud projects, 3 explorer folders, 7 open tabs, 1,291 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 2,775 |
+| skill-tool-extract (11 skills) | 145 |
+| agent-scan | 174 |
+| instruction-scan | 105 |
+| **phase1-ready (tools visible)** | **3,199** |
+| bundled-skills-extract | 4 |
+| phase2-extract | 18 |
+| **total** | **3,217** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 1,819 |
+| trees validated (2nd) | 2,212 |
+| tree refresh (10 sections, 1,291 files) | 3,330 |
+| tab-preload (6 tabs) | 2,495 |
+| index init total | 1,184 / 1,278 |
+| startup ready | 4,387 / 4,494 |
+| tabs restored | 4,100 / 4,131 |
+
+**Rescan (second run):** skill-scan 62ms, skill-tool-extract 2ms, agent-scan 7ms, instruction-scan 6ms, phase1-ready 77ms, total 77ms.
+
+**Comparison vs v0.37.0:** phase1-ready 3,817→3,199ms (−16%). Skills total 4,434→3,217ms (−27%). Tree refresh 4,914→3,330ms (−32%). Startup ready 5,999/6,052→4,387/4,494ms (−27% / −26%). Tabs restored 5,706/5,802→4,100/4,131ms (−28% / −29%). Index init total 1,155/1,164→1,184/1,278ms (flat). v0.38.0 does not touch the startup hot path — the entire release is AI-scope / isolation work — so these consistent double-digit improvements are almost certainly iCloud sync noise (cold/warm-cache differences between runs). No regressions.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
