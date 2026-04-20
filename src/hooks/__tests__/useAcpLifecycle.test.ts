@@ -4,6 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
 import { setMockInvokeHandler, getListenerCount } from '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useChatStore } from '@/stores/chat-store';
+import { usePermissionStore } from '@/stores/permission-store';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 
 // ---------------------------------------------------------------------------
 // Module mocks — must be before importing the hook under test
@@ -86,6 +91,12 @@ describe('useAcpLifecycle', () => {
     vi.useRealTimers();
     // Reset the mocked acpAgent state
     (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = null;
+    // Reset stores so workspace/chat/permission state doesn't leak between tests
+    useWorkspaceStore.setState({ projects: [], explorerFolders: [] } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+    useChatStore.setState({ isLoading: false });
+    usePermissionStore.setState({ requests: [] });
+    vi.mocked(invoke).mockClear();
+    vi.mocked(toast.info).mockClear();
   });
 
   describe('acpCancelChat — cancel escalation listener leak', () => {
@@ -131,6 +142,131 @@ describe('useAcpLifecycle', () => {
       // After the escalation timeout + promise resolution, no listener should remain
       const listenersAfter = getListenerCount('acp-session-update');
       expect(listenersAfter).toBe(listenersBefore);
+    });
+
+    it('[task #29] workspace change during active turn cancels turn, drains permissions, shows toast', async () => {
+      // Seed: workspace has one project, agent is attached, a turn is in
+      // flight AND there's a pending permission request for the agent.
+      useWorkspaceStore.setState({
+        projects: [{ path: '/work/projA', fileTree: [] }],
+        explorerFolders: [],
+      } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+
+      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+        instanceId: 'inst-workspace-29',
+        connectionId: 'conn-test',
+        sandboxScopeKey: '/work/projA',
+        chatSessionId: 'sess-active-29',
+      };
+
+      // Simulate a pending permission card for this instance.
+      usePermissionStore.getState().addRequest({
+        id: 'perm-1',
+        instanceId: 'inst-workspace-29',
+        sessionId: 'sess-active-29',
+        requestId: 'req-abc',
+        toolKind: 'write',
+        toolTitle: 'Writing file',
+        toolInput: '{}',
+        options: [{ optionId: 'allow-once', kind: 'allow_once', name: 'Allow' }],
+        timestamp: Date.now(),
+      });
+
+      // Mark chat as loading so the workspace-change effect sees an active turn.
+      act(() => { useChatStore.getState().setLoading(true); });
+
+      const connection = makeConnection();
+      renderHook(() =>
+        useAcpLifecycle({
+          effectiveConnection: connection,
+          acpSystemMessage: 'sys',
+        })
+      );
+
+      // Sanity-check pre-conditions before the attack.
+      expect(
+        usePermissionStore.getState().requests.filter((r) => r.instanceId === 'inst-workspace-29'),
+      ).toHaveLength(1);
+
+      // Change workspace folders — this fires the workspace-change effect.
+      await act(async () => {
+        useWorkspaceStore.setState({
+          projects: [{ path: '/work/projB', fileTree: [] }],
+          explorerFolders: [],
+        } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+      });
+
+      // 1. acp_session_cancel called for the in-flight turn.
+      expect(invoke).toHaveBeenCalledWith('acp_session_cancel', {
+        instanceId: 'inst-workspace-29',
+        sessionId: 'sess-active-29',
+      });
+
+      // 2. Pending permission denied and drained.
+      expect(invoke).toHaveBeenCalledWith('acp_permission_respond', {
+        instanceId: 'inst-workspace-29',
+        requestId: 'req-abc',
+        optionId: null,
+      });
+      expect(
+        usePermissionStore.getState().requests.filter((r) => r.instanceId === 'inst-workspace-29'),
+      ).toHaveLength(0);
+
+      // 3. Context-reset toast surfaced.
+      expect(toast.info).toHaveBeenCalledWith(
+        expect.stringContaining('Context reset'),
+        expect.objectContaining({ id: 'acp-workspace-context-reset' }),
+      );
+
+      // Agent is then torn down.
+      expect(acpAgentState.stopAcpAgent).toHaveBeenCalled();
+
+      // Chat loading flag cleared so the UI exits the streaming state.
+      expect(useChatStore.getState().isLoading).toBe(false);
+    });
+
+    it('[task #29] workspace change with no active turn does not cancel or deny (just respawn)', async () => {
+      useWorkspaceStore.setState({
+        projects: [{ path: '/work/projA', fileTree: [] }],
+        explorerFolders: [],
+      } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+
+      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+        instanceId: 'inst-workspace-idle',
+        connectionId: 'conn-test',
+        sandboxScopeKey: '/work/projA',
+        chatSessionId: 'sess-idle',
+      };
+
+      // No pending permissions, chat not loading.
+      act(() => { useChatStore.getState().setLoading(false); });
+
+      const connection = makeConnection();
+      renderHook(() =>
+        useAcpLifecycle({
+          effectiveConnection: connection,
+          acpSystemMessage: 'sys',
+        })
+      );
+
+      const invokeMock = vi.mocked(invoke);
+      invokeMock.mockClear();
+      vi.mocked(toast.info).mockClear();
+
+      await act(async () => {
+        useWorkspaceStore.setState({
+          projects: [{ path: '/work/projB', fileTree: [] }],
+          explorerFolders: [],
+        } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
+      });
+
+      // No cancel, no deny, no toast — only stopAcpAgent ran.
+      const cancelCalls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'acp_session_cancel');
+      const denyCalls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'acp_permission_respond');
+      expect(cancelCalls).toHaveLength(0);
+      expect(denyCalls).toHaveLength(0);
+      expect(toast.info).not.toHaveBeenCalled();
+      expect(acpAgentState.stopAcpAgent).toHaveBeenCalled();
     });
 
     it('should clean up listener when cancel confirmation arrives before 5s timeout', async () => {

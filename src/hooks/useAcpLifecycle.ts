@@ -188,7 +188,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     };
   }, []);
 
-  // Respawn agent when workspace folders change (sandbox paths need updating)
+  // Respawn agent when workspace folders change (sandbox paths need updating).
+  //
+  // Task #29: before tearing down the agent, gracefully cancel any in-flight
+  // turn and drain pending permission requests. Without this, a stale
+  // permission prompt can linger in the UI pointing at a session tied to a
+  // dead agent — approving it races against the new agent's spawn and either
+  // no-ops or hits the wrong instance. Ordering matters:
+  //   1. Cancel the active ACP turn (tells the agent to stop streaming).
+  //   2. Deny pending permissions for this instance (fire-and-forget; the
+  //      store is then drained so the UI doesn't render dead cards).
+  //   3. `stopAcpAgent()` — now the SIGTERM is the cleanup, not a mid-turn
+  //      interrupt that dumps errors into the logs.
   const workspaceProjects = useWorkspaceStore((s) => s.projects);
   const workspaceExplorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const prevWorkspaceKeyRef = useRef('');
@@ -200,10 +211,59 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
     if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== key && acpAgent) {
       log.info('ai', 'Workspace folders changed — restarting agent for updated sandbox');
+
+      const instanceId = acpAgent.instanceId;
+      const sessionId = acpAgent.chatSessionId;
+      const permStore = usePermissionStore.getState();
+      const pendingForInstance = permStore.requests.filter((r) => r.instanceId === instanceId);
+      const chatLoading = useChatStore.getState().isLoading;
+      const turnActive = chatLoading || pendingForInstance.length > 0;
+
+      if (turnActive) {
+        // 1. Cancel the ACP turn if a session is active. Agent may be dying
+        //    already — swallow rejections rather than throwing into React.
+        if (sessionId) {
+          invoke('acp_session_cancel', { instanceId, sessionId }).catch((err) => {
+            log.warn('ai', `acp_session_cancel during workspace change failed: ${String(err)}`);
+          });
+        }
+
+        // 2. Deny every pending permission waiter on this instance, then
+        //    drain the store. `acp_permission_respond` resolves the agent-
+        //    side future; `clearRequestsForInstance` drops the UI cards.
+        for (const req of pendingForInstance) {
+          invoke('acp_permission_respond', {
+            instanceId,
+            requestId: req.requestId,
+            optionId: null,
+          }).catch(() => {
+            // Expected: fire-and-forget deny during context reset.
+          });
+        }
+        permStore.clearRequestsForInstance(instanceId);
+
+        // 3. Surface a toast so the user knows why the stream stopped. The
+        //    stable id prevents duplicate toasts if two workspace changes
+        //    fire back-to-back.
+        toast.info('Context reset: workspace changed, previous turn cancelled', {
+          id: 'acp-workspace-context-reset',
+        });
+
+        // Tear down any in-flight chat listeners and clear the loading flag
+        // so the chat UI exits its streaming state cleanly.
+        if (cleanupRef.current) {
+          (cleanupRef.current as (cancelled?: boolean) => void)(true);
+          cleanupRef.current = null;
+        }
+        clearUnresponsiveTimer();
+        setLoading(false);
+        setActiveTool(null);
+      }
+
       stopAcpAgent();
     }
     prevWorkspaceKeyRef.current = key;
-  }, [workspaceProjects, workspaceExplorerFolders]);
+  }, [workspaceProjects, workspaceExplorerFolders, setLoading, setActiveTool]);
 
   // Listen for agent process death events
   useEffect(() => {
