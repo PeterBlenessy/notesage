@@ -28,6 +28,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAIContext } from '@/hooks/useAIContext';
 import type { SkillEntry, AgentInstruction } from '@/stores/skill-store';
+import type { FileEntry } from '@/lib/tauri';
 
 function skillEntry(overrides: Partial<SkillEntry> & { name: string; source: string }): SkillEntry {
   return {
@@ -245,5 +246,197 @@ describe('useAIContext — per-project isolation (Task #18)', () => {
 
     expect(msg).toContain('world');
     expect(msg).not.toContain('leaky');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #27 — file-tree system-prompt injection scope + caps
+// ---------------------------------------------------------------------------
+
+function file(path: string, name?: string): FileEntry {
+  return {
+    name: name ?? path.split('/').pop()!,
+    path,
+    is_directory: false,
+    hidden: false,
+  };
+}
+
+function dir(path: string, children: FileEntry[], name?: string): FileEntry {
+  return {
+    name: name ?? path.split('/').pop()!,
+    path,
+    is_directory: true,
+    children,
+    hidden: false,
+  };
+}
+
+/** Build a flat 500-file directory at the given root path. */
+function flatProject(rootPath: string, fileCount: number): FileEntry[] {
+  const children: FileEntry[] = [];
+  for (let i = 0; i < fileCount; i++) {
+    children.push(file(`${rootPath}/file-${i}.md`));
+  }
+  return children;
+}
+
+/** Build a chain of nested directories `N` deep, each containing a leaf file. */
+function deepChain(rootPath: string, levels: number): FileEntry[] {
+  // Top-level dir d1 → d2 → ... → dN → leaf.md
+  let innerPath = `${rootPath}/${Array.from({ length: levels }, (_, i) => `d${i + 1}`).join('/')}`;
+  let inner: FileEntry[] = [file(`${innerPath}/leaf.md`)];
+  for (let i = levels; i >= 1; i--) {
+    innerPath = `${rootPath}/${Array.from({ length: i }, (_, j) => `d${j + 1}`).join('/')}`;
+    inner = [dir(innerPath, inner)];
+  }
+  return inner;
+}
+
+describe('useAIContext — file-tree injection scope (Task #27)', () => {
+  beforeEach(() => {
+    resetAll();
+  });
+
+  it('does NOT leak Project B filenames when only Project A is selected', () => {
+    // Attack: workspace-store contains BOTH projects. Chat scoped to A only.
+    // Pre-fix observation: without the scope filter a refactor could
+    // accidentally walk every project. Post-fix: only project-A's entries
+    // appear in the composed system message.
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          path: '/workspace/project-A',
+          fileTree: [
+            file('/workspace/project-A/alpha-notes.md'),
+            file('/workspace/project-A/alpha-ideas.md'),
+          ],
+        },
+        {
+          path: '/workspace/project-B',
+          fileTree: [
+            file('/workspace/project-B/beta-secrets.md'),
+            file('/workspace/project-B/beta-client-list.md'),
+          ],
+        },
+      ],
+      explorerFolders: [
+        {
+          path: '/somewhere/else',
+          fileTree: [file('/somewhere/else/explorer-file.md')],
+        },
+      ],
+    });
+    seedActiveConversation(['/workspace/project-A']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    expect(msg).toContain('alpha-notes.md');
+    expect(msg).toContain('alpha-ideas.md');
+    expect(msg).not.toContain('beta-secrets.md');
+    expect(msg).not.toContain('beta-client-list.md');
+    expect(msg).not.toContain('explorer-file.md');
+  });
+
+  it('includes files under the notes root when that is the entry-point scope', () => {
+    // Consistent with #8 / #16 / #17 / #23 — notes root is always in-scope.
+    useSettingsStore.setState({ notesRootPath: '/Users/me/Notesage', homeDir: '/Users/me' });
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          path: '/Users/me/Notesage',
+          fileTree: [
+            file('/Users/me/Notesage/welcome.md'),
+            file('/Users/me/Notesage/journal.md'),
+          ],
+        },
+      ],
+    });
+    seedActiveConversation(['/Users/me/Notesage']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    expect(msg).toContain('welcome.md');
+    expect(msg).toContain('journal.md');
+  });
+
+  it('truncates the tree to 200 entries for a 500-file project', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          path: '/workspace/big-project',
+          fileTree: flatProject('/workspace/big-project', 500),
+        },
+      ],
+    });
+    seedActiveConversation(['/workspace/big-project']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    // file-0.md through file-199.md should appear; file-200.md should not.
+    expect(msg).toContain('file-0.md');
+    expect(msg).toContain('file-199.md');
+    expect(msg).not.toContain('file-200.md');
+    expect(msg).toContain('(truncated)');
+
+    // Count "file-<digits>" entries to prove the cap is respected.
+    const matches = msg.match(/file-\d+\.md/g) ?? [];
+    expect(matches.length).toBeLessThanOrEqual(200);
+  });
+
+  it('caps depth at 4 directory levels (deeper paths truncated)', () => {
+    // deepChain with 6 levels: rootPath / d1 / d2 / d3 / d4 / d5 / d6 / leaf.md
+    // Depth 0 = d1, depth 1 = d2, ..., depth 5 = d6. With maxLevels=4 the
+    // walker stops before descending into d5 — so d5, d6, and leaf.md do
+    // NOT appear in the injected tree.
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          path: '/workspace/deep-project',
+          fileTree: deepChain('/workspace/deep-project', 6),
+        },
+      ],
+    });
+    seedActiveConversation(['/workspace/deep-project']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    expect(msg).toContain('d1/');
+    expect(msg).toContain('d2/');
+    expect(msg).toContain('d3/');
+    expect(msg).toContain('d4/');
+    expect(msg).not.toContain('d5/');
+    expect(msg).not.toContain('d6/');
+    expect(msg).not.toContain('leaf.md');
+  });
+
+  it('does not inject a file tree when no project is selected (scope stays closed)', () => {
+    // Empty scope must not fall through to "show all projects" (the bug the
+    // task is closing). Even if the workspace has 3 projects loaded, an
+    // unscoped conversation sees none of their filenames.
+    useWorkspaceStore.setState({
+      projects: [
+        {
+          path: '/workspace/project-A',
+          fileTree: [file('/workspace/project-A/alpha.md')],
+        },
+        {
+          path: '/workspace/project-B',
+          fileTree: [file('/workspace/project-B/beta.md')],
+        },
+      ],
+    });
+    seedActiveConversation([]);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    expect(msg).not.toContain('alpha.md');
+    expect(msg).not.toContain('beta.md');
+    expect(msg).not.toContain('## Project Files');
   });
 });

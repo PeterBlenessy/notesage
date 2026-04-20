@@ -115,7 +115,16 @@ export function useAIContext(): UseAIContextReturn {
       }
       if (goalsContext) parts.push(goalsContext);
       if (singleProject?.fileTree) {
-        const treeContext = buildFileTreeContext(singleProject.fileTree, singleProjectPath!);
+        // Task #27 — scope the file-tree injection to the selected project
+        // and the notes root, and cap it at 200 files / 4 levels. The call
+        // site already limits to `singleProject` (lookup by path in the
+        // workspace store), but we pass a scope filter to `buildFileTreeContext`
+        // as defense-in-depth so a future refactor can't reintroduce the leak.
+        const scope: UriScope = {
+          projectRoots: selectedProjectPaths,
+          notesRootPath: resolvedNotesRoot,
+        };
+        const treeContext = buildFileTreeContext(singleProject.fileTree, singleProjectPath!, { scope });
         if (treeContext) parts.push(treeContext);
       }
     } else if (selectedProjectPaths.length > 1) {
@@ -145,7 +154,7 @@ export function useAIContext(): UseAIContextReturn {
     }
 
     return parts;
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, activeTabInScope, metadataMap]);
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, activeTabInScope, metadataMap, resolvedNotesRoot]);
 
   // Compose system message for direct API providers
   const buildComposedSystemMessage = useCallback((attachedFilePaths?: string[]) => {
