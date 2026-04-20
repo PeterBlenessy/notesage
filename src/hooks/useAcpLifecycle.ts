@@ -16,7 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
-import { getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
+import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
 import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
@@ -584,6 +584,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionId: effectiveConnection.id,
       };
       addMessage(userMessage);
+      // Task #30 — log every file-path attachment on the user message so the
+      // user has a visible trail of what was shipped to the provider. Image
+      // byte attachments are visible as thumbnails already (intentionally not
+      // logged here).
+      for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
+        addActivity(userTimestamp, activity);
+      }
       // Resolve the UUID id that addMessage generated — we'll pass it as the outbound
       // ACP message_id so the agent can echo it back as `user_message_id`.
       const userMessageAcpId = (() => {

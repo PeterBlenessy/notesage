@@ -2,7 +2,7 @@
 // (useAcpLifecycle, useAgentTaskOperations, useAcpSessionListeners)
 
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import type { ToolCallContentItem } from '@/lib/ai/types';
+import type { AgentActivity, ToolCallContentItem } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -552,4 +552,38 @@ export function getChatSandboxScope(
   for (const p of conv.projectPaths) paths.add(p);
   for (const p of connection.extraWritablePaths ?? []) paths.add(p);
   return [...paths];
+}
+
+// ---------------------------------------------------------------------------
+// Attachment activity logging (task #30)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build `AgentActivity` entries for each attached file path so every send has
+ * a visible trail in the chat UI of *what* was shared with the provider.
+ *
+ * Image attachments (base64 bytes on `ChatMessage.attachments`) are NOT
+ * logged here — they are already visible as thumbnails on the user bubble.
+ * This function only covers `attachedFilePaths` — file paths the user
+ * (explicitly or via active-tab auto-attach) sent along with the prompt.
+ *
+ * Returns an empty array when the input is empty / missing so callers can
+ * safely spread-concat.
+ */
+export function buildAttachmentActivities(
+  attachedFilePaths: string[] | undefined,
+  timestamp: number = Date.now(),
+): AgentActivity[] {
+  if (!attachedFilePaths || attachedFilePaths.length === 0) return [];
+  const basename = (p: string): string => {
+    const parts = p.replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || p;
+  };
+  return attachedFilePaths.map((path) => ({
+    kind: 'attachment' as const,
+    label: basename(path),
+    detail: path,
+    status: 'done' as const,
+    timestamp,
+  }));
 }

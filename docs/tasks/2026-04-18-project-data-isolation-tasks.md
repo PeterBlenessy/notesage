@@ -740,7 +740,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #30 — Attachment path activity log
+### #30 — Attachment path activity log ✅
 
 **Description:** `attachedFilePaths` goes into every send with no visible trace. Log them as activity entries so the user sees what was attached.
 

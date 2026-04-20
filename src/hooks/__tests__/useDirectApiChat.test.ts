@@ -526,3 +526,63 @@ describe('useDirectApiChat — stamps connectionId on user messages (#10)', () =
     expect(userMsg?.connectionId).toBe('conn-openai-123');
   });
 });
+
+describe('useDirectApiChat — attachment activity log (task #30)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    });
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('logs one attachment activity per attachedFilePath on the user message', async () => {
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', [], {
+        attachedFilePaths: [
+          '/workspace/project-A/notes.md',
+          '/workspace/project-A/research.md',
+        ],
+      });
+    });
+
+    const conv = useChatStore.getState().conversations.find(
+      (c) => c.id === useChatStore.getState().activeConversationId
+    );
+    const userMsg = conv?.messages.find((m) => m.role === 'user');
+    expect(userMsg).toBeDefined();
+    const attachments = (userMsg!.activities ?? []).filter((a) => a.kind === 'attachment');
+    expect(attachments).toHaveLength(2);
+    expect(attachments[0]).toMatchObject({
+      kind: 'attachment',
+      label: 'notes.md',
+      detail: '/workspace/project-A/notes.md',
+      status: 'done',
+    });
+    expect(attachments[1]).toMatchObject({
+      kind: 'attachment',
+      label: 'research.md',
+      detail: '/workspace/project-A/research.md',
+      status: 'done',
+    });
+  });
+
+  it('logs no attachments when attachedFilePaths is missing', async () => {
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    const conv = useChatStore.getState().conversations.find(
+      (c) => c.id === useChatStore.getState().activeConversationId
+    );
+    const userMsg = conv?.messages.find((m) => m.role === 'user');
+    expect(userMsg?.activities ?? []).toHaveLength(0);
+  });
+});

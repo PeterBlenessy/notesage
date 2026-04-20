@@ -5,6 +5,7 @@ import {
   normalizeToolCallContent,
   hasSessionCapability,
   getChatSandboxScope,
+  buildAttachmentActivities,
   type AcpAgentCapabilities,
   type AcpSpawnResult,
   type AuthEnvVar,
@@ -562,5 +563,53 @@ describe('getChatSandboxScope', () => {
     expect(scope).not.toBe(extraPaths);
     expect(convPaths).toEqual(['/work/projA']); // unchanged
     expect(extraPaths).toEqual(['/tmp/agent-work']); // unchanged
+  });
+});
+
+describe('buildAttachmentActivities (task #30)', () => {
+  it('returns one `attachment` entry per path with basename label + full path detail', () => {
+    const result = buildAttachmentActivities(
+      ['/workspace/project-A/notes.md', '/workspace/project-A/research.md'],
+      1700000000000,
+    );
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      kind: 'attachment',
+      label: 'notes.md',
+      detail: '/workspace/project-A/notes.md',
+      status: 'done',
+      timestamp: 1700000000000,
+    });
+    expect(result[1]).toEqual({
+      kind: 'attachment',
+      label: 'research.md',
+      detail: '/workspace/project-A/research.md',
+      status: 'done',
+      timestamp: 1700000000000,
+    });
+  });
+
+  it('preserves order of paths', () => {
+    const paths = [
+      '/a/z.md',
+      '/a/a.md',
+      '/b/m.md',
+    ];
+    const result = buildAttachmentActivities(paths, 0);
+    expect(result.map((a) => a.detail)).toEqual(paths);
+  });
+
+  it('returns empty array for undefined / empty input', () => {
+    expect(buildAttachmentActivities(undefined)).toEqual([]);
+    expect(buildAttachmentActivities([])).toEqual([]);
+  });
+
+  it('handles Windows-style paths and path with no slash', () => {
+    const result = buildAttachmentActivities(
+      ['C:\\Users\\peter\\notes.md', 'plainname.md'],
+      42,
+    );
+    expect(result[0]).toMatchObject({ label: 'notes.md', detail: 'C:\\Users\\peter\\notes.md' });
+    expect(result[1]).toMatchObject({ label: 'plainname.md', detail: 'plainname.md' });
   });
 });

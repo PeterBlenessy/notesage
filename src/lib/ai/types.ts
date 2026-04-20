@@ -20,8 +20,21 @@ export interface Citation {
  */
 export type ActivityApprovalMode = 'auto' | 'user' | 'denied';
 
+/**
+ * Known `kind` values for `AgentActivity`. The field is an open string for
+ * backward compatibility with old messages, but new callers should use one
+ * of these tokens so the renderer can switch on them.
+ *
+ * - `'tool_call'`: tool invocation by the assistant (see ActivityLog).
+ * - `'attachment'`: a file path the user attached to a send (task #30). Logged
+ *    on the USER message so every send has a visible trail of what was
+ *    shared with the provider. `label` is the basename for the strip; `detail`
+ *    is the full path for tooltip + debugging.
+ */
+export type AgentActivityKind = 'tool_call' | 'attachment' | string;
+
 export interface AgentActivity {
-  kind: string;
+  kind: AgentActivityKind;
   label: string;
   detail?: string;
   status: 'running' | 'done';

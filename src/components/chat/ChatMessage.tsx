@@ -1,4 +1,4 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis, CircleStop } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis, CircleStop, Paperclip } from 'lucide-react';
 import { useState, useRef, useEffect, memo } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
@@ -25,8 +25,12 @@ function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActiv
 
 function ActivityLog({ activities, isActive }: { activities: AgentActivity[]; isActive: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  // Attachments are rendered via AttachmentFileStrip on the user bubble —
+  // exclude them here so the agent activity log stays tool-call focused.
+  const filtered = activities.filter((a) => a.kind !== 'attachment');
+  if (filtered.length === 0) return null;
   // Only show running state if the chat is actively loading; otherwise treat all as done
-  const hasRunning = isActive && activities.some((a) => a.status === 'running');
+  const hasRunning = isActive && filtered.some((a) => a.status === 'running');
 
   return (
     <div className="mt-2 pt-1.5 border-t border-border/50">
@@ -40,13 +44,13 @@ function ActivityLog({ activities, isActive }: { activities: AgentActivity[]; is
         />
         <span>
           {hasRunning
-            ? `Working (${activities.length} ${activities.length === 1 ? 'step' : 'steps'})`
-            : `${activities.length} ${activities.length === 1 ? 'step' : 'steps'} completed`}
+            ? `Working (${filtered.length} ${filtered.length === 1 ? 'step' : 'steps'})`
+            : `${filtered.length} ${filtered.length === 1 ? 'step' : 'steps'} completed`}
         </span>
       </button>
       {expanded && (
         <div className="mt-1 flex flex-col gap-0.5">
-          {activities.map((activity, i) => (
+          {filtered.map((activity, i) => (
             <div
               key={`${activity.kind}-${activity.timestamp}-${i}`}
               className="flex items-start gap-1.5 pl-1 py-0.5"
@@ -153,6 +157,31 @@ function ToolCallLog({ activities, isActive }: { activities: ToolCallActivity[];
   );
 }
 
+/**
+ * Compact pinned list of file-path attachments logged at send time (task #30).
+ * Renders once per user message, above the user-typed text. Uses the basename
+ * as the visible label with the full path on hover (native `title`) so the
+ * user can audit exactly what filesystem paths were shared with the provider.
+ */
+function AttachmentFileStrip({ message }: { message: ChatMessageType }) {
+  const attachments = (message.activities ?? []).filter((a) => a.kind === 'attachment');
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mb-1.5 flex flex-wrap gap-1">
+      {attachments.map((a, i) => (
+        <span
+          key={`${a.timestamp}-${i}`}
+          className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+          title={a.detail ?? a.label}
+        >
+          <Paperclip className="h-2.5 w-2.5 shrink-0" strokeWidth={1.5} />
+          <span className="truncate max-w-[180px]">{a.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function AttachmentThumbnails({ message }: { message: ChatMessageType }) {
   if (!message.attachments || message.attachments.length === 0) return null;
 
@@ -190,6 +219,7 @@ function UserContent({ message }: { message: ChatMessageType }) {
     return (
       <div>
         <AttachmentThumbnails message={message} />
+        <AttachmentFileStrip message={message} />
         <button
           onClick={() => setSkillExpanded(!skillExpanded)}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1.5"

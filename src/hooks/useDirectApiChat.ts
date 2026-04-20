@@ -13,7 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { friendlyAIError } from '@/lib/ai/errors';
-import { formatToolLabel } from '@/lib/ai/acp-utils';
+import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -130,6 +130,14 @@ export function useDirectApiChat({
         ...(effectiveConnection ? { connectionId: effectiveConnection.id } : {}),
       };
       addMessage(userMessage);
+
+      // Task #30 — log every file-path attachment on the user message so the
+      // user has a visible trail of what was shipped to the provider. Image
+      // byte attachments are visible as thumbnails already (intentionally not
+      // logged here).
+      for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
+        addActivity(userTimestamp, activity);
+      }
 
       const assistantMessageId = userTimestamp + 1;
       addMessage({

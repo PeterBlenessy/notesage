@@ -311,4 +311,122 @@ describe('useAcpLifecycle', () => {
       expect(listenersAfter).toBe(listenersBefore);
     });
   });
+
+  describe('acpSendChatMessage — attachment activity log (task #30)', () => {
+    it('logs one `attachment` activity per attachedFilePath on the user message', async () => {
+      vi.useRealTimers(); // This test drives real async flow; fake timers would stall promises.
+
+      // Make every mock invoke a no-op — we only need send to reach (and get past)
+      // the attachment-logging site at the top of acpSendChatMessage. The rest
+      // of the flow (session_new, prompt) will run against mock handlers and
+      // either succeed silently or throw; either way activities are already
+      // recorded at that point.
+      setMockInvokeHandler('acp_session_new', () => ({
+        session_id: 'sess-attach-test',
+        available_models: [],
+        current_model: null,
+        modes: null,
+        config_options: null,
+      }));
+      setMockInvokeHandler('acp_session_prompt', () => undefined);
+      setMockInvokeHandler('acp_session_set_model', () => undefined);
+
+      // Seed a chat store with an active conversation so addMessage has a home.
+      useChatStore.getState().clearMessages();
+
+      // Attach an already-initialized acpAgent so the hook reuses the session.
+      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+        instanceId: 'inst-attach-test',
+        connectionId: 'conn-test',
+        sandboxScopeKey: '',
+        chatSessionId: null, // forces session_new path
+      };
+
+      const connection = makeConnection();
+      const { result } = renderHook(() =>
+        useAcpLifecycle({
+          effectiveConnection: connection,
+          acpSystemMessage: 'sys',
+        })
+      );
+
+      await act(async () => {
+        // Fire-and-forget — the send may fail later in the pipeline once the
+        // mock session ends, but attachment activities are appended BEFORE any
+        // of that runs.
+        try {
+          await result.current.acpSendChatMessage('hello', [], {
+            attachedFilePaths: [
+              '/workspace/project-A/notes.md',
+              '/workspace/project-A/research.md',
+            ],
+          });
+        } catch {
+          // ignored — downstream pipeline is out of scope for this test
+        }
+      });
+
+      const conv = useChatStore.getState().conversations[0];
+      const userMsg = conv?.messages.find((m) => m.role === 'user');
+      expect(userMsg).toBeDefined();
+      const attachments = (userMsg!.activities ?? []).filter((a) => a.kind === 'attachment');
+      expect(attachments).toHaveLength(2);
+      expect(attachments[0]).toMatchObject({
+        kind: 'attachment',
+        label: 'notes.md',
+        detail: '/workspace/project-A/notes.md',
+        status: 'done',
+      });
+      expect(attachments[1]).toMatchObject({
+        kind: 'attachment',
+        label: 'research.md',
+        detail: '/workspace/project-A/research.md',
+        status: 'done',
+      });
+    });
+
+    it('does not log attachments when attachedFilePaths is missing', async () => {
+      vi.useRealTimers();
+
+      setMockInvokeHandler('acp_session_new', () => ({
+        session_id: 'sess-noop',
+        available_models: [],
+        current_model: null,
+        modes: null,
+        config_options: null,
+      }));
+      setMockInvokeHandler('acp_session_prompt', () => undefined);
+      setMockInvokeHandler('acp_session_set_model', () => undefined);
+
+      useChatStore.getState().clearMessages();
+
+      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+        instanceId: 'inst-attach-empty',
+        connectionId: 'conn-test',
+        sandboxScopeKey: '',
+        chatSessionId: null,
+      };
+
+      const connection = makeConnection();
+      const { result } = renderHook(() =>
+        useAcpLifecycle({
+          effectiveConnection: connection,
+          acpSystemMessage: 'sys',
+        })
+      );
+
+      await act(async () => {
+        try {
+          await result.current.acpSendChatMessage('hello', []);
+        } catch {
+          // ignored
+        }
+      });
+
+      const conv = useChatStore.getState().conversations[0];
+      const userMsg = conv?.messages.find((m) => m.role === 'user');
+      const attachments = (userMsg?.activities ?? []).filter((a) => a.kind === 'attachment');
+      expect(attachments).toHaveLength(0);
+    });
+  });
 });
