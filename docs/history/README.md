@@ -107,3 +107,4 @@ Chronological log of major implementation milestones and changes.
 | 101 | [Release v0.36.0](101-release-v0.36.0.md) | ACP session lifecycle — resume/list/fork/close; inline diff + text content blocks; 4 race/casing fixes |
 | 102 | [Release v0.37.0](102-release-v0.37.0.md) | ACP Protocol Tail — task agent parity + close, EnvVar auth, resource_link, messageId; 5 security advisories closed |
 | 103 | [Release v0.38.0](103-release-v0.38.0.md) | Project & Data Isolation — aiLock enforcement, per-project scoped approvals, kernel-level sandbox allow-list, resend/edit dialog, LSP + completion scope gates, user-friendly re-auth; 22 leaks closed |
+| 104 | [Release v0.38.1](104-release-v0.38.1.md) | Isolation PRD completion — active-tab scope, segment-id anchor, file-tree scope, turn cancellation on respawn, attachment activity log + red-team pass + full docs sweep |
