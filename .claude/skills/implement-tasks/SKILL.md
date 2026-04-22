@@ -16,7 +16,7 @@ Execute tasks from a task breakdown file with quality gates, parallel execution 
 1. **Read the task breakdown file** specified by the user
 2. **Identify the tasks** to implement (user specifies task numbers, e.g., "#35 - #38")
 3. **Check task dependencies** — read the `Dependencies` field of each task. Tasks with unmet dependencies cannot run until their prerequisites complete.
-4. **Group by file overlap**: disjoint files → parallel sub-agents with `isolation: "worktree"`; overlapping files → one sequential sub-agent per group (one worktree, one merge) to avoid merge conflicts.
+4. **Group by file overlap**: disjoint files → parallel sub-agents in **manual worktrees** (see step 2); overlapping files → one sequential sub-agent per group (one worktree, one merge) to avoid merge conflicts.
 5. **Flag blockers or ambiguities** before writing any code
 6. **For 3+ tasks**: create a TaskCreate list to track progress
 
@@ -36,29 +36,47 @@ If the task doesn't change testable behavior (e.g., docs-only, config changes), 
 
 ### 2. Implement
 
-For each task:
+For each task that runs in isolation (parallel or sequential), **manage the worktree yourself** rather than passing `isolation: "worktree"` to the Agent tool. Why: the Agent tool's worktree isolation snapshots from the session-start ref, not current main HEAD — sub-agents launched after earlier merges can't see them and re-implement duplicate work, producing avoidable merge conflicts (validated 2026-04-22 in `.claude/skill-feedback.md`).
 
-1. **Start a background sub-agent** with explicit context:
+**Launch sequence per sub-agent:**
+
+1. **Pre-create the worktree** from current main HEAD:
+   ```bash
+   git worktree add .claude/worktrees/agent-<short-id> main -b worktree-agent-<short-id>
+   ```
+   The `<short-id>` can be derived from the task number, a hash, or any unique tag. The branch always starts from current main, so it sees every merge that has landed in this session.
+2. **Pre-symlink `node_modules`** so the sub-agent never has to think about it (this is one of the things that confuses agents about which checkout they're in):
+   ```bash
+   ln -s /Users/peter/Development/note-sage/node_modules .claude/worktrees/agent-<short-id>/node_modules
+   ```
+3. **Launch the Agent tool WITHOUT the `isolation` parameter.** Pass the absolute worktree path explicitly in the prompt under a "YOUR WORKTREE" header (do not require the agent to discover it via `pwd` — confirm only). Required prompt sections:
+   - **YOUR WORKTREE header** with the explicit path, mandatory first actions: confirm path with `pwd` once, confirm `ls node_modules | head` resolves, every absolute path in Read/Edit/Write must start with the worktree path, every Bash command prefixed with `cd <worktree-path> &&` to anchor CWD. Without these guards, agents leak edits into the parent main checkout.
    - The task description and acceptance criteria from the breakdown file
    - The parent PRD (if one exists) for motivation and constraints
    - The files to create or modify (from the task's `Files` field)
    - `CLAUDE.md` for project conventions
    - The relevant feature doc (see CLAUDE.md's docs tables)
    - Any tests written in step 1 (the implementation must make them pass)
-2. For parallel tasks, use `isolation: "worktree"`. When you do, the sub-agent prompt **must instruct it to commit inside the worktree before returning** (include the expected commit message format). Do NOT tell it to "leave changes staged" — if the sub-agent returns with no commits, the runtime may clean up the worktree and the work is lost. The parent merges via `git merge <branch-name> --no-ff` (step 3).
-3. The sub-agent implements the task following project conventions
-4. **For UI components**: the same sub-agent writes component tests after implementation (before returning) to cover the new behavior
+   - **Note in the prompt that the parent will commit on the agent's behalf** — the agent should NOT attempt to run `git add`/`git commit` (the harness denies git for non-isolated agents). Instead, the agent should report back with the list of files to stage and a proposed commit message; the parent runs the commit in step 3.
+4. **For UI components**: the same sub-agent writes component tests after implementation (before returning).
 5. **If a sub-agent fails or returns partial work**: do NOT merge. Report the failure to the user with the agent's last output and wait for direction.
 
-### 3. Merge worktrees
+### 3. Commit the agent's work + merge worktrees
 
-For tasks that ran in worktree isolation:
+For each sub-agent that returned with implementation work:
 
-1. **Review the worktree diff** (`git -C <worktree-path> diff main...HEAD`) to confirm the changes are correct
-2. **Merge the branch** from the main checkout: `git merge <branch-name> --no-ff`
-3. **Resolve conflicts** if multiple worktrees modified adjacent code
-4. **Remove the worktree** once merged: `git worktree remove <worktree-path>`
-5. Repeat for each completed worktree before proceeding to tests
+1. **Review the agent's report** for the file list + proposed commit message.
+2. **Commit on the agent's behalf** from the parent (the harness denied git in the agent's context):
+   ```bash
+   git -C .claude/worktrees/agent-<short-id> add <specific files>
+   git -C .claude/worktrees/agent-<short-id> commit -m "<agent's proposed message>"
+   ```
+   Stage specific files only — never `git add -A`.
+3. **Review the worktree diff** against main: `git -C <worktree-path> diff main...HEAD`. Confirm only the expected files changed.
+4. **Merge the branch** from the main checkout: `git merge worktree-agent-<short-id> --no-ff`. Auto-merge should usually succeed because the branch was started from current main HEAD (no stale base by construction).
+5. **Resolve conflicts** if multiple worktrees modified adjacent code in the same file.
+6. **Remove the worktree** and delete its branch: `git worktree remove -f -f <worktree-path> && git branch -d worktree-agent-<short-id>`.
+7. Repeat for each completed worktree before proceeding to the test gate.
 
 ### 4. Test gate
 
@@ -86,7 +104,7 @@ Before the task counts as done:
 
 1. **Update docs** for anything affected by the change. Map changed code to the relevant doc using the tables in `CLAUDE.md` (general docs + feature-specific docs).
 2. **Mark done** in BOTH files:
-   - Task breakdown: add ` ✅` at the end of the task heading (e.g., `### #35 — Title ✅`)
+   - Task breakdown: add ` ✅` at the end of the task heading (e.g., `### #35 — Title ✅`). If the project has an aggressive markdown formatter that strips emojis or rewrites tables (e.g. `\|` table escapes get unescaped, breaking rows), use `git apply --cached` with a small patch instead of Edit/sed — that writes directly to the git index without touching the working tree, bypassing the formatter. Validated workaround as of 2026-04-22.
    - PRD: if the task completes a PRD checkbox, mark it too
 3. **Resolve remaining PRD quality gates.** Run them, hand them off with a concrete test proposal, or mark out-of-scope with a reason. Never leave a gate unchecked silently.
 4. **Treat deferred acceptance criteria as incomplete.** If a sub-agent reports any criterion as "documented only", "deferred", "v1 fallback", or similar, the task is NOT done — surface it to the user and get explicit approval to ship in reduced form (with a follow-up plan) before marking ✅ or proposing a commit. See `feedback_full_coverage.md` in auto-memory.
