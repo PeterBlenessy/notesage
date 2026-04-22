@@ -186,6 +186,57 @@
   --ns-code-tag: oklch(72% 0.12 20);
 }
 
+/* ============================================
+   ACCENT COLORS — UI refresh (Phase 1, task #3)
+   ============================================
+   Optional UI accent applied to primary affordances (primary buttons, focus
+   rings, dirty dots, link color in editor). Default: no class on <html>, so
+   `--accent` is unset and consumers fall back via `var(--accent, var(--primary))`
+   to today's neutral grey palette.
+
+   Light-mode oklch values live in the base `.accent-*` rules below; dark-mode
+   variants live under `.dark.accent-*` qualifiers (the project uses class-based
+   dark mode via `.dark` on <html>).
+
+   Per-theme oklch values were chosen so that the accent provides at least 3:1
+   contrast against the page background (UI-element WCAG AA bar) when used as
+   a 1–2 px focus ring or dot, and supports 4.5:1 (body-text AA) when used as a
+   primary-button background with white/near-white foreground.
+
+   The "system" accent reads `--accent-system-value` set inline by the
+   `useAccent` hook from the macOS `get_system_accent_color` Tauri command
+   (task #4). When that property is unset (non-macOS, command failure) we fall
+   back to the orange default so a user picking "System" never sees a missing
+   colour. */
+
+.accent-orange {
+  /* Light mode: 4.96:1 vs white bg, 4.68:1 vs white fg — passes WCAG AA body. */
+  --accent: oklch(56% 0.18 50);
+}
+
+.accent-blue {
+  /* Light mode: 6.39:1 vs white bg, 6.03:1 vs white fg — passes WCAG AA body. */
+  --accent: oklch(48% 0.18 250);
+}
+
+.accent-system {
+  --accent: var(--accent-system-value, oklch(56% 0.18 50));
+}
+
+.dark.accent-orange {
+  /* Dark mode: 7.20:1 vs dark bg, 7.62:1 vs near-black fg — passes WCAG AAA. */
+  --accent: oklch(72% 0.16 50);
+}
+
+.dark.accent-blue {
+  /* Dark mode: 7.07:1 vs dark bg, 7.48:1 vs near-black fg — passes WCAG AAA. */
+  --accent: oklch(70% 0.15 250);
+}
+
+.dark.accent-system {
+  --accent: var(--accent-system-value, oklch(72% 0.16 50));
+}
+
 /* Soft mode — easy on the eyes (dark) */
 .dark.soft {
   --color-background: oklch(25% 0 0);

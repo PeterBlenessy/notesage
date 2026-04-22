@@ -150,6 +150,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
+  accent: 'default',
 };
 
 // ---------------------------------------------------------------------------
@@ -1016,5 +1017,124 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
     const s = useSettingsStore.getState();
     expect(s.contrastLevel).toBe(100);
     expect(s.logLevel).toBe('debug');
+  });
+});
+
+// ===========================================================================
+// Accent (UI refresh task #3)
+// ===========================================================================
+
+describe('accent field', () => {
+  it('default value is "default"', () => {
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('setAccent flips between values', () => {
+    const { setAccent } = useSettingsStore.getState();
+
+    setAccent('orange');
+    expect(useSettingsStore.getState().accent).toBe('orange');
+
+    setAccent('blue');
+    expect(useSettingsStore.getState().accent).toBe('blue');
+
+    setAccent('system');
+    expect(useSettingsStore.getState().accent).toBe('system');
+
+    setAccent('default');
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('persists accent across restart', async () => {
+    useSettingsStore.getState().setAccent('blue');
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().accent).toBe('blue');
+  });
+});
+
+describe('v4 → v5 migration (accent field)', () => {
+  it('adds accent: "default" to a v4 state lacking it', async () => {
+    const v4State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+      },
+      version: 4,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v4State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('migrates v3 state through to v5 with accent: "default"', async () => {
+    const v3State = {
+      state: {
+        theme: 'light',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+      },
+      version: 3,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v3State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('preserves existing accent when present (idempotent)', async () => {
+    const v5State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        accent: 'orange',
+      },
+      version: 5,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v5State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().accent).toBe('orange');
   });
 });

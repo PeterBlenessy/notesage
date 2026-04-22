@@ -1,0 +1,95 @@
+// @vitest-environment jsdom
+
+/**
+ * Unit tests for useAccent hook.
+ *
+ * Covers: default accent value from settings-store, class swap on
+ * setAccentName, system accent fetch via Tauri command + property write,
+ * graceful fallback when the Tauri command returns null.
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import '@/test/tauri-mock';
+import { setMockInvokeHandler } from '@/test/tauri-mock';
+import { renderHook, act, waitFor } from '@testing-library/react';
+
+vi.mock('@/lib/logger', () => ({
+  log: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+import { useAccent } from '@/hooks/useAccent';
+import { useSettingsStore } from '@/stores/settings-store';
+
+beforeEach(() => {
+  // Reset documentElement state
+  document.documentElement.className = '';
+  document.documentElement.style.removeProperty('--accent-system-value');
+  // Reset settings-store accent to default
+  useSettingsStore.setState({ accent: 'default' });
+});
+
+describe('useAccent', () => {
+  it('default accent value is "default"', () => {
+    const { result } = renderHook(() => useAccent());
+    expect(result.current.accent).toBe('default');
+    expect(document.documentElement.classList.contains('accent-orange')).toBe(false);
+    expect(document.documentElement.classList.contains('accent-blue')).toBe(false);
+    expect(document.documentElement.classList.contains('accent-system')).toBe(false);
+  });
+
+  it('setAccentName("orange") triggers accent-orange class on documentElement', async () => {
+    const { result } = renderHook(() => useAccent());
+
+    act(() => {
+      result.current.setAccentName('orange');
+    });
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('accent-orange')).toBe(true);
+    });
+    expect(result.current.accent).toBe('orange');
+  });
+
+  it('setAccentName("system") invokes Tauri command and sets --accent-system-value', async () => {
+    setMockInvokeHandler('get_system_accent_color', () => 'oklch(58% 0.18 50)');
+
+    const { result } = renderHook(() => useAccent());
+
+    act(() => {
+      result.current.setAccentName('system');
+    });
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('accent-system')).toBe(true);
+    });
+    await waitFor(() => {
+      expect(
+        document.documentElement.style.getPropertyValue('--accent-system-value'),
+      ).toBe('oklch(58% 0.18 50)');
+    });
+  });
+
+  it('setAccentName("system") with null Tauri response leaves --accent-system-value unset', async () => {
+    setMockInvokeHandler('get_system_accent_color', () => null);
+
+    const { result } = renderHook(() => useAccent());
+
+    act(() => {
+      result.current.setAccentName('system');
+    });
+
+    await waitFor(() => {
+      expect(document.documentElement.classList.contains('accent-system')).toBe(true);
+    });
+    // Give the async command a tick to resolve
+    await new Promise((r) => setTimeout(r, 0));
+    expect(
+      document.documentElement.style.getPropertyValue('--accent-system-value'),
+    ).toBe('');
+  });
+});
