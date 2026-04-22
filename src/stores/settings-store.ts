@@ -4,6 +4,12 @@ import type { LogLevel } from '@/lib/logger';
 
 
 type Theme = "light" | "dark" | "system";
+/**
+ * UI preview flag — gates the Quiet Composer refresh (PRD `2026-04-21-ui-refresh`).
+ * `legacy` keeps the current layout. `quiet-composer` mounts the new shell.
+ * Phase 1 default is `legacy`; Phase 2 flips the default; Phase 3 deletes legacy.
+ */
+export type UiPreview = "legacy" | "quiet-composer";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
@@ -12,6 +18,8 @@ export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
 interface SettingsStore {
   theme: Theme;
+  /** UI preview flag — see `UiPreview`. Full toggle UX added by task #1; #5 only branches Layout. */
+  uiPreview: UiPreview;
   contrastLevel: number;
   /** Hue angle for UI color tint (0–360, oklch hue). 0 = warm yellow, 270 = cool blue, etc. */
   tintHue: number;
@@ -103,6 +111,7 @@ interface SettingsStore {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
+  setUiPreview: (preview: UiPreview) => void;
   setContrastLevel: (level: number) => void;
   setTintHue: (hue: number) => void;
   setTintChroma: (chroma: number) => void;
@@ -165,6 +174,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       theme: "system",
+      uiPreview: "legacy",
       contrastLevel: 0,
       tintHue: 60,
       tintChroma: 0,
@@ -224,6 +234,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setTheme: (theme: Theme) => {
         set({ theme });
+      },
+
+      setUiPreview: (preview: UiPreview) => {
+        set({ uiPreview: preview });
       },
 
       setContrastLevel: (level: number) => {

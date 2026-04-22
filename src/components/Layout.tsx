@@ -5,6 +5,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { ActivityRail, ActivityPanel } from "@/components/activity/ActivityStrip";
 import { TitleBar } from "@/components/TitleBar";
 import { SidebarPanel } from "@/components/SidebarPanel";
+import { QuietLayout } from "@/components/QuietLayout";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -139,7 +140,19 @@ export interface LayoutProps {
   onClickTask: (task: import("@/stores/activity-store").AgentTask) => void;
 }
 
-export function Layout({
+export function Layout(props: LayoutProps) {
+  // UI refresh preview flag (PRD `2026-04-21-ui-refresh`, task #5).
+  // When set to "quiet-composer", short-circuit to the new placeholder shell
+  // before any of the legacy panels mount. Default "legacy" preserves today's tree.
+  const uiPreview = useSettingsStore((s) => s.uiPreview);
+  if (uiPreview === "quiet-composer") {
+    return <QuietLayout {...props} />;
+  }
+
+  return <LegacyLayout {...props} />;
+}
+
+function LegacyLayout({
   focusMode,
   stripExpanded,
   onNewNote,
