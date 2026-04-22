@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Shield, Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useChatStore } from "@/stores/chat-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import {
@@ -13,8 +15,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ExplainLockDialog } from "@/components/chat/ExplainLockDialog";
+import {
+  describeLockTarget,
+  getProjectLock,
+} from "@/lib/ai/project-lock";
 import type { Connection } from "@/lib/ai/connections";
 import type { Conversation } from "@/stores/chat-store";
+import type { WorkspaceProject } from "@/stores/workspace-store";
 import type { ProjectMetadata } from "@/stores/project-metadata-store";
 
 /**
@@ -73,9 +86,64 @@ function CommandBarContext({ className }: CommandBarContextProps) {
     (s) => s.metadataMap,
   ) as Record<string, ProjectMetadata>;
 
+  // Workspace projects — used to populate the "+ project" popover with paths
+  // not already in scope (#25).
+  const workspaceProjects = useWorkspaceStore(
+    (s) => s.projects,
+  ) as WorkspaceProject[];
+
+  // Chat-store actions for project chip add/remove (#25). Reuse the same
+  // `toggleProjectPath` ChatFooter dispatches so the surrounding
+  // `selectPendingProjectSwitch` flow continues to fire.
+  const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
+
   // Pinned-mode toggle state (#28). Wired to `settings-store.cmdBarPinned`.
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
   const setCmdBarPinned = useSettingsStore((s) => s.setCmdBarPinned);
+
+  // Locked-paths derived view drives the explain-lock dialog when the user
+  // clicks a chip's lock icon. The dialog accepts an array (multiple chips
+  // can each be locked); we only ever surface the clicked one.
+  const [explainLockPaths, setExplainLockPaths] = useState<string[]>([]);
+
+  // Projects available to add — workspace projects not already in scope.
+  // Computed fresh each render; the list is small and rendered inside a
+  // popover, so memoization isn't worth the noise.
+  const addableProjects = workspaceProjects.filter(
+    (p) => !projectPaths.includes(p.path),
+  );
+
+  // Existing locked connection ids in the current chat scope. Used to gate
+  // additions: a project carrying a different `aiLock`, or any unlocked
+  // project added on top of a locked-only selection, is rejected.
+  const existingLockedConnectionIds = projectPaths
+    .map((p) => getProjectLock(p, metadataMap)?.connectionId)
+    .filter((id): id is string => Boolean(id));
+
+  const handleAddProject = (path: string) => {
+    const newLock = getProjectLock(path, metadataMap);
+    const lockedSet = new Set(existingLockedConnectionIds);
+
+    if (newLock && lockedSet.size > 0 && !lockedSet.has(newLock.connectionId)) {
+      toast.error(
+        "These projects are locked to different providers.",
+        { id: "provider-lock-conflict" },
+      );
+      return;
+    }
+
+    if (!newLock && lockedSet.size > 0) {
+      const lockedId = Array.from(lockedSet)[0];
+      const lockedConn = allConnections.find((c) => c.id === lockedId);
+      toast.error(
+        `Current selection is locked to ${describeLockTarget(lockedId, lockedConn?.label)}. Unlock or deselect first.`,
+        { id: "provider-lock-conflict" },
+      );
+      return;
+    }
+
+    toggleProjectPath(path);
+  };
 
   return (
     <div
@@ -112,12 +180,26 @@ function CommandBarContext({ className }: CommandBarContextProps) {
             key={path}
             path={path}
             locked={locked}
+            onRemove={() => toggleProjectPath(path)}
+            onLockClick={() => setExplainLockPaths([path])}
           />
         );
       })}
 
       {/* Dashed "+ project" button ---------------------------------------- */}
-      <AddProjectButton />
+      <AddProjectButton
+        addableProjects={addableProjects}
+        onPick={handleAddProject}
+      />
+
+      {/* Explain-lock dialog (rendered once, controlled by chip click) ---- */}
+      <ExplainLockDialog
+        open={explainLockPaths.length > 0}
+        onOpenChange={(open) => {
+          if (!open) setExplainLockPaths([]);
+        }}
+        lockedProjectPaths={explainLockPaths}
+      />
 
       <Divider />
 
@@ -224,9 +306,16 @@ function ProviderPill({ connection, connections, onPick }: ProviderPillProps) {
 interface ProjectChipProps {
   path: string;
   locked: boolean;
+  /** Called when the chip's × button is clicked. */
+  onRemove: () => void;
+  /**
+   * Called when the chip's lock icon is clicked. Only fires when `locked`
+   * is true; the icon isn't rendered otherwise.
+   */
+  onLockClick: () => void;
 }
 
-function ProjectChip({ path, locked }: ProjectChipProps) {
+function ProjectChip({ path, locked, onRemove, onLockClick }: ProjectChipProps) {
   // Use the basename for the visible label — the full path stays in the
   // tooltip via `title` so no information is lost.
   const name = basename(path);
@@ -240,20 +329,23 @@ function ProjectChip({ path, locked }: ProjectChipProps) {
       title={path}
     >
       {locked ? (
-        <Lock
-          className="w-3 h-3 text-foreground"
-          strokeWidth={1.5}
+        <button
+          type="button"
+          onClick={onLockClick}
           aria-label={`${name} is locked to a provider`}
-        />
+          className={cn(
+            "flex items-center justify-center",
+            "text-foreground hover:text-foreground/80 transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded",
+          )}
+        >
+          <Lock className="w-3 h-3" strokeWidth={1.5} />
+        </button>
       ) : null}
       <span className="text-foreground">{name}</span>
       <button
         type="button"
-        onClick={() => {
-          // Wired in #25.
-          // eslint-disable-next-line no-console
-          console.log("remove project chip — wired in #25", path);
-        }}
+        onClick={onRemove}
         aria-label={`Remove ${name}`}
         className={cn(
           "flex items-center justify-center -mr-0.5",
@@ -267,26 +359,58 @@ function ProjectChip({ path, locked }: ProjectChipProps) {
   );
 }
 
-function AddProjectButton() {
+interface AddProjectButtonProps {
+  addableProjects: WorkspaceProject[];
+  onPick: (path: string) => void;
+}
+
+function AddProjectButton({ addableProjects, onPick }: AddProjectButtonProps) {
   return (
-    <button
-      type="button"
-      onClick={() => {
-        // Wired in #25.
-        // eslint-disable-next-line no-console
-        console.log("add project — wired in #25");
-      }}
-      aria-label="Add project"
-      className={cn(
-        "flex items-center gap-1 px-2 py-0.5 rounded-md shrink-0",
-        "border border-dashed border-border text-muted-foreground",
-        "hover:text-foreground hover:border-foreground/40 transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-      )}
-    >
-      <Plus className="w-3 h-3" strokeWidth={1.5} />
-      <span>project</span>
-    </button>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Add project"
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded-md shrink-0",
+            "border border-dashed border-border text-muted-foreground",
+            "hover:text-foreground hover:border-foreground/40 transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          )}
+        >
+          <Plus className="w-3 h-3" strokeWidth={1.5} />
+          <span>project</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-64 p-1">
+        {addableProjects.length === 0 ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            No other projects to add
+          </div>
+        ) : (
+          addableProjects.map((project) => {
+            const name = basename(project.path);
+            return (
+              <button
+                key={project.path}
+                type="button"
+                onClick={() => onPick(project.path)}
+                aria-label={`Add project ${name}`}
+                className={cn(
+                  "w-full flex flex-col items-start gap-0.5 px-2 py-1.5 rounded",
+                  "text-xs transition-colors text-foreground hover:bg-accent/50",
+                )}
+              >
+                <span className="truncate w-full text-left">{name}</span>
+                <span className="truncate w-full text-left text-[10px] text-muted-foreground">
+                  {project.path}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
