@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSkillStore, SkillEntry, SkillToolEntry, AgentInstruction, BUILT_IN_TOOLS } from '../skill-store';
+import { useSkillStore, SkillEntry, SkillToolEntry, AgentInstruction, BUILT_IN_TOOLS, parseSkillTokens } from '../skill-store';
 
 // Helper to create a SkillEntry
 function skill(overrides: Partial<SkillEntry> & { name: string; source: string }): SkillEntry {
@@ -362,6 +362,84 @@ describe('skill-store', () => {
       const prompt = useSkillStore.getState().getSkillDescriptionsForPrompt();
       expect(prompt).toBe('');
     });
+  });
+});
+
+describe('parseSkillTokens', () => {
+  it('matches a token at the start of the string', () => {
+    expect(parseSkillTokens('/web-search now')).toEqual(['web-search']);
+  });
+
+  it('matches a token after whitespace anywhere in the message', () => {
+    expect(parseSkillTokens('please run /web-search for me')).toEqual(['web-search']);
+  });
+
+  it('matches multiple tokens in document order', () => {
+    expect(
+      parseSkillTokens('do /web-search and /save-research'),
+    ).toEqual(['web-search', 'save-research']);
+  });
+
+  it('does not match slashes inside URLs', () => {
+    // Slashes here are preceded by alphanumerics, not whitespace.
+    expect(parseSkillTokens('see https://example.com/path')).toEqual([]);
+    expect(parseSkillTokens('look at github.com/owner/repo')).toEqual([]);
+  });
+
+  it('does not match numeric-only tokens', () => {
+    // `/123` and `/9-skill` must not match — first char after `/` must be a letter.
+    expect(parseSkillTokens('see issue /123')).toEqual([]);
+    expect(parseSkillTokens('/9-skill should not match')).toEqual([]);
+  });
+
+  it('matches hyphenated names', () => {
+    expect(parseSkillTokens('/web-search')).toEqual(['web-search']);
+    expect(parseSkillTokens('hello /a-b-c-d world')).toEqual(['a-b-c-d']);
+  });
+
+  it('stops at trailing punctuation', () => {
+    expect(parseSkillTokens('use /web-search.')).toEqual(['web-search']);
+    expect(parseSkillTokens('/web-search!')).toEqual(['web-search']);
+    expect(parseSkillTokens('/web-search, then /save')).toEqual(['web-search', 'save']);
+  });
+
+  it('does not match when preceded by non-whitespace punctuation', () => {
+    // Documented limitation: leading `(` is not whitespace.
+    expect(parseSkillTokens('(/web-search)')).toEqual([]);
+  });
+
+  it('matches after a Unicode non-breaking space', () => {
+    // U+00A0 is part of `\s` in modern JS engines — verifies pasted-from-the-web
+    // text doesn't silently fail to expand.
+    expect(parseSkillTokens('text\u00a0/web-search')).toEqual(['web-search']);
+  });
+
+  it('does not match uppercase tokens', () => {
+    // Skill names are lowercase by convention.
+    expect(parseSkillTokens('/WebSearch')).toEqual([]);
+    expect(parseSkillTokens('/Web-Search')).toEqual([]);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(parseSkillTokens('')).toEqual([]);
+  });
+
+  it('returns empty array when no tokens are present', () => {
+    expect(parseSkillTokens('just a normal sentence')).toEqual([]);
+  });
+
+  it('matches a token at the start of a new line', () => {
+    expect(parseSkillTokens('first line\n/save-research')).toEqual(['save-research']);
+  });
+
+  it('matches a token after a tab', () => {
+    expect(parseSkillTokens('\t/web-search')).toEqual(['web-search']);
+  });
+
+  it('preserves duplicates in the order the user typed them', () => {
+    expect(
+      parseSkillTokens('/web-search and again /web-search'),
+    ).toEqual(['web-search', 'web-search']);
   });
 });
 

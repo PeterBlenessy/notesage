@@ -24,6 +24,52 @@ export type SkillEntry = TauriSkillEntry & { projectRoot?: string | null };
 export type AgentEntry = TauriAgentEntry & { projectRoot?: string | null };
 export type AgentInstruction = TauriAgentInstruction & { projectRoot?: string | null };
 
+// --- Skill-token parser (Phase 1, task #22) ---
+//
+// Frontend mirror of the Rust `parse_skill_tokens` helper in
+// `src-tauri/src/commands/skills_tool_parser.rs`. Used by the new Quiet
+// Composer UX to preview / autocomplete `/skill-name` tokens that may appear
+// anywhere in a user message — at start-of-string OR after any whitespace
+// character.
+//
+// SCOPE / CALL-SITE NOTES:
+// - This parser is for the **direct-API** send path only.
+// - The **ACP pass-through** path forwards user messages verbatim (the
+//   provider manages its own subagent / slash-command system). Do NOT call
+//   `parseSkillTokens` from ACP code paths.
+//
+// PATTERN: `(?:^|\s)/[a-z][a-z0-9-]*`
+//   - Anchor: start-of-string or any Unicode whitespace (`\s` in modern JS
+//     engines includes U+00A0 non-breaking space and other Unicode space
+//     separators).
+//   - Slash + first char must be a lowercase letter (avoids `/123` numeric
+//     false positives, AI-generated paths, and URL fragments).
+//   - Body: lowercase letters, digits, hyphens (matches Notesage skill
+//     naming convention).
+//
+// KNOWN LIMITATIONS (covered by tests):
+//   - URLs like `https://example.com/path` do NOT match.
+//   - `(/web-search)` does NOT match — leading `(` is not whitespace.
+//   - Trailing punctuation (`.`, `,`, `!`, `?`) terminates the token cleanly.
+const SKILL_TOKEN_RE = /(?:^|\s)\/([a-z][a-z0-9-]*)/g;
+
+/**
+ * Parse a user message and return the names of every `/skill-name` token
+ * found, in document order. Returns an empty array if no tokens are found.
+ *
+ * Names are returned without the leading slash. Duplicates are preserved
+ * (the order/count reflects the user's input verbatim).
+ */
+export function parseSkillTokens(text: string): string[] {
+  if (!text) return [];
+  // `matchAll` requires the `g` flag, which our regex has.
+  const out: string[] = [];
+  for (const m of text.matchAll(SKILL_TOKEN_RE)) {
+    if (m[1]) out.push(m[1]);
+  }
+  return out;
+}
+
 // --- Built-in tools for local AI tool calling ---
 
 export const BUILT_IN_TOOLS: ToolDefinition[] = [
