@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Shield, Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
+import { Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -21,6 +21,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ExplainLockDialog } from "@/components/chat/ExplainLockDialog";
+import { AcpModePicker } from "@/components/chat/AcpSessionControls";
 import {
   describeLockTarget,
   getProjectLock,
@@ -42,8 +43,8 @@ import type { ProjectMetadata } from "@/stores/project-metadata-store";
  *   - Clock icon → opens history (forward-declared, #27)
  *   - Pin icon  → toggles pinned mode
  *
- * Wiring lives in #24 (provider switch — done), #25 (project chips), #26 (mode
- * picker), #27 (history). Pin (#28) is wired.
+ * Wiring lives in #24 (provider switch — done), #25 (project chips — done),
+ * #26 (mode picker — done), #27 (history). Pin (#28) is wired.
  *
  * The row reads everything from stores; it accepts only an optional
  * `className` so the parent can override layout (e.g. add a top divider).
@@ -204,7 +205,29 @@ function CommandBarContext({ className }: CommandBarContextProps) {
       <Divider />
 
       {/* Mode pill --------------------------------------------------------- */}
-      <ModePill />
+      {/*
+       * #26 — Reuse the existing chat-footer mode picker (`AcpModePicker`)
+       * instead of forking a parallel implementation. The picker:
+       *   - Reads available modes from `connection.acpCapabilities.availableModes`
+       *     (probed at registration), maps them to the four common permission
+       *     levels (Read Only / Agent / Full Access / Plan) via `getCommonModes`,
+       *     and hides itself when fewer than 2 levels are available — which is
+       *     the case for every non-ACP provider (no `acpCapabilities` set).
+       *   - Dispatches mode changes through `updateCurrentMode` +
+       *     `tauriApi.acpSessionSetMode`, the same store action `ChatFooter`
+       *     uses, so the active ACP session stays in sync no matter which
+       *     surface the user picks from.
+       *   - Owns the mode-sandbox conflict `AlertDialog` (Full Access vs
+       *     active sandbox restrictions). We get that for free by reusing it.
+       *
+       * The picker is only rendered when there's an interactive ACP-capable
+       * connection; otherwise the pill is suppressed entirely (no "Direct API"
+       * placeholder — the previous "Agent" stub was a #10 scaffold, not a
+       * permanent affordance).
+       */}
+      {interactiveConnection ? (
+        <AcpModePicker connection={interactiveConnection} />
+      ) : null}
 
       {/* Spacer pushes the trailing icons to the right. */}
       <div className="flex-1 min-w-2" aria-hidden />
@@ -411,31 +434,6 @@ function AddProjectButton({ addableProjects, onPick }: AddProjectButtonProps) {
         )}
       </PopoverContent>
     </Popover>
-  );
-}
-
-function ModePill() {
-  // Default mode is "Agent" until #26 wires the picker. Hardcoded label is
-  // intentional — the mode dropdown lives there.
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        // Wired in #26.
-        // eslint-disable-next-line no-console
-        console.log("switch mode — wired in #26");
-      }}
-      aria-label="Session mode"
-      className={cn(
-        "flex items-center gap-1 px-2 py-0.5 rounded-md shrink-0",
-        "border border-border bg-muted/50",
-        "hover:bg-muted transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-      )}
-    >
-      <Shield className="w-3 h-3 text-foreground" strokeWidth={1.5} />
-      <span className="text-foreground">Agent</span>
-    </button>
   );
 }
 

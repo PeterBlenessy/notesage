@@ -2,12 +2,19 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
-import type { Connection } from '@/lib/ai/connections';
+import {
+  renderWithProviders,
+  screen,
+  fireEvent,
+  setMockInvokeHandler,
+  clearMockInvokeHandlers,
+} from '@/test/component-harness';
+import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { ProjectMetadata } from '@/stores/project-metadata-store';
 import type { WorkspaceProject } from '@/stores/workspace-store';
+import type { AcpSessionInfo } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Mockable store state — flipped per-test before render
@@ -23,6 +30,31 @@ const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
 const setRoutingMock = vi.fn<(useCase: string, connectionId: string | null) => void>();
 const toggleProjectPathMock = vi.fn<(path: string) => void>();
 const setSelectedProjectPathsMock = vi.fn<(paths: string[]) => void>();
+const updateConnectionMock = vi.fn<(id: string, patch: Partial<Connection>) => void>();
+
+// ---------------------------------------------------------------------------
+// ACP agent / session mocks (driving `AcpModePicker` via #26)
+// ---------------------------------------------------------------------------
+
+interface MockAcpAgentState {
+  instanceId: string | null;
+  connectionId: string | null;
+  chatSessionId: string | null;
+}
+
+let mockAcpAgent: MockAcpAgentState = {
+  instanceId: null,
+  connectionId: null,
+  chatSessionId: null,
+};
+let mockSessionInfo: AcpSessionInfo = {
+  modes: null,
+  configOptions: null,
+  usage: null,
+  commands: [],
+};
+const sessionInfoListeners = new Set<() => void>();
+const updateCurrentModeMock = vi.fn<(modeId: string) => void>();
 
 vi.mock('@/stores/connections-store', () => {
   const state = {
@@ -31,12 +63,48 @@ vi.mock('@/stores/connections-store', () => {
     },
     getConnection: (id: string) =>
       mockConnections.find((c) => c.id === id),
+    updateConnection: (id: string, patch: Partial<Connection>) =>
+      updateConnectionMock(id, patch),
   };
   return {
     useConnectionsStore: Object.assign(
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
+  };
+});
+
+// Mock the acp-agent-state module so the picker can drive a controllable
+// in-test session. We expose `acpAgent` as a live binding (accessor) since
+// the production code reads `acpAgent` (not a function) and we need each
+// access to return the current mock value.
+vi.mock('@/lib/ai/acp-agent-state', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai/acp-agent-state')>(
+    '@/lib/ai/acp-agent-state',
+  );
+  return {
+    // Preserve real exports (CommonModeKey enum, getCommonMode mapping table,
+    // getCommonModes filter — these are pure utilities the picker imports).
+    ...actual,
+    // Live binding via getter: production reads `acpAgent` as a module-level
+    // `let`, but ESM imports are read-only references — we proxy through a
+    // getter so each access pulls the current mock value.
+    get acpAgent() {
+      return mockAcpAgent.instanceId
+        ? {
+            instanceId: mockAcpAgent.instanceId,
+            connectionId: mockAcpAgent.connectionId!,
+            chatSessionId: mockAcpAgent.chatSessionId,
+            sandboxScopeKey: '',
+          }
+        : null;
+    },
+    getSessionInfo: () => mockSessionInfo,
+    subscribeSessionInfo: (fn: () => void) => {
+      sessionInfoListeners.add(fn);
+      return () => { sessionInfoListeners.delete(fn); };
+    },
+    updateCurrentMode: (modeId: string) => updateCurrentModeMock(modeId),
   };
 });
 
@@ -290,12 +358,18 @@ describe('CommandBarContext', () => {
     mockMetadataMap = {};
     mockCmdBarPinned = false;
     mockWorkspaceProjects = [];
+    mockAcpAgent = { instanceId: null, connectionId: null, chatSessionId: null };
+    mockSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
+    sessionInfoListeners.clear();
     setCmdBarPinnedMock.mockReset();
     setRoutingMock.mockReset();
     toggleProjectPathMock.mockReset();
     setSelectedProjectPathsMock.mockReset();
+    updateConnectionMock.mockReset();
+    updateCurrentModeMock.mockReset();
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.info).mockReset();
+    clearMockInvokeHandlers();
     document.body.innerHTML = '';
   });
 
@@ -340,10 +414,11 @@ describe('CommandBarContext', () => {
     expect(screen.getByLabelText(/add project/i)).toBeTruthy();
   });
 
-  it('renders the mode pill with the default "Agent" label', () => {
-    renderWithProviders(<CommandBarContext />);
-    expect(screen.getByText(/Agent/i)).toBeTruthy();
-  });
+  // Mode pill (#26) — see the dedicated `describe('mode pill (#26)', …)`
+  // suite below. The pill is now sourced from `AcpModePicker`, which only
+  // renders when an interactive ACP-capable connection is active and
+  // exposes ≥2 mapped permission levels — the default empty-state of this
+  // test file therefore renders nothing. Behavioural coverage lives in #26.
 
   it('renders the clock and pin icon buttons with explicit aria-labels', () => {
     renderWithProviders(<CommandBarContext />);
@@ -687,6 +762,226 @@ describe('CommandBarContext', () => {
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/locked-c');
       expect(toast.error).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Mode pill (#26) — wires the chat-footer's `AcpModePicker` into the
+  // context row. We exercise the picker directly (rather than mocking it
+  // out) so the integration — common-mode mapping, store-action dispatch,
+  // and the Full Access × sandbox conflict dialog — is end-to-end covered.
+  // -------------------------------------------------------------------------
+
+  describe('mode pill (#26)', () => {
+    /**
+     * Build a minimal ACP-capable connection that exposes all four common
+     * permission levels via `acpCapabilities.availableModes`. Mode IDs come
+     * from the real `MODE_ID_TO_COMMON` table inside `acp-agent-state` (we
+     * use Codex's vocabulary for variety).
+     */
+    function makeAcpConnection(
+      overrides: Partial<Connection> = {},
+      caps: Partial<AcpDiscoveredCapabilities> = {},
+    ): Connection {
+      return makeConnection({
+        id: 'conn-acp',
+        // Codex ACP runs under the OpenAI provider umbrella in the connection
+        // taxonomy — there is no standalone 'codex' provider. The mode IDs
+        // we use below ('read-only', 'auto', 'full-access', 'plan') match
+        // Codex's vocabulary, which is what we want to exercise.
+        provider: 'openai',
+        authMethod: 'agent_managed',
+        label: 'Codex',
+        capabilities: ['interactive', 'agent_tasks'],
+        acpCapabilities: {
+          availableModes: [
+            { id: 'read-only', name: 'Read Only' },
+            { id: 'auto', name: 'Agent' },
+            { id: 'full-access', name: 'Full Access' },
+            { id: 'plan', name: 'Plan' },
+          ],
+          ...caps,
+        },
+        ...overrides,
+      });
+    }
+
+    it('hides the mode pill entirely when no interactive provider is active', () => {
+      // Empty interactive slot ⇒ no pill at all (no "Direct API" disabled
+      // placeholder either — the previous "Agent" stub was a #10 scaffold).
+      mockInteractiveConnection = null;
+      mockConnections = [];
+      renderWithProviders(<CommandBarContext />);
+
+      // No "Read Only" / "Full Access" / "Plan" labels → no picker rendered.
+      expect(screen.queryByText('Read Only')).toBeNull();
+      expect(screen.queryByText('Full Access')).toBeNull();
+      expect(screen.queryByText('Plan')).toBeNull();
+    });
+
+    it('hides the mode pill when the active connection is a non-ACP direct-API provider', () => {
+      // Anthropic / OpenAI / Ollama don't carry `acpCapabilities`, so
+      // `getCommonModes(undefined ?? [])` returns []; the picker hides.
+      const directApi = makeConnection({
+        id: 'conn-anthropic',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'Anthropic',
+      });
+      mockInteractiveConnection = directApi;
+      mockConnections = [directApi];
+
+      renderWithProviders(<CommandBarContext />);
+
+      expect(screen.queryByText('Read Only')).toBeNull();
+      expect(screen.queryByText('Full Access')).toBeNull();
+      expect(screen.queryByText('Plan')).toBeNull();
+    });
+
+    it('renders the dropdown with all four common permission levels for an ACP connection', () => {
+      const acp = makeAcpConnection();
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+
+      renderWithProviders(<CommandBarContext />);
+
+      // The popover content is rendered inline by the test mock — every
+      // common-mode label should be queryable inside it. The trigger button
+      // also echoes one of the labels (the currently-selected mode), so we
+      // expect ≥1 occurrence per label and verify all four are present at
+      // least once. Items also carry their tooltip blurb as a sibling node.
+      expect(screen.getAllByText('Read Only').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Agent').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Full Access').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('Plan').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('selecting a level dispatches updateCurrentMode + acp_session_set_mode', async () => {
+      const acp = makeAcpConnection();
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+      mockAcpAgent = {
+        instanceId: 'inst-1',
+        connectionId: acp.id,
+        chatSessionId: 'sess-1',
+      };
+      mockSessionInfo = {
+        modes: { currentModeId: 'auto', availableModes: [] },
+        configOptions: null,
+        usage: null,
+        commands: [],
+      };
+
+      const setModeCalls: Array<Record<string, unknown>> = [];
+      setMockInvokeHandler('acp_session_set_mode', (args) => {
+        setModeCalls.push(args ?? {});
+        return undefined;
+      });
+
+      renderWithProviders(<CommandBarContext />);
+
+      // Click "Plan" — distinct from current "auto" → triggers applyMode().
+      const planItem = screen.getByText('Plan');
+      fireEvent.click(planItem);
+
+      expect(updateCurrentModeMock).toHaveBeenCalledWith('plan');
+
+      // Allow the awaited tauri invoke microtask to resolve before asserting.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(setModeCalls).toHaveLength(1);
+      expect(setModeCalls[0]).toMatchObject({
+        instanceId: 'inst-1',
+        sessionId: 'sess-1',
+        modeId: 'plan',
+      });
+    });
+
+    it('selecting Full Access with active sandbox restrictions opens the conflict dialog (does not dispatch)', () => {
+      // Connection has the sandbox bits flipped ON ⇒ Full Access conflicts.
+      const acp = makeAcpConnection({
+        sandboxEnabled: true,
+        networkSandboxEnabled: true,
+        kernelNetworkDeny: true,
+      });
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+      mockAcpAgent = {
+        instanceId: 'inst-1',
+        connectionId: acp.id,
+        chatSessionId: 'sess-1',
+      };
+      mockSessionInfo = {
+        modes: { currentModeId: 'auto', availableModes: [] },
+        configOptions: null,
+        usage: null,
+        commands: [],
+      };
+
+      let setModeCalls = 0;
+      setMockInvokeHandler('acp_session_set_mode', () => {
+        setModeCalls += 1;
+        return undefined;
+      });
+
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByText('Full Access'));
+
+      // The conflict dialog short-circuits the dispatch — no mode is set.
+      expect(updateCurrentModeMock).not.toHaveBeenCalled();
+      expect(setModeCalls).toBe(0);
+
+      // The AlertDialog content surfaces the conflict heading. shadcn/ui's
+      // AlertDialog (a thin Radix wrapper) is exercised for real here — its
+      // Portal renders into document.body and is queryable from jsdom.
+      expect(
+        screen.getByText(/mode conflicts with security settings/i),
+      ).toBeTruthy();
+    });
+
+    it('selecting Full Access with no sandbox restrictions dispatches without prompting', async () => {
+      const acp = makeAcpConnection({
+        sandboxEnabled: false,
+        networkSandboxEnabled: false,
+        kernelNetworkDeny: false,
+      });
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+      mockAcpAgent = {
+        instanceId: 'inst-1',
+        connectionId: acp.id,
+        chatSessionId: 'sess-1',
+      };
+      mockSessionInfo = {
+        modes: { currentModeId: 'auto', availableModes: [] },
+        configOptions: null,
+        usage: null,
+        commands: [],
+      };
+
+      const setModeCalls: Array<Record<string, unknown>> = [];
+      setMockInvokeHandler('acp_session_set_mode', (args) => {
+        setModeCalls.push(args ?? {});
+        return undefined;
+      });
+
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByText('Full Access'));
+
+      expect(updateCurrentModeMock).toHaveBeenCalledWith('full-access');
+      // No conflict heading should appear in the unrestricted path.
+      expect(
+        screen.queryByText(/mode conflicts with security settings/i),
+      ).toBeNull();
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(setModeCalls).toHaveLength(1);
+      expect(setModeCalls[0]).toMatchObject({ modeId: 'full-access' });
     });
   });
 });
