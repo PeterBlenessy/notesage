@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import AttachmentChips, {
+  type AttachmentChip,
+} from "@/components/cmd/AttachmentChips";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -51,6 +54,13 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   const [expanded, setExpanded] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
+
+  // Attachment chips above the input (#11). Starts empty — populated by the
+  // reference / task / research mode pickers in #15, #17, #18.
+  const [chips, setChips] = useState<AttachmentChip[]>([]);
+  const removeChip = useCallback((id: string) => {
+    setChips((prev) => prev.filter((c) => c.id !== id));
+  }, []);
 
   // Autofocus the input whenever we transition into the expanded state.
   useEffect(() => {
@@ -137,6 +147,8 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
         <ExpandedContent
           inputRef={inputRef}
           onKeyDown={handleKeyDown}
+          chips={chips}
+          onRemoveChip={removeChip}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -186,20 +198,29 @@ function CompactContent({ onActivate }: CompactContentProps) {
 interface ExpandedContentProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  chips: AttachmentChip[];
+  onRemoveChip: (id: string) => void;
 }
 
-function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
+function ExpandedContent({
+  inputRef,
+  onKeyDown,
+  chips,
+  onRemoveChip,
+}: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
       {/*
         Future home of:
           - Context row (#10) — pinned to the top of the expanded bar
-          - Attachment chips (#11) — above the input
           - Chat stream (#12) — fills the scroll region below
        */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         <p className="text-xs text-muted-foreground">{STREAM_PLACEHOLDER}</p>
       </div>
+
+      {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}
+      <AttachmentChips chips={chips} onRemove={onRemoveChip} />
 
       <div className="border-t border-border px-3 py-2">
         <input

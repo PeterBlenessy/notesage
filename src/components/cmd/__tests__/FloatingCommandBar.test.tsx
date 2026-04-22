@@ -19,6 +19,15 @@ vi.mock('@/hooks/useReducedMotion', () => ({
   useReducedMotion: () => useReducedMotionMock(),
 }));
 
+// Stub AttachmentChips so we can detect its presence without exercising its
+// real rendering surface here. The chip component has its own dedicated test
+// file. We just want to confirm FloatingCommandBar mounts it once when
+// expanded.
+vi.mock('@/components/cmd/AttachmentChips', () => ({
+  __esModule: true,
+  default: () => <div data-testid="chips-stub" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -78,6 +87,18 @@ describe('FloatingCommandBar', () => {
 
     // When pinned, the bar lives directly inside the render container.
     expect(container.querySelector('[data-cmd-bar]')).toBeTruthy();
+  });
+
+  it('mounts AttachmentChips exactly once when expanded', () => {
+    renderWithProviders(<FloatingCommandBar />);
+    // Compact state — chips strip not yet mounted (only the expanded contents
+    // include it).
+    expect(screen.queryAllByTestId('chips-stub')).toHaveLength(0);
+
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    // After expansion, the AttachmentChips component is rendered exactly once.
+    expect(screen.getAllByTestId('chips-stub')).toHaveLength(1);
   });
 
   it('skips the lift transition when prefers-reduced-motion is reduce', () => {
