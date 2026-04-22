@@ -1,0 +1,89 @@
+# UI Refresh Phase 1 — Batch Plan (in-flight)
+
+Pointer document for continuing `docs/tasks/2026-04-21-ui-refresh-phase1-tasks.md` across sessions.
+
+## Status as of 2026-04-22
+
+- **Tasks done (29/100)**: #1-#29 except #22 in numerical order — that is, all of M1.1 Foundation (8/8) and all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser. Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings.
+- **Tests passing**: 3379/3379 frontend, 657/657 Rust, typecheck clean.
+- **Workflow**: manual worktrees + parent-commits — see `.claude/skills/implement-tasks/SKILL.md` (validated 2026-04-22). Ignore `Agent isolation: "worktree"` for this codebase.
+- **Markdown formatter quirk**: a hidden formatter strips ✅ markers and `\|` table escapes on every Edit/sed of `*.md` files. Use `git apply --cached` for ✅ marks (writes directly to git index).
+
+## M1.3 Sidebar + Chrome — batch plan (33 tasks, #30–#62)
+
+### Batch G1 — Foundations (4 parallel)
+
+| # | Files | Notes |
+| --- | --- | --- |
+| #30 | new `QuietSidebar.tsx` + 4 section sub-files (`PinnedSection.tsx`, `ProjectsSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`) — extract sections into separate files so G2 can fill them in parallel without overlap | sidebar shell with empty sections |
+| #39 | new `SidebarInlineEdit.tsx` | rename/create primitive |
+| #48 | new `DocHead.tsx` + `QuietLayout.tsx` mount | breadcrumb (replaces TabBar in QuietLayout) |
+| #49 | `Toolbar.tsx` refactor | floating pill with backdrop blur |
+
+### Batch G2 — Sidebar section wiring (4 parallel — depends G1's #30 split)
+
+- #31 PinnedSection wiring (workspace-store)
+- #32 ProjectsSection wiring (flat list with file counts)
+- #33 RecentSection wiring (editor-store, cap 5 + show-more)
+- #34 TagsSection wiring (SQLite top tags, cap 5)
+
+### Batch G3 — Sidebar features (4 parallel after G1)
+
+- #36 new `FolderPeek.tsx` (hover popover, one level deep)
+- #38 new `TreeOverlay.tsx` (⌘⇧E full tree, role="tree")
+- #45 new `SidebarContextMenu.tsx` (shadcn context-menu)
+- #47 new `FilePreview.tsx` (500ms hover, first 10 lines)
+
+### Batch G4 — Sidebar dependents (4 sequential, all small)
+
+- #37 FolderPeek keyboard (after #36)
+- #46 Copy path / Reveal in Finder (after #45; may need Tauri command)
+- #43 type-to-filter (modifies QuietSidebar)
+- #44 drag-to-pin (after #31; modifies QuietSidebar)
+
+### Batch G5 — Inline edit modes (3 sequential — all touch QuietSidebar)
+
+- #40 inline rename (F2/double-click)
+- #41 inline create note (⌘N + `+` on project)
+- #42 inline create project (⌘⇧N + `+` on Projects header)
+
+### Batch G6 — Chrome foundations (4 parallel after #49 lands)
+
+- #50 `useFadeOnType.ts` + globals.css `.typing` class
+- #52 `StatusBar.tsx` simplified strip
+- #55 new `FocusPill.tsx`
+- #57 new `ViewerToolbarPill.tsx` shared primitive
+
+### Batch G7 — Chrome dependents
+
+- #51 quiet-chrome presets (after #50; settings panel)
+- #53 `StatusTray.tsx` popover (after #52)
+- #54 status-bar dots (after #52; overlaps with #52, sequential)
+- #56 `useFocusMode.ts` + Esc fall-through (after #55, #50)
+- #35 sidebar composition settings (after #30; settings + settings-store)
+
+### Batch G8 — Viewer toolbar adoption (5 parallel after #57)
+
+- #58 PdfViewer
+- #59 EpubViewer
+- #60 DocxViewer
+- #61 PptxViewer
+- #62 CodeEditor language pill
+
+## After M1.3
+
+- M1.4 Settings shell (#63–#68, 6 tasks)
+- M1.5 Removals + external-change rewire (#69–#74, 6 tasks)
+- M1.6 State + plumbing (#75–#77, 3 tasks)
+- M1.7 Accessibility (#78–#87, 10 tasks)
+- M1.8 Performance benchmarks (#88–#92, 5 tasks)
+- M1.9 Docs + release prep (#93–#98, 6 tasks)
+- M1.10 Pre-ship validation (#99–#100, 2 tasks)
+
+## How to resume
+
+User prompt to a fresh session, after `/clear`:
+
+> Continue Phase 1 of the UI refresh from the batch plan in `docs/tasks/2026-04-21-ui-refresh-phase1-batches.md`. Start with Batch G1.
+
+That's enough — the plan file references the canonical tasks file and SKILL.md, both of which contain everything needed (workflow, conventions, current ✅ state).
