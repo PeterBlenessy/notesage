@@ -269,7 +269,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #11, #12 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/stores/chat-store.ts` wiring |
 
-### #24 — Provider pill — wire to connections-store
+### #24 — Provider pill — wire to connections-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -279,7 +279,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10 |
 | Files | `src/components/cmd/CommandBarContext.tsx`, reuses existing provider-switch logic |
 
-### #25 — Project chips — wire to chat/workspace stores
+### #25 — Project chips — wire to chat/workspace stores ✅
 
 | Field | Value |
 | --- | --- |
@@ -289,7 +289,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10 |
 | Files | `src/components/cmd/CommandBarContext.tsx`, `src/stores/chat-store.ts` |
 
-### #26 — Mode pill — permission-level dropdown
+### #26 — Mode pill — permission-level dropdown ✅
 
 | Field | Value |
 | --- | --- |
