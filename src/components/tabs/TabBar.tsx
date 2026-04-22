@@ -201,9 +201,10 @@ export function TabBar() {
               <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full" />
             )}
 
-            {/* Dirty dot */}
+            {/* Dirty dot — primary affordance (unsaved-changes signal); reaches the accent
+                token so it picks up the user's accent. Falls back to neutral primary today. */}
             {tab.isDirty && (
-              <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent-primary)] shrink-0" />
             )}
 
             {/* File type icon */}
