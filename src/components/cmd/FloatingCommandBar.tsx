@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import {
+  detectActivePrefix,
+  type ActivePrefix,
+} from "@/components/cmd/prefix-modes";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -18,13 +22,17 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
  *   - #10 CommandBarContext      → context row (provider, projects, mode)
  *   - #11 AttachmentChips        → chips above the input
  *   - #12 CommandBarStream       → real chat stream replaces the placeholder
- *   - #13 prefix morph           → /, @, #, !, ?, > mode switching
+ *   - #13 prefix morph           → /, @, #, !, ?, > mode switching (this file
+ *                                  reports the active prefix; pickers in
+ *                                  #14–#19 render the dropdowns)
  *   - #28 pinned panel layout    → wires up the `isPinned` branch
  *
  * Behaviour summary:
  *   - Click the compact pill (or open via ⌘K — handled by a future task) to
  *     expand. The input autofocuses.
- *   - Esc collapses back to compact and blurs the input.
+ *   - Esc collapses back to compact and blurs the input. When a prefix mode
+ *     is active, the first Esc clears the active prefix only; a second Esc
+ *     collapses the bar (fall-through).
  *   - On focus, the bar lifts 14 px with a 200 ms ease transition. When
  *     `prefers-reduced-motion: reduce` is set, the lift and the height
  *     transition are skipped — the bar just snaps.
@@ -49,6 +57,8 @@ const STREAM_PLACEHOLDER = "Conversation will render here";
 
 function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   const [expanded, setExpanded] = useState(false);
+  const [inputValue, setInputValue] = useState("");
+  const [activePrefix, setActivePrefix] = useState<ActivePrefix | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
 
@@ -65,19 +75,77 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
 
   const collapse = useCallback(() => {
     setExpanded(false);
+    setInputValue("");
+    setActivePrefix(null);
     // Blur is a courtesy — the input itself unmounts when expanded === false,
     // but if we ever animate the input out we still want the focus released.
     inputRef.current?.blur();
   }, []);
 
+  // ---------------------------------------------------------------------
+  // Prefix detection — runs on every input change AND on selection moves.
+  //
+  // We compute the active prefix from (value, selectionStart) so that moving
+  // the cursor outside the prefix token (e.g. arrow-keying into a later word)
+  // dismisses the picker without typing anything.
+  // ---------------------------------------------------------------------
+
+  const recomputePrefix = useCallback(
+    (value: string, cursor: number) => {
+      const next = detectActivePrefix(value, cursor);
+      setActivePrefix(next);
+    },
+    [],
+  );
+
+  const handleInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value;
+      const cursor = event.target.selectionStart ?? value.length;
+      setInputValue(value);
+      recomputePrefix(value, cursor);
+    },
+    [recomputePrefix],
+  );
+
+  const handleSelectionChange = useCallback(
+    (event: React.SyntheticEvent<HTMLInputElement>) => {
+      // Ignore Escape's keyUp — its keyDown handler already cleared (or
+      // collapsed) the prefix mode and we don't want to re-detect from the
+      // unchanged input value and resurrect a badge the user just dismissed.
+      if (
+        "key" in event.nativeEvent &&
+        (event.nativeEvent as KeyboardEvent).key === "Escape"
+      ) {
+        return;
+      }
+      const target = event.currentTarget;
+      const cursor = target.selectionStart ?? target.value.length;
+      recomputePrefix(target.value, cursor);
+    },
+    [recomputePrefix],
+  );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        // Two-stage Esc fall-through: when a prefix is active, the first Esc
+        // dismisses the picker only and leaves the input + bar alone. The
+        // user's literal text (including the prefix character) stays put.
+        // A subsequent Esc collapses the bar.
+        if (activePrefix) {
+          setActivePrefix(null);
+          return;
+        }
         collapse();
+        return;
       }
+      // When a prefix is active, Enter is reserved for the picker (handled by
+      // mode pickers in #14–#19). We don't collapse on Enter here — that
+      // responsibility belongs to the picker components.
     },
-    [collapse],
+    [activePrefix, collapse],
   );
 
   // ---------------------------------------------------------------------
@@ -122,6 +190,7 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
     <div
       data-cmd-bar
       data-expanded={expanded ? "true" : "false"}
+      data-prefix-mode={activePrefix?.mode.id ?? ""}
       className={cn(
         positionClasses,
         widthClasses,
@@ -136,6 +205,10 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
       {expanded ? (
         <ExpandedContent
           inputRef={inputRef}
+          inputValue={inputValue}
+          activePrefix={activePrefix}
+          onInputChange={handleInputChange}
+          onSelectionChange={handleSelectionChange}
           onKeyDown={handleKeyDown}
         />
       ) : (
@@ -185,10 +258,21 @@ function CompactContent({ onActivate }: CompactContentProps) {
 
 interface ExpandedContentProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
+  inputValue: string;
+  activePrefix: ActivePrefix | null;
+  onInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onSelectionChange: (event: React.SyntheticEvent<HTMLInputElement>) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
-function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
+function ExpandedContent({
+  inputRef,
+  inputValue,
+  activePrefix,
+  onInputChange,
+  onSelectionChange,
+  onKeyDown,
+}: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
       {/*
@@ -196,16 +280,23 @@ function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
           - Context row (#10) — pinned to the top of the expanded bar
           - Attachment chips (#11) — above the input
           - Chat stream (#12) — fills the scroll region below
+          - Mode pickers (#14–#19) — rendered when `activePrefix` is non-null
        */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         <p className="text-xs text-muted-foreground">{STREAM_PLACEHOLDER}</p>
       </div>
+
+      {activePrefix ? <PrefixModeBadge prefix={activePrefix} /> : null}
 
       <div className="border-t border-border px-3 py-2">
         <input
           ref={inputRef}
           type="text"
           role="textbox"
+          value={inputValue}
+          onChange={onInputChange}
+          onKeyUp={onSelectionChange}
+          onClick={onSelectionChange}
           onKeyDown={onKeyDown}
           placeholder="Ask, search, or type / for skills…"
           className={cn(
@@ -214,6 +305,37 @@ function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
           )}
         />
       </div>
+    </div>
+  );
+}
+
+interface PrefixModeBadgeProps {
+  prefix: ActivePrefix;
+}
+
+/**
+ * Visual indicator that a prefix mode is active. The actual mode picker
+ * dropdown (file/skill/tag list, keyboard nav) is built in #14–#19; this
+ * badge is just the signal that detection works and previews the mode
+ * metadata until the pickers land.
+ */
+function PrefixModeBadge({ prefix }: PrefixModeBadgeProps) {
+  return (
+    <div
+      data-cmd-bar-prefix-badge
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "border-t border-border px-3 py-2",
+        "flex items-center gap-2 text-xs text-muted-foreground",
+      )}
+    >
+      <span className="font-medium text-foreground">{prefix.mode.label}</span>
+      <span className="text-muted-foreground/70">·</span>
+      <kbd className="rounded bg-muted px-1 py-px text-[11px] text-foreground">
+        {prefix.mode.prefix}
+      </kbd>
+      <span>{prefix.mode.description}</span>
     </div>
   );
 }

@@ -90,4 +90,50 @@ describe('FloatingCommandBar', () => {
     expect(bar.className).not.toMatch(/transition-/);
     expect(bar.className).not.toMatch(/duration-/);
   });
+
+  it('shows a mode badge when typing a prefix character ("/")', () => {
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '/' } });
+
+    // Badge announces the active mode for screen readers + visual users.
+    const badge = document.body.querySelector(
+      '[data-cmd-bar-prefix-badge]',
+    ) as HTMLElement | null;
+    expect(badge).toBeTruthy();
+    expect(badge!.textContent ?? '').toMatch(/skill/i);
+
+    // The bar's data attribute also reflects the active mode (handy for
+    // styling and for downstream pickers in #14–#19).
+    const bar = document.body.querySelector('[data-cmd-bar]') as HTMLElement;
+    expect(bar.getAttribute('data-prefix-mode')).toBe('skill');
+  });
+
+  it('first Esc clears the active prefix; second Esc collapses the bar', () => {
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '/' } });
+
+    // Sanity: badge is up.
+    expect(
+      document.body.querySelector('[data-cmd-bar-prefix-badge]'),
+    ).toBeTruthy();
+
+    // First Esc → badge gone, bar still expanded, input intact.
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(
+      document.body.querySelector('[data-cmd-bar-prefix-badge]'),
+    ).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeTruthy();
+
+    // Second Esc → bar collapses.
+    const stillThere = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.keyDown(stillThere, { key: 'Escape' });
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
+  });
 });
