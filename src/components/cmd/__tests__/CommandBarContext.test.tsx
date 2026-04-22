@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
 import type { Connection } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
+import type { ChatMessage } from '@/lib/ai/types';
 import type { ProjectMetadata } from '@/stores/project-metadata-store';
 
 // ---------------------------------------------------------------------------
@@ -12,18 +13,20 @@ import type { ProjectMetadata } from '@/stores/project-metadata-store';
 // ---------------------------------------------------------------------------
 
 let mockInteractiveConnection: Connection | null = null;
+let mockConnections: Connection[] = [];
 let mockActiveConversation: Conversation | null = null;
 let mockMetadataMap: Record<string, ProjectMetadata> = {};
 let mockCmdBarPinned = false;
 const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
+const setRoutingMock = vi.fn<(useCase: string, connectionId: string | null) => void>();
 
 vi.mock('@/stores/connections-store', () => {
   const state = {
     get connections(): Connection[] {
-      return mockInteractiveConnection ? [mockInteractiveConnection] : [];
+      return mockConnections;
     },
     getConnection: (id: string) =>
-      mockInteractiveConnection?.id === id ? mockInteractiveConnection : undefined,
+      mockConnections.find((c) => c.id === id),
   };
   return {
     useConnectionsStore: Object.assign(
@@ -43,6 +46,8 @@ vi.mock('@/stores/routing-store', () => {
       inline_completion: { connectionId: null },
     },
     getConnectionForUseCase: () => mockInteractiveConnection,
+    setRouting: (useCase: string, connectionId: string | null) =>
+      setRoutingMock(useCase, connectionId),
   };
   return {
     useRoutingStore: Object.assign(
@@ -97,7 +102,57 @@ vi.mock('@/stores/settings-store', () => {
   };
 });
 
+// Mock the shadcn dropdown-menu module so its content is rendered inline
+// (no portal / no Radix open-state machine). This keeps the dropdown DOM
+// queryable from jsdom without simulating pointer events through Radix's
+// internal state machine. We preserve `asChild` on the trigger by rendering
+// children directly.
+vi.mock('@/components/ui/dropdown-menu', () => {
+  const Pass = ({ children }: { children?: React.ReactNode }) => <>{children}</>;
+  const Trigger = ({ children }: { children?: React.ReactNode; asChild?: boolean }) =>
+    <>{children}</>;
+  const Content = ({ children }: { children?: React.ReactNode }) =>
+    <div data-testid="dropdown-menu-content">{children}</div>;
+  const Item = ({
+    children,
+    onSelect,
+    onClick,
+    ...rest
+  }: {
+    children?: React.ReactNode;
+    onSelect?: () => void;
+    onClick?: () => void;
+  } & React.HTMLAttributes<HTMLButtonElement>) => (
+    <button
+      type="button"
+      onClick={(e) => {
+        onClick?.(e);
+        onSelect?.();
+      }}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+  return {
+    DropdownMenu: Pass,
+    DropdownMenuTrigger: Trigger,
+    DropdownMenuContent: Content,
+    DropdownMenuItem: Item,
+    DropdownMenuLabel: Pass,
+    DropdownMenuSeparator: () => <hr />,
+  };
+});
+
+// Mock ProviderLogo to avoid asset-resolution side-effects.
+vi.mock('@/components/ProviderLogo', () => ({
+  ProviderLogo: ({ provider }: { provider: string }) => (
+    <span data-testid={`provider-logo-${provider}`}>{provider}</span>
+  ),
+}));
+
 // Now import after mocks are set up
+import React from 'react';
 import CommandBarContext from '@/components/cmd/CommandBarContext';
 
 // ---------------------------------------------------------------------------
@@ -114,6 +169,15 @@ function makeConnection(overrides: Partial<Connection> = {}): Connection {
     credentials: { type: 'api_key', credentialStored: true },
     capabilities: ['interactive', 'agent_tasks'],
     createdAt: Date.now(),
+    ...overrides,
+  };
+}
+
+function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return {
+    role: 'user',
+    content: 'hello',
+    timestamp: 1,
     ...overrides,
   };
 }
@@ -154,17 +218,24 @@ function makeMetadata(overrides: Partial<ProjectMetadata> = {}): ProjectMetadata
 describe('CommandBarContext', () => {
   beforeEach(() => {
     mockInteractiveConnection = null;
+    mockConnections = [];
     mockActiveConversation = null;
     mockMetadataMap = {};
     mockCmdBarPinned = false;
     setCmdBarPinnedMock.mockReset();
+    setRoutingMock.mockReset();
     document.body.innerHTML = '';
   });
 
   it('renders the provider pill with the active connection label', () => {
-    mockInteractiveConnection = makeConnection({ label: 'Claude Sonnet 4.5' });
+    const conn = makeConnection({ label: 'Claude Sonnet 4.5' });
+    mockInteractiveConnection = conn;
+    mockConnections = [conn];
     renderWithProviders(<CommandBarContext />);
-    expect(screen.getByText('Claude Sonnet 4.5')).toBeTruthy();
+    // The pill trigger advertises the active label as its accessible name.
+    expect(
+      screen.getByLabelText(/active provider: claude sonnet 4\.5/i),
+    ).toBeTruthy();
   });
 
   it('renders one project chip per path in the active conversation', () => {
@@ -243,6 +314,151 @@ describe('CommandBarContext', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<CommandBarContext />);
       expect(screen.getByLabelText(/unpin/i)).toBeTruthy();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Provider pill (#24) — wires connections-store + routing-store
+  // -------------------------------------------------------------------------
+
+  describe('provider pill (#24)', () => {
+    it('the provider pill is a dropdown trigger (no longer a stub)', () => {
+      const conn = makeConnection({ label: 'Anthropic' });
+      mockInteractiveConnection = conn;
+      mockConnections = [conn];
+      renderWithProviders(<CommandBarContext />);
+
+      // The trigger button still carries the provider label as its accessible name.
+      const trigger = screen.getByLabelText(/active provider: anthropic/i);
+      expect(trigger).toBeTruthy();
+    });
+
+    it('renders one dropdown item per registered interactive connection', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic', provider: 'anthropic' });
+      const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
+      const c = makeConnection({ id: 'conn-c', label: 'Ollama', provider: 'ollama', authMethod: 'local', capabilities: ['interactive'] });
+      mockInteractiveConnection = a;
+      mockConnections = [a, b, c];
+
+      renderWithProviders(<CommandBarContext />);
+
+      const items = screen.getAllByRole('button', { name: /switch provider to/i });
+      expect(items).toHaveLength(3);
+      expect(screen.getByRole('button', { name: /switch provider to anthropic/i })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /switch provider to openai/i })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /switch provider to ollama/i })).toBeTruthy();
+    });
+
+    it('hides connections that lack the "interactive" capability', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      // A capability-less connection (e.g. inline-only) should not appear.
+      const inlineOnly = makeConnection({
+        id: 'conn-inline',
+        label: 'Inline Only',
+        capabilities: ['inline_completion'],
+      });
+      mockInteractiveConnection = a;
+      mockConnections = [a, inlineOnly];
+
+      renderWithProviders(<CommandBarContext />);
+
+      expect(screen.getByRole('button', { name: /switch provider to anthropic/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /switch provider to inline only/i })).toBeNull();
+    });
+
+    it('marks the currently active connection with aria-current', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
+      mockInteractiveConnection = a;
+      mockConnections = [a, b];
+
+      renderWithProviders(<CommandBarContext />);
+
+      const activeItem = screen.getByRole('button', { name: /switch provider to anthropic/i });
+      const inactiveItem = screen.getByRole('button', { name: /switch provider to openai/i });
+
+      expect(activeItem.getAttribute('aria-current')).toBe('true');
+      expect(inactiveItem.getAttribute('aria-current')).not.toBe('true');
+    });
+
+    it('selecting a different connection calls setRouting("interactive", id)', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
+      mockInteractiveConnection = a;
+      mockConnections = [a, b];
+
+      renderWithProviders(<CommandBarContext />);
+
+      const openaiItem = screen.getByRole('button', { name: /switch provider to openai/i });
+      fireEvent.click(openaiItem);
+
+      expect(setRoutingMock).toHaveBeenCalledWith('interactive', 'conn-b');
+    });
+
+    it('selecting the already-active connection is a no-op (does not call setRouting)', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      mockInteractiveConnection = a;
+      mockConnections = [a];
+
+      renderWithProviders(<CommandBarContext />);
+
+      const activeItem = screen.getByRole('button', { name: /switch provider to anthropic/i });
+      fireEvent.click(activeItem);
+
+      expect(setRoutingMock).not.toHaveBeenCalled();
+    });
+
+    it('switching with empty chat history calls setRouting (AgentSwitchCard owned by ChatPanel skips no-history convs)', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
+      mockInteractiveConnection = a;
+      mockConnections = [a, b];
+      mockActiveConversation = makeConversation({ id: 'conv-empty', messages: [] });
+
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByRole('button', { name: /switch provider to openai/i }));
+
+      // We dispatch the same store action ChatFooter uses. ChatPanel's effect
+      // already short-circuits AgentSwitchCard when messages.length === 0, so
+      // we deliberately do NOT add a separate prompt here.
+      expect(setRoutingMock).toHaveBeenCalledWith('interactive', 'conn-b');
+      expect(setRoutingMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('switching with non-empty chat history still only calls setRouting (ChatPanel effect raises the prompt)', () => {
+      const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
+      const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
+      mockInteractiveConnection = a;
+      mockConnections = [a, b];
+      mockActiveConversation = makeConversation({
+        id: 'conv-with-history',
+        messages: [
+          makeMessage({ role: 'user', content: 'hi', timestamp: 1 }),
+          makeMessage({ role: 'assistant', content: 'hello', timestamp: 2 }),
+        ],
+      });
+
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByRole('button', { name: /switch provider to openai/i }));
+
+      // The AgentSwitchCard prompt is fired by ChatPanel's effect when
+      // `effectiveConnection?.id` flips. Reusing the same setRouting action
+      // means the existing context-isolation flow keeps working — we don't
+      // duplicate the logic here.
+      expect(setRoutingMock).toHaveBeenCalledWith('interactive', 'conn-b');
+      expect(setRoutingMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders no dropdown items when there are no interactive connections', () => {
+      mockInteractiveConnection = null;
+      mockConnections = [];
+      renderWithProviders(<CommandBarContext />);
+
+      expect(
+        screen.queryAllByRole('button', { name: /switch provider to/i }),
+      ).toHaveLength(0);
     });
   });
 });
