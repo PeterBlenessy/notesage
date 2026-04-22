@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LogLevel } from '@/lib/logger';
+import type { AccentName } from '@/lib/accent';
 
 
 type Theme = "light" | "dark" | "system";
@@ -13,6 +14,12 @@ export type PptxTemplate = "simple" | "business" | "report";
 export type UiPreview = "legacy" | "quiet-composer";
 interface SettingsStore {
   theme: Theme;
+  /**
+   * UI accent color: "default" (neutral primary), "orange", "blue", or "system"
+   * (macOS NSColor.controlAccentColor). Scaffolded by ui-refresh task #3 — task
+   * #6 wires `--accent` into primary-affordance sites.
+   */
+  accent: AccentName;
   contrastLevel: number;
   /** Hue angle for UI color tint (0–360, oklch hue). 0 = warm yellow, 270 = cool blue, etc. */
   tintHue: number;
@@ -111,6 +118,7 @@ interface SettingsStore {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
+  setAccent: (accent: AccentName) => void;
   setContrastLevel: (level: number) => void;
   setTintHue: (hue: number) => void;
   setTintChroma: (chroma: number) => void;
@@ -174,6 +182,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       theme: "system",
+      accent: "default",
       contrastLevel: 0,
       tintHue: 60,
       tintChroma: 0,
@@ -234,6 +243,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setTheme: (theme: Theme) => {
         set({ theme });
+      },
+
+      setAccent: (accent: AccentName) => {
+        set({ accent });
       },
 
       setContrastLevel: (level: number) => {
@@ -462,7 +475,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 4,
+      version: 5,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -491,6 +504,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // Phase 1 of Quiet Composer rollout: existing users default to
           // "legacy" so no one is force-flipped to the new UI on upgrade.
           state.uiPreview = "legacy";
+        }
+        if (version < 5) {
+          // ui-refresh task #3 — add accent field, default to "default" (no
+          // accent applied; consumers fall back to neutral --primary).
+          if (typeof state.accent !== 'string') {
+            state.accent = 'default';
+          }
         }
         return state;
       },

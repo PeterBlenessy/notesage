@@ -151,6 +151,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
   uiPreview: 'legacy',
+  accent: 'default',
 };
 
 // ---------------------------------------------------------------------------
@@ -1050,10 +1051,9 @@ describe('uiPreview flag', () => {
     expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
   });
 
-  it('v3 → v4 migration: adds uiPreview: "legacy" to a state that lacks it', async () => {
-    // Existing user upgrade: persisted at version 3, no uiPreview field yet.
-    // Migration must default them to legacy so no one is force-flipped to the
-    // new UI on upgrade.
+  it('v3 → v5 migration: adds uiPreview: "legacy" (and accent: "default") to a state that lacks them', async () => {
+    // Existing user upgrade: persisted at version 3, no uiPreview/accent fields.
+    // Migration chain runs both <4 (uiPreview) and <5 (accent) branches.
     const v3State = {
       state: {
         theme: 'dark',
@@ -1083,13 +1083,107 @@ describe('uiPreview flag', () => {
     expect(s.theme).toBe('dark');
     expect(s.contrastLevel).toBe(50);
 
-    // The migration must also have bumped the persisted version to 4 and
-    // written uiPreview into storage — otherwise the next upgrade migration
-    // would re-run, and we wouldn't be safe against future re-migrations.
+    // The persisted JSON should reflect the bumped version and both new fields,
+    // so the migration doesn't re-run on the next launch.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(4);
+    expect(parsed.version).toBe(5);
     expect(parsed.state.uiPreview).toBe('legacy');
+    expect(parsed.state.accent).toBe('default');
+  });
+});
+
+// ===========================================================================
+// Accent (UI refresh task #3)
+// ===========================================================================
+
+describe('accent field', () => {
+  it('default value is "default"', () => {
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('setAccent flips between values', () => {
+    const { setAccent } = useSettingsStore.getState();
+
+    setAccent('orange');
+    expect(useSettingsStore.getState().accent).toBe('orange');
+
+    setAccent('blue');
+    expect(useSettingsStore.getState().accent).toBe('blue');
+
+    setAccent('system');
+    expect(useSettingsStore.getState().accent).toBe('system');
+
+    setAccent('default');
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('persists accent across restart', async () => {
+    useSettingsStore.getState().setAccent('blue');
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().accent).toBe('blue');
+  });
+});
+
+describe('v4 → v5 migration (accent field)', () => {
+  it('adds accent: "default" to a v4 state lacking it', async () => {
+    const v4State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+      },
+      version: 4,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v4State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().accent).toBe('default');
+  });
+
+  it('preserves existing accent when present (idempotent)', async () => {
+    const v5State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'orange',
+      },
+      version: 5,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v5State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().accent).toBe('orange');
   });
 });

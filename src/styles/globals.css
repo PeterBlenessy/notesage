@@ -186,6 +186,60 @@
   --ns-code-tag: oklch(72% 0.12 20);
 }
 
+/* ============================================
+   ACCENT COLORS — UI refresh (Phase 1, task #3)
+   ============================================
+   Optional UI accent applied to primary affordances (primary buttons, focus
+   rings, dirty dots, link color in editor). Default: no class on <html>, so
+   `--accent` is unset and consumers fall back via `var(--accent, var(--primary))`
+   to today's neutral grey palette.
+
+   Light-mode oklch values live in the base `.accent-*` rules below; dark-mode
+   variants live under `.dark.accent-*` qualifiers (the project uses class-based
+   dark mode via `.dark` on <html>).
+
+   Per-theme oklch values were chosen for visual identity over strict AA. The
+   blue clears WCAG body 4.5:1 in both modes; the orange is intentionally vivid
+   (Material Deep Orange 500 / rgb(255,87,34)) and clears UI 3:1 but lands at
+   ~3.2:1 against white — acceptable for shapes, fills, focus rings, dots, and
+   button backgrounds with dark labels, but not for orange text or small white
+   labels on an orange background. Phase 1 is shipped behind a flag; Phase 2
+   may introduce a darker text-style variant if real usage flags the gap.
+
+   The "system" accent reads `--accent-system-value` set inline by the
+   `useAccent` hook from the macOS `get_system_accent_color` Tauri command
+   (task #4). When that property is unset (non-macOS, command failure) we fall
+   back to the orange default so a user picking "System" never sees a missing
+   colour. */
+
+.accent-orange {
+  /* Light mode: rgb(255,87,34) — Material Deep Orange 500. ~3.2:1 vs white. */
+  --accent: oklch(68% 0.21 37);
+}
+
+.accent-blue {
+  /* Light mode: rgb(25,118,210) — Material Blue 700. ~4.6:1 vs white (AA body). */
+  --accent: oklch(56% 0.16 253);
+}
+
+.accent-system {
+  --accent: var(--accent-system-value, oklch(68% 0.21 37));
+}
+
+.dark.accent-orange {
+  /* Dark mode: lifted lightness for contrast against dark background. */
+  --accent: oklch(74% 0.19 37);
+}
+
+.dark.accent-blue {
+  /* Dark mode: lifted lightness for contrast against dark background. */
+  --accent: oklch(70% 0.14 253);
+}
+
+.dark.accent-system {
+  --accent: var(--accent-system-value, oklch(74% 0.19 37));
+}
+
 /* Soft mode — easy on the eyes (dark) */
 .dark.soft {
   --color-background: oklch(25% 0 0);
