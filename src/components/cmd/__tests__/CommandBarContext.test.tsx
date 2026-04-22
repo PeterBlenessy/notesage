@@ -7,6 +7,7 @@ import type { Connection } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { ProjectMetadata } from '@/stores/project-metadata-store';
+import type { WorkspaceProject } from '@/stores/workspace-store';
 
 // ---------------------------------------------------------------------------
 // Mockable store state — flipped per-test before render
@@ -17,8 +18,11 @@ let mockConnections: Connection[] = [];
 let mockActiveConversation: Conversation | null = null;
 let mockMetadataMap: Record<string, ProjectMetadata> = {};
 let mockCmdBarPinned = false;
+let mockWorkspaceProjects: WorkspaceProject[] = [];
 const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
 const setRoutingMock = vi.fn<(useCase: string, connectionId: string | null) => void>();
+const toggleProjectPathMock = vi.fn<(path: string) => void>();
+const setSelectedProjectPathsMock = vi.fn<(paths: string[]) => void>();
 
 vi.mock('@/stores/connections-store', () => {
   const state = {
@@ -65,6 +69,8 @@ vi.mock('@/stores/chat-store', () => {
     get activeConversationId(): string | null {
       return mockActiveConversation?.id ?? null;
     },
+    toggleProjectPath: (path: string) => toggleProjectPathMock(path),
+    setSelectedProjectPaths: (paths: string[]) => setSelectedProjectPathsMock(paths),
   };
   return {
     useChatStore: Object.assign(
@@ -73,6 +79,45 @@ vi.mock('@/stores/chat-store', () => {
     ),
   };
 });
+
+vi.mock('@/stores/workspace-store', () => {
+  const state = {
+    get projects(): WorkspaceProject[] {
+      return mockWorkspaceProjects;
+    },
+  };
+  return {
+    useWorkspaceStore: Object.assign(
+      vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
+      { getState: () => state },
+    ),
+  };
+});
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}));
+
+// Stub the explain-lock dialog to a simple visible marker — we don't need
+// to drive the real Radix dialog under jsdom; we just want to verify the
+// chip wires up to it.
+vi.mock('@/components/chat/ExplainLockDialog', () => ({
+  ExplainLockDialog: ({ open, lockedProjectPaths }: { open: boolean; lockedProjectPaths: string[] }) =>
+    open ? (
+      <div data-testid="explain-lock-dialog">
+        {lockedProjectPaths.map((p) => (
+          <span key={p}>{p}</span>
+        ))}
+      </div>
+    ) : null,
+}));
 
 vi.mock('@/stores/project-metadata-store', () => {
   const state = {
@@ -151,8 +196,30 @@ vi.mock('@/components/ProviderLogo', () => ({
   ),
 }));
 
+// Mock the shadcn popover module so its content is rendered inline (no
+// portal / no Radix open-state machine). Mirrors the dropdown-menu mock
+// above. We render the trigger as-is and the content always (no open gate)
+// so tests can query the menu directly.
+vi.mock('@/components/ui/popover', () => {
+  const Pass = ({ children }: { children?: React.ReactNode }) => <>{children}</>;
+  const Trigger = ({ children }: { children?: React.ReactNode; asChild?: boolean }) =>
+    <>{children}</>;
+  const Content = ({ children }: { children?: React.ReactNode }) =>
+    <div data-testid="popover-content">{children}</div>;
+  return {
+    Popover: Pass,
+    PopoverTrigger: Trigger,
+    PopoverContent: Content,
+    PopoverAnchor: Pass,
+    PopoverHeader: Pass,
+    PopoverTitle: Pass,
+    PopoverDescription: Pass,
+  };
+});
+
 // Now import after mocks are set up
 import React from 'react';
+import { toast } from 'sonner';
 import CommandBarContext from '@/components/cmd/CommandBarContext';
 
 // ---------------------------------------------------------------------------
@@ -222,8 +289,13 @@ describe('CommandBarContext', () => {
     mockActiveConversation = null;
     mockMetadataMap = {};
     mockCmdBarPinned = false;
+    mockWorkspaceProjects = [];
     setCmdBarPinnedMock.mockReset();
     setRoutingMock.mockReset();
+    toggleProjectPathMock.mockReset();
+    setSelectedProjectPathsMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.info).mockReset();
     document.body.innerHTML = '';
   });
 
@@ -459,6 +531,162 @@ describe('CommandBarContext', () => {
       expect(
         screen.queryAllByRole('button', { name: /switch provider to/i }),
       ).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Project chips (#25) — wires chat-store add/remove + workspace + locks
+  // -------------------------------------------------------------------------
+
+  describe('project chips (#25)', () => {
+    it("clicking a chip's × calls toggleProjectPath with that path", () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/alpha', '/Users/p/Projects/beta'],
+      });
+      renderWithProviders(<CommandBarContext />);
+
+      const removeBtn = screen.getByLabelText(/remove alpha/i);
+      fireEvent.click(removeBtn);
+
+      expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
+      expect(toggleProjectPathMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('+ project popover lists workspace projects NOT already in scope', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/alpha'],
+      });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/alpha', fileTree: [] },
+        { path: '/Users/p/Projects/beta', fileTree: [] },
+        { path: '/Users/p/Projects/gamma', fileTree: [] },
+      ];
+      renderWithProviders(<CommandBarContext />);
+
+      // beta and gamma should appear inside the popover (not yet in scope).
+      // alpha is already in scope so it must NOT show as an "Add" option.
+      expect(screen.getByRole('button', { name: /add project beta/i })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /add project gamma/i })).toBeTruthy();
+      expect(
+        screen.queryByRole('button', { name: /add project alpha/i }),
+      ).toBeNull();
+    });
+
+    it('clicking a project in the popover calls toggleProjectPath with its path', () => {
+      mockActiveConversation = makeConversation({ projectPaths: [] });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/alpha', fileTree: [] },
+      ];
+      renderWithProviders(<CommandBarContext />);
+
+      const item = screen.getByRole('button', { name: /add project alpha/i });
+      fireEvent.click(item);
+
+      expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
+    });
+
+    it('shows an empty-state message when every workspace project is already in scope', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/alpha'],
+      });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/alpha', fileTree: [] },
+      ];
+      renderWithProviders(<CommandBarContext />);
+
+      expect(screen.getByText(/no other projects/i)).toBeTruthy();
+    });
+
+    it('clicking the lock icon on a locked chip opens the explain-lock dialog with the locked path', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/locked-one'],
+      });
+      mockMetadataMap = {
+        '/Users/p/Projects/locked-one': makeMetadata({
+          aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
+        }),
+      };
+      renderWithProviders(<CommandBarContext />);
+
+      const lockBtn = screen.getByLabelText(/locked-one is locked to a provider/i);
+      fireEvent.click(lockBtn);
+
+      const dialog = screen.getByTestId('explain-lock-dialog');
+      expect(dialog).toBeTruthy();
+      expect(dialog.textContent).toContain('/Users/p/Projects/locked-one');
+    });
+
+    it('adding a project with a conflicting aiLock is prevented and shows an error toast', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/locked-a'],
+      });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/locked-a', fileTree: [] },
+        { path: '/Users/p/Projects/locked-b', fileTree: [] },
+      ];
+      mockMetadataMap = {
+        '/Users/p/Projects/locked-a': makeMetadata({
+          aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
+        }),
+        '/Users/p/Projects/locked-b': makeMetadata({
+          aiLock: { connectionId: 'conn-y', lockedAt: Date.now() },
+        }),
+      };
+      renderWithProviders(<CommandBarContext />);
+
+      const item = screen.getByRole('button', { name: /add project locked-b/i });
+      fireEvent.click(item);
+
+      expect(toggleProjectPathMock).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalled();
+      expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/locked|provider/i);
+    });
+
+    it('adding an unlocked project to a locked-only selection is prevented and shows an error toast', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/locked-a'],
+      });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/locked-a', fileTree: [] },
+        { path: '/Users/p/Projects/free', fileTree: [] },
+      ];
+      mockMetadataMap = {
+        '/Users/p/Projects/locked-a': makeMetadata({
+          aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
+        }),
+      };
+      renderWithProviders(<CommandBarContext />);
+
+      const item = screen.getByRole('button', { name: /add project free/i });
+      fireEvent.click(item);
+
+      expect(toggleProjectPathMock).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalled();
+    });
+
+    it('adding a same-locked project to an existing locked selection is allowed', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/locked-a'],
+      });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/locked-a', fileTree: [] },
+        { path: '/Users/p/Projects/locked-c', fileTree: [] },
+      ];
+      mockMetadataMap = {
+        '/Users/p/Projects/locked-a': makeMetadata({
+          aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
+        }),
+        '/Users/p/Projects/locked-c': makeMetadata({
+          aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
+        }),
+      };
+      renderWithProviders(<CommandBarContext />);
+
+      const item = screen.getByRole('button', { name: /add project locked-c/i });
+      fireEvent.click(item);
+
+      expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/locked-c');
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 });
