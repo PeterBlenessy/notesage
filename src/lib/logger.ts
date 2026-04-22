@@ -18,6 +18,35 @@ interface LogEntry {
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
+/**
+ * Centralised perf-log category names. Reference these constants instead of
+ * raw `'perf:foo'` string literals at call sites — prevents typos, keeps the
+ * canonical list in one place, and lets IDE find-all-references locate every
+ * emit site for a given category.
+ */
+export const PERF = {
+  startup: 'perf:startup',
+  save: 'perf:save',
+  tree: 'perf:tree',
+  find: 'perf:find',
+  typing: 'perf:typing',
+  palette: 'perf:palette',
+  tabLoad: 'perf:tab-load',
+  tabPreload: 'perf:tab-preload',
+  skills: 'perf:skills',
+  aiChat: 'perf:ai-chat',
+  index: 'perf:index',
+  cmdbar: 'perf:cmdbar',
+  orb: 'perf:orb',
+  status: 'perf:status',
+  peek: 'perf:peek',
+  treeOverlay: 'perf:tree-overlay',
+  sidebar: 'perf:sidebar',
+  focus: 'perf:focus',
+} as const;
+
+export type PerfCategory = typeof PERF[keyof typeof PERF];
+
 const LOG_PRIORITY: Record<LogLevel, number> = {
   error: 0,
   warn: 1,

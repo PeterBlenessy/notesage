@@ -310,6 +310,15 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:skills]` | `useSkillOperations.ts` | Skill/agent/instruction discovery timing |
 | `[perf:ai-chat]` | `useDirectApiChat.ts` | First token latency, stream complete (provider, total tokens, elapsed) |
 | `[perf:index]` | `src-tauri/src/index/mod.rs` | Index build (project, files, changed, ms), query timing per type |
+| `[perf:cmdbar]` | `FloatingCommandBar` | Focus, dismiss, prefix morph, attachment chips |
+| `[perf:orb]` | `AgentOrb` | Panel open, pulse cost |
+| `[perf:status]` | `StatusBar`, `StatusTray` | StatusBar render, StatusTray popover open |
+| `[perf:peek]` | `FolderPeek` | Hover popover unfurl |
+| `[perf:tree-overlay]` | `TreeOverlay` | Slide-in, expand/collapse |
+| `[perf:sidebar]` | `Sidebar` | Sidebar render, type-to-filter |
+| `[perf:focus]` | Focus mode | Focus mode enter/exit transition timing |
+
+Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.cmdbar`, `PERF.orb`, etc.) — call sites should reference the constant rather than the raw `'perf:foo'` string literal so typos surface at typecheck time.
 
 ### Security Model
 
