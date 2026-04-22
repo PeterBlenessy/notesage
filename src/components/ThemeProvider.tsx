@@ -9,6 +9,10 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { theme, contrastLevel, tintHue, tintChroma } = useSettingsStore();
 
+  // Why: theme is keyed off `.light` / `.dark` classes on <html> — never a
+  // `data-theme` attribute. globals.css uses `@custom-variant dark (&:where(.dark, .dark *))`
+  // and bare `.dark` selectors throughout. Do NOT reintroduce data-theme; see
+  // ThemeProvider.test.tsx for the regression lock.
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
