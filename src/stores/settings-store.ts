@@ -10,6 +10,7 @@ export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
+export type UiPreview = "legacy" | "quiet-composer";
 interface SettingsStore {
   theme: Theme;
   contrastLevel: number;
@@ -89,6 +90,13 @@ interface SettingsStore {
    * primary project-isolation guarantee from the project-data-isolation PRD.
    */
   crossProjectMode: boolean;
+  /**
+   * UI preview opt-in. Default "legacy" for both fresh installs and existing
+   * users on upgrade — no user is force-flipped to the new layout. Phase 1 of
+   * the Quiet Composer rollout (PRD 2026-04-21-ui-refresh): the new UI mounts
+   * only when this is "quiet-composer".
+   */
+  uiPreview: UiPreview;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -154,6 +162,7 @@ interface SettingsStore {
   setShowHiddenFiles: (show: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
+  setUiPreview: (preview: UiPreview) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -188,6 +197,7 @@ export const useSettingsStore = create<SettingsStore>()(
       showHiddenFiles: false,
       showAgentModePicker: false,
       crossProjectMode: false,
+      uiPreview: "legacy",
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -426,6 +436,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ crossProjectMode: enabled });
       },
 
+      setUiPreview: (preview: UiPreview) => {
+        set({ uiPreview: preview });
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -448,7 +462,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 3,
+      version: 4,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -472,6 +486,11 @@ export const useSettingsStore = create<SettingsStore>()(
           // Migrate pageBreaks: "visible"/"continuous" → printLayout: boolean
           state.printLayout = state.pageBreaks === 'visible';
           delete state.pageBreaks;
+        }
+        if (version < 4) {
+          // Phase 1 of Quiet Composer rollout: existing users default to
+          // "legacy" so no one is force-flipped to the new UI on upgrade.
+          state.uiPreview = "legacy";
         }
         return state;
       },
