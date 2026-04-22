@@ -23,6 +23,12 @@ vi.mock('@/components/cmd/FloatingCommandBar', () => ({
   default: () => <div data-testid="cmd-bar-stub" />,
 }));
 
+// Stub AgentOrb (#29) so we can assert it's mounted without pulling its
+// real implementation (it has its own dedicated test file).
+vi.mock('@/components/activity/AgentOrb', () => ({
+  AgentOrb: () => <div data-testid="agent-orb-stub" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Mock settings-store so QuietLayout can read `cmdBarPinned` to decide
 // whether to apply right-padding to the document area.
@@ -111,6 +117,11 @@ describe('QuietLayout (placeholder)', () => {
   it('mounts the FloatingCommandBar', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     expect(screen.getByTestId('cmd-bar-stub')).toBeTruthy();
+  });
+
+  it('mounts the AgentOrb (#29)', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    expect(screen.getByTestId('agent-orb-stub')).toBeTruthy();
   });
 
   // -------------------------------------------------------------------------
