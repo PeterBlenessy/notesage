@@ -75,7 +75,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src-tauri/src/commands/theme.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/commands/mod.rs` |
 
-### #5 — Preview-flag gate at Layout level
+### #5 — Preview-flag gate at Layout level ✅
 
 | Field | Value |
 | --- | --- |
@@ -85,7 +85,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #1 |
 | Files | `src/components/Layout.tsx`, `src/components/QuietLayout.tsx` (new) |
 
-### #6 — Wire `--accent` to primary-affordance sites
+### #6 — Wire `--accent` to primary-affordance sites ✅
 
 | Field | Value |
 | --- | --- |
