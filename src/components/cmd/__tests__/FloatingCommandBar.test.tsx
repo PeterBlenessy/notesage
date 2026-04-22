@@ -19,6 +19,12 @@ vi.mock('@/hooks/useReducedMotion', () => ({
   useReducedMotion: () => useReducedMotionMock(),
 }));
 
+// Stub CommandBarStream so the FloatingCommandBar tests stay focused on the
+// outer chrome (#9). The stream's own test file covers its behaviour.
+vi.mock('@/components/cmd/CommandBarStream', () => ({
+  default: () => <div data-testid="cmd-stream-stub">stream</div>,
+}));
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -46,8 +52,8 @@ describe('FloatingCommandBar', () => {
     expect(input).toBeTruthy();
     // Autofocus should be active on expansion.
     expect(document.activeElement).toBe(input);
-    // The future-stream placeholder zone is rendered.
-    expect(screen.getByText(/conversation will render here/i)).toBeTruthy();
+    // CommandBarStream (#12) mounts inside the expanded bar.
+    expect(screen.getByTestId('cmd-stream-stub')).toBeTruthy();
   });
 
   it('collapses back to compact when Escape is pressed in the expanded input', () => {

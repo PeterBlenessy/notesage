@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import CommandBarStream from "@/components/cmd/CommandBarStream";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -45,7 +46,6 @@ export interface FloatingCommandBarProps {
 }
 
 const COMPACT_PLACEHOLDER = "Press ⌘K to ask";
-const STREAM_PLACEHOLDER = "Conversation will render here";
 
 function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   const [expanded, setExpanded] = useState(false);
@@ -195,11 +195,10 @@ function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
         Future home of:
           - Context row (#10) — pinned to the top of the expanded bar
           - Attachment chips (#11) — above the input
-          - Chat stream (#12) — fills the scroll region below
        */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-        <p className="text-xs text-muted-foreground">{STREAM_PLACEHOLDER}</p>
-      </div>
+      <CommandBarStream />
+      {/* #12 wires CommandBarStream above; #23 / #24 / #27 add send,
+          provider switch, and history view. */}
 
       <div className="border-t border-border px-3 py-2">
         <input
