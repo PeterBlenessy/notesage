@@ -104,6 +104,17 @@ interface SettingsStore {
    * only when this is "quiet-composer".
    */
   uiPreview: UiPreview;
+  /**
+   * Quiet Composer pinned-panel mode (PRD 2026-04-21-ui-refresh, task #28).
+   * When true the FloatingCommandBar renders as a right-edge side panel
+   * instead of the centre-bottom floating overlay. Default false.
+   */
+  cmdBarPinned: boolean;
+  /**
+   * Width (in pixels) of the pinned command-bar side panel. Persisted across
+   * restarts. Clamped to 280–800. Default 400.
+   */
+  cmdBarPinnedWidth: number;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -171,6 +182,8 @@ interface SettingsStore {
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
   setUiPreview: (preview: UiPreview) => void;
+  setCmdBarPinned: (pinned: boolean) => void;
+  setCmdBarPinnedWidth: (width: number) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -207,6 +220,8 @@ export const useSettingsStore = create<SettingsStore>()(
       showAgentModePicker: false,
       crossProjectMode: false,
       uiPreview: "legacy",
+      cmdBarPinned: false,
+      cmdBarPinnedWidth: 400,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -453,6 +468,17 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ uiPreview: preview });
       },
 
+      setCmdBarPinned: (pinned: boolean) => {
+        set({ cmdBarPinned: pinned });
+      },
+
+      setCmdBarPinnedWidth: (width: number) => {
+        // Clamp to the same min/max enforced by the drag handle UI so the
+        // store cannot be poisoned by an out-of-range value (e.g., from a
+        // hand-edited persisted state).
+        set({ cmdBarPinnedWidth: Math.round(Math.max(280, Math.min(800, width))) });
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -475,7 +501,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 5,
+      version: 6,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -510,6 +536,17 @@ export const useSettingsStore = create<SettingsStore>()(
           // accent applied; consumers fall back to neutral --primary).
           if (typeof state.accent !== 'string') {
             state.accent = 'default';
+          }
+        }
+        if (version < 6) {
+          // ui-refresh task #28 — pinned-panel mode for the Quiet Composer
+          // command bar. Existing users default to floating mode (off) so
+          // upgrading does not silently re-arrange their workspace.
+          if (typeof state.cmdBarPinned !== 'boolean') {
+            state.cmdBarPinned = false;
+          }
+          if (typeof state.cmdBarPinnedWidth !== 'number') {
+            state.cmdBarPinnedWidth = 400;
           }
         }
         return state;

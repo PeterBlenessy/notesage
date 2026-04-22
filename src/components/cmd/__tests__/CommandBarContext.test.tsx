@@ -2,7 +2,7 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders, screen } from '@/test/component-harness';
+import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
 import type { Connection } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
 import type { ProjectMetadata } from '@/stores/project-metadata-store';
@@ -14,6 +14,8 @@ import type { ProjectMetadata } from '@/stores/project-metadata-store';
 let mockInteractiveConnection: Connection | null = null;
 let mockActiveConversation: Conversation | null = null;
 let mockMetadataMap: Record<string, ProjectMetadata> = {};
+let mockCmdBarPinned = false;
+const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
 
 vi.mock('@/stores/connections-store', () => {
   const state = {
@@ -82,6 +84,19 @@ vi.mock('@/stores/project-metadata-store', () => {
   };
 });
 
+vi.mock('@/stores/settings-store', () => {
+  const state = {
+    get cmdBarPinned() { return mockCmdBarPinned; },
+    setCmdBarPinned: (v: boolean) => setCmdBarPinnedMock(v),
+  };
+  return {
+    useSettingsStore: Object.assign(
+      vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
+      { getState: () => state },
+    ),
+  };
+});
+
 // Now import after mocks are set up
 import CommandBarContext from '@/components/cmd/CommandBarContext';
 
@@ -141,6 +156,8 @@ describe('CommandBarContext', () => {
     mockInteractiveConnection = null;
     mockActiveConversation = null;
     mockMetadataMap = {};
+    mockCmdBarPinned = false;
+    setCmdBarPinnedMock.mockReset();
     document.body.innerHTML = '';
   });
 
@@ -189,5 +206,43 @@ describe('CommandBarContext', () => {
     renderWithProviders(<CommandBarContext />);
     expect(screen.getByLabelText(/open history/i)).toBeTruthy();
     expect(screen.getByLabelText(/pin chat/i)).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Pin toggle (#28) — wires settings-store cmdBarPinned
+  // -------------------------------------------------------------------------
+
+  describe('pin toggle (#28)', () => {
+    it('clicking the pin icon while floating calls setCmdBarPinned(true)', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<CommandBarContext />);
+
+      const pinButton = screen.getByLabelText(/pin chat to side/i);
+      fireEvent.click(pinButton);
+
+      expect(setCmdBarPinnedMock).toHaveBeenCalledWith(true);
+    });
+
+    it('clicking the pin icon while pinned calls setCmdBarPinned(false)', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<CommandBarContext />);
+
+      const unpinButton = screen.getByLabelText(/unpin chat/i);
+      fireEvent.click(unpinButton);
+
+      expect(setCmdBarPinnedMock).toHaveBeenCalledWith(false);
+    });
+
+    it('aria-label says "Pin chat to side" when not pinned', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<CommandBarContext />);
+      expect(screen.getByLabelText(/pin chat to side/i)).toBeTruthy();
+    });
+
+    it('aria-label contains "Unpin" when pinned', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<CommandBarContext />);
+      expect(screen.getByLabelText(/unpin/i)).toBeTruthy();
+    });
   });
 });

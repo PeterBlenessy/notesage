@@ -19,6 +19,31 @@ vi.mock('@/hooks/useReducedMotion', () => ({
   useReducedMotion: () => useReducedMotionMock(),
 }));
 
+// ---------------------------------------------------------------------------
+// Mock settings-store so we can flip `cmdBarPinned` and assert
+// `setCmdBarPinnedWidth` calls without going through the real Zustand store.
+// ---------------------------------------------------------------------------
+
+const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
+const setCmdBarPinnedWidthMock = vi.fn<(width: number) => void>();
+let mockCmdBarPinned = false;
+let mockCmdBarPinnedWidth = 400;
+
+vi.mock('@/stores/settings-store', () => {
+  const state = {
+    get cmdBarPinned() { return mockCmdBarPinned; },
+    get cmdBarPinnedWidth() { return mockCmdBarPinnedWidth; },
+    setCmdBarPinned: (v: boolean) => setCmdBarPinnedMock(v),
+    setCmdBarPinnedWidth: (v: number) => setCmdBarPinnedWidthMock(v),
+  };
+  return {
+    useSettingsStore: Object.assign(
+      vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
+      { getState: () => state },
+    ),
+  };
+});
+
 // Stub AttachmentChips so we can detect its presence without exercising its
 // real rendering surface here. The chip component has its own dedicated test
 // file. We just want to confirm FloatingCommandBar mounts it once when
@@ -69,8 +94,15 @@ vi.mock('@/components/cmd/modes/PaletteMode', () => ({
 describe('FloatingCommandBar', () => {
   beforeEach(() => {
     useReducedMotionMock.mockReturnValue(false);
+    // Reset mocked settings-store state.
+    mockCmdBarPinned = false;
+    mockCmdBarPinnedWidth = 400;
+    setCmdBarPinnedMock.mockReset();
+    setCmdBarPinnedWidthMock.mockReset();
     // Clean DOM between tests — portals leak otherwise
     document.body.innerHTML = '';
+    // Also clean the CSS variable that pinned mode sets on <html>
+    document.documentElement.style.removeProperty('--cmd-bar-pinned-width');
   });
 
   it('renders compact state by default with the placeholder hint visible', () => {
@@ -218,5 +250,164 @@ describe('FloatingCommandBar', () => {
     fireEvent.change(input, { target: { value: prefix } });
 
     expect(screen.getByTestId(stubTestId)).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Pinned-panel mode (#28)
+  // -------------------------------------------------------------------------
+
+  describe('pinned-panel mode (#28)', () => {
+    it('renders inline (no portal) and marks data-cmd-bar-pinned="true" when settings.cmdBarPinned is true', () => {
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<FloatingCommandBar />);
+
+      const bar = container.querySelector('[data-cmd-bar]') as HTMLElement;
+      expect(bar).toBeTruthy();
+      expect(bar.getAttribute('data-cmd-bar-pinned')).toBe('true');
+    });
+
+    it('reads cmdBarPinned from settings-store when no isPinned prop is provided', () => {
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<FloatingCommandBar />);
+      // Inline render (not portalled) confirms the store-driven pinned mode.
+      expect(container.querySelector('[data-cmd-bar]')).toBeTruthy();
+    });
+
+    it('explicit isPinned prop overrides the store setting', () => {
+      // Store says floating, but we pass isPinned={true}.
+      mockCmdBarPinned = false;
+      const { container } = renderWithProviders(<FloatingCommandBar isPinned />);
+      const bar = container.querySelector('[data-cmd-bar]') as HTMLElement;
+      expect(bar).toBeTruthy();
+      expect(bar.getAttribute('data-cmd-bar-pinned')).toBe('true');
+    });
+
+    it('is always expanded — no compact pill, input is always present', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<FloatingCommandBar />);
+      // No compact placeholder text in pinned mode.
+      expect(screen.queryByText(/press ⌘k to ask/i)).toBeNull();
+      // Input is always rendered.
+      expect(screen.getByRole('textbox')).toBeTruthy();
+    });
+
+    it('renders the resize handle with role="slider" and ARIA orientation', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 400;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const handle = screen.getByRole('slider', { name: /resize chat panel/i });
+      expect(handle).toBeTruthy();
+      expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+      expect(handle.getAttribute('aria-valuemin')).toBe('280');
+      expect(handle.getAttribute('aria-valuemax')).toBe('800');
+      expect(handle.getAttribute('aria-valuenow')).toBe('400');
+      expect((handle as HTMLElement).tabIndex).toBe(0);
+    });
+
+    it('does NOT render the resize handle when not pinned', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<FloatingCommandBar />);
+      expect(screen.queryByRole('slider', { name: /resize chat panel/i })).toBeNull();
+    });
+
+    it('ArrowLeft on the resize handle widens the panel and persists via setCmdBarPinnedWidth', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 400;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const handle = screen.getByRole('slider', { name: /resize chat panel/i });
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+
+      // Widens by the keyboard step (20).
+      expect(setCmdBarPinnedWidthMock).toHaveBeenCalledWith(420);
+    });
+
+    it('ArrowRight on the resize handle narrows the panel and persists', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 400;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const handle = screen.getByRole('slider', { name: /resize chat panel/i });
+      fireEvent.keyDown(handle, { key: 'ArrowRight' });
+
+      expect(setCmdBarPinnedWidthMock).toHaveBeenCalledWith(380);
+    });
+
+    it('ArrowLeft at the maximum width clamps to 800 (no further growth)', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 800;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const handle = screen.getByRole('slider', { name: /resize chat panel/i });
+      fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+
+      expect(setCmdBarPinnedWidthMock).toHaveBeenCalledWith(800);
+    });
+
+    it('ArrowRight at the minimum width clamps to 280 (no further shrink)', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 280;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const handle = screen.getByRole('slider', { name: /resize chat panel/i });
+      fireEvent.keyDown(handle, { key: 'ArrowRight' });
+
+      expect(setCmdBarPinnedWidthMock).toHaveBeenCalledWith(280);
+    });
+
+    it('Esc with no active prefix does NOT collapse — bar stays expanded', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const input = screen.getByRole('textbox');
+      fireEvent.keyDown(input, { key: 'Escape' });
+
+      // Input is still there — no collapse.
+      expect(screen.queryByRole('textbox')).toBeTruthy();
+    });
+
+    it('Esc with an active prefix clears just the prefix, not the bar', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '/' } });
+      // Prefix badge appears.
+      expect(
+        document.body.querySelector('[data-cmd-bar-prefix-badge]'),
+      ).toBeTruthy();
+
+      fireEvent.keyDown(input, { key: 'Escape' });
+
+      // Badge cleared, input still rendered.
+      expect(
+        document.body.querySelector('[data-cmd-bar-prefix-badge]'),
+      ).toBeNull();
+      expect(screen.queryByRole('textbox')).toBeTruthy();
+    });
+
+    it('focusing the input does NOT un-pin (⌘K-equivalent in pinned mode)', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      input.focus();
+
+      // Setter should NOT have been called — focus alone does not toggle pin.
+      expect(setCmdBarPinnedMock).not.toHaveBeenCalled();
+    });
+
+    it('applies the CSS variable for the panel width on <html>', () => {
+      mockCmdBarPinned = true;
+      mockCmdBarPinnedWidth = 520;
+      renderWithProviders(<FloatingCommandBar />);
+
+      // The handle's effect syncs the persisted width to the CSS variable.
+      const cssVar = document.documentElement.style.getPropertyValue(
+        '--cmd-bar-pinned-width',
+      );
+      expect(cssVar).toBe('520px');
+    });
   });
 });

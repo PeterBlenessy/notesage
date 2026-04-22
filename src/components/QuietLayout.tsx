@@ -1,6 +1,7 @@
 import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
+import { useSettingsStore } from "@/stores/settings-store";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -31,15 +32,31 @@ export function QuietLayout(_props: QuietLayoutProps) {
   // activity strip aren't part of the placeholder.
   const noop = () => {};
 
+  // When the command bar is pinned (#28), the document column needs to
+  // reserve the equivalent right padding so editor content doesn't slide
+  // under the side panel. The width comes from the same CSS variable the
+  // bar's drag handle drives — sharing the variable means a single source
+  // of truth and zero React re-renders during drag.
+  const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
+  const documentAreaStyle: React.CSSProperties = cmdBarPinned
+    ? { paddingRight: "var(--cmd-bar-pinned-width, 400px)" }
+    : {};
+
   return (
     <div
       data-quiet-layout-placeholder
+      data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
       className="flex flex-col h-screen w-full bg-background overflow-hidden"
     >
       <TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />
 
-      <div className="flex-1 grid min-h-0 gap-2 p-2"
-        style={{ gridTemplateColumns: "240px 1fr 240px" }}
+      <div
+        data-quiet-layout-document-area
+        className="flex-1 grid min-h-0 gap-2 p-2"
+        style={{
+          gridTemplateColumns: "240px 1fr 240px",
+          ...documentAreaStyle,
+        }}
       >
         <ZonePlaceholder label="Sidebar (placeholder)" />
         <ZonePlaceholder label="Document area (placeholder)" />
@@ -47,10 +64,11 @@ export function QuietLayout(_props: QuietLayoutProps) {
       </div>
 
       {/*
-        Floating composer (PRD `2026-04-21-ui-refresh`, task #9). Portal-mounts
-        to document.body, so its position in this JSX tree is irrelevant —
-        it always renders at bottom-centre of the viewport. Subsequent tasks
-        (#10–#28) fill in the bar's contents.
+        Composer (PRD `2026-04-21-ui-refresh`, tasks #9 + #28). In floating
+        mode it portal-mounts to document.body and overlays the workspace at
+        the bottom-centre. In pinned mode it renders inline as a fixed-position
+        right-edge side panel and the document area above reserves matching
+        padding-right via the CSS variable.
        */}
       <FloatingCommandBar />
     </div>

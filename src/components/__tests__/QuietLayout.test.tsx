@@ -24,6 +24,25 @@ vi.mock('@/components/cmd/FloatingCommandBar', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock settings-store so QuietLayout can read `cmdBarPinned` to decide
+// whether to apply right-padding to the document area.
+// ---------------------------------------------------------------------------
+
+let mockCmdBarPinned = false;
+
+vi.mock('@/stores/settings-store', () => {
+  const state = {
+    get cmdBarPinned() { return mockCmdBarPinned; },
+  };
+  return {
+    useSettingsStore: Object.assign(
+      vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
+      { getState: () => state },
+    ),
+  };
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -63,6 +82,7 @@ function defaultProps(overrides: Partial<QuietLayoutProps> = {}): QuietLayoutPro
 describe('QuietLayout (placeholder)', () => {
   beforeEach(() => {
     registerDefaultHandlers();
+    mockCmdBarPinned = false;
   });
 
   it('renders without crashing', () => {
@@ -91,5 +111,42 @@ describe('QuietLayout (placeholder)', () => {
   it('mounts the FloatingCommandBar', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     expect(screen.getByTestId('cmd-bar-stub')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Pinned-panel padding (#28)
+  // -------------------------------------------------------------------------
+
+  describe('pinned-panel padding (#28)', () => {
+    it('does NOT apply padding-right to the document area when not pinned', () => {
+      mockCmdBarPinned = false;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      expect(docArea).toBeTruthy();
+      // No padding-right inline style applied.
+      expect(docArea.style.paddingRight).toBe('');
+    });
+
+    it('applies padding-right via the CSS variable when pinned', () => {
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      expect(docArea).toBeTruthy();
+      // Inline style references the CSS variable with a 400px fallback.
+      expect(docArea.style.paddingRight).toContain('--cmd-bar-pinned-width');
+    });
+
+    it('marks the wrapper with data-cmd-bar-pinned when pinned', () => {
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const wrapper = container.querySelector(
+        '[data-quiet-layout-placeholder]',
+      ) as HTMLElement;
+      expect(wrapper.getAttribute('data-cmd-bar-pinned')).toBe('true');
+    });
   });
 });

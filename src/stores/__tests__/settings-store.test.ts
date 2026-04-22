@@ -152,6 +152,8 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   searchProvider: 'duckduckgo',
   uiPreview: 'legacy',
   accent: 'default',
+  cmdBarPinned: false,
+  cmdBarPinnedWidth: 400,
 };
 
 // ---------------------------------------------------------------------------
@@ -219,6 +221,9 @@ describe('initial state defaults', () => {
     expect(s.lastExportIncludePageNumbers).toBe(false);
     expect(s.lastExportFormat).toBe('pdf');
     expect(s.lastPptxTemplate).toBe('simple');
+    // ui-refresh task #28
+    expect(s.cmdBarPinned).toBe(false);
+    expect(s.cmdBarPinnedWidth).toBe(400);
   });
 });
 
@@ -1084,11 +1089,13 @@ describe('uiPreview flag', () => {
     expect(s.contrastLevel).toBe(50);
 
     // The persisted JSON should reflect the bumped version and both new fields,
-    // so the migration doesn't re-run on the next launch.
+    // so the migration doesn't re-run on the next launch. The chain runs all
+    // the way to the current version, so subsequent migrations (#28's
+    // cmdBarPinned defaults) also apply.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(5);
+    expect(parsed.version).toBe(6);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1126,6 +1133,146 @@ describe('accent field', () => {
     await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
 
     expect(useSettingsStore.getState().accent).toBe('blue');
+  });
+});
+
+// ===========================================================================
+// cmdBarPinned + cmdBarPinnedWidth (UI refresh task #28)
+// ===========================================================================
+
+describe('cmdBarPinned (pinned-panel mode)', () => {
+  it('default cmdBarPinned is false', () => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+    expect(useSettingsStore.getState().cmdBarPinned).toBe(false);
+  });
+
+  it('default cmdBarPinnedWidth is 400', () => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(400);
+  });
+
+  it('setCmdBarPinned toggles between false and true', () => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+    const { setCmdBarPinned } = useSettingsStore.getState();
+
+    setCmdBarPinned(true);
+    expect(useSettingsStore.getState().cmdBarPinned).toBe(true);
+
+    setCmdBarPinned(false);
+    expect(useSettingsStore.getState().cmdBarPinned).toBe(false);
+  });
+
+  it('setCmdBarPinnedWidth sets a value within range', () => {
+    useSettingsStore.getState().setCmdBarPinnedWidth(500);
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(500);
+  });
+
+  it('setCmdBarPinnedWidth clamps below the minimum (280)', () => {
+    useSettingsStore.getState().setCmdBarPinnedWidth(100);
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(280);
+  });
+
+  it('setCmdBarPinnedWidth clamps above the maximum (800)', () => {
+    useSettingsStore.getState().setCmdBarPinnedWidth(1200);
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(800);
+  });
+
+  it('setCmdBarPinnedWidth rounds fractional values', () => {
+    useSettingsStore.getState().setCmdBarPinnedWidth(450.7);
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(451);
+  });
+
+  it('persists cmdBarPinned across restart', async () => {
+    useSettingsStore.getState().setCmdBarPinned(true);
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().cmdBarPinned).toBe(true);
+  });
+
+  it('persists cmdBarPinnedWidth across restart', async () => {
+    useSettingsStore.getState().setCmdBarPinnedWidth(560);
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().cmdBarPinnedWidth).toBe(560);
+  });
+});
+
+describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
+  it('adds cmdBarPinned: false and cmdBarPinnedWidth: 400 to a v5 state lacking them', async () => {
+    const v5State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+      },
+      version: 5,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v5State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.cmdBarPinned).toBe(false);
+    expect(s.cmdBarPinnedWidth).toBe(400);
+
+    // Persisted JSON should reflect the bumped version + new fields so the
+    // migration doesn't re-run on the next launch.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(6);
+    expect(parsed.state.cmdBarPinned).toBe(false);
+    expect(parsed.state.cmdBarPinnedWidth).toBe(400);
+  });
+
+  it('preserves existing cmdBarPinned when present (idempotent)', async () => {
+    const v6State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: true,
+        cmdBarPinnedWidth: 500,
+      },
+      version: 6,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v6State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.cmdBarPinned).toBe(true);
+    expect(s.cmdBarPinnedWidth).toBe(500);
   });
 });
 
