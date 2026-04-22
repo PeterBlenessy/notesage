@@ -286,6 +286,8 @@ pub fn run() {
             fetch_link_metadata,
             // System font enumeration
             list_system_fonts,
+            // System accent color bridge (macOS NSColor.controlAccentColor)
+            get_system_accent_color,
             // System tray
             tray::update_tray_badge,
             tray::update_tray_recent,

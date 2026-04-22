@@ -38,6 +38,7 @@ pub mod credentials;
 pub mod web_search;
 pub mod fonts;
 pub mod link_preview;
+pub mod theme;
 
 pub use file::*;
 pub use dialog::*;
@@ -68,3 +69,4 @@ pub use credentials::*;
 pub use web_search::*;
 pub use fonts::*;
 pub use link_preview::*;
+pub use theme::*;

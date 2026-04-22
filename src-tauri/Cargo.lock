@@ -4256,6 +4256,8 @@ dependencies = [
  "log",
  "notify",
  "notify-debouncer-full",
+ "objc2",
+ "objc2-app-kit",
  "parking_lot",
  "ppt-rs",
  "regex",
