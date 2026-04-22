@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import {
   renderWithProviders,
@@ -9,6 +9,7 @@ import {
   registerDefaultHandlers,
 } from '@/test/component-harness';
 import { Layout, type LayoutProps } from '@/components/Layout';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Mock all heavy child components
@@ -123,5 +124,55 @@ describe('Layout', () => {
   it('does not render titlebar in focus mode', () => {
     renderWithProviders(<Layout {...defaultProps({ focusMode: true })} />);
     expect(screen.queryByTestId('titlebar')).toBeNull();
+  });
+});
+
+describe('Layout uiPreview branching', () => {
+  // Snapshot the current uiPreview value so tests don't pollute global state.
+  let originalUiPreview: 'legacy' | 'quiet-composer';
+
+  beforeEach(() => {
+    registerDefaultHandlers();
+    originalUiPreview = useSettingsStore.getState().uiPreview;
+  });
+
+  afterEach(() => {
+    useSettingsStore.setState({ uiPreview: originalUiPreview });
+  });
+
+  it('renders the legacy tree when uiPreview is "legacy"', () => {
+    useSettingsStore.setState({ uiPreview: 'legacy' });
+    renderWithProviders(<Layout {...defaultProps()} />);
+    // Legacy tree mounts the SidebarPanel + Editor
+    expect(screen.getByTestId('sidebar-panel')).toBeTruthy();
+    expect(screen.getByTestId('editor')).toBeTruthy();
+    // Quiet placeholder marker is absent in the legacy path.
+    expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeNull();
+  });
+
+  it('renders QuietLayout when uiPreview is "quiet-composer"', () => {
+    useSettingsStore.setState({ uiPreview: 'quiet-composer' });
+    renderWithProviders(<Layout {...defaultProps()} />);
+    // Placeholder marker present
+    expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeTruthy();
+    // Legacy tree's heavy children are NOT rendered
+    expect(screen.queryByTestId('sidebar-panel')).toBeNull();
+    expect(screen.queryByTestId('editor')).toBeNull();
+  });
+
+  it('swaps between layouts when the flag flips', () => {
+    useSettingsStore.setState({ uiPreview: 'legacy' });
+    const { rerender } = renderWithProviders(<Layout {...defaultProps()} />);
+    expect(screen.getByTestId('editor')).toBeTruthy();
+
+    useSettingsStore.setState({ uiPreview: 'quiet-composer' });
+    rerender(<Layout {...defaultProps()} />);
+    expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeTruthy();
+    expect(screen.queryByTestId('editor')).toBeNull();
+
+    useSettingsStore.setState({ uiPreview: 'legacy' });
+    rerender(<Layout {...defaultProps()} />);
+    expect(screen.getByTestId('editor')).toBeTruthy();
+    expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeNull();
   });
 });
