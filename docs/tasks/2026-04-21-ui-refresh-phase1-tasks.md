@@ -229,7 +229,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #13 |
 | Files | `src/components/cmd/modes/PaletteMode.tsx` |
 
-### #20 — Command-bar keyboard shortcuts
+### #20 — Command-bar keyboard shortcuts ✅
 
 | Field | Value |
 | --- | --- |
@@ -299,7 +299,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10 |
 | Files | `src/components/cmd/CommandBarContext.tsx` |
 
-### #27 — History view inside stream
+### #27 — History view inside stream ✅
 
 | Field | Value |
 | --- | --- |
@@ -309,7 +309,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10, #12 |
 | Files | `src/components/cmd/CommandBarHistory.tsx` |
 
-### #28 — Pinned-panel mode
+### #28 — Pinned-panel mode ✅
 
 | Field | Value |
 | --- | --- |
