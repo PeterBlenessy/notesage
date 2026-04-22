@@ -129,7 +129,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx` |
 
-### #10 — `CommandBarContext` (context row)
+### #10 — `CommandBarContext` (context row) ✅
 
 | Field | Value |
 | --- | --- |
@@ -139,7 +139,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/components/cmd/CommandBarContext.tsx` |
 
-### #11 — `AttachmentChips` strip
+### #11 — `AttachmentChips` strip ✅
 
 | Field | Value |
 | --- | --- |
@@ -149,7 +149,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/components/cmd/AttachmentChips.tsx` |
 
-### #12 — `CommandBarStream` (chat stream renderer)
+### #12 — `CommandBarStream` (chat stream renderer) ✅
 
 | Field | Value |
 | --- | --- |
@@ -159,7 +159,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/components/cmd/CommandBarStream.tsx` |
 
-### #13 — Prefix morph logic + MODES registry
+### #13 — Prefix morph logic + MODES registry ✅
 
 | Field | Value |
 | --- | --- |
@@ -249,7 +249,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #20 |
 | Files | `src/hooks/useDoubleTapCmd.ts`, `src/hooks/useCommandBarShortcuts.ts` |
 
-### #22 — Backend: skill-parser mid-text extension
+### #22 — Backend: skill-parser mid-text extension ✅
 
 | Field | Value |
 | --- | --- |
