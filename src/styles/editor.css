@@ -429,9 +429,10 @@
   margin: 2em 0;
 }
 
-/* Links — external */
+/* Links — external. Colour reaches --color-accent-primary (UI Refresh #6) so links
+   pick up the user's accent. Falls back to today's neutral --color-primary by default. */
 .ProseMirror a {
-  color: var(--color-primary);
+  color: var(--color-accent-primary);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   cursor: pointer;
@@ -439,7 +440,7 @@
 }
 
 .ProseMirror a:hover {
-  border-bottom-color: var(--color-primary);
+  border-bottom-color: var(--color-accent-primary);
 }
 
 /* Link URL tooltip on hover — matches shadcn tooltip style (inverted colors) */
@@ -473,7 +474,7 @@
 }
 
 .ProseMirror a:not([href^="http"]):not([href^="mailto"]):not([href^="tel"]):not([href^="#"]):hover {
-  border-bottom-color: var(--color-primary);
+  border-bottom-color: var(--color-accent-primary);
 }
 
 /* Images */

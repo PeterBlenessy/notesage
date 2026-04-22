@@ -82,6 +82,32 @@
   --ns-code-tag: oklch(48% 0.14 20);
 }
 
+/* ============================================
+   ACCENT (UI Refresh, task #6) — primary-affordance token
+   --------------------------------------------
+   --accent is the user-picked accent (set by the .accent-orange / .accent-blue /
+   .accent-system classes from task #3 on <html>). When no accent class is
+   active, --accent is unset and the fallback chain resolves to today's neutral
+   --color-primary, so existing UI is byte-identical.
+
+   Consumers MUST reference --color-accent-primary (the named, single-source
+   token) rather than spelling out var(--accent, var(--color-primary)) inline.
+   This keeps the fallback in one place and lets a future audit re-point every
+   primary affordance with one edit.
+
+   Wired into: primary button bg + hover + focus, link button text, switch
+   ON state, editor link colour, tab dirty dot. Surfaces, borders, muted
+   tokens, destructive, and editor content colours are NOT touched.
+
+   Defined OUTSIDE @theme so it is NOT auto-registered as a Tailwind colour
+   token (no `bg-accent-primary` utility is generated, avoiding name collision
+   with the existing neutral --color-accent surface token). Consumers reach it
+   via Tailwind's arbitrary-value syntax, e.g. `bg-[var(--color-accent-primary)]`.
+   ============================================ */
+:root {
+  --color-accent-primary: var(--accent, var(--color-primary));
+}
+
 /* Soft mode — easy on the eyes (light) */
 .soft {
   --color-background: oklch(96% 0 0);

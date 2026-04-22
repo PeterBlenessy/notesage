@@ -30,7 +30,10 @@ function Switch({
         className
       )}
       style={{
-        backgroundColor: checked ? 'var(--color-foreground)' : 'var(--color-border)',
+        // ON state goes through --accent so the toggle picks up the user's accent.
+        // Fallback resolves to today's --color-foreground when no accent class is set.
+        // OFF state stays neutral (--color-border) — accent is for affordance, not chrome.
+        backgroundColor: checked ? 'var(--accent, var(--color-foreground))' : 'var(--color-border)',
       }}
       {...props}
       onCheckedChange={handleCheckedChange}

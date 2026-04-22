@@ -69,10 +69,11 @@ describe('TabBar', () => {
     renderWithProviders(<TabBar />);
 
     const button = screen.getByText('dirty.md').closest('button')!;
-    // The dirty dot is a small round span — look for it by its class pattern
+    // The dirty dot is a small round span — look for it by its class pattern.
+    // After UI Refresh #6 the colour token is --color-accent-primary (was bg-primary).
     const spans = button.querySelectorAll('span');
     const dirtyDot = Array.from(spans).find(
-      (s) => s.className.includes('rounded-full') && s.className.includes('bg-primary') && s.className.includes('w-1.5')
+      (s) => s.className.includes('rounded-full') && s.className.includes('w-1.5') && s.className.includes('h-1.5')
     );
     expect(dirtyDot).toBeTruthy();
   });
@@ -86,7 +87,7 @@ describe('TabBar', () => {
     const button = screen.getByText('clean.md').closest('button')!;
     const spans = button.querySelectorAll('span');
     const dirtyDot = Array.from(spans).find(
-      (s) => s.className.includes('rounded-full') && s.className.includes('bg-primary') && s.className.includes('w-1.5')
+      (s) => s.className.includes('rounded-full') && s.className.includes('w-1.5') && s.className.includes('h-1.5')
     );
     expect(dirtyDot).toBeUndefined();
   });
