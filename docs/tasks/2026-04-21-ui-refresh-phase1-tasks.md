@@ -95,7 +95,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #3 |
 | Files | `src/styles/globals.css`, selective component stylesheets |
 
-### #7 — New perf-logger categories
+### #7 — New perf-logger categories ✅
 
 | Field | Value |
 | --- | --- |
