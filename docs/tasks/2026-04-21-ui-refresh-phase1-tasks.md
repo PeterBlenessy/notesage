@@ -8,7 +8,7 @@
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
 | **Total** | 100 tasks across 10 milestones |
-| **Complexity mix** | ~30 S, ~50 M, ~20 L |
+| **Complexity mix** | \~30 S, \~50 M, \~20 L |
 | **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
 ## Scope
@@ -27,7 +27,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 - **⌘1–4 collisions on Windows/Linux WebView2/WebKitGTK** — may be consumed by OS before reaching the app. Verify during M1.2; if broken on non-macOS, document as known limitation for Phase 1 and treat as a Phase 2 gate.
 - **Double-tap ⌘ detection** — requires native key event timing. Browser/WebView variance possible. If detection is unreliable, keep ⌘K as the sole path and defer double-tap to a follow-up.
-- **Migration for `editor-store.openTabs` → `openDocuments`** — persisted localStorage needs a versioned migration. Test with real user state dumps before merging.
+- **Migration for** `editor-store.openTabs` **→** `openDocuments` — persisted localStorage needs a versioned migration. Test with real user state dumps before merging.
 - **Backend skill-parser mid-text extension** — if the change is riskier than expected (ACP subagent forwarding edge cases), fall back to start-of-message-only matching in Phase 1 and schedule the broader match for Phase 2.
 
 ---
@@ -39,13 +39,13 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Field | Value |
 | --- | --- |
 | Title | Add `uiPreview` flag to settings-store |
-| Description | Add `uiPreview: "legacy" \| "quiet-composer"` to `settings-store` with persist. Default `"legacy"` on upgrade. Include a Zustand persist migration (bump store version). Expose a Settings > Advanced toggle "Try the new UI" wired to this value. Acceptance: toggling the flag in Settings persists across reload; new field surfaces in DevTools. |
+| Description | Add `uiPreview: "legacy" | "quiet-composer"` to `settings-store` with persist. Default `"legacy"` on upgrade. Include a Zustand persist migration (bump store version). Expose a Settings &gt; Advanced toggle "Try the new UI" wired to this value. Acceptance: toggling the flag in Settings persists across reload; new field surfaces in DevTools. |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
 | Files | `src/stores/settings-store.ts`, `src/components/settings/AdvancedSettings.tsx`, store tests |
 
-### #2 — Fix `html[data-theme]` vs `body[data-theme]` mismatch
+### #2 — Fix `html[data-theme]` vs `body[data-theme]` mismatch ✅
 
 | Field | Value |
 | --- | --- |
@@ -65,7 +65,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #2 |
 | Files | `src/styles/globals.css`, `src/lib/accent.ts`, `src/hooks/useAccent.ts` |
 
-### #4 — Tauri command: macOS system accent bridge
+### #4 — Tauri command: macOS system accent bridge ✅
 
 | Field | Value |
 | --- | --- |
@@ -243,7 +243,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Detect double-tap on either ⌘ key within ~300 ms → focus command bar. Implement at Tauri IPC or use native `keydown`/`keyup` with timing. If detection unreliable on some platforms, log as known limitation and retain ⌘K as primary. |
+| Description | Detect double-tap on either ⌘ key within \~300 ms → focus command bar. Implement at Tauri IPC or use native `keydown`/`keyup` with timing. If detection unreliable on some platforms, log as known limitation and retain ⌘K as primary. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #20 |
@@ -253,7 +253,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Extend skill-detection to match `(?:^\|\s)/[a-z0-9-]+` tokens anywhere in user message, not just first character. Applies to direct-API path. For ACP pass-through, preserve verbatim forwarding (no re-parsing). Add unit tests covering URL false positives, numeric edge cases, and multi-skill messages. |
+| Description | Extend skill-detection to match `(?:^|\s)/[a-z0-9-]+` tokens anywhere in user message, not just first character. Applies to direct-API path. For ACP pass-through, preserve verbatim forwarding (no re-parsing). Add unit tests covering URL false positives, numeric edge cases, and multi-skill messages. |
 | Complexity | M |
 | Category | backend |
 | Depends on | none |
@@ -387,7 +387,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Settings > Appearance > Sidebar composition. Per-section: cap slider (3–15), hide toggle. Persisted in settings-store. Consumers read from settings. |
+| Description | Settings &gt; Appearance &gt; Sidebar composition. Per-section: cap slider (3–15), hide toggle. Persisted in settings-store. Consumers read from settings. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #30 |
@@ -507,7 +507,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | 500 ms hover on a file row → popover with first ~10 lines of the document. Uses `read_file` Tauri command. Keyboard equivalent is the right-arrow expansion pattern, or simply the tree overlay for exhaustive browsing. |
+| Description | 500 ms hover on a file row → popover with first \~10 lines of the document. Uses `read_file` Tauri command. Keyboard equivalent is the right-arrow expansion pattern, or simply the tree overlay for exhaustive browsing. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #30 |
@@ -547,7 +547,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Settings > Appearance > Quiet chrome with 4 presets (Relaxed / Default / Aggressive / Focus mode is a separate mode). Each preset flips CSS classes on `.app` controlling which elements fade. Advanced sub-panel exposes per-element toggles. |
+| Description | Settings &gt; Appearance &gt; Quiet chrome with 4 presets (Relaxed / Default / Aggressive / Focus mode is a separate mode). Each preset flips CSS classes on `.app` controlling which elements fade. Advanced sub-panel exposes per-element toggles. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #50 |
@@ -721,7 +721,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Move "Review external diff" to Settings > Editor (if not already). Storage key and default unchanged. Docs and tooltip updated to reflect broadened scope: gates all external-change UX (clean + dirty). |
+| Description | Move "Review external diff" to Settings &gt; Editor (if not already). Storage key and default unchanged. Docs and tooltip updated to reflect broadened scope: gates all external-change UX (clean + dirty). |
 | Complexity | S |
 | Category | frontend |
 | Depends on | #66, #71 |
@@ -799,7 +799,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Semantic rename across store and consumers. Zustand persist migration bumps store version; migrator maps `openTabs` → `openDocuments` on load. Keyboard navigation (⌘⇧[/]) still cycles. |
+| Description | Semantic rename across store and consumers. Zustand persist migration bumps store version; migrator maps `openTabs` → `openDocuments` on load. Keyboard navigation (⌘⇧\[/\]) still cycles. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | none |
@@ -809,7 +809,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Central `useKeyboardShortcuts()` mounted at app root. Aware of `uiPreview` flag; activates either legacy or quiet-composer bindings. Includes: ⌘K, ⌘1–4 (both variants), ⌘⇧P, ⌘⇧E, ⌘⇧H, ⌘., ⌘⇧K, ⌘⇧[/], ⌘⌥C, ⌘⌥R, ⌘N, ⌘⇧N. |
+| Description | Central `useKeyboardShortcuts()` mounted at app root. Aware of `uiPreview` flag; activates either legacy or quiet-composer bindings. Includes: ⌘K, ⌘1–4 (both variants), ⌘⇧P, ⌘⇧E, ⌘⇧H, ⌘., ⌘⇧K, ⌘⇧\[/\], ⌘⌥C, ⌘⌥R, ⌘N, ⌘⇧N. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #20, #56 |
@@ -1031,7 +1031,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | One-time dismissible banner shown on first launch after the Phase 1 release installs. "Try the new UI — a calmer, more focused Notesage [Try it]". Repeats once after 30 days if dismissed. Stored via settings-store flag. |
+| Description | One-time dismissible banner shown on first launch after the Phase 1 release installs. "Try the new UI — a calmer, more focused Notesage \[Try it\]". Repeats once after 30 days if dismissed. Stored via settings-store flag. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #1 |
@@ -1078,14 +1078,23 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
 - [ ] All 100 tasks completed
+
 - [ ] All new perf suites pass within budget at 1× multiplier
-- [ ] No existing baseline regressed by > 20%
+
+- [ ] No existing baseline regressed by &gt; 20%
+
 - [ ] VoiceOver walk-through: 0 P0/P1 findings
+
 - [ ] Keyboard-only walkthrough: all 5 flows pass
+
 - [ ] Contrast audit: 0 AA failures
+
 - [ ] Legacy UI verified still functional when flag is `legacy`
+
 - [ ] CHANGELOG + release notes written
+
 - [ ] Feature docs updated (editor, ai-workflows, workspace, keyboard-shortcuts, design-system)
+
 - [ ] Preview invitation banner tested on fresh install
 
 Phase 2 (default-on for new installs) and Phase 3 (legacy deletion) tracked separately in [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md).
