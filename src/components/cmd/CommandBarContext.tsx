@@ -1,4 +1,5 @@
-import { Shield, Clock, Pin, PinOff, Plus, Lock, X } from "lucide-react";
+import { useMemo } from "react";
+import { Shield, Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
@@ -6,6 +7,12 @@ import { useRoutingStore } from "@/stores/routing-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Connection } from "@/lib/ai/connections";
 import type { Conversation } from "@/stores/chat-store";
 import type { ProjectMetadata } from "@/stores/project-metadata-store";
@@ -14,17 +21,16 @@ import type { ProjectMetadata } from "@/stores/project-metadata-store";
  * CommandBarContext — the expanded-state context row that sits above the
  * input inside `FloatingCommandBar`. Renders, in a single horizontal line:
  *
- *   - Provider pill (active interactive connection)
+ *   - Provider pill (active interactive connection) — wired in #24
  *   - Project chips (one per path on the active conversation; lock icon
  *     when the project carries an `aiLock`)
  *   - Dashed `+ project` button
  *   - Mode pill (Read Only / Agent / Full Access / Plan — defaults to Agent)
  *   - Clock icon → opens history (forward-declared, #27)
- *   - Pin icon  → toggles pinned mode (forward-declared, #28)
+ *   - Pin icon  → toggles pinned mode
  *
- * All click handlers are visual stubs that `console.log` the wire-up task.
- * Wiring lives in #24 (provider switch), #25 (project chips), #26 (mode
- * picker), #27 (history), #28 (pin).
+ * Wiring lives in #24 (provider switch — done), #25 (project chips), #26 (mode
+ * picker), #27 (history). Pin (#28) is wired.
  *
  * The row reads everything from stores; it accepts only an optional
  * `className` so the parent can override layout (e.g. add a top divider).
@@ -40,6 +46,17 @@ function CommandBarContext({ className }: CommandBarContextProps) {
   const interactiveConnection = useRoutingStore((s) =>
     s.getConnectionForUseCase("interactive"),
   ) as Connection | null;
+  const setRouting = useRoutingStore((s) => s.setRouting);
+
+  // All registered connections — the dropdown lists those with the
+  // `interactive` capability. Reads from connections-store so the same
+  // store action ChatFooter dispatches drives the AgentSwitchCard flow
+  // via ChatPanel's `effectiveConnection?.id` effect (no duplicate logic).
+  const allConnections = useConnectionsStore((s) => s.connections);
+  const interactiveConnections = useMemo(
+    () => allConnections.filter((c) => c.capabilities.includes("interactive")),
+    [allConnections],
+  );
 
   // Current conversation (project chips). Read defensively — there may be
   // no conversation yet when the bar is first opened.
@@ -71,7 +88,18 @@ function CommandBarContext({ className }: CommandBarContextProps) {
       )}
     >
       {/* Provider pill ----------------------------------------------------- */}
-      <ProviderPill connection={interactiveConnection} />
+      <ProviderPill
+        connection={interactiveConnection}
+        connections={interactiveConnections}
+        onPick={(id) => {
+          // Ignore re-picking the active connection — the change-detect
+          // effect in ChatPanel relies on `prev !== curr` to fire the
+          // AgentSwitchCard prompt. Calling setRouting unconditionally
+          // would spuriously bump the routing-store's reference identity.
+          if (id === interactiveConnection?.id) return;
+          setRouting("interactive", id);
+        }}
+      />
 
       <Divider />
 
@@ -135,33 +163,61 @@ function Divider() {
 
 interface ProviderPillProps {
   connection: Connection | null;
+  connections: Connection[];
+  onPick: (connectionId: string) => void;
 }
 
-function ProviderPill({ connection }: ProviderPillProps) {
+function ProviderPill({ connection, connections, onPick }: ProviderPillProps) {
   const label = connection?.label ?? "No provider";
   const provider = connection?.provider ?? null;
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        // Wired in #24.
-        // eslint-disable-next-line no-console
-        console.log("switch provider — wired in #24");
-      }}
-      className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md shrink-0",
-        "border border-border bg-muted/50",
-        "hover:bg-muted transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-      )}
-      aria-label={`Active provider: ${label}`}
-    >
-      {provider ? (
-        <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
-      ) : null}
-      <span className="text-foreground">{label}</span>
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "flex items-center gap-1.5 px-2 py-0.5 rounded-md shrink-0",
+            "border border-border bg-muted/50",
+            "hover:bg-muted transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          )}
+          aria-label={`Active provider: ${label}`}
+        >
+          {provider ? (
+            <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
+          ) : null}
+          <span className="text-foreground">{label}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[200px]">
+        {connections.map((c) => {
+          const isActive = c.id === connection?.id;
+          return (
+            <DropdownMenuItem
+              key={c.id}
+              onSelect={() => onPick(c.id)}
+              aria-label={`Switch provider to ${c.label}`}
+              aria-current={isActive ? "true" : undefined}
+              className={cn(
+                "flex items-center gap-2 cursor-pointer",
+                isActive && "bg-accent/50",
+              )}
+            >
+              <ProviderLogo provider={c.provider} className="w-4 h-4" bare />
+              <span className="flex-1 truncate text-foreground">{c.label}</span>
+              {isActive ? (
+                <Check
+                  className="h-3.5 w-3.5 text-foreground shrink-0"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+              ) : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -294,12 +350,5 @@ function basename(path: string): string {
   const lastSlash = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
 }
-
-// Mark `useConnectionsStore` as referenced for future #24 wiring; ESLint
-// would otherwise flag it as an unused import. The store is currently only
-// consumed transitively via `useRoutingStore.getConnectionForUseCase`, but
-// keeping the explicit dep declaration keeps the seam visible to readers
-// and to the test mocks.
-void useConnectionsStore;
 
 export default CommandBarContext;
