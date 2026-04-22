@@ -388,3 +388,22 @@ body {
     height: auto !important;
   }
 }
+
+/* ============================================================================
+ * Reduced Motion Escape Hatch
+ * ============================================================================
+ * Why: an opt-in class for components whose CSS-driven transitions or
+ * animations should be disabled when the OS reports
+ * `prefers-reduced-motion: reduce`. Apply `.reducemotion-skip` to any element
+ * (or a wrapper) where the motion is purely decorative.
+ *
+ * Components that animate via JS (programmatic CSS keyframes, framer-motion,
+ * imperative scroll, etc.) cannot be controlled by a class — those should
+ * consult the `useReducedMotion()` hook directly.
+ * ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  .reducemotion-skip {
+    transition: none !important;
+    animation: none !important;
+  }
+}
