@@ -28,13 +28,16 @@ vi.mock('@/components/cmd/AttachmentChips', () => ({
   default: () => <div data-testid="chips-stub" />,
 }));
 
-// ---------------------------------------------------------------------------
-// Mock CommandBarContext — stubbed so this test focuses on the bar shell.
+// Stub CommandBarContext so this test focuses on the bar shell.
 // (Verifying the context row's wiring lives in CommandBarContext.test.tsx.)
-// ---------------------------------------------------------------------------
-
 vi.mock('@/components/cmd/CommandBarContext', () => ({
   default: () => <div data-testid="ctx-stub">context</div>,
+}));
+
+// Stub CommandBarStream so the FloatingCommandBar tests stay focused on the
+// outer chrome (#9). The stream's own test file covers its behaviour.
+vi.mock('@/components/cmd/CommandBarStream', () => ({
+  default: () => <div data-testid="cmd-stream-stub">stream</div>,
 }));
 
 // ---------------------------------------------------------------------------
@@ -64,8 +67,8 @@ describe('FloatingCommandBar', () => {
     expect(input).toBeTruthy();
     // Autofocus should be active on expansion.
     expect(document.activeElement).toBe(input);
-    // The future-stream placeholder zone is rendered.
-    expect(screen.getByText(/conversation will render here/i)).toBeTruthy();
+    // CommandBarStream (#12) mounts inside the expanded bar.
+    expect(screen.getByTestId('cmd-stream-stub')).toBeTruthy();
   });
 
   it('collapses back to compact when Escape is pressed in the expanded input', () => {

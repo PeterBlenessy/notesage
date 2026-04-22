@@ -6,6 +6,7 @@ import CommandBarContext from "@/components/cmd/CommandBarContext";
 import AttachmentChips, {
   type AttachmentChip,
 } from "@/components/cmd/AttachmentChips";
+import CommandBarStream from "@/components/cmd/CommandBarStream";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -49,7 +50,6 @@ export interface FloatingCommandBarProps {
 }
 
 const COMPACT_PLACEHOLDER = "Press ⌘K to ask";
-const STREAM_PLACEHOLDER = "Conversation will render here";
 
 function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   const [expanded, setExpanded] = useState(false);
@@ -219,9 +219,7 @@ function ExpandedContent({
        */}
       <CommandBarContext />
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-        <p className="text-xs text-muted-foreground">{STREAM_PLACEHOLDER}</p>
-      </div>
+      <CommandBarStream />
 
       {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}
       <AttachmentChips chips={chips} onRemove={onRemoveChip} />
