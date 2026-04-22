@@ -1,6 +1,7 @@
 import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
+import { AgentOrb } from "@/components/activity/AgentOrb";
 import { useSettingsStore } from "@/stores/settings-store";
 
 /**
@@ -71,6 +72,15 @@ export function QuietLayout(_props: QuietLayoutProps) {
         padding-right via the CSS variable.
        */}
       <FloatingCommandBar />
+
+      {/*
+        AgentOrb (PRD `2026-04-21-ui-refresh`, task #29). Fixed-position 46 px
+        circle at the bottom-right of the workspace — pulses while
+        `activity-store` reports running tasks > 0, hidden when the
+        FloatingCommandBar is in pinned mode (the right side panel covers
+        the same screen real estate).
+       */}
+      <AgentOrb />
     </div>
   );
 }

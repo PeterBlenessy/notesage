@@ -433,3 +433,34 @@ body {
     animation: none !important;
   }
 }
+
+/* ============================================================================
+ * AgentOrb Pulse (#29)
+ * ============================================================================
+ * Why: a subtle scale + opacity pulse signals background agent activity in
+ * the QuietLayout's bottom-right orb. Pure CSS keyframe — zero JS in the
+ * animation loop. The component omits the `.orb-pulsing` class entirely
+ * when `useReducedMotion()` is true, so the @media guard below is
+ * defence-in-depth for users who flip the OS preference after mount or
+ * when the animation lands on an element via other means.
+ * ========================================================================= */
+@keyframes orb-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.85;
+  }
+}
+
+.orb-pulsing {
+  animation: orb-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-pulsing {
+    animation: none;
+  }
+}
