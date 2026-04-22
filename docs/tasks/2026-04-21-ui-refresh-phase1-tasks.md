@@ -55,7 +55,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src/styles/globals.css`, `src/hooks/useTheme.ts`, `src/components/ThemeProvider.tsx`, test |
 
-### #3 — Scaffold `--accent` CSS variable + Default/Orange/Blue/System structure
+### #3 — Scaffold `--accent` CSS variable + Default/Orange/Blue/System structure ✅
 
 | Field | Value |
 | --- | --- |
@@ -105,7 +105,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src/lib/logger.ts` |
 
-### #8 — `useReducedMotion` hook + global CSS fallback
+### #8 — `useReducedMotion` hook + global CSS fallback ✅
 
 | Field | Value |
 | --- | --- |
