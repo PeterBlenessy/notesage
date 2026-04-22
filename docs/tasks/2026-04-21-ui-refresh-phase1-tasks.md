@@ -169,7 +169,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/components/cmd/prefix-modes.ts`, `src/components/cmd/FloatingCommandBar.tsx` |
 
-### #14 — `SkillMode` picker
+### #14 — `SkillMode` picker ✅
 
 | Field | Value |
 | --- | --- |
@@ -179,7 +179,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #13 |
 | Files | `src/components/cmd/modes/SkillMode.tsx` |
 
-### #15 — `ReferenceMode` picker (files + people + comments)
+### #15 — `ReferenceMode` picker (files + people + comments) ✅
 
 | Field | Value |
 | --- | --- |
@@ -189,7 +189,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #11, #13 |
 | Files | `src/components/cmd/modes/ReferenceMode.tsx` |
 
-### #16 — `TagMode` picker
+### #16 — `TagMode` picker ✅
 
 | Field | Value |
 | --- | --- |
@@ -199,7 +199,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #13 |
 | Files | `src/components/cmd/modes/TagMode.tsx` |
 
-### #17 — `TaskMode` picker
+### #17 — `TaskMode` picker ✅
 
 | Field | Value |
 | --- | --- |
@@ -209,7 +209,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #11, #13 |
 | Files | `src/components/cmd/modes/TaskMode.tsx` |
 
-### #18 — `ResearchMode` picker
+### #18 — `ResearchMode` picker ✅
 
 | Field | Value |
 | --- | --- |
@@ -219,7 +219,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #11, #13 |
 | Files | `src/components/cmd/modes/ResearchMode.tsx` |
 
-### #19 — `PaletteMode` picker
+### #19 — `PaletteMode` picker ✅
 
 | Field | Value |
 | --- | --- |
