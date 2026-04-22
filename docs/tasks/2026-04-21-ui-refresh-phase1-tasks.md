@@ -119,7 +119,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.2 Composer + Orb (21 tasks)
 
-### #9 — `FloatingCommandBar` component shell
+### #9 — `FloatingCommandBar` component shell ✅
 
 | Field | Value |
 | --- | --- |
