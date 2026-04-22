@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Focus Mode (Mockup F)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --orb: oklch(20% 0 0);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Literata", "Iowan Old Style", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(18% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --orb: oklch(85% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    transition: background 240ms ease, color 240ms ease;
+  }
+
+  /* Simulated macOS title bar / traffic light zone — visually reserved */
+  .title-zone {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 44px;
+    background: transparent;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    -webkit-app-region: drag;
+  }
+  .traffic {
+    display: flex; gap: 8px; align-items: center;
+    opacity: 0.28;
+  }
+  .traffic .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 0.5px solid rgba(0,0,0,0.2);
+  }
+  .traffic .red    { background: oklch(65% 0.18 25); }
+  .traffic .yellow { background: oklch(80% 0.15 85); }
+  .traffic .green  { background: oklch(72% 0.17 145); }
+
+  /* Document area — all breathing room */
+  .doc {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    padding: 140px min(12vw, 160px) 160px;
+  }
+  .doc-inner {
+    max-width: 680px;
+    margin: 0 auto;
+    font-family: var(--serif);
+    font-size: 18px;
+    line-height: 1.76;
+    color: var(--fg);
+  }
+  .doc-inner h1 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 34px;
+    letter-spacing: -0.015em;
+    margin: 0 0 4px;
+    color: var(--fg);
+  }
+  .doc-inner .subtitle {
+    font-family: var(--sans-body);
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    margin-bottom: 56px;
+  }
+  .doc-inner h2 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 19px;
+    margin: 56px 0 14px;
+    letter-spacing: -0.005em;
+  }
+  .doc-inner p { margin: 0 0 18px; }
+  .doc-inner blockquote {
+    border-left: 2px solid var(--muted-2);
+    color: var(--muted);
+    padding-left: 22px;
+    margin: 28px 0;
+    font-style: italic;
+  }
+  .doc-inner em { font-style: italic; }
+  .doc-inner code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--line);
+    padding: 1.5px 6px;
+    border-radius: 4px;
+  }
+  .caret { color: var(--muted-2); animation: blink 1100ms step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Focus-mode pill — the only chrome in sight */
+  .focus-pill {
+    position: fixed;
+    top: 12px; left: 50%; transform: translateX(-50%);
+    padding: 5px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 8px;
+    z-index: 6;
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.15);
+    -webkit-app-region: no-drag;
+  }
+  .kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--fg);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+
+  /* Agent orb — dimmed in focus mode */
+  .orb {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--orb);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    border: 0;
+    box-shadow: 0 6px 24px -8px rgba(0,0,0,0.25);
+    z-index: 6;
+    opacity: 0.25;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+  .orb:hover { opacity: 1; transform: scale(1.04); }
+  .orb::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1.5px solid var(--orb);
+    opacity: 0.15;
+    animation: pulse 2400ms ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.9); opacity: 0.2; }
+    50%  { transform: scale(1.15); opacity: 0; }
+    100% { transform: scale(0.9); opacity: 0; }
+  }
+  .orb svg { width: 18px; height: 18px; }
+  .orb .count-badge {
+    position: absolute;
+    top: -3px; right: -3px;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    font-size: 9.5px;
+    display: grid; place-items: center;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+
+  /* Dev-only: theme toggle */
+  .theme-toggle {
+    position: fixed; top: 14px; right: 22px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+    -webkit-app-region: no-drag;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+
+  /* Faint mockup annotations (not in real app) */
+  .annotation {
+    position: fixed;
+    font-size: 10.5px;
+    color: var(--muted-2);
+    font-family: var(--mono);
+    letter-spacing: 0.02em;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+  .annotation.left  { top: 54px; left: 18px; }
+  .annotation.right { bottom: 14px; right: 76px; }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="title-zone">
+  <div class="traffic">
+    <div class="dot red"></div>
+    <div class="dot yellow"></div>
+    <div class="dot green"></div>
+  </div>
+</div>
+
+<div class="focus-pill">
+  <span>Focus</span>
+  <span class="kbd">⌘</span><span class="kbd">.</span>
+  <span>to exit</span>
+</div>
+
+<div class="doc">
+  <div class="doc-inner">
+    <h1>On Attention</h1>
+    <div class="subtitle">Focus mode · nothing between you and the page</div>
+
+    <p>The hardest part of thinking is not the thinking itself but holding
+    still long enough for a thought to arrive. Distraction is rarely loud.
+    It is almost always polite, small, well-intended — a little interruption
+    wearing a useful face.</p>
+
+    <p>I have been reading old essays on the discipline of writing, and one
+    line has kept returning to me: <em>attention is the beginning of
+    devotion</em>. I suspect the reverse is also true.</p>
+
+    <h2>What the tools are for</h2>
+    <p>A good writing surface should disappear. It should feel, as the
+    designers of iA Writer once put it, "closer to a sheet of paper than a
+    screen." When the interface fades, what remains is the voice.</p>
+
+    <blockquote>"We write to know what we think. The page is the mirror."</blockquote>
+
+    <p>This is why I keep coming back to <code>markdown</code> — not because
+    it is the fastest or the most powerful format, but because it refuses
+    to get in the way. Ceremony is the enemy of clarity.</p>
+
+    <h2>A confession</h2>
+    <p>I do not write in focus mode as often as I say I do. Most of the
+    time I am bouncing between tabs, half-attending to the shape of a
+    sentence while my eye drifts to a sidebar that I convinced myself I
+    needed. Every now and then — usually late, usually once I have stopped
+    trying to be clever — I remember that the point was to write.</p>
+
+    <p>The app, then, should help me remember. It should know when to
+    vanish. It should hold the page for me, the way a good friend holds a
+    silence until you are ready to fill it.<span class="caret">|</span></p>
+  </div>
+</div>
+
+<!-- Agent orb — present but dimmed, 1 task running -->
+<button class="orb" id="orb" title="Agent · 1 working">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+    <circle cx="12" cy="12" r="4"/>
+  </svg>
+  <span class="count-badge">1</span>
+</button>
+
+<!-- Faint mockup annotations — remove for real screenshots -->
+<div class="annotation left">↑ traffic-light safe zone preserved (110 px top-padding)</div>
+<div class="annotation right">↑ orb dimmed to 30% · hover to restore</div>
+
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<script>
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

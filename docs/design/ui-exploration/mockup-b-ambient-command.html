@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Ambient Command (Mockup B)</title>
+<style>
+  :root {
+    --bg: oklch(98.5% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(55% 0 0);
+    --muted-2: oklch(75% 0 0);
+    --line: oklch(92% 0 0);
+    --accent: oklch(22% 0 0);
+    --highlight: oklch(94% 0 0);
+    --radius: 12px;
+    --sans: -apple-system, "SF Pro Text", Inter, ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Iowan Old Style", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  html[data-theme="dark"] {
+    --bg: oklch(18% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(65% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --accent: oklch(92% 0 0);
+    --highlight: oklch(30% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease;
+  }
+
+  /* ── App layout ─────────────────────────────── */
+  .app { display: grid; grid-template-columns: 52px 1fr; height: 100vh; position: relative; }
+
+  .rail {
+    border-right: 1px solid var(--line);
+    padding: 14px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .rail .logo {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .rail button {
+    width: 32px; height: 32px; border: 0; background: transparent;
+    border-radius: 8px; color: var(--muted); cursor: pointer;
+    display: grid; place-items: center;
+    transition: background 160ms ease, color 160ms ease;
+  }
+  .rail button:hover { background: var(--line); color: var(--fg); }
+  .rail button.active { background: var(--line); color: var(--fg); }
+  .rail .spacer { flex: 1; }
+
+  .workspace { display: flex; flex-direction: column; min-width: 0; position: relative; }
+
+  /* Breadcrumb strip instead of tabs — far less prominent */
+  .crumbs {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 22px;
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: 0.01em;
+  }
+  .crumbs .sep { color: var(--muted-2); }
+  .crumbs .leaf { color: var(--fg); font-weight: 500; }
+  .crumbs .project-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px; font-weight: 500;
+  }
+  .crumbs .project-pill .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--fg);
+  }
+
+  .doc {
+    flex: 1; overflow: auto;
+    padding: 48px min(10vw, 80px) 180px;
+  }
+  .doc-inner { max-width: 720px; margin: 0 auto; }
+  .doc-inner h1 {
+    font-family: var(--sans); font-weight: 600;
+    font-size: 32px; letter-spacing: -0.015em;
+    margin: 0 0 4px;
+  }
+  .doc-inner .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 36px; }
+  .doc-inner h2 { font-size: 18px; font-weight: 600; margin: 38px 0 12px; letter-spacing: -0.005em; }
+  .doc-inner p {
+    font-family: var(--serif); font-size: 17px; line-height: 1.72;
+    margin: 0 0 16px;
+  }
+  .doc-inner ul { font-family: var(--serif); font-size: 17px; line-height: 1.72; }
+  .doc-inner code { font-family: var(--mono); font-size: 0.88em; background: var(--line); padding: 1.5px 6px; border-radius: 4px; }
+
+  /* ── The signature: one floating command bar ─── */
+  .cmdbar-wrap {
+    position: fixed;
+    left: 52px; right: 0; bottom: 28px;
+    display: grid; place-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .cmdbar {
+    pointer-events: auto;
+    width: min(680px, 80vw);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 18px 54px -18px rgba(0,0,0,0.32);
+    backdrop-filter: blur(14px);
+    overflow: hidden;
+    transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow 260ms ease;
+  }
+  .cmdbar.expanded { transform: translateY(-18px); }
+
+  /* When expanded, the answer stream appears ABOVE the input */
+  .cmdbar-stream {
+    max-height: 0;
+    overflow-y: auto;
+    transition: max-height 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    border-bottom: 0 solid var(--line);
+  }
+  .cmdbar.expanded .cmdbar-stream {
+    max-height: min(420px, 50vh);
+    border-bottom: 1px solid var(--line);
+  }
+  .cmdbar-stream-inner { padding: 16px 18px; }
+  .msg { margin-bottom: 14px; }
+  .msg .role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; }
+  .msg.user .bubble { font-size: 13.5px; color: var(--fg); }
+  .msg.assistant .bubble {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--fg);
+  }
+  .msg.assistant .bubble p { margin: 0 0 8px; }
+
+  /* The input row */
+  .cmdbar-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    padding: 12px 14px;
+    gap: 12px;
+  }
+  .cmdbar-mode {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--line);
+    color: var(--fg);
+    font-size: 11.5px;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: background 160ms ease;
+  }
+  .cmdbar-mode .icon { width: 12px; height: 12px; }
+  .cmdbar-input {
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+    padding: 2px 0;
+    caret-color: var(--fg);
+  }
+  .cmdbar-input::placeholder { color: var(--muted); }
+  .cmdbar-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid var(--line); border-radius: 4px;
+    font-size: 10px; color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  /* Suggestion dropdown — morphs by mode */
+  .cmdbar-suggest {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 220ms ease;
+    border-top: 0 solid var(--line);
+  }
+  .cmdbar.suggesting .cmdbar-suggest {
+    max-height: 260px;
+    border-top: 1px solid var(--line);
+  }
+  .suggest-item {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 16px;
+    color: var(--fg);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .suggest-item:hover, .suggest-item.focused { background: var(--line); }
+  .suggest-item .meta { color: var(--muted); font-size: 11.5px; }
+  .suggest-item .icon { color: var(--muted); }
+
+  /* Agent bubbles — floating status for background tasks */
+  .bubbles {
+    position: fixed;
+    right: 20px;
+    bottom: 110px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 8;
+  }
+  .bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: 0 8px 24px -14px rgba(0,0,0,0.22);
+    font-size: 12.5px;
+    color: var(--fg);
+    cursor: pointer;
+    transition: transform 160ms ease;
+  }
+  .bubble:hover { transform: translateX(-3px); }
+  .bubble .spin {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid var(--muted-2);
+    border-top-color: var(--fg);
+    animation: spin 900ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bubble.done .spin { border-top-color: var(--muted-2); animation: none; }
+  .bubble.done::after { content: "✓"; margin-left: 4px; color: var(--muted); }
+
+  .theme-toggle {
+    position: fixed; top: 12px; right: 18px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+
+  .hint {
+    position: fixed; bottom: 0; left: 52px; right: 0;
+    text-align: center;
+    color: var(--muted-2);
+    font-size: 11px;
+    padding: 6px 0 8px;
+    z-index: 5;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="app">
+  <div class="rail">
+    <div class="logo"><em>N</em></div>
+    <button class="active" title="Files">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+    </button>
+    <button title="History">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 7v5l3 2"/></svg>
+    </button>
+    <div class="spacer"></div>
+    <button title="Settings">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+  </div>
+
+  <div class="workspace">
+    <div class="crumbs">
+      <span class="project-pill"><span class="dot"></span> Notesage</span>
+      <span class="sep">/</span>
+      <span>drafts</span>
+      <span class="sep">/</span>
+      <span class="leaf">On Attention.md</span>
+    </div>
+
+    <div class="doc">
+      <div class="doc-inner">
+        <h1>On Attention</h1>
+        <div class="sub">Draft · saved 40 s ago</div>
+        <p>The hardest part of thinking is not the thinking itself but holding
+        still long enough for a thought to arrive. Distraction is rarely loud.
+        It is almost always polite, small, well-intended.</p>
+
+        <h2>What the tools are for</h2>
+        <p>A good writing surface should <code>disappear</code>. It should feel
+        closer to a sheet of paper than a screen. When the interface fades,
+        what remains is the voice.</p>
+
+        <ul>
+          <li>Less chrome. More margin.</li>
+          <li>Type ahead — commands come to you.</li>
+          <li>Answers unfold above the page, not beside it.</li>
+        </ul>
+
+        <h2>Try the bar</h2>
+        <p>Click the command bar below. Type <code>/</code> for commands,
+        <code>@</code> for mentions, <code>#</code> for tags,
+        <code>?</code> for research, or just ask in prose.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating agent bubbles -->
+  <div class="bubbles">
+    <div class="bubble">
+      <span class="spin"></span>
+      <span>Synthesizing 3 sources…</span>
+    </div>
+    <div class="bubble done">
+      <span class="spin"></span>
+      <span>Answered 1 comment</span>
+    </div>
+  </div>
+
+  <!-- THE bar -->
+  <div class="cmdbar-wrap">
+    <div class="cmdbar" id="cmdbar">
+      <div class="cmdbar-stream">
+        <div class="cmdbar-stream-inner">
+          <div class="msg user">
+            <div class="role">You · 2 min ago</div>
+            <div class="bubble">Summarize this draft in three bullets, keep the tone.</div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">Claude Sonnet 4.5</div>
+            <div class="bubble">
+              <p>• Attention is fragile, undermined by small polite interruptions rather than loud ones.</p>
+              <p>• Tools should disappear — interface as paper, not screen — so the writer's voice remains.</p>
+              <p>• Markdown endures because it adds no ceremony; ceremony is the enemy of clarity.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmdbar-row">
+        <div class="cmdbar-mode" id="mode">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>
+          <span id="modeLabel">On Attention.md</span>
+        </div>
+        <input
+          id="cmdinput"
+          class="cmdbar-input"
+          placeholder="Ask, or type /  @  #  ?  to search"
+          autocomplete="off"
+        />
+        <div class="cmdbar-actions">
+          <span class="kbd">⌘</span><span class="kbd">K</span>
+        </div>
+      </div>
+
+      <div class="cmdbar-suggest" id="suggest"></div>
+    </div>
+  </div>
+
+  <div class="hint">One bar. Ask, search, command — press <span class="kbd">⌘</span><span class="kbd">K</span> from anywhere</div>
+
+  <button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+</div>
+
+<script>
+  // Morph command bar based on prefix
+  const input = document.getElementById("cmdinput");
+  const modeLabel = document.getElementById("modeLabel");
+  const modeEl = document.getElementById("mode");
+  const bar = document.getElementById("cmdbar");
+  const suggest = document.getElementById("suggest");
+
+  const MODES = {
+    "/":  { label: "Command", items: [
+            { icon: "⌁", text: "Summarize selection", meta: "AI" },
+            { icon: "⤷", text: "Improve writing",    meta: "AI" },
+            { icon: "✎", text: "Insert callout",     meta: "/callout" },
+            { icon: "◧", text: "Toggle focus mode",  meta: "⌘ ." },
+          ] },
+    "@":  { label: "Mention", items: [
+            { icon: "@", text: "Peter Blenessy",   meta: "weekly-review.md · 12" },
+            { icon: "@", text: "Notesage Design",  meta: "4 files" },
+            { icon: "@", text: "team-product",     meta: "3 files" },
+          ] },
+    "#":  { label: "Tag", items: [
+            { icon: "#", text: "attention",        meta: "8 files" },
+            { icon: "#", text: "design",           meta: "24 files" },
+            { icon: "#", text: "draft",            meta: "5 files" },
+          ] },
+    "?":  { label: "Research", items: [
+            { icon: "◦", text: "Oliver Burkeman — The problem with attention", meta: "2025-11 · guardian.com" },
+            { icon: "◦", text: "James Clear — Deep work routines",             meta: "2024-06" },
+            { icon: "◦", text: "iA — The art of the page",                     meta: "2022" },
+          ] },
+    ">":  { label: "Command palette", items: [
+            { icon: "⌘", text: "Export as PDF",     meta: "⌘ ⇧ E" },
+            { icon: "⌘", text: "Toggle sidebar",    meta: "⌘ ⇧ L" },
+            { icon: "⌘", text: "New note",          meta: "⌘ N" },
+          ] },
+  };
+
+  const DEFAULT_LABEL = "On Attention.md";
+
+  function renderSuggest(mode) {
+    if (!mode) { bar.classList.remove("suggesting"); suggest.innerHTML = ""; return; }
+    bar.classList.add("suggesting");
+    suggest.innerHTML = mode.items.map((i, idx) => `
+      <div class="suggest-item ${idx === 0 ? "focused" : ""}">
+        <span class="icon">${i.icon}</span>
+        <span>${i.text}</span>
+        <span class="meta">${i.meta}</span>
+      </div>
+    `).join("");
+  }
+
+  input.addEventListener("input", () => {
+    const v = input.value;
+    const prefix = v[0];
+    if (MODES[prefix]) {
+      modeLabel.textContent = MODES[prefix].label;
+      renderSuggest(MODES[prefix]);
+    } else if (v.length === 0) {
+      modeLabel.textContent = DEFAULT_LABEL;
+      renderSuggest(null);
+    } else {
+      modeLabel.textContent = "Ask · On Attention.md";
+      renderSuggest(null);
+    }
+  });
+
+  // Expand/collapse chat stream
+  input.addEventListener("focus", () => bar.classList.add("expanded"));
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); input.focus(); }
+    if (e.key === "Escape") {
+      bar.classList.remove("expanded");
+      bar.classList.remove("suggesting");
+      input.blur();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!bar.contains(e.target)) { bar.classList.remove("expanded"); bar.classList.remove("suggesting"); }
+  });
+
+  // Theme
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

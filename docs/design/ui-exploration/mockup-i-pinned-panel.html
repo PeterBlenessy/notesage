@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Pinned Panel (Mockup I)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --accent: oklch(20% 0 0);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Literata", "Iowan Old Style", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(19% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --accent: oklch(92% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease;
+  }
+
+  /* 3-column grid: sidebar | doc | pinned chat panel */
+  .app {
+    display: grid;
+    grid-template-columns: 252px 1fr 400px;
+    height: 100vh;
+    position: relative;
+  }
+
+  /* ── Sidebar (same pattern as D) ─── */
+  .sidebar {
+    padding: 20px 16px;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .workspace-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 4px; margin-bottom: 18px;
+  }
+  .workspace-header .avatar {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 12px;
+  }
+  .workspace-header .name { font-weight: 600; font-size: 13px; }
+  .workspace-header .sub  { font-size: 11px; color: var(--muted); }
+  .sidebar h4 {
+    margin: 22px 4px 6px;
+    font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted);
+    font-weight: 600;
+  }
+  .sidebar h4:first-of-type { margin-top: 4px; }
+  .item {
+    display: grid; grid-template-columns: 14px 1fr auto; gap: 10px;
+    align-items: center;
+    padding: 5px 8px; border-radius: 6px;
+    color: var(--fg); cursor: pointer;
+    font-size: 13px; line-height: 1.3;
+  }
+  .item:hover { background: var(--line-soft); }
+  .item.active { background: var(--line); }
+  .item .icon { color: var(--muted); }
+  .item .count { color: var(--muted); font-size: 11px; }
+
+  /* ── Workspace (doc) ─── */
+  .workspace {
+    display: grid; grid-template-rows: 44px 1fr; min-width: 0; position: relative;
+  }
+  .doc-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 22px;
+    color: var(--muted); font-size: 12.5px;
+  }
+  .doc-head .crumb-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px; font-weight: 500;
+  }
+  .doc-head .sep { color: var(--muted-2); }
+  .doc-head .leaf { color: var(--fg); font-weight: 500; }
+  .doc-head .dirty {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--fg); margin-left: 4px; opacity: 0.7;
+  }
+  .doc-head .spacer { flex: 1; }
+  .doc-head .doc-meta { font-size: 11.5px; color: var(--muted); }
+
+  .doc {
+    overflow: auto;
+    padding: 56px max(64px, 6vw) 120px;
+  }
+  .doc-inner { max-width: 680px; margin: 0 auto; }
+  .doc-inner h1 {
+    font-family: var(--sans); font-weight: 600;
+    font-size: 30px; letter-spacing: -0.02em; margin: 0 0 6px;
+  }
+  .doc-inner .subtitle {
+    color: var(--muted); font-size: 12.5px; margin-bottom: 40px;
+  }
+  .doc-inner h2 {
+    font-family: var(--sans); font-weight: 600;
+    font-size: 18px; margin: 40px 0 12px; letter-spacing: -0.005em;
+  }
+  .doc-inner p, .doc-inner blockquote {
+    font-family: var(--serif); font-size: 17px; line-height: 1.72; margin: 0 0 16px;
+  }
+  .doc-inner blockquote {
+    border-left: 2px solid var(--muted-2);
+    color: var(--muted); padding-left: 18px;
+    margin: 22px 0; font-style: italic;
+  }
+  .doc-inner code {
+    font-family: var(--mono); font-size: 0.88em;
+    background: var(--line); padding: 1.5px 6px; border-radius: 4px;
+  }
+
+  /* ── Pinned chat panel ─── */
+  .chat-panel {
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    box-shadow: -10px 0 32px -20px rgba(0,0,0,0.15);
+  }
+
+  /* Panel title row — minimal, single height, signals "pinned" */
+  .panel-title {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .panel-title .pinned-icon { color: var(--muted); }
+  .panel-title .spacer { flex: 1; }
+  .panel-title button {
+    background: transparent; border: 0;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border-radius: 5px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .panel-title button:hover { background: var(--line-soft); color: var(--fg); }
+  .panel-title .unpin-btn { color: var(--fg); }
+
+  /* Context row — stacked below panel title */
+  .ctx-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .ctx-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--line-soft);
+    font-size: 11.5px;
+    color: var(--fg);
+    cursor: pointer;
+    border: 0;
+    font-family: inherit;
+    transition: background 140ms ease;
+  }
+  .ctx-pill:hover { background: var(--line); }
+  .ctx-pill .caret { color: var(--muted); font-size: 9px; }
+  .ctx-project {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 4px 3px 10px;
+    border-radius: 999px;
+    background: var(--line);
+    font-size: 11.5px;
+    color: var(--fg);
+  }
+  .ctx-project .lock { color: var(--muted); font-size: 10px; }
+  .ctx-project .remove {
+    display: grid; place-items: center;
+    width: 15px; height: 15px; border-radius: 50%;
+    color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1;
+  }
+  .ctx-project .remove:hover { color: var(--fg); background: var(--panel); }
+  .ctx-add {
+    background: transparent; border: 1px dashed var(--line);
+    color: var(--muted); font-size: 11px;
+    padding: 2px 9px; border-radius: 999px;
+    cursor: pointer; font-family: inherit;
+  }
+  .ctx-add:hover { border-color: var(--muted-2); color: var(--fg); }
+  .ctx-spacer { flex: 1; min-width: 8px; }
+  .ctx-icon-btn {
+    background: transparent; border: 0;
+    width: 24px; height: 24px;
+    display: grid; place-items: center;
+    border-radius: 5px;
+    color: var(--muted); cursor: pointer;
+  }
+  .ctx-icon-btn:hover { background: var(--line-soft); color: var(--fg); }
+  .ctx-divider { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+
+  /* Stream — takes remaining vertical space */
+  .panel-stream {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 16px 8px;
+  }
+  .msg { margin-bottom: 16px; }
+  .msg .role {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin-bottom: 5px;
+  }
+  .msg.user .bubble { font-size: 13.5px; color: var(--fg); }
+  .msg.assistant .bubble {
+    font-family: var(--serif);
+    font-size: 14.5px; line-height: 1.65; color: var(--fg);
+  }
+  .msg.assistant .bubble p { margin: 0 0 8px; }
+
+  .thinking {
+    background: var(--line-soft);
+    border-left: 2px solid var(--muted-2);
+    padding: 7px 10px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12.5px;
+    color: var(--muted);
+    font-style: italic;
+    margin: 4px 0 8px;
+    line-height: 1.55;
+  }
+  .thinking .label {
+    font-style: normal; font-size: 10.5px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted-2); margin-bottom: 4px;
+  }
+
+  .tool {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    background: var(--line-soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 12px; color: var(--fg);
+    margin: 6px 0;
+    cursor: pointer;
+  }
+  .tool:hover { background: var(--line); }
+  .tool .icon { color: var(--muted); font-size: 14px; }
+  .tool .label { flex: 1; font-weight: 500; font-size: 12px; }
+  .tool .status { font-size: 10.5px; color: var(--muted); }
+
+  .quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .quick-reply {
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-size: 12px;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background 140ms ease;
+    font-family: inherit;
+  }
+  .quick-reply:hover { background: var(--line-soft); }
+
+  /* Chips row + input stays at bottom */
+  .panel-chips {
+    padding: 10px 14px 0;
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 4px 3px 10px;
+    border-radius: 999px;
+    background: var(--line);
+    font-size: 11.5px;
+    color: var(--fg);
+  }
+  .chip .chip-icon { color: var(--muted); font-size: 10px; }
+  .chip .remove {
+    display: grid; place-items: center;
+    width: 16px; height: 16px; border-radius: 50%;
+    color: var(--muted); cursor: pointer;
+    font-size: 12px; line-height: 1;
+  }
+  .chip .remove:hover { color: var(--fg); background: var(--panel); }
+
+  .panel-input-row {
+    padding: 10px 14px 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+    border-top: 1px solid var(--line);
+  }
+  .panel-mode {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px;
+  }
+  .panel-input {
+    background: transparent; border: 0;
+    color: var(--fg); font: inherit; font-size: 14.5px;
+    outline: none; padding: 2px 0;
+  }
+  .panel-input::placeholder { color: var(--muted); }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid var(--line); border-radius: 4px;
+    font-size: 10px; color: var(--muted); font-family: var(--mono);
+  }
+
+  /* Resize handle between doc and panel */
+  .resize-handle {
+    position: absolute;
+    top: 0; right: 399px;
+    width: 4px; height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 5;
+    transition: background 160ms ease;
+  }
+  .resize-handle:hover { background: var(--line); }
+
+  .theme-toggle {
+    position: fixed; top: 14px; right: 18px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+
+  .caret-hint { color: var(--muted-2); animation: blink 1100ms step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="workspace-header">
+      <div class="avatar"><em>N</em></div>
+      <div>
+        <div class="name">Notesage</div>
+        <div class="sub">12 projects · 248 notes</div>
+      </div>
+    </div>
+
+    <h4>Pinned</h4>
+    <div class="item active">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>
+      <span>On Attention.md</span>
+      <span class="count">·</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+      <span>Weekly Review</span>
+      <span class="count">Mon</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+      <span>Ideas</span>
+      <span class="count">17</span>
+    </div>
+
+    <h4>Projects</h4>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span>Essays</span>
+      <span class="count">32</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span>Design System</span>
+      <span class="count">64</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span>Research</span>
+      <span class="count">19</span>
+    </div>
+
+    <h4>Recent</h4>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>On Craft.md</span>
+      <span class="count">2h</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>Workshop notes.md</span>
+      <span class="count">1d</span>
+    </div>
+  </aside>
+
+  <!-- Document -->
+  <div class="workspace">
+    <div class="doc-head">
+      <span class="crumb-pill">Notesage</span>
+      <span class="sep">/</span>
+      <span>essays</span>
+      <span class="sep">/</span>
+      <span>drafts</span>
+      <span class="sep">/</span>
+      <span class="leaf">On Attention.md</span>
+      <span class="dirty"></span>
+      <div class="spacer"></div>
+      <div class="doc-meta">saved 40 s</div>
+    </div>
+    <div class="doc">
+      <div class="doc-inner">
+        <h1>On Attention</h1>
+        <div class="subtitle">Draft · 2,184 words · paired with chat</div>
+
+        <p>The hardest part of thinking is not the thinking itself but holding
+        still long enough for a thought to arrive. Distraction is rarely loud.
+        It is almost always polite, small, well-intended — a little
+        interruption wearing a useful face.</p>
+
+        <p>I have been reading old essays on the discipline of writing, and one
+        line has kept returning to me: <em>attention is the beginning of
+        devotion</em>. I suspect the reverse is also true.</p>
+
+        <h2>What the tools are for</h2>
+        <p>A good writing surface should <code>disappear</code>. It should
+        feel closer to a sheet of paper than a screen. When the interface
+        fades, what remains is the voice.</p>
+
+        <blockquote>"We write to know what we think. The page is the mirror."</blockquote>
+
+        <p>This is why I keep coming back to markdown — not because it is the
+        fastest or the most powerful format, but because it refuses to get in
+        the way. Ceremony is the enemy of clarity.<span class="caret-hint">|</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resize handle (visual only) -->
+  <div class="resize-handle" title="Drag to resize panel"></div>
+
+  <!-- ── Pinned chat panel ─── -->
+  <aside class="chat-panel">
+    <div class="panel-title">
+      <svg class="pinned-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4 6 6-3 3-6-6zM9 10l-6 6 3 3 6-6M14 15l7 7M3 21l6-6"/></svg>
+      <span>Pinned chat</span>
+      <div class="spacer"></div>
+      <button title="New conversation">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="unpin-btn" title="Unpin (return to floating)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="ctx-row">
+      <button class="ctx-pill" title="AI provider">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="4"/></svg>
+        <span>Claude</span>
+        <span class="caret">▾</span>
+      </button>
+      <span class="ctx-divider"></span>
+      <span class="ctx-project">
+        <span>Essays</span>
+        <span class="lock" title="Locked">🔒</span>
+        <span class="remove">×</span>
+      </span>
+      <button class="ctx-add">+</button>
+      <div class="ctx-spacer"></div>
+      <button class="ctx-pill" title="Permission mode">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1 3 5v6c0 5 3.5 9.5 9 11 5.5-1.5 9-6 9-11V5Z"/></svg>
+        <span>Agent</span>
+        <span class="caret">▾</span>
+      </button>
+      <button class="ctx-icon-btn" title="Conversation history">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+    </div>
+
+    <div class="panel-stream" id="stream">
+
+      <div class="msg user">
+        <div class="role">You · 4 min ago</div>
+        <div class="bubble">Summarize the essay in three bullets, keep the tone.</div>
+      </div>
+
+      <div class="msg assistant">
+        <div class="role">Claude Sonnet 4.5</div>
+        <div class="thinking">
+          <div class="label">Thinking · 8 s</div>
+          The piece is about attention as a discipline; I should preserve its
+          reflective register and avoid over-summarizing.
+        </div>
+        <div class="bubble">
+          <p>• Attention is fragile, undermined by small polite interruptions rather than loud ones.</p>
+          <p>• Tools should disappear so the writer's voice remains — "paper, not screen".</p>
+          <p>• Markdown endures because it adds no ceremony, and ceremony is the enemy of clarity.</p>
+        </div>
+      </div>
+
+      <div class="msg user">
+        <div class="role">You · 2 min ago</div>
+        <div class="bubble">Find sources that support the "paper, not screen" claim.</div>
+      </div>
+
+      <div class="msg assistant">
+        <div class="role">Claude Sonnet 4.5</div>
+        <div class="tool">
+          <span class="icon">◦</span>
+          <span class="label">Research search · "paper not screen"</span>
+          <span class="status">✓ 3</span>
+        </div>
+        <div class="tool">
+          <span class="icon">▤</span>
+          <span class="label">Read reading-list.md</span>
+          <span class="status">✓</span>
+        </div>
+        <div class="bubble">
+          <p>Three sources stand out:</p>
+          <p>• Oliver Reichenstein (iA), <em>The Art of the Page</em> — argues the screen should "recede to paper" during writing.</p>
+          <p>• Maryanne Wolf, <em>Reader, Come Home</em> — deep-reading neuroscience on how surface choice shapes attention.</p>
+          <p>• Craig Mod, <em>Fast Software, the Best Software</em> — UI ceremony as a source of cognitive fatigue.</p>
+        </div>
+        <div class="quick-replies">
+          <button class="quick-reply">Add to research folder</button>
+          <button class="quick-reply">Cite all three inline</button>
+          <button class="quick-reply">Keep only Reichenstein</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="panel-chips">
+      <div class="chip"><span class="chip-icon">▤</span><span>on-attention.md</span><span class="remove">×</span></div>
+      <div class="chip"><span class="chip-icon">▤</span><span>reading-list.md</span><span class="remove">×</span></div>
+    </div>
+
+    <div class="panel-input-row" style="grid-template-columns: 1fr auto;">
+      <input class="panel-input" placeholder="Follow up…" />
+      <div class="kbd">⌘↵</div>
+    </div>
+  </aside>
+</div>
+
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<script>
+  const stream = document.getElementById("stream");
+  requestAnimationFrame(() => { stream.scrollTop = stream.scrollHeight; });
+
+  document.querySelectorAll(".tool").forEach((t) => {
+    t.addEventListener("click", () => t.classList.toggle("open"));
+  });
+  document.querySelectorAll(".chip .remove").forEach((x) => {
+    x.addEventListener("click", (e) => e.target.closest(".chip").remove());
+  });
+  document.querySelectorAll(".ctx-project .remove").forEach((x) => {
+    x.addEventListener("click", (e) => e.target.closest(".ctx-project").remove());
+  });
+
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

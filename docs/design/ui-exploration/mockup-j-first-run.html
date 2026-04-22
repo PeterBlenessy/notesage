@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · First Run (Mockup J)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --orb: oklch(20% 0 0);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Literata", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(19% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --orb: oklch(85% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease;
+  }
+  .app { display: grid; grid-template-columns: 252px 1fr; height: 100vh; position: relative; }
+
+  /* Sidebar — mostly empty */
+  .sidebar {
+    padding: 20px 16px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    overflow-y: auto;
+  }
+  .workspace-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 4px; margin-bottom: 18px;
+  }
+  .workspace-header .avatar {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 12px;
+  }
+  .workspace-header .name { font-weight: 600; font-size: 13px; }
+  .workspace-header .sub { font-size: 11px; color: var(--muted); }
+
+  .sidebar h4 {
+    margin: 22px 4px 6px;
+    font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sidebar h4 .add-btn {
+    background: transparent; border: 0;
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    color: var(--muted); cursor: pointer;
+    border-radius: 4px;
+  }
+  .sidebar h4 .add-btn:hover { background: var(--line); color: var(--fg); }
+
+  .empty-section {
+    padding: 10px 8px 14px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .empty-section .tiny-cta {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 4px;
+    color: var(--fg); font-weight: 500;
+    cursor: pointer;
+  }
+  .empty-section .tiny-cta:hover { text-decoration: underline; }
+
+  /* Document — empty + centered welcome */
+  .workspace {
+    display: grid; grid-template-rows: 44px 1fr;
+    min-width: 0; position: relative;
+  }
+  .doc-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 130px 0 22px;
+    color: var(--muted); font-size: 12.5px;
+  }
+  .doc-head .crumb-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px; font-weight: 500;
+  }
+  .doc-head .muted-text { color: var(--muted-2); font-style: italic; }
+
+  .welcome {
+    overflow: auto;
+    padding: 80px 40px 180px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .welcome .hero {
+    max-width: 540px; text-align: center;
+    margin-bottom: 44px;
+  }
+  .welcome .big-logo {
+    width: 56px; height: 56px;
+    border-radius: 14px;
+    background: var(--fg); color: var(--bg);
+    margin: 0 auto 20px;
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600;
+    font-size: 28px;
+  }
+  .welcome h1 {
+    font-family: var(--sans);
+    font-weight: 600; font-size: 30px;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+  }
+  .welcome p.lead {
+    font-family: var(--serif);
+    font-size: 17px; line-height: 1.6;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* Three starter cards */
+  .starters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    max-width: 720px;
+    width: 100%;
+  }
+  .starter {
+    padding: 22px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .starter:hover {
+    transform: translateY(-2px);
+    border-color: var(--muted-2);
+    box-shadow: 0 8px 24px -14px rgba(0,0,0,0.18);
+  }
+  .starter .icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: var(--line); color: var(--fg);
+    display: grid; place-items: center;
+    margin-bottom: 14px;
+  }
+  .starter h3 {
+    margin: 0 0 4px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 14px; letter-spacing: -0.005em;
+  }
+  .starter p {
+    margin: 0;
+    font-size: 12px; color: var(--muted);
+    line-height: 1.5;
+  }
+  .starter .hint {
+    margin-top: 10px;
+    font-size: 11px; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid var(--line); border-radius: 4px;
+    font-size: 10px; color: var(--muted); font-family: var(--mono);
+  }
+
+  /* Quick-tour card — dismissible */
+  .tour {
+    position: fixed;
+    top: 70px; right: 22px;
+    width: 320px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px -16px rgba(0,0,0,0.22);
+    padding: 16px 18px;
+    z-index: 8;
+  }
+  .tour .tour-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .tour h4 {
+    margin: 0;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 13px;
+  }
+  .tour .close {
+    background: transparent; border: 0;
+    color: var(--muted); cursor: pointer;
+    font-size: 18px; line-height: 1; padding: 0;
+  }
+  .tour .close:hover { color: var(--fg); }
+  .tour .step {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 8px 0;
+    font-size: 12.5px;
+    color: var(--fg);
+    line-height: 1.45;
+  }
+  .tour .step .num {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted-2);
+    padding-top: 1px;
+  }
+  .tour .step b { font-weight: 600; }
+  .tour .step .meta {
+    display: block;
+    font-size: 11.5px; color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* Invite callout pointing at the bar */
+  .invite {
+    position: fixed;
+    bottom: 100px; left: 50%;
+    transform: translateX(calc(-50% + 126px));  /* center over the bar (sidebar offset 252/2) */
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--fg);
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.18);
+    z-index: 7;
+    pointer-events: none;
+  }
+  .invite::after {
+    content: "";
+    position: absolute;
+    bottom: -6px; left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px; height: 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 0; border-left: 0;
+  }
+
+  /* Simplified command bar — pulses to invite attention */
+  .cmdbar-wrap {
+    position: fixed;
+    left: 252px; right: 0; bottom: 28px;
+    display: grid; place-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .cmdbar {
+    pointer-events: auto;
+    width: min(640px, 80%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 18px 54px -18px rgba(0,0,0,0.32);
+    backdrop-filter: blur(14px);
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    position: relative;
+    transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                box-shadow 260ms ease;
+  }
+  .cmdbar.focused {
+    transform: translateY(-14px);
+    box-shadow: 0 24px 68px -18px rgba(0,0,0,0.38);
+  }
+  .cmdbar::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 20px;
+    border: 2px solid var(--fg);
+    opacity: 0;
+    animation: invite-pulse 2600ms ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes invite-pulse {
+    0%, 100% { opacity: 0; transform: scale(1); }
+    50%      { opacity: 0.10; transform: scale(1.015); }
+  }
+  .cmdbar-mode {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px;
+  }
+  .cmdbar-input {
+    background: transparent; border: 0;
+    color: var(--fg); font: inherit; font-size: 15px;
+    outline: none;
+  }
+  .cmdbar-input::placeholder { color: var(--muted); }
+
+  .theme-toggle {
+    position: fixed; top: 14px; right: 22px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="workspace-header">
+      <div class="avatar"><em>N</em></div>
+      <div>
+        <div class="name">Notesage</div>
+        <div class="sub">Fresh install</div>
+      </div>
+    </div>
+
+    <h4>
+      <span>Pinned</span>
+    </h4>
+    <div class="empty-section">
+      Nothing pinned yet.
+      <span class="tiny-cta">Drag a file here →</span>
+    </div>
+
+    <h4>
+      <span>Projects</span>
+      <button class="add-btn" title="New project">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </h4>
+    <div class="empty-section">
+      Your workspace is empty.
+      <br>
+      <span class="tiny-cta">+ Create your first project</span>
+    </div>
+
+    <h4>
+      <span>Recent</span>
+    </h4>
+    <div class="empty-section">
+      <span style="color: var(--muted-2)">Files you open will appear here.</span>
+    </div>
+
+    <h4>
+      <span>Tags</span>
+    </h4>
+    <div class="empty-section">
+      <span style="color: var(--muted-2)">Tags from your notes will appear here.</span>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <div class="doc-head">
+      <span class="crumb-pill">Notesage</span>
+      <span class="muted-text">No document open</span>
+    </div>
+
+    <div class="welcome">
+      <div class="hero">
+        <div class="big-logo"><em>N</em></div>
+        <h1>Welcome to Notesage</h1>
+        <p class="lead">A quiet place to write, think, and work with AI. Start with one of the paths below — or just press <span class="kbd">⌘K</span> and ask.</p>
+      </div>
+
+      <div class="starters">
+        <div class="starter">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15h6"/></svg>
+          </div>
+          <h3>Create a note</h3>
+          <p>Blank markdown document. You can start writing immediately — no project needed.</p>
+          <span class="hint"><span class="kbd">⌘N</span></span>
+        </div>
+
+        <div class="starter">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </div>
+          <h3>New project</h3>
+          <p>A folder of related notes. Templates available: Research, Writing, Blank.</p>
+          <span class="hint"><span class="kbd">⌘⇧N</span></span>
+        </div>
+
+        <div class="starter">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM8 10h8M8 14h5"/></svg>
+          </div>
+          <h3>Open a folder</h3>
+          <p>Point Notesage at a folder of markdown files. We'll show them in the sidebar.</p>
+          <span class="hint"><span class="kbd">⌘O</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dismissible quick tour -->
+  <div class="tour" id="tour">
+    <div class="tour-head">
+      <h4>Three things to know</h4>
+      <button class="close" id="closeTour">×</button>
+    </div>
+    <div class="step">
+      <span class="num">1</span>
+      <div>
+        <b>Press <span class="kbd">⌘K</span> for everything.</b>
+        <span class="meta">Ask the AI, search files, run commands, switch documents.</span>
+      </div>
+    </div>
+    <div class="step">
+      <span class="num">2</span>
+      <div>
+        <b>Prefix a letter, change the mode.</b>
+        <span class="meta"><span class="kbd">/</span> skills · <span class="kbd">@</span> references · <span class="kbd">#</span> tags · <span class="kbd">!</span> tasks · <span class="kbd">?</span> research</span>
+      </div>
+    </div>
+    <div class="step">
+      <span class="num">3</span>
+      <div>
+        <b>Quiet yourself with <span class="kbd">⌘.</span></b>
+        <span class="meta">Focus mode hides everything except the page.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invite callout pointing at the bar -->
+  <div class="invite" id="invite">
+    <span>Try it — press</span>
+    <span class="kbd">⌘</span><span class="kbd">K</span>
+  </div>
+
+  <!-- Command bar (pulsing to invite attention) -->
+  <div class="cmdbar-wrap">
+    <div class="cmdbar" id="cmdbar">
+      <div class="cmdbar-mode">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Ask, search, or run</span>
+      </div>
+      <input class="cmdbar-input" placeholder="Type anywhere and we'll figure it out…" />
+      <div style="color: var(--muted); font-size: 11px; display: flex; gap: 4px;">
+        <span class="kbd">⌘</span><span class="kbd">K</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<script>
+  const bar = document.getElementById("cmdbar");
+  const invite = document.getElementById("invite");
+  const input = bar.querySelector("input");
+
+  document.getElementById("closeTour").addEventListener("click", () => {
+    document.getElementById("tour").style.display = "none";
+  });
+
+  // Focus → lift the bar, dim the invite callout + halo pulse
+  function engage() {
+    bar.classList.add("focused");
+    invite.style.opacity = "0";
+    const style = document.createElement("style");
+    style.id = "pulse-off";
+    style.textContent = ".cmdbar::before { animation: none !important; opacity: 0 !important; }";
+    if (!document.getElementById("pulse-off")) document.head.appendChild(style);
+  }
+  function disengage() {
+    bar.classList.remove("focused");
+  }
+  input.addEventListener("focus", engage);
+  input.addEventListener("blur", disengage);
+
+  // ⌘K also focuses the bar
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      input.focus();
+    }
+    if (e.key === "Escape") input.blur();
+  });
+
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

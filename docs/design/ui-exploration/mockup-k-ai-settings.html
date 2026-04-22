@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · AI &amp; Agents Settings (Mockup K)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --destructive: oklch(55% 0.19 25);
+    --ok: oklch(62% 0.14 150);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(18% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --ok: oklch(72% 0.15 150);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans-body); font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Settings shell (same as E) */
+  .frame {
+    max-width: 1100px;
+    height: calc(100vh - 48px);
+    margin: 24px auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 28px 72px -20px rgba(0,0,0,0.22);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 236px 1fr;
+  }
+  .nav {
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  .nav-header { padding: 18px 16px 8px; }
+  .nav-header h1 {
+    margin: 0 4px 10px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 14px; letter-spacing: -0.005em;
+  }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .search svg { color: var(--muted); flex-shrink: 0; }
+  .search input {
+    border: 0; background: transparent; flex: 1;
+    font: inherit; font-size: 12.5px; color: var(--fg);
+    outline: none; min-width: 0;
+  }
+  .search input::placeholder { color: var(--muted); }
+
+  .nav-body { flex: 1; overflow-y: auto; padding: 14px 8px 20px; }
+  .nav h5 {
+    margin: 18px 12px 6px;
+    font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  }
+  .nav h5:first-child { margin-top: 0; }
+  .nav-item {
+    display: grid; grid-template-columns: 18px 1fr auto;
+    gap: 10px; align-items: center;
+    padding: 7px 10px; border-radius: 6px;
+    color: var(--fg); cursor: pointer;
+    font-size: 13px; line-height: 1.3;
+  }
+  .nav-item:hover { background: var(--line-soft); }
+  .nav-item.active { background: var(--line); font-weight: 500; }
+  .nav-item .icon { color: var(--muted); display: grid; place-items: center; }
+  .nav-item.active .icon { color: var(--fg); }
+  .nav-item .hint { font-size: 11px; color: var(--muted); }
+
+  /* Content */
+  .content { overflow-y: auto; padding: 32px 40px 60px; }
+  .content .hero {
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .content .hero h2 {
+    margin: 0 0 6px;
+    font-family: var(--sans); font-weight: 600;
+    font-size: 24px; letter-spacing: -0.02em;
+  }
+  .content .hero p {
+    margin: 0; color: var(--muted);
+    font-size: 13px; max-width: 560px; line-height: 1.55;
+  }
+
+  .group { margin-bottom: 36px; }
+  .group-label {
+    font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .row {
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 22px; align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .label { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .row .desc { font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 460px; }
+  .row .control { display: flex; align-items: center; gap: 10px; }
+
+  /* Connection cards */
+  .connections {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .conn-card {
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    display: grid;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+  }
+  .conn-card .top {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    gap: 10px; align-items: center;
+  }
+  .conn-card .logo {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--line); color: var(--fg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 14px;
+  }
+  .conn-card .name { font-weight: 600; font-size: 13px; }
+  .conn-card .provider { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+  .conn-card .status {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--line);
+    color: var(--muted);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .conn-card .status .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ok);
+  }
+  .conn-card .status.offline .dot { background: var(--muted-2); }
+  .conn-card .status.offline { color: var(--muted-2); }
+  .conn-card .badges {
+    display: flex; gap: 4px; flex-wrap: wrap;
+  }
+  .conn-card .badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--line-soft);
+    color: var(--muted);
+  }
+  .conn-card .actions {
+    display: flex; gap: 6px;
+    border-top: 1px solid var(--line); padding-top: 8px;
+  }
+  .conn-card .action-btn {
+    background: transparent; border: 0;
+    color: var(--muted); cursor: pointer;
+    font-size: 11px; padding: 2px 6px;
+    border-radius: 4px;
+    font-family: inherit;
+  }
+  .conn-card .action-btn:hover { background: var(--line-soft); color: var(--fg); }
+  .conn-card .action-btn.danger:hover { color: var(--destructive); background: oklch(95% 0.04 25); }
+  body[data-theme="dark"] .conn-card .action-btn.danger:hover { background: oklch(30% 0.06 25); }
+
+  .add-connection-row {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12.5px;
+    transition: border-color 140ms ease, color 140ms ease;
+  }
+  .add-connection-row:hover { border-color: var(--muted-2); color: var(--fg); }
+
+  /* Routing grid */
+  .routing-table {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .routing-table .rt-header,
+  .routing-table .rt-row {
+    display: contents;
+  }
+  .routing-table .rt-cell {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px;
+    color: var(--fg);
+    display: flex; align-items: center;
+  }
+  .routing-table .rt-header .rt-cell {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    background: var(--line-soft);
+  }
+  .routing-table .rt-row:last-child .rt-cell { border-bottom: 0; }
+  .routing-table .rt-cell.desc { color: var(--muted); font-size: 11.5px; }
+
+  /* Controls */
+  .switch {
+    position: relative; display: inline-block;
+    width: 38px; height: 22px; cursor: pointer;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0;
+    background: var(--muted-2);
+    border-radius: 999px;
+    transition: background 160ms ease;
+  }
+  .switch .thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    background: var(--panel);
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    transition: transform 160ms ease;
+  }
+  .switch input:checked + .track { background: var(--fg); }
+  .switch input:checked + .track + .thumb { transform: translateX(16px); }
+
+  .select {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 12px;
+    font: inherit; font-size: 12.5px;
+    color: var(--fg);
+    outline: none; min-width: 200px;
+    cursor: pointer;
+  }
+  .select:focus { border-color: var(--muted-2); }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 12px;
+    font: inherit; font-size: 12.5px;
+    color: var(--fg);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { background: var(--line-soft); }
+  .btn.subtle { color: var(--muted); }
+  .btn.danger { color: var(--destructive); border-color: transparent; }
+
+  .num {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted);
+    padding: 4px 8px;
+    background: var(--line-soft);
+    border-radius: 5px;
+  }
+
+  /* Approvals list */
+  .approval-list {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .approval {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    align-items: center;
+    font-size: 12.5px;
+  }
+  .approval:last-child { border-bottom: 0; }
+  .approval .scope { color: var(--muted); font-size: 11px; margin-top: 2px; font-family: var(--mono); }
+  .approval .revoke {
+    background: transparent; border: 0;
+    color: var(--muted); cursor: pointer;
+    font-size: 11px;
+  }
+  .approval .revoke:hover { color: var(--destructive); }
+
+  /* Footer */
+  .footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 11.5px;
+  }
+
+  .theme-toggle {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 12px; font-size: 11px;
+    color: var(--muted); cursor: pointer;
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.18);
+  }
+  .theme-toggle:hover { color: var(--fg); }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="frame">
+  <!-- Nav -->
+  <aside class="nav">
+    <div class="nav-header">
+      <h1>Settings</h1>
+      <div class="search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input placeholder="Search settings…" />
+      </div>
+    </div>
+    <div class="nav-body">
+      <h5>Notesage</h5>
+      <div class="nav-item"><span class="icon">⚙︎</span><span>General</span><span></span></div>
+      <div class="nav-item"><span class="icon">◐</span><span>Appearance</span><span></span></div>
+      <div class="nav-item"><span class="icon">✎</span><span>Editor</span><span></span></div>
+      <div class="nav-item active">
+        <span class="icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5 5.6.8-4 4 1 5.6-5-2.8-5 2.8 1-5.6-4-4 5.6-.8z"/></svg>
+        </span>
+        <span>AI &amp; Agents</span>
+        <span class="hint">3</span>
+      </div>
+      <h5>Workspace</h5>
+      <div class="nav-item"><span class="icon">◆</span><span>Skills</span><span class="hint">12</span></div>
+      <div class="nav-item"><span class="icon">▤</span><span>Projects</span><span></span></div>
+      <div class="nav-item"><span class="icon">🔒</span><span>Privacy</span><span></span></div>
+      <div class="nav-item"><span class="icon">»</span><span>Advanced</span><span></span></div>
+      <h5>Notesage 0.38.1</h5>
+      <div class="nav-item"><span class="icon">ⓘ</span><span>About</span><span></span></div>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <main class="content">
+    <div class="hero">
+      <h2>AI &amp; Agents</h2>
+      <p>Provider connections, per-use-case routing, tool calling, and network sandboxing. Changes apply to all future conversations; existing ones keep their original provider.</p>
+    </div>
+
+    <!-- Connections group -->
+    <div class="group">
+      <div class="group-label">
+        <span>Connections · 3 active</span>
+        <button class="btn subtle" style="font-size: 11px">+ Add connection</button>
+      </div>
+
+      <div class="connections">
+        <div class="conn-card">
+          <div class="top">
+            <div class="logo"><em>C</em></div>
+            <div>
+              <div class="name">Anthropic Claude</div>
+              <div class="provider">claude-sonnet-4-5 · API key</div>
+            </div>
+            <span class="status"><span class="dot"></span>live</span>
+          </div>
+          <div class="badges">
+            <span class="badge">interactive</span>
+            <span class="badge">agent tasks</span>
+          </div>
+          <div class="actions">
+            <button class="action-btn">Settings</button>
+            <button class="action-btn">Test</button>
+            <button class="action-btn danger" style="margin-left: auto">Remove</button>
+          </div>
+        </div>
+
+        <div class="conn-card">
+          <div class="top">
+            <div class="logo"><em>Cc</em></div>
+            <div>
+              <div class="name">Claude Code CLI</div>
+              <div class="provider">ACP agent · managed</div>
+            </div>
+            <span class="status"><span class="dot"></span>running</span>
+          </div>
+          <div class="badges">
+            <span class="badge">interactive</span>
+            <span class="badge">agent tasks</span>
+            <span class="badge">sandbox</span>
+          </div>
+          <div class="actions">
+            <button class="action-btn">Settings</button>
+            <button class="action-btn">Re-auth</button>
+            <button class="action-btn danger" style="margin-left: auto">Remove</button>
+          </div>
+        </div>
+
+        <div class="conn-card">
+          <div class="top">
+            <div class="logo"><em>O</em></div>
+            <div>
+              <div class="name">Ollama (local)</div>
+              <div class="provider">qwen2.5-coder · localhost:11434</div>
+            </div>
+            <span class="status offline"><span class="dot"></span>offline</span>
+          </div>
+          <div class="badges">
+            <span class="badge">inline completion</span>
+          </div>
+          <div class="actions">
+            <button class="action-btn">Settings</button>
+            <button class="action-btn">Start</button>
+            <button class="action-btn danger" style="margin-left: auto">Remove</button>
+          </div>
+        </div>
+
+        <div class="add-connection-row">+ Add another connection</div>
+      </div>
+    </div>
+
+    <!-- Routing group -->
+    <div class="group">
+      <div class="group-label"><span>Routing</span></div>
+
+      <div class="row">
+        <div>
+          <div class="label">Interactive (chat + inline actions)</div>
+          <div class="desc">Used when you type in the command bar or invoke AI actions from the bubble menu.</div>
+        </div>
+        <div class="control">
+          <select class="select">
+            <option>Claude Sonnet 4.5 · Anthropic</option>
+            <option>Claude Code CLI</option>
+            <option>Ollama (local)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Agent tasks (comment delegation)</div>
+          <div class="desc">Used when you delegate a comment to "an agent" or the agent runs a multi-step task in the background.</div>
+        </div>
+        <div class="control">
+          <select class="select">
+            <option>Claude Code CLI · ACP</option>
+            <option>Claude Sonnet 4.5 · Anthropic</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Inline completion (Copilot-style)</div>
+          <div class="desc">Ghost-text suggestions as you type. Disable by choosing "None".</div>
+        </div>
+        <div class="control">
+          <select class="select">
+            <option>Ollama (local)</option>
+            <option>None</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool calling group -->
+    <div class="group">
+      <div class="group-label"><span>Tool calling</span></div>
+
+      <div class="row">
+        <div>
+          <div class="label">Enable tool calling</div>
+          <div class="desc">Models can read files, search the web, execute skill scripts. Required for most agent workflows.</div>
+        </div>
+        <div class="control">
+          <label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Require confirmation for every tool call</div>
+          <div class="desc">Disables "always allow" approvals. Every tool call shows a permission card.</div>
+        </div>
+        <div class="control">
+          <label class="switch"><input type="checkbox" /><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Web search provider</div>
+          <div class="desc">Backend for the <code style="font-family: var(--mono)">web_search</code> tool.</div>
+        </div>
+        <div class="control">
+          <select class="select" style="min-width: 180px">
+            <option>DuckDuckGo</option>
+            <option>Brave Search</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Max tool calls per turn</div>
+          <div class="desc">Safety cap to prevent runaway loops.</div>
+        </div>
+        <div class="control"><span class="num">20</span></div>
+      </div>
+    </div>
+
+    <!-- Network group -->
+    <div class="group">
+      <div class="group-label"><span>Network &amp; filesystem sandbox</span></div>
+
+      <div class="row">
+        <div>
+          <div class="label">Route agent network through Notesage proxy</div>
+          <div class="desc">Domain-level filtering for outbound requests. Unknown domains trigger an approval card.</div>
+        </div>
+        <div class="control">
+          <label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Kernel-level network deny</div>
+          <div class="desc">Uses Seatbelt <code style="font-family: var(--mono)">(deny default)</code>. Agent processes physically cannot bypass the proxy.</div>
+        </div>
+        <div class="control">
+          <label class="switch"><input type="checkbox" checked /><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Cross-project mode</div>
+          <div class="desc">Expose every open project to the agent. A banner above the chat reminds you while active. Default off.</div>
+        </div>
+        <div class="control">
+          <label class="switch"><input type="checkbox" /><span class="track"></span><span class="thumb"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Persisted approvals group -->
+    <div class="group">
+      <div class="group-label">
+        <span>Persisted approvals · 4</span>
+        <button class="btn subtle danger" style="font-size: 11px">Revoke all</button>
+      </div>
+
+      <div class="approval-list">
+        <div class="approval">
+          <div>
+            <div><b>web_search</b></div>
+            <div class="scope">any connection · any project · granted 2026-04-02</div>
+          </div>
+          <button class="revoke">Revoke</button>
+        </div>
+        <div class="approval">
+          <div>
+            <div><b>write_file</b></div>
+            <div class="scope">Claude · Essays · granted 2026-04-15</div>
+          </div>
+          <button class="revoke">Revoke</button>
+        </div>
+        <div class="approval">
+          <div>
+            <div><b>execute_skill_script</b> · generate-presentation</div>
+            <div class="scope">Claude · Essays · granted 2026-04-18</div>
+          </div>
+          <button class="revoke">Revoke</button>
+        </div>
+        <div class="approval">
+          <div>
+            <div><b>domain</b> · api.github.com</div>
+            <div class="scope">Claude Code CLI · any project · granted 2026-04-19</div>
+          </div>
+          <button class="revoke">Revoke</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Changes apply to future conversations. Active sessions keep their current configuration.</span>
+      <button class="btn subtle">Reset routing to defaults</button>
+    </div>
+  </main>
+</div>
+
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<script>
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

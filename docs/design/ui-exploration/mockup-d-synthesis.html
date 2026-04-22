@@ -1,0 +1,1498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Synthesis (Mockup D)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --accent: oklch(20% 0 0);
+    --orb: oklch(20% 0 0);
+    --radius: 10px;
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Literata", "Iowan Old Style", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(19% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --accent: oklch(92% 0 0);
+    --orb: oklch(85% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease;
+  }
+
+  /* ── Layout ───────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: 252px 1fr;
+    height: 100vh;
+    position: relative;
+  }
+
+  /* ── Sidebar (from C) ─────────────────────── */
+  .sidebar {
+    padding: 20px 16px;
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .workspace-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 4px;
+    margin-bottom: 18px;
+  }
+  .workspace-header .avatar {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600;
+    font-size: 12px;
+  }
+  .workspace-header .name { font-weight: 600; font-size: 13px; }
+  .workspace-header .sub  { font-size: 11px; color: var(--muted); }
+
+  .sidebar h4 {
+    margin: 22px 4px 6px;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .sidebar h4:first-of-type { margin-top: 4px; }
+
+  .item {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .item:hover { background: var(--line-soft); }
+  .item.active { background: var(--line); }
+  .item .icon { color: var(--muted); }
+  .item .count { color: var(--muted); font-size: 11px; }
+  .pinned .item { padding: 6px 8px; }
+  .pinned .item .name { font-weight: 500; }
+
+  /* ── Workspace ─────────────────────────────── */
+  .workspace {
+    display: grid;
+    grid-template-rows: 44px 1fr;
+    min-width: 0;
+    position: relative;
+  }
+
+  /* Document head — breadcrumb + dirty dot (replaces tab strip) */
+  .doc-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 130px 0 22px;  /* reserves space on the right for the floating toggle */
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: 0.01em;
+    transition: opacity 320ms ease;
+    -webkit-app-region: drag; /* visual: this is the drag zone, so title bar buttons live above */
+  }
+  .doc-head .crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .doc-head .crumbs .crumb-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 8px; border-radius: 999px;
+    background: var(--line); color: var(--fg);
+    font-size: 11.5px; font-weight: 500;
+  }
+  .doc-head .crumbs .crumb-pill .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--fg);
+  }
+  .doc-head .sep { color: var(--muted-2); }
+  .doc-head .leaf { color: var(--fg); font-weight: 500; }
+  .doc-head .dirty {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--fg);
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+  .doc-head .spacer { flex: 1; }
+  .doc-head .doc-meta {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .app.typing .doc-head { opacity: 0; pointer-events: none; }
+
+  /* Floating pill toolbar (from A) — fades on type */
+  .toolbar {
+    position: absolute;
+    top: 54px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 2px 14px -8px rgba(0,0,0,0.18);
+    opacity: 1;
+    transition: opacity 340ms ease, transform 340ms ease;
+    z-index: 3;
+  }
+  .app.typing .toolbar { opacity: 0; transform: translateX(-50%) translateY(-8px); pointer-events: none; }
+  .toolbar button {
+    width: 30px; height: 30px; border-radius: 999px;
+    border: 0; background: transparent; color: var(--fg);
+    cursor: pointer; font-size: 13px;
+  }
+  .toolbar button:hover { background: var(--line); }
+  .toolbar .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+
+  /* Document canvas */
+  .doc {
+    overflow: auto;
+    padding: 56px min(10vw, 110px) 180px;
+  }
+  .doc-inner { max-width: 720px; margin: 0 auto; }
+  .doc-inner .hero-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 4px;
+  }
+  .doc-inner .hero-row .badge {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .doc-inner h1 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .doc-inner .subtitle {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 6px 0 36px;
+  }
+  .doc-inner h2 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 17px;
+    margin: 40px 0 12px;
+    letter-spacing: -0.005em;
+  }
+  .doc-inner p {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.72;
+    margin: 0 0 16px;
+  }
+  .doc-inner ul {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.72;
+  }
+  .doc-inner blockquote {
+    border-left: 2px solid var(--muted-2);
+    color: var(--muted);
+    padding-left: 18px;
+    margin: 22px 0;
+    font-family: var(--serif);
+    font-style: italic;
+  }
+  .doc-inner code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--line);
+    padding: 1.5px 6px;
+    border-radius: 4px;
+  }
+
+  /* Status line (from A) — fades on type */
+  .status {
+    position: absolute;
+    bottom: 12px;
+    left: 252px; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    opacity: 0.7;
+    transition: opacity 340ms ease;
+    pointer-events: none;
+  }
+  .app.typing .status { opacity: 0; }
+
+  /* ── Focus mode (⌘.) ─────────────────────── */
+  .sidebar { transition: opacity 320ms ease, transform 320ms ease; }
+  .app.focus-mode .sidebar {
+    opacity: 0;
+    transform: translateX(-20px);
+    pointer-events: none;
+  }
+  .app.focus-mode .doc-head,
+  .app.focus-mode .toolbar,
+  .app.focus-mode .status {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+  .app.focus-mode .doc {
+    padding-top: 110px; /* Respect macOS traffic-light safe zone */
+  }
+  .app.focus-mode .orb { opacity: 0.3; }
+  .app.focus-mode .orb:hover { opacity: 1; }
+  .focus-pill {
+    position: fixed;
+    top: 14px; left: 50%; transform: translateX(-50%);
+    padding: 5px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px; color: var(--muted);
+    display: none;
+    z-index: 25;
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.18);
+    align-items: center;
+    gap: 8px;
+  }
+  .app.focus-mode .focus-pill { display: inline-flex; }
+  .focus-pill .kbd { border-color: var(--line); }
+
+  /* ── Floating command bar (from B) ─────────── */
+  .cmdbar-wrap {
+    position: fixed;
+    left: 252px; right: 66px;            /* leave room for orb */
+    bottom: 26px;
+    display: grid; place-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .cmdbar {
+    pointer-events: auto;
+    width: min(640px, 75%);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 18px 54px -18px rgba(0,0,0,0.32);
+    backdrop-filter: blur(14px);
+    overflow: hidden;
+    transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .cmdbar.expanded { transform: translateY(-14px); }
+
+  .cmdbar-stream {
+    max-height: 0;
+    overflow-y: auto;
+    transition: max-height 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    border-bottom: 0 solid var(--line);
+  }
+  .cmdbar.expanded .cmdbar-stream {
+    max-height: min(380px, 48vh);
+    border-bottom: 1px solid var(--line);
+  }
+  .cmdbar-stream-inner { padding: 16px 18px; }
+  .msg { margin-bottom: 14px; }
+  .msg .role { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; }
+  .msg.user .bubble { font-size: 13.5px; color: var(--fg); }
+  .msg.assistant .bubble {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--fg);
+  }
+  .msg.assistant .bubble p { margin: 0 0 8px; }
+
+  /* Context row — provider / projects / mode / history / pin */
+  .cmdbar-context {
+    display: none;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 6px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .cmdbar.expanded .cmdbar-context { display: flex; }
+
+  .ctx-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--line-soft);
+    font-size: 11.5px;
+    color: var(--fg);
+    cursor: pointer;
+    border: 0;
+    font-family: inherit;
+    transition: background 140ms ease;
+  }
+  .ctx-pill:hover { background: var(--line); }
+  .ctx-pill .caret { color: var(--muted); font-size: 9px; margin-left: 1px; }
+  .ctx-pill svg { color: var(--muted); }
+
+  .ctx-project {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 4px 3px 10px;
+    border-radius: 999px;
+    background: var(--line);
+    font-size: 11.5px;
+    color: var(--fg);
+  }
+  .ctx-project .lock { color: var(--muted); font-size: 10px; }
+  .ctx-project .remove {
+    display: grid; place-items: center;
+    width: 15px; height: 15px; border-radius: 50%;
+    color: var(--muted); cursor: pointer; font-size: 11px;
+    line-height: 1;
+  }
+  .ctx-project .remove:hover { color: var(--fg); background: var(--panel); }
+  .ctx-add {
+    background: transparent; border: 1px dashed var(--line);
+    color: var(--muted); font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ctx-add:hover { border-color: var(--muted-2); color: var(--fg); }
+
+  .ctx-spacer { flex: 1; min-width: 8px; }
+
+  .ctx-icon-btn {
+    background: transparent; border: 0;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border-radius: 6px;
+    color: var(--muted); cursor: pointer;
+  }
+  .ctx-icon-btn:hover { background: var(--line-soft); color: var(--fg); }
+  .ctx-icon-btn.active { background: var(--line); color: var(--fg); }
+
+  .ctx-divider { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+
+  /* Attachment chips (from @ reference) */
+  .cmdbar-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px 0;
+  }
+  .cmdbar-attachments:empty { display: none; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 4px 3px 10px;
+    border-radius: 999px;
+    background: var(--line);
+    font-size: 11.5px;
+    color: var(--fg);
+  }
+  .chip .chip-icon { color: var(--muted); font-size: 10px; }
+  .chip .remove {
+    display: grid; place-items: center;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .chip .remove:hover { color: var(--fg); background: var(--panel); }
+
+  .cmdbar-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    padding: 12px 14px;
+    gap: 12px;
+  }
+  /* When the context row is visible and no prefix filter is active,
+     suppress the input-row mode pill — it would duplicate the permission dropdown above. */
+  .cmdbar.expanded:not(.suggesting) .cmdbar-mode { display: none; }
+  .cmdbar.expanded:not(.suggesting) .cmdbar-row { grid-template-columns: 1fr auto; }
+  .cmdbar-mode {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--line);
+    color: var(--fg);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+  .cmdbar-mode .icon { width: 12px; height: 12px; }
+  .cmdbar-input {
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+    padding: 2px 0;
+    caret-color: var(--fg);
+    min-width: 0;
+  }
+  .cmdbar-input::placeholder { color: var(--muted); }
+  .cmdbar-actions { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+  .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border: 1px solid var(--line); border-radius: 4px;
+    font-size: 10px; color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .cmdbar-suggest {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 220ms ease;
+    border-top: 0 solid var(--line);
+  }
+  .cmdbar.suggesting .cmdbar-suggest {
+    max-height: 240px;
+    border-top: 1px solid var(--line);
+  }
+  .suggest-item {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 16px;
+    color: var(--fg);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .suggest-item:hover, .suggest-item.focused { background: var(--line); }
+  .suggest-item .meta { color: var(--muted); font-size: 11.5px; }
+  .suggest-item .icon { color: var(--muted); }
+
+  /* ── Agent orb (from A) ────────────────────── */
+  .orb {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--orb);
+    color: var(--bg);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    border: 0;
+    box-shadow: 0 6px 24px -8px rgba(0,0,0,0.28);
+    z-index: 11;
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+  .orb:hover { transform: scale(1.06); }
+  .orb::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1.5px solid var(--orb);
+    opacity: 0.28;
+    animation: pulse 2400ms ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.9); opacity: 0.35; }
+    50%  { transform: scale(1.15); opacity: 0; }
+    100% { transform: scale(0.9); opacity: 0; }
+  }
+  .orb.idle::after { animation: none; opacity: 0; }
+  .orb svg { width: 18px; height: 18px; }
+
+  /* Orb count badge shows # of running tasks */
+  .orb .count-badge {
+    position: absolute;
+    top: -3px; right: -3px;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    font-size: 10px;
+    display: grid; place-items: center;
+    font-family: var(--mono);
+    font-weight: 600;
+  }
+
+  /* Agent panel (click orb) */
+  .panel {
+    position: fixed;
+    right: 22px;
+    bottom: 82px;
+    width: 340px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 16px 48px -16px rgba(0,0,0,0.28);
+    padding: 14px;
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 200ms ease, opacity 200ms ease;
+    z-index: 10;
+  }
+  .panel.open {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .panel h3 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .task {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    gap: 10px;
+    padding: 10px 8px;
+    border-radius: 8px;
+    align-items: start;
+  }
+  .task:hover { background: var(--line); }
+  .task .spinner {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1.5px solid var(--muted-2);
+    border-top-color: var(--fg);
+    animation: spin 900ms linear infinite;
+    margin-top: 2px;
+  }
+  .task.done .spinner { border-color: var(--muted-2); animation: none; border-top-color: var(--muted-2); }
+  .task.done .spinner::after { content: "✓"; position: relative; top: -3px; left: 1px; font-size: 10px; color: var(--fg); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .task .title { font-size: 13px; line-height: 1.35; }
+  .task .meta  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .task .elapsed { font-size: 11px; color: var(--muted); }
+
+  .panel-footer {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 4px 2px;
+    margin-top: 6px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  /* Theme toggle */
+  .theme-toggle {
+    position: fixed; top: 12px; right: 18px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+
+  .caret { color: var(--muted-2); animation: blink 1100ms step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ── Folder peek popover (hover escape hatch) ─ */
+  .peek {
+    position: fixed;
+    display: none;
+    min-width: 260px;
+    max-width: 320px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 16px 48px -16px rgba(0,0,0,0.28);
+    padding: 8px 6px;
+    z-index: 18;
+    animation: peek-in 140ms ease;
+  }
+  @keyframes peek-in {
+    from { opacity: 0; transform: translateX(-4px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .peek .peek-header {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 2px 8px 8px;
+  }
+  .peek .peek-item {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .peek .peek-item:hover { background: var(--line-soft); }
+  .peek .peek-item .icon { color: var(--muted); }
+  .peek .peek-item .meta { color: var(--muted); font-size: 11px; }
+  .peek .peek-footer {
+    margin-top: 6px;
+    border-top: 1px solid var(--line);
+    padding: 8px 10px 2px;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex; justify-content: space-between;
+  }
+  .peek .peek-footer .kbd-line { display: inline-flex; gap: 3px; align-items: center; }
+
+  /* ── Tree overlay (⌘⇧E) ─────────────────────── */
+  .tree-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    box-shadow: 18px 0 48px -24px rgba(0,0,0,0.35);
+    transform: translateX(-100%);
+    transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+  }
+  .tree-overlay.open { transform: translateX(0); }
+  .tree-header {
+    padding: 16px 16px 10px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tree-header h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--sans);
+    letter-spacing: -0.005em;
+  }
+  .tree-header .spacer { flex: 1; }
+  .tree-search {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tree-search input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--fg);
+    font-size: 12.5px;
+    outline: none;
+    font-family: inherit;
+  }
+  .tree-search input:focus { border-color: var(--muted-2); }
+  .tree-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 10px 24px;
+  }
+  .tree-node { font-size: 12.5px; }
+  .tree-node .row {
+    display: grid;
+    grid-template-columns: 12px 14px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 6px;
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .tree-node .row:hover { background: var(--line-soft); }
+  .tree-node .row .caret-tri {
+    width: 0; height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid var(--muted);
+    transition: transform 140ms ease;
+    justify-self: center;
+  }
+  .tree-node.leaf .row .caret-tri { visibility: hidden; }
+  .tree-node.expanded > .row .caret-tri { transform: rotate(90deg); }
+  .tree-node .row .tree-icon { color: var(--muted); }
+  .tree-node .row .count { color: var(--muted); font-size: 10.5px; }
+  .tree-node .children {
+    display: none;
+    padding-left: 14px;
+    border-left: 1px solid var(--line-soft);
+    margin-left: 10px;
+  }
+  .tree-node.expanded > .children { display: block; }
+  .tree-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.06);
+    z-index: 29;
+    display: none;
+  }
+  body[data-theme="dark"] .tree-backdrop { background: rgba(0,0,0,0.35); }
+  .tree-backdrop.open { display: block; }
+  .tree-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="app" id="app">
+  <!-- Sidebar (from C) ── flat list, not a tree -->
+  <aside class="sidebar">
+    <div class="workspace-header">
+      <div class="avatar"><em>N</em></div>
+      <div>
+        <div class="name">Notesage</div>
+        <div class="sub">12 projects · 248 notes</div>
+      </div>
+    </div>
+
+    <h4>Pinned</h4>
+    <div class="pinned">
+      <div class="item active">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>
+        <span class="name">On Attention.md</span>
+        <span class="count">·</span>
+      </div>
+      <div class="item">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        <span class="name">Weekly Review</span>
+        <span class="count">Mon</span>
+      </div>
+      <div class="item">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+        <span class="name">Ideas</span>
+        <span class="count">17</span>
+      </div>
+    </div>
+
+    <h4>Projects</h4>
+    <div class="item" data-project="essays">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Essays</span>
+      <span class="count">32</span>
+    </div>
+    <div class="item" data-project="design">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Design System</span>
+      <span class="count">64</span>
+    </div>
+    <div class="item" data-project="research">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Research</span>
+      <span class="count">19</span>
+    </div>
+
+    <h4>Recent</h4>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">On Craft.md</span>
+      <span class="count">2h</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">Workshop notes.md</span>
+      <span class="count">1d</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">Prompt library.md</span>
+      <span class="count">3d</span>
+    </div>
+
+    <h4>Tags</h4>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">attention</span>
+      <span class="count">8</span>
+    </div>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">design</span>
+      <span class="count">24</span>
+    </div>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">draft</span>
+      <span class="count">5</span>
+    </div>
+  </aside>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <!-- Doc head — breadcrumb + dirty dot, replaces tab strip -->
+    <div class="doc-head">
+      <div class="crumbs">
+        <span class="crumb-pill"><span class="dot"></span> Notesage</span>
+        <span class="sep">/</span>
+        <span>essays</span>
+        <span class="sep">/</span>
+        <span>drafts</span>
+        <span class="sep">/</span>
+        <span class="leaf">On Attention.md</span>
+        <span class="dirty" title="Unsaved changes"></span>
+      </div>
+      <div class="spacer"></div>
+      <div class="doc-meta">saved 40 s ago</div>
+    </div>
+
+    <!-- Formatting pill — fades on type -->
+    <div class="toolbar" aria-label="Formatting">
+      <button title="Bold"><b>B</b></button>
+      <button title="Italic"><i>I</i></button>
+      <button title="Underline"><u>U</u></button>
+      <span class="sep"></span>
+      <button title="Heading">H</button>
+      <button title="Quote">❝</button>
+      <button title="List">≡</button>
+      <span class="sep"></span>
+      <button title="Link">⇄</button>
+      <button title="Code"><code style="font-size:11px">&lt;/&gt;</code></button>
+    </div>
+
+    <!-- Document -->
+    <div class="doc" id="doc" tabindex="0">
+      <div class="doc-inner">
+        <div class="hero-row">
+          <span class="badge">Essay</span>
+          <span class="badge">Draft</span>
+          <span class="badge">#attention</span>
+        </div>
+        <h1>On Attention</h1>
+        <div class="subtitle">Peter · saved 40 s ago · 2,184 words</div>
+
+        <p>The hardest part of thinking is not the thinking itself but holding
+        still long enough for a thought to arrive. Distraction is rarely loud.
+        It is almost always polite, small, well-intended — a little
+        interruption wearing a useful face.</p>
+
+        <p>I have been reading old essays on the discipline of writing, and one
+        line has kept returning to me: <em>attention is the beginning of
+        devotion</em>. I suspect the reverse is also true.</p>
+
+        <h2>What the tools are for</h2>
+        <p>A good writing surface should <code>disappear</code>. It should
+        feel closer to a sheet of paper than a screen. When the interface
+        fades, what remains is the voice.</p>
+
+        <blockquote>"We write to know what we think. The page is the mirror."</blockquote>
+
+        <p>This is why I keep coming back to markdown — not because it is the
+        fastest or the most powerful format, but because it refuses to get in
+        the way. Ceremony is the enemy of clarity.<span class="caret">|</span></p>
+      </div>
+    </div>
+
+    <div class="status">
+      <span>2,184 words</span>
+      <span>·</span>
+      <span>saved 40 s</span>
+      <span>·</span>
+      <span>⌘K ask</span>
+      <span>·</span>
+      <span>⌘1 !tasks</span>
+      <span>·</span>
+      <span>⌘2 @ref</span>
+      <span>·</span>
+      <span>⌘3 #tag</span>
+      <span>·</span>
+      <span>⌘. focus</span>
+    </div>
+  </div>
+
+  <!-- Floating command bar (from B) -->
+  <div class="cmdbar-wrap">
+    <div class="cmdbar" id="cmdbar">
+      <div class="cmdbar-context">
+        <!-- Left: provider + project scope -->
+        <button class="ctx-pill" title="AI provider">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="4"/></svg>
+          <span>Claude Sonnet 4.5</span>
+          <span class="caret">▾</span>
+        </button>
+        <span class="ctx-divider"></span>
+        <span class="ctx-project">
+          <span>Essays</span>
+          <span class="lock" title="Locked to Claude">🔒</span>
+          <span class="remove">×</span>
+        </span>
+        <button class="ctx-add">+ project</button>
+
+        <div class="ctx-spacer"></div>
+
+        <!-- Right: mode + history + pin -->
+        <button class="ctx-pill" title="Permission mode">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1 3 5v6c0 5 3.5 9.5 9 11 5.5-1.5 9-6 9-11V5Z"/></svg>
+          <span>Agent</span>
+          <span class="caret">▾</span>
+        </button>
+        <button class="ctx-icon-btn" title="Conversation history">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </button>
+        <button class="ctx-icon-btn" title="Pin as side panel (break out)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4 6 6-3 3-6-6zM9 10l-6 6 3 3 6-6M14 15l7 7M3 21l6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="cmdbar-stream">
+        <div class="cmdbar-stream-inner">
+          <div class="msg user">
+            <div class="role">You · 2 min ago</div>
+            <div class="bubble">Summarize this draft in three bullets, keep the tone.</div>
+          </div>
+          <div class="msg assistant">
+            <div class="role">Claude Sonnet 4.5</div>
+            <div class="bubble">
+              <p>• Attention is fragile, undermined by small polite interruptions rather than loud ones.</p>
+              <p>• Tools should disappear — interface as paper, not screen — so the writer's voice remains.</p>
+              <p>• Markdown endures because it adds no ceremony; ceremony is the enemy of clarity.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmdbar-attachments" id="chips">
+        <div class="chip" data-id="on-attention.md">
+          <span class="chip-icon">▤</span>
+          <span>on-attention.md</span>
+          <span class="remove" title="Remove">×</span>
+        </div>
+      </div>
+
+      <div class="cmdbar-row">
+        <div class="cmdbar-mode">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1 3 5v6c0 5 3.5 9.5 9 11 5.5-1.5 9-6 9-11V5Z"/></svg>
+          <span id="modeLabel">Claude · Essays · Agent</span>
+        </div>
+        <input
+          id="cmdinput"
+          class="cmdbar-input"
+          placeholder="Ask · / skill · @ reference · # tag · ! task · ? research · > palette"
+          autocomplete="off"
+        />
+        <div class="cmdbar-actions">
+          <span class="kbd">⌘</span><span class="kbd">K</span>
+        </div>
+      </div>
+
+      <div class="cmdbar-suggest" id="suggest"></div>
+    </div>
+  </div>
+
+  <!-- Agent orb (from A) -->
+  <button class="orb" id="orb" title="Agent — 2 working">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><circle cx="12" cy="12" r="4"/></svg>
+    <span class="count-badge">2</span>
+  </button>
+
+  <!-- Agent panel (click orb) -->
+  <div class="panel" id="panel">
+    <h3>Agent · 2 working</h3>
+    <div class="task">
+      <div class="spinner"></div>
+      <div>
+        <div class="title">Summarizing draft into key arguments</div>
+        <div class="meta">Claude Sonnet · On Attention.md</div>
+      </div>
+      <div class="elapsed">0:14</div>
+    </div>
+    <div class="task">
+      <div class="spinner"></div>
+      <div>
+        <div class="title">Drafting reply for comment "Is this too poetic?"</div>
+        <div class="meta">Claude Code · line 23</div>
+      </div>
+      <div class="elapsed">1:02</div>
+    </div>
+    <div class="task done">
+      <div class="spinner"></div>
+      <div>
+        <div class="title">Fetched 3 sources on "deep attention"</div>
+        <div class="meta">Research · 2 min ago</div>
+      </div>
+      <div class="elapsed">✓</div>
+    </div>
+    <div class="panel-footer">
+      <span>⌘⇧A to open full activity</span>
+      <span>2 of 8 today</span>
+    </div>
+  </div>
+
+  <!-- Folder peek popover (hover over a project) -->
+  <div class="peek" id="peek"></div>
+
+  <!-- Tree overlay (⌘⇧E) — full summonable tree -->
+  <div class="tree-backdrop" id="treeBackdrop"></div>
+  <div class="tree-overlay" id="treeOverlay">
+    <div class="tree-header">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <h3>Folders</h3>
+      <div class="spacer"></div>
+      <span class="kbd">esc</span>
+    </div>
+    <div class="tree-search">
+      <input placeholder="Filter folders…" autocomplete="off" />
+    </div>
+    <div class="tree-body" id="treeBody">
+      <!-- Essays -->
+      <div class="tree-node expanded">
+        <div class="row">
+          <span class="caret-tri"></span>
+          <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Essays</span>
+          <span class="count">32</span>
+        </div>
+        <div class="children">
+          <div class="tree-node expanded">
+            <div class="row">
+              <span class="caret-tri"></span>
+              <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span>drafts</span>
+              <span class="count">8</span>
+            </div>
+            <div class="children">
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>on-attention.md</span><span class="count">2h</span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>weekly-review.md</span><span class="count">1d</span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>workshop-notes.md</span><span class="count">3d</span></div></div>
+            </div>
+          </div>
+          <div class="tree-node">
+            <div class="row">
+              <span class="caret-tri"></span>
+              <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span>published</span>
+              <span class="count">14</span>
+            </div>
+            <div class="children">
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>on-craft.md</span><span class="count">Nov</span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>on-silence.md</span><span class="count">Oct</span></div></div>
+            </div>
+          </div>
+          <div class="tree-node">
+            <div class="row">
+              <span class="caret-tri"></span>
+              <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span>fragments</span>
+              <span class="count">10</span>
+            </div>
+            <div class="children">
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>quotes.md</span><span class="count">5d</span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>maybe-essays.md</span><span class="count">2w</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Design System -->
+      <div class="tree-node">
+        <div class="row">
+          <span class="caret-tri"></span>
+          <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Design System</span>
+          <span class="count">64</span>
+        </div>
+        <div class="children">
+          <div class="tree-node">
+            <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>tokens</span><span class="count">8</span></div>
+            <div class="children">
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>colors.md</span><span class="count"></span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>typography.md</span><span class="count"></span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>spacing.md</span><span class="count"></span></div></div>
+            </div>
+          </div>
+          <div class="tree-node">
+            <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>components</span><span class="count">36</span></div>
+            <div class="children">
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>button.md</span><span class="count"></span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>input.md</span><span class="count"></span></div></div>
+              <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>dialog.md</span><span class="count"></span></div></div>
+            </div>
+          </div>
+          <div class="tree-node">
+            <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>patterns</span><span class="count">20</span></div>
+            <div class="children"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Research — demonstrates deep nesting (5 levels) -->
+      <div class="tree-node expanded">
+        <div class="row">
+          <span class="caret-tri"></span>
+          <svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Research</span>
+          <span class="count">19</span>
+        </div>
+        <div class="children">
+          <div class="tree-node expanded">
+            <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>papers</span><span class="count">12</span></div>
+            <div class="children">
+              <div class="tree-node expanded">
+                <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>cognitive-science</span><span class="count">7</span></div>
+                <div class="children">
+                  <div class="tree-node expanded">
+                    <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>attention</span><span class="count">4</span></div>
+                    <div class="children">
+                      <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>2024-burkeman.md</span><span class="count"></span></div></div>
+                      <div class="tree-node leaf"><div class="row"><span class="caret-tri"></span><span class="tree-icon">·</span><span>2023-clear.md</span><span class="count"></span></div></div>
+                    </div>
+                  </div>
+                  <div class="tree-node">
+                    <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>focus</span><span class="count">3</span></div>
+                    <div class="children"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tree-node">
+            <div class="row"><span class="caret-tri"></span><svg class="tree-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>interviews</span><span class="count">7</span></div>
+            <div class="children"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tree-footer">
+      <span>Click rows to expand</span>
+      <span><span class="kbd">⌘</span> <span class="kbd">⇧</span> <span class="kbd">E</span></span>
+    </div>
+  </div>
+
+  <div class="focus-pill" id="focusPill">
+    <span>Focus</span>
+    <span class="kbd">⌘</span><span class="kbd">.</span>
+    <span>to exit</span>
+  </div>
+
+  <button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+</div>
+
+<script>
+  // ── Fade chrome on type (from A) ─────────────
+  const app = document.getElementById("app");
+  const doc = document.getElementById("doc");
+  let typingTimer;
+  const startTyping = (e) => {
+    // Don't fade when typing in the command bar — it's the input surface.
+    if (e.target && e.target.id === "cmdinput") return;
+    app.classList.add("typing");
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => app.classList.remove("typing"), 1200);
+  };
+  window.addEventListener("keydown", startTyping);
+  window.addEventListener("wheel",     () => app.classList.remove("typing"));
+  window.addEventListener("mousemove", () => app.classList.remove("typing"));
+
+  // ── Command bar morphing (from B) ────────────
+  const input = document.getElementById("cmdinput");
+  const modeLabel = document.getElementById("modeLabel");
+  const bar = document.getElementById("cmdbar");
+  const suggest = document.getElementById("suggest");
+
+  const MODES = {
+    "/":  { label: "Skill", items: [
+            { icon: "▹", text: "web-search",           meta: "skill · fetch & summarize" },
+            { icon: "▹", text: "download-webpage",     meta: "skill · URL → markdown" },
+            { icon: "▹", text: "save-research",        meta: "skill · file with tags" },
+            { icon: "▹", text: "synthesize-sources",   meta: "skill · cross-source synthesis" },
+            { icon: "▹", text: "generate-presentation", meta: "skill · doc → PPTX" },
+            { icon: "▹", text: "create-skill",         meta: "skill · scaffold new SKILL.md" },
+          ] },
+    "@":  { label: "Reference", items: [
+            { icon: "▤", text: "on-attention.md",          meta: "file · essays/drafts · 2h" },
+            { icon: "▤", text: "weekly-review.md",         meta: "file · essays/drafts · 1d" },
+            { icon: "▤", text: "prompt-library.md",        meta: "file · 3d" },
+            { icon: "◉", text: "workshop-image.png",       meta: "image · 214 KB" },
+            { icon: "○", text: "Peter Blenessy",           meta: "person · 12 mentions across 4 files" },
+            { icon: "◐", text: "'Is this too poetic?'",    meta: "comment · On Attention.md · line 23" },
+          ] },
+    "#":  { label: "Tag", items: [
+            { icon: "#", text: "attention", meta: "8 files" },
+            { icon: "#", text: "design",    meta: "24 files" },
+            { icon: "#", text: "draft",     meta: "5 files" },
+          ] },
+    "!":  { label: "Open task", items: [
+            { icon: "☐", text: "Fix theme toggle bug in mockups",     meta: "On Attention.md · line 45" },
+            { icon: "☐", text: "Write red-team report for isolation", meta: "docs/audits · due today" },
+            { icon: "☐", text: "Research ambient agent UX patterns",  meta: "Inbox · 2d" },
+            { icon: "☐", text: "Draft v0.39.0 release notes",         meta: "CHANGELOG.md" },
+            { icon: "☐", text: "Review PR #248 — network sandbox",    meta: "Work · today" },
+          ] },
+    "?":  { label: "Research", items: [
+            { icon: "◦", text: "Oliver Burkeman — The problem with attention", meta: "2025-11 · guardian.com" },
+            { icon: "◦", text: "James Clear — Deep work routines",             meta: "2024-06" },
+            { icon: "◦", text: "iA — The art of the page",                     meta: "2022" },
+          ] },
+    ">":  { label: "Palette", items: [
+            { icon: "⌘", text: "Summarize selection", meta: "AI · ⌘ ⇧ S" },
+            { icon: "⌘", text: "Improve writing",     meta: "AI · ⌘ ⇧ I" },
+            { icon: "⌘", text: "Export as PDF",       meta: "⌘ ⇧ E" },
+            { icon: "⌘", text: "Toggle focus mode",   meta: "⌘ ." },
+            { icon: "⌘", text: "New note",            meta: "⌘ N" },
+          ] },
+  };
+  const DEFAULT_LABEL = "Claude · Essays · Agent";
+
+  function renderSuggest(mode) {
+    if (!mode) { bar.classList.remove("suggesting"); suggest.innerHTML = ""; return; }
+    bar.classList.add("suggesting");
+    suggest.innerHTML = mode.items.map((i, idx) => `
+      <div class="suggest-item ${idx === 0 ? "focused" : ""}">
+        <span class="icon">${i.icon}</span>
+        <span>${i.text}</span>
+        <span class="meta">${i.meta}</span>
+      </div>
+    `).join("");
+  }
+
+  input.addEventListener("input", () => {
+    const v = input.value;
+    const prefix = v[0];
+    if (MODES[prefix]) {
+      modeLabel.textContent = MODES[prefix].label;
+      renderSuggest(MODES[prefix]);
+    } else {
+      modeLabel.textContent = DEFAULT_LABEL;
+      renderSuggest(null);
+    }
+  });
+  input.addEventListener("focus", () => bar.classList.add("expanded"));
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); input.focus(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+      e.preventDefault();
+      app.classList.toggle("focus-mode");
+    }
+    // ⌘1–4 focus the bar with a prefix pre-filled — one bar, many entry points.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      const shortcutMap = { "1": "!", "2": "@", "3": "#", "4": "?" };
+      if (shortcutMap[e.key]) {
+        e.preventDefault();
+        input.value = shortcutMap[e.key];
+        input.focus();
+        input.dispatchEvent(new Event("input"));
+      }
+    }
+    if (e.key === "Escape") {
+      bar.classList.remove("expanded");
+      bar.classList.remove("suggesting");
+      input.blur();
+    }
+  });
+
+  // Click an @ result → attach as a chip; click any other mode → just populate.
+  const chips = document.getElementById("chips");
+  suggest.addEventListener("click", (e) => {
+    const item = e.target.closest(".suggest-item");
+    if (!item) return;
+    const mode = input.value[0];
+    if (mode === "@") {
+      const iconEl = item.querySelector(".icon");
+      const nameEl = item.querySelector("span:nth-of-type(2)");
+      const icon = iconEl ? iconEl.textContent : "·";
+      const name = nameEl ? nameEl.textContent : "item";
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      chip.innerHTML = `<span class="chip-icon">${icon}</span><span>${name}</span><span class="remove" title="Remove">×</span>`;
+      chips.appendChild(chip);
+      input.value = "";
+      input.dispatchEvent(new Event("input"));
+      input.focus();
+    }
+  });
+  chips.addEventListener("click", (e) => {
+    if (e.target.classList.contains("remove")) {
+      e.target.closest(".chip").remove();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!bar.contains(e.target)) { bar.classList.remove("expanded"); bar.classList.remove("suggesting"); }
+  });
+
+  // ── Orb → panel (from A) ─────────────────────
+  const orb = document.getElementById("orb");
+  const panel = document.getElementById("panel");
+  orb.addEventListener("click", (e) => {
+    e.stopPropagation();
+    panel.classList.toggle("open");
+  });
+  document.addEventListener("click", (e) => {
+    if (!panel.contains(e.target) && !orb.contains(e.target)) panel.classList.remove("open");
+  });
+
+  // ── Hover peek (escape hatch #1) ─────────────
+  const PEEKS = {
+    essays: {
+      label: "Essays · 32 files",
+      folders: [
+        { name: "drafts",    meta: "8" },
+        { name: "published", meta: "14" },
+        { name: "fragments", meta: "10" },
+      ],
+      files: [
+        { name: "on-attention.md",  meta: "2h" },
+        { name: "on-craft.md",      meta: "2d" },
+        { name: "on-silence.md",    meta: "1w" },
+      ],
+    },
+    design: {
+      label: "Design System · 64 files",
+      folders: [
+        { name: "tokens",     meta: "8" },
+        { name: "components", meta: "36" },
+        { name: "patterns",   meta: "20" },
+      ],
+      files: [
+        { name: "overview.md",   meta: "4h" },
+        { name: "changelog.md",  meta: "1d" },
+      ],
+    },
+    research: {
+      label: "Research · 19 files · up to 5 deep",
+      folders: [
+        { name: "papers",     meta: "12" },
+        { name: "interviews", meta: "7" },
+      ],
+      files: [
+        { name: "reading-list.md", meta: "today" },
+      ],
+    },
+  };
+
+  const peek = document.getElementById("peek");
+  let peekShowTimer, peekHideTimer;
+
+  function showPeek(el) {
+    const id = el.dataset.project;
+    const data = PEEKS[id];
+    if (!data) return;
+    const rect = el.getBoundingClientRect();
+    peek.style.left = (rect.right + 8) + "px";
+    peek.style.top  = (rect.top - 4) + "px";
+    peek.innerHTML = `
+      <div class="peek-header">${data.label}</div>
+      ${data.folders.map(f => `
+        <div class="peek-item">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>${f.name}/</span>
+          <span class="meta">${f.meta}</span>
+        </div>
+      `).join("")}
+      ${data.files.map(f => `
+        <div class="peek-item">
+          <span class="icon">·</span>
+          <span>${f.name}</span>
+          <span class="meta">${f.meta}</span>
+        </div>
+      `).join("")}
+      <div class="peek-footer">
+        <span>Show full tree</span>
+        <span class="kbd-line"><span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">E</span></span>
+      </div>
+    `;
+    peek.style.display = "block";
+  }
+  function hidePeek() {
+    peek.style.display = "none";
+  }
+
+  document.querySelectorAll(".item[data-project]").forEach((el) => {
+    el.addEventListener("mouseenter", () => {
+      clearTimeout(peekHideTimer);
+      clearTimeout(peekShowTimer);
+      peekShowTimer = setTimeout(() => showPeek(el), 220);
+    });
+    el.addEventListener("mouseleave", () => {
+      clearTimeout(peekShowTimer);
+      peekHideTimer = setTimeout(hidePeek, 180);
+    });
+  });
+  peek.addEventListener("mouseenter", () => clearTimeout(peekHideTimer));
+  peek.addEventListener("mouseleave", () => {
+    peekHideTimer = setTimeout(hidePeek, 180);
+  });
+
+  // ── Tree overlay (escape hatch #2, ⌘⇧E) ──────
+  const overlay  = document.getElementById("treeOverlay");
+  const backdrop = document.getElementById("treeBackdrop");
+  function openTree() {
+    overlay.classList.add("open");
+    backdrop.classList.add("open");
+    hidePeek();
+    setTimeout(() => {
+      const q = overlay.querySelector(".tree-search input");
+      if (q) q.focus();
+    }, 120);
+  }
+  function closeTree() {
+    overlay.classList.remove("open");
+    backdrop.classList.remove("open");
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "E" || e.key === "e")) {
+      e.preventDefault();
+      if (overlay.classList.contains("open")) closeTree(); else openTree();
+    }
+    if (e.key === "Escape" && overlay.classList.contains("open")) {
+      closeTree();
+    }
+  });
+  backdrop.addEventListener("click", closeTree);
+
+  // Tree expand/collapse on row click
+  document.querySelectorAll(".tree-node .row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      const node = row.parentElement;
+      if (!node.classList.contains("leaf")) {
+        node.classList.toggle("expanded");
+      }
+      e.stopPropagation();
+    });
+  });
+
+  // Theme toggle
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+
+  doc.focus();
+</script>
+</body>
+</html>

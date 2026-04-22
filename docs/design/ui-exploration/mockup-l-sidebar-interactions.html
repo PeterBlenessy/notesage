@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Sidebar Interactions (Mockup L)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --destructive: oklch(55% 0.19 25);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(19% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans-body); font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    padding: 20px 16px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    overflow-y: auto;
+  }
+  .workspace-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 4px; margin-bottom: 18px;
+  }
+  .workspace-header .avatar {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 12px;
+  }
+  .workspace-header .name { font-weight: 600; font-size: 13px; }
+  .workspace-header .sub { font-size: 11px; color: var(--muted); }
+
+  .sidebar h4 {
+    margin: 22px 4px 6px;
+    font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .add-btn {
+    background: transparent; border: 0;
+    width: 18px; height: 18px;
+    display: grid; place-items: center;
+    color: var(--muted); cursor: pointer;
+    border-radius: 4px;
+    font-family: inherit;
+  }
+  .add-btn:hover { background: var(--line); color: var(--fg); }
+
+  .item {
+    display: grid; grid-template-columns: 14px 1fr auto;
+    gap: 10px; align-items: center;
+    padding: 5px 8px; border-radius: 6px;
+    color: var(--fg); cursor: pointer;
+    font-size: 13px; line-height: 1.3;
+    position: relative;
+  }
+  .item:hover { background: var(--line-soft); }
+  .item.active { background: var(--line); }
+  .item .icon { color: var(--muted); }
+  .item .count { color: var(--muted); font-size: 11px; }
+
+  /* Inline rename input — shown in one row */
+  .item.renaming { background: var(--line-soft); padding: 3px 6px; }
+  .item.renaming input {
+    grid-column: 2;
+    background: var(--panel);
+    border: 1.5px solid var(--fg);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font: inherit; font-size: 13px;
+    color: var(--fg);
+    outline: none;
+    width: 100%;
+  }
+
+  /* Inline new-file row */
+  .item.new-item {
+    background: var(--line-soft); padding: 3px 6px;
+    border: 1px dashed var(--muted-2);
+  }
+  .item.new-item input {
+    grid-column: 2;
+    background: var(--panel);
+    border: 1.5px solid var(--fg);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font: inherit; font-size: 13px;
+    color: var(--fg);
+    outline: none;
+    width: 100%;
+  }
+  .item.new-item .icon { color: var(--muted-2); }
+
+  /* Doc area — quiet, serves as backdrop */
+  .workspace { overflow: auto; padding: 40px 80px; opacity: 0.5; }
+  .workspace h1 {
+    font-family: var(--sans); font-weight: 600;
+    font-size: 28px; letter-spacing: -0.015em; margin: 0 0 20px;
+  }
+  .workspace p {
+    font-family: var(--serif); font-size: 16px; line-height: 1.7;
+    margin: 0 0 14px; max-width: 640px;
+  }
+
+  /* Right-click context menu */
+  .context-menu {
+    position: fixed;
+    min-width: 220px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 16px 40px -16px rgba(0,0,0,0.3);
+    padding: 5px;
+    z-index: 20;
+    display: none;
+    font-size: 12.5px;
+  }
+  .context-menu.open { display: block; }
+  .menu-item {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--fg);
+  }
+  .menu-item:hover { background: var(--line-soft); }
+  .menu-item.danger { color: var(--destructive); }
+  .menu-item .icon { color: var(--muted); font-size: 12px; }
+  .menu-item .kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 16px; height: 16px; padding: 0 5px;
+    border: 1px solid var(--line); border-radius: 3px;
+    font-size: 10px; color: var(--muted); font-family: var(--mono);
+  }
+  .menu-sep { height: 1px; background: var(--line); margin: 5px 2px; }
+
+  /* Hover preview popover */
+  .peek {
+    position: fixed;
+    width: 300px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 16px 40px -16px rgba(0,0,0,0.28);
+    padding: 14px;
+    z-index: 15;
+    display: none;
+  }
+  .peek.open { display: block; }
+  .peek .peek-header {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 10px;
+  }
+  .peek .peek-title { font-weight: 600; font-size: 13px; }
+  .peek .peek-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .peek .preview-lines {
+    font-family: var(--serif);
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  .peek .preview-lines p { margin: 0 0 6px; }
+  .peek .peek-foot {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--muted-2);
+    display: flex; gap: 8px;
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+    z-index: 30;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  /* Demo instructions */
+  .demo-panel {
+    position: fixed;
+    top: 22px; right: 22px;
+    width: 280px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 12px;
+    color: var(--fg);
+    box-shadow: 0 10px 28px -14px rgba(0,0,0,0.22);
+    z-index: 10;
+  }
+  .demo-panel h4 {
+    margin: 0 0 8px;
+    font-family: var(--sans);
+    font-size: 12px; font-weight: 600;
+  }
+  .demo-panel .thing {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 5px 0;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+  .demo-panel .thing:first-of-type { border-top: 0; }
+  .demo-panel .thing b { color: var(--fg); font-weight: 500; }
+  .demo-panel .kbd {
+    font-family: var(--mono); font-size: 10px;
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    color: var(--fg);
+  }
+
+  .theme-toggle {
+    position: fixed; bottom: 22px; right: 22px;
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="workspace-header">
+      <div class="avatar"><em>N</em></div>
+      <div>
+        <div class="name">Notesage</div>
+        <div class="sub">Sidebar interactions</div>
+      </div>
+    </div>
+
+    <h4>
+      <span>Pinned</span>
+      <button class="add-btn" title="New pinned file">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </h4>
+
+    <!-- A freshly-created row — shown inline -->
+    <div class="item new-item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <input id="newInput" placeholder="New file name…" autofocus />
+    </div>
+
+    <div class="item active" data-name="On Attention.md" data-kind="file">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>On Attention.md</span>
+      <span class="count">·</span>
+    </div>
+
+    <!-- This one is being renamed right now -->
+    <div class="item renaming" data-name="Weekly Review">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+      <input value="Weekly Review" />
+    </div>
+
+    <div class="item" data-name="Ideas" data-kind="file">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+      <span>Ideas</span>
+      <span class="count">17</span>
+    </div>
+
+    <h4>
+      <span>Projects</span>
+      <button class="add-btn" title="New project">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </h4>
+    <div class="item" data-name="Essays" data-kind="project">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span>Essays</span>
+      <span class="count">32</span>
+    </div>
+    <div class="item" data-name="Design System" data-kind="project">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span>Design System</span>
+      <span class="count">64</span>
+    </div>
+
+    <h4>
+      <span>Recent</span>
+    </h4>
+    <div class="item" data-name="On Craft.md" data-kind="file">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>On Craft.md</span>
+      <span class="count">2h</span>
+    </div>
+    <div class="item" data-name="Workshop notes.md" data-kind="file">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>Workshop notes.md</span>
+      <span class="count">1d</span>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <h1>Sidebar interaction demo</h1>
+    <p>Try these on the sidebar →</p>
+    <p>The demo panel on the right lists what's available. Every interaction is inline or in a shadcn <code>context-menu</code>; none open a modal dialog.</p>
+  </div>
+</div>
+
+<!-- Right-click context menu (positioned dynamically) -->
+<div class="context-menu" id="contextMenu">
+  <div class="menu-item" data-action="open">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+    <span>Open</span>
+    <span class="kbd">↵</span>
+  </div>
+  <div class="menu-item" data-action="rename">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    <span>Rename</span>
+    <span class="kbd">F2</span>
+  </div>
+  <div class="menu-item" data-action="duplicate">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    <span>Duplicate</span>
+    <span class="kbd">⌘D</span>
+  </div>
+  <div class="menu-item" data-action="pin">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6l3 3-3 3-3-3 3-3V2M9 14v8"/></svg>
+    <span>Pin</span>
+  </div>
+  <div class="menu-sep"></div>
+  <div class="menu-item" data-action="reveal">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m9 13 3 3 3-3"/></svg>
+    <span>Reveal in Finder</span>
+    <span class="kbd">⌘⌥R</span>
+  </div>
+  <div class="menu-item" data-action="copy-path">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    <span>Copy path</span>
+    <span class="kbd">⌘⌥C</span>
+  </div>
+  <div class="menu-item" data-action="copy-name">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span>Copy filename</span>
+  </div>
+  <div class="menu-item" data-action="move">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    <span>Move to…</span>
+  </div>
+  <div class="menu-sep"></div>
+  <div class="menu-item danger" data-action="trash">
+    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+    <span>Move to trash</span>
+    <span class="kbd">⌘⌫</span>
+  </div>
+</div>
+
+<!-- Hover preview -->
+<div class="peek" id="peek">
+  <div class="peek-header">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <div>
+      <div class="peek-title">On Craft.md</div>
+      <div class="peek-meta">2,184 words · saved 2 h ago · essays/drafts</div>
+    </div>
+  </div>
+  <div class="preview-lines">
+    <p># On Craft</p>
+    <p>The difference between craft and hobby is the willingness to keep after something long past the point at which you already know how it ends.</p>
+    <p>A carpenter who has planed ten thousand boards still reaches for the block plane with…</p>
+  </div>
+  <div class="peek-foot">
+    <span>Click to open</span>
+    <span>·</span>
+    <span>⌘click for new tab</span>
+  </div>
+</div>
+
+<!-- Demo affordances panel -->
+<div class="demo-panel">
+  <h4>Try the sidebar</h4>
+  <div class="thing">
+    <span><b>Right-click</b> any item</span>
+    <span style="color: var(--muted)">context menu</span>
+  </div>
+  <div class="thing">
+    <span><b>Hover</b> "On Craft.md" for 500 ms</span>
+    <span style="color: var(--muted)">preview</span>
+  </div>
+  <div class="thing">
+    <span><b>Double-click</b> any name</span>
+    <span style="color: var(--muted)">rename</span>
+  </div>
+  <div class="thing">
+    <span>Click <span class="kbd">+</span> in "Pinned"</span>
+    <span style="color: var(--muted)">new inline</span>
+  </div>
+  <div class="thing">
+    <span>"Weekly Review" is in <b>rename</b></span>
+    <span style="color: var(--muted)">top row new</span>
+  </div>
+</div>
+
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const menu = document.getElementById("contextMenu");
+  const peek = document.getElementById("peek");
+  const toast = document.getElementById("toast");
+  let peekTimer;
+  let currentItem = null;
+
+  function showToast(text) {
+    toast.textContent = text;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 1800);
+  }
+
+  // Right-click → menu
+  document.querySelectorAll(".item[data-name]").forEach((el) => {
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      currentItem = el;
+      menu.style.left = Math.min(e.clientX, window.innerWidth - 240) + "px";
+      menu.style.top  = Math.min(e.clientY, window.innerHeight - 360) + "px";
+      menu.classList.add("open");
+    });
+
+    // Double-click → rename
+    el.addEventListener("dblclick", (e) => {
+      if (el.classList.contains("renaming") || el.classList.contains("new-item")) return;
+      const name = el.dataset.name;
+      const iconSvg = el.querySelector("svg").outerHTML;
+      el.classList.add("renaming");
+      const nameSpan = el.querySelector("span:not(.count)");
+      if (nameSpan) {
+        const input = document.createElement("input");
+        input.value = name;
+        nameSpan.replaceWith(input);
+        input.focus();
+        input.select();
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            el.classList.remove("renaming");
+            const span = document.createElement("span");
+            span.textContent = input.value;
+            input.replaceWith(span);
+            showToast(`Renamed to "${input.value}"`);
+          }
+          if (ev.key === "Escape") {
+            el.classList.remove("renaming");
+            const span = document.createElement("span");
+            span.textContent = name;
+            input.replaceWith(span);
+          }
+        });
+      }
+    });
+
+    // Hover on "On Craft.md" → peek
+    el.addEventListener("mouseenter", () => {
+      if (el.dataset.name !== "On Craft.md") return;
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        peek.style.left = (rect.right + 8) + "px";
+        peek.style.top  = rect.top + "px";
+        peek.classList.add("open");
+      }, 500);
+    });
+    el.addEventListener("mouseleave", () => {
+      clearTimeout(peekTimer);
+      peek.classList.remove("open");
+    });
+  });
+
+  // Close menu on click outside
+  document.addEventListener("click", (e) => {
+    if (!menu.contains(e.target)) menu.classList.remove("open");
+  });
+
+  // Menu actions → toast feedback
+  menu.querySelectorAll(".menu-item").forEach((m) => {
+    m.addEventListener("click", () => {
+      const action = m.dataset.action;
+      const name = currentItem?.dataset.name || "item";
+      menu.classList.remove("open");
+      if (action === "copy-path") showToast(`Copied /Users/peter/Notesage/…/${name}`);
+      else if (action === "copy-name") showToast(`Copied "${name}"`);
+      else if (action === "reveal") showToast(`Reveal "${name}" in Finder`);
+      else if (action === "rename") { currentItem?.dispatchEvent(new Event("dblclick")); }
+      else if (action === "trash") showToast(`Moved "${name}" to trash`);
+      else if (action === "duplicate") showToast(`Duplicated "${name}"`);
+      else if (action === "pin") showToast(`Pinned "${name}"`);
+      else if (action === "move") showToast(`Move "${name}" to…`);
+      else showToast(action);
+    });
+  });
+
+  // Inline create — new input at top
+  const newInput = document.getElementById("newInput");
+  newInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && newInput.value.trim()) {
+      showToast(`Created "${newInput.value.trim()}"`);
+      newInput.value = "";
+    }
+    if (e.key === "Escape") newInput.value = "";
+  });
+  // Focus add buttons → focus the new-input if one exists
+  document.querySelectorAll(".add-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      newInput.focus();
+      newInput.select();
+    });
+  });
+
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>

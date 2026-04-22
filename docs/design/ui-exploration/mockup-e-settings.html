@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Settings (Mockup E)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --accent: oklch(20% 0 0);
+    --destructive: oklch(55% 0.19 25);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  }
+  body[data-theme="dark"] {
+    --bg: oklch(18% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --accent: oklch(92% 0 0);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease;
+    overflow: hidden;
+  }
+
+  /* ── Window frame (like a modal dialog) ─── */
+  .frame {
+    max-width: 1040px;
+    height: calc(100vh - 48px);
+    margin: 24px auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 28px 72px -20px rgba(0,0,0,0.22);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 236px 1fr;
+  }
+
+  /* ── Sidebar nav ────────────────────────── */
+  .nav {
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .nav-header {
+    padding: 18px 16px 8px;
+  }
+  .nav-header h1 {
+    margin: 0 4px 10px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.005em;
+  }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .search svg { color: var(--muted); flex-shrink: 0; }
+  .search input {
+    border: 0; background: transparent;
+    font: inherit; font-size: 12.5px;
+    color: var(--fg);
+    outline: none;
+    flex: 1;
+    min-width: 0;
+  }
+  .search input::placeholder { color: var(--muted); }
+  .search .kbd {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--muted);
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  .nav-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 8px 20px;
+  }
+  .nav h5 {
+    margin: 18px 12px 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .nav h5:first-child { margin-top: 0; }
+  .nav-item {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .nav-item:hover { background: var(--line-soft); }
+  .nav-item.active { background: var(--line); font-weight: 500; }
+  .nav-item .icon { color: var(--muted); display: grid; place-items: center; }
+  .nav-item.active .icon { color: var(--fg); }
+  .nav-item .hint { font-size: 11px; color: var(--muted); }
+
+  /* ── Content pane ───────────────────────── */
+  .content {
+    overflow-y: auto;
+    padding: 36px 44px 60px;
+  }
+  .content .hero {
+    margin-bottom: 30px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .content .hero h2 {
+    margin: 0 0 6px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 24px;
+    letter-spacing: -0.02em;
+  }
+  .content .hero p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 520px;
+    line-height: 1.55;
+  }
+
+  .group {
+    margin-bottom: 40px;
+  }
+  .group-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 22px;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .label { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .row .desc  { font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 460px; }
+  .row .control { display: flex; align-items: center; gap: 10px; }
+
+  /* ── Controls ───────────────────────────── */
+  .segmented {
+    display: inline-flex;
+    background: var(--line-soft);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .segmented button {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: 5px 12px;
+    font: inherit; font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+  }
+  .segmented button.active {
+    background: var(--panel);
+    color: var(--fg);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .segmented button:hover:not(.active) { color: var(--fg); }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 38px; height: 22px;
+    cursor: pointer;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0;
+    background: var(--muted-2);
+    border-radius: 999px;
+    transition: background 160ms ease;
+  }
+  .switch .thumb {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    background: var(--panel);
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    transition: transform 160ms ease;
+  }
+  .switch input:checked + .track { background: var(--fg); }
+  .switch input:checked + .track + .thumb { transform: translateX(16px); }
+
+  .slider {
+    display: inline-flex; align-items: center; gap: 10px;
+    min-width: 240px;
+  }
+  .slider input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--line);
+    border-radius: 3px;
+    outline: none;
+  }
+  .slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--fg);
+    cursor: pointer;
+    border: 2px solid var(--panel);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.22);
+  }
+  .slider .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 32px; text-align: right;
+  }
+
+  .select, .input {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 12px;
+    font: inherit; font-size: 12.5px;
+    color: var(--fg);
+    outline: none;
+    min-width: 180px;
+    cursor: pointer;
+  }
+  .input { cursor: text; }
+  .select:focus, .input:focus { border-color: var(--muted-2); }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 12px;
+    font: inherit; font-size: 12.5px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--line-soft); }
+  .btn.subtle { color: var(--muted); }
+  .btn.danger { color: var(--destructive); border-color: transparent; }
+  .btn.danger:hover { background: oklch(95% 0.04 25); }
+  body[data-theme="dark"] .btn.danger:hover { background: oklch(30% 0.06 25); }
+
+  /* ── Preview card (live theme sample) ────── */
+  .preview {
+    margin-top: 18px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    background: var(--bg);
+  }
+  .preview h4 {
+    font-family: var(--sans);
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .preview p {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.65;
+    margin: 0 0 10px;
+    color: var(--fg);
+  }
+  .preview .muted { color: var(--muted); font-size: 12px; }
+
+  /* ── Top window controls / close ────────── */
+  .close {
+    position: absolute;
+    top: 36px; right: calc(50vw - 520px + 24px);
+    width: 26px; height: 26px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--muted);
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-size: 12px;
+    z-index: 10;
+  }
+  .close:hover { color: var(--fg); background: var(--line-soft); }
+
+  /* Footer */
+  .footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+
+  .theme-toggle {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 12px; font-size: 11px;
+    color: var(--muted); cursor: pointer;
+    box-shadow: 0 4px 14px -6px rgba(0,0,0,0.18);
+  }
+  .theme-toggle:hover { color: var(--fg); }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="frame">
+  <!-- ── Nav sidebar ─── -->
+  <aside class="nav">
+    <div class="nav-header">
+      <h1>Settings</h1>
+      <div class="search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input placeholder="Search settings…" />
+        <span class="kbd">⌘F</span>
+      </div>
+    </div>
+
+    <div class="nav-body">
+      <h5>Notesage</h5>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+        <span>General</span>
+        <span></span>
+      </div>
+      <div class="nav-item active">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v1M12 21v1M4.22 4.22l.71.71M18.36 18.36l.71.71M2 12h1M21 12h1M4.22 19.78l.71-.71M18.36 5.64l.71-.71"/><circle cx="12" cy="12" r="5"/></svg></span>
+        <span>Appearance</span>
+        <span></span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+        <span>Editor</span>
+        <span></span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5 5.6.8-4 4 1 5.6-5-2.8-5 2.8 1-5.6-4-4 5.6-.8z"/></svg></span>
+        <span>AI &amp; Agents</span>
+        <span class="hint">3</span>
+      </div>
+
+      <h5>Workspace</h5>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span>
+        <span>Skills</span>
+        <span class="hint">12</span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+        <span>Projects</span>
+        <span></span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1 3 5v6c0 5 3.5 9.5 9 11 5.5-1.5 9-6 9-11V5Z"/></svg></span>
+        <span>Privacy</span>
+        <span></span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+        <span>Advanced</span>
+        <span></span>
+      </div>
+
+      <h5>Notesage 0.38.1</h5>
+      <div class="nav-item">
+        <span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span>
+        <span>About</span>
+        <span></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Content pane ─── -->
+  <main class="content">
+    <div class="hero">
+      <h2>Appearance</h2>
+      <p>How Notesage looks. All changes are live — preview below reflects the current selection instantly.</p>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Theme</div>
+
+      <div class="row">
+        <div>
+          <div class="label">Color mode</div>
+          <div class="desc">Choose light, dark, or match the operating system.</div>
+        </div>
+        <div class="control">
+          <div class="segmented" data-segmented="theme">
+            <button data-v="light" class="active">Light</button>
+            <button data-v="dark">Dark</button>
+            <button data-v="system">System</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Contrast</div>
+          <div class="desc">Interpolate between full and soft contrast. 0 is crisp, 100 is calm.</div>
+        </div>
+        <div class="control">
+          <div class="slider">
+            <input type="range" id="contrast" min="0" max="100" value="0" />
+            <span class="num" id="contrastNum">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Reduce motion</div>
+          <div class="desc">Disable slide and fade animations across the app.</div>
+        </div>
+        <div class="control">
+          <label class="switch">
+            <input type="checkbox" />
+            <span class="track"></span>
+            <span class="thumb"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Layout</div>
+
+      <div class="row">
+        <div>
+          <div class="label">Density</div>
+          <div class="desc">Scales spacing across every component. Choose what matches the way you work — drafting long-form prefers spacious; reviewing dozens of items prefers compact.</div>
+        </div>
+        <div class="control">
+          <div class="segmented" data-segmented="density">
+            <button data-v="compact">Compact</button>
+            <button data-v="comfortable" class="active">Comfortable</button>
+            <button data-v="spacious">Spacious</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Sidebar</div>
+          <div class="desc">The left panel shows Pinned, Projects, Recent, and Tags. Full tree is summonable any time with <span style="font-family:var(--mono);font-size:11px">⌘⇧E</span>.</div>
+        </div>
+        <div class="control">
+          <select class="select">
+            <option>Show</option>
+            <option>Hide</option>
+            <option>Hide in focus mode</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Command bar</div>
+          <div class="desc">Single floating bar at the bottom. Bring it anywhere with <span style="font-family:var(--mono);font-size:11px">⌘K</span>.</div>
+        </div>
+        <div class="control">
+          <div class="segmented" data-segmented="bar">
+            <button class="active">Floating</button>
+            <button>Hide</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Writing surface</div>
+
+      <div class="row">
+        <div>
+          <div class="label">Editor font</div>
+          <div class="desc">Used for document body. Headings always use the interface font.</div>
+        </div>
+        <div class="control">
+          <select class="select">
+            <option>Source Serif 4 · Serif</option>
+            <option>Inter · Sans</option>
+            <option>iA Writer Quattro</option>
+            <option>Charter</option>
+            <option>Literata</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Font size</div>
+          <div class="desc">Applies to document content only.</div>
+        </div>
+        <div class="control">
+          <div class="slider">
+            <input type="range" min="14" max="22" value="17" />
+            <span class="num">17 px</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <div class="label">Line height</div>
+          <div class="desc">Generous line-height reads more like a book; tight line-height fits more on screen.</div>
+        </div>
+        <div class="control">
+          <div class="slider">
+            <input type="range" min="130" max="200" value="172" />
+            <span class="num">1.72</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Live preview</div>
+      <div class="preview">
+        <h4>On Attention</h4>
+        <p>The hardest part of thinking is not the thinking itself but holding still long enough for a thought to arrive. Distraction is rarely loud — it is almost always polite, small, well-intended.</p>
+        <div class="muted">Preview · 17 px Source Serif 4 · 1.72 line-height</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Appearance settings live in your user config and sync across projects.</span>
+      <button class="btn subtle">Reset to defaults</button>
+    </div>
+  </main>
+</div>
+
+<button class="close" id="closeBtn" title="Close settings">×</button>
+<button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+
+<script>
+  // ── Theme (fixed: selector and JS agree) ──
+  const toggle = document.getElementById("themeToggle");
+  toggle.addEventListener("click", () => {
+    const next = document.body.dataset.theme === "dark" ? "light" : "dark";
+    document.body.dataset.theme = next;
+    // Keep the Theme segmented synced with the actual applied theme.
+    document.querySelectorAll('[data-segmented="theme"] button').forEach((b) => {
+      b.classList.toggle("active", b.dataset.v === next);
+    });
+  });
+
+  // Segmented controls — generic click→activate
+  document.querySelectorAll(".segmented").forEach((group) => {
+    group.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => {
+        group.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        // Theme segmented also flips body theme
+        if (group.dataset.segmented === "theme" && b.dataset.v !== "system") {
+          document.body.dataset.theme = b.dataset.v;
+        }
+      });
+    });
+  });
+
+  // Contrast slider reads out
+  const contrast = document.getElementById("contrast");
+  const contrastNum = document.getElementById("contrastNum");
+  contrast.addEventListener("input", () => { contrastNum.textContent = contrast.value; });
+
+  // Nav item click
+  document.querySelectorAll(".nav-item").forEach((it) => {
+    it.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item").forEach((x) => x.classList.remove("active"));
+      it.classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

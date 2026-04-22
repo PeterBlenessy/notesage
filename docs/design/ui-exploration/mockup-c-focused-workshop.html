@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notesage · Focused Workshop (Mockup C)</title>
+<style>
+  :root {
+    --bg: oklch(98% 0 0);
+    --panel: oklch(100% 0 0);
+    --fg: oklch(16% 0 0);
+    --muted: oklch(52% 0 0);
+    --muted-2: oklch(72% 0 0);
+    --line: oklch(92% 0 0);
+    --line-soft: oklch(95% 0 0);
+    --accent: oklch(22% 0 0);
+    --highlight: oklch(94% 0 0);
+    --sans: "Inter Display", -apple-system, "SF Pro Display", Inter, ui-sans-serif, system-ui;
+    --sans-body: Inter, -apple-system, "SF Pro Text", ui-sans-serif, system-ui;
+    --serif: "Source Serif 4", "Iowan Old Style", Charter, Georgia, serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+    /* Density unit — scales everything. Set by .density-* class. */
+    --d: 1;
+  }
+  html[data-theme="dark"] {
+    --bg: oklch(18% 0 0);
+    --panel: oklch(22% 0 0);
+    --fg: oklch(96% 0 0);
+    --muted: oklch(66% 0 0);
+    --muted-2: oklch(45% 0 0);
+    --line: oklch(28% 0 0);
+    --line-soft: oklch(24% 0 0);
+    --accent: oklch(92% 0 0);
+    --highlight: oklch(30% 0 0);
+  }
+  /* Density presets scale spacing unit */
+  html[data-density="compact"]     { --d: 0.78; }
+  html[data-density="comfortable"] { --d: 1;    }
+  html[data-density="spacious"]    { --d: 1.22; }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans-body);
+    font-size: calc(13.5px * var(--d));
+    -webkit-font-smoothing: antialiased;
+    transition: background 240ms ease, color 240ms ease, font-size 160ms ease;
+  }
+
+  /* ── Layout ────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: calc(250px * var(--d)) 1fr calc(46px * var(--d));
+    height: 100vh;
+  }
+
+  /* ── Sidebar: flat list, not a tree ────────── */
+  .sidebar {
+    padding: calc(20px * var(--d)) calc(16px * var(--d));
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .sidebar h4 {
+    margin: calc(22px * var(--d)) calc(4px * var(--d)) calc(6px * var(--d));
+    font-size: calc(10.5px * var(--d));
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .sidebar h4:first-child { margin-top: 0; }
+
+  .sidebar .workspace-header {
+    display: flex; align-items: center; gap: calc(10px * var(--d));
+    padding: calc(6px * var(--d)) calc(4px * var(--d));
+    margin-bottom: calc(16px * var(--d));
+  }
+  .sidebar .workspace-header .avatar {
+    width: calc(22px * var(--d)); height: calc(22px * var(--d));
+    border-radius: 6px;
+    background: var(--fg); color: var(--bg);
+    display: grid; place-items: center;
+    font-family: var(--serif); font-style: italic; font-weight: 600;
+    font-size: calc(11px * var(--d));
+  }
+  .sidebar .workspace-header .name { font-weight: 600; font-size: calc(13px * var(--d)); }
+  .sidebar .workspace-header .sub { font-size: calc(11px * var(--d)); color: var(--muted); }
+
+  .item {
+    display: grid;
+    grid-template-columns: calc(14px * var(--d)) 1fr auto;
+    gap: calc(10px * var(--d));
+    align-items: center;
+    padding: calc(5px * var(--d)) calc(8px * var(--d));
+    border-radius: 6px;
+    color: var(--fg);
+    cursor: pointer;
+    font-size: calc(13px * var(--d));
+    line-height: 1.3;
+  }
+  .item:hover { background: var(--line-soft); }
+  .item.active { background: var(--line); }
+  .item .icon { color: var(--muted); }
+  .item .count { color: var(--muted); font-size: calc(11px * var(--d)); }
+
+  .item.project .icon { color: var(--fg); }
+
+  /* Pinned section uses subtler pill-like treatment */
+  .pinned .item { padding: calc(6px * var(--d)) calc(8px * var(--d)); }
+  .pinned .item .name { font-weight: 500; }
+
+  /* ── Workspace ─────────────────────────────── */
+  .workspace {
+    display: grid;
+    grid-template-rows: calc(46px * var(--d)) 1fr;
+    min-width: 0;
+  }
+
+  /* Tab strip — Linear-style muted */
+  .tabs {
+    display: flex; align-items: end;
+    padding: 0 calc(22px * var(--d));
+    border-bottom: 1px solid var(--line);
+    gap: calc(2px * var(--d));
+  }
+  .tab {
+    display: inline-flex; align-items: center; gap: calc(8px * var(--d));
+    padding: calc(9px * var(--d)) calc(12px * var(--d));
+    font-size: calc(12.5px * var(--d));
+    color: var(--muted);
+    border-bottom: 1.5px solid transparent;
+    cursor: pointer;
+    line-height: 1;
+    position: relative;
+    top: 1px;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab.active { color: var(--fg); border-bottom-color: var(--fg); }
+  .tab .dot { width: calc(5px * var(--d)); height: calc(5px * var(--d)); border-radius: 50%; background: var(--fg); opacity: 0.7; }
+  .tab .close { opacity: 0; color: var(--muted); font-size: calc(13px * var(--d)); padding-left: 2px; }
+  .tab:hover .close { opacity: 0.7; }
+
+  .density-switch {
+    margin-left: auto;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px;
+    margin-bottom: calc(7px * var(--d));
+    background: var(--bg);
+  }
+  .density-switch button {
+    background: transparent; border: 0;
+    padding: calc(3px * var(--d)) calc(10px * var(--d));
+    font-size: calc(10.5px * var(--d));
+    color: var(--muted);
+    border-radius: 999px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  .density-switch button.active { background: var(--fg); color: var(--bg); }
+  .density-switch button:hover:not(.active) { color: var(--fg); }
+
+  .doc {
+    overflow: auto;
+    padding: calc(50px * var(--d)) calc(max(64px, 6vw) * var(--d)) calc(100px * var(--d));
+  }
+  .doc-inner { max-width: calc(720px * var(--d)); margin: 0 auto; }
+  .doc-inner .hero-row {
+    display: flex; align-items: center; gap: calc(10px * var(--d));
+    margin-bottom: calc(4px * var(--d));
+  }
+  .doc-inner .hero-row .badge {
+    font-family: var(--sans);
+    font-size: calc(10.5px * var(--d));
+    padding: calc(3px * var(--d)) calc(8px * var(--d));
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .doc-inner h1 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: calc(30px * var(--d));
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .doc-inner .subtitle {
+    font-family: var(--sans-body);
+    color: var(--muted);
+    font-size: calc(12.5px * var(--d));
+    margin: calc(6px * var(--d)) 0 calc(36px * var(--d));
+  }
+  .doc-inner h2 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: calc(17px * var(--d));
+    margin: calc(40px * var(--d)) 0 calc(12px * var(--d));
+    letter-spacing: -0.005em;
+  }
+  .doc-inner p {
+    font-family: var(--serif);
+    font-size: calc(16.5px * var(--d));
+    line-height: 1.7;
+    margin: 0 0 calc(14px * var(--d));
+  }
+  .doc-inner ul {
+    font-family: var(--serif);
+    font-size: calc(16.5px * var(--d));
+    line-height: 1.7;
+  }
+  .doc-inner code { font-family: var(--mono); font-size: 0.88em; background: var(--line); padding: 1.5px 6px; border-radius: 4px; }
+
+  .callout {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: calc(14px * var(--d)) calc(16px * var(--d));
+    margin: calc(20px * var(--d)) 0;
+    font-family: var(--sans-body);
+    font-size: calc(13px * var(--d));
+    color: var(--muted);
+    line-height: 1.55;
+  }
+  .callout .tag {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: calc(10.5px * var(--d));
+    font-weight: 600;
+    color: var(--fg);
+    margin-right: calc(10px * var(--d));
+  }
+
+  /* ── Activity rail (right) ─────────────────── */
+  .activity {
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: calc(16px * var(--d)) 0;
+    gap: calc(8px * var(--d));
+    background: var(--bg);
+  }
+  .activity button {
+    width: calc(30px * var(--d)); height: calc(30px * var(--d));
+    border-radius: 50%;
+    border: 0;
+    background: var(--line);
+    color: var(--fg);
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-size: calc(11px * var(--d));
+    position: relative;
+  }
+  .activity button:hover { background: var(--muted-2); }
+  .activity button .count-badge {
+    position: absolute;
+    top: -3px; right: -3px;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 999px;
+    background: var(--fg); color: var(--bg);
+    font-size: 9.5px; display: grid; place-items: center;
+    font-family: var(--mono);
+  }
+  .activity .spinner {
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1.5px solid var(--muted-2);
+    border-top-color: var(--fg);
+    animation: spin 900ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .activity .spacer { flex: 1; }
+
+  .theme-toggle {
+    position: fixed; top: 12px; right: calc(58px * var(--d));
+    background: transparent; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; font-size: 11px;
+    color: var(--muted); cursor: pointer; z-index: 20;
+  }
+  .theme-toggle:hover { color: var(--fg); }
+
+  /* Footer text hint */
+  .hint {
+    position: fixed; bottom: 0; left: calc(250px * var(--d)); right: calc(46px * var(--d));
+    text-align: center;
+    color: var(--muted-2);
+    font-size: 11px;
+    padding: 6px 0 8px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body data-theme="light">
+<div class="app">
+  <!-- Flat sidebar — not a tree -->
+  <aside class="sidebar">
+    <div class="workspace-header">
+      <div class="avatar"><em>N</em></div>
+      <div>
+        <div class="name">Notesage</div>
+        <div class="sub">12 projects · 248 notes</div>
+      </div>
+    </div>
+
+    <h4>Pinned</h4>
+    <div class="pinned">
+      <div class="item active project">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/></svg>
+        <span class="name">On Attention.md</span>
+        <span class="count">·</span>
+      </div>
+      <div class="item">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        <span class="name">Weekly Review</span>
+        <span class="count">Mon</span>
+      </div>
+      <div class="item">
+        <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+        <span class="name">Ideas</span>
+        <span class="count">17</span>
+      </div>
+    </div>
+
+    <h4>Projects</h4>
+    <div class="item project">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Essays</span>
+      <span class="count">32</span>
+    </div>
+    <div class="item project">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Design System</span>
+      <span class="count">64</span>
+    </div>
+    <div class="item project">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="name">Research</span>
+      <span class="count">19</span>
+    </div>
+
+    <h4>Recent</h4>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">On Craft.md</span>
+      <span class="count">2h</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">Workshop notes.md</span>
+      <span class="count">1d</span>
+    </div>
+    <div class="item">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="name">Prompt library.md</span>
+      <span class="count">3d</span>
+    </div>
+
+    <h4>Tags</h4>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">attention</span>
+      <span class="count">8</span>
+    </div>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">design</span>
+      <span class="count">24</span>
+    </div>
+    <div class="item">
+      <span class="icon">#</span>
+      <span class="name">draft</span>
+      <span class="count">5</span>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <div class="tabs">
+      <div class="tab active"><span class="dot"></span> On Attention.md <span class="close">×</span></div>
+      <div class="tab">Weekly Review <span class="close">×</span></div>
+      <div class="tab">Prompt library <span class="close">×</span></div>
+      <div class="density-switch">
+        <button data-d="compact">Compact</button>
+        <button data-d="comfortable" class="active">Comfortable</button>
+        <button data-d="spacious">Spacious</button>
+      </div>
+    </div>
+
+    <div class="doc">
+      <div class="doc-inner">
+        <div class="hero-row">
+          <span class="badge">Essay</span>
+          <span class="badge">Draft</span>
+          <span class="badge">#attention</span>
+        </div>
+        <h1>On Attention</h1>
+        <div class="subtitle">Peter Blenessy · saved 40 s ago · 2,184 words</div>
+
+        <p>The hardest part of thinking is not the thinking itself but holding
+        still long enough for a thought to arrive. Distraction is rarely loud.
+        It is almost always polite, small, well-intended — a little
+        interruption wearing a useful face.</p>
+
+        <p>I have been reading old essays on the discipline of writing, and one
+        line has kept returning to me: <em>attention is the beginning of
+        devotion</em>.</p>
+
+        <div class="callout">
+          <span class="tag">Note</span>
+          There are three density presets above the tab strip. Compact is
+          Linear-dense. Comfortable is the default. Spacious gives generous air
+          for long-form drafting. Every component scales together — no
+          one-off exceptions.
+        </div>
+
+        <h2>What the tools are for</h2>
+        <p>A good writing surface should <code>disappear</code>. Density is not
+        a "setting" in the usual sense — it's a mode you inhabit depending on
+        what you're doing. Reviewing? Compact. Drafting? Spacious.</p>
+
+        <ul>
+          <li>Sidebar is a flat list of pinned + recent + tags — no trees to expand.</li>
+          <li>Tabs are Linear-muted: no icons, active gets a hairline underline.</li>
+          <li>AI lives in the activity rail on the right — collapsible, never in your way.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity rail: AI/agent summary dots -->
+  <aside class="activity">
+    <button title="Chat">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </button>
+    <button title="2 agents working">
+      <div class="spinner"></div>
+      <span class="count-badge">2</span>
+    </button>
+    <button title="3 comments">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/></svg>
+      <span class="count-badge">3</span>
+    </button>
+    <button title="Outline">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+    </button>
+    <div class="spacer"></div>
+    <button title="Recording">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+    </button>
+  </aside>
+
+  <div class="hint">Switch density above the tabs · AI surfaces on the right · sidebar is flat, not a tree</div>
+  <button class="theme-toggle" id="themeToggle">Light ↔ Dark</button>
+</div>
+
+<script>
+  // Density switcher
+  const buttons = document.querySelectorAll(".density-switch button");
+  buttons.forEach((b) => {
+    b.addEventListener("click", () => {
+      buttons.forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      document.documentElement.dataset.density = b.dataset.d;
+    });
+  });
+  document.documentElement.dataset.density = "comfortable";
+
+  document.getElementById("themeToggle").addEventListener("click", () => {
+    document.body.dataset.theme = document.body.dataset.theme === "dark" ? "light" : "dark";
+  });
+</script>
+</body>
+</html>
