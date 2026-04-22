@@ -1,10 +1,11 @@
-import { Shield, Clock, Pin, Plus, Lock, X } from "lucide-react";
+import { Shield, Clock, Pin, PinOff, Plus, Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import type { Connection } from "@/lib/ai/connections";
 import type { Conversation } from "@/stores/chat-store";
 import type { ProjectMetadata } from "@/stores/project-metadata-store";
@@ -54,6 +55,10 @@ function CommandBarContext({ className }: CommandBarContextProps) {
   const metadataMap = useProjectMetadataStore(
     (s) => s.metadataMap,
   ) as Record<string, ProjectMetadata>;
+
+  // Pinned-mode toggle state (#28). Wired to `settings-store.cmdBarPinned`.
+  const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
+  const setCmdBarPinned = useSettingsStore((s) => s.setCmdBarPinned);
 
   return (
     <div
@@ -105,12 +110,14 @@ function CommandBarContext({ className }: CommandBarContextProps) {
         }}
       />
       <IconButton
-        ariaLabel="Pin chat"
-        icon={Pin}
+        ariaLabel={
+          cmdBarPinned
+            ? "Unpin chat (return to floating)"
+            : "Pin chat to side"
+        }
+        icon={cmdBarPinned ? PinOff : Pin}
         onClick={() => {
-          // Wired in #28.
-          // eslint-disable-next-line no-console
-          console.log("pin chat — wired in #28");
+          setCmdBarPinned(!cmdBarPinned);
         }}
       />
     </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useSettingsStore } from "@/stores/settings-store";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
 import AttachmentChips, {
   type AttachmentChip,
@@ -18,6 +19,16 @@ import TaskMode, { type TaskAction } from "@/components/cmd/modes/TaskMode";
 import ResearchMode from "@/components/cmd/modes/ResearchMode";
 import PaletteMode from "@/components/cmd/modes/PaletteMode";
 import { log } from "@/lib/logger";
+
+/**
+ * Pinned-mode width clamping constants — kept at module scope so the resize
+ * handle, store setter, and CSS variable fallback all agree on the same
+ * range. Mirrors the clamp in `setCmdBarPinnedWidth`.
+ */
+const PINNED_WIDTH_MIN = 280;
+const PINNED_WIDTH_MAX = 800;
+const PINNED_WIDTH_DEFAULT = 400;
+const PINNED_WIDTH_KEYBOARD_STEP = 20;
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -54,19 +65,24 @@ import { log } from "@/lib/logger";
 
 export interface FloatingCommandBarProps {
   /**
-   * When true, the bar renders inline as a normal block element instead of
-   * being portal-mounted to `document.body`. Forward-declared for the
-   * pinned-side-panel work in #28; the actual pinned-mode layout (vertical
-   * context stack, drag handle, etc.) arrives there.
-   *
-   * @default false
+   * When provided, overrides the persisted `cmdBarPinned` setting from
+   * settings-store. Tests pass this explicitly; production call sites should
+   * leave it undefined and let the store drive the mode (so the pin icon in
+   * `CommandBarContext` is the single source of truth). Forward-declared in
+   * #9; wired to the store in #28.
    */
   isPinned?: boolean;
 }
 
 const COMPACT_PLACEHOLDER = "Press ⌘K to ask";
 
-function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
+function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps) {
+  // Read the persisted pinned flag. The prop overrides it (for tests / for
+  // call sites that need to force a mode); when the prop is undefined, the
+  // store wins so the pin-icon toggle in `CommandBarContext` works.
+  const cmdBarPinnedSetting = useSettingsStore((s) => s.cmdBarPinned);
+  const isPinned = isPinnedProp ?? cmdBarPinnedSetting;
+
   const [expanded, setExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [activePrefix, setActivePrefix] = useState<ActivePrefix | null>(null);
@@ -88,25 +104,35 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   // composing; the picker uses this to pick the default Enter action.
   const isComposing = inputValue.trim().length > 0 || chips.length > 0;
 
+  // Pinned mode is "always expanded" — the panel is permanent docking, so
+  // there's no compact pill to click and no Esc-to-collapse behaviour. We
+  // model this as a derived value (`effectiveExpanded`) so the rest of the
+  // component logic can stay shared between floating and pinned.
+  const effectiveExpanded = isPinned || expanded;
+
   // Autofocus the input whenever we transition into the expanded state.
   useEffect(() => {
-    if (expanded && inputRef.current) {
+    if (effectiveExpanded && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [expanded]);
+  }, [effectiveExpanded]);
 
   const expand = useCallback(() => {
     setExpanded(true);
   }, []);
 
   const collapse = useCallback(() => {
+    // Pinned mode has no "collapsed" state — the panel always stays docked.
+    // Esc still falls through to clear the prefix (handled in `handleKeyDown`)
+    // but we never tear down the bar itself.
+    if (isPinned) return;
     setExpanded(false);
     setInputValue("");
     setActivePrefix(null);
     // Blur is a courtesy — the input itself unmounts when expanded === false,
     // but if we ever animate the input out we still want the focus released.
     inputRef.current?.blur();
-  }, []);
+  }, [isPinned]);
 
   // ---------------------------------------------------------------------
   // Prefix detection — runs on every input change AND on selection moves.
@@ -268,25 +294,48 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   // transition utility and the lift transform.
   // ---------------------------------------------------------------------
 
-  // Position differs between portal mode (fixed bottom-centre overlay) and
-  // pinned mode (caller takes over). In pinned mode we render a relative
-  // block so the caller's layout decides where it lands.
+  // Position / sizing depend on the current mode:
+  //   - pinned       → fixed right-edge full-height side panel; width comes
+  //                    from the `--cmd-bar-pinned-width` CSS variable so the
+  //                    drag handle can mutate it without React re-renders
+  //   - floating + expanded → centered overlay near the bottom, fixed width
+  //   - floating + compact  → smaller pill, same horizontal centring
+  //
+  // In pinned mode the panel is always "expanded" — there's no compact pill
+  // and no height collapse. We still funnel through `effectiveExpanded` so
+  // a single conditional below picks the right content slot.
   const positionClasses = isPinned
-    ? "relative w-full"
+    ? "fixed top-0 right-0 h-screen"
     : "fixed bottom-10 left-1/2 -translate-x-1/2";
 
-  // Width grows when expanded so the stream has more breathing room.
-  const widthClasses = expanded ? "w-[640px] max-w-[90vw]" : "w-[480px] max-w-[90vw]";
+  const widthClasses = isPinned
+    ? // Width is driven by the CSS variable. We set a Tailwind w-* fallback
+      // (defaults to PINNED_WIDTH_DEFAULT) for the very first paint before
+      // the inline style is applied. `max-w-[90vw]` keeps the panel sane on
+      // narrow windows.
+      "max-w-[90vw]"
+    : effectiveExpanded
+      ? "w-[640px] max-w-[90vw]"
+      : "w-[480px] max-w-[90vw]";
 
-  // Height collapses to ~48 px in the compact pill state; grows to ~480 px
-  // when expanded so there's room for the (currently empty) stream zone.
-  const heightClasses = expanded ? "h-[480px]" : "h-12";
+  const heightClasses = isPinned
+    ? "" // pinned: full-screen height owned by `positionClasses`
+    : effectiveExpanded
+      ? "h-[480px]"
+      : "h-12";
 
-  // Roundness softens slightly when expanded, matching the design spec.
-  const radiusClasses = expanded ? "rounded-2xl" : "rounded-xl";
+  // Pinned panel uses square corners on the right edge (it's flush against
+  // the window) and only rounds the left side.
+  const radiusClasses = isPinned
+    ? "rounded-l-2xl rounded-r-none"
+    : effectiveExpanded
+      ? "rounded-2xl"
+      : "rounded-xl";
 
-  // 14 px lift on focus / when expanded. Skipped in reduced-motion mode.
-  const liftClasses = !reducedMotion && expanded ? "-translate-y-[14px]" : "";
+  // 14 px lift on focus / when expanded — only for the floating overlay.
+  // Pinned mode is permanent docking; lift would feel out of place.
+  const liftClasses =
+    !reducedMotion && expanded && !isPinned ? "-translate-y-[14px]" : "";
 
   // Fixed-position overlay needs a vertical translate that combines with
   // the horizontal -translate-x-1/2. We layer them via Tailwind's transform
@@ -297,11 +346,19 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
     ? ""
     : "transition-all duration-200 ease-out";
 
+  // Inline style for pinned mode — the CSS variable cascades from <html>
+  // (set by the resize-handle drag logic) so resizes don't re-render React.
+  const inlineStyle: React.CSSProperties = isPinned
+    ? { width: `var(--cmd-bar-pinned-width, ${PINNED_WIDTH_DEFAULT}px)` }
+    : {};
+
   const bar = (
     <div
       data-cmd-bar
-      data-expanded={expanded ? "true" : "false"}
+      data-cmd-bar-pinned={isPinned ? "true" : "false"}
+      data-expanded={effectiveExpanded ? "true" : "false"}
       data-prefix-mode={activePrefix?.mode.id ?? ""}
+      style={inlineStyle}
       className={cn(
         positionClasses,
         widthClasses,
@@ -309,11 +366,22 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
         radiusClasses,
         liftClasses,
         transitionClasses,
-        "z-40 flex flex-col overflow-hidden",
+        // z-30 in pinned mode — slightly behind floating overlays so dialogs
+        // still appear on top. Floating mode keeps z-40 to sit above the
+        // editor and friends.
+        isPinned ? "z-30" : "z-40",
+        "flex flex-col overflow-hidden",
         "border border-border bg-popover/95 backdrop-blur-md shadow-lg",
       )}
     >
-      {expanded ? (
+      {/*
+        Pinned-mode resize handle. A thin (6px) draggable strip on the LEFT
+        edge of the panel. Hidden in floating mode — there's nothing to
+        resize there.
+       */}
+      {isPinned ? <PinnedResizeHandle /> : null}
+
+      {effectiveExpanded ? (
         <ExpandedContent
           inputRef={inputRef}
           inputValue={inputValue}
@@ -338,6 +406,10 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   );
 
   if (isPinned) {
+    // Pinned mode: render inline (no portal). The fixed-positioning on the
+    // bar itself is what docks it to the right edge — the parent QuietLayout
+    // applies a corresponding padding-right so document content doesn't
+    // slide under the panel.
     return bar;
   }
 
@@ -347,6 +419,122 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   }
 
   return createPortal(bar, document.body);
+}
+
+// ---------------------------------------------------------------------------
+// PinnedResizeHandle — vertical drag handle on the left edge of the pinned
+// panel. The actual width state lives in the `--cmd-bar-pinned-width` CSS
+// variable on <html>; we only persist the final value to settings-store on
+// pointerup / keyup. This keeps mousemove paths free of React re-renders.
+// ---------------------------------------------------------------------------
+
+function PinnedResizeHandle() {
+  const persistedWidth = useSettingsStore((s) => s.cmdBarPinnedWidth);
+  const setCmdBarPinnedWidth = useSettingsStore((s) => s.setCmdBarPinnedWidth);
+
+  // Sync the persisted width to the CSS variable on mount and whenever the
+  // store value changes (e.g., on rehydration after restart).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty(
+      "--cmd-bar-pinned-width",
+      `${persistedWidth}px`,
+    );
+  }, [persistedWidth]);
+
+  // Pointer drag — write to the CSS variable on every move, persist on up.
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+
+      const onMove = (moveEvent: PointerEvent) => {
+        // The panel docks to the right edge, so the new width is the
+        // distance from the pointer to the right edge of the viewport.
+        const next = Math.round(
+          Math.max(
+            PINNED_WIDTH_MIN,
+            Math.min(PINNED_WIDTH_MAX, window.innerWidth - moveEvent.clientX),
+          ),
+        );
+        document.documentElement.style.setProperty(
+          "--cmd-bar-pinned-width",
+          `${next}px`,
+        );
+      };
+
+      const onUp = (upEvent: PointerEvent) => {
+        const finalWidth = Math.round(
+          Math.max(
+            PINNED_WIDTH_MIN,
+            Math.min(PINNED_WIDTH_MAX, window.innerWidth - upEvent.clientX),
+          ),
+        );
+        setCmdBarPinnedWidth(finalWidth);
+        target.releasePointerCapture(event.pointerId);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [setCmdBarPinnedWidth],
+  );
+
+  // Keyboard adjustment — ←/→ adjust width by ±20 px while focused. Persist
+  // immediately (no need to defer; key events are coarse-grained).
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      // ArrowLeft makes the panel WIDER (it grows away from the right edge).
+      const delta =
+        event.key === "ArrowLeft"
+          ? PINNED_WIDTH_KEYBOARD_STEP
+          : -PINNED_WIDTH_KEYBOARD_STEP;
+      const current = persistedWidth;
+      const next = Math.max(
+        PINNED_WIDTH_MIN,
+        Math.min(PINNED_WIDTH_MAX, current + delta),
+      );
+      // Update the CSS variable immediately so the user sees the change,
+      // then persist via the store setter (which will re-sync on the next
+      // effect run, but this avoids any flicker).
+      document.documentElement.style.setProperty(
+        "--cmd-bar-pinned-width",
+        `${next}px`,
+      );
+      setCmdBarPinnedWidth(next);
+    },
+    [persistedWidth, setCmdBarPinnedWidth],
+  );
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label="Resize chat panel"
+      aria-orientation="vertical"
+      aria-valuemin={PINNED_WIDTH_MIN}
+      aria-valuemax={PINNED_WIDTH_MAX}
+      aria-valuenow={persistedWidth}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      data-cmd-bar-resize-handle
+      className={cn(
+        // Absolute-positioned strip on the left edge of the pinned panel.
+        "absolute left-0 top-0 h-full w-1.5 cursor-col-resize",
+        // Subtle accent on hover/focus so it's discoverable without being
+        // visually noisy at rest.
+        "bg-transparent hover:bg-border/60 transition-colors",
+        "focus-visible:outline-none focus-visible:bg-border",
+        // Sit above the panel content so pointer events land on the handle.
+        "z-10",
+      )}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
