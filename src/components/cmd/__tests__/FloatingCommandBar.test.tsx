@@ -20,6 +20,15 @@ vi.mock('@/hooks/useReducedMotion', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock CommandBarContext — stubbed so this test focuses on the bar shell.
+// (Verifying the context row's wiring lives in CommandBarContext.test.tsx.)
+// ---------------------------------------------------------------------------
+
+vi.mock('@/components/cmd/CommandBarContext', () => ({
+  default: () => <div data-testid="ctx-stub">context</div>,
+}));
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -78,6 +87,17 @@ describe('FloatingCommandBar', () => {
 
     // When pinned, the bar lives directly inside the render container.
     expect(container.querySelector('[data-cmd-bar]')).toBeTruthy();
+  });
+
+  it('mounts CommandBarContext when expanded', () => {
+    renderWithProviders(<FloatingCommandBar />);
+    // Compact state: the context stub is NOT mounted.
+    expect(screen.queryByTestId('ctx-stub')).toBeNull();
+
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    // Expanded state: the context stub appears above the input.
+    expect(screen.getByTestId('ctx-stub')).toBeTruthy();
   });
 
   it('skips the lift transition when prefers-reduced-motion is reduce', () => {
