@@ -150,6 +150,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
+  uiPreview: 'legacy',
 };
 
 // ---------------------------------------------------------------------------
@@ -1016,5 +1017,79 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
     const s = useSettingsStore.getState();
     expect(s.contrastLevel).toBe(100);
     expect(s.logLevel).toBe('debug');
+  });
+});
+
+// ===========================================================================
+// uiPreview flag (Phase 1 of Quiet Composer rollout — task #1)
+// ===========================================================================
+
+describe('uiPreview flag', () => {
+  it('defaults to "legacy" on a fresh install', () => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
+  });
+
+  it('setUiPreview flips between "legacy" and "quiet-composer"', () => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
+
+    useSettingsStore.getState().setUiPreview('quiet-composer');
+    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
+
+    useSettingsStore.getState().setUiPreview('legacy');
+    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
+  });
+
+  it('persists across a simulated restart', async () => {
+    useSettingsStore.getState().setUiPreview('quiet-composer');
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
+  });
+
+  it('v3 → v4 migration: adds uiPreview: "legacy" to a state that lacks it', async () => {
+    // Existing user upgrade: persisted at version 3, no uiPreview field yet.
+    // Migration must default them to legacy so no one is force-flipped to the
+    // new UI on upgrade.
+    const v3State = {
+      state: {
+        theme: 'dark',
+        contrastLevel: 50,
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        printLayout: false,
+      },
+      version: 3,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v3State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.uiPreview).toBe('legacy');
+    // Pre-existing fields survive untouched.
+    expect(s.theme).toBe('dark');
+    expect(s.contrastLevel).toBe(50);
+
+    // The migration must also have bumped the persisted version to 4 and
+    // written uiPreview into storage — otherwise the next upgrade migration
+    // would re-run, and we wouldn't be safe against future re-migrations.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(4);
+    expect(parsed.state.uiPreview).toBe('legacy');
   });
 });
