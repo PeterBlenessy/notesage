@@ -17,6 +17,12 @@ vi.mock('@/components/TitleBar', () => ({
   TitleBar: () => <div data-testid="titlebar">TitleBar</div>,
 }));
 
+// Stub FloatingCommandBar so we can assert it's mounted without pulling in
+// its real implementation (portal, hooks, etc.).
+vi.mock('@/components/cmd/FloatingCommandBar', () => ({
+  default: () => <div data-testid="cmd-bar-stub" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -80,5 +86,10 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByText(/Sidebar \(placeholder\)/i)).toBeTruthy();
     expect(screen.getByText(/Document area \(placeholder\)/i)).toBeTruthy();
     expect(screen.getByText(/Reserved \(placeholder\)/i)).toBeTruthy();
+  });
+
+  it('mounts the FloatingCommandBar', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    expect(screen.getByTestId('cmd-bar-stub')).toBeTruthy();
   });
 });
