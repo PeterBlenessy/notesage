@@ -47,10 +47,13 @@ vi.mock('@/stores/settings-store', () => {
 // Stub AttachmentChips so we can detect its presence without exercising its
 // real rendering surface here. The chip component has its own dedicated test
 // file. We just want to confirm FloatingCommandBar mounts it once when
-// expanded.
+// expanded — the stub also exposes the chip count so #23 send tests can
+// assert chips are cleared after send.
 vi.mock('@/components/cmd/AttachmentChips', () => ({
   __esModule: true,
-  default: () => <div data-testid="chips-stub" />,
+  default: ({ chips }: { chips: Array<{ id: string }> }) => (
+    <div data-testid="chips-stub" data-chip-count={chips.length} />
+  ),
 }));
 
 // Stub CommandBarContext so this test focuses on the bar shell.
@@ -72,7 +75,17 @@ vi.mock('@/components/cmd/modes/SkillMode', () => ({
   default: () => <div data-testid="skill-mode-stub" />,
 }));
 vi.mock('@/components/cmd/modes/ReferenceMode', () => ({
-  default: () => <div data-testid="reference-mode-stub" />,
+  default: ({ onPick }: { filter: string; onPick: (chip: { id: string; kind: 'file'; name: string }) => void }) => (
+    <div data-testid="reference-mode-stub">
+      <button
+        type="button"
+        data-testid="reference-mode-add-chip"
+        onClick={() => onPick({ id: 'chip-test', kind: 'file', name: 'notes.md' })}
+      >
+        add chip
+      </button>
+    </div>
+  ),
 }));
 vi.mock('@/components/cmd/modes/TagMode', () => ({
   default: () => <div data-testid="tag-mode-stub" />,
@@ -88,6 +101,33 @@ vi.mock('@/components/cmd/modes/PaletteMode', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock useAIOperations + chat-store so #23 can assert send wiring without
+// dragging the full provider/credentials/streaming stack into the test.
+// ---------------------------------------------------------------------------
+
+const sendChatMessageMock = vi.fn<(content: string, messages: unknown[], opts?: unknown) => Promise<void>>(
+  () => Promise.resolve(),
+);
+
+vi.mock('@/hooks/useAIOperations', () => ({
+  useAIOperations: () => ({
+    sendChatMessage: sendChatMessageMock,
+    generateText: vi.fn(),
+    cancelChat: vi.fn(),
+  }),
+}));
+
+vi.mock('@/stores/chat-store', () => {
+  function useChatStore<T>(selector: (state: { isLoading: boolean }) => T): T {
+    return selector({ isLoading: false });
+  }
+  return {
+    useChatStore,
+    selectMessages: () => [],
+  };
+});
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -99,6 +139,8 @@ describe('FloatingCommandBar', () => {
     mockCmdBarPinnedWidth = 400;
     setCmdBarPinnedMock.mockReset();
     setCmdBarPinnedWidthMock.mockReset();
+    sendChatMessageMock.mockReset();
+    sendChatMessageMock.mockImplementation(() => Promise.resolve());
     // Clean DOM between tests — portals leak otherwise
     document.body.innerHTML = '';
     // Also clean the CSS variable that pinned mode sets on <html>
@@ -408,6 +450,103 @@ describe('FloatingCommandBar', () => {
         '--cmd-bar-pinned-width',
       );
       expect(cssVar).toBe('520px');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Send wiring (#23) — Enter sends via the existing chat-store / useAIOperations
+  // pipeline. We mock useAIOperations.sendChatMessage and assert the wiring,
+  // not the downstream provider streaming. Chips are an optional payload.
+  // -------------------------------------------------------------------------
+
+  describe('send wiring (#23)', () => {
+    function expand() {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      return screen.getByRole('textbox') as HTMLInputElement;
+    }
+
+    it('Enter with non-empty input calls sendChatMessage with the typed text', () => {
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'hello world' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+      const [content] = sendChatMessageMock.mock.calls[0];
+      expect(content).toBe('hello world');
+    });
+
+    it('Enter with empty input AND no chips is a no-op (sendChatMessage NOT called)', () => {
+      const input = expand();
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(sendChatMessageMock).not.toHaveBeenCalled();
+    });
+
+    it('clears the input after a successful send', () => {
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'hi' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect((input as HTMLInputElement).value).toBe('');
+    });
+
+    it('keeps focus in the input after send (ready for the next message)', () => {
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'hi' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      // Focus stays in the input — autofocus effect re-fires when the input
+      // re-renders with cleared value, AND we explicitly do not blur on send.
+      expect(document.activeElement).toBe(input);
+    });
+
+    it('clears chips after send (chip count drops to 0)', () => {
+      const input = expand();
+
+      // Drive a chip into state via the @ ReferenceMode picker stub.
+      fireEvent.change(input, { target: { value: '@' } });
+      fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
+
+      // Chip is now in state — the AttachmentChips stub reflects the count.
+      const chipsStripBefore = screen.getByTestId('chips-stub');
+      expect(chipsStripBefore.getAttribute('data-chip-count')).toBe('1');
+
+      // Type a message and send.
+      const inputAfter = screen.getByRole('textbox') as HTMLInputElement;
+      fireEvent.change(inputAfter, { target: { value: 'check this' } });
+      fireEvent.keyDown(inputAfter, { key: 'Enter' });
+
+      // Chips reset.
+      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+      const chipsStripAfter = screen.getByTestId('chips-stub');
+      expect(chipsStripAfter.getAttribute('data-chip-count')).toBe('0');
+    });
+
+    it('Enter while a prefix is active does NOT send — picker reserves Enter', () => {
+      const input = expand();
+      // Active prefix = "/" → SkillMode owns Enter.
+      fireEvent.change(input, { target: { value: '/skill' } });
+
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      expect(sendChatMessageMock).not.toHaveBeenCalled();
+    });
+
+    it('Enter with empty input but non-empty chips still sends (chips are content)', () => {
+      const input = expand();
+
+      // Add one chip via the @ picker stub.
+      fireEvent.change(input, { target: { value: '@' } });
+      fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
+
+      // Clear the input again so it's empty when we press Enter — the chip
+      // alone should still be enough to send.
+      const inputAfter = screen.getByRole('textbox') as HTMLInputElement;
+      fireEvent.change(inputAfter, { target: { value: '' } });
+
+      fireEvent.keyDown(inputAfter, { key: 'Enter' });
+
+      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
     });
   });
 });
