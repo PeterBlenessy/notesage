@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
@@ -24,8 +24,20 @@ import {
 // Helper — create editor with typography override extensions
 // ---------------------------------------------------------------------------
 
+// Why: ProseMirror's DOMObserver schedules timers that can fire after jsdom
+// teardown if the EditorView isn't destroyed. Track every instance so afterEach
+// can drain them — without this, "ReferenceError: document is not defined" leaks
+// from prosemirror-view into the full-suite run.
+const editors: Editor[] = [];
+
+afterEach(() => {
+  while (editors.length > 0) {
+    editors.pop()?.destroy();
+  }
+});
+
 function createEditor(content: string): Editor {
-  return new Editor({
+  const editor = new Editor({
     extensions: [
       StarterKit.configure({ heading: false, paragraph: false }),
       HeadingWithOverrides.configure({ levels: [1, 2, 3, 4, 5, 6] }),
@@ -35,6 +47,8 @@ function createEditor(content: string): Editor {
     ],
     content,
   });
+  editors.push(editor);
+  return editor;
 }
 
 function getMarkdown(editor: Editor): string {
