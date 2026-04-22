@@ -11,6 +11,13 @@ import {
   detectActivePrefix,
   type ActivePrefix,
 } from "@/components/cmd/prefix-modes";
+import SkillMode from "@/components/cmd/modes/SkillMode";
+import ReferenceMode from "@/components/cmd/modes/ReferenceMode";
+import TagMode from "@/components/cmd/modes/TagMode";
+import TaskMode, { type TaskAction } from "@/components/cmd/modes/TaskMode";
+import ResearchMode from "@/components/cmd/modes/ResearchMode";
+import PaletteMode from "@/components/cmd/modes/PaletteMode";
+import { log } from "@/lib/logger";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -66,12 +73,20 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
 
-  // Attachment chips above the input (#11). Starts empty — populated by the
-  // reference / task / research mode pickers in #15, #17, #18.
+  // Attachment chips above the input (#11). Populated by the reference / task /
+  // research mode pickers (#15 / #17 / #18) via the dispatchers below.
   const [chips, setChips] = useState<AttachmentChip[]>([]);
   const removeChip = useCallback((id: string) => {
     setChips((prev) => prev.filter((c) => c.id !== id));
   }, []);
+  const addChip = useCallback((chip: AttachmentChip) => {
+    setChips((prev) => (prev.some((c) => c.id === chip.id) ? prev : [...prev, chip]));
+  }, []);
+
+  // Whether the user is "composing" — used by TaskMode to choose between
+  // navigate and attach. We treat any non-empty input or any pending chip as
+  // composing; the picker uses this to pick the default Enter action.
+  const isComposing = inputValue.trim().length > 0 || chips.length > 0;
 
   // Autofocus the input whenever we transition into the expanded state.
   useEffect(() => {
@@ -160,6 +175,91 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
   );
 
   // ---------------------------------------------------------------------
+  // Mode picker dispatchers (#14–#19)
+  //
+  // Each picker emits a domain-specific selection; these handlers translate
+  // the selection into input-text / chip-state mutations. After applying,
+  // the active prefix is cleared (the picker has done its job) and focus
+  // returns to the input.
+  // ---------------------------------------------------------------------
+
+  /** Replace the active prefix token (prefix + filter) with the given string. */
+  const replaceActiveToken = useCallback(
+    (replacement: string) => {
+      if (!activePrefix) return;
+      const before = inputValue.slice(0, activePrefix.tokenStart);
+      const after = inputValue.slice(activePrefix.tokenEnd);
+      const next = before + replacement + after;
+      const cursor = (before + replacement).length;
+      setInputValue(next);
+      setActivePrefix(null);
+      // Restore cursor position after React applies the value.
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(cursor, cursor);
+        }
+      });
+    },
+    [activePrefix, inputValue],
+  );
+
+  const handlePickSkill = useCallback(
+    (skillName: string) => {
+      replaceActiveToken(`/${skillName} `);
+    },
+    [replaceActiveToken],
+  );
+
+  const handlePickTag = useCallback(
+    (tagName: string) => {
+      replaceActiveToken(`#${tagName} `);
+    },
+    [replaceActiveToken],
+  );
+
+  const handlePickReference = useCallback(
+    (chip: AttachmentChip) => {
+      addChip(chip);
+      replaceActiveToken("");
+    },
+    [addChip, replaceActiveToken],
+  );
+
+  const handlePickResearch = useCallback(
+    (chip: AttachmentChip) => {
+      addChip(chip);
+      replaceActiveToken("");
+    },
+    [addChip, replaceActiveToken],
+  );
+
+  const handlePickTask = useCallback(
+    (action: TaskAction) => {
+      if (action.kind === "attach") {
+        addChip(action.chip);
+        replaceActiveToken("");
+        return;
+      }
+      // Navigate path is forward-declared — wired with global shortcuts in #20+.
+      log.info("perf:cmdbar", "task-navigate stub", action);
+      replaceActiveToken("");
+    },
+    [addChip, replaceActiveToken],
+  );
+
+  const handlePickPalette = useCallback(
+    (commandId: string) => {
+      // Real command execution wires up alongside the global shortcut hook in
+      // #20+. For now, log and clear so the picker UX is testable end-to-end.
+      log.info("perf:cmdbar", "palette-execute stub", { commandId });
+      replaceActiveToken("");
+    },
+    [replaceActiveToken],
+  );
+
+  // ---------------------------------------------------------------------
   // Visual chrome
   //
   // The bar is the same DOM in both compact and expanded states — only the
@@ -223,6 +323,13 @@ function FloatingCommandBar({ isPinned = false }: FloatingCommandBarProps) {
           onKeyDown={handleKeyDown}
           chips={chips}
           onRemoveChip={removeChip}
+          isComposing={isComposing}
+          onPickSkill={handlePickSkill}
+          onPickReference={handlePickReference}
+          onPickTag={handlePickTag}
+          onPickTask={handlePickTask}
+          onPickResearch={handlePickResearch}
+          onPickPalette={handlePickPalette}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -278,6 +385,13 @@ interface ExpandedContentProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   chips: AttachmentChip[];
   onRemoveChip: (id: string) => void;
+  isComposing: boolean;
+  onPickSkill: (name: string) => void;
+  onPickReference: (chip: AttachmentChip) => void;
+  onPickTag: (name: string) => void;
+  onPickTask: (action: TaskAction) => void;
+  onPickResearch: (chip: AttachmentChip) => void;
+  onPickPalette: (commandId: string) => void;
 }
 
 function ExpandedContent({
@@ -289,6 +403,13 @@ function ExpandedContent({
   onKeyDown,
   chips,
   onRemoveChip,
+  isComposing,
+  onPickSkill,
+  onPickReference,
+  onPickTag,
+  onPickTask,
+  onPickResearch,
+  onPickPalette,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -307,6 +428,19 @@ function ExpandedContent({
       <AttachmentChips chips={chips} onRemove={onRemoveChip} />
 
       {activePrefix ? <PrefixModeBadge prefix={activePrefix} /> : null}
+
+      {activePrefix ? (
+        <ModePickerDispatch
+          activePrefix={activePrefix}
+          isComposing={isComposing}
+          onPickSkill={onPickSkill}
+          onPickReference={onPickReference}
+          onPickTag={onPickTag}
+          onPickTask={onPickTask}
+          onPickResearch={onPickResearch}
+          onPickPalette={onPickPalette}
+        />
+      ) : null}
 
       <div className="border-t border-border px-3 py-2">
         <input
@@ -358,6 +492,49 @@ function PrefixModeBadge({ prefix }: PrefixModeBadgeProps) {
       <span>{prefix.mode.description}</span>
     </div>
   );
+}
+
+interface ModePickerDispatchProps {
+  activePrefix: ActivePrefix;
+  isComposing: boolean;
+  onPickSkill: (name: string) => void;
+  onPickReference: (chip: AttachmentChip) => void;
+  onPickTag: (name: string) => void;
+  onPickTask: (action: TaskAction) => void;
+  onPickResearch: (chip: AttachmentChip) => void;
+  onPickPalette: (commandId: string) => void;
+}
+
+/**
+ * Picker dispatcher — selects the mode-specific picker based on the active
+ * prefix's mode id. Each picker is a standalone component (#14–#19); the
+ * dispatcher is just the route table.
+ */
+function ModePickerDispatch({
+  activePrefix,
+  isComposing,
+  onPickSkill,
+  onPickReference,
+  onPickTag,
+  onPickTask,
+  onPickResearch,
+  onPickPalette,
+}: ModePickerDispatchProps) {
+  const filter = activePrefix.filter;
+  switch (activePrefix.mode.id) {
+    case "skill":
+      return <SkillMode filter={filter} onPick={onPickSkill} />;
+    case "reference":
+      return <ReferenceMode filter={filter} onPick={onPickReference} />;
+    case "tag":
+      return <TagMode filter={filter} onPick={onPickTag} />;
+    case "task":
+      return <TaskMode filter={filter} onPick={onPickTask} isComposing={isComposing} />;
+    case "research":
+      return <ResearchMode filter={filter} onPick={onPickResearch} />;
+    case "palette":
+      return <PaletteMode filter={filter} onPick={onPickPalette} />;
+  }
 }
 
 export default FloatingCommandBar;

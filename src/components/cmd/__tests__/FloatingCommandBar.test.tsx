@@ -40,6 +40,28 @@ vi.mock('@/components/cmd/CommandBarStream', () => ({
   default: () => <div data-testid="cmd-stream-stub">stream</div>,
 }));
 
+// Stub all 6 mode pickers (#14–#19). They each have their own dedicated test
+// file. The FloatingCommandBar test verifies that the dispatcher mounts the
+// right picker for the active prefix, not the picker's internals.
+vi.mock('@/components/cmd/modes/SkillMode', () => ({
+  default: () => <div data-testid="skill-mode-stub" />,
+}));
+vi.mock('@/components/cmd/modes/ReferenceMode', () => ({
+  default: () => <div data-testid="reference-mode-stub" />,
+}));
+vi.mock('@/components/cmd/modes/TagMode', () => ({
+  default: () => <div data-testid="tag-mode-stub" />,
+}));
+vi.mock('@/components/cmd/modes/TaskMode', () => ({
+  default: () => <div data-testid="task-mode-stub" />,
+}));
+vi.mock('@/components/cmd/modes/ResearchMode', () => ({
+  default: () => <div data-testid="research-mode-stub" />,
+}));
+vi.mock('@/components/cmd/modes/PaletteMode', () => ({
+  default: () => <div data-testid="palette-mode-stub" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -179,5 +201,22 @@ describe('FloatingCommandBar', () => {
     fireEvent.keyDown(stillThere, { key: 'Escape' });
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
+  });
+
+  it.each([
+    ['/', 'skill-mode-stub'],
+    ['@', 'reference-mode-stub'],
+    ['#', 'tag-mode-stub'],
+    ['!', 'task-mode-stub'],
+    ['?', 'research-mode-stub'],
+    ['>', 'palette-mode-stub'],
+  ])('mounts the right picker for prefix "%s"', (prefix, stubTestId) => {
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: prefix } });
+
+    expect(screen.getByTestId(stubTestId)).toBeTruthy();
   });
 });
