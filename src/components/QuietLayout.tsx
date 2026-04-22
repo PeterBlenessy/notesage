@@ -1,5 +1,6 @@
 import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
+import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -44,6 +45,14 @@ export function QuietLayout(_props: QuietLayoutProps) {
         <ZonePlaceholder label="Document area (placeholder)" />
         <ZonePlaceholder label="Reserved (placeholder)" />
       </div>
+
+      {/*
+        Floating composer (PRD `2026-04-21-ui-refresh`, task #9). Portal-mounts
+        to document.body, so its position in this JSX tree is irrelevant —
+        it always renders at bottom-centre of the viewport. Subsequent tasks
+        (#10–#28) fill in the bar's contents.
+       */}
+      <FloatingCommandBar />
     </div>
   );
 }
