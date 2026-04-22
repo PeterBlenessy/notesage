@@ -7,8 +7,9 @@
 | **PRD** | [ui-refresh](../prds/2026-04-21-ui-refresh.md) |
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
-| **Total** | 74 tasks: 22 S, 34 M, 18 L |
-| **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) |
+| **Total** | 100 tasks across 10 milestones |
+| **Complexity mix** | ~30 S, ~50 M, ~20 L |
+| **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
 ## Scope
 
