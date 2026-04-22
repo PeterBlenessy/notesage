@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useChatStore, selectMessages } from "@/stores/chat-store";
+import { useAIOperations } from "@/hooks/useAIOperations";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
 import AttachmentChips, {
   type AttachmentChip,
@@ -88,6 +90,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const [activePrefix, setActivePrefix] = useState<ActivePrefix | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
+
+  // Send wiring (#23). We reuse the existing `sendChatMessage` from
+  // `useAIOperations` — the same entry point `ChatPanel` calls — so all
+  // routing (direct API / ACP / Copilot LSP / local), provider lock checks,
+  // segment isolation, and downstream streaming come "for free".
+  const messagesForSend = useChatStore(selectMessages);
+  const { sendChatMessage } = useAIOperations();
 
   // Attachment chips above the input (#11). Populated by the reference / task /
   // research mode pickers (#15 / #17 / #18) via the dispatchers below.
@@ -178,6 +187,56 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [recomputePrefix],
   );
 
+  // ---------------------------------------------------------------------
+  // Send (#23) — Enter (no active prefix) sends via the existing
+  // `useAIOperations.sendChatMessage` pipeline. We REUSE this hook rather
+  // than rebuild the streaming flow so the composer inherits provider
+  // routing, project lock enforcement, segment isolation, and downstream
+  // streaming behaviour from `ChatPanel`.
+  //
+  // Chip handling for v1 is pragmatic: when the message has chips, we
+  // prepend a tiny `[refs: …]` block so the references reach the model as
+  // text. Tag chips already arrive as literal `#tag` text (TagMode keeps
+  // the literal); `file`, `person`, `comment`, `task`, and `research`
+  // chips are inlined here.
+  //
+  // TODO(#25 / future): Replace the inline-text fallback with a structured
+  // `references` field on `sendChatMessage` opts so the chat-store can
+  // surface them as proper chips on the resulting user message (matching
+  // today's image-attachment thumbnails).
+  // ---------------------------------------------------------------------
+
+  const handleSend = useCallback(() => {
+    const trimmed = inputValue.trim();
+    if (trimmed.length === 0 && chips.length === 0) {
+      // Empty input AND no chips → no-op. Don't fire blank messages.
+      return;
+    }
+
+    const refsBlock =
+      chips.length > 0
+        ? `[refs: ${chips.map((c) => `${c.kind}:${c.name}`).join(", ")}] `
+        : "";
+    const content = `${refsBlock}${trimmed}`;
+
+    // Reset the composer optimistically — the send is async but the user
+    // expects the input to clear immediately so they can keep typing.
+    setInputValue("");
+    setChips([]);
+    setActivePrefix(null);
+
+    // Fire-and-forget — the chat-store handles its own loading + error state
+    // and the chat stream renders the assistant response.
+    void sendChatMessage(content, messagesForSend);
+
+    // Keep focus in the input for the next message. The autofocus effect on
+    // `effectiveExpanded` doesn't re-fire when only the input value changes,
+    // so we ensure focus explicitly here.
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [inputValue, chips, sendChatMessage, messagesForSend]);
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
@@ -193,11 +252,23 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         collapse();
         return;
       }
-      // When a prefix is active, Enter is reserved for the picker (handled by
-      // mode pickers in #14–#19). We don't collapse on Enter here — that
-      // responsibility belongs to the picker components.
+      if (event.key === "Enter") {
+        // When a prefix is active, Enter is reserved for the picker (handled
+        // by mode pickers in #14–#19). We must NOT swallow Enter here — the
+        // picker component owns it.
+        if (activePrefix) {
+          return;
+        }
+        // Allow newlines via Shift+Enter for forward-compat (the input is a
+        // single-line `<input>` today, so this branch is just a guard for
+        // when the bar grows a textarea).
+        if (event.shiftKey) return;
+        event.preventDefault();
+        handleSend();
+        return;
+      }
     },
-    [activePrefix, collapse],
+    [activePrefix, collapse, handleSend],
   );
 
   // ---------------------------------------------------------------------
