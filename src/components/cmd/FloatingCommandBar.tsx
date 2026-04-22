@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import CommandBarContext from "@/components/cmd/CommandBarContext";
 
 /**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
@@ -192,11 +193,13 @@ function ExpandedContent({ inputRef, onKeyDown }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
       {/*
-        Future home of:
-          - Context row (#10) — pinned to the top of the expanded bar
+        Layout (top → bottom):
+          - Context row (#10) — provider, projects, mode, history, pin
           - Attachment chips (#11) — above the input
           - Chat stream (#12) — fills the scroll region below
        */}
+      <CommandBarContext />
+
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         <p className="text-xs text-muted-foreground">{STREAM_PLACEHOLDER}</p>
       </div>
