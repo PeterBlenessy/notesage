@@ -239,7 +239,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #13 |
 | Files | `src/hooks/useCommandBarShortcuts.ts` |
 
-### #21 — Double-tap ⌘ detection (alternate bar focus)
+### #21 — Double-tap ⌘ detection (alternate bar focus) ✅
 
 | Field | Value |
 | --- | --- |
@@ -259,7 +259,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src-tauri/src/commands/skills_tool_parser.rs`, `src/stores/skill-store.ts` (frontend helper), tests |
 
-### #23 — Wire composer send → chat-store
+### #23 — Wire composer send → chat-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -319,7 +319,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/components/QuietLayout.tsx` |
 
-### #29 — `AgentOrb` component
+### #29 — `AgentOrb` component ✅
 
 | Field | Value |
 | --- | --- |
