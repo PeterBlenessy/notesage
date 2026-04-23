@@ -1088,7 +1088,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx`, possibly `src/components/editor/Editor.tsx` |
 | Surfaced as | F7 in `phase1-followups.md` (promoted to numbered task) |
 
-### #102 — Decide and mount the chat in QuietLayout right column
+### #102 — Decide and mount the chat in QuietLayout right column ✅
 
 | Field | Value |
 | --- | --- |
