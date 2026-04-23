@@ -154,6 +154,14 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   accent: 'default',
   cmdBarPinned: false,
   cmdBarPinnedWidth: 400,
+  quietChromePreset: 'default',
+  quietChromeOverrides: {
+    toolbar: true,
+    status: true,
+    docHead: true,
+    sidebar: false,
+    orb: false,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1095,7 +1103,7 @@ describe('uiPreview flag', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(6);
+    expect(parsed.version).toBe(7);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1237,7 +1245,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(6);
+    expect(parsed.version).toBe(7);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1332,5 +1340,161 @@ describe('v4 → v5 migration (accent field)', () => {
     await waitForPersist();
 
     expect(useSettingsStore.getState().accent).toBe('orange');
+  });
+});
+
+// ===========================================================================
+// v6 → v7 migration (quiet-chrome presets + overrides)
+// ===========================================================================
+
+describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () => {
+  it('adds quietChromePreset: "default" and the default overrides to a v6 state lacking them', async () => {
+    const v6State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+      },
+      version: 6,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v6State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromePreset).toBe('default');
+    expect(s.quietChromeOverrides).toEqual({
+      toolbar: true,
+      status: true,
+      docHead: true,
+      sidebar: false,
+      orb: false,
+    });
+
+    // Persisted JSON should reflect bumped version and new fields so the
+    // migration doesn't re-run on the next launch.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(7);
+    expect(parsed.state.quietChromePreset).toBe('default');
+    expect(parsed.state.quietChromeOverrides).toBeTruthy();
+  });
+
+  it('preserves existing quietChromePreset when present (idempotent)', async () => {
+    const v7State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        quietChromePreset: 'aggressive',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: true,
+          orb: true,
+        },
+      },
+      version: 7,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v7State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromePreset).toBe('aggressive');
+    expect(s.quietChromeOverrides.sidebar).toBe(true);
+    expect(s.quietChromeOverrides.orb).toBe(true);
+  });
+});
+
+describe('quiet-chrome setters', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('setQuietChromePreset flips to a named preset and resets overrides to match', () => {
+    const { setQuietChromePreset } = useSettingsStore.getState();
+
+    setQuietChromePreset('aggressive');
+    const a = useSettingsStore.getState();
+    expect(a.quietChromePreset).toBe('aggressive');
+    expect(a.quietChromeOverrides).toEqual({
+      toolbar: true,
+      status: true,
+      docHead: true,
+      sidebar: true,
+      orb: true,
+    });
+
+    setQuietChromePreset('relaxed');
+    const r = useSettingsStore.getState();
+    expect(r.quietChromePreset).toBe('relaxed');
+    expect(r.quietChromeOverrides).toEqual({
+      toolbar: true,
+      status: true,
+      docHead: false,
+      sidebar: false,
+      orb: false,
+    });
+  });
+
+  it('setQuietChromePreset("custom") preserves existing overrides', () => {
+    const { setQuietChromePreset, setQuietChromeOverride } =
+      useSettingsStore.getState();
+
+    // First, flip a single switch — this auto-switches preset to "custom".
+    setQuietChromeOverride('sidebar', true);
+    const before = useSettingsStore.getState();
+    expect(before.quietChromePreset).toBe('custom');
+    expect(before.quietChromeOverrides.sidebar).toBe(true);
+
+    // Explicitly re-select "custom" — shouldn't reset the overrides.
+    setQuietChromePreset('custom');
+    const after = useSettingsStore.getState();
+    expect(after.quietChromePreset).toBe('custom');
+    expect(after.quietChromeOverrides.sidebar).toBe(true);
+  });
+
+  it('setQuietChromeOverride flips the preset to "custom"', () => {
+    const { setQuietChromeOverride } = useSettingsStore.getState();
+    expect(useSettingsStore.getState().quietChromePreset).toBe('default');
+
+    setQuietChromeOverride('orb', true);
+    expect(useSettingsStore.getState().quietChromePreset).toBe('custom');
+    expect(useSettingsStore.getState().quietChromeOverrides.orb).toBe(true);
+    // Other overrides unchanged.
+    expect(useSettingsStore.getState().quietChromeOverrides.toolbar).toBe(true);
   });
 });
