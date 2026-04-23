@@ -16,11 +16,13 @@ import type { FileEntry } from '@/lib/tauri';
 
 // ----------------------------------------------------------------------------
 // useFileOperations mock — rename wiring (#40) asserts against renamePath;
-// inline create (#41) asserts against createFile + openFile.
+// inline create (#41) asserts against createFile + openFile; project-create
+// (#42) asserts against createFolder.
 // ----------------------------------------------------------------------------
 
 const mockRenamePath = vi.fn();
 const mockCreateFile = vi.fn();
+const mockCreateFolder = vi.fn();
 const mockOpenFile = vi.fn();
 
 vi.mock('@/hooks/useFileOperations', () => ({
@@ -30,7 +32,7 @@ vi.mock('@/hooks/useFileOperations', () => ({
     openFileAtText: vi.fn(),
     saveFile: vi.fn(),
     createFile: mockCreateFile,
-    createFolder: vi.fn(),
+    createFolder: mockCreateFolder,
     renamePath: mockRenamePath,
     deletePath: vi.fn(),
     refreshFileTree: vi.fn(),
@@ -80,6 +82,8 @@ beforeEach(() => {
   mockRenamePath.mockResolvedValue(true);
   mockCreateFile.mockReset();
   mockCreateFile.mockResolvedValue('/Users/me/Notesage/alpha/new.md');
+  mockCreateFolder.mockReset();
+  mockCreateFolder.mockResolvedValue('/Users/me/Notesage/new-project');
   mockOpenFile.mockReset();
   mockOpenFile.mockResolvedValue(undefined);
 });
@@ -909,5 +913,229 @@ describe('ProjectsSection — inline create (#41)', () => {
     // No filesystem call, input stays open with an error message.
     expect(mockCreateFile).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toMatch(/slash/i);
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Task #42 — inline create project
+// ----------------------------------------------------------------------------
+
+import { buildProjectNameValidator } from '../ProjectsSection';
+import { useSettingsStore } from '@/stores/settings-store';
+import { toast } from 'sonner';
+
+describe('buildProjectNameValidator (#42)', () => {
+  it('accepts a plain project name', () => {
+    const validate = buildProjectNameValidator(new Set());
+    expect(validate('new-project')).toBeNull();
+  });
+
+  it('rejects empty input by returning null (auto-cancel)', () => {
+    const validate = buildProjectNameValidator(new Set());
+    expect(validate('')).toBeNull();
+    expect(validate('   ')).toBeNull();
+  });
+
+  it('rejects names containing slashes', () => {
+    const validate = buildProjectNameValidator(new Set());
+    expect(validate('a/b')).toMatch(/slash/i);
+    expect(validate('/abs')).toMatch(/slash/i);
+  });
+
+  it('rejects names starting with a dot', () => {
+    const validate = buildProjectNameValidator(new Set());
+    expect(validate('.hidden')).toMatch(/dot/i);
+  });
+
+  it('rejects a name that collides with an existing project basename', () => {
+    const validate = buildProjectNameValidator(new Set(['alpha', 'beta']));
+    expect(validate('alpha')).toMatch(/already exists/i);
+    expect(validate('gamma')).toBeNull();
+  });
+});
+
+describe('ProjectsSection — inline create project (#42)', () => {
+  beforeEach(() => {
+    useQuietSidebarStore.setState({
+      pendingCreate: null,
+      pendingCreateProject: false,
+    });
+    // Default to an expanded notesRootPath so the commit handler can proceed.
+    useSettingsStore.setState({ notesRootPath: '/Users/me/Notesage' });
+    vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.error).mockReset();
+  });
+
+  it('renders NO inline project-create row when pendingCreateProject is false', () => {
+    renderWithProviders(<ProjectsSection />);
+    // Nothing with data-pending-create-project
+    expect(
+      document.querySelector('[data-pending-create-project]'),
+    ).toBeNull();
+  });
+
+  it('renders the inline project-create row when pendingCreateProject is true', async () => {
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = (await screen.findByLabelText(/create/i)) as HTMLInputElement;
+    expect(input.placeholder).toBe('New project');
+    // Anchor present for row alignment
+    expect(
+      document.querySelector('[data-pending-create-project="true"]'),
+    ).toBeTruthy();
+  });
+
+  it('renders the create row at the top — above existing projects', async () => {
+    setProjects([
+      { path: '/Users/me/Notesage/alpha', fileTree: [] },
+    ]);
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    // Find the tree and its direct `<li>` children; the first one should
+    // be the pending-create marker.
+    await waitFor(() => {
+      const ul = screen.getByRole('tree', { name: /projects/i });
+      const firstLi = ul.querySelector(':scope > li') as HTMLElement | null;
+      expect(firstLi).toBeTruthy();
+      expect(firstLi?.getAttribute('data-pending-create-project')).toBe('true');
+    });
+  });
+
+  it('section-header + button flips pendingCreateProject on click (when onAdd wired)', () => {
+    const onAdd = vi.fn(() => {
+      useQuietSidebarStore.getState().setPendingCreateProject(true);
+    });
+    renderWithProviders(<ProjectsSection onAdd={onAdd} />);
+    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
+  });
+
+  it('commits by calling createFolder + addProject + clears pending', async () => {
+    const user = userEvent.setup();
+    // Simulate the freshly-created directory returning an empty tree.
+    setMockInvokeHandler(
+      'list_directory',
+      () => [],
+    );
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'my-project{Enter}');
+
+    await waitFor(() => {
+      expect(mockCreateFolder).toHaveBeenCalledWith(
+        '/Users/me/Notesage',
+        'my-project',
+      );
+    });
+    await waitFor(() => {
+      const projects = useWorkspaceStore.getState().projects;
+      expect(projects).toHaveLength(1);
+      expect(projects[0].path).toBe('/Users/me/Notesage/my-project');
+      expect(projects[0].fileTree).toEqual([]);
+    });
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      expect.stringMatching(/my-project/i),
+    );
+  });
+
+  it('Escape cancels — no createFolder, no new project, pending cleared', async () => {
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/create/i)).toBeNull();
+    });
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().projects).toHaveLength(0);
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+  });
+
+  it('rejects slash in the name (no filesystem call)', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'a/b{Enter}');
+
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/slash/i);
+    // Input stays open — pending flag not cleared yet.
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
+  });
+
+  it('rejects dot-prefix in the name', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, '.hidden{Enter}');
+
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/dot/i);
+  });
+
+  it('rejects a duplicate project name', async () => {
+    const user = userEvent.setup();
+    setProjects([
+      { path: '/Users/me/Notesage/alpha', fileTree: [] },
+    ]);
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'alpha{Enter}');
+
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/already exists/i);
+  });
+
+  it('bails with an error toast when the library root is not expanded yet', async () => {
+    const user = userEvent.setup();
+    // Simulate pre-lifecycle state: notesRootPath still has the `~` prefix.
+    useSettingsStore.setState({ notesRootPath: '~/Notesage' });
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'my-project{Enter}');
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        expect.stringMatching(/not ready/i),
+      );
+    });
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+  });
+
+  it('surfaces a toast.error when createFolder rejects', async () => {
+    const user = userEvent.setup();
+    mockCreateFolder.mockRejectedValueOnce(new Error('EACCES'));
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'my-project{Enter}');
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        expect.stringMatching(/failed to create project/i),
+      );
+    });
+    // Pending was cleared up-front.
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+    // No project added.
+    expect(useWorkspaceStore.getState().projects).toHaveLength(0);
   });
 });

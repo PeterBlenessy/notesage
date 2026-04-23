@@ -1,6 +1,7 @@
-import { useState, type KeyboardEvent } from "react";
+import { useCallback, useState, type KeyboardEvent } from "react";
 import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
 import { RecentSection } from "./RecentSection";
@@ -39,6 +40,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function QuietSidebar() {
   const [filter, setFilter] = useState<string>("");
+  const setPendingCreateProject = useQuietSidebarStore(
+    (s) => s.setPendingCreateProject,
+  );
+
+  // Projects section header `+` button opens the top-of-list inline
+  // project-create row via the quiet-sidebar-store flag (task #42).
+  const handleAddProject = useCallback(() => {
+    setPendingCreateProject(true);
+  }, [setPendingCreateProject]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     // Let text-entry surfaces inside the sidebar (TreeOverlay search,
@@ -85,7 +95,7 @@ export function QuietSidebar() {
     >
       {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
       <PinnedSection filter={filter} />
-      <ProjectsSection filter={filter} />
+      <ProjectsSection filter={filter} onAdd={handleAddProject} />
       <RecentSection filter={filter} />
       <TagsSection filter={filter} />
     </nav>
