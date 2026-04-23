@@ -473,7 +473,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #44 — Drag-to-pin + drag-to-reorder Pinned
+### #44 — Drag-to-pin + drag-to-reorder Pinned 🚧
 
 | Field | Value |
 | --- | --- |
