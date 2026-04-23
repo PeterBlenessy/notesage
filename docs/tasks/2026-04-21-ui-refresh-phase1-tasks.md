@@ -433,7 +433,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src/components/sidebar/SidebarInlineEdit.tsx` |
 
-### #40 — Inline rename (F2, double-click)
+### #40 — Inline rename (F2, double-click) 🚧
 
 | Field | Value |
 | --- | --- |
