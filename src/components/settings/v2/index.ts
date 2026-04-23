@@ -18,3 +18,5 @@ export type { SettingsRowProps } from './SettingsRow';
 
 export { SettingsDialogV2 } from './SettingsDialogV2';
 export type { SettingsDialogV2Props } from './SettingsDialogV2';
+
+export { AISettings } from './AISettings';
