@@ -18,3 +18,12 @@ export type { SettingsRowProps } from './SettingsRow';
 
 export { SettingsDialogV2 } from './SettingsDialogV2';
 export type { SettingsDialogV2Props } from './SettingsDialogV2';
+
+export { GeneralSettings } from './GeneralSettings';
+export { EditorSettings } from './EditorSettings';
+export { SkillsSettings } from './SkillsSettings';
+export { ProjectsSettings } from './ProjectsSettings';
+export { PrivacySettings } from './PrivacySettings';
+export { AdvancedSettings } from './AdvancedSettings';
+export { AboutSettings } from './AboutSettings';
+export type { AboutSettingsProps } from './AboutSettings';
