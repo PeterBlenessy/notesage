@@ -22,6 +22,7 @@ import {
   useSidebarItemShortcuts,
 } from "@/components/sidebar/quiet/useSidebarItemShortcuts";
 import { useEditorStore, type RecentFile } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
 import { cn } from "@/lib/utils";
@@ -41,11 +42,20 @@ import { beginFileDrag } from "./file-drag";
  * user-configurable `recentCap` in settings-store.
  */
 
-/** Default display cap for the Recent section. Task #35 will let users override via settings. */
+/**
+ * Default display cap for the Recent section — used when neither an explicit
+ * `cap` prop nor a persisted `sidebarRecentCap` value is available. Task #35
+ * threaded the setting through; this constant remains exported as a stable
+ * fallback value (and for tests that import it).
+ */
 export const DEFAULT_RECENT_CAP = 5;
 
 export interface RecentSectionProps {
-  /** Override the display cap. When omitted, `DEFAULT_RECENT_CAP` is used. */
+  /**
+   * Override the display cap. When omitted, the component reads
+   * `settings.sidebarRecentCap` (task #35). Primarily for tests; production
+   * callers should rely on the settings value.
+   */
   cap?: number;
   /**
    * Case-insensitive substring filter applied to recent rows. Matches
@@ -195,7 +205,7 @@ function RecentRow({
 }
 
 export function RecentSection({
-  cap = DEFAULT_RECENT_CAP,
+  cap,
   filter,
 }: RecentSectionProps = {}) {
   const recentFiles = useEditorStore((s) => s.recentFiles);
@@ -203,6 +213,11 @@ export function RecentSection({
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
+  // Task #35 — read cap from settings. The explicit `cap` prop still wins
+  // when provided (tests, edge-case callers) so the component remains
+  // cap-agnostic from the caller's perspective.
+  const settingCap = useSettingsStore((s) => s.sidebarRecentCap);
+  const effectiveCap = cap ?? settingCap ?? DEFAULT_RECENT_CAP;
   const { openFile, renamePath } = useFileOperations();
 
   const [expanded, setExpanded] = useState(false);
@@ -222,13 +237,13 @@ export function RecentSection({
     });
   }, [recentFiles, filter]);
 
-  const hasOverflow = filteredFiles.length > cap;
+  const hasOverflow = filteredFiles.length > effectiveCap;
   // Auto-collapse when the list shrinks below the cap so the "Show more"
   // button never lingers with nothing extra to reveal.
   const effectiveExpanded = expanded && hasOverflow;
   const visibleFiles = effectiveExpanded
     ? filteredFiles
-    : filteredFiles.slice(0, cap);
+    : filteredFiles.slice(0, effectiveCap);
 
   const handleOpen = async (entry: RecentFile) => {
     try {

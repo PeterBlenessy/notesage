@@ -9,6 +9,7 @@ import {
 } from '@/test/component-harness';
 import userEvent from '@testing-library/user-event';
 import { TagsSection, DEFAULT_TAG_CAP } from '../TagsSection';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -48,6 +49,8 @@ describe('TagsSection', () => {
   beforeEach(() => {
     indexTagsMock.mockReset();
     emitCmdBarEventMock.mockReset();
+    // Reset the cap to the default so each test starts from a known baseline.
+    useSettingsStore.setState({ sidebarTagsCap: 5, sidebarTagsHidden: false });
   });
 
   it('renders the uppercase "Tags" heading', async () => {
@@ -308,5 +311,51 @@ describe('TagsSection', () => {
 
     // Clean up state for other tests.
     mockWorkspaceState.projects = [];
+  });
+
+  it('uses sidebarTagsCap from settings when no explicit `cap` prop is passed (#35)', async () => {
+    useSettingsStore.setState({ sidebarTagsCap: 3 });
+    indexTagsMock.mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        tag: `tag${i}`,
+        file_count: 100 - i,
+      })),
+    );
+
+    renderWithProviders(<TagsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText('tag0')).toBeTruthy();
+    });
+
+    // Only first 3 rows visible (driven by setting).
+    const rows = screen
+      .getAllByRole('button')
+      .filter((el) => (el.getAttribute('aria-label') ?? '').startsWith('Search for'));
+    expect(rows).toHaveLength(3);
+    expect(screen.queryByText('tag3')).toBeNull();
+
+    expect(screen.getByRole('button', { name: /show more/i })).toBeTruthy();
+  });
+
+  it('explicit `cap` prop overrides the setting (#35)', async () => {
+    useSettingsStore.setState({ sidebarTagsCap: 15 });
+    indexTagsMock.mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        tag: `tag${i}`,
+        file_count: 100 - i,
+      })),
+    );
+
+    renderWithProviders(<TagsSection cap={2} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('tag0')).toBeTruthy();
+    });
+
+    const rows = screen
+      .getAllByRole('button')
+      .filter((el) => (el.getAttribute('aria-label') ?? '').startsWith('Search for'));
+    expect(rows).toHaveLength(2);
   });
 });

@@ -11,6 +11,7 @@ import {
 } from '@/test/component-harness';
 import { RecentSection, DEFAULT_RECENT_CAP } from '../RecentSection';
 import { useEditorStore, type RecentFile } from '@/stores/editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // Mock useFileOperations so tests never hit Tauri IPC.
 const openFileMock = vi.fn();
@@ -79,6 +80,8 @@ beforeEach(() => {
     tabs: [],
     activeTabId: null,
   });
+  // Reset the cap to the default so each test starts from a known baseline.
+  useSettingsStore.setState({ sidebarRecentCap: 5 });
 });
 
 describe('RecentSection — shell', () => {
@@ -355,5 +358,46 @@ describe('RecentSection — inline rename (#40)', () => {
       }),
     );
     expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+});
+
+describe('RecentSection — settings-driven cap (#35)', () => {
+  it('uses sidebarRecentCap from settings when no explicit `cap` prop is passed', () => {
+    useSettingsStore.setState({ sidebarRecentCap: 3 });
+    setRecent(makeRecent(10));
+    renderWithProviders(<RecentSection />);
+
+    // Only first 3 rows should be visible (driven by setting).
+    expect(screen.getByText('file-1.md')).toBeTruthy();
+    expect(screen.getByText('file-2.md')).toBeTruthy();
+    expect(screen.getByText('file-3.md')).toBeTruthy();
+    expect(screen.queryByText('file-4.md')).toBeNull();
+
+    // Overflow → Show more button surfaces.
+    expect(screen.getByRole('button', { name: /show more/i })).toBeTruthy();
+  });
+
+  it('respects a raised sidebarRecentCap (up to 15)', () => {
+    useSettingsStore.setState({ sidebarRecentCap: 15 });
+    setRecent(makeRecent(10));
+    renderWithProviders(<RecentSection />);
+
+    // All 10 rows fit under the cap of 15.
+    for (let i = 1; i <= 10; i++) {
+      expect(screen.getByText(`file-${i}.md`)).toBeTruthy();
+    }
+    expect(screen.queryByRole('button', { name: /show more/i })).toBeNull();
+  });
+
+  it('explicit `cap` prop overrides the setting', () => {
+    useSettingsStore.setState({ sidebarRecentCap: 15 });
+    setRecent(makeRecent(10));
+    renderWithProviders(<RecentSection cap={2} />);
+
+    // The explicit prop wins — only 2 rows visible despite the looser setting.
+    expect(screen.getByText('file-1.md')).toBeTruthy();
+    expect(screen.getByText('file-2.md')).toBeTruthy();
+    expect(screen.queryByText('file-3.md')).toBeNull();
+    expect(screen.getByRole('button', { name: /show more/i })).toBeTruthy();
   });
 });

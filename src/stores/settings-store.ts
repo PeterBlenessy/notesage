@@ -132,6 +132,21 @@ interface SettingsStore {
    * Named presets ignore this field. Default mirrors `PRESETS.default`.
    */
   quietChromeOverrides: QuietChromeTargets;
+  /**
+   * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
+   * the quiet-composer sidebar Recent section. Clamped to [3, 15]. Default 5.
+   */
+  sidebarRecentCap: number;
+  /**
+   * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
+   * the quiet-composer sidebar Tags section. Clamped to [3, 15]. Default 5.
+   */
+  sidebarTagsCap: number;
+  /**
+   * Sidebar composition (ui-refresh #35). When true, the Tags section is
+   * hidden entirely from the quiet-composer sidebar. Default false.
+   */
+  sidebarTagsHidden: boolean;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -207,6 +222,9 @@ interface SettingsStore {
    * "custom" so the override is actually used at read time.
    */
   setQuietChromeOverride: (key: keyof QuietChromeTargets, value: boolean) => void;
+  setSidebarRecentCap: (n: number) => void;
+  setSidebarTagsCap: (n: number) => void;
+  setSidebarTagsHidden: (hidden: boolean) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -247,6 +265,9 @@ export const useSettingsStore = create<SettingsStore>()(
       cmdBarPinnedWidth: 400,
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
+      sidebarRecentCap: 5,
+      sidebarTagsCap: 5,
+      sidebarTagsHidden: false,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -525,6 +546,19 @@ export const useSettingsStore = create<SettingsStore>()(
         }));
       },
 
+      setSidebarRecentCap: (n: number) => {
+        // Clamp to [3, 15] per PRD; round so the slider value stays integer.
+        set({ sidebarRecentCap: Math.round(Math.max(3, Math.min(15, n))) });
+      },
+
+      setSidebarTagsCap: (n: number) => {
+        set({ sidebarTagsCap: Math.round(Math.max(3, Math.min(15, n))) });
+      },
+
+      setSidebarTagsHidden: (hidden: boolean) => {
+        set({ sidebarTagsHidden: hidden });
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -547,7 +581,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 7,
+      version: 8,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -609,6 +643,20 @@ export const useSettingsStore = create<SettingsStore>()(
             typeof state.quietChromeOverrides !== 'object'
           ) {
             state.quietChromeOverrides = { ...QUIET_CHROME_PRESETS.default };
+          }
+        }
+        if (version < 8) {
+          // ui-refresh task #35 — sidebar composition. Defaults mirror the
+          // pre-#35 hardcoded caps (5 for Recent, 5 for Tags) and keep Tags
+          // visible so existing users see zero visual change.
+          if (typeof state.sidebarRecentCap !== 'number') {
+            state.sidebarRecentCap = 5;
+          }
+          if (typeof state.sidebarTagsCap !== 'number') {
+            state.sidebarTagsCap = 5;
+          }
+          if (typeof state.sidebarTagsHidden !== 'boolean') {
+            state.sidebarTagsHidden = false;
           }
         }
         return state;
