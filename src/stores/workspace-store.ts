@@ -33,6 +33,9 @@ interface WorkspaceStore {
   // Notes section
   notesTree: FileEntry[];
 
+  // Pinned files (quiet-composer sidebar) — absolute file paths, user-ordered
+  pinnedFiles: string[];
+
   // Shared
   expandedFolders: Set<string>;
 
@@ -59,6 +62,11 @@ interface WorkspaceStore {
   // Notes actions
   setNotesTree: (tree: FileEntry[]) => void;
 
+  // Pinned file actions
+  pinFile: (path: string) => void;
+  unpinFile: (path: string) => void;
+  reorderPinnedFiles: (from: number, to: number) => void;
+
   // Folder expansion
   toggleFolder: (path: string) => void;
   isExpanded: (path: string) => boolean;
@@ -70,6 +78,8 @@ interface WorkspaceStore {
 
   // Path migration (used by iCloud sync)
   updateProjectPath: (oldPath: string, newPath: string, newTree: FileEntry[]) => void;
+  /** Rewrite any pinned paths that start with oldPrefix to use newPrefix. */
+  updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
 
   // Utility: find which section a file path belongs to
   findOwningProject: (filePath: string) => WorkspaceProject | undefined;
@@ -82,6 +92,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       projects: [],
       recentProjects: [],
       notesTree: [],
+      pinnedFiles: [],
       expandedFolders: new Set<string>(),
       explorerCollapsed: false,
       projectsCollapsed: false,
@@ -189,6 +200,40 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         set({ notesTree: tree });
       },
 
+      pinFile: (path) => {
+        set((state) => {
+          if (state.pinnedFiles.includes(path)) return state;
+          return { pinnedFiles: [...state.pinnedFiles, path] };
+        });
+      },
+
+      unpinFile: (path) => {
+        set((state) => {
+          if (!state.pinnedFiles.includes(path)) return state;
+          return { pinnedFiles: state.pinnedFiles.filter((p) => p !== path) };
+        });
+      },
+
+      reorderPinnedFiles: (from, to) => {
+        set((state) => {
+          const len = state.pinnedFiles.length;
+          if (
+            from === to ||
+            from < 0 ||
+            from >= len ||
+            to < 0 ||
+            to >= len
+          ) {
+            return state;
+          }
+          const next = [...state.pinnedFiles];
+          const [moved] = next.splice(from, 1);
+          if (moved === undefined) return state;
+          next.splice(to, 0, moved);
+          return { pinnedFiles: next };
+        });
+      },
+
       toggleFolder: (path) => {
         set((state) => {
           const newExpanded = new Set(state.expandedFolders);
@@ -210,11 +255,30 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       setNotesCollapsed: (collapsed) => set({ notesCollapsed: collapsed }),
 
       updateProjectPath: (oldPath, newPath, newTree) => {
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.path === oldPath ? { path: newPath, fileTree: newTree } : p
-          ),
-        }));
+        set((state) => {
+          const rewrite = (p: string) =>
+            p === oldPath || p.startsWith(oldPath + "/")
+              ? newPath + p.slice(oldPath.length)
+              : p;
+          return {
+            projects: state.projects.map((p) =>
+              p.path === oldPath ? { path: newPath, fileTree: newTree } : p
+            ),
+            pinnedFiles: state.pinnedFiles.map(rewrite),
+          };
+        });
+      },
+
+      updateFilePaths: (oldPrefix, newPrefix) => {
+        set((state) => {
+          const rewrite = (p: string) =>
+            p === oldPrefix || p.startsWith(oldPrefix + "/")
+              ? newPrefix + p.slice(oldPrefix.length)
+              : p;
+          return {
+            pinnedFiles: state.pinnedFiles.map(rewrite),
+          };
+        });
       },
 
       findOwningProject: (filePath) => {
@@ -228,6 +292,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         explorerFolders: state.explorerFolders.map((f) => ({ path: f.path })),
         projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),
         recentProjects: state.recentProjects,
+        pinnedFiles: state.pinnedFiles,
         expandedFolders: Array.from(state.expandedFolders),
         explorerCollapsed: state.explorerCollapsed,
         projectsCollapsed: state.projectsCollapsed,
@@ -247,11 +312,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           explorerFolders = [{ path: p.explorerPath as string, fileTree: [] }];
         }
 
+        const rawPinned = Array.isArray(p.pinnedFiles) ? p.pinnedFiles : [];
+        const pinnedFiles = rawPinned.filter(
+          (v): v is string => typeof v === "string"
+        );
+
         return {
           ...current,
           explorerFolders,
           projects: (p.projects as WorkspaceProject[]) ?? [],
           recentProjects: (p.recentProjects as RecentProject[]) ?? [],
+          pinnedFiles,
           expandedFolders: new Set(
             (p.expandedFolders as string[]) ?? []
           ),

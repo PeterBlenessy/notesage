@@ -97,6 +97,7 @@ const WORKSPACE_DEFAULTS = {
   projects: [],
   recentProjects: [],
   notesTree: [],
+  pinnedFiles: [],
   expandedFolders: new Set<string>(),
   explorerCollapsed: false,
   projectsCollapsed: false,
@@ -662,5 +663,152 @@ describe('v1 migration', () => {
     expect(state.expandedFolders.size).toBe(2);
     expect(state.isExpanded('/docs')).toBe(true);
     expect(state.isExpanded('/docs/sub')).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Pinned files
+// ===========================================================================
+
+describe('pinnedFiles', () => {
+  it('defaults to an empty array', () => {
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([]);
+  });
+
+  it('pinFile adds a path', () => {
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(['/docs/a.md']);
+  });
+
+  it('pinFile deduplicates (no-op when path already pinned)', () => {
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+
+    const pinned = useWorkspaceStore.getState().pinnedFiles;
+    expect(pinned).toEqual(['/docs/a.md']);
+  });
+
+  it('unpinFile removes a path', () => {
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+    useWorkspaceStore.getState().pinFile('/docs/b.md');
+    useWorkspaceStore.getState().unpinFile('/docs/a.md');
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(['/docs/b.md']);
+  });
+
+  it('unpinFile is a no-op for non-existent paths', () => {
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+    useWorkspaceStore.getState().unpinFile('/nope.md');
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(['/docs/a.md']);
+  });
+
+  it('reorderPinnedFiles swaps entries', () => {
+    useWorkspaceStore.getState().pinFile('/a.md');
+    useWorkspaceStore.getState().pinFile('/b.md');
+    useWorkspaceStore.getState().pinFile('/c.md');
+
+    useWorkspaceStore.getState().reorderPinnedFiles(0, 2);
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/b.md',
+      '/c.md',
+      '/a.md',
+    ]);
+  });
+
+  it('reorderPinnedFiles is a no-op for out-of-range indices', () => {
+    useWorkspaceStore.getState().pinFile('/a.md');
+    useWorkspaceStore.getState().pinFile('/b.md');
+
+    useWorkspaceStore.getState().reorderPinnedFiles(0, 5);
+    useWorkspaceStore.getState().reorderPinnedFiles(-1, 1);
+    useWorkspaceStore.getState().reorderPinnedFiles(1, 1);
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/a.md',
+      '/b.md',
+    ]);
+  });
+
+  it('updateFilePaths rewrites pinned entries that match the prefix', () => {
+    useWorkspaceStore.getState().pinFile('/old/a.md');
+    useWorkspaceStore.getState().pinFile('/old/sub/b.md');
+    useWorkspaceStore.getState().pinFile('/other/c.md');
+
+    useWorkspaceStore.getState().updateFilePaths('/old', '/new');
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/new/a.md',
+      '/new/sub/b.md',
+      '/other/c.md',
+    ]);
+  });
+
+  it('updateFilePaths does not partially rewrite similar-looking prefixes', () => {
+    useWorkspaceStore.getState().pinFile('/projects/alpha/file.md');
+    useWorkspaceStore.getState().pinFile('/projects/alphabet/file.md');
+
+    useWorkspaceStore.getState().updateFilePaths('/projects/alpha', '/renamed');
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/renamed/file.md',
+      '/projects/alphabet/file.md',
+    ]);
+  });
+
+  it('updateProjectPath also rewrites pinned entries under the project', () => {
+    useWorkspaceStore.getState().addProject('/old/proj', []);
+    useWorkspaceStore.getState().pinFile('/old/proj/readme.md');
+    useWorkspaceStore.getState().pinFile('/external/note.md');
+
+    useWorkspaceStore.getState().updateProjectPath('/old/proj', '/new/proj', []);
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/new/proj/readme.md',
+      '/external/note.md',
+    ]);
+  });
+
+  it('persists pinnedFiles across a restart', async () => {
+    useWorkspaceStore.getState().pinFile('/docs/a.md');
+    useWorkspaceStore.getState().pinFile('/docs/b.md');
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state.pinnedFiles).toEqual(['/docs/a.md', '/docs/b.md']);
+
+    await simulateRestart(useWorkspaceStore, STORAGE_KEY, WORKSPACE_DEFAULTS);
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      '/docs/a.md',
+      '/docs/b.md',
+    ]);
+  });
+
+  it('merge tolerates missing pinnedFiles (back-compat with pre-31 persisted state)', async () => {
+    const legacyData = {
+      state: {
+        explorerFolders: [],
+        projects: [],
+        recentProjects: [],
+        expandedFolders: [],
+        explorerCollapsed: false,
+        projectsCollapsed: false,
+        notesCollapsed: false,
+      },
+      version: 0,
+    };
+
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(legacyData));
+    useWorkspaceStore.setState(WORKSPACE_DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(legacyData));
+    await useWorkspaceStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([]);
   });
 });

@@ -1,10 +1,57 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
 import { PinnedSection } from '../PinnedSection';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useEditorStore } from '@/stores/editor-store';
+
+// ---------------------------------------------------------------------------
+// Mock useFileOperations — PinnedSection calls openFile on item click
+// ---------------------------------------------------------------------------
+
+const mockOpenFile = vi.fn();
+
+vi.mock('@/hooks/useFileOperations', () => ({
+  useFileOperations: vi.fn(() => ({
+    openFile: mockOpenFile,
+    openFileAtTag: vi.fn(),
+    openFileAtText: vi.fn(),
+    saveFile: vi.fn(),
+    createFile: vi.fn(),
+    createFolder: vi.fn(),
+    renamePath: vi.fn(),
+    deletePath: vi.fn(),
+    refreshFileTree: vi.fn(),
+  })),
+}));
+
+function resetStores() {
+  useWorkspaceStore.setState({
+    explorerFolders: [],
+    projects: [],
+    recentProjects: [],
+    notesTree: [],
+    pinnedFiles: [],
+    expandedFolders: new Set<string>(),
+    explorerCollapsed: false,
+    projectsCollapsed: false,
+    notesCollapsed: false,
+  });
+  useEditorStore.setState({
+    tabs: [],
+    activeTabId: null,
+  });
+}
 
 describe('PinnedSection', () => {
+  beforeEach(() => {
+    resetStores();
+    mockOpenFile.mockReset();
+    mockOpenFile.mockResolvedValue(undefined);
+  });
+
   it('renders the uppercase "Pinned" heading', () => {
     renderWithProviders(<PinnedSection />);
     const heading = screen.getByRole('heading', { level: 2, name: /pinned/i });
@@ -25,9 +72,72 @@ describe('PinnedSection', () => {
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
-  it('renders no items in the body (empty shell — G2 task #31 fills it in)', () => {
+  it('renders header only (no list) when pinnedFiles is empty', () => {
     renderWithProviders(<PinnedSection />);
     const section = screen.getByRole('region', { name: /pinned/i });
     expect(section.querySelectorAll('li')).toHaveLength(0);
+  });
+
+  it('renders a row per pinned file with basename as visible text', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ['/Users/me/notes/alpha.md', '/work/proj/readme.md'],
+    });
+
+    renderWithProviders(<PinnedSection />);
+    const section = screen.getByRole('region', { name: /pinned/i });
+    expect(section.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.getByText('alpha.md')).toBeTruthy();
+    expect(screen.getByText('readme.md')).toBeTruthy();
+  });
+
+  it('invokes openFile when a pinned row is clicked', async () => {
+    useWorkspaceStore.setState({ pinnedFiles: ['/docs/intro.md'] });
+
+    renderWithProviders(<PinnedSection />);
+    const user = userEvent.setup();
+    await user.click(screen.getByText('intro.md'));
+
+    expect(mockOpenFile).toHaveBeenCalledWith('/docs/intro.md', 'intro.md');
+  });
+
+  it('opens the pinned file when Enter is pressed on the row', async () => {
+    useWorkspaceStore.setState({ pinnedFiles: ['/notes/beta.md'] });
+
+    renderWithProviders(<PinnedSection />);
+    const row = screen.getByText('beta.md').closest('[role="button"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+
+    expect(mockOpenFile).toHaveBeenCalledWith('/notes/beta.md', 'beta.md');
+  });
+
+  it('marks the active row with aria-current="page" and data-active', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ['/p/a.md', '/p/b.md'],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 'tab-1',
+          filePath: '/p/b.md',
+          fileName: 'b.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+        },
+      ],
+      activeTabId: 'tab-1',
+    });
+
+    renderWithProviders(<PinnedSection />);
+    const activeRow = screen.getByText('b.md').closest('[role="button"]') as HTMLElement;
+    const otherRow = screen.getByText('a.md').closest('[role="button"]') as HTMLElement;
+
+    expect(activeRow.getAttribute('aria-current')).toBe('page');
+    expect(activeRow.getAttribute('data-active')).toBe('true');
+    expect(otherRow.getAttribute('aria-current')).toBeNull();
+    expect(otherRow.getAttribute('data-active')).toBeNull();
   });
 });
