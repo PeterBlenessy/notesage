@@ -39,7 +39,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Field | Value |
 | --- | --- |
 | Title | Add `uiPreview` flag to settings-store |
-| Description | Add `uiPreview: "legacy" | "quiet-composer"` to `settings-store` with persist. Default `"legacy"` on upgrade. Include a Zustand persist migration (bump store version). Expose a Settings &gt; Advanced toggle "Try the new UI" wired to this value. Acceptance: toggling the flag in Settings persists across reload; new field surfaces in DevTools. |
+| Description | Add \`uiPreview: "legacy" |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
@@ -253,7 +253,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 | Field | Value |
 | --- | --- |
-| Description | Extend skill-detection to match `(?:^|\s)/[a-z0-9-]+` tokens anywhere in user message, not just first character. Applies to direct-API path. For ACP pass-through, preserve verbatim forwarding (no re-parsing). Add unit tests covering URL false positives, numeric edge cases, and multi-skill messages. |
+| Description | Extend skill-detection to match \`(?:^ |
 | Complexity | M |
 | Category | backend |
 | Depends on | none |
@@ -1051,25 +1051,25 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.10 Pre-ship validation (2 tasks)
 
-### #99 — VoiceOver walk-through
+### #99 — VoiceOver walkthrough — checklist artifact ✅
 
 | Field | Value |
 | --- | --- |
-| Description | Manual test per main surface (Mockups D, E, F, I). VoiceOver enabled; navigate every user story. Findings logged as blocker tasks if P0/P1, deferred to Phase 2 list if lower. |
-| Complexity | L |
-| Category | qa |
-| Depends on | all a11y tasks |
-| Files | `docs/tasks/qa/2026-04-21-voiceover-checklist.md` (artifact) |
-
-### #100 — Keyboard-only walkthrough
-
-| Field | Value |
-| --- | --- |
-| Description | Disconnect mouse. Complete 5 flows end-to-end: create new note, delegate a comment, export PDF, switch provider mid-chat, enter + exit focus mode. Any mouse-required step = blocker. |
+| Description | Draft the VoiceOver QA checklist covering every Phase 1 surface (FloatingCommandBar, AgentOrb / AgentPanel, QuietSidebar, TreeOverlay, FolderPeek, PermissionCard, FocusPill, SettingsShell, PreviewInvitation) plus reduced-motion verification + legacy-Layout regression. The actual VoiceOver run-through is Phase 2 #7 (gated on F7 — editor mount in QuietLayout). |
 | Complexity | M |
-| Category | qa |
+| Category | doc |
 | Depends on | all a11y tasks |
-| Files | `docs/tasks/qa/2026-04-21-keyboard-only.md` (artifact) |
+| Files | `docs/tasks/qa/2026-04-21-voiceover-checklist.md` |
+
+### #100 — Keyboard-only walkthrough — checklist artifact ✅
+
+| Field | Value |
+| --- | --- |
+| Description | Draft the keyboard-only QA checklist covering the 5 spec flows (create new note, delegate a comment, export PDF, switch provider mid-chat, enter + exit focus mode) plus a Phase-1-shell coverage section. Flag flows gated on F7 / F8 inline. The actual keyboard-only run-through is Phase 2 #8 (gated on F7 + F8). |
+| Complexity | S |
+| Category | doc |
+| Depends on | all a11y tasks |
+| Files | `docs/tasks/qa/2026-04-21-keyboard-only.md` |
 
 ---
 
