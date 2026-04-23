@@ -1,10 +1,13 @@
+import { useEffect } from "react";
 import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
+import { TreeOverlay } from "@/components/sidebar/quiet/TreeOverlay";
 import { DocHead } from "@/components/editor/DocHead";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -45,11 +48,52 @@ export function QuietLayout(_props: QuietLayoutProps) {
     ? { paddingRight: "var(--cmd-bar-pinned-width, 400px)" }
     : {};
 
+  // `⌘⇧E` (or `Ctrl+Shift+E`) opens the TreeOverlay. Intentionally scoped to
+  // QuietLayout so the legacy shell's `useKeyboardShortcuts` (which binds the
+  // same chord to "Export as PDF") continues to own that chord outside the
+  // quiet-composer preview. We preventDefault + stopImmediatePropagation so
+  // the legacy handler, which registers a window-level listener at App
+  // mount, never gets to open its dialog while this layout is active.
+  const openOverlay = useTreeOverlayStore((s) => s.openOverlay);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod || !event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "e") return;
+
+      // Skip when the user is typing in an input/textarea/contenteditable
+      // (outside the tree overlay itself) so we don't hijack editing
+      // shortcuts in settings dialogs, inline renames, or the editor.
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const isTextInput =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable;
+        if (isTextInput && target.closest("[data-tree-overlay]") === null) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openOverlay();
+    };
+
+    // `capture: true` runs our handler before the legacy App-level listener,
+    // which registered with the default bubble-phase options. Combined with
+    // stopImmediatePropagation, this keeps the export dialog from firing.
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, [openOverlay]);
+
   return (
     <div
       data-quiet-layout-placeholder
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
-      className="flex flex-col h-screen w-full bg-background overflow-hidden"
+      className="relative flex flex-col h-screen w-full bg-background overflow-hidden"
     >
       <TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />
 
@@ -91,6 +135,14 @@ export function QuietLayout(_props: QuietLayoutProps) {
         the same screen real estate).
        */}
       <AgentOrb />
+
+      {/*
+        TreeOverlay (PRD `2026-04-21-ui-refresh`, task #38). Slide-in
+        workspace-tree panel triggered by `⌘⇧E`. Rendered as a sibling of
+        the layout grid so it can stack above the sidebar without being
+        constrained by the grid's column track.
+       */}
+      <TreeOverlay />
     </div>
   );
 }
