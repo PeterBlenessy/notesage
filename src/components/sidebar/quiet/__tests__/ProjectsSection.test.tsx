@@ -491,6 +491,38 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     expect(overlay.focusedPath).toBe('/Users/me/Notesage/alpha/docs');
   });
 
+  it('filters projects by basename substring when `filter` is provided (#43)', () => {
+    setProjects([
+      { path: '/Users/me/Notesage/alpha', fileTree: [] },
+      { path: '/Users/me/Notesage/beta', fileTree: [] },
+      { path: '/Users/me/Notesage/alphabet-soup', fileTree: [] },
+    ]);
+    renderWithProviders(<ProjectsSection filter="alpha" />);
+    expect(screen.getByRole('treeitem', { name: /open project alpha$/i })).toBeTruthy();
+    expect(
+      screen.getByRole('treeitem', { name: /open project alphabet-soup/i }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('treeitem', { name: /open project beta/i })).toBeNull();
+  });
+
+  it('renders no rows when no project matches the filter (#43)', () => {
+    setProjects([
+      { path: '/Users/me/Notesage/alpha', fileTree: [] },
+      { path: '/Users/me/Notesage/beta', fileTree: [] },
+    ]);
+    renderWithProviders(<ProjectsSection filter="zzz" />);
+    expect(screen.queryByRole('treeitem')).toBeNull();
+  });
+
+  it('empty filter passes through all projects (#43)', () => {
+    setProjects([
+      { path: '/Users/me/Notesage/alpha', fileTree: [] },
+      { path: '/Users/me/Notesage/beta', fileTree: [] },
+    ]);
+    renderWithProviders(<ProjectsSection filter="" />);
+    expect(screen.getAllByRole('treeitem')).toHaveLength(2);
+  });
+
   it('renders children that match the FolderPeek hover popover listing', () => {
     // Mix of hidden entries + varied casing + files + folders to exercise
     // the shared `derivePeekChildren` contract inside the inline expansion.

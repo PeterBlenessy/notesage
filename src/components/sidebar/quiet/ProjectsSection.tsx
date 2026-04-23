@@ -37,6 +37,13 @@ import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek"
 export interface ProjectsSectionProps {
   /** Optional click handler for the `+` add button (wired by task #42). */
   onAdd?: () => void;
+  /**
+   * Case-insensitive substring filter applied to project display names
+   * (the basename of `project.path`). Inline-expanded children are NOT
+   * filtered — if a parent project matches, its expanded tree stays intact.
+   * Task #43 — sidebar type-to-filter. Empty / undefined = no filter.
+   */
+  filter?: string;
 }
 
 /**
@@ -136,14 +143,29 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
 // ProjectsSection
 // ---------------------------------------------------------------------------
 
-export function ProjectsSection({ onAdd }: ProjectsSectionProps) {
-  const projects = useWorkspaceStore((s) => s.projects);
+export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
+  const allProjects = useWorkspaceStore((s) => s.projects);
   const activeTabPath = useEditorStore((s) => {
     const id = s.activeTabId;
     if (!id) return null;
     const tab = s.tabs.find((t) => t.id === id);
     return tab?.filePath ?? null;
   });
+
+  // Filter projects by basename (case-insensitive substring). Expanded
+  // children of a matching parent are preserved — we filter the project
+  // list only, not the nested trees.
+  const projects = useMemo(
+    () =>
+      filter
+        ? allProjects.filter((p) =>
+            projectBasename(p.path)
+              .toLowerCase()
+              .includes(filter.toLowerCase()),
+          )
+        : allProjects,
+    [allProjects, filter],
+  );
 
   // Each project's inline-expanded state is independent — this set tracks
   // absolute project paths that the user has expanded via ArrowRight.

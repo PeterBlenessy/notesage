@@ -176,4 +176,39 @@ describe('PinnedSection', () => {
     await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
     expect(mockClipboardWrite).toHaveBeenCalledWith('/notes/gamma.md');
   });
+
+  // -------------------------------------------------------------------------
+  // Task #43 — filter prop
+  // -------------------------------------------------------------------------
+
+  it('filters rows by basename substring (case-insensitive) when `filter` is set', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ['/p/readme.md', '/p/notes.md', '/p/ideas.md'],
+    });
+
+    renderWithProviders(<PinnedSection filter="read" />);
+
+    expect(screen.getByText('readme.md')).toBeTruthy();
+    expect(screen.queryByText('notes.md')).toBeNull();
+    expect(screen.queryByText('ideas.md')).toBeNull();
+  });
+
+  it('renders no rows when no pinned basename matches the filter', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ['/p/alpha.md', '/p/beta.md'],
+    });
+
+    renderWithProviders(<PinnedSection filter="zzz" />);
+    expect(screen.queryByText('alpha.md')).toBeNull();
+    expect(screen.queryByText('beta.md')).toBeNull();
+  });
+
+  it('passes through all rows when the filter is empty', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ['/p/alpha.md', '/p/beta.md'],
+    });
+    renderWithProviders(<PinnedSection filter="" />);
+    expect(screen.getByText('alpha.md')).toBeTruthy();
+    expect(screen.getByText('beta.md')).toBeTruthy();
+  });
 });
