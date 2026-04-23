@@ -14,6 +14,7 @@ import { searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codem
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import { notesageCodeExtensions } from "../codemirror-theme";
 import { loadLanguage, getLanguageName, getExtension } from "@/lib/codemirror-languages";
+import { ViewerToolbarPill } from "./ViewerToolbarPill";
 
 interface CodeEditorProps {
   content: string;
@@ -184,7 +185,7 @@ export function CodeEditor({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
+      {/* Toolbar — file name + dirty indicator (legacy layout has no DocHead) */}
       <div className="h-9 border-b border-border px-3 flex items-center shrink-0 bg-background">
         <span className="text-xs text-muted-foreground truncate max-w-[200px]">
           {fileName}
@@ -192,11 +193,24 @@ export function CodeEditor({
         {isDirty && (
           <span className="ml-1.5 text-xs text-muted-foreground">●</span>
         )}
-        <div className="flex-1" />
-        {languageName && (
-          <span className="text-xs text-muted-foreground">{languageName}</span>
-        )}
       </div>
+
+      {/*
+        Floating language-indicator pill — same visual family as the PDF/EPUB/
+        DOCX/PPTX viewer pills (PRD 2026-04-21-ui-refresh task #62). Positioned
+        top-right rather than top-centre so it does not collide with the
+        DocHead breadcrumb in the quiet-composer layout.
+      */}
+      {languageName && (
+        <ViewerToolbarPill
+          viewerId="code"
+          className="top-4 right-4 left-auto translate-x-0"
+        >
+          <span className="tabular-nums text-xs font-medium px-1">
+            {languageName}
+          </span>
+        </ViewerToolbarPill>
+      )}
 
       {/* CodeMirror container — full width, no max-width */}
       <div className="flex-1 min-h-0 overflow-hidden">
