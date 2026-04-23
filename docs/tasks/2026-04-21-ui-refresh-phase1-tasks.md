@@ -533,7 +533,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/editor/Toolbar.tsx` |
 
-### #50 — Fade-on-type hook + class
+### #50 — Fade-on-type hook + class 🚧
 
 | Field | Value |
 | --- | --- |
@@ -553,7 +553,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #50 |
 | Files | `src/lib/quiet-chrome.ts`, settings panel |
 
-### #52 — Simplified `StatusBar` + click handler
+### #52 — Simplified `StatusBar` + click handler 🚧
 
 | Field | Value |
 | --- | --- |
@@ -583,7 +583,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #52 |
 | Files | `src/components/editor/StatusBar.tsx` |
 
-### #55 — `FocusPill` component
+### #55 — `FocusPill` component 🚧
 
 | Field | Value |
 | --- | --- |
@@ -603,7 +603,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #55, #50 |
 | Files | `src/hooks/useFocusMode.ts` |
 
-### #57 — `ViewerToolbarPill` shared primitive
+### #57 — `ViewerToolbarPill` shared primitive 🚧
 
 | Field | Value |
 | --- | --- |
