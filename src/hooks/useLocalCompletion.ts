@@ -32,10 +32,10 @@ export function useLocalCompletion(editor: Editor | null) {
   const connection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
   const useCaseModel = useRoutingStore((s) => s.routing.inline_completion?.model);
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
   const fimContextChars = useSettingsStore((s) => s.fimContextChars);
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
 
   // Activate for local (Ollama), local_bundled, or openai_compatible connections
   const isActive =
@@ -176,7 +176,7 @@ export function useLocalCompletion(editor: Editor | null) {
 
         // Verify the active tab hasn't changed during the async request (tab switch during await)
         const currentState = useEditorStore.getState();
-        const currentTab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+        const currentTab = currentState.openDocuments.find(t => t.id === currentState.activeTabId);
         if (currentTab?.filePath !== capturedTabPath) return;
 
         const trimmed = completion.trimEnd();

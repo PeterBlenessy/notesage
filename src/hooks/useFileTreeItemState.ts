@@ -34,7 +34,7 @@ export function useFileTreeItemState(
 ): FileTreeItemState {
   // Editor store — active file path only (not full tabs array)
   const activeFilePath = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
 

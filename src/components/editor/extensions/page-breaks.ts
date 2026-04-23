@@ -138,7 +138,7 @@ export const PageBreaks = Extension.create({
 
             const editorStore = useEditorStore.getState()
             const settingsStore = useSettingsStore.getState()
-            const activeTab = editorStore.tabs.find((t) => t.id === editorStore.activeTabId)
+            const activeTab = editorStore.openDocuments.find((t) => t.id === editorStore.activeTabId)
             const pageSettings: DocumentPageSettings = parsePageSettings(activeTab?.frontmatter ?? null)
             const docTitle = resolveDocumentTitle(editorView.state.doc)
 

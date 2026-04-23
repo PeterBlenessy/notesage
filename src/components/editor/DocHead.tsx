@@ -192,7 +192,7 @@ function Separator() {
 export function DocHead() {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const tab = useEditorStore((s) =>
-    activeTabId ? s.tabs.find((t) => t.id === activeTabId) ?? null : null,
+    activeTabId ? s.openDocuments.find((t) => t.id === activeTabId) ?? null : null,
   );
   const projects = useWorkspaceStore((s) => s.projects);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);

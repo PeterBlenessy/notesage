@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 
 function resetStores(notesRoot = '/Users/test/Notesage') {
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
     scrollPositions: {},
@@ -35,8 +35,8 @@ function resetStores(notesRoot = '/Users/test/Notesage') {
 function openTab(path: string, fileName: string, overrides: { isDirty?: boolean; lastSavedAt?: number } = {}) {
   const id = 'tab-' + path;
   useEditorStore.setState((s) => ({
-    tabs: [
-      ...s.tabs,
+    openDocuments: [
+      ...s.openDocuments,
       {
         id,
         filePath: path,

@@ -210,7 +210,7 @@ export function RecentSection({
 }: RecentSectionProps = {}) {
   const recentFiles = useEditorStore((s) => s.recentFiles);
   const activeFilePath = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
   // Task #35 — read cap from settings. The explicit `cap` prop still wins

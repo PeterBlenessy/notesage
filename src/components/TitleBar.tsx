@@ -13,7 +13,7 @@ interface TitleBarProps {
 export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps) {
   const chatPanelOpen = useSettingsStore((s) => s.chatPanelOpen);
   const activeTab = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab ?? null;
   });
   const panelExpanded = useActivityStore((s) => !s.isManuallyHidden);

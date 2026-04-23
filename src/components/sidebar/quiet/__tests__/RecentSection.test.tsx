@@ -51,7 +51,7 @@ function setRecent(recentFiles: RecentFile[], opts?: { activeFilePath?: string }
   const active = opts?.activeFilePath;
   useEditorStore.setState({
     recentFiles,
-    tabs: active
+    openDocuments: active
       ? [
           {
             id: 'tab-active',
@@ -77,7 +77,7 @@ beforeEach(() => {
   installClipboardMock();
   useEditorStore.setState({
     recentFiles: [],
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
   });
   // Reset the cap to the default so each test starts from a known baseline.

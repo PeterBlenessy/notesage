@@ -245,7 +245,7 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
   // backend file watcher skips events for recently self-written files.
 
   const state = useEditorStore.getState();
-  const tab = state.tabs.find(
+  const tab = state.openDocuments.find(
     (t) => normalizePath(t.filePath) === normalizedPath
   );
 
@@ -263,7 +263,7 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
 
     // Re-read state after await — tab state may have changed during the read
     const freshState = useEditorStore.getState();
-    const freshTab = freshState.tabs.find(
+    const freshTab = freshState.openDocuments.find(
       (t) => normalizePath(t.filePath) === normalizedPath
     );
     if (!freshTab) return;

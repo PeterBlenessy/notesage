@@ -73,7 +73,7 @@ function resetStores(): void {
     notesCollapsed: false,
   });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
   });
   useTreeOverlayStore.setState({ open: false, focusedPath: null });

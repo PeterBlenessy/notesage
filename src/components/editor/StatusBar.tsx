@@ -298,8 +298,8 @@ function OutOfScopeCompletionsIndicator({ copilotActive }: { copilotActive: bool
   const homeDir = useSettingsStore((s) => s.homeDir);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
 
   if (!copilotActive || inlineCompletionsDisabled || completionsOnOutOfScope) return null;
   if (!activeTab?.filePath) return null;
@@ -838,8 +838,8 @@ function useStatusDotsState(): {
 
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const isDictating = useRecordingStore((s) => s.isDictating);
@@ -911,7 +911,7 @@ function QuietStatusBar({
 }) {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const tab = useEditorStore((s) =>
-    activeTabId ? s.tabs.find((t) => t.id === activeTabId) ?? null : null,
+    activeTabId ? s.openDocuments.find((t) => t.id === activeTabId) ?? null : null,
   );
 
   // Re-read word count when the editor transacts so it tracks typing.

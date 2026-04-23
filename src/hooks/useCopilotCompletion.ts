@@ -29,14 +29,14 @@ import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 export function useCopilotCompletion(editor: Editor | null) {
   const rawConnection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
   const projects = useWorkspaceStore((s) => s.projects);
 
   // Only activate for agent_managed connections (Copilot LSP).
   // Non-LSP providers (e.g., Ollama local) use their own hooks.
   const connection = rawConnection?.authMethod === 'agent_managed' ? rawConnection : null;
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
   // Working directory for the LSP must reflect the chat footer's project
   // selection (Track 1 isolation — task #15). Falling back to the first
   // workspace folder only when no conversation is active keeps the LSP

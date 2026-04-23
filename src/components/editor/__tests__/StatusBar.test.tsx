@@ -26,7 +26,7 @@ import type { Connection } from '@/lib/ai/connections';
 
 function resetEditorStore() {
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
     scrollPositions: {},
@@ -88,8 +88,8 @@ function addConnection(
 function openTab(path: string, fileName: string, lastSavedAt?: number) {
   const id = 'tab-' + path;
   useEditorStore.setState((s) => ({
-    tabs: [
-      ...s.tabs,
+    openDocuments: [
+      ...s.openDocuments,
       {
         id,
         filePath: path,

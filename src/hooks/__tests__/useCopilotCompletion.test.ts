@@ -166,7 +166,7 @@ function resetStores() {
   });
   useConnectionsStore.setState({ connections: [] });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
     scrollPositions: {},
@@ -223,7 +223,7 @@ function setupWithConnection(connection: Connection) {
 
 function setupWithTab(tab = makeTab()) {
   useEditorStore.setState({
-    tabs: [tab],
+    openDocuments: [tab],
     activeTabId: tab.id,
   });
 }
@@ -435,7 +435,7 @@ describe('useCopilotCompletion', () => {
       const tab2 = makeTab({ id: 'tab-2', filePath: '/project/two.md', fileName: 'two.md' });
 
       useEditorStore.setState({
-        tabs: [tab1, tab2],
+        openDocuments: [tab1, tab2],
         activeTabId: 'tab-1',
       });
 
@@ -533,7 +533,7 @@ describe('useCopilotCompletion', () => {
       // Switch to source mode
       act(() => {
         useEditorStore.setState({
-          tabs: [{ ...tab, viewMode: 'source' as const }],
+          openDocuments: [{ ...tab, viewMode: 'source' as const }],
         });
       });
 
@@ -924,7 +924,7 @@ describe('useCopilotCompletion', () => {
       const tab2 = makeTab({ id: 'tab-2', filePath: '/project/two.md' });
 
       useEditorStore.setState({
-        tabs: [tab1, tab2],
+        openDocuments: [tab1, tab2],
         activeTabId: 'tab-1',
       });
 
@@ -1410,7 +1410,7 @@ describe('useCopilotCompletion', () => {
       const tabA = makeTab({ id: 'tab-A', filePath: '/workspace/project-A/file.md', fileName: 'file.md' });
       const tabB = makeTab({ id: 'tab-B', filePath: '/workspace/project-B/secrets.md', fileName: 'secrets.md' });
 
-      useEditorStore.setState({ tabs: [tabA, tabB], activeTabId: 'tab-A' });
+      useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: 'tab-A' });
 
       const editor = makeMockEditor('hello');
       const { rerender } = renderHook(() => useCopilotCompletion(editor));

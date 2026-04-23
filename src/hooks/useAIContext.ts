@@ -64,7 +64,7 @@ export function useAIContext(): UseAIContextReturn {
   // Active file for file awareness
   const activeTab = useEditorStore((s) => {
     if (!s.activeTabId) return null;
-    return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
+    return s.openDocuments.find((t) => t.id === s.activeTabId) ?? null;
   });
 
   // Task #23 — the active tab's path may only be included in the system

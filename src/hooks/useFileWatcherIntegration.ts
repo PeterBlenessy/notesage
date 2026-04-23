@@ -73,7 +73,7 @@ export function useFileWatcherIntegration({
       } else {
         // Non-active tab: invalidate cached EditorState so the next tab switch
         // loads the fresh content from the store instead of the stale cached state.
-        const tab = useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
+        const tab = useEditorStore.getState().openDocuments.find((t) => t.filePath === filePath);
         if (tab) {
           cachedEditorStatesRef.current.delete(tab.id);
         }

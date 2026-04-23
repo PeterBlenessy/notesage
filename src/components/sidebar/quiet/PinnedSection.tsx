@@ -240,7 +240,7 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const reorderPinnedFiles = useWorkspaceStore((s) => s.reorderPinnedFiles);
   const activeFilePath = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
   const { openFile, renamePath } = useFileOperations();

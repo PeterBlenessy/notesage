@@ -18,10 +18,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 function useActiveProjectPath(): string | undefined {
-  // Only subscribe to the active tab's filePath — NOT the full tabs array.
-  // tabs changes on every keystroke, which would re-render every chart.
+  // Only subscribe to the active tab's filePath — NOT the full openDocuments array.
+  // openDocuments changes on every keystroke, which would re-render every chart.
   const activeFilePath = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
   const findOwningProject = useWorkspaceStore((s) => s.findOwningProject);

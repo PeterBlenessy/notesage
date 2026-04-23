@@ -37,7 +37,7 @@ function seedActiveConversation(projectPaths: string[]) {
 
 function seedActiveTab(filePath: string, fileName: string) {
   useEditorStore.setState({
-    tabs: [
+    openDocuments: [
       {
         id: 'tab-1',
         filePath,
@@ -56,7 +56,7 @@ function seedActiveTab(filePath: string, fileName: string) {
 
 function resetAll() {
   useChatStore.setState({ conversations: [], activeConversationId: null });
-  useEditorStore.setState({ tabs: [], activeTabId: null });
+  useEditorStore.setState({ openDocuments: [], activeTabId: null });
   useSettingsStore.setState({ notesRootPath: '', homeDir: null });
 }
 

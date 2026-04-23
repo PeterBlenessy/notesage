@@ -64,7 +64,7 @@ function resetStores() {
     notesCollapsed: false,
   });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
   });
 }
@@ -145,7 +145,7 @@ describe('PinnedSection', () => {
       pinnedFiles: ['/p/a.md', '/p/b.md'],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 'tab-1',
           filePath: '/p/b.md',

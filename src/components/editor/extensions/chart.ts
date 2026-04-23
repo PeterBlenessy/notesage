@@ -30,8 +30,8 @@ const pendingCleanups = new Map<string, ReturnType<typeof setTimeout>>();
  * Resolve the project root for the currently active file.
  */
 function resolveProjectRoot(): string | undefined {
-  const { tabs, activeTabId } = useEditorStore.getState();
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const { openDocuments, activeTabId } = useEditorStore.getState();
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
   if (!activeTab) return undefined;
 
   const ws = useWorkspaceStore.getState();

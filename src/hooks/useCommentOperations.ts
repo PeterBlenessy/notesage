@@ -39,7 +39,7 @@ export function useCommentOperations(editor: Editor | null) {
   const storageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const isProjectFile = !!projectPath;
   const activeTab = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab ?? null;
   });
   const updateFrontmatter = useEditorStore((s) => s.updateFrontmatter);

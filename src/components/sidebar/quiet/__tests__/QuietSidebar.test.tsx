@@ -64,7 +64,7 @@ function resetStores() {
     pinnedFiles: [],
   });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
   });

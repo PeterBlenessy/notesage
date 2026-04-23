@@ -61,7 +61,7 @@ function makeDir(name: string, path: string, children: FileEntry[] = []): FileEn
 
 function resetStores(): void {
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     persistedTabs: [],
     persistedActiveFilePath: null,
@@ -302,7 +302,7 @@ describe("FolderPeek (#36)", () => {
       );
     });
     await waitFor(() => {
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs).toHaveLength(1);
       expect(tabs[0].filePath).toBe("/p/alpha/note.md");
     });

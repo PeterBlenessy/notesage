@@ -8,11 +8,11 @@ interface ActiveProject {
 }
 
 export function useActiveProject(): ActiveProject {
-  // Only subscribe to the active tab's filePath — NOT the full tabs array.
-  // tabs changes on every keystroke (content updates), which would cause
+  // Only subscribe to the active tab's filePath — NOT the full openDocuments array.
+  // openDocuments changes on every keystroke (content updates), which would cause
   // every component using this hook to re-render on every character typed.
   const activeFilePath = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
   const projects = useWorkspaceStore((s) => s.projects);

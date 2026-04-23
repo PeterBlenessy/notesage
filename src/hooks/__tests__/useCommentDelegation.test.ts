@@ -80,7 +80,7 @@ function resetStores() {
   });
 
   useEditorStore.setState({
-    tabs: [
+    openDocuments: [
       {
         id: 'tab-1',
         filePath: '/Users/test/project/notes/test.md',
@@ -1208,7 +1208,7 @@ describe('useCommentDelegation', () => {
   describe('sandbox root resolution', () => {
     it('uses project path when file is within a project', async () => {
       useEditorStore.setState({
-        tabs: [
+        openDocuments: [
           { id: 'tab-1', filePath: '/Users/test/project/notes/test.md', fileName: 'test.md', content: '', isDirty: false, frontmatter: null, fileType: 'markdown' as const },
         ],
         activeTabId: 'tab-1',
@@ -1244,7 +1244,7 @@ describe('useCommentDelegation', () => {
 
     it('falls back to provided projectRoot when file is not in any project or explorer folder', async () => {
       useEditorStore.setState({
-        tabs: [
+        openDocuments: [
           { id: 'tab-1', filePath: '/tmp/random/file.md', fileName: 'file.md', content: '', isDirty: false, frontmatter: null, fileType: 'markdown' as const },
         ],
         activeTabId: 'tab-1',

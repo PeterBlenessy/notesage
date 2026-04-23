@@ -27,7 +27,7 @@ interface UsePageSettingsReturn {
 export function usePageSettings(editor: Editor | null): UsePageSettingsReturn {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const activeTab = useEditorStore((s) =>
-    s.tabs.find((t) => t.id === s.activeTabId),
+    s.openDocuments.find((t) => t.id === s.activeTabId),
   );
   const frontmatter = activeTab?.frontmatter ?? null;
 

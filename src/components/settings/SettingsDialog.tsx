@@ -1251,7 +1251,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                                   connections: redactedConnections,
                                   routing,
                                   logLevel,
-                                  tabCount: useEditorStore.getState().tabs.length,
+                                  tabCount: useEditorStore.getState().openDocuments.length,
                                   localAI: {
                                     activeModelId: localAIState.activeModelId,
                                     binaryStatus: localAIState.binaryStatus,

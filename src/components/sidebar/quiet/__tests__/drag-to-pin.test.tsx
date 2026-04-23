@@ -50,7 +50,7 @@ function resetStores() {
     notesCollapsed: false,
   });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
   });

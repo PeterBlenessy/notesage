@@ -384,8 +384,8 @@ function DocumentStyleActions() {
   const setDocumentPresets = useEditorStylesStore((s) => s.setDocumentPresets);
 
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : null;
+  const openDocuments = useEditorStore((s) => s.openDocuments);
+  const activeTab = activeTabId ? openDocuments.find((t) => t.id === activeTabId) : null;
 
   // Only show for markdown files that have a tab
   const isMarkdown = activeTab?.filePath?.endsWith(".md");

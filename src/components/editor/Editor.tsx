@@ -86,7 +86,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const tabs = useEditorStore((s) => s.tabs);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const updateTabContent = useEditorStore((s) => s.updateTabContent);
   const setFrontmatter = useEditorStore((s) => s.setFrontmatter);
@@ -119,7 +119,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const maxWidth = CONTENT_WIDTHS[contentWidth];
   const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
   const pageHeight = isPaperMode ? CONTENT_HEIGHTS[contentWidth] : undefined;
-  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  const activeTab = openDocuments.find((tab) => tab.id === activeTabId);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -164,7 +164,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // so they open instantly when clicked.
   useEffect(() => {
     if (!activeTab || activeTab.contentLoaded === false) return;
-    const unloaded = tabs.filter((t) => t.contentLoaded === false && t.id !== activeTabId);
+    const unloaded = openDocuments.filter((t) => t.contentLoaded === false && t.id !== activeTabId);
     if (unloaded.length === 0) return;
 
     log.debug("perf:tab-preload", "Starting background preload", { count: unloaded.length });
@@ -209,7 +209,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab?.contentLoaded, activeTabId, tabs.length]);
+  }, [activeTab?.contentLoaded, activeTabId, openDocuments.length]);
 
   const {
     isProgrammaticScroll,
@@ -756,7 +756,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onOpenActions={onOpenActions}
           onSelectChange={(change, hunkIndex) => {
             // Switch to the tab that has this file open and scroll to the specific hunk
-            const matchingTab = tabs.find((t) => t.filePath === change.filePath);
+            const matchingTab = openDocuments.find((t) => t.filePath === change.filePath);
             if (matchingTab) {
               if (matchingTab.id === activeTabId) {
                 // Already on this tab — scroll to the specific hunk
@@ -883,7 +883,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           if (commentOps.activeComment) {
             // Find project path for this document
             const ws = useWorkspaceStore.getState();
-            const tab = useEditorStore.getState().tabs.find((t) => t.id === useEditorStore.getState().activeTabId);
+            const tab = useEditorStore.getState().openDocuments.find((t) => t.id === useEditorStore.getState().activeTabId);
             const projectPath = ws.projects.find((p) => tab?.filePath?.startsWith(p.path + '/'))?.path;
             moveToChat(commentOps.activeComment, projectPath, commentStorageRoot ?? undefined);
           }

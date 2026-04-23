@@ -462,9 +462,9 @@ async function reloadTrees() {
   // Wait for tab restoration (started earlier, runs concurrently with above)
   await tabRestorePromise;
   const editorState = useEditorStore.getState();
-  const activeTabForLog = editorState.tabs.find(t => t.id === editorState.activeTabId);
+  const activeTabForLog = editorState.openDocuments.find(t => t.id === editorState.activeTabId);
   console.log('[perf:startup] tabs restored', {
-    tabCount: editorState.tabs.length,
+    tabCount: editorState.openDocuments.length,
     activeTab: activeTabForLog?.filePath ?? null,
     ms: Math.round(performance.now() - tTabs0),
   });
@@ -490,7 +490,7 @@ async function restorePersistedTabs() {
   const activePersistedTab = persistedTabs.find((pt) => pt.filePath === persistedActiveFilePath);
   if (activePersistedTab) {
     const { filePath, fileName } = activePersistedTab;
-    const activeTab = useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
+    const activeTab = useEditorStore.getState().openDocuments.find((t) => t.filePath === filePath);
     if (activeTab) {
       useEditorStore.getState().setActiveTab(activeTab.id);
       try {

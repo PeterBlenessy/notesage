@@ -25,16 +25,16 @@ export function useTraySync() {
   // Sync recent files from editor store, filtered by active chat scope.
   // `files` is the scoped list (primary submenu); `allFiles` is the unfiltered
   // list exposed via the "All recent" submenu as an opt-in escape hatch.
-  const tabs = useEditorStore((s) => s.tabs);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   useEffect(() => {
     const { scoped, all } = buildTrayRecents({
-      tabs,
+      tabs: openDocuments,
       selectedProjectPaths,
       notesRootPath,
       limit: 5,
     });
     invoke("update_tray_recent", { files: scoped, allFiles: all }).catch(() => {});
-  }, [tabs, selectedProjectPaths, notesRootPath]);
+  }, [openDocuments, selectedProjectPaths, notesRootPath]);
 }
