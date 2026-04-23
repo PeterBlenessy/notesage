@@ -100,19 +100,19 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
-6. Create/delete: debounced `refreshFileTree()` + git status refresh
-7. Modify: content guard reads file from disk, compares against tab content — skips if identical
-8. Clean-tab behavior gated on `settings-store.externalChangeDiffReview`:
-   - **Auto-accept (default):** `editor-store.setExternalChange()` → Editor.tsx auto-reloads with toast
-   - **Diff review (beta):** `external-change-store.addChange()` → inline diff decorations for review
-9. Dirty tabs: show reload/keep banner for user decision
+1. Create/delete: debounced `refreshFileTree()` + git status refresh
+2. Modify: content guard reads file from disk, compares against tab content — skips if identical
+3. Behavior is governed by a single user setting, `settings-store.externalChangeDiffReview` (Settings &gt; Editor &gt; "Review external diff"). Clean and dirty tabs are treated identically:
+   - **OFF (default):** `editor-store.setExternalChange()` → `useFileWatcherIntegration` silently auto-reloads the tab and emits a 3-second info toast (`<name> reloaded from disk`, no actions) via `toastExternalReload`. In-memory edits on dirty tabs are lost — users who want protection turn the setting ON.
+   - **ON:** `external-change-store.addChange()` → inline diff decorations (red strikethrough deletions, green insertions) appear in the editor, plus a sticky action toast (`<name> changed externally`) via `toastExternalChange` with **Accept** / **Reject** / **Dismiss**. Accept reloads from disk and saves; Reject persists the in-memory version to disk to avoid a watcher re-detection loop; Dismiss leaves the decorations visible for per-hunk review via the inline controls.
 
 **Critical implementation notes:**
 
 - **Tiptap is source of truth**: Must use `editor.commands.setContent()` to visually reflect changes
-- **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency
+- **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency. Self-write suppression is implemented at the Rust/backend level — `saveFile` calls `mark_self_write` before writing, and the backend excludes self-written paths from the `file-changed-batch` payload
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`; frontend strips `/private/` prefix
-- **Toast dedup**: Stable `id: "external-change"` prevents duplicate notifications
+- **Toast dedup**: Stable `id: "external-change:<filePath>"` prevents duplicate notifications; repeated changes to the same file collapse into one toast
+- **Toast helpers**: `toastExternalChange` / `toastExternalReload` live in `src/lib/notifications.ts` — single source of truth for external-change UX
 - **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete. Startup has a 30s global timeout and 10s per-step timeouts for cloud storage operations, ensuring `startupReady` is always set even if cloud paths hang.
 
 ## Key Files
@@ -125,7 +125,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/NewProjectDialog.tsx` | New project creation |
 | `src/components/NewNoteDialog.tsx` | New note creation |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
-| `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler |
+| `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
+| `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
+| `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |
 | `src/hooks/useProjectMetadata.ts` | Auto-bootstrap `.notesage/project.json` |
 | `src/lib/scan-icloud-projects.ts` | iCloud project auto-discovery |
 | `src/stores/workspace-store.ts` | Explorer folders, projects, notes tree |

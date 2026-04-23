@@ -57,7 +57,6 @@ import { EditorEmptyState } from "./EditorEmptyState";
 import { BubbleMenu } from "./BubbleMenu";
 import { FindBar } from "./FindBar";
 import { TranscriptionOverlay } from "./TranscriptionOverlay";
-import { DiffReviewBanner } from "./DiffReviewBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
@@ -264,7 +263,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   });
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
-  const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
+  const { reviewActive, compareBranch } = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
   const hfEditStateRef = useRef(hfEditState);
@@ -596,14 +595,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             </div>
           )}
         </div>
-      )}
-      {reviewActive && compareBranch && (
-        <DiffReviewBanner
-          editor={editor}
-          branchName={compareBranch}
-          onAcceptAll={handleAcceptAll}
-          onRejectAll={handleRejectAll}
-        />
       )}
       {activeTab?.viewMode === "source" ? (
         <SourceModeEditor

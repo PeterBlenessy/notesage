@@ -295,7 +295,11 @@ describe('useFileWatcher', () => {
   // ==========================================================================
 
   describe('modify events -- dirty tab', () => {
-    it('sets external change for dirty tabs (prompts user)', async () => {
+    it('sets external change for dirty tabs (OFF mode: consumer auto-reloads silently)', async () => {
+      // In OFF mode the watcher routes BOTH clean and dirty tabs through
+      // editor-store.setExternalChange — the integration hook then auto-reloads
+      // them silently and surfaces a 3 s info toast. This test only asserts the
+      // routing at the watcher level; the display layer is covered elsewhere.
       const tab = makeTab({ isDirty: true, content: '# Hello\n\nUnsaved changes' });
       useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nDifferent content from disk');
@@ -308,13 +312,31 @@ describe('useFileWatcher', () => {
       const changes = getExternalChanges();
       expect(changes['/project/notes/test.md']).toBeDefined();
     });
+
+    it('dirty tabs route to editor-store (not external-change-store) when diff review is OFF', async () => {
+      // Regression guard: OFF mode must not populate the external-change-store
+      // for either clean or dirty tabs — that store is the ON-mode surface.
+      useSettingsStore.setState({ externalChangeDiffReview: false });
+
+      const tab = makeTab({ isDirty: true, content: '# Hello\n\nUnsaved' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      setMockInvokeHandler('read_file', () => '# Hello\n\nDisk');
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(getExternalChanges()['/project/notes/test.md']).toBeDefined();
+      expect(getExternalChangeEntries()['/project/notes/test.md']).toBeUndefined();
+    });
   });
 
   // ==========================================================================
-  // Diff review beta mode
+  // Diff review mode (externalChangeDiffReview: true)
   // ==========================================================================
 
-  describe('diff review beta mode', () => {
+  describe('diff review mode (ON)', () => {
     it('routes clean tab changes to external-change-store when diff review is enabled', async () => {
       useSettingsStore.setState({ externalChangeDiffReview: true });
 

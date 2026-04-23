@@ -14,7 +14,7 @@ import {
 } from "@/components/editor/extensions";
 import { mapExternalChangeToPM } from "@/lib/external-diff";
 import { getMarkdownFromEditor, loadRawMarkdownIntoEditor } from "@/lib/markdown";
-import { toast } from "sonner";
+import { toastExternalChange, toastExternalReload } from "@/lib/notifications";
 
 interface Tab {
   id: string;
@@ -46,43 +46,18 @@ export function useFileWatcherIntegration({
   // External change detection via editor-store
   const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
 
-  // Auto-reload clean tabs; show toast with Reload action for dirty tabs
+  // "Review external diff" OFF (default): silent auto-reload + info toast for
+  // both clean and dirty tabs. Users who want to protect in-memory edits turn
+  // the setting ON (which routes through the external-change-store path below).
   useEffect(() => {
     if (!editor || !activeTab || activeExternalContent === undefined) return;
 
-    if (!activeTab.isDirty) {
-      // Clean tab: auto-reload silently + toast
-      cachedEditorStatesRef.current.delete(activeTab.id);
-      loadRawMarkdownIntoEditor(editor, activeExternalContent);
-      updateTabContent(activeTab.id, activeExternalContent, false);
-      clearExternalChange(activeTab.filePath);
-      toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
-    } else {
-      // Dirty tab: persistent toast with Reload action
-      const filePath = activeTab.filePath;
-      const tabId = activeTab.id;
-      const content = activeExternalContent;
-      toast("File modified externally", {
-        id: `external-change-dirty-${filePath}`,
-        description: activeTab.fileName,
-        duration: 8000,
-        action: {
-          label: "Reload",
-          onClick: () => {
-            const currentEditor = editor;
-            if (!currentEditor) return;
-            cachedEditorStatesRef.current.delete(tabId);
-            loadRawMarkdownIntoEditor(currentEditor, content);
-            useEditorStore.getState().updateTabContent(tabId, content, false);
-            useEditorStore.getState().clearExternalChange(filePath);
-          },
-        },
-        onDismiss: () => {
-          useEditorStore.getState().clearExternalChange(filePath);
-        },
-      });
-    }
-  }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
+    cachedEditorStatesRef.current.delete(activeTab.id);
+    loadRawMarkdownIntoEditor(editor, activeExternalContent);
+    updateTabContent(activeTab.id, activeExternalContent, false);
+    clearExternalChange(activeTab.filePath);
+    toastExternalReload(activeTab.filePath);
+  }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange, cachedEditorStatesRef]);
 
   // Listen for content refreshes from non-editor sources (e.g., actions dashboard task toggle).
   // These writes go through the backend and update Zustand, but ProseMirror needs an explicit push.
@@ -130,7 +105,6 @@ export function useFileWatcherIntegration({
 
     const filePath = activeTab.filePath;
     const tabId = activeTab.id;
-    const fileName = activeTab.fileName;
 
     const rafId = requestAnimationFrame(() => {
       // Re-check: the change may have been resolved during the rAF delay
@@ -162,30 +136,42 @@ export function useFileWatcherIntegration({
       // This prevents the effect from re-firing and is the default resting state.
       useExternalChangeStore.getState().setStatus(filePath, "deferred");
 
-      toast("File changed externally", {
-        id: `external-change-${filePath}`,
-        description: fileName,
-        duration: 8000,
-        closeButton: true,
-        cancel: {
-          label: "Accept",
-          onClick: () => {
-            const change = useExternalChangeStore.getState().getChange(filePath);
-            if (!change) return;
-            // Nullify ref and resolve BEFORE dispatching the accept transaction.
-            // acceptAllDiffHunks dispatches synchronously, which fires the sync
-            // effect's onTransaction listener. Without this guard, the sync effect
-            // would also resolve + save, causing a double-save race condition.
-            lastExternalDecoratedFile.current = null;
-            useExternalChangeStore.getState().resolveChange(filePath);
-            acceptAllDiffHunks(editor);
-            const markdown = getMarkdownFromEditor(editor);
-            updateTabContent(tabId, markdown, true);
-            saveFile(filePath, markdown, tabId).catch((err) =>
-              console.error("Failed to save after accepting:", err)
-            );
-          },
+      // Sticky action toast: Accept reloads from disk, Reject keeps in-memory
+      // version, Dismiss leaves decorations visible for per-hunk review.
+      // Uses the shared helper in src/lib/notifications.ts.
+      toastExternalChange({
+        filePath,
+        onAccept: () => {
+          const change = useExternalChangeStore.getState().getChange(filePath);
+          if (!change) return;
+          // Nullify ref and resolve BEFORE dispatching the accept transaction.
+          // acceptAllDiffHunks dispatches synchronously, which fires the sync
+          // effect's onTransaction listener. Without this guard, the sync effect
+          // would also resolve + save, causing a double-save race condition.
+          lastExternalDecoratedFile.current = null;
+          useExternalChangeStore.getState().resolveChange(filePath);
+          acceptAllDiffHunks(editor);
+          const markdown = getMarkdownFromEditor(editor);
+          updateTabContent(tabId, markdown, true);
+          saveFile(filePath, markdown, tabId).catch((err) =>
+            console.error("Failed to save after accepting:", err)
+          );
         },
+        onReject: () => {
+          const change = useExternalChangeStore.getState().getChange(filePath);
+          if (!change) return;
+          lastExternalDecoratedFile.current = null;
+          useExternalChangeStore.getState().resolveChange(filePath);
+          rejectAllDiffHunks(editor);
+          // Persist the in-memory version back to disk so the watcher doesn't
+          // re-detect the same mismatch in a loop.
+          const markdown = getMarkdownFromEditor(editor);
+          saveFile(filePath, markdown, tabId).catch((err) =>
+            console.error("Failed to save after rejecting:", err)
+          );
+        },
+        // onDismiss: no-op. Decorations remain visible so the user can
+        // review and accept/reject individual hunks via the inline controls.
       });
     });
 
