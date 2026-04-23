@@ -120,6 +120,10 @@ export function SettingsShell({
           className={cn(
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+            // #86 reduced-motion sweep: disable Radix entrance/exit animations
+            // entirely under reduce — `motion-reduce:` maps to
+            // `prefers-reduced-motion: reduce`.
+            'motion-reduce:!animate-none motion-reduce:!duration-0',
             'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm',
           )}
         />
@@ -129,6 +133,8 @@ export function SettingsShell({
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+            // #86 reduced-motion sweep — see overlay above.
+            'motion-reduce:!animate-none motion-reduce:!duration-0',
             'fixed top-[50%] left-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',
             'w-[calc(100vw-48px)] max-w-[1040px]',
             'h-[min(720px,calc(100vh-48px))]',

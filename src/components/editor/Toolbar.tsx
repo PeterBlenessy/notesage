@@ -136,7 +136,10 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
         "inline-flex items-center gap-0.5 px-1.5 py-1 min-w-0",
         "rounded-full border border-border bg-background/70 shadow-sm",
         "backdrop-blur-[14px]",
+        // #86 reduced-motion sweep: the typing-fade pulse is decorative —
+        // disable the opacity transition entirely under reduce, don't shorten.
         "transition-opacity duration-[340ms] ease-in-out",
+        "motion-reduce:transition-none",
       )
     : "h-9 px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden flex-1 min-w-0";
 
@@ -348,7 +351,9 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           {/* Table editing tools — only visible when cursor is inside a table */}
           {editor.isActive("table") && (
-            <div className="animate-in fade-in duration-150">
+            // #86 reduced-motion sweep: disable entrance fade entirely under
+            // reduce — `motion-reduce:` maps to `prefers-reduced-motion: reduce`.
+            <div className="animate-in fade-in duration-150 motion-reduce:!animate-none motion-reduce:!duration-0">
               <TableToolsPopover editor={editor} />
             </div>
           )}

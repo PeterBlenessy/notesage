@@ -612,3 +612,32 @@ body {
     transition: none;
   }
 }
+
+/* ============================================================================
+ * Radix UI surfaces — reduced-motion guard (#86)
+ * ============================================================================
+ * Why: Radix portal-mounted content (Dialog, AlertDialog, Popover, Tooltip,
+ * DropdownMenu, ContextMenu, Select, HoverCard, etc.) ships with Tailwind
+ * `data-[state=open]:animate-in` entrance/exit animations baked into our
+ * shadcn primitives in `src/components/ui/`. Those classes do NOT auto-honor
+ * `prefers-reduced-motion: reduce` — Tailwind's `animate-in` plugin emits
+ * keyframes that fire regardless of the OS preference.
+ *
+ * This block targets every shadcn `data-slot="*-content"` surface that
+ * carries the Radix `data-state` attribute, plus the dialog overlay slot,
+ * and disables the entrance/exit animation entirely under reduce. Per the
+ * 2026-04-21 UI-refresh PRD task #86 the rule is DISABLED, not shortened —
+ * vestibular-sensitive users get the surface to appear instantly.
+ *
+ * Scope is narrow on purpose: only `data-slot` ending in `-content` or
+ * `-overlay` with a `data-state` attribute is affected. Triggers, anchors,
+ * portals, and content children are untouched.
+ * ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot$="-content"][data-state],
+  [data-slot$="-overlay"][data-state],
+  [data-slot="settings-shell-content"][data-state] {
+    animation: none !important;
+    transition: none !important;
+  }
+}
