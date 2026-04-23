@@ -1,6 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import type { ViewMode } from "@/lib/file-utils";
 import {
   setSearchQuery,
   searchNext,
@@ -29,7 +28,6 @@ interface UseEditorKeyBindingsParams {
   saveFile: (filePath: string, content: string, tabId: string) => Promise<unknown>;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
   toggleViewMode: (tabId: string) => void;
-  setViewMode: (tabId: string, mode: ViewMode) => void;
 }
 
 export function useEditorKeyBindings({
@@ -38,7 +36,6 @@ export function useEditorKeyBindings({
   saveFile,
   updateTabContent,
   toggleViewMode,
-  setViewMode,
 }: UseEditorKeyBindingsParams) {
   // Find in document state
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -61,32 +58,6 @@ export function useEditorKeyBindings({
 
     toggleViewMode(activeTab.id);
   }, [activeTab, editor, updateTabContent, toggleViewMode]);
-
-  // Handle HTML preview toggle — switch between html-preview and previous mode
-  const handleToggleHtmlPreview = useCallback(() => {
-    if (!activeTab || activeTab.fileType !== "markdown") return;
-    const isPreview = activeTab.viewMode === "html-preview";
-
-    if (!isPreview && editor) {
-      // Serialize current editor state before switching to preview
-      const markdown = getMarkdownFromEditor(editor);
-      updateTabContent(activeTab.id, markdown, activeTab.isDirty);
-    }
-
-    setViewMode(activeTab.id, isPreview ? "wysiwyg" : "html-preview");
-  }, [activeTab, editor, updateTabContent, setViewMode]);
-
-  // Handle Cmd+Shift+P to toggle HTML preview
-  useEffect(() => {
-    const handlePreviewShortcut = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        handleToggleHtmlPreview();
-      }
-    };
-    window.addEventListener("keydown", handlePreviewShortcut);
-    return () => window.removeEventListener("keydown", handlePreviewShortcut);
-  }, [handleToggleHtmlPreview]);
 
   // Handle Cmd+S to save
   useEffect(() => {
@@ -311,6 +282,5 @@ export function useEditorKeyBindings({
     handleFindClose,
     // View mode
     handleToggleViewMode,
-    handleToggleHtmlPreview,
   };
 }

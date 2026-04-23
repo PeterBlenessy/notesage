@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare, Lock } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, MessageSquare, Lock } from "lucide-react";
 import { FileIcon } from "./FileIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
@@ -9,7 +9,6 @@ import { parseFileError } from "@/lib/file-errors";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import { useEditorStore } from "@/stores/editor-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -226,15 +225,6 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
   };
 
   // Task #25: Extract context menu callbacks to useCallback
-  const handlePreviewAsHtml = useCallback(() => {
-    onFileClick(entry.path, entry.name);
-    setTimeout(() => {
-      const { tabs, setViewMode } = useEditorStore.getState();
-      const tab = tabs.find((t) => t.filePath === entry.path);
-      if (tab) setViewMode(tab.id, "html-preview");
-    }, 100);
-  }, [onFileClick, entry.path, entry.name]);
-
   const handleMakeProject = useCallback(() => {
     onMakeProject?.(entry.path);
   }, [onMakeProject, entry.path]);
@@ -694,10 +684,6 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                   </ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
-              <ContextMenuItem onClick={handlePreviewAsHtml}>
-                <Eye className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-                Preview as HTML
-              </ContextMenuItem>
             </>
           )}
           {gitInfo && onCommitFile && (

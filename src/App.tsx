@@ -562,13 +562,6 @@ function App() {
           onOpenFolder={handleOpenFolder}
           onOpenSettings={() => setSettingsOpen(true)}
           onExportPdf={() => setExportOpen(true)}
-          onToggleHtmlPreview={() => {
-            const { tabs, activeTabId, setViewMode } = useEditorStore.getState();
-            const tab = tabs.find((t) => t.id === activeTabId);
-            if (tab && tab.fileType === "markdown") {
-              setViewMode(tab.id, tab.viewMode === "html-preview" ? "wysiwyg" : "html-preview");
-            }
-          }}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           onOpenActions={() => setActionsDialogOpen(true)}
         />

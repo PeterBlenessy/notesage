@@ -41,7 +41,6 @@ import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
-import { HtmlViewer } from "./viewers/HtmlViewer";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
@@ -96,7 +95,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const externalChanges = useEditorStore((s) => s.externalChanges);
   const clearExternalChange = useEditorStore((s) => s.clearExternalChange);
   const toggleViewMode = useEditorStore((s) => s.toggleViewMode);
-  const setViewMode = useEditorStore((s) => s.setViewMode);
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
@@ -323,14 +321,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     handleFindReplaceAll,
     handleFindClose,
     handleToggleViewMode,
-    handleToggleHtmlPreview,
   } = useEditorKeyBindings({
     editor,
     activeTab: activeTab ?? null,
     saveFile,
     updateTabContent,
     toggleViewMode,
-    setViewMode,
   });
 
   // Comments
@@ -591,7 +587,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             onImageInsert={() => setImageDialogOpen(true)}
             viewMode={activeTab?.viewMode}
             onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
-            onToggleHtmlPreview={activeTab?.fileType === "markdown" ? handleToggleHtmlPreview : undefined}
             sourceWordWrap={sourceWordWrap}
             onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
           />
@@ -610,14 +605,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectAll={handleRejectAll}
         />
       )}
-      {activeTab?.viewMode === "html-preview" ? (
-        <HtmlViewer
-          content={activeTab.content}
-          filePath={activeTab.filePath}
-          fileName={activeTab.fileName}
-          projectRoot={projectPath ?? undefined}
-        />
-      ) : activeTab?.viewMode === "source" ? (
+      {activeTab?.viewMode === "source" ? (
         <SourceModeEditor
           tabId={activeTab.id}
           content={activeTab.content}

@@ -18,7 +18,6 @@ import {
   BookOpen,
   Globe,
   CheckSquare,
-  Eye,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -59,7 +58,6 @@ interface CommandPaletteProps {
   onOpenFolder: () => void;
   onOpenSettings: () => void;
   onExportPdf: () => void;
-  onToggleHtmlPreview?: () => void;
   onToggleFocusMode: () => void;
   onOpenActions?: () => void;
 }
@@ -75,7 +73,6 @@ export function CommandPalette({
   onOpenFolder,
   onOpenSettings,
   onExportPdf,
-  onToggleHtmlPreview,
   onToggleFocusMode,
   onOpenActions,
 }: CommandPaletteProps) {
@@ -356,14 +353,13 @@ export function CommandPalette({
     { value: "new project", label: "New Project", icon: FolderDot, shortcut: "\u2318\u21E7N", action: onNewProject },
     { value: "open folder", label: "Open Folder", icon: FolderOpen, shortcut: "\u2318O", action: onOpenFolder },
     { value: "export pdf", label: "Export as PDF", icon: FileOutput, shortcut: "\u2318\u21E7E", action: onExportPdf, condition: !!activeTabId },
-    ...(onToggleHtmlPreview ? [{ value: "preview html", label: "Preview as HTML", icon: Eye, shortcut: "\u2318\u21E7P", action: onToggleHtmlPreview, condition: !!activeTabId }] : []),
     { value: "toggle theme dark light", label: "Toggle Theme", icon: SunMoon, shortcut: "\u2318T", action: toggleTheme },
     { value: "toggle sidebar", label: "Toggle Sidebar", icon: PanelLeft, shortcut: "\u2318B", action: toggleSidebar },
     { value: "toggle chat ai", label: "Toggle Chat", icon: MessageSquare, shortcut: "\u2318\u21E7A", action: toggleChat },
     { value: "toggle focus mode distraction free", label: "Toggle Focus Mode", icon: Focus, shortcut: "\u2318.", action: onToggleFocusMode },
     { value: "open settings preferences", label: "Settings", icon: Settings, shortcut: "\u2318,", action: onOpenSettings },
     ...(onOpenActions ? [{ value: "open actions dashboard tasks", label: "Open Actions", icon: CheckSquare, shortcut: "\u23185", action: onOpenActions }] : []),
-  ], [activeTabId, onNewNote, onNewProject, onOpenFolder, onExportPdf, onToggleHtmlPreview, toggleTheme, toggleSidebar, toggleChat, onToggleFocusMode, onOpenSettings, onOpenActions]);
+  ], [activeTabId, onNewNote, onNewProject, onOpenFolder, onExportPdf, toggleTheme, toggleSidebar, toggleChat, onToggleFocusMode, onOpenSettings, onOpenActions]);
 
   const filteredActions = useMemo(() => {
     if (mode !== "commands") return actions;

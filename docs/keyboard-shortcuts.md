@@ -12,7 +12,6 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | New note | `Cmd+N` | Open new note dialog |
 | New project | `Cmd+Shift+N` | Open new project dialog |
 | Export as PDF | `Cmd+Shift+E` | Open PDF export dialog (requires active file) |
-| Preview as HTML | `Cmd+Shift+P` | Toggle HTML preview mode (requires active .md file) |
 
 ## Editor Formatting
 

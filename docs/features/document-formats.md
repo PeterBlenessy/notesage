@@ -197,28 +197,16 @@ Export notes to presentation slides using the ppt-rs crate.
 - Template config applied via font sizes and colors on SlideContent
 - Tauri commands: `export_pptx` (generate), `import_pptx_template`, `list_pptx_templates`, `delete_pptx_template`
 
-## HTML Preview & Export
+## HTML Export
 
-Preview and export markdown documents as self-contained HTML files with full feature parity.
-
-**Preview triggers:**
-
-- Cmd+Shift+P keyboard shortcut
-- Eye icon in editor toolbar
-- Command palette: "Preview as HTML"
-- Right-click sidebar context menu on .md files: "Preview as HTML"
+Export markdown documents as self-contained HTML files with full feature parity.
 
 **Export triggers:**
 
-- "Export" button in HTML preview toolbar
 - Right-click sidebar context menu: Export as... > HTML
 
 **Features:**
 
-- Rendered in a sandboxed `<iframe>` with `sandbox="allow-same-origin"` (no script execution)
-- Theme-reactive: re-renders when light/dark mode changes
-- "Copy HTML" button copies `text/html` + `text/plain` (raw markdown) to clipboard for pasting into rich text editors
-- Find in document (Cmd+F) via shared `dom-search.ts` utility
 - Self-contained output: no external stylesheets, fonts, or scripts
 - CSP meta tag prevents script injection when served from a web server
 
@@ -334,7 +322,6 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 | `src-tauri/src/export/templates.rs` | PDF + PPTX template configurations |
 | `src-tauri/fonts/` | Bundled fonts |
 | `src-tauri/templates/` | Typst template presets |
-| `src/components/editor/viewers/HtmlViewer.tsx` | Sandboxed iframe HTML preview with toolbar |
 | `src/components/editor/viewers/EpubViewer.tsx` | EPUB reader |
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
