@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatSavedLabel, pickTimerInterval } from "@/lib/saved-ago";
 import { useActionStore } from "@/stores/action-store";
 
 /** Inline completion icon — italic T with horizontal sparkle trail ✦··· representing text being completed. */
@@ -427,6 +429,20 @@ interface StatusBarProps {
   onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
   onOpenActions?: () => void;
+  /**
+   * Visual variant. `"full"` (default) preserves the legacy rich status strip
+   * byte-for-byte. `"quiet"` renders the minimal
+   * `<words> · saved Xs ago · ⌘K ask · ⌘. focus`
+   * strip used by the quiet-composer layout (task #52 of 2026-04-21-ui-refresh).
+   * The full variant remains mounted everywhere today — the quiet variant is
+   * wired in by `QuietLayout` in a later task.
+   */
+  variant?: "full" | "quiet";
+  /**
+   * Callback when the user clicks the quiet status strip — opens the
+   * `StatusTray` popover (task #53). Has no effect on the full variant.
+   */
+  onOpenTray?: () => void;
 }
 
 export function StatusBar({
@@ -461,7 +477,16 @@ export function StatusBar({
   onUpdateClick,
   onOpenActions,
   onShortcutsOpen,
+  variant = "full",
+  onOpenTray,
 }: StatusBarProps) {
+  // The quiet variant short-circuits before the full-variant render path —
+  // it owns its own data reads (word count + lastSavedAt) and never touches
+  // the rich indicators (comments, git, external changes, etc.).
+  if (variant === "quiet") {
+    return <QuietStatusBar editor={editor} onOpenTray={onOpenTray} />;
+  }
+
   if (!editor) {
     return (
       <div role="status" aria-live="polite" className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
@@ -681,5 +706,122 @@ export function StatusBar({
         )}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Quiet variant (task #52 of 2026-04-21-ui-refresh)
+//
+// Minimal strip: `<words> · saved Xs ago · ⌘K ask · ⌘. focus`. The whole strip
+// is clickable — clicking (or pressing Enter / Space) triggers `onOpenTray`
+// which will mount the `StatusTray` popover in task #53. A `data-status-dots`
+// slot is reserved for #54 ambient dots but is left empty today. The
+// `data-quiet-status` attribute + pre-wired opacity transition let #50 target
+// this element for fade-on-type without any further refactor.
+// ---------------------------------------------------------------------------
+
+function QuietStatusBar({
+  editor,
+  onOpenTray,
+}: {
+  editor: Editor | null;
+  onOpenTray?: () => void;
+}) {
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const tab = useEditorStore((s) =>
+    activeTabId ? s.tabs.find((t) => t.id === activeTabId) ?? null : null,
+  );
+
+  // Re-read word count when the editor transacts so it tracks typing.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!editor) return;
+    const onTransaction = () => setTick((t) => t + 1);
+    editor.on("transaction", onTransaction);
+    return () => {
+      editor.off("transaction", onTransaction);
+    };
+  }, [editor]);
+
+  const text = editor ? editor.getText() : "";
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+
+  const handleActivate = () => {
+    onOpenTray?.();
+  };
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleActivate();
+    }
+  };
+
+  return (
+    <div
+      data-quiet-status
+      role="button"
+      tabIndex={0}
+      aria-label="Open status tray"
+      onClick={handleActivate}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        "h-8 flex items-center gap-3 px-3 text-xs text-muted-foreground",
+        "cursor-pointer select-none",
+        "hover:text-foreground transition-colors",
+        "transition-opacity duration-[340ms] ease-in-out",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
+        "motion-reduce:transition-none",
+      )}
+    >
+      {/* Reserved slot for ambient dots (task #54). Empty today. */}
+      <div data-status-dots className="flex items-center gap-1" />
+
+      <span className="tabular-nums">
+        {fmtNum(words)} {words === 1 ? "word" : "words"}
+      </span>
+
+      <span aria-hidden="true">·</span>
+
+      <QuietSavedLabel lastSavedAt={tab?.lastSavedAt} />
+
+      <span className="ml-auto flex items-center gap-3">
+        <span>
+          <kbd className="font-sans">{"\u2318"}K</kbd> ask
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          <kbd className="font-sans">{"\u2318"}.</kbd> focus
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function QuietSavedLabel({ lastSavedAt }: { lastSavedAt: number | undefined }) {
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (lastSavedAt === undefined) return;
+    const tick = () => setNow(Date.now());
+    tick();
+    const elapsed = Date.now() - lastSavedAt;
+    const interval = pickTimerInterval(elapsed);
+    const id = window.setInterval(tick, interval);
+    return () => window.clearInterval(id);
+  }, [lastSavedAt]);
+
+  if (lastSavedAt === undefined) {
+    return (
+      <span className="tabular-nums" aria-live="polite" aria-label="Not yet saved this session">
+        {"\u2014"}
+      </span>
+    );
+  }
+
+  return (
+    <span className="tabular-nums" aria-live="polite">
+      {formatSavedLabel(now - lastSavedAt)}
+    </span>
   );
 }
