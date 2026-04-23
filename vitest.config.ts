@@ -9,8 +9,8 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    exclude: ['e2e/**', 'e2e-real/**', 'node_modules/**', 'bundled-skills/**/node_modules/**', '.claude/worktrees/**', 'src/perf/**/*.perf.test.ts'],
-    // Note: perf benchmarks (*.perf.test.ts) are excluded from default runs.
+    exclude: ['e2e/**', 'e2e-real/**', 'node_modules/**', 'bundled-skills/**/node_modules/**', '.claude/worktrees/**', 'src/perf/**/*.perf.test.ts', 'src/perf/**/*.perf.test.tsx'],
+    // Note: perf benchmarks (*.perf.test.{ts,tsx}) are excluded from default runs.
     // Run them separately via `pnpm test:perf` which uses vitest.perf.config.ts.
     environmentOptions: {
       jsdom: {
