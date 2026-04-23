@@ -362,4 +362,139 @@ describe('PinnedSection', () => {
       expect(mockRenamePath).not.toHaveBeenCalled();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Task #80 — ARIA + keyboard primitives (roving tabindex, announcer,
+  // ContextMenu key)
+  // -------------------------------------------------------------------------
+
+  describe('roving tabindex + ARIA (#80)', () => {
+    it('only the first row carries tabIndex=0 before any focus lands', () => {
+      useWorkspaceStore.setState({
+        pinnedFiles: ['/p/a.md', '/p/b.md', '/p/c.md'],
+      });
+      renderWithProviders(<PinnedSection />);
+
+      const a = screen.getByText('a.md').closest('[role="button"]') as HTMLElement;
+      const b = screen.getByText('b.md').closest('[role="button"]') as HTMLElement;
+      const c = screen.getByText('c.md').closest('[role="button"]') as HTMLElement;
+
+      expect(a.getAttribute('tabindex')).toBe('0');
+      expect(b.getAttribute('tabindex')).toBe('-1');
+      expect(c.getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('ArrowDown moves focus to the next row (and previously-focused row drops to tabIndex=-1)', () => {
+      useWorkspaceStore.setState({
+        pinnedFiles: ['/p/a.md', '/p/b.md'],
+      });
+      renderWithProviders(<PinnedSection />);
+
+      const a = screen.getByText('a.md').closest('[role="button"]') as HTMLElement;
+      const b = screen.getByText('b.md').closest('[role="button"]') as HTMLElement;
+
+      a.focus();
+      fireEvent.keyDown(a, { key: 'ArrowDown' });
+
+      expect(document.activeElement).toBe(b);
+      expect(b.getAttribute('tabindex')).toBe('0');
+      expect(a.getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('ArrowUp at the top wraps to the bottom of the section', () => {
+      useWorkspaceStore.setState({
+        pinnedFiles: ['/p/a.md', '/p/b.md', '/p/c.md'],
+      });
+      renderWithProviders(<PinnedSection />);
+
+      const a = screen.getByText('a.md').closest('[role="button"]') as HTMLElement;
+      const c = screen.getByText('c.md').closest('[role="button"]') as HTMLElement;
+
+      a.focus();
+      fireEvent.keyDown(a, { key: 'ArrowUp' });
+
+      expect(document.activeElement).toBe(c);
+    });
+
+    it('ArrowDown at the bottom wraps to the top of the section', () => {
+      useWorkspaceStore.setState({
+        pinnedFiles: ['/p/a.md', '/p/b.md', '/p/c.md'],
+      });
+      renderWithProviders(<PinnedSection />);
+
+      const a = screen.getByText('a.md').closest('[role="button"]') as HTMLElement;
+      const c = screen.getByText('c.md').closest('[role="button"]') as HTMLElement;
+
+      c.focus();
+      fireEvent.keyDown(c, { key: 'ArrowDown' });
+
+      expect(document.activeElement).toBe(a);
+    });
+
+    it('F2 surfaces a "Renaming <filename>" announcement via aria-live', async () => {
+      // Clear any leftover announcer node from previous tests (TTL is 2s).
+      document
+        .querySelectorAll('[data-sidebar-announcer]')
+        .forEach((n) => n.remove());
+
+      useWorkspaceStore.setState({ pinnedFiles: ['/notes/alpha.md'] });
+      renderWithProviders(<PinnedSection />);
+
+      const row = screen
+        .getByText('alpha.md')
+        .closest('[role="button"]') as HTMLElement;
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      // Look for the live-region node created by `announce`.
+      await waitFor(() => {
+        const announcer = document.querySelector(
+          '[data-sidebar-announcer]',
+        ) as HTMLElement | null;
+        expect(announcer).toBeTruthy();
+        expect(announcer?.textContent).toBe('Renaming alpha.md');
+      });
+    });
+
+    it('the macOS Menu key dispatches a contextmenu event on the row', () => {
+      useWorkspaceStore.setState({ pinnedFiles: ['/notes/alpha.md'] });
+      renderWithProviders(<PinnedSection />);
+
+      const row = screen
+        .getByText('alpha.md')
+        .closest('[role="button"]') as HTMLElement;
+
+      let captured: MouseEvent | null = null;
+      row.addEventListener('contextmenu', (e) => {
+        captured = e as MouseEvent;
+        e.preventDefault();
+      });
+
+      row.focus();
+      fireEvent.keyDown(row, { key: 'ContextMenu' });
+
+      expect(captured).not.toBeNull();
+      expect(captured!.button).toBe(2);
+    });
+
+    it('⌘⇧, also dispatches a contextmenu event on the row', () => {
+      useWorkspaceStore.setState({ pinnedFiles: ['/notes/alpha.md'] });
+      renderWithProviders(<PinnedSection />);
+
+      const row = screen
+        .getByText('alpha.md')
+        .closest('[role="button"]') as HTMLElement;
+
+      let captured: MouseEvent | null = null;
+      row.addEventListener('contextmenu', (e) => {
+        captured = e as MouseEvent;
+        e.preventDefault();
+      });
+
+      row.focus();
+      fireEvent.keyDown(row, { key: ',', metaKey: true, shiftKey: true });
+
+      expect(captured).not.toBeNull();
+    });
+  });
 });

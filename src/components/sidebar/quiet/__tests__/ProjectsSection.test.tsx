@@ -1139,3 +1139,148 @@ describe('ProjectsSection — inline create project (#42)', () => {
     expect(useWorkspaceStore.getState().projects).toHaveLength(0);
   });
 });
+
+// ----------------------------------------------------------------------------
+// Task #80 — ARIA + keyboard primitives
+// ----------------------------------------------------------------------------
+
+describe('ProjectsSection — ARIA + keyboard primitives (#80)', () => {
+  const project: WorkspaceProject = {
+    path: '/Users/me/Notesage/alpha',
+    fileTree: [
+      makeFile('note.md', '/Users/me/Notesage/alpha/note.md'),
+      makeDir('docs', '/Users/me/Notesage/alpha/docs', [
+        makeFile('intro.md', '/Users/me/Notesage/alpha/docs/intro.md'),
+      ]),
+    ],
+  };
+
+  it('F2 on a child file row surfaces a "Renaming <filename>" announcement', async () => {
+    // Clear any leftover announcer node from previous tests (TTL is 2s).
+    document
+      .querySelectorAll('[data-sidebar-announcer]')
+      .forEach((n) => n.remove());
+
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Expand alpha so note.md becomes visible.
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+    noteRow.focus();
+    fireEvent.keyDown(noteRow, { key: 'F2' });
+
+    await waitFor(() => {
+      const announcer = document.querySelector(
+        '[data-sidebar-announcer]',
+      ) as HTMLElement | null;
+      expect(announcer).toBeTruthy();
+      expect(announcer?.textContent).toBe('Renaming note.md');
+    });
+  });
+
+  it('the ContextMenu key on a child file row dispatches a contextmenu event', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+
+    let captured: MouseEvent | null = null;
+    noteRow.addEventListener('contextmenu', (e) => {
+      captured = e as MouseEvent;
+      e.preventDefault();
+    });
+
+    noteRow.focus();
+    fireEvent.keyDown(noteRow, { key: 'ContextMenu' });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.button).toBe(2);
+  });
+
+  it('the ContextMenu key on a project row dispatches a contextmenu event', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+
+    let captured: MouseEvent | null = null;
+    projectRow.addEventListener('contextmenu', (e) => {
+      captured = e as MouseEvent;
+      e.preventDefault();
+    });
+
+    projectRow.focus();
+    fireEvent.keyDown(projectRow, { key: 'ContextMenu' });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.button).toBe(2);
+  });
+
+  it('⌘⇧, on a project row also dispatches a contextmenu event', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+
+    let captured: MouseEvent | null = null;
+    projectRow.addEventListener('contextmenu', (e) => {
+      captured = e as MouseEvent;
+      e.preventDefault();
+    });
+
+    projectRow.focus();
+    fireEvent.keyDown(projectRow, { key: ',', metaKey: true, shiftKey: true });
+
+    expect(captured).not.toBeNull();
+  });
+
+  it('ArrowRight on a project row reveals one level of children inline (keyboard parity with hover-peek)', () => {
+    // Mix folders + files + hidden so the inline expansion mirrors what
+    // the FolderPeek hover popover would show via `derivePeekChildren`.
+    const richProject: WorkspaceProject = {
+      path: '/Users/me/Notesage/rich',
+      fileTree: [
+        makeFile('.hidden.md', '/Users/me/Notesage/rich/.hidden.md'),
+        makeDir('docs', '/Users/me/Notesage/rich/docs'),
+        makeFile('readme.md', '/Users/me/Notesage/rich/readme.md'),
+      ],
+    };
+    setProjects([richProject]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project rich/i,
+    });
+    expect(projectRow.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    expect(projectRow.getAttribute('aria-expanded')).toBe('true');
+    // Folder (docs) and file (readme.md) visible inline; hidden entry not.
+    expect(
+      screen.getByRole('treeitem', { name: /open folder docs/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('treeitem', { name: /open file readme\.md/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText('.hidden.md')).toBeNull();
+  });
+});

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -22,8 +23,12 @@ import {
 } from "@/components/sidebar/quiet/rename-utils";
 import {
   chainKeyHandlers,
+  isContextMenuKey,
+  openContextMenuOnElement,
   useSidebarItemShortcuts,
 } from "@/components/sidebar/quiet/useSidebarItemShortcuts";
+import { announce } from "@/components/sidebar/quiet/aria-announcer";
+import { useRovingTabindex } from "@/components/sidebar/quiet/useRovingTabindex";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -87,15 +92,19 @@ interface PinnedRowProps {
   isDragging: boolean;
   dropEdge: DropEdge;
   isRenaming: boolean;
+  tabIndex: 0 | -1;
   onOpen: (path: string) => void | Promise<void>;
   onStartRename: (path: string) => void;
   onCommitRename: (oldPath: string, newBasename: string) => void;
   onCancelRename: () => void;
+  onFocus: () => void;
+  onNavigate: (event: KeyboardEvent<HTMLElement>) => void;
   onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragEnd: () => void;
   onDragOverRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragLeaveRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDropRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  registerRef: (el: HTMLDivElement | null) => void;
 }
 
 /**
@@ -111,15 +120,19 @@ function PinnedRow({
   isDragging,
   dropEdge,
   isRenaming,
+  tabIndex,
   onOpen,
   onStartRename,
   onCommitRename,
   onCancelRename,
+  onFocus,
+  onNavigate,
   onDragStart,
   onDragEnd,
   onDragOverRow,
   onDragLeaveRow,
   onDropRow,
+  registerRef,
 }: PinnedRowProps) {
   const name = basename(path);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +142,14 @@ function PinnedRow({
   });
 
   const handleOpenKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+    // #80 — keyboard context-menu gesture. Synthesises a contextmenu event
+    // on the row so Radix's ContextMenuTrigger opens the SidebarContextMenu.
+    if (isContextMenuKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (rowRef.current) openContextMenuOnElement(rowRef.current);
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       void onOpen(path);
@@ -141,10 +162,30 @@ function PinnedRow({
     }
   };
 
-  // Shortcuts first (⌘⌥C / ⌘⌥R). When a shortcut matches it calls
-  // preventDefault and chainKeyHandlers short-circuits so Enter/Space
-  // handling doesn't double-fire on the same keystroke.
-  const onKeyDown = chainKeyHandlers(shortcutKeyDown, handleOpenKeys);
+  // Shortcuts first (⌘⌥C / ⌘⌥R). Then roving-tabindex navigation (↑/↓ within
+  // the section). Finally Enter / Space / F2 / ContextMenu. When an earlier
+  // handler calls preventDefault chainKeyHandlers short-circuits.
+  const onKeyDown = chainKeyHandlers(
+    shortcutKeyDown,
+    onNavigate,
+    handleOpenKeys,
+  );
+
+  // #80 — announce the rename transition to screen readers on the tick the
+  // row flips into rename mode. The SidebarInlineEdit's `aria-label="Rename"`
+  // is not enough context — we want "Renaming <filename>" spoken explicitly.
+  const prevRenamingRef = useRef(false);
+  useEffect(() => {
+    if (isRenaming && !prevRenamingRef.current) {
+      announce(`Renaming ${name}`);
+    }
+    prevRenamingRef.current = isRenaming;
+  }, [isRenaming, name]);
+
+  const setRowRef = (el: HTMLDivElement | null) => {
+    rowRef.current = el;
+    registerRef(el);
+  };
 
   // Restore focus to the row after a rename session ends (commit or cancel).
   // SidebarInlineEdit steals focus on mount; when it unmounts we want the
@@ -179,9 +220,9 @@ function PinnedRow({
         onOpen={() => void onOpen(path)}
       >
         <div
-          ref={rowRef}
+          ref={setRowRef}
           role="button"
-          tabIndex={0}
+          tabIndex={tabIndex}
           draggable={!isRenaming}
           data-active={isActive ? "true" : undefined}
           data-dragging={isDragging ? "true" : undefined}
@@ -191,6 +232,7 @@ function PinnedRow({
           title={path}
           onClick={isRenaming ? undefined : handleClick}
           onKeyDown={isRenaming ? undefined : onKeyDown}
+          onFocus={onFocus}
           onDragStart={(e) => onDragStart(e, index)}
           onDragEnd={onDragEnd}
           onDragOver={(e) => onDragOverRow(e, index)}
@@ -269,6 +311,12 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
     edge: DropEdge;
   } | null>(null);
   const [containerActive, setContainerActive] = useState(false);
+
+  // #80 — roving tabindex + ArrowUp/Down navigation. Using the file path as
+  // the stable row id is fine here because pinned paths are unique by
+  // definition (the store dedupes them on pinFile).
+  const rowIds = useMemo(() => visibleFiles.slice(), [visibleFiles]);
+  const roving = useRovingTabindex({ rowIds });
 
   const handleDefaultAdd = () => {
     if (!activeFilePath) {
@@ -535,15 +583,19 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
                 isDragging={isDragging}
                 dropEdge={dropEdge}
                 isRenaming={isRenaming}
+                tabIndex={roving.getTabIndex(path)}
                 onOpen={handleOpen}
                 onStartRename={startRename}
                 onCommitRename={commitRename}
                 onCancelRename={cancelRename}
+                onFocus={() => roving.handleFocus(path)}
+                onNavigate={(e) => roving.handleKeyDown(e, path)}
                 onDragStart={handleRowDragStart}
                 onDragEnd={handleRowDragEnd}
                 onDragOverRow={handleRowDragOver}
                 onDragLeaveRow={handleRowDragLeave}
                 onDropRow={handleRowDrop}
+                registerRef={(el) => roving.registerRef(path, el)}
               />
             </li>
           );

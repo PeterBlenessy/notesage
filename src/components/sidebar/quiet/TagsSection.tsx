@@ -19,6 +19,7 @@ import { tauriApi, type IndexedTag } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { useRovingTabindex } from "@/components/sidebar/quiet/useRovingTabindex";
 
 /**
  * Default maximum number of tag rows shown before "Show more" expands the
@@ -113,6 +114,13 @@ export function TagsSection({
   const visibleTags = expanded ? filteredTags : filteredTags.slice(0, effectiveCap);
   const hasOverflow = filteredTags.length > effectiveCap;
 
+  // #80 — roving tabindex for ↑/↓ navigation within the tag list. Tag names
+  // are unique within a workspace's index, so they make a stable row id. No
+  // rename / context menu / hover-peek primitives apply to tags — this hook
+  // is the only #80 wiring TagsSection needs.
+  const rowIds = useMemo(() => visibleTags.map((t) => t.name), [visibleTags]);
+  const roving = useRovingTabindex({ rowIds });
+
   /**
    * Open the FloatingCommandBar in TagMode. Phase 1 limitation: the
    * `cmd-bar-events` bus carries a single optional `prefix` character — there
@@ -138,6 +146,9 @@ export function TagsSection({
     event: React.KeyboardEvent<HTMLDivElement>,
     tagName: string,
   ) => {
+    // ArrowUp / ArrowDown navigation first (cyclic, within section).
+    roving.handleKeyDown(event, tagName);
+    if (event.defaultPrevented) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleTagClick(tagName);
@@ -162,9 +173,11 @@ export function TagsSection({
             <li key={tag.name}>
               <div
                 role="button"
-                tabIndex={0}
+                ref={(el) => roving.registerRef(tag.name, el)}
+                tabIndex={roving.getTabIndex(tag.name)}
                 aria-label={`Search for #${tag.name} — ${formatUsageLabel(tag.usageCount)}`}
                 onClick={() => handleTagClick(tag.name)}
+                onFocus={() => roving.handleFocus(tag.name)}
                 onKeyDown={(e) => handleRowKeyDown(e, tag.name)}
                 className={cn(
                   "h-7 px-2 flex items-center gap-2 rounded-sm",
