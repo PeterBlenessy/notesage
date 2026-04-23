@@ -2,6 +2,7 @@ import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
+import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { useSettingsStore } from "@/stores/settings-store";
 
 /**
@@ -59,7 +60,7 @@ export function QuietLayout(_props: QuietLayoutProps) {
           ...documentAreaStyle,
         }}
       >
-        <ZonePlaceholder label="Sidebar (placeholder)" />
+        <QuietSidebar />
         <ZonePlaceholder label="Document area (placeholder)" />
         <ZonePlaceholder label="Reserved (placeholder)" />
       </div>
