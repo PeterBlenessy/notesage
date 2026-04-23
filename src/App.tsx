@@ -30,7 +30,7 @@ import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
-import { useSettingsStore } from "@/stores/settings-store";
+import { useSettingsStore, type UiPreview } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
@@ -42,6 +42,25 @@ import { log } from "@/lib/logger";
 import type { PaletteMode } from "@/lib/command-palette";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+
+/**
+ * Preview gate (#69/#70).
+ *
+ * In the legacy shell the NewNoteDialog and NewProjectDialog components are
+ * mounted and opened by handlers such as `handleNewNote` / `handleNewProject`
+ * plus the `useKeyboardShortcuts` ⌘N / ⌘⇧N bindings. Under the quiet-composer
+ * preview, inline-create rows in the QuietSidebar replace these dialogs
+ * entirely — `QuietLayout` intercepts ⌘N / ⌘⇧N at capture phase with
+ * `stopImmediatePropagation` and routes to `quiet-sidebar-store`
+ * (tasks #41 / #42).
+ *
+ * The dialog files remain in the repo until Phase 3 full deletion. We keep
+ * the legacy code path intact — this helper simply gates the render/open
+ * call sites so the dialogs never mount while the quiet preview is active.
+ */
+export function shouldRenderLegacyNewDialogs(uiPreview: UiPreview): boolean {
+  return uiPreview !== "quiet-composer";
+}
 
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -148,6 +167,10 @@ function App() {
 
   const { openFile, openFileAtTag, openFileAtText, refreshFileTree } = useFileOperations();
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
+  // Preview gate for legacy New* dialogs (#69/#70) — see
+  // `shouldRenderLegacyNewDialogs` comment above.
+  const uiPreview = useSettingsStore((s) => s.uiPreview);
+  const renderLegacyNewDialogs = shouldRenderLegacyNewDialogs(uiPreview);
 
   // Tray menu event handlers
   const handleTrayOpenFile = useCallback((path: string) => {
@@ -324,6 +347,13 @@ function App() {
   }, []);
 
   const handleNewNote = useCallback((parentPath?: string) => {
+    // Preview gate (#69). QuietLayout's capture-phase ⌘N listener already
+    // owns this chord and routes to the inline-create row, so this handler
+    // shouldn't be reached — early-return belt-and-suspenders to avoid any
+    // state flapping on a dialog that won't render.
+    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
+      return;
+    }
     let target = parentPath;
     if (!target) {
       const activeProject = activeProjectPath;
@@ -351,6 +381,11 @@ function App() {
   }, [activeProjectPath]);
 
   const handleNewProject = useCallback(() => {
+    // Preview gate (#70). Same rationale as handleNewNote — QuietLayout
+    // owns ⌘⇧N under the quiet-composer preview.
+    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
+      return;
+    }
     setNewProjectOpen(true);
   }, []);
 
@@ -572,17 +607,28 @@ function App() {
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           onOpenActions={() => setActionsDialogOpen(true)}
         />
-        <NewNoteDialog
-          open={newNoteOpen}
-          onOpenChange={setNewNoteOpen}
-          parentPath={newNoteParentPath}
-          onCreated={handleNoteCreated}
-        />
-        <NewProjectDialog
-          open={newProjectOpen}
-          onOpenChange={setNewProjectOpen}
-          onCreated={handleOpenProject}
-        />
+        {/*
+         * Preview gate (#69/#70).
+         * Legacy path mounts these dialogs; quiet-composer uses inline-create
+         * rows in QuietSidebar, driven by QuietLayout's capture-phase ⌘N / ⌘⇧N
+         * listeners (tasks #41 / #42). The dialog files stay in the repo until
+         * Phase 3 full deletion — see `shouldRenderLegacyNewDialogs` above.
+         */}
+        {renderLegacyNewDialogs && (
+          <NewNoteDialog
+            open={newNoteOpen}
+            onOpenChange={setNewNoteOpen}
+            parentPath={newNoteParentPath}
+            onCreated={handleNoteCreated}
+          />
+        )}
+        {renderLegacyNewDialogs && (
+          <NewProjectDialog
+            open={newProjectOpen}
+            onOpenChange={setNewProjectOpen}
+            onCreated={handleOpenProject}
+          />
+        )}
         <UpdateDialog
           open={updateDialogOpen}
           onOpenChange={setUpdateDialogOpen}
