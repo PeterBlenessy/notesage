@@ -613,7 +613,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #49 |
 | Files | `src/components/editor/viewers/ViewerToolbarPill.tsx` |
 
-### #58 — Adopt `ViewerToolbarPill` — PdfViewer
+### #58 — Adopt `ViewerToolbarPill` — PdfViewer ✅
 
 | Field | Value |
 | --- | --- |
@@ -623,7 +623,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #57 |
 | Files | `src/components/editor/viewers/PdfViewer.tsx` |
 
-### #59 — Adopt `ViewerToolbarPill` — EpubViewer
+### #59 — Adopt `ViewerToolbarPill` — EpubViewer ✅
 
 | Field | Value |
 | --- | --- |
@@ -633,7 +633,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #57 |
 | Files | `src/components/editor/viewers/EpubViewer.tsx` |
 
-### #60 — Adopt `ViewerToolbarPill` — DocxViewer
+### #60 — Adopt `ViewerToolbarPill` — DocxViewer ✅
 
 | Field | Value |
 | --- | --- |
@@ -643,7 +643,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #57 |
 | Files | `src/components/editor/viewers/DocxViewer.tsx` |
 
-### #61 — Adopt `ViewerToolbarPill` — PptxViewer
+### #61 — Adopt `ViewerToolbarPill` — PptxViewer ✅
 
 | Field | Value |
 | --- | --- |
@@ -653,7 +653,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #57 |
 | Files | `src/components/editor/viewers/PptxViewer.tsx` |
 
-### #62 — CodeEditor language indicator pill
+### #62 — CodeEditor language indicator pill ✅
 
 | Field | Value |
 | --- | --- |
