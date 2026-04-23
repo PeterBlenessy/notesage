@@ -25,6 +25,7 @@ let mockConnections: Connection[] = [];
 let mockActiveConversation: Conversation | null = null;
 let mockMetadataMap: Record<string, ProjectMetadata> = {};
 let mockCmdBarPinned = false;
+let mockCrossProjectMode = false;
 let mockWorkspaceProjects: WorkspaceProject[] = [];
 const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
 const setRoutingMock = vi.fn<(useCase: string, connectionId: string | null) => void>();
@@ -206,6 +207,7 @@ vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     setCmdBarPinned: (v: boolean) => setCmdBarPinnedMock(v),
+    get crossProjectMode() { return mockCrossProjectMode; },
   };
   return {
     useSettingsStore: Object.assign(
@@ -357,6 +359,7 @@ describe('CommandBarContext', () => {
     mockActiveConversation = null;
     mockMetadataMap = {};
     mockCmdBarPinned = false;
+    mockCrossProjectMode = false;
     mockWorkspaceProjects = [];
     mockAcpAgent = { instanceId: null, connectionId: null, chatSessionId: null };
     mockSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
@@ -982,6 +985,53 @@ describe('CommandBarContext', () => {
 
       expect(setModeCalls).toHaveLength(1);
       expect(setModeCalls[0]).toMatchObject({ modeId: 'full-access' });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Cross-project scope pill (#73) — replaces the legacy ChatPanel banner
+  // -------------------------------------------------------------------------
+
+  describe('cross-project scope pill (#73)', () => {
+    it('is not rendered when crossProjectMode is false', () => {
+      mockCrossProjectMode = false;
+      renderWithProviders(<CommandBarContext />);
+
+      expect(screen.queryByText(/cross-project scope/i)).toBeNull();
+    });
+
+    it('is rendered with the "Cross-project scope" label when crossProjectMode is true', () => {
+      mockCrossProjectMode = true;
+      renderWithProviders(<CommandBarContext />);
+
+      // The label appears inside the pill's button.
+      expect(screen.getByText(/cross-project scope/i)).toBeTruthy();
+      // The pill carries an aria-label explaining the warning + next step.
+      expect(
+        screen.getByLabelText(/cross-project mode exposes all workspace folders/i),
+      ).toBeTruthy();
+    });
+
+    it('clicking the pill dispatches notesage:open-settings with { tab: "developer" }', () => {
+      mockCrossProjectMode = true;
+      const received: Array<{ tab?: string }> = [];
+      const handler = (e: Event) => {
+        const detail = (e as CustomEvent<{ tab?: string }>).detail;
+        received.push(detail ?? {});
+      };
+      window.addEventListener('notesage:open-settings', handler);
+
+      try {
+        renderWithProviders(<CommandBarContext />);
+        fireEvent.click(
+          screen.getByLabelText(/cross-project mode exposes all workspace folders/i),
+        );
+
+        expect(received).toHaveLength(1);
+        expect(received[0].tab).toBe('developer');
+      } finally {
+        window.removeEventListener('notesage:open-settings', handler);
+      }
     });
   });
 });

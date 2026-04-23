@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
+import { AlertTriangle, Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -101,6 +101,13 @@ function CommandBarContext({ className }: CommandBarContextProps) {
   // Pinned-mode toggle state (#28). Wired to `settings-store.cmdBarPinned`.
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
   const setCmdBarPinned = useSettingsStore((s) => s.setCmdBarPinned);
+
+  // Cross-project mode warning pill (#73). Replaces the deleted legacy banner
+  // above the chat input with a compact indicator on the context row — the
+  // pill is only rendered when the opt-in is active (default off). Clicking
+  // the pill opens Settings > Advanced (the "developer" tab) so the user can
+  // toggle the mode off in one jump.
+  const crossProjectMode = useSettingsStore((s) => s.crossProjectMode);
 
   // Locked-paths derived view drives the explain-lock dialog when the user
   // clicks a chip's lock icon. The dialog accepts an array (multiple chips
@@ -229,8 +236,11 @@ function CommandBarContext({ className }: CommandBarContextProps) {
         <AcpModePicker connection={interactiveConnection} />
       ) : null}
 
-      {/* Spacer pushes the trailing icons to the right. */}
+      {/* Spacer pushes the warning pill + trailing icons to the right. */}
       <div className="flex-1 min-w-2" aria-hidden />
+
+      {/* Cross-project scope warning pill (#73) — replaces the legacy banner */}
+      {crossProjectMode ? <CrossProjectScopePill /> : null}
 
       {/* Trailing icons ---------------------------------------------------- */}
       <IconButton
@@ -434,6 +444,41 @@ function AddProjectButton({ addableProjects, onPick }: AddProjectButtonProps) {
         )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * CrossProjectScopePill — compact warning indicator that replaces the
+ * legacy "Cross-project mode" banner (#73). Only rendered when
+ * `settings-store.crossProjectMode` is true; clicking opens Settings >
+ * Advanced so the user can toggle the mode off.
+ */
+function CrossProjectScopePill() {
+  const title =
+    "Cross-project mode exposes all workspace folders to the agent. Click to open Settings > Advanced.";
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        window.dispatchEvent(
+          new CustomEvent("notesage:open-settings", {
+            detail: { tab: "developer" },
+          }),
+        );
+      }}
+      aria-label={title}
+      title={title}
+      className={cn(
+        "inline-flex items-center gap-1 h-5 px-2 rounded-full shrink-0",
+        "text-[11px] font-medium",
+        "bg-destructive/10 text-destructive border border-destructive/30",
+        "hover:bg-destructive/15 hover:border-destructive/40 transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+      )}
+    >
+      <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={1.8} aria-hidden />
+      <span>Cross-project scope</span>
+    </button>
   );
 }
 

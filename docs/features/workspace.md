@@ -42,7 +42,7 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 - Tray "Recent" submenu filters to the selection (opt-in "All Recent" submenu shows everything)
 - Scoped persisted approvals — `alwaysAllowed`, `toolCallAlways`, `skillScriptAlways`, and `domainAlwaysAllowed` are stored as `(toolName, connectionId, projectRoot)` triples; legacy flat approvals migrate into a "legacy broad" bucket with a review toast
 
-**Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a persistent banner above the chat input flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
+**Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
 ## Notesage Library & iCloud Sync
 
