@@ -829,7 +829,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.7 Accessibility (10 tasks)
 
-### #78 — ARIA: FloatingCommandBar
+### #78 — ARIA: FloatingCommandBar 🚧
 
 | Field | Value |
 | --- | --- |
@@ -839,7 +839,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #13 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx` + sub-components |
 
-### #79 — ARIA: AgentOrb
+### #79 — ARIA: AgentOrb 🚧
 
 | Field | Value |
 | --- | --- |
@@ -849,7 +849,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #29 |
 | Files | `AgentOrb.tsx`, `AgentPanel.tsx` |
 
-### #80 — ARIA: Sidebar + keyboard hover-peek
+### #80 — ARIA: Sidebar + keyboard hover-peek 🚧
 
 | Field | Value |
 | --- | --- |
@@ -859,7 +859,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #37, #45 |
 | Files | sidebar + sub-components |
 
-### #81 — ARIA: TreeOverlay
+### #81 — ARIA: TreeOverlay 🚧
 
 | Field | Value |
 | --- | --- |
@@ -869,7 +869,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #38 |
 | Files | `TreeOverlay.tsx` |
 
-### #82 — ARIA: PinnedPanel
+### #82 — ARIA: PinnedPanel 🚧
 
 | Field | Value |
 | --- | --- |
@@ -879,7 +879,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #28 |
 | Files | `FloatingCommandBar.tsx` pinned mode |
 
-### #83 — ARIA: PermissionCard
+### #83 — ARIA: PermissionCard 🚧
 
 | Field | Value |
 | --- | --- |
@@ -889,7 +889,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #29 |
 | Files | `PermissionCard.tsx` (existing, annotated) |
 
-### #84 — ARIA: Focus mode announcements
+### #84 — ARIA: Focus mode announcements 🚧
 
 | Field | Value |
 | --- | --- |
@@ -899,7 +899,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #56 |
 | Files | `useFocusMode.ts`, `FocusPill.tsx` |
 
-### #85 — ARIA: SettingsShell
+### #85 — ARIA: SettingsShell 🚧
 
 | Field | Value |
 | --- | --- |
@@ -909,7 +909,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #63 |
 | Files | `SettingsShell.tsx`, `SettingsRow.tsx` |
 
-### #86 — Reduced-motion sweep
+### #86 — Reduced-motion sweep 🚧
 
 | Field | Value |
 | --- | --- |
@@ -919,7 +919,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | most animation tasks |
 | Files | various |
 
-### #87 — Automated contrast audit
+### #87 — Automated contrast audit 🚧
 
 | Field | Value |
 | --- | --- |
