@@ -32,8 +32,9 @@ function Switch({
       style={{
         // ON state goes through --accent so the toggle picks up the user's accent.
         // Fallback resolves to today's --color-foreground when no accent class is set.
-        // OFF state stays neutral (--color-border) — accent is for affordance, not chrome.
-        backgroundColor: checked ? 'var(--accent, var(--color-foreground))' : 'var(--color-border)',
+        // OFF state uses --color-border-strong because the track fill IS the
+        // only visual cue when off — must clear WCAG 1.4.11 (3:1).
+        backgroundColor: checked ? 'var(--accent, var(--color-foreground))' : 'var(--color-border-strong)',
       }}
       {...props}
       onCheckedChange={handleCheckedChange}

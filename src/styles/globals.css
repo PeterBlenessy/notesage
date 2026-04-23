@@ -27,7 +27,20 @@
   --color-accent-foreground: oklch(25% 0 0);
   --color-destructive: oklch(55.62% 0.227 27.33);
   --color-destructive-foreground: oklch(98% 0 0);
+  /* Two border tokens — see WCAG 1.4.11 ("Non-text Contrast"):
+   *   --color-border        : decorative hairlines (cards, panels, separators,
+   *                           grouping dividers). NOT subject to the 3:1
+   *                           "Non-text Contrast" requirement under the
+   *                           1.4.11 carve-out for graphical objects that are
+   *                           not required to understand the content.
+   *   --color-border-strong : UI components where the border itself conveys
+   *                           affordance or state (form input outlines, focus
+   *                           indicators outside of --color-ring, outline
+   *                           buttons, unchecked checkboxes/radios). MUST clear
+   *                           3:1 against --color-background. Audited by
+   *                           scripts/contrast-audit.ts. */
   --color-border: oklch(90% 0 0);
+  --color-border-strong: oklch(60% 0 0);
   --color-input: oklch(90% 0 0);
   --color-ring: oklch(50% 0 0);
 
@@ -125,6 +138,7 @@
   --color-accent: oklch(91% 0 0);
   --color-accent-foreground: oklch(28% 0 0);
   --color-border: oklch(86% 0 0);
+  --color-border-strong: oklch(58% 0 0);
   --color-input: oklch(86% 0 0);
   --color-ring: oklch(52% 0 0);
   --color-comment-bg: oklch(88% 0 0 / 0.5);
@@ -163,6 +177,7 @@
   --color-destructive: oklch(55.62% 0.227 27.33);
   --color-destructive-foreground: oklch(98% 0 0);
   --color-border: oklch(32% 0 0);
+  --color-border-strong: oklch(52% 0 0);
   --color-input: oklch(28% 0 0);
   --color-ring: oklch(60% 0 0);
 
@@ -283,6 +298,7 @@
   --color-accent: oklch(35% 0 0);
   --color-accent-foreground: oklch(90% 0 0);
   --color-border: oklch(36% 0 0);
+  --color-border-strong: oklch(54% 0 0);
   --color-input: oklch(32% 0 0);
   --color-ring: oklch(55% 0 0);
   --color-comment-bg: oklch(50% 0 0 / 0.2);

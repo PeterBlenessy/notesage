@@ -19,8 +19,10 @@ const buttonVariants = cva(
           "bg-[var(--color-accent-primary)] text-primary-foreground hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:border-destructive dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        // Outline variant: the border IS the primary visual cue (no filled
+        // background). Uses --color-border-strong to clear WCAG 1.4.11 (3:1).
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-border-strong bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-border-strong dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:

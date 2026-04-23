@@ -102,6 +102,15 @@ A "Contrast" slider (Settings > Appearance, range 0–100) continuously interpol
 - Soft contrast (100): Light `oklch(96% 0 0)` bg / `oklch(20% 0 0)` fg; Dark `oklch(25% 0 0)` bg / `oklch(90% 0 0)` fg
 - Intermediate values are linearly interpolated between these endpoints
 
+**Border tokens — two variants (WCAG 1.4.11):**
+
+There are two greyscale border tokens in `globals.css`. Pick the right one:
+
+- `--color-border` (Tailwind `border-border`) — decorative hairlines: cards, panels, separators, content groupings. Subtle by design (`oklch(90% 0 0)` light / `oklch(32% 0 0)` dark). Falls under the WCAG 1.4.11 carve-out for "graphical objects that are not required to understand the content" — NOT subject to the 3:1 non-text-contrast requirement. Default for any decorative use.
+- `--color-border-strong` (Tailwind `border-border-strong`) — affordance-carrying borders where the border itself conveys UI state (form input outlines, outline buttons, unchecked checkboxes/radios, switch off-state track, focus indicators outside of `--color-ring`). MUST clear 3:1 against `--color-background`. Audited automatically by `scripts/contrast-audit.ts` (`pnpm audit:contrast`).
+
+Rule of thumb: if removing the border would make the user unable to tell that something is interactive or what state it's in, use `border-border-strong`. Otherwise use `border-border`.
+
 **Forbidden colors:**
 
 - No blue, indigo, teal, violet, or any chromatic accent anywhere in the UI
