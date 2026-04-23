@@ -343,7 +343,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #31 — Pinned section — wire to workspace-store 🚧
+### #31 — Pinned section — wire to workspace-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -353,7 +353,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx`, `src/stores/workspace-store.ts` |
 
-### #32 — Projects section — wire to workspace-store 🚧
+### #32 — Projects section — wire to workspace-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -363,7 +363,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #33 — Recent section (with cap) 🚧
+### #33 — Recent section (with cap) ✅
 
 | Field | Value |
 | --- | --- |
@@ -373,7 +373,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #34 — Tags section (with cap) 🚧
+### #34 — Tags section (with cap) ✅
 
 | Field | Value |
 | --- | --- |
