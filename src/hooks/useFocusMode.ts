@@ -83,6 +83,13 @@ export function useFocusMode(): UseFocusModeResult {
   const activeRef = useRef<boolean>(false);
   activeRef.current = active;
 
+  // Captures `document.activeElement` at the moment focus mode is entered so
+  // we can restore focus to the pre-focus-mode element on exit. This matches
+  // the 2026-04-21 UI-refresh PRD #84 spec: "Focus returns to pre-focus-mode
+  // element." Restoration is skipped if the previously-focused element is
+  // `document.body` (i.e. nothing was focused) or has since been detached.
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   const toggle = useCallback((): void => {
     setActive((prev) => !prev);
   }, []);
@@ -91,7 +98,7 @@ export function useFocusMode(): UseFocusModeResult {
     setActive(false);
   }, []);
 
-  // --- DOM class sync + screen-reader announcement ----------------------
+  // --- DOM class sync + screen-reader announcement + focus restore ------
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -99,9 +106,41 @@ export function useFocusMode(): UseFocusModeResult {
     const root =
       document.querySelector<HTMLElement>(ROOT_SELECTOR) ?? document.body;
     if (active) {
+      // Capture the currently-focused element BEFORE adding the class so we
+      // can restore focus on exit. Skip the body fallback — restoring focus
+      // to body is indistinguishable from "no focus" and would cause a jarring
+      // blur on exit. An empty ref means "don't restore".
+      const activeEl = document.activeElement;
+      previousFocusRef.current =
+        activeEl instanceof HTMLElement && activeEl !== document.body
+          ? activeEl
+          : null;
+
       root.classList.add(FOCUS_MODE_CLASS);
     } else {
       root.classList.remove(FOCUS_MODE_CLASS);
+
+      // Restore focus to the pre-focus-mode element on exit. Use
+      // `requestAnimationFrame` so React's commit flush has landed and any
+      // focus-stealing effects (toolbar mount, overlay unmount) have already
+      // run — otherwise our `.focus()` call would be immediately clobbered.
+      const target = previousFocusRef.current;
+      previousFocusRef.current = null;
+      if (
+        target !== null &&
+        target.isConnected &&
+        typeof target.focus === "function" &&
+        typeof window !== "undefined" &&
+        typeof window.requestAnimationFrame === "function"
+      ) {
+        window.requestAnimationFrame(() => {
+          // Re-check isConnected inside rAF — the node might have been removed
+          // from the DOM between entering focus mode and exiting it.
+          if (target.isConnected) {
+            target.focus();
+          }
+        });
+      }
     }
 
     // Announce the transition to screen readers via a short-lived aria-live

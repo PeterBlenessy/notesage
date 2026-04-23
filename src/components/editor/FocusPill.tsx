@@ -15,10 +15,20 @@ export function FocusPill({ active, onExit }: FocusPillProps) {
     return null;
   }
 
+  // NOTE: The outer container is intentionally NOT `role="status"` /
+  // `aria-live="polite"`. The `useFocusMode` hook appends its own short-lived
+  // aria-live announcer on enter/exit with the canonical wording from the
+  // 2026-04-21 UI-refresh PRD ("Focus mode on. Press Command period to exit.").
+  // Duplicating the live region here would cause the announcement to fire
+  // twice and would also re-announce the pill's hint text on every re-render.
+  //
+  // The decorative hint `<span>` is `aria-hidden="true"` — the announcement
+  // does the work for AT, the pill is visual-only chrome for sighted users.
+  // The exit `<Button>` remains in the accessibility tree with its
+  // `aria-label` so keyboard / AT users can still trigger exit (beyond the
+  // global ⌘. shortcut).
   return (
     <div
-      role="status"
-      aria-live="polite"
       data-focus-pill="true"
       className={cn(
         "fixed top-4 left-1/2 -translate-x-1/2 z-50",
@@ -29,7 +39,7 @@ export function FocusPill({ active, onExit }: FocusPillProps) {
           "animate-in fade-in-0 slide-in-from-top-1 duration-[180ms] ease-out",
       )}
     >
-      <span>
+      <span aria-hidden="true">
         Focus ·{" "}
         <kbd className="font-mono text-muted-foreground">⌘.</kbd>
         {" "}to exit

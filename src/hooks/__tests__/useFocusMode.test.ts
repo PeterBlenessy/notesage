@@ -320,4 +320,135 @@ describe("useFocusMode", () => {
     });
     expect(document.body.classList.contains("focus-mode")).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // Focus restoration (PRD #84: "Focus returns to pre-focus-mode element.")
+  // -------------------------------------------------------------------------
+
+  /** Flush one animation frame so the rAF-deferred focus restore runs. */
+  async function flushRaf(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  }
+
+  it("restores focus to the pre-focus-mode element on exit", async () => {
+    mountRoot();
+    const button = document.createElement("button");
+    button.textContent = "Source";
+    document.body.appendChild(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    const { result } = renderHook(() => useFocusMode());
+
+    // Enter focus mode — previous focus captured.
+    act(() => {
+      result.current.toggle();
+    });
+    // Simulate something else stealing focus while in focus mode.
+    const other = document.createElement("input");
+    document.body.appendChild(other);
+    other.focus();
+    expect(document.activeElement).toBe(other);
+
+    // Exit focus mode — focus should return to the original button.
+    act(() => {
+      result.current.exit();
+    });
+    await act(async () => {
+      await flushRaf();
+    });
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("does not restore focus when the pre-focus element has been detached", async () => {
+    mountRoot();
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    button.focus();
+
+    const { result } = renderHook(() => useFocusMode());
+
+    act(() => {
+      result.current.toggle();
+    });
+
+    // Detach the button before exit — restoration must be a no-op (no throw).
+    button.remove();
+
+    act(() => {
+      result.current.exit();
+    });
+    await act(async () => {
+      await flushRaf();
+    });
+    // Nothing to focus → activeElement falls back to body.
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("skips focus restoration when nothing was focused before entering", async () => {
+    mountRoot();
+    // Nothing focused: activeElement === body.
+    expect(document.activeElement).toBe(document.body);
+
+    const sibling = document.createElement("button");
+    document.body.appendChild(sibling);
+
+    const { result } = renderHook(() => useFocusMode());
+
+    act(() => {
+      result.current.toggle();
+    });
+    // Focus the sibling while focus mode is active.
+    sibling.focus();
+    expect(document.activeElement).toBe(sibling);
+
+    act(() => {
+      result.current.exit();
+    });
+    await act(async () => {
+      await flushRaf();
+    });
+    // Because body was the "previous focus," ref was null — sibling keeps focus.
+    expect(document.activeElement).toBe(sibling);
+  });
+
+  it("captures fresh previous-focus on re-entry", async () => {
+    mountRoot();
+    const first = document.createElement("button");
+    first.textContent = "first";
+    const second = document.createElement("button");
+    second.textContent = "second";
+    document.body.appendChild(first);
+    document.body.appendChild(second);
+
+    const { result } = renderHook(() => useFocusMode());
+
+    // First cycle: focus `first`, enter, exit → should restore to `first`.
+    first.focus();
+    act(() => {
+      result.current.toggle();
+    });
+    act(() => {
+      result.current.exit();
+    });
+    await act(async () => {
+      await flushRaf();
+    });
+    expect(document.activeElement).toBe(first);
+
+    // Second cycle: focus `second`, enter, exit → should restore to `second`.
+    second.focus();
+    act(() => {
+      result.current.toggle();
+    });
+    act(() => {
+      result.current.exit();
+    });
+    await act(async () => {
+      await flushRaf();
+    });
+    expect(document.activeElement).toBe(second);
+  });
 });
