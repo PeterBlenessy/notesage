@@ -1,11 +1,18 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { renderAsync } from "docx-preview";
-import { FileDown, ZoomIn, ZoomOut, RectangleVertical, SquareDashedBottom } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import {
+  FileDown,
+  RectangleVertical,
+  Search,
+  SquareDashedBottom,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { getBinaryData } from "@/lib/binary-cache";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
+import { ViewerToolbarPill } from "./ViewerToolbarPill";
 
 interface DocxViewerProps {
   filePath: string;
@@ -20,6 +27,19 @@ const ZOOM_STEPS = [
 const DEFAULT_ZOOM_INDEX = 7; // 1.0
 
 type FitMode = "width" | "page" | null;
+
+// Shared pill-button classes matching the editor toolbar's pill style (#49).
+const PILL_BTN =
+  "inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:pointer-events-none";
+
+function PillDivider() {
+  return (
+    <span
+      className="w-px h-3.5 bg-border/60 mx-0.5"
+      aria-hidden="true"
+    />
+  );
+}
 
 export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxViewerProps) {
   const [loading, setLoading] = useState(true);
@@ -308,62 +328,101 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
   }
 
   return (
-    <div ref={viewerRef} className="h-full flex flex-col" tabIndex={-1}>
-      {/* Toolbar */}
-      <div className="h-9 border-b border-border px-3 flex items-center gap-1 shrink-0 bg-background">
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {fileName}
-        </span>
-        <Separator orientation="vertical" className="h-4 mx-1" />
-        <Button variant="ghost" size="icon-xs" onClick={zoomOut} title="Zoom out">
+    <div ref={viewerRef} className="h-full flex flex-col relative" tabIndex={-1}>
+      {/* Floating pill toolbar — fades on scroll, replaces the old dense chrome */}
+      <ViewerToolbarPill viewerId="docx" scrollRef={scrollContainerRef}>
+        <button
+          type="button"
+          onClick={zoomOut}
+          className={cn(PILL_BTN, "text-muted-foreground")}
+          title="Zoom out"
+          aria-label="Zoom out"
+        >
           <ZoomOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
+        </button>
         <span className="text-xs text-muted-foreground tabular-nums min-w-[40px] text-center">
           {Math.round(zoom * 100)}%
         </span>
-        <Button variant="ghost" size="icon-xs" onClick={zoomIn} title="Zoom in">
+        <button
+          type="button"
+          onClick={zoomIn}
+          className={cn(PILL_BTN, "text-muted-foreground")}
+          title="Zoom in"
+          aria-label="Zoom in"
+        >
           <ZoomIn className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Separator orientation="vertical" className="h-4 mx-1" />
-        <Button
-          variant="ghost"
-          size="icon-xs"
+        </button>
+        <PillDivider />
+        <button
+          type="button"
           onClick={toggleFitWidth}
-          className={fitMode === "width" ? "bg-accent text-foreground" : "text-muted-foreground"}
+          className={cn(
+            PILL_BTN,
+            fitMode === "width"
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground",
+          )}
           title="Fit to width"
+          aria-label="Fit to width"
+          aria-pressed={fitMode === "width"}
         >
           <SquareDashedBottom className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
+        </button>
+        <button
+          type="button"
           onClick={toggleFitPage}
-          className={fitMode === "page" ? "bg-accent text-foreground" : "text-muted-foreground"}
+          className={cn(
+            PILL_BTN,
+            fitMode === "page"
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground",
+          )}
           title="Fit to page"
+          aria-label="Fit to page"
+          aria-pressed={fitMode === "page"}
         >
           <RectangleVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
+        </button>
         {totalPages > 0 && (
           <>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <PillDivider />
+            <span className="text-xs text-muted-foreground tabular-nums px-1">
               Page {currentPage} / {totalPages}
             </span>
           </>
         )}
-        <span className="flex-1" />
+        <PillDivider />
+        <button
+          type="button"
+          onClick={() => setFindBarOpen(true)}
+          className={cn(
+            PILL_BTN,
+            findBarOpen
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground",
+          )}
+          title="Find (Cmd+F)"
+          aria-label="Find"
+          aria-pressed={findBarOpen}
+        >
+          <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
         {onConvertToMarkdown && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
-            onClick={() => onConvertToMarkdown(fileName)}
-          >
-            <FileDown className="h-3 w-3" strokeWidth={1.5} />
-            Convert to Markdown
-          </Button>
+          <>
+            <PillDivider />
+            <button
+              type="button"
+              onClick={() => onConvertToMarkdown(fileName)}
+              className={cn(PILL_BTN, "text-muted-foreground hover:text-foreground")}
+              title="Convert to Markdown"
+              aria-label="Convert to Markdown"
+            >
+              <FileDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+              <span>Convert to Markdown</span>
+            </button>
+          </>
         )}
-      </div>
+      </ViewerToolbarPill>
 
       {/* Content area with FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
@@ -384,7 +443,14 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
             <p className="text-sm text-muted-foreground">Loading document...</p>
           </div>
         )}
-        <div ref={scrollContainerRef} className="h-full overflow-auto bg-muted/50 p-8">
+        {/* Top padding (pt-16) reserves clearance for the floating pill so the
+            first page doesn't sit under it. The viewer preserves the
+            docx-preview "white-background island" in dark mode — only the
+            toolbar chrome moved. */}
+        <div
+          ref={scrollContainerRef}
+          className="h-full overflow-auto bg-muted/50 px-8 pt-16 pb-8"
+        >
           <div className="docx-preview-wrapper">
             {/* Scoped style container — docx-preview injects its CSS here instead of <head> */}
             <style ref={styleContainerRef} />
