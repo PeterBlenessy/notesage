@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
+import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType } from "@/lib/file-utils";
@@ -26,6 +27,7 @@ import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit"
 import {
   basename as pathBasename,
   resolveRenamePath,
+  validateCreateBasename,
   validateRenameBasename,
 } from "@/components/sidebar/quiet/rename-utils";
 
@@ -185,7 +187,73 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // Task #40 — inline rename for child FILE rows. Project roots are NOT
   // renameable in this task (bigger blast radius; separate follow-up).
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const { renamePath } = useFileOperations();
+  const { renamePath, createFile, openFile } = useFileOperations();
+
+  // Task #41 — inline create note. The pending signal comes from either the
+  // `⌘N` handler in `QuietLayout` or the per-row `+` button below. The
+  // owning project (`parentDir` equals project.path OR starts with
+  // `project.path + "/"`) is auto-expanded so the inline input appears as
+  // the first row in its child tree.
+  const pendingCreate = useQuietSidebarStore((s) => s.pendingCreate);
+  const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
+
+  const pendingCreateProjectPath = useMemo(() => {
+    if (!pendingCreate) return null;
+    for (const p of projects) {
+      if (
+        pendingCreate.parentDir === p.path ||
+        pendingCreate.parentDir.startsWith(p.path + "/")
+      ) {
+        return p.path;
+      }
+    }
+    return null;
+  }, [pendingCreate, projects]);
+
+  // Auto-expand the owning project when a pending create is set for it.
+  useEffect(() => {
+    if (!pendingCreateProjectPath) return;
+    setExpandedPaths((prev) => {
+      if (prev.has(pendingCreateProjectPath)) return prev;
+      const next = new Set(prev);
+      next.add(pendingCreateProjectPath);
+      return next;
+    });
+  }, [pendingCreateProjectPath]);
+
+  const handleCreateCommit = useCallback(
+    async (parentDir: string, trimmedName: string) => {
+      const fileName = trimmedName.includes(".")
+        ? trimmedName
+        : `${trimmedName}.md`;
+      const filePath = `${parentDir}/${fileName}`;
+      // Clear pending state up front so a slow createFile doesn't leave the
+      // input hanging in the DOM. If creation fails we surface the toast
+      // and the user re-triggers from scratch.
+      setPendingCreate(null);
+      try {
+        await createFile(parentDir, fileName);
+        await openFile(filePath, fileName);
+        toast.success(`Created ${fileName}`);
+      } catch (error) {
+        toast.error(`Failed to create: ${error}`);
+      }
+    },
+    [createFile, openFile, setPendingCreate],
+  );
+
+  const handleCreateCancel = useCallback(() => {
+    setPendingCreate(null);
+  }, [setPendingCreate]);
+
+  /** Handler for the per-row `+` button. Sets pending state at the project
+   *  root (not at the active tab's parent — that's what `⌘N` is for). */
+  const handleAddToProject = useCallback(
+    (projectPath: string) => {
+      setPendingCreate({ parentDir: projectPath });
+    },
+    [setPendingCreate],
+  );
 
   const startRename = useCallback((path: string) => {
     setRenamingPath(path);
@@ -452,6 +520,8 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             const children = isExpanded
               ? derivePeekChildren(project.fileTree)
               : null;
+            const isPendingCreateHere =
+              pendingCreateProjectPath === project.path && !!pendingCreate;
             return (
               <li key={project.path} className="m-0 p-0">
                 <FolderPeek
@@ -470,14 +540,43 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                     onOpen={() => void openProject(project)}
                     onKeyDown={(e) => handleProjectKeyDown(e, project)}
                     onFocus={() => setFocusedRowId(project.path)}
+                    onAddNote={() => handleAddToProject(project.path)}
                     registerRef={(el) => rowRefs.current.set(project.path, el)}
                   />
                 </FolderPeek>
-                {children && (
+                {(children || isPendingCreateHere) && (
                   <ul
                     role="group"
                     className="flex flex-col m-0 p-0 list-none pl-4"
                   >
+                    {isPendingCreateHere && pendingCreate && (
+                      <li
+                        className="m-0 p-0"
+                        data-pending-create="true"
+                        data-pending-create-parent={pendingCreate.parentDir}
+                      >
+                        <div className="h-7 px-2 flex items-center gap-2">
+                          <FileText
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                            strokeWidth={1.5}
+                            aria-hidden="true"
+                          />
+                          <SidebarInlineEdit
+                            mode="create"
+                            placeholder="note.md"
+                            validate={validateCreateBasename}
+                            onCommit={(value) =>
+                              void handleCreateCommit(
+                                pendingCreate.parentDir,
+                                value,
+                              )
+                            }
+                            onCancel={handleCreateCancel}
+                            className="flex-1 min-w-0"
+                          />
+                        </div>
+                      </li>
+                    )}
                     {rows
                       .filter(
                         (r) =>
@@ -554,6 +653,7 @@ interface ProjectRowProps {
   onOpen: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
+  onAddNote: () => void;
   registerRef: (el: HTMLDivElement | null) => void;
 }
 
@@ -566,6 +666,7 @@ function ProjectRow({
   onOpen,
   onKeyDown,
   onFocus,
+  onAddNote,
   registerRef,
 }: ProjectRowProps) {
   const name = useMemo(() => projectBasename(project.path), [project.path]);
@@ -600,7 +701,7 @@ function ProjectRow({
       onKeyDown={onKeyDown}
       onFocus={onFocus}
       className={cn(
-        "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+        "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
@@ -614,10 +715,24 @@ function ProjectRow({
       />
       <span className="truncate min-w-0 flex-1">{name}</span>
       {fileCount !== null && (
-        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {fileCount}
         </span>
       )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={`New note in ${name}`}
+        tabIndex={-1}
+        onClick={(event) => {
+          event.stopPropagation();
+          onAddNote();
+        }}
+        className="opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 shrink-0"
+      >
+        <Plus strokeWidth={1.5} />
+      </Button>
     </div>
   );
 }

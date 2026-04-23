@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { TitleBar } from "@/components/TitleBar";
 import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
@@ -8,6 +9,9 @@ import { TreeOverlay } from "@/components/sidebar/quiet/TreeOverlay";
 import { DocHead } from "@/components/editor/DocHead";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
+import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -27,6 +31,39 @@ import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
  */
 
 export type QuietLayoutProps = LayoutProps;
+
+/**
+ * Resolve the parent directory for a new note triggered by `⌘N`. Returns
+ * the active tab's parent dir if that path falls within any open project,
+ * else the first project root if the user is not currently editing a
+ * project file but at least one project is open, else `null` to signal
+ * the no-match fallback.
+ *
+ * Exported for unit testing. Pure helper — no store or filesystem access.
+ */
+export function resolveCreateParent(
+  activeFilePath: string | null,
+  projects: WorkspaceProject[],
+): string | null {
+  if (projects.length === 0) return null;
+
+  if (activeFilePath) {
+    // Match the active tab against every open project. If the file lives
+    // inside one, return its immediate parent directory so the new note
+    // is created next to the current document.
+    for (const p of projects) {
+      if (activeFilePath === p.path) continue;
+      if (activeFilePath.startsWith(p.path + "/")) {
+        const lastSlash = activeFilePath.lastIndexOf("/");
+        if (lastSlash > 0) return activeFilePath.slice(0, lastSlash);
+      }
+    }
+  }
+
+  // No active tab, or the active file is outside every open project.
+  // Signal no-match so the caller can show the toast fallback.
+  return null;
+}
 
 export function QuietLayout(_props: QuietLayoutProps) {
   // Props are accepted to mirror Layout's signature so the call site at
@@ -88,6 +125,58 @@ export function QuietLayout(_props: QuietLayoutProps) {
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
     };
   }, [openOverlay]);
+
+  // `⌘N` — inline create note (task #41). Routes to the QuietSidebar's
+  // inline-edit row by setting `quiet-sidebar-store.pendingCreate` to the
+  // active tab's parent directory (if it resides inside a project) or
+  // triggering the fallback toast. `⌘⇧N` is intentionally NOT intercepted
+  // — task #42 owns the project-create flow.
+  const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+      // Don't fight `⌘⇧N` (task #42). `⌥⌘N` is also left alone.
+      if (event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "n") return;
+
+      // Skip when the user is typing — same guard as `⌘⇧E` above.
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const isTextInput =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable;
+        if (isTextInput) {
+          return;
+        }
+      }
+
+      // Compute parent from active tab + open projects.
+      const editorState = useEditorStore.getState();
+      const activeTab = editorState.activeTabId
+        ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
+        : null;
+      const activeFilePath = activeTab?.filePath ?? null;
+      const projects = useWorkspaceStore.getState().projects;
+      const parentDir = resolveCreateParent(activeFilePath, projects);
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      if (!parentDir) {
+        toast.info("Open a project to create a note");
+        return;
+      }
+
+      setPendingCreate({ parentDir });
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, [setPendingCreate]);
 
   return (
     <div

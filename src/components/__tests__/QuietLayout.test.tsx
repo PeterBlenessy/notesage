@@ -7,7 +7,31 @@ import {
   screen,
   registerDefaultHandlers,
 } from '@/test/component-harness';
-import { QuietLayout, type QuietLayoutProps } from '@/components/QuietLayout';
+import {
+  QuietLayout,
+  resolveCreateParent,
+  type QuietLayoutProps,
+} from '@/components/QuietLayout';
+import { useQuietSidebarStore } from '@/stores/quiet-sidebar-store';
+import { useEditorStore } from '@/stores/editor-store';
+import { useWorkspaceStore, type WorkspaceProject } from '@/stores/workspace-store';
+
+// Mock sonner so the Cmd+N toast fallback is observable without rendering
+// the real Toaster component.
+vi.mock('sonner', () => ({
+  toast: {
+    info: vi.fn(),
+    error: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+  },
+  Toaster: () => null,
+}));
+
+// Import after mock so `toast` resolves to the mocked instance.
+import { toast as mockedToast } from 'sonner';
 
 // ---------------------------------------------------------------------------
 // Mock TitleBar — heavy dependency tree, not relevant to placeholder shell
@@ -159,5 +183,246 @@ describe('QuietLayout (placeholder)', () => {
       ) as HTMLElement;
       expect(wrapper.getAttribute('data-cmd-bar-pinned')).toBe('true');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveCreateParent — pure helper
+// ---------------------------------------------------------------------------
+
+describe('resolveCreateParent (#41)', () => {
+  const projects: WorkspaceProject[] = [
+    { path: '/Users/me/Notesage/alpha', fileTree: [] },
+    { path: '/Users/me/Notesage/beta', fileTree: [] },
+  ];
+
+  it('returns the active tab parent dir when the file is inside a project', () => {
+    expect(
+      resolveCreateParent('/Users/me/Notesage/alpha/notes/a.md', projects),
+    ).toBe('/Users/me/Notesage/alpha/notes');
+  });
+
+  it('returns the project root when the active file is at the project root', () => {
+    expect(
+      resolveCreateParent('/Users/me/Notesage/alpha/a.md', projects),
+    ).toBe('/Users/me/Notesage/alpha');
+  });
+
+  it('returns null when there are no projects', () => {
+    expect(resolveCreateParent('/Users/me/Notesage/alpha/a.md', [])).toBeNull();
+  });
+
+  it('returns null when the active file is outside every project', () => {
+    expect(
+      resolveCreateParent('/Users/me/elsewhere/a.md', projects),
+    ).toBeNull();
+  });
+
+  it('returns null when there is no active file', () => {
+    expect(resolveCreateParent(null, projects)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cmd+N keyboard handler (#41)
+// ---------------------------------------------------------------------------
+
+describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
+  beforeEach(() => {
+    registerDefaultHandlers();
+    mockCmdBarPinned = false;
+    vi.mocked(mockedToast.info).mockReset();
+    useQuietSidebarStore.setState({ pendingCreate: null });
+    useWorkspaceStore.setState({
+      explorerFolders: [],
+      projects: [],
+      recentProjects: [],
+      notesTree: [],
+    });
+    useEditorStore.setState({
+      tabs: [],
+      activeTabId: null,
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+  });
+
+  function dispatchCmdN(modifiers: Partial<KeyboardEventInit> = {}) {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+        ...modifiers,
+      }),
+    );
+  }
+
+  it('Cmd+N with an active tab inside a project sets pending create with that parent', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        { path: '/Users/me/Notesage/alpha', fileTree: [] },
+      ],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/Users/me/Notesage/alpha/docs/intro.md',
+          fileName: 'intro.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    dispatchCmdN();
+
+    expect(useQuietSidebarStore.getState().pendingCreate).toEqual({
+      parentDir: '/Users/me/Notesage/alpha/docs',
+    });
+    expect(vi.mocked(mockedToast.info)).not.toHaveBeenCalled();
+  });
+
+  it('Cmd+N with active tab at the project root sets pending at the project root', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        { path: '/Users/me/Notesage/alpha', fileTree: [] },
+      ],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/Users/me/Notesage/alpha/note.md',
+          fileName: 'note.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    dispatchCmdN();
+
+    expect(useQuietSidebarStore.getState().pendingCreate).toEqual({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+  });
+
+  it('Cmd+N with no matching project shows a toast and leaves pending null', () => {
+    useWorkspaceStore.setState({
+      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/tmp/elsewhere.md',
+          fileName: 'elsewhere.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    dispatchCmdN();
+
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+    expect(vi.mocked(mockedToast.info)).toHaveBeenCalledWith(
+      expect.stringMatching(/open a project/i),
+    );
+  });
+
+  it('Cmd+N while typing in an input is a no-op', () => {
+    useWorkspaceStore.setState({
+      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/Users/me/Notesage/alpha/a.md',
+          fileName: 'a.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+    input.remove();
+  });
+
+  it('Cmd+Shift+N is NOT intercepted by the Cmd+N handler (task #42 owns it)', () => {
+    useWorkspaceStore.setState({
+      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/Users/me/Notesage/alpha/a.md',
+          fileName: 'a.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    dispatchCmdN({ shiftKey: true });
+
+    // Pending create NOT set — the Shift modifier routes the event past
+    // our handler so #42's project-create flow can claim it.
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
   });
 });

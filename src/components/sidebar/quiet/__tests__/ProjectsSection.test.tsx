@@ -15,19 +15,21 @@ import { useEditorStore } from '@/stores/editor-store';
 import type { FileEntry } from '@/lib/tauri';
 
 // ----------------------------------------------------------------------------
-// useFileOperations mock — rename wiring (#40) asserts against renamePath.
-// Kept minimal: ProjectsSection only calls `renamePath` from this hook today.
+// useFileOperations mock — rename wiring (#40) asserts against renamePath;
+// inline create (#41) asserts against createFile + openFile.
 // ----------------------------------------------------------------------------
 
 const mockRenamePath = vi.fn();
+const mockCreateFile = vi.fn();
+const mockOpenFile = vi.fn();
 
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: vi.fn(() => ({
-    openFile: vi.fn(),
+    openFile: mockOpenFile,
     openFileAtTag: vi.fn(),
     openFileAtText: vi.fn(),
     saveFile: vi.fn(),
-    createFile: vi.fn(),
+    createFile: mockCreateFile,
     createFolder: vi.fn(),
     renamePath: mockRenamePath,
     deletePath: vi.fn(),
@@ -76,6 +78,10 @@ beforeEach(() => {
   resetStores();
   mockRenamePath.mockReset();
   mockRenamePath.mockResolvedValue(true);
+  mockCreateFile.mockReset();
+  mockCreateFile.mockResolvedValue('/Users/me/Notesage/alpha/new.md');
+  mockOpenFile.mockReset();
+  mockOpenFile.mockResolvedValue(undefined);
 });
 
 // ----------------------------------------------------------------------------
@@ -746,5 +752,162 @@ describe('ProjectsSection — inline rename (#40)', () => {
     );
 
     expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Task #41 — inline create note
+// ----------------------------------------------------------------------------
+
+import { useQuietSidebarStore } from '@/stores/quiet-sidebar-store';
+
+describe('ProjectsSection — inline create (#41)', () => {
+  const alpha: WorkspaceProject = {
+    path: '/Users/me/Notesage/alpha',
+    fileTree: [
+      makeFile('note.md', '/Users/me/Notesage/alpha/note.md'),
+      makeDir('docs', '/Users/me/Notesage/alpha/docs', [
+        makeFile('intro.md', '/Users/me/Notesage/alpha/docs/intro.md'),
+      ]),
+    ],
+  };
+
+  beforeEach(() => {
+    useQuietSidebarStore.setState({ pendingCreate: null });
+  });
+
+  it('renders a per-row + button with the new-note aria label', () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+    expect(
+      screen.getByRole('button', { name: /new note in alpha/i }),
+    ).toBeTruthy();
+  });
+
+  it('per-row + button is visually hidden by default (opacity-0)', () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+    const btn = screen.getByRole('button', { name: /new note in alpha/i });
+    expect(btn.className).toMatch(/opacity-0/);
+    expect(btn.className).toMatch(/group-hover\/row:opacity-100/);
+  });
+
+  it('clicking the per-row + button sets pending create at the project root', () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+    const btn = screen.getByRole('button', { name: /new note in alpha/i });
+    fireEvent.click(btn);
+    expect(useQuietSidebarStore.getState().pendingCreate).toEqual({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+  });
+
+  it('clicking the per-row + button does NOT open the project (stopPropagation)', () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+    const btn = screen.getByRole('button', { name: /new note in alpha/i });
+    fireEvent.click(btn);
+    expect(useEditorStore.getState().tabs).toHaveLength(0);
+  });
+
+  it('auto-expands the project and renders the inline create input when pending is set', async () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Project starts collapsed.
+    const row = screen.getByRole('treeitem', { name: /open project alpha/i });
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    useQuietSidebarStore.getState().setPendingCreate({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+
+    // After state update, project expands and the create input appears.
+    await waitFor(() => {
+      expect(row.getAttribute('aria-expanded')).toBe('true');
+    });
+    const input = (await screen.findByLabelText(/create/i)) as HTMLInputElement;
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('note.md');
+  });
+
+  it('commits by calling createFile with .md appended and then openFile', async () => {
+    const user = userEvent.setup();
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    useQuietSidebarStore.getState().setPendingCreate({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+
+    const input = (await screen.findByLabelText(/create/i)) as HTMLInputElement;
+    await user.type(input, 'draft{Enter}');
+
+    await waitFor(() => {
+      expect(mockCreateFile).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha',
+        'draft.md',
+      );
+    });
+    await waitFor(() => {
+      expect(mockOpenFile).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha/draft.md',
+        'draft.md',
+      );
+    });
+    // Pending signal cleared after commit.
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+  });
+
+  it('preserves an explicit extension when the user types one', async () => {
+    const user = userEvent.setup();
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    useQuietSidebarStore.getState().setPendingCreate({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'notes.txt{Enter}');
+
+    await waitFor(() => {
+      expect(mockCreateFile).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha',
+        'notes.txt',
+      );
+    });
+  });
+
+  it('Escape cancels the inline create — no createFile call', async () => {
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    useQuietSidebarStore.getState().setPendingCreate({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+    const input = await screen.findByLabelText(/create/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/create/i)).toBeNull();
+    });
+    expect(mockCreateFile).not.toHaveBeenCalled();
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+  });
+
+  it('validation rejects slashes in the new name', async () => {
+    const user = userEvent.setup();
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    useQuietSidebarStore.getState().setPendingCreate({
+      parentDir: '/Users/me/Notesage/alpha',
+    });
+    const input = await screen.findByLabelText(/create/i);
+    await user.type(input, 'a/b{Enter}');
+
+    // No filesystem call, input stays open with an error message.
+    expect(mockCreateFile).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/slash/i);
   });
 });

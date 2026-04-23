@@ -74,3 +74,14 @@ export function validateRenameBasename(input: string): string | null {
   if (trimmed.includes("/")) return "Name cannot contain slashes";
   return null;
 }
+
+/**
+ * Validation rule for `SidebarInlineEdit` in create mode (task #41). Same
+ * rules as rename (slashes rejected, empty passes through to auto-cancel).
+ * Kept as a separate export so future create-specific rules (e.g. reject a
+ * name that already exists in the target directory) can land here without
+ * loosening the rename contract.
+ */
+export function validateCreateBasename(input: string): string | null {
+  return validateRenameBasename(input);
+}
