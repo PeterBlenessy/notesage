@@ -1158,11 +1158,22 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/PreviewInvitation.tsx` (or new `src/components/RevertInvitation.tsx`), `src/components/QuietLayout.tsx`, `src/stores/settings-store.ts` |
 | Surfaced from | Project lead's 2026-04-23 trial — discoverability of the toggle is asymmetric |
 
+### #111 — Mockup-vs-implementation audit — inventory + close design drift
+
+| Field | Value |
+| --- | --- |
+| Description | Surfaced 2026-04-23 by the project lead's first trial: the original 100-task plan was derived from the mockups but never had an "audit implementation against mockups" task. Drift accumulated silently — the toolbar (#110), the sidebar, the title bar (legacy chat/agent buttons leaking through, #103), and likely the chat surface (when #102 lands) all diverge from the spec in ways the user notices on first use. **Walk every shipped surface against its canonical mockup**, file each drift item, and either fix inline (small) or split into new numbered tasks (large). Surfaces in scope: QuietSidebar (mockup D / mockup A), TitleBar in QuietLayout (mockup D), DocHead breadcrumb (mockup D), FloatingCommandBar compact + expanded + pinned (mockup A / mockup G / mockup I), AgentOrb + AgentPanel (mockup D — orb at bottom-right, panel popover behaviour), TreeOverlay (mockup D — slide-in animation + tree style), Settings shell (mockup E), Focus mode (mockup F), Permission card inline (mockup H), Quiet chrome fade-on-type behaviour (all mockups). Deliverable: `docs/tasks/qa/2026-04-23-mockup-audit.md` with one row per drift item: `surface | mockup line/element | current behaviour | spec'd behaviour | severity | ticket`. P0 / P1 drifts split into new numbered tasks (#112+); P2 / P3 drifts go to `phase1-followups.md` as F-entries. |
+| Complexity | L |
+| Category | qa |
+| Depends on | #101 (editor), #102 (chat — needed to audit chat surface), #110 (toolbar — same drift class) |
+| Files | `docs/tasks/qa/2026-04-23-mockup-audit.md` (artifact) + new task entries it spawns |
+| Surfaced from | Project lead's 2026-04-23 trial: "the design is in several aspects different than the mockups we created before the implementation" |
+
 ### #110 — Quiet Composer toolbar — wire pill variant + simplified button set 🚧
 
 | Field | Value |
 | --- | --- |
-| Description | Task #49 built `Toolbar.tsx`'s `variant="pill"` mode (rounded shape, backdrop-blur, fade-on-type via `data-quiet-toolbar`) but `Editor.tsx` never opts in — it always renders the legacy `"inline"` variant. Two-part fix: (a) Wire `variant="pill"` through `Editor.tsx` when `settings.uiPreview === "quiet-composer"`. (b) Reduce the visible button set in pill mode to **mockup D's 8-button shape** with the user's revisions: `Heading ▾ | Quote | Task list | sep | Text color ▾ | Highlight ▾ | sep | Callout ▾ | Table | Typography ▾`. Drops Bold/Italic/Underline (⌘B/I/U muscle memory), Link/Code (low priority), bullet/ordered lists (auto-form via input rules), strikethrough/sub/sup/inline code (rare), image/drawing (slash commands), alignment/indent/outdent (Bubble Menu / list keys), undo/redo (⌘Z). Move Dictation (⌘⇧R) and Source-mode toggle to the StatusTray (left edge of the bottom strip). Inline (legacy) variant unchanged — byte-identical to today's flat strip. |
+| Description | Task #49 built `Toolbar.tsx`'s `variant="pill"` mode (rounded shape, backdrop-blur, fade-on-type via `data-quiet-toolbar`) but `Editor.tsx` never opts in — it always renders the legacy `"inline"` variant. Two-part fix: (a) Wire `variant="pill"` through `Editor.tsx` when `settings.uiPreview === "quiet-composer"`. (b) Reduce the visible button set in pill mode to **mockup D's 8-button shape** with the user's revisions: \`Heading ▾ |
 | Complexity | M |
 | Category | frontend |
 | Depends on | #49, #101 |
