@@ -393,7 +393,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | settings panel, `src/stores/settings-store.ts` |
 
-### #36 — `FolderPeek` hover popover
+### #36 — `FolderPeek` hover popover 🚧
 
 | Field | Value |
 | --- | --- |
@@ -413,7 +413,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #36 |
 | Files | `src/components/sidebar/FolderPeek.tsx`, sidebar keyboard handlers |
 
-### #38 — `TreeOverlay` component
+### #38 — `TreeOverlay` component 🚧
 
 | Field | Value |
 | --- | --- |
@@ -483,7 +483,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30, #31 |
 | Files | `src/components/sidebar/QuietSidebar.tsx`, `src/stores/workspace-store.ts` |
 
-### #45 — Right-click context menu (shadcn `context-menu`)
+### #45 — Right-click context menu (shadcn `context-menu`) 🚧
 
 | Field | Value |
 | --- | --- |
@@ -503,7 +503,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #45 |
 | Files | `src-tauri/src/commands/file.rs` (if needed), frontend wiring |
 
-### #47 — Hover preview for files
+### #47 — Hover preview for files 🚧
 
 | Field | Value |
 | --- | --- |
