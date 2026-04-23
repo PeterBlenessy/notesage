@@ -1,4 +1,4 @@
-import { useState, useEffect, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useSkillStore } from "@/stores/skill-store";
 import { CommentListPopover } from "./CommentListPopover";
 import { ChangeListPopover } from "./ChangeListPopover";
+import { StatusTray } from "./StatusTray";
 import type { Comment } from "@/stores/comment-store";
 import type { ExternalChangeEntry } from "@/stores/external-change-store";
 
@@ -484,7 +485,18 @@ export function StatusBar({
   // it owns its own data reads (word count + lastSavedAt) and never touches
   // the rich indicators (comments, git, external changes, etc.).
   if (variant === "quiet") {
-    return <QuietStatusBar editor={editor} onOpenTray={onOpenTray} />;
+    return (
+      <QuietStatusBar
+        editor={editor}
+        onOpenTray={onOpenTray}
+        comments={comments}
+        onSelectComment={onSelectComment}
+        onDelegateComment={onDelegateComment}
+        onDelegateAll={onDelegateAll}
+        canDelegate={canDelegate}
+        onShortcutsOpen={onShortcutsOpen}
+      />
+    );
   }
 
   if (!editor) {
@@ -723,9 +735,21 @@ export function StatusBar({
 function QuietStatusBar({
   editor,
   onOpenTray,
+  comments,
+  onSelectComment,
+  onDelegateComment,
+  onDelegateAll,
+  canDelegate,
+  onShortcutsOpen,
 }: {
   editor: Editor | null;
   onOpenTray?: () => void;
+  comments?: Comment[];
+  onSelectComment?: (c: Comment) => void;
+  onDelegateComment?: (c: Comment) => void;
+  onDelegateAll?: () => void;
+  canDelegate?: boolean;
+  onShortcutsOpen?: () => void;
 }) {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const tab = useEditorStore((s) =>
@@ -746,7 +770,15 @@ function QuietStatusBar({
   const text = editor ? editor.getText() : "";
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
 
+  // StatusTray is owned here — the strip clicks to open; Radix handles
+  // outside-click / Escape to close. `onOpenTray` stays as an optional
+  // secondary notifier so existing tests and any out-of-tree callers that
+  // were already listening keep working.
+  const [trayOpen, setTrayOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+
   const handleActivate = () => {
+    setTrayOpen(true);
     onOpenTray?.();
   };
 
@@ -758,43 +790,58 @@ function QuietStatusBar({
   };
 
   return (
-    <div
-      data-quiet-status
-      role="button"
-      tabIndex={0}
-      aria-label="Open status tray"
-      onClick={handleActivate}
-      onKeyDown={handleKeyDown}
-      className={cn(
-        "h-8 flex items-center gap-3 px-3 text-xs text-muted-foreground",
-        "cursor-pointer select-none",
-        "hover:text-foreground transition-colors",
-        "transition-opacity duration-[340ms] ease-in-out",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
-        "motion-reduce:transition-none",
-      )}
-    >
-      {/* Reserved slot for ambient dots (task #54). Empty today. */}
-      <div data-status-dots className="flex items-center gap-1" />
+    <>
+      <div
+        ref={anchorRef}
+        data-quiet-status
+        role="button"
+        tabIndex={0}
+        aria-label="Open status tray"
+        onClick={handleActivate}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          "h-8 flex items-center gap-3 px-3 text-xs text-muted-foreground",
+          "cursor-pointer select-none",
+          "hover:text-foreground transition-colors",
+          "transition-opacity duration-[340ms] ease-in-out",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
+          "motion-reduce:transition-none",
+        )}
+      >
+        {/* Reserved slot for ambient dots (task #54). Empty today. */}
+        <div data-status-dots className="flex items-center gap-1" />
 
-      <span className="tabular-nums">
-        {fmtNum(words)} {words === 1 ? "word" : "words"}
-      </span>
-
-      <span aria-hidden="true">·</span>
-
-      <QuietSavedLabel lastSavedAt={tab?.lastSavedAt} />
-
-      <span className="ml-auto flex items-center gap-3">
-        <span>
-          <kbd className="font-sans">{"\u2318"}K</kbd> ask
+        <span className="tabular-nums">
+          {fmtNum(words)} {words === 1 ? "word" : "words"}
         </span>
+
         <span aria-hidden="true">·</span>
-        <span>
-          <kbd className="font-sans">{"\u2318"}.</kbd> focus
+
+        <QuietSavedLabel lastSavedAt={tab?.lastSavedAt} />
+
+        <span className="ml-auto flex items-center gap-3">
+          <span>
+            <kbd className="font-sans">{"\u2318"}K</kbd> ask
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            <kbd className="font-sans">{"\u2318"}.</kbd> focus
+          </span>
         </span>
-      </span>
-    </div>
+      </div>
+      <StatusTray
+        open={trayOpen}
+        onOpenChange={setTrayOpen}
+        anchor={anchorRef}
+        wordCount={editor ? words : undefined}
+        comments={comments}
+        onSelectComment={onSelectComment}
+        onDelegateComment={onDelegateComment}
+        onDelegateAll={onDelegateAll}
+        canDelegate={canDelegate}
+        onShortcutsOpen={onShortcutsOpen}
+      />
+    </>
   );
 }
 

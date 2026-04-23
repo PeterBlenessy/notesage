@@ -232,5 +232,32 @@ describe('StatusBar — variants', () => {
 
       expect(container.textContent ?? '').toContain('saved 10s ago');
     });
+
+    // ---------------------------------------------------------------------
+    // Task #53 regression: quiet strip now owns the StatusTray popover.
+    // The tray must not be in the DOM until the strip is activated, and
+    // activating the strip must surface it.
+    // ---------------------------------------------------------------------
+    it('does not mount the StatusTray popover content until the strip is clicked', () => {
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      renderWithProviders(<StatusBar editor={editor} variant="quiet" />);
+      // Radix renders Popover content in a portal — inspect document.body.
+      expect(document.body.textContent ?? '').not.toContain('Completions');
+    });
+
+    it('mounts the StatusTray popover after the strip is clicked', () => {
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const strip = container.querySelector('[data-quiet-status]') as HTMLElement;
+      fireEvent.click(strip);
+      // All four group headers should now be in the DOM (portal).
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Completions');
+      expect(text).toContain('Comments');
+      expect(text).toContain('Session');
+      expect(text).toContain('Help');
+    });
   });
 });
