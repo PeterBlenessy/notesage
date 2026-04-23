@@ -1,29 +1,29 @@
 # Keyboard Shortcuts
 
-All keyboard shortcuts use Cmd (⌘) on macOS.
+All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option · ⇧ Shift · ⌃ Control.
 
 ## File Operations
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Save | `Cmd+S` | Save current file to disk |
-| Open file | `Cmd+O` | Open file picker dialog |
-| Close tab | `Cmd+W` | Close active tab (warns if unsaved) |
-| New note | `Cmd+N` | Open new note dialog |
-| New project | `Cmd+Shift+N` | Open new project dialog |
-| Export as PDF | `Cmd+Shift+E` | Open PDF export dialog (requires active file) |
+| Save | `⌘S` | Save current file to disk |
+| Open file | `⌘O` | Open file picker dialog |
+| Close tab | `⌘W` | Close active tab (warns if unsaved) |
+| New note | `⌘N` | Open new note dialog (Quiet Composer: opens inline-create row in sidebar) |
+| New project | `⌘⇧N` | Open new project dialog (Quiet Composer: opens inline-create row in Projects section) |
+| Export as PDF | `⌘⇧E` | Open PDF export dialog (Layout) — also see App Navigation: in Quiet Composer this chord opens the TreeOverlay instead |
 
 ## Editor Formatting
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Bold | `Cmd+B` | Toggle bold on selection |
-| Italic | `Cmd+I` | Toggle italic on selection |
-| Underline | `Cmd+U` | Toggle underline on selection |
-| Strikethrough | `Cmd+Shift+X` | Toggle strikethrough on selection |
-| Code | `Cmd+E` | Toggle inline code on selection |
+| Bold | `⌘B` | Toggle bold on selection |
+| Italic | `⌘I` | Toggle italic on selection |
+| Underline | `⌘U` | Toggle underline on selection |
+| Strikethrough | `⌘⇧X` | Toggle strikethrough on selection |
+| Code | `⌘E` | Toggle inline code on selection |
 | Indent list item | `Tab` | Nest list item deeper (also available via toolbar button) |
-| Outdent list item | `Shift+Tab` | Lift list item one level (also available via toolbar button) |
+| Outdent list item | `⇧Tab` | Lift list item one level (also available via toolbar button) |
 
 ## Toolbar Controls (Mouse)
 
@@ -42,34 +42,36 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Undo | `Cmd+Z` | Undo last change |
-| Redo | `Cmd+Shift+Z` | Redo last undone change |
-| Find in document | `Cmd+F` | Open find bar (WYSIWYG) or CodeMirror search panel (source mode) |
-| Find and replace | `Cmd+Shift+H` | Open find bar with replace row expanded |
+| Undo | `⌘Z` | Undo last change |
+| Redo | `⌘⇧Z` | Redo last undone change |
+| Find in document | `⌘F` | Open find bar (WYSIWYG) or CodeMirror search panel (source mode) |
+| Find and replace | `⌘⇧H` | Open find bar with replace row expanded |
 
 ## App Settings
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Toggle theme | `Cmd+T` | Switch between light and dark mode |
-| Open settings | `Cmd+,` | Open settings dialog |
+| Toggle theme | `⌘T` | Switch between light and dark mode |
+| Open settings | `⌘,` | Open settings dialog |
 
 ## AI Features
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Toggle chat panel | `Cmd+Shift+C` | Show/hide AI chat sidebar |
-| Toggle agent panel | `Cmd+Shift+A` | Show/hide agent activity panel |
-| Add comment | `Cmd+Shift+M` | Create inline comment on selected text |
-| Accept suggestion | `Cmd+Enter` | Accept AI inline suggestion (when decoration visible) |
-| Reject suggestion | `Cmd+Backspace` | Reject AI inline suggestion (when decoration visible) |
-| Toggle recording | `Cmd+Shift+R` | Start/stop meeting recording |
-| Quick capture | `Cmd+Shift+Space` | Open quick capture window (global shortcut — works even when app is hidden) |
+| Toggle chat panel | `⌘⇧C` | Show/hide AI chat sidebar |
+| Toggle agent panel | `⌘⇧A` | Show/hide agent activity panel |
+| Add comment | `⌘⇧M` | Create inline comment on selected text |
+| Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
+| Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
+| Toggle recording | `⌘⇧R` | Start/stop meeting recording |
+| Quick capture | `⌘⇧Space` | Open quick capture window (global shortcut — works even when app is hidden) |
 
 ## Tab Navigation
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
+| Previous Recent doc | `⌘⇧[` | Cycle backward through MRU document history |
+| Next Recent doc | `⌘⇧]` | Cycle forward through MRU document history |
 | Middle-click tab | Mouse middle button | Close tab |
 
 ## Slash Commands
@@ -96,28 +98,36 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Command palette | `Cmd+K` | Open command palette (when no text selected) |
-| Search files | `Cmd+Shift+F` | Open command palette in file search mode |
-| Toggle sidebar | `Cmd+Shift+L` | Show/hide file sidebar |
-| Focus mode | `Cmd+.` | Toggle distraction-free focus mode |
-| Mention search | `Cmd+2` | Search for @mentions across all files (or type `@` in palette) |
-| Tag search | `Cmd+3` | Search for #tags across all files (or type `#` in palette) |
-| Research search | `Cmd+4` | Search research files across all projects (or type `?` in palette) |
-| Open actions | `Cmd+1` | Open actions dashboard |
-| Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |
-| Keyboard shortcuts | `Cmd+7` | Show keyboard shortcuts reference |
+| Command palette / Command bar | `⌘K` | Legacy: open CommandPalette. Quiet Composer: focus the FloatingCommandBar |
+| Double-tap `⌘` | Within 300 ms | Quiet Composer only — alternate path to summon the command bar (no chord) |
+| Search files | `⌘⇧F` | Legacy: command palette in file-search mode. Quiet Composer: focus command bar (no prefix — type to file-search) |
+| Toggle sidebar | `⌘⇧L` | Show/hide file sidebar |
+| Focus mode | `⌘.` | Toggle distraction-free focus mode |
+| Open actions | `⌘1` / `⌘⇧1` | Legacy: open actions dashboard. Quiet Composer: focus command bar with `!` prefix |
+| Mention search | `⌘2` / `⌘⇧2` | Legacy: command palette in mentions mode. Quiet Composer: focus command bar with `@` prefix |
+| Tag search | `⌘3` / `⌘⇧3` | Legacy: command palette in tags mode. Quiet Composer: focus command bar with `#` prefix |
+| Research search | `⌘4` / `⌘⇧4` | Legacy: command palette in research mode. Quiet Composer: focus command bar with `?` prefix |
+| Commands palette | `⌘⇧P` | Legacy: command palette in `>` (commands) mode. Quiet Composer: focus command bar with `>` prefix |
+| TreeOverlay | `⌘⇧E` | Quiet Composer only — open the slide-in workspace tree overlay (capture-phase preempts the legacy Export-as-PDF binding) |
+| Document outline | `⌘⇧O` | Open document outline (requires active file) |
+| Keyboard shortcuts | `⌘⇧K` | Show keyboard shortcuts reference (`⌘7` is the legacy alias and still works) |
+| Copy path | `⌘⌥C` | Quiet sidebar: copy absolute path of focused row to clipboard. Globally fires the `notesage:copy-path` event |
+| Reveal in Finder | `⌘⌥R` | Quiet sidebar: reveal focused row in Finder. Globally fires the `notesage:reveal-in-finder` event |
+| Open Tauri devtools | `⌘⌥I` | Open the Tauri WebView devtools |
 | Exit focus mode | `Esc` | Exit focus mode (when active) |
 
 ### Command Palette Prefix Modes
 
-Type a prefix character as the first character in the command palette input to switch modes:
+Type a prefix character as the first character in the command palette / command bar input to switch modes:
 
 | Prefix | Mode | Description |
 | --- | --- | --- |
+| `!` | Tasks | Quiet Composer command-bar TaskMode (open / attach a task) |
 | `#` | Tags | Search for #tags across all files |
-| `@` | Mentions | Search for @mentions across all files |
+| `@` | Mentions / References | Search for @mentions (legacy palette) or open ReferenceMode (Quiet Composer) |
 | `>` | Commands | Filter actions (New Note, Toggle Theme, etc.) |
 | `?` | Research | Search research files across all projects |
+| `/` | Skills | Quiet Composer command-bar SkillMode |
 
 Backspacing past a prefix character returns to the default (files + actions) mode.
 
@@ -125,7 +135,15 @@ Backspacing past a prefix character returns to the default (files + actions) mod
 
 No shortcuts are currently planned but not yet implemented.
 
+## Removed Shortcuts
+
+- `⌘⇧P` (Preview HTML) — the inline HTML Preview viewer was removed in the M1.5 round of the UI Refresh PRD (`docs/prds/2026-04-21-ui-refresh.md`, "Preview as HTML"). Native HTML rendering with JavaScript is deferred to a separate PRD. The chord `⌘⇧P` is now bound to the commands-palette `>` prefix (see App Navigation).
+
 ## Implementation Notes
+
+### Owner table (Quiet Composer vs Legacy)
+
+The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Legacy Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the FloatingCommandBar (`useCommandBarShortcuts`), while ⌘⇧E / ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners.
 
 ### Shortcut Priority
 
@@ -137,17 +155,18 @@ When multiple shortcuts could apply, priority is:
 
 ### Conflicts
 
-- Avoid conflicting with system shortcuts (Cmd+Q quit, Cmd+H hide, etc.)
+- Avoid conflicting with system shortcuts (`⌘Q` quit, `⌘H` hide, etc.)
 - Avoid conflicting with browser shortcuts if running in web view
-- Document any intentional overrides
+- Document any intentional overrides (e.g., `⌘⇧E` in Quiet Composer overrides the legacy Export-as-PDF chord)
 
 ### Cross-platform
 
 Currently targeting macOS:
 
-- `Cmd` (⌘) is used for all shortcuts
+- `⌘` (Cmd) is used for all shortcuts
 - Windows/Linux support would use `Ctrl` instead
-- Use `Mod` key in code to support both: `Mod+S` maps to `Cmd+S` on Mac, `Ctrl+S` on Windows
+- Use `Mod` key in code to support both: `Mod+S` maps to `⌘S` on Mac, `Ctrl+S` on Windows
+- Double-tap `⌘` is mac-only — Windows/Linux equivalent (Super, Ctrl) is not yet wired
 
 ### Accessibility
 
