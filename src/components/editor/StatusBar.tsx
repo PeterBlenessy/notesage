@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +29,7 @@ import { useConnectionsStore } from "@/stores/connections-store";
 import { useRecordingStore } from "@/stores/recording-store";
 import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useRoutingStore } from "@/stores/routing-store";
 import { Progress } from "@/components/ui/progress";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -37,7 +44,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useSkillStore } from "@/stores/skill-store";
 import { CommentListPopover } from "./CommentListPopover";
 import { ChangeListPopover } from "./ChangeListPopover";
-import { StatusTray } from "./StatusTray";
+import { StatusTray, type StatusTrayGroup } from "./StatusTray";
 import type { Comment } from "@/stores/comment-store";
 import type { ExternalChangeEntry } from "@/stores/external-change-store";
 
@@ -726,11 +733,162 @@ export function StatusBar({
 //
 // Minimal strip: `<words> · saved Xs ago · ⌘K ask · ⌘. focus`. The whole strip
 // is clickable — clicking (or pressing Enter / Space) triggers `onOpenTray`
-// which will mount the `StatusTray` popover in task #53. A `data-status-dots`
-// slot is reserved for #54 ambient dots but is left empty today. The
-// `data-quiet-status` attribute + pre-wired opacity transition let #50 target
-// this element for fade-on-type without any further refactor.
+// which will mount the `StatusTray` popover in task #53. The `data-status-dots`
+// slot now hosts task #54 ambient dots. The `data-quiet-status` attribute +
+// pre-wired opacity transition let #50 target this element for fade-on-type
+// without any further refactor.
 // ---------------------------------------------------------------------------
+
+/**
+ * Task #54 — semantic ambient dot. Appears inside the quiet strip's
+ * `data-status-dots` slot to surface three always-relevant pieces of
+ * runtime state without opening the tray:
+ *
+ *   green  → Local AI server is the routed interactive/agent provider
+ *            AND `serverStatus === "running"` (links to Session group)
+ *   orange → inline completions are active on this doc (links to
+ *            Completions group)
+ *   red    → voice recording / dictation is live (links to Session group)
+ *
+ * The dot sits inside the strip which already handles click-to-open-tray,
+ * so the dot's `onClick` must `stopPropagation` — otherwise the parent
+ * would ALSO fire and the group-deep-link intent would be lost. Keyboard
+ * users still reach these dots through normal tab order; Enter activates
+ * the button.
+ *
+ * Neutral-palette exception: these are semantic status indicators, in
+ * the same category as the destructive red allowed for errors. Colors
+ * mirror the existing `LocalAIIndicator` / recording-row pattern.
+ */
+function StatusDot({
+  tone,
+  ariaLabel,
+  onActivate,
+}: {
+  tone: "green" | "orange" | "red";
+  ariaLabel: string;
+  onActivate: () => void;
+}) {
+  const color =
+    tone === "green"
+      ? "bg-green-500"
+      : tone === "orange"
+        ? "bg-amber-500"
+        : "bg-red-500";
+
+  const handleClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
+    // Prevent the enclosing strip from ALSO opening the tray without a
+    // group hint. We call onActivate ourselves so the click both opens
+    // the tray AND targets the correct group.
+    e.stopPropagation();
+    onActivate();
+  };
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    // Same reasoning as handleClick — avoid bubbling Enter / Space up
+    // to the strip's keydown handler, which would fire handleActivate
+    // with no group hint.
+    if (e.key === "Enter" || e.key === " ") {
+      e.stopPropagation();
+      e.preventDefault();
+      onActivate();
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        "h-1.5 w-1.5 rounded-full shrink-0 transition-opacity",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
+        "hover:opacity-80",
+        color,
+      )}
+    />
+  );
+}
+
+/**
+ * Compute which ambient dots should render in the quiet strip. Reads from
+ * the relevant stores and applies the scope gate for inline completions so
+ * the orange dot is truthful (it should mirror what the completion hook
+ * would actually do, not just "a provider is routed").
+ */
+function useStatusDotsState(): {
+  showGreen: boolean;
+  showOrange: boolean;
+  showRed: boolean;
+} {
+  const serverStatus = useLocalAIStore((s) => s.serverStatus);
+  const connections = useConnectionsStore((s) => s.connections);
+  const routing = useRoutingStore((s) => s.routing);
+
+  const inlineCompletionsDisabled = useSettingsStore(
+    (s) => s.inlineCompletionsDisabled,
+  );
+  const completionsOnOutOfScope = useSettingsStore(
+    (s) => s.completionsOnOutOfScope,
+  );
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const homeDir = useSettingsStore((s) => s.homeDir);
+
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  const isRecording = useRecordingStore((s) => s.isRecording);
+  const isDictating = useRecordingStore((s) => s.isDictating);
+
+  // --- Green: Local AI server running AND routed to an active use case ---
+  // "Active provider" per task spec = Local AI connection is wired to
+  // `interactive` OR `agent_tasks`. `inline_completion` alone would be too
+  // narrow since the user might have Copilot for completions and Local AI
+  // for chat — we still want the dot to say "Local AI is active".
+  const localAiConnIds = connections
+    .filter((c) => c.provider === "local_ai" && c.authMethod === "local_bundled")
+    .map((c) => c.id);
+  const localAiRoutedActive =
+    localAiConnIds.length > 0 &&
+    (localAiConnIds.includes(routing.interactive?.connectionId ?? "") ||
+      localAiConnIds.includes(routing.agent_tasks?.connectionId ?? ""));
+  const showGreen = localAiRoutedActive && serverStatus === "running";
+
+  // --- Orange: inline completions active AND active tab in scope ---
+  // Mirror the `OutOfScopeCompletionsIndicator` guard so the dot agrees
+  // with what the completion hook actually does.
+  const completionRouted = Boolean(routing.inline_completion?.connectionId);
+  let showOrange = false;
+  if (completionRouted && !inlineCompletionsDisabled) {
+    if (activeTab?.filePath) {
+      const resolvedNotesRoot =
+        notesRootPath && notesRootPath.startsWith("~")
+          ? homeDir
+            ? notesRootPath.replace("~", homeDir)
+            : null
+          : notesRootPath || null;
+      const scope: UriScope = {
+        projectRoots: selectedProjectPaths,
+        notesRootPath: resolvedNotesRoot,
+      };
+      if (completionsOnOutOfScope || isUriInScope(activeTab.filePath, scope)) {
+        showOrange = true;
+      }
+    } else {
+      // No tab open — completions would noop anyway, so don't light up.
+      showOrange = false;
+    }
+  }
+
+  // --- Red: voice recording / live dictation ---
+  const showRed = isRecording || isDictating;
+
+  return { showGreen, showOrange, showRed };
+}
 
 function QuietStatusBar({
   editor,
@@ -775,9 +933,22 @@ function QuietStatusBar({
   // secondary notifier so existing tests and any out-of-tree callers that
   // were already listening keep working.
   const [trayOpen, setTrayOpen] = useState(false);
+  // Remembers which group a click requested — set by dot activations so
+  // the tray can deep-link into the right section. Cleared when the tray
+  // closes so a subsequent "blank" strip click doesn't re-target.
+  const [initialGroup, setInitialGroup] = useState<StatusTrayGroup | undefined>(
+    undefined,
+  );
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
   const handleActivate = () => {
+    setInitialGroup(undefined);
+    setTrayOpen(true);
+    onOpenTray?.();
+  };
+
+  const openTrayForGroup = (group: StatusTrayGroup) => {
+    setInitialGroup(group);
     setTrayOpen(true);
     onOpenTray?.();
   };
@@ -788,6 +959,16 @@ function QuietStatusBar({
       handleActivate();
     }
   };
+
+  // Reset the group hint whenever the tray closes so the next strip-level
+  // click (without a dot) doesn't accidentally re-scroll to the previous
+  // dot's group.
+  const handleOpenChange = (next: boolean) => {
+    setTrayOpen(next);
+    if (!next) setInitialGroup(undefined);
+  };
+
+  const { showGreen, showOrange, showRed } = useStatusDotsState();
 
   return (
     <>
@@ -808,8 +989,32 @@ function QuietStatusBar({
           "motion-reduce:transition-none",
         )}
       >
-        {/* Reserved slot for ambient dots (task #54). Empty today. */}
-        <div data-status-dots className="flex items-center gap-1" />
+        {/* Ambient dots (task #54). Each dot is a button, clickable to open
+            the tray scrolled to its owning group. stopPropagation in
+            StatusDot keeps the strip's own click from firing twice. */}
+        <div data-status-dots className="flex items-center gap-1">
+          {showGreen && (
+            <StatusDot
+              tone="green"
+              ariaLabel="Local AI running — opens Session group"
+              onActivate={() => openTrayForGroup("session")}
+            />
+          )}
+          {showOrange && (
+            <StatusDot
+              tone="orange"
+              ariaLabel="Inline completions active — opens Completions group"
+              onActivate={() => openTrayForGroup("completions")}
+            />
+          )}
+          {showRed && (
+            <StatusDot
+              tone="red"
+              ariaLabel="Recording active — opens Session group"
+              onActivate={() => openTrayForGroup("session")}
+            />
+          )}
+        </div>
 
         <span className="tabular-nums">
           {fmtNum(words)} {words === 1 ? "word" : "words"}
@@ -831,7 +1036,7 @@ function QuietStatusBar({
       </div>
       <StatusTray
         open={trayOpen}
-        onOpenChange={setTrayOpen}
+        onOpenChange={handleOpenChange}
         anchor={anchorRef}
         wordCount={editor ? words : undefined}
         comments={comments}
@@ -840,6 +1045,7 @@ function QuietStatusBar({
         onDelegateAll={onDelegateAll}
         canDelegate={canDelegate}
         onShortcutsOpen={onShortcutsOpen}
+        initialExpandedGroup={initialGroup}
       />
     </>
   );

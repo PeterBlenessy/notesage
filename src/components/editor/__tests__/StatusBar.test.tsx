@@ -12,6 +12,13 @@ import { createMockEditor } from '@/test/mock-editor';
 import type { Editor } from '@tiptap/core';
 import { StatusBar } from '@/components/editor/StatusBar';
 import { useEditorStore } from '@/stores/editor-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import { useRoutingStore } from '@/stores/routing-store';
+import { useRecordingStore } from '@/stores/recording-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useChatStore } from '@/stores/chat-store';
+import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
 // Store reset + helpers
@@ -28,6 +35,54 @@ function resetEditorStore() {
     persistedTabs: [],
     persistedActiveFilePath: null,
   });
+}
+
+/**
+ * Reset every store read by the ambient dots (task #54) so each test has
+ * a deterministic starting state. Mirrors the reset helpers in
+ * `StatusTray.test.tsx` but also resets the chat-store to "no projects
+ * selected" and the settings-store to "no completionsOnOutOfScope" etc.
+ */
+function resetAmbientDotStores() {
+  useLocalAIStore.setState({
+    serverStatus: 'stopped',
+    activeModelId: null,
+    models: [],
+  });
+  useConnectionsStore.setState({ connections: [] });
+  useRoutingStore.setState({
+    routing: {
+      interactive: { connectionId: null },
+      agent_tasks: { connectionId: null },
+      inline_completion: { connectionId: null },
+    },
+  });
+  useRecordingStore.setState({
+    isRecording: false,
+    isDictating: false,
+  });
+  useSettingsStore.setState({
+    inlineCompletionsDisabled: false,
+    completionsOnOutOfScope: false,
+    notesRootPath: '/Users/peter/Notesage',
+    homeDir: '/Users/peter',
+  });
+  // Clear any active conversation so `selectProjectPaths` returns `[]`.
+  useChatStore.setState({ conversations: [], activeConversationId: null });
+}
+
+function addConnection(
+  partial: Partial<Connection> & Pick<Connection, 'id' | 'provider' | 'authMethod' | 'label'>,
+) {
+  const conn: Connection = {
+    status: 'connected',
+    credentials: { type: 'local_bundled' } as Connection['credentials'],
+    capabilities: ['inline_completion'],
+    createdAt: Date.now(),
+    ...partial,
+  } as Connection;
+  useConnectionsStore.setState((s) => ({ connections: [...s.connections, conn] }));
+  return conn;
 }
 
 function openTab(path: string, fileName: string, lastSavedAt?: number) {
@@ -66,6 +121,10 @@ describe('StatusBar — variants', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     resetEditorStore();
+    // jsdom doesn't implement scrollIntoView; Radix's focus-scope may
+    // trigger it when the tray opens. Stub to avoid uncaught errors in
+    // tests that exercise the StatusTray integration.
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
@@ -258,6 +317,230 @@ describe('StatusBar — variants', () => {
       expect(text).toContain('Comments');
       expect(text).toContain('Session');
       expect(text).toContain('Help');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Ambient dots (task #54)
+  // -------------------------------------------------------------------------
+  describe('variant="quiet" — ambient dots', () => {
+    beforeEach(() => {
+      resetAmbientDotStores();
+    });
+
+    it('renders no dots when Local AI is stopped, completions are off, and not recording', () => {
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      expect(slot).toBeTruthy();
+      // The dot slot is present but empty — no ambient signals to surface.
+      expect(slot.querySelectorAll('button').length).toBe(0);
+    });
+
+    it('renders the green dot when Local AI is running AND routed to interactive', () => {
+      const localAi = addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: localAi.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      useLocalAIStore.setState({ serverStatus: 'running' });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      const dots = slot.querySelectorAll('button');
+      expect(dots.length).toBe(1);
+      // aria-label describes both the state AND the target group.
+      expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
+      expect(dots[0].getAttribute('aria-label')).toContain('Session');
+    });
+
+    it('does NOT render the green dot when Local AI is routed but not running', () => {
+      const localAi = addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: localAi.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      useLocalAIStore.setState({ serverStatus: 'starting' });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      expect(slot.querySelectorAll('button').length).toBe(0);
+    });
+
+    it('renders the orange dot when inline completions routed AND active tab is in scope', () => {
+      const ollama = addConnection({
+        id: 'c-ollama',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: ollama.id },
+        },
+      });
+      // Open a tab inside the notes root so `isUriInScope` returns true.
+      openTab('/Users/peter/Notesage/note.md', 'note.md');
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      const dots = slot.querySelectorAll('button');
+      expect(dots.length).toBe(1);
+      expect(dots[0].getAttribute('aria-label')).toContain('completions active');
+      expect(dots[0].getAttribute('aria-label')).toContain('Completions');
+    });
+
+    it('does NOT render the orange dot when the active tab is out of scope', () => {
+      const ollama = addConnection({
+        id: 'c-ollama',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: ollama.id },
+        },
+      });
+      // Tab is outside both notes root and any selected project — out of scope.
+      openTab('/etc/hosts', 'hosts');
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      expect(slot.querySelectorAll('button').length).toBe(0);
+    });
+
+    it('renders the red dot when recording-store.isRecording is true', () => {
+      useRecordingStore.setState({ isRecording: true });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
+      const dots = slot.querySelectorAll('button');
+      expect(dots.length).toBe(1);
+      expect(dots[0].getAttribute('aria-label')).toContain('Recording active');
+      expect(dots[0].getAttribute('aria-label')).toContain('Session');
+    });
+
+    it('clicking the green dot opens the tray scrolled to the Session group', () => {
+      const localAi = addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: localAi.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      useLocalAIStore.setState({ serverStatus: 'running' });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      // Tray should not be in the DOM before the click.
+      expect(document.body.textContent ?? '').not.toContain('Completions');
+      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
+      fireEvent.click(dot);
+      // Tray is now mounted — verified via all four group headings in the portal.
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Completions');
+      expect(text).toContain('Session');
+    });
+
+    it('clicking a dot does not also trigger the strip click (no double-fire of onOpenTray)', () => {
+      useRecordingStore.setState({ isRecording: true });
+      const onOpenTray = vi.fn();
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" onOpenTray={onOpenTray} />,
+      );
+      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
+      fireEvent.click(dot);
+      // A bubbling click would fire onOpenTray twice (once from the dot, once
+      // from the strip). stopPropagation in StatusDot must prevent that.
+      expect(onOpenTray).toHaveBeenCalledTimes(1);
+    });
+
+    it('dot aria-labels are descriptive (state + target group)', () => {
+      // Turn on all three signals so every dot renders at once.
+      const localAi = addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      const ollama = addConnection({
+        id: 'c-ollama',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: localAi.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: ollama.id },
+        },
+      });
+      useLocalAIStore.setState({ serverStatus: 'running' });
+      useRecordingStore.setState({ isRecording: true });
+      openTab('/Users/peter/Notesage/note.md', 'note.md');
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const dots = Array.from(
+        container.querySelectorAll('[data-status-dots] button'),
+      );
+      const labels = dots.map((d) => d.getAttribute('aria-label') ?? '');
+      // All three dots are present with descriptive labels.
+      expect(labels.length).toBe(3);
+      expect(labels.some((l) => l.includes('Local AI running'))).toBe(true);
+      expect(labels.some((l) => l.includes('completions active'))).toBe(true);
+      expect(labels.some((l) => l.includes('Recording active'))).toBe(true);
     });
   });
 });

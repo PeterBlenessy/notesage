@@ -73,6 +73,14 @@ function readingTimeMinutes(words: number): number {
 // Props
 // ---------------------------------------------------------------------------
 
+/**
+ * Group identifiers used by the task #54 ambient dots to request that a
+ * specific section of the tray be scrolled into view + focused when the
+ * popover opens. These strings are stable contract between the dots in
+ * `QuietStatusBar` and the tray layout below.
+ */
+export type StatusTrayGroup = "completions" | "comments" | "session" | "help";
+
 export interface StatusTrayProps {
   /** Controlled open state. */
   open: boolean;
@@ -97,6 +105,18 @@ export interface StatusTrayProps {
 
   /** Opens the ⌘7 keyboard-shortcuts dialog from the Help group. */
   onShortcutsOpen?: () => void;
+
+  /**
+   * When provided on open, scroll the named group into view and give it
+   * programmatic focus so screen readers announce the section. Used by
+   * the task #54 ambient dots to deep-link into their owning group
+   * (e.g. clicking the red recording dot jumps to Session).
+   *
+   * Only read when `open` transitions from false → true. Subsequent
+   * changes while the tray is already open are ignored so user scrolling
+   * inside the tray is never yanked back.
+   */
+  initialExpandedGroup?: StatusTrayGroup;
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +443,7 @@ export function StatusTray({
   onDelegateAll,
   canDelegate = false,
   onShortcutsOpen,
+  initialExpandedGroup,
 }: StatusTrayProps) {
   // Pass-through handlers for the Comments "View open comments" row. We fire
   // a DOM CustomEvent so the host (StatusBar / Layout) can mount the existing
@@ -455,6 +476,46 @@ export function StatusTray({
     onShortcutsOpen?.();
   }, [onOpenChange, onShortcutsOpen]);
 
+  // Per-group refs used to deep-link into a section when a task #54 dot is
+  // clicked. Each group wrapper holds a `tabIndex={-1}` so `.focus()` works
+  // without trapping Tab order; scrollIntoView keeps the section anchored
+  // in the 300px popover when the tray is tall enough to overflow.
+  const completionsRef = React.useRef<HTMLDivElement | null>(null);
+  const commentsRef = React.useRef<HTMLDivElement | null>(null);
+  const sessionRef = React.useRef<HTMLDivElement | null>(null);
+  const helpRef = React.useRef<HTMLDivElement | null>(null);
+
+  /** Resolve the group ref by id. Safe to call before mount — returns null. */
+  const resolveGroup = React.useCallback(
+    (group?: StatusTrayGroup): HTMLDivElement | null => {
+      if (!group) return null;
+      if (group === "completions") return completionsRef.current;
+      if (group === "comments") return commentsRef.current;
+      if (group === "session") return sessionRef.current;
+      if (group === "help") return helpRef.current;
+      return null;
+    },
+    [],
+  );
+
+  // `onOpenAutoFocus` runs after Radix has mounted the popover content.
+  // When a dot has pre-selected a group, intercept the default autofocus
+  // (which would land on the first focusable descendant — typically the
+  // Completions "Off" radio) and steer focus + scroll to the requested
+  // group root instead. Without this, Radix would win the focus race and
+  // any scrollIntoView we did in a later tick would be overridden.
+  const handleOpenAutoFocus = React.useCallback(
+    (e: Event) => {
+      if (!initialExpandedGroup) return;
+      const target = resolveGroup(initialExpandedGroup);
+      if (!target) return;
+      e.preventDefault();
+      target.scrollIntoView({ block: "nearest" });
+      target.focus({ preventScroll: true });
+    },
+    [initialExpandedGroup, resolveGroup],
+  );
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverAnchor
@@ -465,25 +526,27 @@ export function StatusTray({
         align="start"
         sideOffset={6}
         className="w-[300px] p-0"
+        onOpenAutoFocus={handleOpenAutoFocus}
         // The anchor is the whole status strip; clicking the strip is what
-        // opens us, so `onOpenAutoFocus` defaulting to the first focusable
-        // element is fine — users landing here via keyboard get focus on the
-        // first interactive control.
+        // opens us. When no `initialExpandedGroup` is set, Radix's default
+        // autofocus runs (first focusable control). When a dot requested a
+        // group, `handleOpenAutoFocus` preventDefaults Radix and steers
+        // focus + scroll to that group root instead.
       >
         <div className="divide-y divide-border">
-          <div className="p-3">
+          <div ref={completionsRef} tabIndex={-1} className="p-3 focus:outline-none">
             <CompletionsGroup />
           </div>
-          <div className="p-3">
+          <div ref={commentsRef} tabIndex={-1} className="p-3 focus:outline-none">
             <CommentsGroup
               comments={comments}
               onOpenCommentList={openCommentList}
             />
           </div>
-          <div className="p-3">
+          <div ref={sessionRef} tabIndex={-1} className="p-3 focus:outline-none">
             <SessionGroup />
           </div>
-          <div className="p-3">
+          <div ref={helpRef} tabIndex={-1} className="p-3 focus:outline-none">
             <HelpGroup wordCount={wordCount} onShortcutsOpen={handleShortcuts} />
           </div>
         </div>

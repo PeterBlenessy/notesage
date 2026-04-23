@@ -80,6 +80,9 @@ describe('StatusTray — task #53', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     resetStores();
+    // jsdom doesn't implement scrollIntoView — stub so the task #54
+    // deep-link effect doesn't throw under test.
+    Element.prototype.scrollIntoView = vi.fn();
   });
 
   it('does not render popover content when open=false', () => {
@@ -344,5 +347,106 @@ describe('StatusTray — task #53', () => {
     // word "Running" or "Stopped" after the provider name. With no
     // connection, nothing like "Local AI · Stopped" should render.
     expect(document.body.textContent ?? '').not.toMatch(/Local AI\s*·/);
+  });
+
+  // -------------------------------------------------------------------------
+  // initialExpandedGroup (task #54)
+  // -------------------------------------------------------------------------
+
+  it('focuses the requested group root when opened with initialExpandedGroup="completions"', async () => {
+    // Open host starting closed, then flip to open with the prop set. The
+    // tray only reacts on the false → true transition, so this mirrors how
+    // the dots in `QuietStatusBar` will drive it.
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div>
+          <button data-testid="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <TrayHost
+            open={open}
+            onOpenChange={setOpen}
+            initialExpandedGroup="completions"
+          />
+        </div>
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const opener = document.querySelector('[data-testid="opener"]') as HTMLElement;
+
+    // The effect schedules focus/scroll via setTimeout(0) so Radix can
+    // mount the popover first. We wait for both the open transition AND
+    // the timer to flush.
+    await act(async () => {
+      fireEvent.click(opener);
+      // Flush the microtask queue + setTimeout(0).
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // The "Completions" label lives inside the targeted group root, so the
+    // currently focused element's subtree should contain that text.
+    const focused = document.activeElement as HTMLElement | null;
+    expect(focused).toBeTruthy();
+    expect(focused?.textContent ?? '').toContain('Completions');
+  });
+
+  it('calls scrollIntoView on the requested group when opened with initialExpandedGroup', async () => {
+    const spy = vi.fn();
+    Element.prototype.scrollIntoView = spy;
+
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div>
+          <button data-testid="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <TrayHost
+            open={open}
+            onOpenChange={setOpen}
+            initialExpandedGroup="session"
+          />
+        </div>
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const opener = document.querySelector('[data-testid="opener"]') as HTMLElement;
+
+    await act(async () => {
+      fireEvent.click(opener);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // The effect calls scrollIntoView on the resolved group ref.
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('does not scroll when opened without initialExpandedGroup', async () => {
+    const spy = vi.fn();
+    Element.prototype.scrollIntoView = spy;
+
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div>
+          <button data-testid="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <TrayHost open={open} onOpenChange={setOpen} />
+        </div>
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const opener = document.querySelector('[data-testid="opener"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(opener);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    expect(spy).not.toHaveBeenCalled();
   });
 });
