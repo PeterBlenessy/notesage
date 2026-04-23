@@ -667,7 +667,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.4 Settings shell (6 tasks)
 
-### #63 — `SettingsShell` + primitives (`SettingsRow`, `SettingsGroup`)
+### #63 — `SettingsShell` + primitives (`SettingsRow`, `SettingsGroup`) ✅
 
 | Field | Value |
 | --- | --- |
@@ -677,7 +677,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/settings/v2/SettingsShell.tsx`, `SettingsRow.tsx`, `SettingsGroup.tsx` |
 
-### #64 — Settings search
+### #64 — Settings search ✅
 
 | Field | Value |
 | --- | --- |
@@ -687,7 +687,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #63 |
 | Files | `src/components/settings/v2/SettingsSearch.tsx` |
 
-### #65 — Migrate Appearance panel
+### #65 — Migrate Appearance panel ✅
 
 | Field | Value |
 | --- | --- |
@@ -697,7 +697,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #63, #3, #4, #51 |
 | Files | `src/components/settings/v2/AppearanceSettings.tsx` |
 
-### #66 — Migrate General + Editor + Skills + Projects + Privacy + Advanced + About panels
+### #66 — Migrate General + Editor + Skills + Projects + Privacy + Advanced + About panels ✅
 
 | Field | Value |
 | --- | --- |
@@ -707,7 +707,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #63 |
 | Files | `src/components/settings/v2/*.tsx` |
 
-### #67 — Migrate AI & Agents panel (dense — per Mockup K)
+### #67 — Migrate AI & Agents panel (dense — per Mockup K) ✅
 
 | Field | Value |
 | --- | --- |

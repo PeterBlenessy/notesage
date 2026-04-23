@@ -4,8 +4,8 @@ Pointer document for continuing `docs/tasks/2026-04-21-ui-refresh-phase1-tasks.m
 
 ## Status as of 2026-04-23
 
-- **Tasks done (62/100)**: #1-#29 except #22, plus Batch G1 (#30, #39, #48, #49), G2 (#31, #32, #33, #34), G3 (#36, #38, #45, #47), G4 (#37, #43, #44, #46), G5 (#40, #41, #42), G6 (#50, #52, #55, #57), G7 (#35, #51, #53, #54, #56), G8 (#58, #59, #60, #61, #62). All of M1.1 Foundation (8/8), all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser, and ALL of M1.3 Sidebar + Chrome (33/33). Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings. **Next up: M1.4 Settings shell (#63-#68, 6 tasks).**
-- **Tests passing**: 3825/3825 frontend, typecheck clean. (Rust unchanged this batch.)
+- **Tasks done (67/100)**: #1-#29 except #22, plus Batch G1 (#30, #39, #48, #49), G2 (#31, #32, #33, #34), G3 (#36, #38, #45, #47), G4 (#37, #43, #44, #46), G5 (#40, #41, #42), G6 (#50, #52, #55, #57), G7 (#35, #51, #53, #54, #56), G8 (#58, #59, #60, #61, #62), G9 (#63), G10 (#64, #65, #66, #67). All of M1.1 Foundation (8/8), all of M1.2 Composer + Orb (21/21), all of M1.3 Sidebar + Chrome (33/33), plus #22 backend skill parser. M1.4 Settings shell: 5/6 done — only #68 remains (blocked on #71 in M1.5). Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings. **Next up: M1.5 Removals + external-change rewire (#69-#74, 6 tasks), then back to #68.**
+- **Tests passing**: 3887/3887 frontend, typecheck clean. (Rust unchanged this batch.)
 - **Task status marks**: 🚧 on launch, ✅ on merge. Both via `git apply --cached` to bypass the markdown formatter. Expected by user; see `feedback_task_status_marks.md` in auto-memory.
 - **Known follow-ups tracked in** `2026-04-21-ui-refresh-phase1-followups.md` (F1 pinned-delete cleanup; F2 tag-seed wiring).
 - **Workflow**: manual worktrees + parent-commits — see `.claude/skills/implement-tasks/SKILL.md` (validated 2026-04-22). Ignore `Agent isolation: "worktree"` for this codebase.
