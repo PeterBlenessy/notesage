@@ -1162,14 +1162,14 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | Surfaced 2026-04-23 by the project lead's first trial: the original 100-task plan was derived from the mockups but never had an "audit implementation against mockups" task. Drift accumulated silently — the toolbar (#110), the sidebar, the title bar (legacy chat/agent buttons leaking through, #103), and likely the chat surface (when #102 lands) all diverge from the spec in ways the user notices on first use. **Walk every shipped surface against its canonical mockup**, file each drift item, and either fix inline (small) or split into new numbered tasks (large). Surfaces in scope: QuietSidebar (mockup D / mockup A), TitleBar in QuietLayout (mockup D), DocHead breadcrumb (mockup D), FloatingCommandBar compact + expanded + pinned (mockup A / mockup G / mockup I), AgentOrb + AgentPanel (mockup D — orb at bottom-right, panel popover behaviour), TreeOverlay (mockup D — slide-in animation + tree style), Settings shell (mockup E), Focus mode (mockup F), Permission card inline (mockup H), Quiet chrome fade-on-type behaviour (all mockups). Deliverable: `docs/tasks/qa/2026-04-23-mockup-audit.md` with one row per drift item: `surface | mockup line/element | current behaviour | spec'd behaviour | severity | ticket`. P0 / P1 drifts split into new numbered tasks (#112+); P2 / P3 drifts go to `phase1-followups.md` as F-entries. |
+| Description | Surfaced 2026-04-23 by the project lead's first trial: the original 100-task plan was derived from the mockups but never had an "audit implementation against mockups" task. Drift accumulated silently — the toolbar (#110), the sidebar, the title bar (legacy chat/agent buttons leaking through, #103), and likely the chat surface (when #102 lands) all diverge from the spec in ways the user notices on first use. **Walk every shipped surface against its canonical mockup**, file each drift item, and either fix inline (small) or split into new numbered tasks (large). Surfaces in scope: QuietSidebar (mockup D / mockup A), TitleBar in QuietLayout (mockup D), DocHead breadcrumb (mockup D), FloatingCommandBar compact + expanded + pinned (mockup A / mockup G / mockup I), AgentOrb + AgentPanel (mockup D — orb at bottom-right, panel popover behaviour), TreeOverlay (mockup D — slide-in animation + tree style), Settings shell (mockup E), Focus mode (mockup F), Permission card inline (mockup H), Quiet chrome fade-on-type behaviour (all mockups). Deliverable: `docs/tasks/qa/2026-04-23-mockup-audit.md` with one row per drift item: \`surface |
 | Complexity | L |
 | Category | qa |
 | Depends on | #101 (editor), #102 (chat — needed to audit chat surface), #110 (toolbar — same drift class) |
 | Files | `docs/tasks/qa/2026-04-23-mockup-audit.md` (artifact) + new task entries it spawns |
 | Surfaced from | Project lead's 2026-04-23 trial: "the design is in several aspects different than the mockups we created before the implementation" |
 
-### #110 — Quiet Composer toolbar — wire pill variant + simplified button set 🚧
+### #110 — Quiet Composer toolbar — wire pill variant + simplified button set ✅
 
 | Field | Value |
 | --- | --- |
