@@ -437,8 +437,8 @@ function App() {
       return;
     }
 
-    const { tabs, activeTabId } = useEditorStore.getState();
-    const activeTab = tabs.find((t) => t.id === activeTabId);
+    const { openDocuments, activeTabId } = useEditorStore.getState();
+    const activeTab = openDocuments.find((t) => t.id === activeTabId);
     if (!activeTab || activeTab.filePath !== filePath) {
       await openFile(filePath, fileName);
     }
@@ -670,8 +670,8 @@ function App() {
               const filePath = action.file_path;
               const fileName = filePath.split("/").pop() ?? filePath;
 
-              const { tabs, activeTabId } = useEditorStore.getState();
-              const alreadyActive = tabs.some((t) => t.filePath === filePath && t.id === activeTabId);
+              const { openDocuments, activeTabId } = useEditorStore.getState();
+              const alreadyActive = openDocuments.some((t) => t.filePath === filePath && t.id === activeTabId);
 
               (async () => {
                 if (!alreadyActive) {

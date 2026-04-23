@@ -244,7 +244,7 @@ export function AdvancedSettings() {
                       connections: redactedConnections,
                       routing,
                       logLevel,
-                      tabCount: useEditorStore.getState().tabs.length,
+                      tabCount: useEditorStore.getState().openDocuments.length,
                       localAI: {
                         activeModelId: localAIState.activeModelId,
                         binaryStatus: localAIState.binaryStatus,

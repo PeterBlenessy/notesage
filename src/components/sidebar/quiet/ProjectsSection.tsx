@@ -189,7 +189,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   const activeTabPath = useEditorStore((s) => {
     const id = s.activeTabId;
     if (!id) return null;
-    const tab = s.tabs.find((t) => t.id === id);
+    const tab = s.openDocuments.find((t) => t.id === id);
     return tab?.filePath ?? null;
   });
 

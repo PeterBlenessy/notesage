@@ -80,13 +80,13 @@ function resetAll() {
   });
   useProjectMetadataStore.setState({ metadataMap: {} });
   useWorkspaceStore.setState({ projects: [], explorerFolders: [] });
-  useEditorStore.setState({ tabs: [], activeTabId: null });
+  useEditorStore.setState({ openDocuments: [], activeTabId: null });
   useSettingsStore.setState({ notesRootPath: '', homeDir: null });
 }
 
 function seedActiveTab(filePath: string, fileName: string) {
   useEditorStore.setState({
-    tabs: [
+    openDocuments: [
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { id: 'tab-1', filePath, fileName, content: '', originalContent: '', dirty: false } as any,
     ],

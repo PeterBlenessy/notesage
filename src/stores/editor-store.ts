@@ -60,7 +60,11 @@ const MAX_RECENT_FILES = 5;
 const MAX_SCROLL_POSITIONS = 200;
 
 interface EditorStore {
-  tabs: Tab[];
+  /** All open documents. Renamed from `tabs` in persist version 1 as part of
+   *  the UI Refresh project — semantically the same set, but no longer bound to
+   *  a visible tab strip. Keyboard navigation (⌘⇧[/]) still cycles through
+   *  this array. */
+  openDocuments: Tab[];
   activeTabId: string | null;
   recentFiles: RecentFile[];
   /** Scroll position ratios (0–1) keyed by file path, persisted across restarts. */
@@ -114,7 +118,7 @@ interface EditorStore {
 export const useEditorStore = create<EditorStore>()(
   persist(
     (set) => ({
-      tabs: [],
+      openDocuments: [],
       activeTabId: null,
       recentFiles: [],
       scrollPositions: {},
@@ -130,7 +134,7 @@ export const useEditorStore = create<EditorStore>()(
           const newRecent = [{ path: filePath, name: fileName }, ...filteredRecent].slice(0, MAX_RECENT_FILES);
 
           // Check if tab already exists
-          const existingTab = state.tabs.find((tab) => tab.filePath === filePath);
+          const existingTab = state.openDocuments.find((tab) => tab.filePath === filePath);
 
           if (existingTab) {
             // Sync persisted state + set scroll targets atomically with tab activation
@@ -139,11 +143,11 @@ export const useEditorStore = create<EditorStore>()(
               ? state.persistedTabs
               : [...state.persistedTabs, { filePath, fileName }];
             return {
-              tabs: needsTabUpdate
-                ? state.tabs.map((tab) => tab.id === existingTab.id
+              openDocuments: needsTabUpdate
+                ? state.openDocuments.map((tab) => tab.id === existingTab.id
                   ? { ...tab, ...(scrollToTag !== undefined && { scrollToTag }), ...(scrollToText !== undefined && { scrollToText }) }
                   : tab)
-                : state.tabs,
+                : state.openDocuments,
               activeTabId: existingTab.id,
               recentFiles: newRecent,
               persistedTabs: newPersistedTabs,
@@ -169,7 +173,7 @@ export const useEditorStore = create<EditorStore>()(
           const newPersistedTabs = [...state.persistedTabs.filter((p) => p.filePath !== filePath), { filePath, fileName }];
 
           return {
-            tabs: [...state.tabs, newTab],
+            openDocuments: [...state.openDocuments, newTab],
             activeTabId: newTab.id,
             recentFiles: newRecent,
             persistedTabs: newPersistedTabs,
@@ -180,7 +184,7 @@ export const useEditorStore = create<EditorStore>()(
 
       openTabPlaceholder: (filePath, fileName, fileType) => {
         set((state) => {
-          if (state.tabs.some((t) => t.filePath === filePath)) return state;
+          if (state.openDocuments.some((t) => t.filePath === filePath)) return state;
           const newTab: Tab = {
             id: crypto.randomUUID(),
             filePath,
@@ -191,13 +195,13 @@ export const useEditorStore = create<EditorStore>()(
             frontmatter: null,
             fileType: fileType ?? "markdown",
           };
-          return { tabs: [...state.tabs, newTab] };
+          return { openDocuments: [...state.openDocuments, newTab] };
         });
       },
 
       loadTabContent: (tabId, content, frontmatter) => {
         set((state) => ({
-          tabs: state.tabs.map((t) =>
+          openDocuments: state.openDocuments.map((t) =>
             t.id === tabId ? { ...t, content, contentLoaded: true, frontmatter: frontmatter ?? t.frontmatter, lastSavedContent: content } : t
           ),
         }));
@@ -205,7 +209,7 @@ export const useEditorStore = create<EditorStore>()(
 
       setTabLoadError: (tabId, error) => {
         set((state) => ({
-          tabs: state.tabs.map((t) =>
+          openDocuments: state.openDocuments.map((t) =>
             t.id === tabId ? { ...t, contentLoaded: true, loadError: error } : t
           ),
         }));
@@ -213,14 +217,14 @@ export const useEditorStore = create<EditorStore>()(
 
       closeTab: (tabId: string) => {
         set((state) => {
-          const closedTab = state.tabs.find((tab) => tab.id === tabId);
-          const newTabs = state.tabs.filter((tab) => tab.id !== tabId);
+          const closedTab = state.openDocuments.find((tab) => tab.id === tabId);
+          const newTabs = state.openDocuments.filter((tab) => tab.id !== tabId);
           let newActiveTabId = state.activeTabId;
 
           // If closing active tab, switch to another
           if (state.activeTabId === tabId) {
             if (newTabs.length > 0) {
-              const closedIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+              const closedIndex = state.openDocuments.findIndex((tab) => tab.id === tabId);
               const newIndex = Math.max(0, closedIndex - 1);
               newActiveTabId = newTabs[newIndex]?.id || null;
             } else {
@@ -234,7 +238,7 @@ export const useEditorStore = create<EditorStore>()(
           const activeTab = newActiveTabId ? newTabs.find((t) => t.id === newActiveTabId) : null;
 
           return {
-            tabs: newTabs,
+            openDocuments: newTabs,
             activeTabId: newActiveTabId,
             persistedTabs: newPersistedTabs,
             persistedActiveFilePath: activeTab?.filePath ?? null,
@@ -244,14 +248,14 @@ export const useEditorStore = create<EditorStore>()(
 
       setActiveTab: (tabId: string) => {
         set((state) => {
-          const tab = state.tabs.find((t) => t.id === tabId);
+          const tab = state.openDocuments.find((t) => t.id === tabId);
           return { activeTabId: tabId, persistedActiveFilePath: tab?.filePath ?? state.persistedActiveFilePath };
         });
       },
 
       updateTabContent: (tabId: string, content: string, isDirty: boolean) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) => {
+          openDocuments: state.openDocuments.map((tab) => {
             if (tab.id !== tabId) return tab;
             // Stamp lastSavedAt only on the dirty → clean transition so the
             // "saved Xs ago" clock resets at save time, not on every keystroke
@@ -270,7 +274,7 @@ export const useEditorStore = create<EditorStore>()(
 
       markTabClean: (tabId: string, savedContent?: string) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) => {
+          openDocuments: state.openDocuments.map((tab) => {
             if (tab.id !== tabId) return tab;
             const savedNow = tab.isDirty;
             return {
@@ -285,7 +289,7 @@ export const useEditorStore = create<EditorStore>()(
 
       markTabDeleted: (filePath: string) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.filePath === filePath || tab.filePath.startsWith(filePath + '/')
               ? { ...tab, deleted: true, isDirty: false }
               : tab
@@ -295,7 +299,7 @@ export const useEditorStore = create<EditorStore>()(
 
       setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId ? { ...tab, frontmatter, isDirty: true } : tab
           ),
         }));
@@ -303,7 +307,7 @@ export const useEditorStore = create<EditorStore>()(
 
       updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId
               ? { ...tab, frontmatter: { ...tab.frontmatter, ...updates }, isDirty: true }
               : tab
@@ -344,7 +348,7 @@ export const useEditorStore = create<EditorStore>()(
       renameTab: (oldPath: string, newPath: string) => {
         const newName = newPath.split("/").pop() ?? newPath;
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.filePath === oldPath
               ? { ...tab, filePath: newPath, fileName: newName }
               : tab
@@ -371,7 +375,7 @@ export const useEditorStore = create<EditorStore>()(
 
       setViewMode: (tabId: string, mode: ViewMode) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId ? { ...tab, viewMode: mode } : tab
           ),
         }));
@@ -379,7 +383,7 @@ export const useEditorStore = create<EditorStore>()(
 
       toggleViewMode: (tabId: string) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId
               ? { ...tab, viewMode: tab.viewMode === "source" ? "wysiwyg" : "source" }
               : tab
@@ -389,7 +393,7 @@ export const useEditorStore = create<EditorStore>()(
 
       toggleCopilotForTab: (tabId: string) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId ? { ...tab, copilotDisabled: !tab.copilotDisabled } : tab
           ),
         }));
@@ -398,7 +402,7 @@ export const useEditorStore = create<EditorStore>()(
       reorderTab: (fromIndex: number, toIndex: number) => {
         if (fromIndex === toIndex) return;
         set((state) => {
-          const newTabs = [...state.tabs];
+          const newTabs = [...state.openDocuments];
           const [moved] = newTabs.splice(fromIndex, 1);
           if (!moved) return state;
           newTabs.splice(toIndex, 0, moved);
@@ -409,13 +413,13 @@ export const useEditorStore = create<EditorStore>()(
             newPersisted.splice(toIndex, 0, movedPersisted);
           }
 
-          return { tabs: newTabs, persistedTabs: newPersisted };
+          return { openDocuments: newTabs, persistedTabs: newPersisted };
         });
       },
 
       setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId ? { ...tab, scrollToTag: target } : tab
           ),
         }));
@@ -423,7 +427,7 @@ export const useEditorStore = create<EditorStore>()(
 
       setScrollToText: (tabId: string, text: string | undefined) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
+          openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId ? { ...tab, scrollToText: text } : tab
           ),
         }));
@@ -439,7 +443,7 @@ export const useEditorStore = create<EditorStore>()(
             p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : p;
 
           return {
-            tabs: state.tabs.map((tab) => ({
+            openDocuments: state.openDocuments.map((tab) => ({
               ...tab,
               filePath: rewrite(tab.filePath),
             })),
@@ -463,6 +467,24 @@ export const useEditorStore = create<EditorStore>()(
     }),
     {
       name: "notesage-editor",
+      version: 1,
+
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as Record<string, unknown>;
+        if (version < 1) {
+          // ui-refresh task #75 — rename `tabs` field to `openDocuments`.
+          // The persisted shape only carries `persistedTabs` (not `tabs` — the
+          // in-memory array was never persisted, see `partialize`), so the
+          // rename is effectively a no-op for existing users. We still run the
+          // migration defensively to cover any hand-edited or future-forked
+          // states that may have the legacy key lying around.
+          if (Array.isArray((state as { tabs?: unknown }).tabs)) {
+            state.openDocuments = (state as { tabs: unknown[] }).tabs;
+            delete (state as { tabs?: unknown }).tabs;
+          }
+        }
+        return state;
+      },
 
       partialize: (state) => ({
         recentFiles: state.recentFiles,

@@ -24,7 +24,7 @@ interface FileEntry {
 function populateStore(count: number): string[] {
   const store = useEditorStore;
   // Reset to empty state
-  store.setState({ tabs: [], activeTabId: null, recentFiles: [], persistedTabs: [] });
+  store.setState({ openDocuments: [], activeTabId: null, recentFiles: [], persistedTabs: [] });
 
   const ids: string[] = [];
   for (let i = 0; i < count; i++) {
@@ -40,9 +40,9 @@ function populateStore(count: number): string[] {
       contentLoaded: true,
     };
     ids.push(id);
-    // Build tabs array directly for speed — avoids N individual set() calls
+    // Build openDocuments array directly for speed — avoids N individual set() calls
     store.setState((state) => ({
-      tabs: [...state.tabs, tab],
+      openDocuments: [...state.openDocuments, tab],
       activeTabId: id,
     }));
   }

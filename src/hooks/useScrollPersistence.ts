@@ -43,7 +43,7 @@ export function useScrollPersistence({
 
   const scrollPositions = useEditorStore((s) => s.scrollPositions);
   const setScrollPosition = useEditorStore((s) => s.setScrollPosition);
-  const tabs = useEditorStore((s) => s.tabs);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
 
   // Save current scroll position as a ratio (0-1) keyed by file path
   const saveScrollRatio = useCallback(() => {
@@ -78,14 +78,14 @@ export function useScrollPersistence({
     const el = scrollAreaRef.current;
     const prevTabId = lastLoadedTabId.current;
     if (el && prevTabId && !isResizing.current) {
-      const prevTab = tabs.find((t) => t.id === prevTabId);
+      const prevTab = openDocuments.find((t) => t.id === prevTabId);
       if (prevTab) {
         const maxScroll = el.scrollHeight - el.clientHeight;
         const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
         setScrollPosition(prevTab.filePath, ratio);
       }
     }
-  }, [tabs, setScrollPosition, scrollAreaRef]);
+  }, [openDocuments, setScrollPosition, scrollAreaRef]);
 
   // Save scroll position on scroll events (debounced)
   useEffect(() => {

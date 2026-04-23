@@ -362,7 +362,7 @@ export const useActionStore = create<ActionStore>()(
 
           // Refresh open editor tab if this file is open
           const editorStore = useEditorStore.getState();
-          const openTab = editorStore.tabs.find((t) => t.filePath === action.file_path);
+          const openTab = editorStore.openDocuments.find((t) => t.filePath === action.file_path);
           if (openTab) {
             try {
               const raw = await tauriApi.readFile(action.file_path);

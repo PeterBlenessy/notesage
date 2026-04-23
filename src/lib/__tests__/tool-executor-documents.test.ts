@@ -40,7 +40,7 @@ function setActiveTab(filePath: string, frontmatterId?: string) {
     frontmatter: frontmatterId ? { id: frontmatterId } : null,
     fileType: 'markdown' as const,
   };
-  useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+  useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 }
 
 // Helper to set up workspace with a project
@@ -53,7 +53,7 @@ function setProject(path: string) {
 describe('tool-executor document tools', () => {
   beforeEach(() => {
     // Reset stores
-    useEditorStore.setState({ tabs: [], activeTabId: null });
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
     useWorkspaceStore.setState({ projects: [], explorerFolders: [] });
     useSettingsStore.setState({ notesRootPath: '/Users/test/Notesage' });
     useCommentStore.setState({ commentsByDocument: {} });

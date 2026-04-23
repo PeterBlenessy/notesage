@@ -22,8 +22,8 @@ export function useActivityNavigation() {
       const fileName = task.sourceFile.split('/').pop() ?? task.sourceFile;
 
       // Check if the file is already the active tab
-      const { tabs, activeTabId } = useEditorStore.getState();
-      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const { openDocuments, activeTabId } = useEditorStore.getState();
+      const activeTab = openDocuments.find((t) => t.id === activeTabId);
       const alreadyActive = activeTab?.filePath === task.sourceFile;
 
       if (!alreadyActive) {

@@ -536,7 +536,7 @@ export function useCopilotChat({
             // Collect editor state for context
             const editorState = useEditorStore.getState();
             const activeTab = editorState.activeTabId
-              ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
+              ? editorState.openDocuments.find((t) => t.id === editorState.activeTabId)
               : null;
 
             // Task #16 — context-request scope gate. The LSP asks for the
@@ -585,7 +585,7 @@ export function useCopilotChat({
         // Collect active document context for the LSP
         const editorState = useEditorStore.getState();
         const activeTab = editorState.activeTabId
-          ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
+          ? editorState.openDocuments.find((t) => t.id === editorState.activeTabId)
           : null;
 
         // Task #16 — scope gate for the "active document" context that

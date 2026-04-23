@@ -23,7 +23,7 @@ interface KeyboardShortcutCallbacks {
 }
 
 export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
-  const { tabs, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
+  const { openDocuments, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
   const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && e.key === "w") {
         e.preventDefault();
         if (activeTabId) {
-          const activeTab = tabs.find((t) => t.id === activeTabId);
+          const activeTab = openDocuments.find((t) => t.id === activeTabId);
           if (activeTab?.isDirty) {
             setPendingCloseTabId(activeTabId);
             return;
@@ -212,5 +212,5 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTabId, tabs, closeTab, setPendingCloseTabId, setSidebarPinned, setChatPanelOpen, callbacks]);
+  }, [activeTabId, openDocuments, closeTab, setPendingCloseTabId, setSidebarPinned, setChatPanelOpen, callbacks]);
 }

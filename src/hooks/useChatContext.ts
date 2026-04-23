@@ -47,11 +47,11 @@ export function useChatContext(): UseChatContextReturn {
 
   const activeFilePath = useEditorStore((s) => {
     if (!s.activeTabId) return null;
-    return s.tabs.find((t) => t.id === s.activeTabId)?.filePath ?? null;
+    return s.openDocuments.find((t) => t.id === s.activeTabId)?.filePath ?? null;
   });
   const activeFileName = useEditorStore((s) => {
     if (!s.activeTabId) return null;
-    return s.tabs.find((t) => t.id === s.activeTabId)?.fileName ?? null;
+    return s.openDocuments.find((t) => t.id === s.activeTabId)?.fileName ?? null;
   });
 
   // Scope inputs — kept in sync with the project isolation policy enforced

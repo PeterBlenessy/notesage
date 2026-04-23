@@ -610,7 +610,7 @@ describe('executeToolCall', () => {
     // -------------------------------------------------------------------------
 
     function resetDocStores() {
-      useEditorStore.setState({ tabs: [], activeTabId: null });
+      useEditorStore.setState({ openDocuments: [], activeTabId: null });
       useWorkspaceStore.setState({ projects: [], explorerFolders: [] });
       useSettingsStore.setState({ notesRootPath: '/Users/tester/Notesage' });
       useCommentStore.setState({ commentsByDocument: {} });
@@ -819,7 +819,7 @@ function setActiveTabAt(filePath: string, frontmatterId?: string) {
     frontmatter: frontmatterId ? { id: frontmatterId } : null,
     fileType: 'markdown' as const,
   };
-  useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-scope-1' });
+  useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-scope-1' });
 }
 
 // ---------------------------------------------------------------------------

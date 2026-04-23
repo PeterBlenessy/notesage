@@ -105,7 +105,7 @@ async function simulateRestart(
 }
 
 const EDITOR_DEFAULTS = {
-  tabs: [], activeTabId: null, recentFiles: [], scrollPositions: {},
+  openDocuments: [], activeTabId: null, recentFiles: [], scrollPositions: {},
   externalChanges: {}, persistedTabs: [], persistedActiveFilePath: null,
 };
 const CONNECTIONS_DEFAULTS = { connections: [] };
@@ -193,9 +193,9 @@ describe('editor-store persistence round-trip', () => {
     });
   });
 
-  it('does NOT persist tabs array (full tab objects are ephemeral)', async () => {
+  it('does NOT persist openDocuments array (full tab objects are ephemeral)', async () => {
     useEditorStore.setState({
-      tabs: [{
+      openDocuments: [{
         id: 'tab-1',
         filePath: '/test.md',
         fileName: 'test.md',
@@ -210,6 +210,8 @@ describe('editor-store persistence round-trip', () => {
 
     const raw = localStorageMock.getItem('notesage-editor');
     const parsed = JSON.parse(raw!);
+    expect(parsed.state.openDocuments).toBeUndefined();
+    // Legacy key should also be absent — the field was renamed in v1.
     expect(parsed.state.tabs).toBeUndefined();
     expect(parsed.state.activeTabId).toBeUndefined();
   });

@@ -11,13 +11,13 @@ const ACCENT_TOKEN = 'var(--color-accent-primary)';
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
-  useEditorStore.setState({ tabs: [], activeTabId: null, pendingCloseTabId: null });
+  useEditorStore.setState({ openDocuments: [], activeTabId: null, pendingCloseTabId: null });
 });
 
 describe('TabBar — accent wiring (UI Refresh #6)', () => {
   it('dirty dot uses --color-accent-primary, not raw --color-primary', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 

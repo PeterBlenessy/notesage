@@ -178,7 +178,7 @@ export function QuietLayout(_props: QuietLayoutProps) {
       // Compute parent from active tab + open projects.
       const editorState = useEditorStore.getState();
       const activeTab = editorState.activeTabId
-        ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
+        ? editorState.openDocuments.find((t) => t.id === editorState.activeTabId)
         : null;
       const activeFilePath = activeTab?.filePath ?? null;
       const projects = useWorkspaceStore.getState().projects;

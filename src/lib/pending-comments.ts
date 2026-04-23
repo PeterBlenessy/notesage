@@ -169,7 +169,7 @@ export async function processPendingCommentFile(
 
   // Check if target is the active file
   const editorState = useEditorStore.getState();
-  const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+  const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
   const isActiveFile = activeTab?.filePath === targetPath;
   const editor = isActiveFile ? getEditorRef() : null;
 
@@ -316,7 +316,7 @@ async function processResolveAction(
 
   // Refresh decorations if active
   const editorState = useEditorStore.getState();
-  const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+  const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
   if (activeTab?.filePath === targetPath) {
     const editor = getEditorRef();
     if (editor) {

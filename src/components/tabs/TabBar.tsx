@@ -36,7 +36,7 @@ function TabIcon({ fileType }: { fileType?: FileType }) {
 }
 
 export function TabBar() {
-  const tabs = useEditorStore((s) => s.tabs);
+  const tabs = useEditorStore((s) => s.openDocuments);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
   const closeTab = useEditorStore((s) => s.closeTab);

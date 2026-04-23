@@ -224,7 +224,7 @@ describe('useCopilotChat — Track 1 leak #16 context-request scope gate', () =>
     useWorkspaceStore.setState({ explorerFolders: [], projects: [] });
     useChatStore.setState({ conversations: [], activeConversationId: null });
     useEditorStore.setState({
-      tabs: [],
+      openDocuments: [],
       activeTabId: null,
       recentFiles: [],
       scrollPositions: {},
@@ -291,7 +291,7 @@ describe('useCopilotChat — Track 1 leak #16 context-request scope gate', () =>
       fileType: 'markdown' as const,
       contentLoaded: true,
     };
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
   }
 
   it('returns NULL context when the active tab is outside the project scope', async () => {

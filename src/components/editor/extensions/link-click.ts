@@ -48,7 +48,7 @@ export const LinkClick = Extension.create({
               event.stopPropagation();
 
               // Get workspace context
-              const { openTab, tabs, activeTabId } = useEditorStore.getState();
+              const { openTab, openDocuments, activeTabId } = useEditorStore.getState();
               const { projects, explorerFolders } = useWorkspaceStore.getState();
 
               const roots = [
@@ -57,7 +57,7 @@ export const LinkClick = Extension.create({
               ];
 
               // Determine active file's directory for relative path resolution
-              const activeTab = tabs.find((t) => t.id === activeTabId);
+              const activeTab = openDocuments.find((t) => t.id === activeTabId);
               let activeFileDir: string | undefined;
               if (activeTab?.filePath) {
                 const parts = activeTab.filePath.split('/');

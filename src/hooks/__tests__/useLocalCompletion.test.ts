@@ -144,7 +144,7 @@ function setupRouting(connection: Connection | null, model?: string) {
 
 function setupEditorStore(filePath = '/test/file.md', tabId = 'tab-1') {
   useEditorStore.setState({
-    tabs: [{
+    openDocuments: [{
       id: tabId,
       filePath,
       fileName: 'file.md',
@@ -711,8 +711,8 @@ describe('useLocalCompletion', () => {
       // Switch tab — should reset error counter
       useEditorStore.setState({
         activeTabId: 'tab-2',
-        tabs: [
-          ...useEditorStore.getState().tabs,
+        openDocuments: [
+          ...useEditorStore.getState().openDocuments,
           {
             id: 'tab-2',
             filePath: '/test/file2.md',
@@ -809,8 +809,8 @@ describe('useLocalCompletion', () => {
       // Switch active tab
       useEditorStore.setState({
         activeTabId: 'tab-2',
-        tabs: [
-          ...useEditorStore.getState().tabs,
+        openDocuments: [
+          ...useEditorStore.getState().openDocuments,
           {
             id: 'tab-2',
             filePath: '/test/file2.md',

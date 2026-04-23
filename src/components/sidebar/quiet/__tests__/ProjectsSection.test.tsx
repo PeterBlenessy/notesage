@@ -69,7 +69,7 @@ function resetStores(): void {
     notesTree: [],
   });
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     persistedTabs: [],
     persistedActiveFilePath: null,
@@ -230,7 +230,7 @@ describe('ProjectsSection (quiet variant)', () => {
       { path: '/Users/me/Notesage/beta', fileTree: [makeFile('note.md', '/Users/me/Notesage/beta/note.md')] },
     ]);
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/beta/note.md',
@@ -277,7 +277,7 @@ describe('ProjectsSection (quiet variant)', () => {
     });
 
     await waitFor(() => {
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs).toHaveLength(1);
       expect(tabs[0].filePath).toBe('/Users/me/Notesage/alpha/README.md');
       expect(tabs[0].fileName).toBe('README.md');
@@ -311,7 +311,7 @@ describe('ProjectsSection (quiet variant)', () => {
     });
 
     await waitFor(() => {
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs).toHaveLength(1);
       expect(tabs[0].filePath).toBe('/Users/me/Notesage/alpha/notes/first.md');
     });
@@ -333,7 +333,7 @@ describe('ProjectsSection (quiet variant)', () => {
 
     // No read_file invocation, no tab opened.
     expect(readFile).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().tabs).toHaveLength(0);
+    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
   });
 });
 
@@ -500,7 +500,7 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
       );
     });
     await waitFor(() => {
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs).toHaveLength(1);
       expect(tabs[0].filePath).toBe('/Users/me/Notesage/alpha/note.md');
     });
@@ -669,7 +669,7 @@ describe('ProjectsSection — inline rename (#40)', () => {
     const input = await screen.findByLabelText(/rename/i);
     expect(input).toBeTruthy();
     // Should not open the file (no new tab created).
-    expect(useEditorStore.getState().tabs).toHaveLength(0);
+    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
   });
 
   it('commits the rename by calling renamePath', async () => {
@@ -811,7 +811,7 @@ describe('ProjectsSection — inline create (#41)', () => {
     renderWithProviders(<ProjectsSection />);
     const btn = screen.getByRole('button', { name: /new note in alpha/i });
     fireEvent.click(btn);
-    expect(useEditorStore.getState().tabs).toHaveLength(0);
+    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
   });
 
   it('auto-expands the project and renders the inline create input when pending is set', async () => {

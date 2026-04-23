@@ -152,7 +152,7 @@ interface CommentContext {
 /** Get the comment key and storage root for the active document. */
 function getCommentContextForActiveTab(): CommentContext | null {
   const editorState = useEditorStore.getState();
-  const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+  const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
   if (!activeTab?.filePath) return null;
 
   const projects = useWorkspaceStore.getState().projects;
@@ -179,7 +179,7 @@ async function getCommentContextForPath(filePath: string): Promise<CommentContex
   // Check if this file is the active tab — if so, use the in-memory state (has frontmatter)
   const activeCtx = getCommentContextForActiveTab();
   const editorState = useEditorStore.getState();
-  const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+  const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
   if (activeCtx && activeTab?.filePath === filePath) return activeCtx;
 
   // Find project for this path
@@ -515,7 +515,7 @@ export async function executeToolCall(
           markdown = markdownArg;
         } else {
           const editorState = useEditorStore.getState();
-          const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+          const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
           if (!activeTab?.filePath) throw new Error('No active document — open a file or provide markdown content');
           sourcePath = activeTab.filePath;
           markdown = await invoke<string>('read_file', { path: sourcePath });
@@ -526,7 +526,7 @@ export async function executeToolCall(
           // List available templates
           const projects = useWorkspaceStore.getState().projects;
           const editorState = useEditorStore.getState();
-          const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+          const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
           const project = activeTab ? projects.find((p) => activeTab.filePath.startsWith(p.path + '/')) : null;
 
           let templateList = 'Built-in templates: simple, business, report';

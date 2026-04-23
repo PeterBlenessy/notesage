@@ -77,8 +77,8 @@ export function useDiffReview(editor: Editor | null) {
     useDiffReviewStore();
   const { saveFile } = useFileOperations();
   const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTab = tabs.find((t) => t.id === activeTabId);
+  const openDocuments = useEditorStore((s) => s.openDocuments);
+  const activeTab = openDocuments.find((t) => t.id === activeTabId);
 
   // Track which file we last applied decorations for, to avoid re-applying
   const lastDecoratedFile = useRef<string | null>(null);

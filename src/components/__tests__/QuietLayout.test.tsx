@@ -251,7 +251,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       notesTree: [],
     });
     useEditorStore.setState({
-      tabs: [],
+      openDocuments: [],
       activeTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
@@ -277,7 +277,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       ],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/alpha/docs/intro.md',
@@ -310,7 +310,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       ],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/alpha/note.md',
@@ -340,7 +340,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/tmp/elsewhere.md',
@@ -371,7 +371,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/alpha/a.md',
@@ -415,7 +415,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
       projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/alpha/a.md',
@@ -458,7 +458,7 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
       notesTree: [],
     });
     useEditorStore.setState({
-      tabs: [],
+      openDocuments: [],
       activeTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
@@ -492,7 +492,7 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
       projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
     });
     useEditorStore.setState({
-      tabs: [
+      openDocuments: [
         {
           id: 't1',
           filePath: '/Users/me/Notesage/alpha/a.md',

@@ -232,8 +232,8 @@ export function useExportOperations(editor: Editor | null) {
     async (options: ExportOptions) => {
       if (!editor) return;
 
-      const { tabs, activeTabId } = useEditorStore.getState();
-      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const { openDocuments, activeTabId } = useEditorStore.getState();
+      const activeTab = openDocuments.find((t) => t.id === activeTabId);
       if (!activeTab) return;
 
       // Derive title from filename (strip .md extension)

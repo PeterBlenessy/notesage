@@ -12,7 +12,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
 
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     pendingCloseTabId: null,
   });
@@ -26,7 +26,7 @@ describe('TabBar', () => {
 
   it('renders tab with file name', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'notes.md' });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
     expect(screen.getByText('notes.md')).toBeTruthy();
@@ -38,7 +38,7 @@ describe('TabBar', () => {
       createMockTab({ id: 'tab-2', fileName: 'second.md', filePath: '/test/second.md' }),
       createMockTab({ id: 'tab-3', fileName: 'third.md', filePath: '/test/third.md' }),
     ];
-    useEditorStore.setState({ tabs, activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: tabs, activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
     expect(screen.getByText('first.md')).toBeTruthy();
@@ -51,7 +51,7 @@ describe('TabBar', () => {
       createMockTab({ id: 'tab-1', fileName: 'active.md' }),
       createMockTab({ id: 'tab-2', fileName: 'inactive.md', filePath: '/test/inactive.md' }),
     ];
-    useEditorStore.setState({ tabs, activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: tabs, activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
@@ -64,7 +64,7 @@ describe('TabBar', () => {
 
   it('dirty indicator shows for unsaved tabs', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
@@ -80,7 +80,7 @@ describe('TabBar', () => {
 
   it('no dirty indicator for clean tabs', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'clean.md', isDirty: false });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
@@ -98,7 +98,7 @@ describe('TabBar', () => {
       createMockTab({ id: 'tab-1', fileName: 'first.md' }),
       createMockTab({ id: 'tab-2', fileName: 'second.md', filePath: '/test/second.md' }),
     ];
-    useEditorStore.setState({ tabs, activeTabId: 'tab-1', setActiveTab });
+    useEditorStore.setState({ openDocuments: tabs, activeTabId: 'tab-1', setActiveTab });
 
     renderWithProviders(<TabBar />);
 
@@ -110,7 +110,7 @@ describe('TabBar', () => {
 
   it('close button has correct aria-label', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'note.md' });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
@@ -121,7 +121,7 @@ describe('TabBar', () => {
   it('shows line-through for deleted tabs', () => {
     const tab = createMockTab({ id: 'tab-1', fileName: 'deleted.md' });
     (tab as any).deleted = true;
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
@@ -132,7 +132,7 @@ describe('TabBar', () => {
   it('close button calls closeTab for clean tabs without confirm', () => {
     const closeTab = vi.fn();
     const tab = createMockTab({ id: 'tab-1', fileName: 'clean.md', isDirty: false });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1', closeTab });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1', closeTab });
 
     renderWithProviders(<TabBar />);
 
@@ -145,7 +145,7 @@ describe('TabBar', () => {
   it('close button sets pendingCloseTabId for dirty tabs instead of closing', () => {
     const closeTab = vi.fn();
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1', closeTab });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1', closeTab });
 
     renderWithProviders(<TabBar />);
 
@@ -160,7 +160,7 @@ describe('TabBar', () => {
   it('does not use window.confirm for dirty tabs', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 

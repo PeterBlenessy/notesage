@@ -69,7 +69,7 @@ import type { Tab } from '../editor-store';
 // ---------------------------------------------------------------------------
 
 const DEFAULTS = {
-  tabs: [],
+  openDocuments: [],
   activeTabId: null,
   recentFiles: [],
   scrollPositions: {},
@@ -92,11 +92,11 @@ async function simulateRestart(): Promise<void> {
 }
 
 function getTab(filePath: string): Tab | undefined {
-  return useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
+  return useEditorStore.getState().openDocuments.find((t) => t.filePath === filePath);
 }
 
 function getTabById(id: string): Tab | undefined {
-  return useEditorStore.getState().tabs.find((t) => t.id === id);
+  return useEditorStore.getState().openDocuments.find((t) => t.id === id);
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +121,9 @@ describe('Tab management', () => {
     useEditorStore.getState().openTab('/docs/readme.md', 'readme.md', '# Hello');
 
     const state = useEditorStore.getState();
-    expect(state.tabs).toHaveLength(1);
+    expect(state.openDocuments).toHaveLength(1);
 
-    const tab = state.tabs[0];
+    const tab = state.openDocuments[0];
     expect(tab.filePath).toBe('/docs/readme.md');
     expect(tab.fileName).toBe('readme.md');
     expect(tab.content).toBe('# Hello');
@@ -138,7 +138,7 @@ describe('Tab management', () => {
   it('openTab sets the new tab as active', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
     const state = useEditorStore.getState();
-    expect(state.activeTabId).toBe(state.tabs[0].id);
+    expect(state.activeTabId).toBe(state.openDocuments[0].id);
   });
 
   it('openTab updates persistedActiveFilePath', () => {
@@ -157,42 +157,42 @@ describe('Tab management', () => {
     const scrollToTag = { tag: 'important', occurrence: 2 };
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a', null, 'markdown', scrollToTag);
 
-    expect(useEditorStore.getState().tabs[0].scrollToTag).toEqual(scrollToTag);
+    expect(useEditorStore.getState().openDocuments[0].scrollToTag).toEqual(scrollToTag);
   });
 
   it('openTab passes scrollToText through to the tab', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a', null, 'markdown', undefined, 'find me');
 
-    expect(useEditorStore.getState().tabs[0].scrollToText).toBe('find me');
+    expect(useEditorStore.getState().openDocuments[0].scrollToText).toBe('find me');
   });
 
   it('openTab with custom fileType and frontmatter', () => {
     const fm = { title: 'Test', id: 'uuid-1' };
     useEditorStore.getState().openTab('/doc.epub', 'doc.epub', '', fm, 'epub');
 
-    const tab = useEditorStore.getState().tabs[0];
+    const tab = useEditorStore.getState().openDocuments[0];
     expect(tab.fileType).toBe('epub');
     expect(tab.frontmatter).toEqual(fm);
   });
 
   it('openTab reuses existing tab for same filePath (duplicate)', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content-v1');
-    const firstId = useEditorStore.getState().tabs[0].id;
+    const firstId = useEditorStore.getState().openDocuments[0].id;
 
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content-v2');
 
     const state = useEditorStore.getState();
-    expect(state.tabs).toHaveLength(1);
+    expect(state.openDocuments).toHaveLength(1);
     expect(state.activeTabId).toBe(firstId);
     // Content is NOT overwritten on reuse — only activates the tab
-    expect(state.tabs[0].content).toBe('content-v1');
+    expect(state.openDocuments[0].content).toBe('content-v1');
   });
 
   it('openTab on existing tab sets scrollToTag/scrollToText', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content', null, 'markdown', { tag: 'x', occurrence: 0 }, 'search');
 
-    const tab = useEditorStore.getState().tabs[0];
+    const tab = useEditorStore.getState().openDocuments[0];
     expect(tab.scrollToTag).toEqual({ tag: 'x', occurrence: 0 });
     expect(tab.scrollToText).toBe('search');
   });
@@ -204,7 +204,7 @@ describe('Tab management', () => {
 
     useEditorStore.getState().closeTab(tabA.id);
 
-    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().openDocuments).toHaveLength(1);
     expect(getTab('/a.md')).toBeUndefined();
   });
 
@@ -226,7 +226,7 @@ describe('Tab management', () => {
     useEditorStore.getState().closeTab(tabC.id);
 
     const state = useEditorStore.getState();
-    expect(state.tabs).toHaveLength(2);
+    expect(state.openDocuments).toHaveLength(2);
     // Should switch to tab at index max(0, closedIndex-1) = index 1 = b
     expect(state.activeTabId).toBe(getTab('/b.md')!.id);
   });
@@ -299,7 +299,7 @@ describe('Tab placeholders', () => {
     useEditorStore.getState().openTabPlaceholder('/a.md', 'a.md');
     useEditorStore.getState().openTabPlaceholder('/a.md', 'a.md');
 
-    expect(useEditorStore.getState().tabs).toHaveLength(1);
+    expect(useEditorStore.getState().openDocuments).toHaveLength(1);
   });
 
   it('loadTabContent populates a placeholder tab', () => {
@@ -509,12 +509,14 @@ describe('Persistence', () => {
     expect(useEditorStore.getState().scrollPositions['/a.md']).toBe(0.42);
   });
 
-  it('does NOT persist tabs array', async () => {
+  it('does NOT persist openDocuments array', async () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', '# secret');
     await waitForPersist();
 
     const raw = localStorageMock.getItem('notesage-editor');
     const parsed = JSON.parse(raw!);
+    expect(parsed.state.openDocuments).toBeUndefined();
+    // Legacy key should also be absent — the field was renamed in v1.
     expect(parsed.state.tabs).toBeUndefined();
   });
 
@@ -534,6 +536,50 @@ describe('Persistence', () => {
     const raw = localStorageMock.getItem('notesage-editor');
     const parsed = JSON.parse(raw!);
     expect(parsed.state.externalChanges).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Persist migration (v0 → v1: tabs → openDocuments)
+// ===========================================================================
+
+describe('Persist migration', () => {
+  it('migrates legacy `tabs` key to `openDocuments` on rehydrate', async () => {
+    // Simulate a pre-v1 persisted snapshot that somehow carries a `tabs`
+    // array (hand-edited or forked state). The runtime `tabs` field was
+    // never actually persisted by the app itself, but the migrator must
+    // still drop the legacy key defensively so consumers never see both.
+    const legacySnapshot = {
+      state: {
+        tabs: [
+          { id: 'legacy-1', filePath: '/legacy.md', fileName: 'legacy.md' },
+        ],
+        recentFiles: [{ path: '/legacy.md', name: 'legacy.md' }],
+        scrollPositions: {},
+        persistedTabs: [{ filePath: '/legacy.md', fileName: 'legacy.md' }],
+        persistedActiveFilePath: '/legacy.md',
+      },
+      version: 0,
+    };
+    // Follow the `simulateRestart` pattern: resetting the store first triggers
+    // a persist write that would clobber our synthetic snapshot, so we reset,
+    // then inject the legacy payload, then rehydrate.
+    useEditorStore.setState(DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem('notesage-editor', JSON.stringify(legacySnapshot));
+    await useEditorStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem('notesage-editor');
+    const parsed = JSON.parse(raw!);
+    // After rehydrate+save, the persisted snapshot must not carry `tabs`.
+    expect(parsed.state.tabs).toBeUndefined();
+    // Persisted data (recentFiles, persistedTabs, etc.) must survive the migration.
+    expect(parsed.state.persistedTabs).toEqual([
+      { filePath: '/legacy.md', fileName: 'legacy.md' },
+    ]);
+    expect(parsed.state.persistedActiveFilePath).toBe('/legacy.md');
+    expect(parsed.version).toBe(1);
   });
 });
 
@@ -629,8 +675,8 @@ describe('renameTab', () => {
     useEditorStore.getState().renameTab('/old/note.md', '/new/renamed.md');
 
     const state = useEditorStore.getState();
-    expect(state.tabs[0].filePath).toBe('/new/renamed.md');
-    expect(state.tabs[0].fileName).toBe('renamed.md');
+    expect(state.openDocuments[0].filePath).toBe('/new/renamed.md');
+    expect(state.openDocuments[0].fileName).toBe('renamed.md');
     expect(state.persistedTabs[0].filePath).toBe('/new/renamed.md');
     expect(state.persistedTabs[0].fileName).toBe('renamed.md');
     expect(state.recentFiles[0].path).toBe('/new/renamed.md');
@@ -657,9 +703,9 @@ describe('updateFilePaths', () => {
     useEditorStore.getState().updateFilePaths('/old/dir', '/new/dir');
 
     const state = useEditorStore.getState();
-    expect(state.tabs[0].filePath).toBe('/new/dir/a.md');
-    expect(state.tabs[1].filePath).toBe('/new/dir/b.md');
-    expect(state.tabs[2].filePath).toBe('/other/c.md');
+    expect(state.openDocuments[0].filePath).toBe('/new/dir/a.md');
+    expect(state.openDocuments[1].filePath).toBe('/new/dir/b.md');
+    expect(state.openDocuments[2].filePath).toBe('/other/c.md');
     // Last opened tab was /other/c.md which doesn't match prefix, so stays as-is
     expect(state.persistedActiveFilePath).toBe('/other/c.md');
     expect(state.scrollPositions['/new/dir/a.md']).toBe(0.3);
@@ -722,7 +768,7 @@ describe('reorderTab', () => {
     // Move tab at index 0 (a) to index 2
     useEditorStore.getState().reorderTab(0, 2);
 
-    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/b.md', '/c.md', '/a.md', '/d.md']);
   });
 
@@ -732,7 +778,7 @@ describe('reorderTab', () => {
 
     useEditorStore.getState().reorderTab(1, 1);
 
-    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/a.md', '/b.md']);
   });
 
@@ -765,7 +811,7 @@ describe('reorderTab', () => {
 
     useEditorStore.getState().reorderTab(2, 0);
 
-    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/c.md', '/a.md', '/b.md']);
   });
 });

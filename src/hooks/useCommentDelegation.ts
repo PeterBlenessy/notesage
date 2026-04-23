@@ -79,7 +79,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
 
       // Resolve source file path for the activity strip and sandbox scope
       const editorState = useEditorStore.getState();
-      const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+      const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
       const sandboxRoot = resolveSandboxRoot(activeTab?.filePath) ?? projectRoot;
 
       // Snapshot label for meta (uses body at delegation time)
@@ -262,7 +262,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
       });
 
       const editorState = useEditorStore.getState();
-      const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+      const activeTab = editorState.openDocuments.find((t) => t.id === editorState.activeTabId);
       const sandboxRoot = resolveSandboxRoot(activeTab?.filePath) ?? projectRoot;
 
       // Snapshot label for meta (uses body at delegation time)

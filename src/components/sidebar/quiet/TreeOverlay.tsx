@@ -231,7 +231,7 @@ export function TreeOverlay() {
   const activeTabPath = useEditorStore((s) => {
     const id = s.activeTabId;
     if (!id) return null;
-    return s.tabs.find((t) => t.id === id)?.filePath ?? null;
+    return s.openDocuments.find((t) => t.id === id)?.filePath ?? null;
   });
 
   const { openFile } = useFileOperations();

@@ -38,7 +38,7 @@ vi.mock('@/stores/action-store', () => {
 function resetStores() {
   // Reset editor store to a clean state
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
     scrollPositions: {},
@@ -113,7 +113,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/test.md', 'test.md');
       });
 
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs.length).toBe(1);
       expect(tabs[0].filePath).toBe('/project/test.md');
       expect(tabs[0].content).toBe('Hello world.');
@@ -130,7 +130,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/readme.txt', 'readme.txt');
       });
 
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs.length).toBe(1);
       expect(tabs[0].content).toBe('Some plain text content.');
       expect(tabs[0].frontmatter).toBeNull();
@@ -146,7 +146,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/doc.pdf', 'doc.pdf');
       });
 
-      const tabs = useEditorStore.getState().tabs;
+      const tabs = useEditorStore.getState().openDocuments;
       expect(tabs.length).toBe(1);
       expect(tabs[0].fileType).toBe('pdf');
     });
@@ -182,11 +182,11 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/note.md', 'note.md');
       });
 
-      const tabId = useEditorStore.getState().tabs[0].id;
+      const tabId = useEditorStore.getState().openDocuments[0].id;
 
       // Mark tab dirty
       useEditorStore.getState().updateTabContent(tabId, 'Updated content.', true);
-      expect(useEditorStore.getState().tabs[0].isDirty).toBe(true);
+      expect(useEditorStore.getState().openDocuments[0].isDirty).toBe(true);
 
       let saved: boolean | undefined;
       await act(async () => {
@@ -194,7 +194,7 @@ describe('useFileOperations', () => {
       });
 
       expect(saved).toBe(true);
-      expect(useEditorStore.getState().tabs[0].isDirty).toBe(false);
+      expect(useEditorStore.getState().openDocuments[0].isDirty).toBe(false);
     });
 
     it('saves a file without frontmatter (plain content)', async () => {
@@ -209,7 +209,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/plain.md', 'plain.md');
       });
 
-      const tabId = useEditorStore.getState().tabs[0].id;
+      const tabId = useEditorStore.getState().openDocuments[0].id;
 
       let saved: boolean | undefined;
       await act(async () => {
@@ -233,7 +233,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/note.md', 'note.md');
       });
 
-      const tabId = useEditorStore.getState().tabs[0].id;
+      const tabId = useEditorStore.getState().openDocuments[0].id;
 
       await expect(
         act(async () => {
@@ -257,11 +257,11 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/note.md', 'note.md');
       });
 
-      const tabId = useEditorStore.getState().tabs[0].id;
+      const tabId = useEditorStore.getState().openDocuments[0].id;
 
       // Mark tab dirty (user edited the document)
       useEditorStore.getState().updateTabContent(tabId, 'Edited content.', true);
-      expect(useEditorStore.getState().tabs[0].isDirty).toBe(true);
+      expect(useEditorStore.getState().openDocuments[0].isDirty).toBe(true);
 
       // Attempt save — should fail
       await expect(
@@ -271,7 +271,7 @@ describe('useFileOperations', () => {
       ).rejects.toThrow('Disk full');
 
       // Tab MUST still be dirty after a failed save
-      expect(useEditorStore.getState().tabs[0].isDirty).toBe(true);
+      expect(useEditorStore.getState().openDocuments[0].isDirty).toBe(true);
     });
   });
 
@@ -290,7 +290,7 @@ describe('useFileOperations', () => {
         await result.current.openFile('/project/note.md', 'note.md');
       });
 
-      expect(useEditorStore.getState().tabs.length).toBe(1);
+      expect(useEditorStore.getState().openDocuments.length).toBe(1);
 
       let deleted: boolean | undefined;
       await act(async () => {
@@ -298,7 +298,7 @@ describe('useFileOperations', () => {
       });
 
       expect(deleted).toBe(true);
-      expect(useEditorStore.getState().tabs[0].deleted).toBe(true);
+      expect(useEditorStore.getState().openDocuments[0].deleted).toBe(true);
     });
 
     it('still refreshes tree and throws when delete_path fails', async () => {
@@ -344,7 +344,7 @@ describe('useFileOperations', () => {
 
       expect(renamed).toBe(true);
       // Tab should be updated with the new path
-      const tab = useEditorStore.getState().tabs[0];
+      const tab = useEditorStore.getState().openDocuments[0];
       expect(tab.filePath).toBe('/project/new.md');
     });
 

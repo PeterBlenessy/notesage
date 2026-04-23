@@ -20,7 +20,7 @@ export function LinkButton({ editor }: { editor: Editor }) {
   const projects = useWorkspaceStore((s) => s.projects);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const activeFileDir = useEditorStore((s) => {
-    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     if (!tab?.filePath) return undefined;
     const parts = tab.filePath.split('/');
     parts.pop();

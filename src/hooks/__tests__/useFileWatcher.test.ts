@@ -72,7 +72,7 @@ function makeTab(overrides: Partial<import('@/stores/editor-store').Tab> = {}): 
 
 function resetStores() {
   useEditorStore.setState({
-    tabs: [],
+    openDocuments: [],
     activeTabId: null,
     recentFiles: [],
     scrollPositions: {},
@@ -242,7 +242,7 @@ describe('useFileWatcher', () => {
   describe('modify events -- clean tab (auto-reload)', () => {
     it('sets external change for clean tabs with different content', async () => {
       const tab = makeTab({ content: '# Hello\n\nOriginal content' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nNew content from disk');
 
       renderHook(() => useFileWatcher());
@@ -257,7 +257,7 @@ describe('useFileWatcher', () => {
 
     it('skips update when disk content matches tab content', async () => {
       const tab = makeTab({ content: '# Hello\n\nOriginal content' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       // parseFrontmatter strips frontmatter, so return raw content without frontmatter
       setMockInvokeHandler('read_file', () => '# Hello\n\nOriginal content');
 
@@ -276,7 +276,7 @@ describe('useFileWatcher', () => {
         isDirty: true,
         lastSavedContent: '# Hello\n\nSaved content',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       // parseFrontmatter returns content after stripping frontmatter
       setMockInvokeHandler('read_file', () => '# Hello\n\nSaved content');
 
@@ -301,7 +301,7 @@ describe('useFileWatcher', () => {
       // them silently and surfaces a 3 s info toast. This test only asserts the
       // routing at the watcher level; the display layer is covered elsewhere.
       const tab = makeTab({ isDirty: true, content: '# Hello\n\nUnsaved changes' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nDifferent content from disk');
 
       renderHook(() => useFileWatcher());
@@ -319,7 +319,7 @@ describe('useFileWatcher', () => {
       useSettingsStore.setState({ externalChangeDiffReview: false });
 
       const tab = makeTab({ isDirty: true, content: '# Hello\n\nUnsaved' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nDisk');
 
       renderHook(() => useFileWatcher());
@@ -341,7 +341,7 @@ describe('useFileWatcher', () => {
       useSettingsStore.setState({ externalChangeDiffReview: true });
 
       const tab = makeTab({ content: '# Hello\n\nOriginal' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nModified externally');
 
       renderHook(() => useFileWatcher());
@@ -358,7 +358,7 @@ describe('useFileWatcher', () => {
       useSettingsStore.setState({ externalChangeDiffReview: true });
 
       const tab = makeTab({ content: '# Hello\n\nOriginal' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nModified externally');
 
       // Pre-populate with the same change
@@ -387,7 +387,7 @@ describe('useFileWatcher', () => {
       useDiffReviewStore.setState({ reviewActive: true });
 
       const tab = makeTab({ content: '# Hello\n\nOriginal' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Hello\n\nGit-modified');
 
       renderHook(() => useFileWatcher());
@@ -406,7 +406,7 @@ describe('useFileWatcher', () => {
 
   describe('no matching tab', () => {
     it('does not set external change when no tab matches the path', async () => {
-      useEditorStore.setState({ tabs: [], activeTabId: null });
+      useEditorStore.setState({ openDocuments: [], activeTabId: null });
 
       renderHook(() => useFileWatcher());
       emitFileChanged('/project/notes/untracked.md', 'modify');
@@ -428,7 +428,7 @@ describe('useFileWatcher', () => {
         filePath: '/var/folders/tmp/test.md',
         content: '# Old',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       renderHook(() => useFileWatcher());
@@ -446,7 +446,7 @@ describe('useFileWatcher', () => {
         filePath: '/tmp/test-notes/test.md',
         content: '# Old',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       renderHook(() => useFileWatcher());
@@ -464,7 +464,7 @@ describe('useFileWatcher', () => {
         filePath: '/Users/testuser/notes/test.md',
         content: '# Old',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       renderHook(() => useFileWatcher());
@@ -496,7 +496,7 @@ describe('useFileWatcher', () => {
   describe('debouncing', () => {
     it('coalesces duplicate modify events for the same file', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -533,7 +533,7 @@ describe('useFileWatcher', () => {
         fileName: 'file2.md',
         content: '# File2 Old',
       });
-      useEditorStore.setState({ tabs: [tab1, tab2], activeTabId: tab1.id });
+      useEditorStore.setState({ openDocuments: [tab1, tab2], activeTabId: tab1.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', (args) => {
@@ -561,7 +561,7 @@ describe('useFileWatcher', () => {
   describe('batch events', () => {
     it('deduplicates events in a batch (last event wins per path)', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -781,7 +781,7 @@ describe('useFileWatcher', () => {
   describe('error handling', () => {
     it('handles readFile errors gracefully without crashing', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       setMockInvokeHandler('read_file', () => {
         throw new Error('File not found');
@@ -847,7 +847,7 @@ describe('useFileWatcher', () => {
   describe('modify events do not call indexFile (Rust backend handles it)', () => {
     it('does not call indexFile from frontend for modified files', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       const indexFileSpy = vi.fn();
@@ -919,7 +919,7 @@ describe('useFileWatcher', () => {
 
     it('modify events still work correctly after debounce map overflow', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       renderHook(() => useFileWatcher());
@@ -958,7 +958,7 @@ describe('useFileWatcher', () => {
 
     it('calls readFile exactly once per modified file (not twice from duplicate listeners)', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -979,7 +979,7 @@ describe('useFileWatcher', () => {
 
     it('never calls indexFile from frontend for any event type', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       const indexFileSpy = vi.fn();
@@ -1010,7 +1010,7 @@ describe('useFileWatcher', () => {
     it('strips YAML frontmatter before comparing content (no false external change)', async () => {
       // Tab content is body-only (frontmatter already stripped by editor)
       const tab = makeTab({ content: '# Hello\n\nBody text' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       // Disk file has frontmatter wrapping the same body content
       setMockInvokeHandler('read_file', () => '---\nid: abc-123\ntitle: Test\n---\n# Hello\n\nBody text');
@@ -1027,7 +1027,7 @@ describe('useFileWatcher', () => {
 
     it('detects change when body differs despite frontmatter being present', async () => {
       const tab = makeTab({ content: '# Hello\n\nOriginal body' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       setMockInvokeHandler('read_file', () => '---\nid: abc-123\n---\n# Hello\n\nChanged body');
 
@@ -1048,7 +1048,7 @@ describe('useFileWatcher', () => {
   describe('delete events for open tabs', () => {
     it('triggers tree refresh and git refresh when an open tab file is deleted', async () => {
       const tab = makeTab({ filePath: '/project/notes/doomed.md' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       renderHook(() => useFileWatcher());
       emitFileChanged('/project/notes/doomed.md', 'delete');
@@ -1062,7 +1062,7 @@ describe('useFileWatcher', () => {
 
     it('does not attempt readFile for delete events (no modify handling)', async () => {
       const tab = makeTab({ filePath: '/project/notes/doomed.md', content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -1092,7 +1092,7 @@ describe('useFileWatcher', () => {
         fileName: 'existing.md',
         content: '# Old content',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# Modified externally');
 
       renderHook(() => useFileWatcher());
@@ -1119,7 +1119,7 @@ describe('useFileWatcher', () => {
 
     it('batch dedup: delete after modify for same path means only delete is processed', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -1151,11 +1151,11 @@ describe('useFileWatcher', () => {
   describe('tab state race conditions', () => {
     it('handles tab closing between event emission and readFile resolution', async () => {
       const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       setMockInvokeHandler('read_file', () => {
         // Simulate the tab being closed while readFile is in-flight
-        useEditorStore.setState({ tabs: [], activeTabId: null });
+        useEditorStore.setState({ openDocuments: [], activeTabId: null });
         return '# New content';
       });
 
@@ -1172,13 +1172,13 @@ describe('useFileWatcher', () => {
 
     it('handles tab content changing between event emission and readFile resolution', async () => {
       const tab = makeTab({ content: '# Version 1' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       setMockInvokeHandler('read_file', () => {
         // User edits the tab while readFile is in-flight, and the new content
         // happens to match the disk content — no external change needed
         useEditorStore.setState({
-          tabs: [{ ...tab, content: '# Version 2' }],
+          openDocuments: [{ ...tab, content: '# Version 2' }],
         });
         return '# Version 2';
       });
@@ -1204,7 +1204,7 @@ describe('useFileWatcher', () => {
         filePath: '/etc/notesage/config.md',
         content: '# Old',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
 
       renderHook(() => useFileWatcher());
@@ -1221,7 +1221,7 @@ describe('useFileWatcher', () => {
         filePath: '/var/folders/tmp/test.md',
         content: '# Old',
       });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
 
       let readCount = 0;
       setMockInvokeHandler('read_file', () => {
@@ -1357,7 +1357,7 @@ describe('useFileWatcher', () => {
         fileName: 'gamma.md',
         content: '# Gamma unchanged',
       });
-      useEditorStore.setState({ tabs: [tab1, tab2, tab3], activeTabId: tab1.id });
+      useEditorStore.setState({ openDocuments: [tab1, tab2, tab3], activeTabId: tab1.id });
 
       setMockInvokeHandler('read_file', (args) => {
         const p = (args as { path: string }).path;
@@ -1400,7 +1400,7 @@ describe('useFileWatcher', () => {
         content: '# Dirty unsaved',
         isDirty: true,
       });
-      useEditorStore.setState({ tabs: [cleanTab, dirtyTab], activeTabId: cleanTab.id });
+      useEditorStore.setState({ openDocuments: [cleanTab, dirtyTab], activeTabId: cleanTab.id });
 
       setMockInvokeHandler('read_file', (args) => {
         const p = (args as { path: string }).path;
