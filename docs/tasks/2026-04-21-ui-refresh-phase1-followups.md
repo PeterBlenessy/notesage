@@ -74,6 +74,18 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none. Speculative — not a current bug.
 
+## F6 — Memoize PinnedRow / RecentRow / project rows for type-to-filter scaling
+
+**Surfaced by:** Batch M1.8 / task #91 (sidebar-filter perf, 2026-04-23)
+
+**Problem:** Type-to-filter at N=2000 pinned + N=2000 recent items takes ~6.2s in jsdom (real Chromium is 5–10× faster, so still ~600ms — well above the 50ms spec target). Each keystroke causes React to re-render every row in PinnedSection, RecentSection, and the flat ProjectsSection child rows because none of the row components are wrapped in `memo`. The `#91` perf test currently sets the N=2000 first-keystroke budget to 8000ms (jsdom ceiling) — a smoke test, not a regression lock.
+
+**Fix approach:** Wrap `PinnedRow`, `RecentRow`, and `ProjectsSection`'s `ChildRow` / `ProjectRow` in `React.memo` with stable callback refs (use `useCallback` for `onOpen` / `onStartRename` / etc. in the parent). Or push the filter to a CSS class so non-matching rows don't unmount — but memo is simpler. After memoization, tighten `FIRST_KEYSTROKE_BUDGETS` in `src/perf/sidebar-filter.perf.test.tsx` toward the spec target (50ms) — that's the regression-lock value.
+
+**Scope:** M. ~5–10 callback refs to lift, four row components to wrap, perf budgets to tighten + verify they pass.
+
+**Blockers:** none. Production users rarely have >50 items in either section, so this is performance hygiene, not a user-facing bug.
+
 ## How to use this file
 
 - Add entries here when a task returns with a well-scoped follow-up that's outside the numbered 100-task Phase 1 plan.

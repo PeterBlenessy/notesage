@@ -64,6 +64,53 @@ Previous baseline (same date, same code) had optimistic parse 100KB (182ms) and 
 | palette filter (500, 3-char) | 0.03 | 1 | 1 |
 | palette filter (500, 8 queries) | 0.11 | 1 | 1 |
 
+## Component Benchmarks — Quiet Composer UI Refresh (M1.8)
+
+Added 2026-04-23 alongside Phase 1 ARIA + reduced-motion sweep. All four suites use jsdom + `@testing-library/react` to render real component trees and time user-perceived interactions. Real-Chromium performance is typically 5–10× faster than the jsdom numbers below.
+
+### FloatingCommandBar (`cmdbar.perf.test.ts` — task #88)
+
+| Operation | Median (ms) | Spec Budget |
+| --- | --- | --- |
+| focus (compact→expanded) | 2.53 | 100 |
+| dismiss (Esc → compact) | 1.94 | 80 |
+| prefix morph (`/` → mode picker) | 2.41 | 50 |
+| attachment-chip add | 2.25 | 30 |
+| context row initial render (3 projects) | 3.56 | 20 |
+
+### AgentOrb (`orb.perf.test.ts` — task #89)
+
+| Operation | Median (ms) | Spec Budget |
+| --- | --- | --- |
+| panel open (N=10 tasks) | 12.75 | 120 |
+| panel open (N=50 tasks) | 9.29 | 120 |
+| panel open (N=100 tasks) | 9.34 | 120 |
+| pulse render cost | 1.06 | 5 |
+| reduced-motion render | 0.52 | 5 |
+
+The orb pulse animation is CSS-only (`@keyframes orb-pulse`) — there is no `requestAnimationFrame` JS in the loop. The "pulse render cost" benchmark measures the cost of mounting the orb in pulsing state; a regression that accidentally introduces JS-driven animation would either fail the budget or drop the `orb-pulsing` class assertion.
+
+### StatusTray (`status-tray.perf.test.ts` — task #90)
+
+| Operation | Median (ms) | Spec Budget |
+| --- | --- | --- |
+| popover open | 34.57 | 150 |
+| comments list expand | 23.54 | 80 |
+| segmented picker click | 1.37 | 50 |
+
+### Sidebar Type-to-Filter (`sidebar-filter.perf.test.ts` — task #91)
+
+| Operation | Median (ms) | Spec Budget | Notes |
+| --- | --- | --- | --- |
+| first keystroke (N=100) | 7.62 | 50 | hits spec target |
+| first keystroke (N=500) | 32.03 | 500 | inflated jsdom budget |
+| first keystroke (N=2000) | 208.01 | 8,000 | smoke test only |
+| subsequent keystroke (N=100) | 0.54 | 20 | |
+| subsequent keystroke (N=500) | 1.13 | 20 | |
+| subsequent keystroke (N=2000) | 4.46 | 20 | |
+
+The N=500 / N=2000 first-keystroke budgets are intentionally loose — they document the current ceiling of the unmemoized `PinnedRow` / `RecentRow` implementation in jsdom. Real production workloads rarely have more than ~50 items in either section. Memoization opportunity tracked as F6 in `2026-04-21-ui-refresh-phase1-followups.md`. Once the rows are wrapped in `React.memo`, the budgets should be tightened toward the 50ms spec target — that's the regression-lock value.
+
 ## Startup Performance (real-world, dev mode)
 
 Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total files. Times are from `[perf:*]` console logs on page refresh (steady-state, not cold first launch).
