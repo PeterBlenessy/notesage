@@ -140,12 +140,31 @@ export interface LayoutProps {
   onClickTask: (task: import("@/stores/activity-store").AgentTask) => void;
 }
 
+/**
+ * Pure helper: whether the caller should render the legacy chrome
+ * (TabBar, ChatPanel, ActivityStrip/Rail, ChatFooter) for the given
+ * `uiPreview` value. The Quiet Composer preview (task #74) swaps in
+ * equivalent surfaces — FloatingCommandBar, AgentOrb, etc. — so the
+ * legacy components are preview-gated until Phase 3 full deletion.
+ *
+ * Exported for unit testing.
+ */
+export function shouldRenderLegacyChrome(uiPreview: string): boolean {
+  return uiPreview !== "quiet-composer";
+}
+
 export function Layout(props: LayoutProps) {
   // UI refresh preview flag (PRD `2026-04-21-ui-refresh`, task #5).
-  // When set to "quiet-composer", short-circuit to the new placeholder shell
-  // before any of the legacy panels mount. Default "legacy" preserves today's tree.
+  //
+  // Preview gate (#74): when `uiPreview === "quiet-composer"` we short-
+  // circuit to `QuietLayout` before any legacy panel mounts. That means
+  // `TabBar`, `ChatPanel`, `ActivityRail`, `ActivityPanel`, and the
+  // `ChatFooter` (rendered inside `ChatPanel`) never hit the DOM in
+  // the preview. Components remain in code and render on the legacy
+  // path until Phase 3 full deletion. Default "legacy" preserves
+  // today's tree.
   const uiPreview = useSettingsStore((s) => s.uiPreview);
-  if (uiPreview === "quiet-composer") {
+  if (!shouldRenderLegacyChrome(uiPreview)) {
     return <QuietLayout {...props} />;
   }
 

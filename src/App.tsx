@@ -167,8 +167,16 @@ function App() {
 
   const { openFile, openFileAtTag, openFileAtText, refreshFileTree } = useFileOperations();
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
-  // Preview gate for legacy New* dialogs (#69/#70) — see
-  // `shouldRenderLegacyNewDialogs` comment above.
+  // Preview gate — `uiPreview` is read once and reused by multiple render
+  // sites:
+  //  - `renderLegacyNewDialogs` (#69/#70): gates <NewNoteDialog> /
+  //    <NewProjectDialog> so the legacy modal stack is absent in
+  //    quiet-composer mode (inline creation handles ⌘N / ⌘⇧N via
+  //    QuietLayout).
+  //  - `<CommandPalette />` (#74): the Quiet Composer preview absorbs the
+  //    palette into the FloatingCommandBar's `>` mode (#17), so the
+  //    legacy palette does not mount in that preview. State and handlers
+  //    remain wired up — we gate the render site, not the business logic.
   const uiPreview = useSettingsStore((s) => s.uiPreview);
   const renderLegacyNewDialogs = shouldRenderLegacyNewDialogs(uiPreview);
 
@@ -580,33 +588,43 @@ function App() {
             />
           )}
         </Suspense>
-        <CommandPalette
-          open={commandPaletteOpen}
-          onOpenChange={(open) => {
-            setCommandPaletteOpen(open);
-            if (!open) {
-              setCommandPaletteInitialMode("default");
-              setCommandPaletteDrilldown("");
-            }
-          }}
-          initialMode={commandPaletteInitialMode}
-          drilldownName={commandPaletteDrilldown || undefined}
-          onOpenFileAtSymbol={handleOpenFileAtTag}
-          onNewNote={() => handleNewNote()}
-          onNewProject={handleNewProject}
-          onOpenFolder={handleOpenFolder}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onExportPdf={() => setExportOpen(true)}
-          onToggleHtmlPreview={() => {
-            const { tabs, activeTabId, setViewMode } = useEditorStore.getState();
-            const tab = tabs.find((t) => t.id === activeTabId);
-            if (tab && tab.fileType === "markdown") {
-              setViewMode(tab.id, tab.viewMode === "html-preview" ? "wysiwyg" : "html-preview");
-            }
-          }}
-          onToggleFocusMode={() => setFocusMode((prev) => !prev)}
-          onOpenActions={() => setActionsDialogOpen(true)}
-        />
+        {/*
+          Preview gate (#74). Legacy CommandPalette is absorbed into the
+          FloatingCommandBar's `>` mode in the Quiet Composer preview, so
+          the component is not mounted when `uiPreview === "quiet-composer"`.
+          Handlers and state above remain intact so the legacy path is
+          unchanged; only the render site is gated. Phase 3 will delete
+          the component entirely.
+        */}
+        {uiPreview !== "quiet-composer" && (
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={(open) => {
+              setCommandPaletteOpen(open);
+              if (!open) {
+                setCommandPaletteInitialMode("default");
+                setCommandPaletteDrilldown("");
+              }
+            }}
+            initialMode={commandPaletteInitialMode}
+            drilldownName={commandPaletteDrilldown || undefined}
+            onOpenFileAtSymbol={handleOpenFileAtTag}
+            onNewNote={() => handleNewNote()}
+            onNewProject={handleNewProject}
+            onOpenFolder={handleOpenFolder}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onExportPdf={() => setExportOpen(true)}
+            onToggleHtmlPreview={() => {
+              const { tabs, activeTabId, setViewMode } = useEditorStore.getState();
+              const tab = tabs.find((t) => t.id === activeTabId);
+              if (tab && tab.fileType === "markdown") {
+                setViewMode(tab.id, tab.viewMode === "html-preview" ? "wysiwyg" : "html-preview");
+              }
+            }}
+            onToggleFocusMode={() => setFocusMode((prev) => !prev)}
+            onOpenActions={() => setActionsDialogOpen(true)}
+          />
+        )}
         {/*
          * Preview gate (#69/#70).
          * Legacy path mounts these dialogs; quiet-composer uses inline-create
