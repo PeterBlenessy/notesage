@@ -1169,7 +1169,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `docs/tasks/qa/2026-04-23-mockup-audit.md` (artifact) + new task entries it spawns |
 | Surfaced from | Project lead's 2026-04-23 trial: "the design is in several aspects different than the mockups we created before the implementation" |
 
-### #112 — Toolbar pill — add `•••` overflow menu (7 items) 🚧
+### #112 — Toolbar pill — add `•••` overflow menu (7 items) ✅
 
 | Field | Value |
 | --- | --- |
