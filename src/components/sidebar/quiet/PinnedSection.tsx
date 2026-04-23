@@ -1,4 +1,4 @@
-import { type KeyboardEvent } from "react";
+import { useState, type DragEvent, type KeyboardEvent } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,13 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
+import {
+  FILE_DRAG_MIME,
+  beginFileDrag,
+  computeReorderTarget,
+  hasFileDrag,
+  isBelowMidpoint,
+} from "./file-drag";
 
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
@@ -21,6 +28,12 @@ import { FilePreview } from "./FilePreview";
  * hidden (header only) when nothing is pinned to avoid an empty-state
  * placeholder. Manual ordering from drag-to-reorder (#44) is preserved by
  * rendering `pinnedFiles` in array order.
+ *
+ * Drag-and-drop (task #44) — HTML5 DnD is plumbed through `file-drag.ts`:
+ * Recent / project-child rows use `FILE_DRAG_MIME` to advertise a single
+ * absolute path; PinnedSection accepts drops either on a specific row
+ * (with above/below midpoint precision) or on the outer `<ul>` (appends).
+ * Pinned rows are themselves draggable to reorder within the list.
  */
 
 export interface PinnedSectionProps {
@@ -44,19 +57,46 @@ function basename(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
+/**
+ * Drop-zone indicator for a pinned row. `above` / `below` draw a thin
+ * accent-coloured line at the matching edge; `null` renders nothing. This
+ * is ephemeral UI state — no Zustand round-trip.
+ */
+type DropEdge = "above" | "below" | null;
+
 interface PinnedRowProps {
   path: string;
+  index: number;
   isActive: boolean;
+  isDragging: boolean;
+  dropEdge: DropEdge;
   onOpen: (path: string) => void | Promise<void>;
+  onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  onDragEnd: () => void;
+  onDragOverRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  onDragLeaveRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  onDropRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
 }
 
 /**
  * Single row in the pinned list. Extracted from PinnedSection so we can
- * install the row-level ⌘⌥C / ⌘⌥R shortcut hook per row (#46). The hook
- * must run inside a component because it captures `filePath` in the
- * returned handler.
+ * install the row-level ⌘⌥C / ⌘⌥R shortcut hook per row (#46) and carry
+ * the per-row drag handlers locally (#44). The hook must run inside a
+ * component because it captures `filePath` in the returned handler.
  */
-function PinnedRow({ path, isActive, onOpen }: PinnedRowProps) {
+function PinnedRow({
+  path,
+  index,
+  isActive,
+  isDragging,
+  dropEdge,
+  onOpen,
+  onDragStart,
+  onDragEnd,
+  onDragOverRow,
+  onDragLeaveRow,
+  onDropRow,
+}: PinnedRowProps) {
   const name = basename(path);
   const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
     filePath: path,
@@ -85,18 +125,39 @@ function PinnedRow({ path, isActive, onOpen }: PinnedRowProps) {
         <div
           role="button"
           tabIndex={0}
+          draggable
           data-active={isActive ? "true" : undefined}
+          data-dragging={isDragging ? "true" : undefined}
+          data-drop-edge={dropEdge ?? undefined}
           aria-current={isActive ? "page" : undefined}
           title={path}
           onClick={() => void onOpen(path)}
           onKeyDown={onKeyDown}
+          onDragStart={(e) => onDragStart(e, index)}
+          onDragEnd={onDragEnd}
+          onDragOver={(e) => onDragOverRow(e, index)}
+          onDragLeave={(e) => onDragLeaveRow(e, index)}
+          onDrop={(e) => onDropRow(e, index)}
           className={cn(
-            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
+            "relative h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
             "hover:bg-muted/50",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
             isActive && "bg-muted",
+            isDragging && "opacity-50",
           )}
         >
+          {dropEdge === "above" && (
+            <span
+              aria-hidden="true"
+              className="absolute left-1 right-1 -top-px h-0.5 bg-[var(--accent,var(--primary))] rounded-full pointer-events-none"
+            />
+          )}
+          {dropEdge === "below" && (
+            <span
+              aria-hidden="true"
+              className="absolute left-1 right-1 -bottom-px h-0.5 bg-[var(--accent,var(--primary))] rounded-full pointer-events-none"
+            />
+          )}
           <FileIcon fileName={name} />
           <span className="truncate min-w-0">{name}</span>
         </div>
@@ -108,6 +169,7 @@ function PinnedRow({ path, isActive, onOpen }: PinnedRowProps) {
 export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
+  const reorderPinnedFiles = useWorkspaceStore((s) => s.reorderPinnedFiles);
   const activeFilePath = useEditorStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
@@ -121,6 +183,18 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
         basename(path).toLowerCase().includes(filter.toLowerCase()),
       )
     : pinnedFiles;
+
+  // Ephemeral DnD state. `draggingIndex` is set while a row from this list
+  // is being dragged; `activeDrop` tracks the hover indicator so only one
+  // row shows the edge line at a time. `containerActive` is the dashed
+  // border on the outer <ul> when the pointer is over the section but not
+  // a specific row.
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [activeDrop, setActiveDrop] = useState<{
+    index: number;
+    edge: DropEdge;
+  } | null>(null);
+  const [containerActive, setContainerActive] = useState(false);
 
   const handleDefaultAdd = () => {
     if (!activeFilePath) {
@@ -136,6 +210,153 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
     } catch (error) {
       toast.error(`Failed to open file: ${error}`);
     }
+  };
+
+  // -----------------------------------------------------------------------
+  // Drag source — pinned rows being reordered within the list.
+  // -----------------------------------------------------------------------
+
+  const handleRowDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    index: number,
+  ) => {
+    const path = visibleFiles[index];
+    if (!path) return;
+    beginFileDrag(event, path);
+    // `move` effect during same-list reorder; the outer container reads the
+    // MIME type via `hasFileDrag` regardless of effectAllowed.
+    event.dataTransfer.effectAllowed = "move";
+    // Use the ORIGINAL (unfiltered) index because reorderPinnedFiles works
+    // against `pinnedFiles`. When a filter is active `visibleFiles` is a
+    // subset; we need to map back to the source array.
+    const originalIndex = pinnedFiles.indexOf(path);
+    setDraggingIndex(originalIndex);
+  };
+
+  const handleRowDragEnd = () => {
+    setDraggingIndex(null);
+    setActiveDrop(null);
+    setContainerActive(false);
+  };
+
+  // -----------------------------------------------------------------------
+  // Drop target — pinned rows (precise above/below insertion).
+  // -----------------------------------------------------------------------
+
+  const handleRowDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    visibleIndex: number,
+  ) => {
+    if (!hasFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect =
+      draggingIndex !== null ? "move" : "copy";
+
+    const below = isBelowMidpoint(event, event.currentTarget);
+    // Translate visibleIndex back to the original pinnedFiles index so
+    // reorder math stays consistent under filtering.
+    const path = visibleFiles[visibleIndex];
+    if (!path) return;
+    const originalIndex = pinnedFiles.indexOf(path);
+    setActiveDrop({ index: originalIndex, edge: below ? "below" : "above" });
+  };
+
+  const handleRowDragLeave = (
+    event: DragEvent<HTMLDivElement>,
+    _visibleIndex: number,
+  ) => {
+    // Only clear if the pointer actually leaves the row element (not moving
+    // to a child). `relatedTarget` is the node the pointer moved INTO.
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    setActiveDrop((current) => {
+      if (current === null) return current;
+      // We can't cheaply tell which row is leaving, so just clear when any
+      // row fires dragleave. The next dragover will repaint.
+      return null;
+    });
+  };
+
+  const handleRowDrop = (
+    event: DragEvent<HTMLDivElement>,
+    visibleIndex: number,
+  ) => {
+    if (!hasFileDrag(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const path = event.dataTransfer.getData(FILE_DRAG_MIME);
+    if (!path) return;
+
+    const targetPath = visibleFiles[visibleIndex];
+    if (!targetPath) return;
+    const targetIndex = pinnedFiles.indexOf(targetPath);
+    if (targetIndex < 0) return;
+
+    const below = isBelowMidpoint(event, event.currentTarget);
+
+    const existingIndex = pinnedFiles.indexOf(path);
+    if (existingIndex >= 0) {
+      // Reorder — path is already pinned.
+      const to = computeReorderTarget(existingIndex, targetIndex, below);
+      if (to !== null) reorderPinnedFiles(existingIndex, to);
+    } else {
+      // New pin — append, then reorder into place.
+      pinFile(path);
+      const fromIndex = pinnedFiles.length; // post-append index
+      const to = computeReorderTarget(fromIndex, targetIndex, below);
+      if (to !== null) reorderPinnedFiles(fromIndex, to);
+    }
+
+    setActiveDrop(null);
+    setContainerActive(false);
+    setDraggingIndex(null);
+  };
+
+  // -----------------------------------------------------------------------
+  // Drop target — outer container (append at end).
+  // -----------------------------------------------------------------------
+
+  const handleContainerDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!hasFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect =
+      draggingIndex !== null ? "move" : "copy";
+    setContainerActive(true);
+  };
+
+  const handleContainerDragLeave = (event: DragEvent<HTMLElement>) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    setContainerActive(false);
+    setActiveDrop(null);
+  };
+
+  const handleContainerDrop = (event: DragEvent<HTMLElement>) => {
+    if (!hasFileDrag(event)) return;
+    event.preventDefault();
+
+    const path = event.dataTransfer.getData(FILE_DRAG_MIME);
+    if (!path) {
+      setContainerActive(false);
+      return;
+    }
+
+    // If the drop was already handled by a row, the event is stopped there.
+    // We only reach here on the empty space of the <ul> → append semantics.
+    const existingIndex = pinnedFiles.indexOf(path);
+    if (existingIndex >= 0) {
+      // Reorder to end.
+      const to = pinnedFiles.length - 1;
+      if (existingIndex !== to) reorderPinnedFiles(existingIndex, to);
+    } else {
+      pinFile(path);
+    }
+
+    setContainerActive(false);
+    setActiveDrop(null);
+    setDraggingIndex(null);
   };
 
   return (
@@ -158,19 +379,46 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
           <Plus strokeWidth={1.5} />
         </Button>
       </header>
-      {visibleFiles.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {visibleFiles.map((path) => (
+      <ul
+        data-testid="pinned-drop-zone"
+        data-drop-active={containerActive ? "true" : undefined}
+        onDragOver={handleContainerDragOver}
+        onDragLeave={handleContainerDragLeave}
+        onDrop={handleContainerDrop}
+        className={cn(
+          "flex flex-col gap-0.5 rounded-sm transition-colors duration-150",
+          // Empty-state hit box so users can drop even when nothing is pinned.
+          visibleFiles.length === 0 && "min-h-[2rem]",
+          containerActive &&
+            "ring-1 ring-dashed ring-[var(--accent,var(--primary))]",
+        )}
+      >
+        {visibleFiles.map((path, visibleIndex) => {
+          const originalIndex = pinnedFiles.indexOf(path);
+          const dropEdge =
+            activeDrop && activeDrop.index === originalIndex
+              ? activeDrop.edge
+              : null;
+          const isDragging = draggingIndex === originalIndex;
+          return (
             <li key={path}>
               <PinnedRow
                 path={path}
+                index={visibleIndex}
                 isActive={activeFilePath === path}
+                isDragging={isDragging}
+                dropEdge={dropEdge}
                 onOpen={handleOpen}
+                onDragStart={handleRowDragStart}
+                onDragEnd={handleRowDragEnd}
+                onDragOverRow={handleRowDragOver}
+                onDragLeaveRow={handleRowDragLeave}
+                onDropRow={handleRowDrop}
               />
             </li>
-          ))}
-        </ul>
-      )}
+          );
+        })}
+      </ul>
     </section>
   );
 }

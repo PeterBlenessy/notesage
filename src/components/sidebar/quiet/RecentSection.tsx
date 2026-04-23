@@ -11,6 +11,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
+import { beginFileDrag } from "./file-drag";
 
 /**
  * RecentSection — quiet-composer sidebar recent-documents list (task #33).
@@ -56,6 +57,7 @@ interface RecentRowProps {
 
 function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
   const parentHint = useMemo(() => getParentFolderHint(entry.path), [entry.path]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleActivate = () => onOpen(entry);
 
@@ -83,10 +85,17 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
         <div
           role="button"
           tabIndex={0}
+          draggable
           aria-current={isActive ? "page" : undefined}
           data-active={isActive ? "true" : undefined}
+          data-dragging={isDragging ? "true" : undefined}
           onClick={handleActivate}
           onKeyDown={onKeyDown}
+          onDragStart={(e) => {
+            beginFileDrag(e, entry.path);
+            setIsDragging(true);
+          }}
+          onDragEnd={() => setIsDragging(false)}
           title={entry.path}
           className={cn(
             "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
@@ -95,6 +104,7 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
             isActive
               ? "bg-muted text-foreground font-medium"
               : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+            isDragging && "opacity-50",
           )}
         >
           <FileIcon fileName={entry.name} />

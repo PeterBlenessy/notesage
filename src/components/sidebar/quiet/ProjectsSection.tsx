@@ -17,6 +17,7 @@ import { getFileType } from "@/lib/file-utils";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
+import { beginFileDrag } from "./file-drag";
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
@@ -596,6 +597,10 @@ function ChildRow({
   const ariaLabel = entry.is_directory
     ? `Open folder ${entry.name}`
     : `Open file ${entry.name}`;
+  // File children are draggable into the Pinned section (#44). Folders are
+  // not — only file paths can be pinned in Phase 1. Projects themselves
+  // (row.kind === "project") stay non-draggable too.
+  const draggable = !entry.is_directory;
 
   return (
     <div
@@ -607,9 +612,17 @@ function ChildRow({
       data-row-type="child"
       data-row-kind={entry.is_directory ? "folder" : "file"}
       tabIndex={hasFocusWithin ? tabIndex : -1}
+      draggable={draggable}
       onClick={onActivate}
       onKeyDown={onKeyDown}
       onFocus={onFocus}
+      onDragStart={
+        draggable
+          ? (e) => {
+              beginFileDrag(e, entry.path);
+            }
+          : undefined
+      }
       className={cn(
         "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
         "text-foreground/90 transition-colors duration-150",
