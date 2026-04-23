@@ -30,6 +30,7 @@ import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
+import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useSettingsStore, type UiPreview } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -120,6 +121,7 @@ function App() {
   useActionScanner();
   useTraySync();
   useApprovalMigrationToast();
+  useRecentDocumentCycle();
 
   // Consolidated startup effects and event listeners
   const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {

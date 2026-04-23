@@ -77,6 +77,13 @@ interface EditorStore {
   persistedTabs: PersistedTab[];
   /** Persisted: which file was active, so we can re-activate it on restart. */
   persistedActiveFilePath: string | null;
+  /**
+   * Session-only: MRU order of document IDs — first entry is the most
+   * recently activated. Maintained by `openTab` / `setActiveTab` /
+   * `closeTab`. Drives the ⌘⇧[/] cycle shortcut (#77). Not persisted —
+   * access order resets on restart and repopulates as the user navigates.
+   */
+  documentAccessOrder: string[];
 
   openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => void;
   /** Create a tab placeholder without loading content (for startup restoration). */
@@ -126,6 +133,7 @@ export const useEditorStore = create<EditorStore>()(
       pendingCloseTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
+      documentAccessOrder: [],
 
       openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => {
         set((state) => {
@@ -152,6 +160,10 @@ export const useEditorStore = create<EditorStore>()(
               recentFiles: newRecent,
               persistedTabs: newPersistedTabs,
               persistedActiveFilePath: filePath,
+              documentAccessOrder: [
+                existingTab.id,
+                ...state.documentAccessOrder.filter((id) => id !== existingTab.id),
+              ],
             };
           }
 
@@ -178,6 +190,10 @@ export const useEditorStore = create<EditorStore>()(
             recentFiles: newRecent,
             persistedTabs: newPersistedTabs,
             persistedActiveFilePath: filePath,
+            documentAccessOrder: [
+              newTab.id,
+              ...state.documentAccessOrder.filter((id) => id !== newTab.id),
+            ],
           };
         });
       },
@@ -242,6 +258,7 @@ export const useEditorStore = create<EditorStore>()(
             activeTabId: newActiveTabId,
             persistedTabs: newPersistedTabs,
             persistedActiveFilePath: activeTab?.filePath ?? null,
+            documentAccessOrder: state.documentAccessOrder.filter((id) => id !== tabId),
           };
         });
       },
@@ -249,7 +266,14 @@ export const useEditorStore = create<EditorStore>()(
       setActiveTab: (tabId: string) => {
         set((state) => {
           const tab = state.openDocuments.find((t) => t.id === tabId);
-          return { activeTabId: tabId, persistedActiveFilePath: tab?.filePath ?? state.persistedActiveFilePath };
+          return {
+            activeTabId: tabId,
+            persistedActiveFilePath: tab?.filePath ?? state.persistedActiveFilePath,
+            documentAccessOrder: [
+              tabId,
+              ...state.documentAccessOrder.filter((id) => id !== tabId),
+            ],
+          };
         });
       },
 
