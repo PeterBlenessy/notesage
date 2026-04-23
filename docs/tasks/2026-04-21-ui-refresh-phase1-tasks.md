@@ -1077,7 +1077,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 This milestone closes the planning gap surfaced during the Phase 1 trial (2026-04-23): the Foundation milestones (M1.1–M1.10) built the new shell + design system + ARIA + perf, but never assigned tasks to mount the actual editor or chat inside QuietLayout. **Phase 1 cannot ship without these tasks** — the new UI is non-functional until they land.
 
-### #101 — Mount the editor inside QuietLayout center column
+### #101 — Mount the editor inside QuietLayout center column 🚧
 
 | Field | Value |
 | --- | --- |
@@ -1107,7 +1107,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />` in `QuietLayout.tsx` line 251 mounts the same TitleBar as classic, including chat-toggle and agent-strip-toggle buttons that do nothing in Quiet Composer (props are stubs). Add `mode?: 'classic' \| 'quiet'` to TitleBar to suppress those buttons in quiet mode. |
+| Description | `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />` in `QuietLayout.tsx` line 251 mounts the same TitleBar as classic, including chat-toggle and agent-strip-toggle buttons that do nothing in Quiet Composer (props are stubs). Add \`mode?: 'classic' |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
