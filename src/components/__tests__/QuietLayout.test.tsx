@@ -106,10 +106,10 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByTestId('titlebar')).toBeTruthy();
   });
 
-  it('renders three labelled placeholder zones (sidebar, document, reserved)', () => {
+  it('renders the QuietSidebar plus placeholder document + reserved zones', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
-    // Each zone has a centered placeholder label
-    expect(screen.getByText(/Sidebar \(placeholder\)/i)).toBeTruthy();
+    // Sidebar is now the real QuietSidebar (#30), centre + right remain placeholders.
+    expect(screen.getByRole('navigation', { name: /workspace sidebar/i })).toBeTruthy();
     expect(screen.getByText(/Document area \(placeholder\)/i)).toBeTruthy();
     expect(screen.getByText(/Reserved \(placeholder\)/i)).toBeTruthy();
   });
