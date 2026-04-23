@@ -9,6 +9,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType } from "@/lib/file-utils";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { FolderPeek } from "./FolderPeek";
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file counts.
@@ -190,11 +191,13 @@ export function ProjectsSection({ onAdd }: ProjectsSectionProps) {
             const isActive =
               !!activeTabPath && activeTabPath.startsWith(project.path + "/");
             return (
-              <ProjectRow
+              <FolderPeek
                 key={project.path}
-                project={project}
-                isActive={isActive}
-              />
+                projectPath={project.path}
+                fileTree={project.fileTree}
+              >
+                <ProjectRow project={project} isActive={isActive} />
+              </FolderPeek>
             );
           })}
         </div>
