@@ -504,3 +504,57 @@ body {
     transition-duration: 0ms;
   }
 }
+
+/* =========================================================================
+ * Focus mode (#56)
+ *
+ * `useFocusMode` toggles the `.focus-mode` class on the QuietLayout root
+ * (`.app[data-quiet-layout-root]`) when the user presses ⌘. (or the
+ * FocusPill's × button). The PRD's "Focus mode — done right" spec requires:
+ *
+ *   - Sidebar fades + slides left out of the column.
+ *   - Doc-head, formatting toolbar, and status line hide (opacity 0).
+ *   - Document gets +110 px top-padding so text clears the traffic lights.
+ *   - AgentOrb dims to 30% opacity but stays interactive.
+ *   - The FocusPill is rendered by `<FocusPill />` as a fixed overlay;
+ *     it is NOT faded here — the pill is the user's only exit affordance.
+ *
+ * Reduced motion: the `@media` block below zeros the transitions so
+ * vestibular-sensitive users get an instant transition, not a shorter one.
+ * ========================================================================= */
+.app.focus-mode [data-quiet-layout-document-area] > nav[aria-label="Workspace sidebar"] {
+  opacity: 0;
+  transform: translateX(-12px);
+  pointer-events: none;
+  transition: opacity 220ms ease-out, transform 220ms ease-out;
+}
+.app.focus-mode [data-doc-head],
+.app.focus-mode [data-quiet-toolbar],
+.app.focus-mode [data-quiet-status] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease-out;
+}
+/* AgentOrb doesn't carry a dedicated `data-agent-orb` attribute; it uses
+ * `data-testid="agent-orb"` as its stable hook (see AgentOrb.tsx). We key
+ * the dim-to-30% behaviour off that so the orb remains interactive. */
+.app.focus-mode [data-testid="agent-orb"] {
+  opacity: 0.3;
+  transition: opacity 220ms ease-out;
+}
+.app.focus-mode [data-doc-area-placeholder],
+.app.focus-mode [data-doc-area] {
+  padding-top: 110px;
+  transition: padding-top 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.focus-mode [data-quiet-layout-document-area] > nav[aria-label="Workspace sidebar"],
+  .app.focus-mode [data-doc-head],
+  .app.focus-mode [data-quiet-toolbar],
+  .app.focus-mode [data-quiet-status],
+  .app.focus-mode [data-testid="agent-orb"],
+  .app.focus-mode [data-doc-area-placeholder],
+  .app.focus-mode [data-doc-area] {
+    transition: none;
+  }
+}

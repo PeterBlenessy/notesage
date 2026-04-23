@@ -13,6 +13,8 @@ import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useFadeOnType } from "@/hooks/useFadeOnType";
+import { useFocusMode } from "@/hooks/useFocusMode";
+import { FocusPill } from "@/components/editor/FocusPill";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -77,6 +79,13 @@ export function QuietLayout(_props: QuietLayoutProps) {
   // `[data-quiet-layout-root]` node below, so state lives on the DOM and
   // typing never triggers a React re-render.
   useFadeOnType();
+
+  // #56 — Focus mode. Owns the `⌘.` toggle and the `Esc` fall-through
+  // chain (open popover → command bar expanded → inline edit → focus
+  // mode). Applies `.focus-mode` to the layout root; CSS in `globals.css`
+  // handles the sidebar slide-out, chrome fade, document top-padding, and
+  // orb dim. The FocusPill below renders the exit affordance.
+  const focus = useFocusMode();
 
   // Inert handlers for the toggle buttons — the real chat panel and
   // activity strip aren't part of the placeholder.
@@ -280,6 +289,14 @@ export function QuietLayout(_props: QuietLayoutProps) {
         constrained by the grid's column track.
        */}
       <TreeOverlay />
+
+      {/*
+        FocusPill (PRD `2026-04-21-ui-refresh`, task #55). Small pill at
+        the top-centre with an × affordance; only rendered while focus
+        mode is active. Announces itself via aria-live; keyboard exit via
+        `⌘.` is owned by `useFocusMode` above.
+       */}
+      <FocusPill active={focus.active} onExit={focus.exit} />
     </div>
   );
 }
