@@ -3,6 +3,7 @@ import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
+import { DocHead } from "@/components/editor/DocHead";
 import { useSettingsStore } from "@/stores/settings-store";
 
 /**
@@ -61,7 +62,15 @@ export function QuietLayout(_props: QuietLayoutProps) {
         }}
       >
         <QuietSidebar />
-        <ZonePlaceholder label="Document area (placeholder)" />
+        <div className="flex flex-col min-h-0 min-w-0">
+          <DocHead />
+          <div
+            data-doc-area-placeholder
+            className="flex-1 min-h-0 flex items-center justify-center rounded-md border border-dashed border-border bg-muted/30"
+          >
+            <span className="text-muted-foreground text-sm">Document area (placeholder)</span>
+          </div>
+        </div>
         <ZonePlaceholder label="Reserved (placeholder)" />
       </div>
 

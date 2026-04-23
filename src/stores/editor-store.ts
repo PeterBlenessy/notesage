@@ -39,6 +39,10 @@ export interface Tab {
   /** Session-only: the markdown content at the time of the last save. Used to distinguish
    *  self-writes from external changes when the user continues typing after a save. */
   lastSavedContent?: string;
+  /** Session-only: epoch millis of the last time this tab transitioned from dirty → clean
+   *  (i.e. was saved). Drives the "saved Xs ago" indicator in `DocHead`. Undefined means
+   *  the tab has never been saved this session. */
+  lastSavedAt?: number;
 }
 
 export interface RecentFile {
@@ -247,21 +251,35 @@ export const useEditorStore = create<EditorStore>()(
 
       updateTabContent: (tabId: string, content: string, isDirty: boolean) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
-            tab.id === tabId
-              ? { ...tab, content, isDirty, ...(!isDirty && { lastSavedContent: content }) }
-              : tab
-          ),
+          tabs: state.tabs.map((tab) => {
+            if (tab.id !== tabId) return tab;
+            // Stamp lastSavedAt only on the dirty → clean transition so the
+            // "saved Xs ago" clock resets at save time, not on every keystroke
+            // that happens to land in a clean state.
+            const savedNow = !isDirty && tab.isDirty;
+            return {
+              ...tab,
+              content,
+              isDirty,
+              ...(!isDirty && { lastSavedContent: content }),
+              ...(savedNow && { lastSavedAt: Date.now() }),
+            };
+          }),
         }));
       },
 
       markTabClean: (tabId: string, savedContent?: string) => {
         set((state) => ({
-          tabs: state.tabs.map((tab) =>
-            tab.id === tabId
-              ? { ...tab, isDirty: false, ...(savedContent !== undefined && { lastSavedContent: savedContent }) }
-              : tab
-          ),
+          tabs: state.tabs.map((tab) => {
+            if (tab.id !== tabId) return tab;
+            const savedNow = tab.isDirty;
+            return {
+              ...tab,
+              isDirty: false,
+              ...(savedContent !== undefined && { lastSavedContent: savedContent }),
+              ...(savedNow && { lastSavedAt: Date.now() }),
+            };
+          }),
         }));
       },
 

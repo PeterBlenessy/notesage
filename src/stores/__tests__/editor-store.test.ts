@@ -770,6 +770,57 @@ describe('reorderTab', () => {
   });
 });
 
+describe('lastSavedAt tracking', () => {
+  it('updateTabContent stamps lastSavedAt on dirty → clean transition', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+    const tabId = getTab('/a.md')!.id;
+    useEditorStore.getState().updateTabContent(tabId, 'dirty content', true);
+    expect(getTabById(tabId)!.lastSavedAt).toBeUndefined();
+
+    const before = Date.now();
+    useEditorStore.getState().updateTabContent(tabId, 'saved content', false);
+    const after = Date.now();
+
+    const stamped = getTabById(tabId)!.lastSavedAt;
+    expect(stamped).toBeDefined();
+    expect(stamped!).toBeGreaterThanOrEqual(before);
+    expect(stamped!).toBeLessThanOrEqual(after);
+  });
+
+  it('updateTabContent with isDirty=true does NOT update lastSavedAt', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+    const tabId = getTab('/a.md')!.id;
+
+    useEditorStore.getState().updateTabContent(tabId, 'modified', true);
+
+    expect(getTabById(tabId)!.lastSavedAt).toBeUndefined();
+  });
+
+  it('updateTabContent with clean → clean does NOT update lastSavedAt', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+    const tabId = getTab('/a.md')!.id;
+
+    useEditorStore.getState().updateTabContent(tabId, 'content', false);
+
+    expect(getTabById(tabId)!.lastSavedAt).toBeUndefined();
+  });
+
+  it('markTabClean stamps lastSavedAt when transitioning from dirty', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+    const tabId = getTab('/a.md')!.id;
+    useEditorStore.getState().updateTabContent(tabId, 'dirty', true);
+
+    const before = Date.now();
+    useEditorStore.getState().markTabClean(tabId);
+    const after = Date.now();
+
+    const stamped = getTabById(tabId)!.lastSavedAt;
+    expect(stamped).toBeDefined();
+    expect(stamped!).toBeGreaterThanOrEqual(before);
+    expect(stamped!).toBeLessThanOrEqual(after);
+  });
+});
+
 describe('scroll-to targets', () => {
   it('setScrollToTag sets and clears scrollToTag', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
