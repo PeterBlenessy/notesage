@@ -13,12 +13,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType } from "@/lib/file-utils";
-import type { FileEntry } from "@/lib/tauri";
+import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
 import { beginFileDrag } from "./file-drag";
@@ -114,6 +115,33 @@ function projectBasename(path: string): string {
 }
 
 /**
+ * Build a `validate` callback for the inline project-create input.
+ *
+ * Rejects:
+ *   - Slashes — projects are always a single folder directly under the
+ *     Notesage library root. Nested paths are not supported from this UI.
+ *   - Names beginning with `.` — dot-prefixed folders are treated as hidden
+ *     metadata directories elsewhere in the app.
+ *   - Names that collide (case-sensitively, by basename) with an already
+ *     open project.
+ *
+ * Empty inputs return `null` — SidebarInlineEdit auto-cancels those before
+ * this function is consulted.
+ */
+export function buildProjectNameValidator(
+  existingBasenames: Set<string>,
+): (input: string) => string | null {
+  return (input: string) => {
+    const trimmed = input.trim();
+    if (trimmed.length === 0) return null;
+    if (trimmed.includes("/")) return "Name cannot contain slashes";
+    if (trimmed.startsWith(".")) return "Name cannot start with a dot";
+    if (existingBasenames.has(trimmed)) return "Project already exists";
+    return null;
+  };
+}
+
+/**
  * Flat row representation used by the keyboard navigator. Each rendered
  * row — project or expanded child — corresponds to one `RowDescriptor`,
  * letting ArrowUp / ArrowDown walk the visible sequence without caring
@@ -187,7 +215,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // Task #40 — inline rename for child FILE rows. Project roots are NOT
   // renameable in this task (bigger blast radius; separate follow-up).
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  const { renamePath, createFile, openFile } = useFileOperations();
+  const { renamePath, createFile, createFolder, openFile } = useFileOperations();
 
   // Task #41 — inline create note. The pending signal comes from either the
   // `⌘N` handler in `QuietLayout` or the per-row `+` button below. The
@@ -196,6 +224,18 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // the first row in its child tree.
   const pendingCreate = useQuietSidebarStore((s) => s.pendingCreate);
   const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
+
+  // Task #42 — inline create project. Flag driven by `⌘⇧N` in QuietLayout
+  // or the section-header `+` button. When set, we render a
+  // SidebarInlineEdit row at the very top of the projects list (above
+  // any existing rows) that creates a new empty folder under the Notesage
+  // library root and registers it via workspace-store.addProject.
+  const pendingCreateProject = useQuietSidebarStore(
+    (s) => s.pendingCreateProject,
+  );
+  const setPendingCreateProject = useQuietSidebarStore(
+    (s) => s.setPendingCreateProject,
+  );
 
   const pendingCreateProjectPath = useMemo(() => {
     if (!pendingCreate) return null;
@@ -254,6 +294,71 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     },
     [setPendingCreate],
   );
+
+  // Task #42 — inline create project. The set of existing project
+  // basenames is used by the validator to reject duplicates before we
+  // hit the filesystem. Derived from `allProjects` (pre-filter) so the
+  // duplicate check doesn't miss projects the user has filtered out.
+  const existingProjectBasenames = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of allProjects) {
+      set.add(projectBasename(p.path));
+    }
+    return set;
+  }, [allProjects]);
+
+  const validateProjectName = useMemo(
+    () => buildProjectNameValidator(existingProjectBasenames),
+    [existingProjectBasenames],
+  );
+
+  const handleCreateProjectCommit = useCallback(
+    async (trimmedName: string) => {
+      // Resolve the Notesage library root. After `useAppLifecycle.reloadTrees`,
+      // `notesRootPath` is an expanded absolute path. Before that, it still
+      // carries a leading `~` — we bail rather than feed a non-absolute path
+      // to `create_directory`.
+      const libraryRoot = useSettingsStore.getState().notesRootPath;
+      if (!libraryRoot || libraryRoot.startsWith("~")) {
+        toast.error("Notesage library is not ready yet — try again in a moment");
+        setPendingCreateProject(false);
+        return;
+      }
+
+      const projectPath = `${libraryRoot}/${trimmedName}`;
+
+      // Clear the pending flag up front so a slow create doesn't leave the
+      // input hanging in the DOM. Toast reports any failure; the user can
+      // retrigger from scratch.
+      setPendingCreateProject(false);
+
+      try {
+        await createFolder(libraryRoot, trimmedName);
+        // Phase 1: projects start empty — no templates, no goal files,
+        // no iCloud migration. The freshly-created directory is empty, so
+        // the tree snapshot is predictable; we still fetch it via the same
+        // command the rest of the app uses for consistency.
+        let tree: FileEntry[] = [];
+        try {
+          tree = await tauriApi.listDirectory(projectPath, false);
+        } catch {
+          // Expected: on some filesystems (iCloud, permission-restricted
+          // mounts) a freshly-created directory may briefly not list. An
+          // empty tree is still a valid initial state — the watcher will
+          // refresh it on the next event.
+        }
+        useWorkspaceStore.getState().addProject(projectPath, tree);
+        toast.success(`Created project ${trimmedName}`);
+      } catch (error) {
+        toast.error(`Failed to create project: ${error}`);
+      }
+    },
+    [createFolder, setPendingCreateProject],
+  );
+
+  const handleCreateProjectCancel = useCallback(() => {
+    setPendingCreateProject(false);
+  }, [setPendingCreateProject]);
 
   const startRename = useCallback((path: string) => {
     setRenamingPath(path);
@@ -511,8 +616,32 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
           <Plus strokeWidth={1.5} />
         </Button>
       </header>
-      {projects.length > 0 && (
+      {(projects.length > 0 || pendingCreateProject) && (
         <ul role="tree" aria-label="Projects" className="flex flex-col m-0 p-0 list-none">
+          {pendingCreateProject && (
+            <li
+              className="m-0 p-0"
+              data-pending-create-project="true"
+            >
+              <div className="h-7 px-2 flex items-center gap-2">
+                <Folder
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+                <SidebarInlineEdit
+                  mode="create"
+                  placeholder="New project"
+                  validate={validateProjectName}
+                  onCommit={(value) =>
+                    void handleCreateProjectCommit(value)
+                  }
+                  onCancel={handleCreateProjectCancel}
+                  className="flex-1 min-w-0"
+                />
+              </div>
+            </li>
+          )}
           {projects.map((project) => {
             const isActive =
               !!activeTabPath && activeTabPath.startsWith(project.path + "/");

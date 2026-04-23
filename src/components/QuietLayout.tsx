@@ -178,6 +178,46 @@ export function QuietLayout(_props: QuietLayoutProps) {
     };
   }, [setPendingCreate]);
 
+  // `⌘⇧N` — inline create project (task #42). Routes to the QuietSidebar's
+  // top-of-Projects inline-edit row by flipping
+  // `quiet-sidebar-store.pendingCreateProject`. The legacy shell binds the
+  // same chord to "New Project" dialog via `useKeyboardShortcuts`; we use
+  // capture phase + stopImmediatePropagation to claim the chord while the
+  // quiet-composer preview is active.
+  const setPendingCreateProject = useQuietSidebarStore(
+    (s) => s.setPendingCreateProject,
+  );
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+      if (!event.shiftKey) return;
+      if (event.altKey) return;
+      if (event.key.toLowerCase() !== "n") return;
+
+      // Skip when the user is typing — same guard as the other chords.
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const isTextInput =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable;
+        if (isTextInput) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setPendingCreateProject(true);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+    };
+  }, [setPendingCreateProject]);
+
   return (
     <div
       data-quiet-layout-placeholder

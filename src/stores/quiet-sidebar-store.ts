@@ -3,21 +3,23 @@ import { create } from "zustand";
 /**
  * quiet-sidebar-store — ephemeral signals shared between the quiet-composer
  * sidebar sections and the layout-level keyboard handlers (PRD
- * `2026-04-21-ui-refresh`, Phase 1 task #41).
+ * `2026-04-21-ui-refresh`, Phase 1 tasks #41 + #42).
  *
- * Currently exposes a single `pendingCreate` signal: when set to a parent
- * directory, the matching project row in `ProjectsSection` renders a
- * `SidebarInlineEdit` in create mode as its first child. The store is the
- * coupling point between:
+ * Two signals today:
  *
- *   - `⌘N` in `QuietLayout` (resolves parent from active tab, then sets the
- *     signal)
- *   - the per-row `+` button on a project (sets the signal to the project
- *     root)
- *   - the inline-edit rendered by `ProjectsSection` (clears the signal on
- *     commit or cancel)
+ *   - `pendingCreate` (task #41) — when set to a parent directory, the
+ *     matching project row in `ProjectsSection` renders a
+ *     `SidebarInlineEdit` in create mode under that parent. Driven by
+ *     `⌘N` in `QuietLayout` (resolves parent from the active tab) and by
+ *     the per-row `+` button on a project (sets the signal to the project
+ *     root). Cleared by the inline edit on commit or cancel.
  *
- * No persistence — opening the inline create row is always a fresh,
+ *   - `pendingCreateProject` (task #42) — boolean flag that tells
+ *     `ProjectsSection` to render a top-of-list `SidebarInlineEdit` row
+ *     that creates a fresh empty project under the Notesage library root.
+ *     Driven by `⌘⇧N` in `QuietLayout` and the section-header `+` button.
+ *
+ * No persistence — opening either inline surface is always a fresh,
  * ephemeral action.
  */
 
@@ -41,9 +43,23 @@ interface QuietSidebarStore {
    * `ProjectsSection`'s job (it matches on `project.path` prefix).
    */
   setPendingCreate: (next: PendingCreate | null) => void;
+
+  /**
+   * When true, `ProjectsSection` renders a top-of-list `SidebarInlineEdit`
+   * row in create mode. Commit creates a new project directory under the
+   * Notesage library root (`settings.notesRootPath`) and registers it via
+   * `workspace-store.addProject`. False when no project-create flow is
+   * active.
+   */
+  pendingCreateProject: boolean;
+
+  /** Set / clear the pending-project-create flag. */
+  setPendingCreateProject: (next: boolean) => void;
 }
 
 export const useQuietSidebarStore = create<QuietSidebarStore>((set) => ({
   pendingCreate: null,
   setPendingCreate: (next) => set({ pendingCreate: next }),
+  pendingCreateProject: false,
+  setPendingCreateProject: (next) => set({ pendingCreateProject: next }),
 }));

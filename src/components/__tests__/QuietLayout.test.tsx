@@ -396,7 +396,10 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
     input.remove();
   });
 
-  it('Cmd+Shift+N is NOT intercepted by the Cmd+N handler (task #42 owns it)', () => {
+  it('Cmd+Shift+N does NOT set the note-level pendingCreate signal', () => {
+    // Cmd+N owns the note-create signal (`pendingCreate`); Cmd+Shift+N
+    // belongs to the project-create handler below and must not spill over
+    // into the note-create code path.
     useWorkspaceStore.setState({
       projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
     });
@@ -421,8 +424,126 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     dispatchCmdN({ shiftKey: true });
 
-    // Pending create NOT set — the Shift modifier routes the event past
-    // our handler so #42's project-create flow can claim it.
     expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cmd+Shift+N keyboard handler (#42) — project-create
+// ---------------------------------------------------------------------------
+
+describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
+  beforeEach(() => {
+    registerDefaultHandlers();
+    mockCmdBarPinned = false;
+    useQuietSidebarStore.setState({
+      pendingCreate: null,
+      pendingCreateProject: false,
+    });
+    useWorkspaceStore.setState({
+      explorerFolders: [],
+      projects: [],
+      recentProjects: [],
+      notesTree: [],
+    });
+    useEditorStore.setState({
+      tabs: [],
+      activeTabId: null,
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+  });
+
+  function dispatchCmdShiftN(modifiers: Partial<KeyboardEventInit> = {}) {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+        ...modifiers,
+      }),
+    );
+  }
+
+  it('Cmd+Shift+N sets pendingCreateProject to true', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    dispatchCmdShiftN();
+
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
+    // Note-create signal left untouched so the two flows don't fight.
+    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
+  });
+
+  it('Cmd+N alone does NOT set pendingCreateProject (#41 territory)', () => {
+    useWorkspaceStore.setState({
+      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          id: 't1',
+          filePath: '/Users/me/Notesage/alpha/a.md',
+          fileName: 'a.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 't1',
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        metaKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+  });
+
+  it('Cmd+Shift+N while typing in an input is a no-op', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        metaKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
+    input.remove();
+  });
+
+  it('Ctrl+Shift+N works on non-mac paths (ctrlKey alternative to metaKey)', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'n',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
   });
 });
