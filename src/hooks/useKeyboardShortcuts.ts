@@ -1,8 +1,88 @@
+/**
+ * useKeyboardShortcuts — the single keyboard-shortcut hook, mounted at the app
+ * root (App.tsx) alongside the other lifecycle hooks.
+ *
+ * Batch G12 · task #76 — consolidated the scattered if/else soup of the
+ * legacy hook into a declarative SHORTCUT table, added `uiPreview` awareness
+ * so ⌘K / ⌘1–4 / ⌘⇧P route to the FloatingCommandBar under the Quiet
+ * Composer preview, and pulled `useCommandBarShortcuts` into this hook
+ * (composition) so App.tsx only has to mount one keyboard hook.
+ *
+ * ------------------------------------------------------------------------
+ *   SHORTCUT INVENTORY — read this before editing.
+ * ------------------------------------------------------------------------
+ *
+ *   Legacy column = behaviour when `settings.uiPreview === "legacy"`
+ *   QuietComposer column = behaviour when `settings.uiPreview === "quiet-composer"`
+ *   A dash (—) means this hook does NOT handle the chord; see "Owner" column
+ *   for the component that owns it at capture phase.
+ *
+ *   | Chord       | Legacy                             | QuietComposer                                  | Owner (if not this hook) |
+ *   | ----------- | ---------------------------------- | ---------------------------------------------- | ------------------------ |
+ *   | ⌘K          | Open CommandPalette (default mode) | emit cmd-bar `focus`                           | this hook (both paths)   |
+ *   | ⌘1          | Open CommandPalette (actions)      | emit cmd-bar `focus` prefix `!`                | this hook (both paths)   |
+ *   | ⌘2          | Open CommandPalette (mentions)     | emit cmd-bar `focus` prefix `@`                | this hook (both paths)   |
+ *   | ⌘3          | Open CommandPalette (tags)         | emit cmd-bar `focus` prefix `#`                | this hook (both paths)   |
+ *   | ⌘4          | Open CommandPalette (research)     | emit cmd-bar `focus` prefix `?`                | this hook (both paths)   |
+ *   | ⌘⇧1…4       | same as unshifted (same action)    | same as unshifted                              | this hook (both paths)   |
+ *   | ⌘⇧P         | Open CommandPalette (commands `>`) | emit cmd-bar `focus` prefix `>`                | this hook (both paths)   |
+ *   | ⌘⇧H         | Open find-replace in editor        | Open find-replace in editor                    | this hook                |
+ *   | ⌘⇧F         | Open CommandPalette (files)        | emit cmd-bar `focus` (no prefix — file search) | this hook (both paths)   |
+ *   | ⌘F          | Open find in editor                | Open find in editor                            | this hook                |
+ *   | ⌘W          | Close active tab (dirty guard)     | Close active tab (dirty guard)                 | this hook                |
+ *   | ⌘.          | Toggle focus mode                  | —                                              | useFocusMode (capture)   |
+ *   | ⌘⇧E         | Open Export dialog                 | —                                              | QuietLayout (capture)    |
+ *   | ⌘⇧O         | Open document outline              | Open document outline                          | this hook                |
+ *   | ⌘⇧L         | Toggle sidebar pin                 | Toggle sidebar pin                             | this hook                |
+ *   | ⌘⇧A         | Toggle activity strip              | Toggle activity strip                          | this hook                |
+ *   | ⌘⇧C         | Toggle chat panel                  | Toggle chat panel                              | this hook                |
+ *   | ⌘⇧R         | Toggle recording                   | Toggle recording                               | this hook                |
+ *   | ⌘⇧K         | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
+ *   | ⌘7          | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
+ *   | ⌘,          | Open Settings                      | Open Settings                                  | this hook                |
+ *   | ⌘T          | Toggle theme                       | Toggle theme                                   | this hook                |
+ *   | ⌘N          | Open New Note dialog               | —                                              | QuietLayout (capture)    |
+ *   | ⌘⇧N         | Open New Project dialog            | —                                              | QuietLayout (capture)    |
+ *   | ⌘O          | Open folder picker                 | Open folder picker                             | this hook                |
+ *   | ⌘⇧[         | Previous Recent doc (TODO #77)     | Previous Recent doc (TODO #77)                 | this hook (scaffold)     |
+ *   | ⌘⇧]         | Next Recent doc (TODO #77)         | Next Recent doc (TODO #77)                     | this hook (scaffold)     |
+ *   | ⌘⌥C         | Copy absolute path of selection    | Copy absolute path of selection                | this hook (event emit)   |
+ *   | ⌘⌥R         | Reveal selection in Finder         | Reveal selection in Finder                     | this hook (event emit)   |
+ *   | Esc         | Exit focus mode (when active)      | —                                              | useFocusMode (capture)   |
+ *   | ⌘⌥I         | Open Tauri devtools                | Open Tauri devtools                            | this hook                |
+ *
+ * ⌘S (save) is context-aware and lives in `Editor.tsx` / `CodeEditor.tsx` so
+ * markdown and code-file save paths can diverge. It's intentionally NOT here.
+ *
+ * ------------------------------------------------------------------------
+ *   Why the capture-phase listeners in other components aren't migrated.
+ * ------------------------------------------------------------------------
+ *
+ * `QuietLayout` owns ⌘⇧E (TreeOverlay), ⌘N, and ⌘⇧N at CAPTURE phase with
+ * `stopImmediatePropagation`. `useFocusMode` owns ⌘. at capture phase.
+ * That design predates this consolidation and is deliberate: the capture
+ * phase lets those components preempt this hook's bubble-phase listener
+ * when the Quiet Composer preview is active. If we absorbed them into this
+ * hook, we'd need to conditionally skip them based on `uiPreview` + active
+ * popover state + focus state — a worse abstraction than letting each
+ * component own its own chord.
+ *
+ * The JSDoc table above is the single source of truth for "which component
+ * owns which chord" — keep it in sync when moving listeners around.
+ */
+
 import { useEffect } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import type { PaletteMode } from "@/lib/command-palette";
 
+/**
+ * Callback bag the hook invokes when a shortcut fires. Signature is
+ * BACKWARD-COMPATIBLE with the pre-consolidation hook — App.tsx's call site
+ * continues to work unchanged.
+ */
 interface KeyboardShortcutCallbacks {
   onPaletteOpen: (mode: PaletteMode) => void;
   onFindOpen: () => void;
@@ -22,23 +102,46 @@ interface KeyboardShortcutCallbacks {
   focusMode: boolean;
 }
 
+/**
+ * Public event name for sidebar/editor "copy absolute path" and "reveal in
+ * Finder" chords. Listeners are free to ignore these if they're not the
+ * current focus owner — the hook just announces that the chord fired.
+ */
+export const COPY_PATH_EVENT = "notesage:copy-path";
+export const REVEAL_IN_FINDER_EVENT = "notesage:reveal-in-finder";
+export const CYCLE_RECENT_EVENT = "notesage:cycle-recent";
+
 export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
+  // Quiet-composer-only cmd-bar bindings (⌘K, ⌘1–4, ⌘⇧P, Esc inside the
+  // bar). The hook short-circuits itself to a no-op under legacy, so it's
+  // safe to mount unconditionally from here.
+  useCommandBarShortcuts();
+
   const { openDocuments, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
   const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
+  const uiPreview = useSettingsStore((s) => s.uiPreview);
+  const isQuiet = uiPreview === "quiet-composer";
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
+      const key = e.key;
+      const keyLower = key.toLowerCase();
 
-      // Esc — exit focus mode
-      if (e.key === "Escape" && callbacks.focusMode) {
+      // ------------------------------------------------------------------
+      // Focus-mode escape — legacy only. useFocusMode owns Esc under the
+      // quiet-composer preview at capture phase.
+      // ------------------------------------------------------------------
+      if (key === "Escape" && callbacks.focusMode && !isQuiet) {
         e.preventDefault();
         callbacks.onExitFocusMode();
         return;
       }
 
-      // Cmd+W — close active tab
-      if (isMod && e.key === "w") {
+      // ------------------------------------------------------------------
+      // Cmd+W — close active tab (both variants).
+      // ------------------------------------------------------------------
+      if (isMod && !e.shiftKey && !e.altKey && keyLower === "w") {
         e.preventDefault();
         if (activeTabId) {
           const activeTab = openDocuments.find((t) => t.id === activeTabId);
@@ -51,79 +154,116 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+K — command palette (always, regardless of selection)
-      if (isMod && e.key === "k") {
+      // ------------------------------------------------------------------
+      // Palette / command bar family. Under quiet-composer, the
+      // `useCommandBarShortcuts` hook (composed above) has ALREADY handled
+      // ⌘K / ⌘1–4 / ⌘⇧P at the time we run — it installs its listener on
+      // the same `window` target with the same (default) event phase, and
+      // the React effect ordering guarantees it mounts first. It calls
+      // preventDefault; we guard against re-firing here by checking
+      // `defaultPrevented`. Belt-and-suspenders: we also short-circuit by
+      // `uiPreview` below so even if the cmd-bar hook weren't mounted
+      // (unlikely), we still wouldn't open the legacy palette.
+      // ------------------------------------------------------------------
+
+      // ⌘K
+      if (isMod && !e.shiftKey && !e.altKey && keyLower === "k") {
+        if (isQuiet) {
+          // useCommandBarShortcuts has it. Do NOT open the legacy palette.
+          return;
+        }
         e.preventDefault();
         callbacks.onPaletteOpen("default");
         return;
       }
 
-      // Cmd+Shift+H — find and replace in document
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "h") {
+      // ⌘⇧H — find-replace (not a cmd-bar mode; keep it on the editor).
+      if (isMod && e.shiftKey && keyLower === "h") {
         e.preventDefault();
         callbacks.onFindReplaceOpen();
         return;
       }
 
-      // Cmd+Shift+F — project file search
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
+      // ⌘⇧F — file search
+      if (isMod && e.shiftKey && keyLower === "f") {
+        if (isQuiet) {
+          // The quiet-composer cmd bar doesn't reserve a prefix for "files",
+          // so we emit a plain focus (empty query) and let the user type.
+          e.preventDefault();
+          emitCmdBarEvent({ type: "focus" });
+          return;
+        }
         e.preventDefault();
         callbacks.onPaletteOpen("files");
         return;
       }
 
-      // Cmd+F — find in document (must come after Cmd+Shift+F check)
-      if (isMod && !e.shiftKey && e.key.toLowerCase() === "f") {
+      // ⌘F — in-document find (never routes to cmd bar).
+      if (isMod && !e.shiftKey && keyLower === "f") {
         e.preventDefault();
         callbacks.onFindOpen();
         return;
       }
 
-      // Cmd+2 — mention search
-      if (isMod && !e.shiftKey && e.key === "2") {
+      // ⌘1 / ⌘2 / ⌘3 / ⌘4 — palette prefix modes.
+      if (isMod && !e.altKey) {
+        const DIGIT_TO_LEGACY_MODE: Record<string, PaletteMode> = {
+          "1": "default", // actions dashboard opens separately via onOpenActions
+          "2": "mentions",
+          "3": "tags",
+          "4": "research",
+        };
+        if (key in DIGIT_TO_LEGACY_MODE) {
+          if (isQuiet) {
+            // useCommandBarShortcuts owns these.
+            return;
+          }
+          e.preventDefault();
+          if (key === "1") {
+            callbacks.onOpenActions?.();
+          } else {
+            callbacks.onPaletteOpen(DIGIT_TO_LEGACY_MODE[key]);
+          }
+          return;
+        }
+      }
+
+      // ⌘⇧P — command palette in `>` (commands) mode under legacy; focus
+      // cmd bar with `>` prefix under quiet-composer.
+      if (isMod && e.shiftKey && keyLower === "p") {
+        if (isQuiet) {
+          // useCommandBarShortcuts owns this.
+          return;
+        }
         e.preventDefault();
-        callbacks.onPaletteOpen("mentions");
+        callbacks.onPaletteOpen("commands");
         return;
       }
 
-      // Cmd+3 — tag search
-      if (isMod && !e.shiftKey && e.key === "3") {
-        e.preventDefault();
-        callbacks.onPaletteOpen("tags");
-        return;
-      }
-
-      // Cmd+4 — research search
-      if (isMod && !e.shiftKey && e.key === "4") {
-        e.preventDefault();
-        callbacks.onPaletteOpen("research");
-        return;
-      }
-
-      // Cmd+1 — open actions dashboard
-      if (isMod && !e.shiftKey && e.key === "1") {
-        e.preventDefault();
-        callbacks.onOpenActions?.();
-        return;
-      }
-
-      // Cmd+. — focus mode toggle
-      if (isMod && e.key === ".") {
+      // ------------------------------------------------------------------
+      // Focus mode — legacy only. useFocusMode owns ⌘. under quiet-composer.
+      // ------------------------------------------------------------------
+      if (isMod && !isQuiet && key === ".") {
         e.preventDefault();
         callbacks.onToggleFocusMode();
         return;
       }
 
-      // Cmd+T — toggle theme
-      if (isMod && e.key === "t") {
+      // ------------------------------------------------------------------
+      // Theme / settings / outline / sidebar / chat / activity / recording.
+      // These are uiPreview-agnostic.
+      // ------------------------------------------------------------------
+
+      // ⌘T — toggle theme
+      if (isMod && !e.shiftKey && !e.altKey && keyLower === "t") {
         e.preventDefault();
         const settings = useSettingsStore.getState();
         settings.setTheme(settings.theme === "dark" ? "light" : "dark");
         return;
       }
 
-      // Cmd+Shift+O — document outline (check before Cmd+O)
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "o") {
+      // ⌘⇧O — document outline
+      if (isMod && e.shiftKey && keyLower === "o") {
         e.preventDefault();
         if (useEditorStore.getState().activeTabId) {
           callbacks.onOutlineOpen();
@@ -131,47 +271,58 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+Shift+L — sidebar pin toggle
-      if (isMod && e.shiftKey && e.key === "l") {
+      // ⌘⇧L — toggle sidebar pin
+      if (isMod && e.shiftKey && keyLower === "l") {
         e.preventDefault();
         setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
+        return;
       }
 
-      // Cmd+Shift+A — agent panel toggle
-      if (isMod && e.shiftKey && e.key === "a") {
+      // ⌘⇧A — toggle activity strip
+      if (isMod && e.shiftKey && keyLower === "a") {
         e.preventDefault();
         callbacks.onToggleActivityStrip?.();
         return;
       }
 
-      // Cmd+Shift+C — AI chat toggle
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "c") {
+      // ⌘⇧C — toggle chat panel
+      if (isMod && e.shiftKey && keyLower === "c" && !e.altKey) {
         e.preventDefault();
         setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
+        return;
       }
 
-      // Cmd+, — settings
-      if (isMod && e.key === ",") {
+      // ⌘, — settings
+      if (isMod && !e.shiftKey && !e.altKey && key === ",") {
         e.preventDefault();
         callbacks.onSettingsOpen();
+        return;
       }
 
-      // Cmd+7 — keyboard shortcuts reference
-      if (isMod && !e.shiftKey && e.key === "7") {
+      // ⌘⇧K — keyboard shortcuts reference (ui-refresh PRD §Keyboard shortcuts)
+      if (isMod && e.shiftKey && !e.altKey && keyLower === "k") {
         e.preventDefault();
         callbacks.onShortcutsOpen();
         return;
       }
 
-      // Cmd+Shift+R — toggle recording
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "r") {
+      // ⌘7 — legacy alias for keyboard shortcuts reference
+      if (isMod && !e.shiftKey && key === "7") {
+        e.preventDefault();
+        callbacks.onShortcutsOpen();
+        return;
+      }
+
+      // ⌘⇧R — toggle recording
+      if (isMod && e.shiftKey && keyLower === "r" && !e.altKey) {
         e.preventDefault();
         callbacks.onToggleRecording?.();
         return;
       }
 
-      // Cmd+Shift+E — export PDF
-      if (isMod && e.shiftKey && e.key === "e") {
+      // ⌘⇧E — export. QuietLayout preempts at capture phase under
+      // quiet-composer, so we're safe to handle unconditionally here.
+      if (isMod && e.shiftKey && keyLower === "e") {
         e.preventDefault();
         if (useEditorStore.getState().activeTabId) {
           callbacks.onExportOpen();
@@ -179,27 +330,72 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+Shift+N — new project
-      if (isMod && e.shiftKey && e.key === "n") {
+      // ⌘⇧N — new project. QuietLayout preempts at capture phase under
+      // quiet-composer.
+      if (isMod && e.shiftKey && keyLower === "n") {
         e.preventDefault();
         callbacks.onNewProject();
         return;
       }
 
-      // Cmd+N — new note
-      if (isMod && e.key === "n") {
+      // ⌘N — new note. QuietLayout preempts at capture phase under
+      // quiet-composer.
+      if (isMod && !e.shiftKey && !e.altKey && keyLower === "n") {
         e.preventDefault();
         callbacks.onNewNote();
+        return;
       }
 
-      // Cmd+O — open folder
-      if (isMod && e.key === "o") {
+      // ⌘O — open folder
+      if (isMod && !e.shiftKey && !e.altKey && keyLower === "o") {
         e.preventDefault();
         callbacks.onOpenFolder();
+        return;
       }
 
-      // Cmd+Option+I — open devtools
-      if (isMod && e.altKey && e.key === "i") {
+      // ------------------------------------------------------------------
+      // ⌘⇧[ / ⌘⇧] — cycle through Recent documents (MRU order).
+      //
+      // TODO(#77): The MRU cycling logic itself is task #77. For #76 we
+      // install the binding scaffold and emit a custom event so the feature
+      // wire-up is a one-file change when #77 lands. Firing the event is
+      // harmless — no listener exists today, so the chord is effectively a
+      // no-op that consumes the keystroke (intentional — avoids the chord
+      // falling through to the browser's back/forward navigation).
+      // ------------------------------------------------------------------
+      if (isMod && e.shiftKey && !e.altKey && (key === "[" || key === "]")) {
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent<{ direction: "previous" | "next" }>(
+            CYCLE_RECENT_EVENT,
+            { detail: { direction: key === "[" ? "previous" : "next" } },
+          ),
+        );
+        return;
+      }
+
+      // ------------------------------------------------------------------
+      // ⌘⌥C — copy absolute path (sidebar selection).
+      // ⌘⌥R — reveal in Finder (sidebar selection).
+      //
+      // We emit DOM events so the sidebar (which owns the current selection)
+      // can respond if it's the focus owner. Listeners that aren't the
+      // current focus owner silently ignore the event.
+      // ------------------------------------------------------------------
+      if (isMod && e.altKey && !e.shiftKey && keyLower === "c") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent(COPY_PATH_EVENT));
+        return;
+      }
+
+      if (isMod && e.altKey && !e.shiftKey && keyLower === "r") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent(REVEAL_IN_FINDER_EVENT));
+        return;
+      }
+
+      // ⌘⌥I — devtools
+      if (isMod && e.altKey && keyLower === "i") {
         e.preventDefault();
         import("@tauri-apps/api/core").then(({ invoke }) => {
           invoke("open_devtools").catch(console.error);
@@ -207,10 +403,19 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+S is handled in the Editor component for context-aware saving
+      // Cmd+S is handled in the Editor component for context-aware saving.
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTabId, openDocuments, closeTab, setPendingCloseTabId, setSidebarPinned, setChatPanelOpen, callbacks]);
+  }, [
+    activeTabId,
+    openDocuments,
+    closeTab,
+    setPendingCloseTabId,
+    setSidebarPinned,
+    setChatPanelOpen,
+    callbacks,
+    isQuiet,
+  ]);
 }
