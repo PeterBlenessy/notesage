@@ -987,7 +987,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.9 Docs + release prep (6 tasks)
 
-### #93 — Update `docs/design-system.md`
+### #93 — Update `docs/design-system.md` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -997,7 +997,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | most UI tasks |
 | Files | `docs/design-system.md` |
 
-### #94 — Update `docs/features/editor.md` + `ai-workflows.md` + `workspace.md`
+### #94 — Update `docs/features/editor.md` + `ai-workflows.md` + `workspace.md` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -1007,7 +1007,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | most UI tasks |
 | Files | three files |
 
-### #95 — Update `docs/keyboard-shortcuts.md`
+### #95 — Update `docs/keyboard-shortcuts.md` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -1017,7 +1017,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #76 |
 | Files | `docs/keyboard-shortcuts.md` |
 
-### #96 — Update `docs/architecture.md`
+### #96 — Update `docs/architecture.md` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -1027,7 +1027,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | most tasks |
 | Files | `docs/architecture.md` |
 
-### #97 — Preview invitation banner
+### #97 — Preview invitation banner 🚧
 
 | Field | Value |
 | --- | --- |
@@ -1037,7 +1037,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #1 |
 | Files | `src/components/PreviewInvitation.tsx`, settings-store |
 
-### #98 — Changelog entry for Phase 1
+### #98 — Changelog entry for Phase 1 🚧
 
 | Field | Value |
 | --- | --- |
