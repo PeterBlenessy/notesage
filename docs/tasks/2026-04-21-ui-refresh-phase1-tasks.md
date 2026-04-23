@@ -383,7 +383,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #35 — Sidebar composition settings
+### #35 — Sidebar composition settings ✅
 
 | Field | Value |
 | --- | --- |
@@ -543,7 +543,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #49, #8 |
 | Files | `src/hooks/useFadeOnType.ts`, `src/components/QuietLayout.tsx`, `src/styles/globals.css` |
 
-### #51 — Quiet-chrome presets
+### #51 — Quiet-chrome presets ✅
 
 | Field | Value |
 | --- | --- |
@@ -563,7 +563,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/editor/StatusBar.tsx` |
 
-### #53 — `StatusTray` popover
+### #53 — `StatusTray` popover ✅
 
 | Field | Value |
 | --- | --- |
@@ -573,7 +573,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #52 |
 | Files | `src/components/editor/StatusTray.tsx` |
 
-### #54 — Status-bar ambient dots
+### #54 — Status-bar ambient dots ✅
 
 | Field | Value |
 | --- | --- |
@@ -593,7 +593,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/editor/FocusPill.tsx` |
 
-### #56 — `useFocusMode` hook + Esc fall-through
+### #56 — `useFocusMode` hook + Esc fall-through ✅
 
 | Field | Value |
 | --- | --- |
