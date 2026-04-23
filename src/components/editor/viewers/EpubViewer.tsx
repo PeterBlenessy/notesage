@@ -4,13 +4,20 @@ import {
   ChevronRight,
   BookOpen,
   ScrollText,
+  List,
+  Search,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { getBinaryData } from "@/lib/binary-cache";
 import { useEpubStore } from "@/stores/epub-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { FindBar } from "@/components/editor/FindBar";
+import { ViewerToolbarPill } from "@/components/editor/viewers/ViewerToolbarPill";
 
 type ViewMode = "scroll" | "paginated";
 
@@ -212,7 +219,6 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   const filePathRef = useRef(filePath);
   filePathRef.current = filePath;
 
-  const [bookTitle, setBookTitle] = useState("");
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentChapter, setCurrentChapter] = useState("");
   const [atStart, setAtStart] = useState(true);
@@ -325,10 +331,11 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
 
         if (destroyedRef.current) return;
 
-        // Extract metadata
+        // Extract metadata. Title is only kept in a ref for the paginator's
+        // running header — the visible label comes from the tab bar and the
+        // current-chapter indicator in the floating pill.
         const title = getBookTitle(view.book);
         if (title) {
-          setBookTitle(title);
           bookTitleRef.current = title;
         }
         if (view.book.toc) setToc(view.book.toc);
@@ -634,83 +641,144 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   }
 
   const isPaginated = viewMode === "paginated";
+  const pillButtonClass =
+    "inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs hover:bg-muted/60 transition-colors text-muted-foreground disabled:opacity-50 disabled:pointer-events-none";
+  const pillButtonActiveClass =
+    "inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs bg-muted text-foreground transition-colors";
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
-      <div className="h-9 border-b border-border px-3 flex items-center gap-1 shrink-0 bg-background">
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {bookTitle || fileName}
-        </span>
-        {currentChapter && (
-          <>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <span className="text-xs text-muted-foreground truncate max-w-[300px]">
-              {currentChapter}
-            </span>
-          </>
-        )}
-        <span className="flex-1" />
-
-        {/* View mode */}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setViewMode("scroll")}
-          className={!isPaginated ? "bg-accent text-foreground" : "text-muted-foreground"}
-          title="Continuous scroll"
-        >
-          <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => setViewMode("paginated")}
-          className={isPaginated ? "bg-accent text-foreground" : "text-muted-foreground"}
-          title="Paginated"
-        >
-          <BookOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-
-        <Separator orientation="vertical" className="h-4 mx-1" />
-
-        {/* Navigation */}
-        <Button variant="ghost" size="icon-xs" onClick={goPrev} disabled={atStart} title="Previous">
-          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        {pageInfo.total > 0 && (
-          <span className="text-xs text-muted-foreground tabular-nums min-w-[50px] text-center">
-            {pageInfo.current} / {pageInfo.total}
-          </span>
-        )}
-        <Button variant="ghost" size="icon-xs" onClick={goNext} disabled={atEnd} title="Next">
-          <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-
-        {/* TOC */}
-        {toc.length > 0 && (
-          <>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <select
-              className="text-xs bg-transparent border-none outline-none text-muted-foreground cursor-pointer max-w-[200px]"
-              value=""
-              onChange={(e) => { if (e.target.value) goToChapter(e.target.value); }}
-            >
-              <option value="" disabled>Chapters</option>
-              {toc.map((item, i) => (
-                <option key={item.id ?? i} value={item.href}>{item.label.trim()}</option>
-              ))}
-            </select>
-          </>
-        )}
-      </div>
-
       {/* Content area — foliate-view fills this entirely.
           The paginator's internal CSS grid handles page margins,
           content centering, and the header/footer areas.
           The #background div inside the paginator auto-syncs to the
-          iframe's computed background, so the surrounding area matches. */}
+          iframe's computed background, so the surrounding area matches.
+          The floating pill (fixed top-4 centered) hovers above. */}
       <div className="flex-1 overflow-hidden relative bg-background">
+        {/* Floating toolbar pill */}
+        <ViewerToolbarPill viewerId="epub">
+          {/* TOC popover */}
+          {toc.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={pillButtonClass}
+                  aria-label="Table of contents"
+                  title="Chapters"
+                >
+                  <List className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  {currentChapter ? (
+                    <span className="truncate max-w-[140px]">{currentChapter}</span>
+                  ) : (
+                    <span>Chapters</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                sideOffset={6}
+                className="w-72 p-1 max-h-[60vh] overflow-auto"
+              >
+                <div className="flex flex-col">
+                  {toc.map((item, i) => (
+                    <button
+                      key={item.id ?? i}
+                      type="button"
+                      onClick={() => goToChapter(item.href)}
+                      className="text-left text-xs px-2 py-1.5 rounded-md hover:bg-muted text-foreground truncate"
+                    >
+                      {item.label.trim()}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          {toc.length > 0 && (
+            <span
+              className="w-px h-3.5 bg-border/60 mx-0.5"
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Navigation */}
+          <button
+            type="button"
+            onClick={goPrev}
+            disabled={atStart}
+            className={pillButtonClass}
+            aria-label="Previous page"
+            title="Previous"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+          {pageInfo.total > 0 && (
+            <span className="text-xs text-muted-foreground tabular-nums px-1 select-none min-w-[50px] text-center">
+              {pageInfo.current} / {pageInfo.total}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={atEnd}
+            className={pillButtonClass}
+            aria-label="Next page"
+            title="Next"
+          >
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+
+          <span
+            className="w-px h-3.5 bg-border/60 mx-0.5"
+            aria-hidden="true"
+          />
+
+          {/* View mode toggle */}
+          <button
+            type="button"
+            onClick={() => setViewMode("scroll")}
+            className={cn(
+              !isPaginated ? pillButtonActiveClass : pillButtonClass,
+            )}
+            aria-pressed={!isPaginated}
+            aria-label="Continuous scroll"
+            title="Continuous scroll"
+          >
+            <ScrollText className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("paginated")}
+            className={cn(
+              isPaginated ? pillButtonActiveClass : pillButtonClass,
+            )}
+            aria-pressed={isPaginated}
+            aria-label="Paginated"
+            title="Paginated"
+          >
+            <BookOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+
+          <span
+            className="w-px h-3.5 bg-border/60 mx-0.5"
+            aria-hidden="true"
+          />
+
+          {/* Search */}
+          <button
+            type="button"
+            onClick={() => setFindBarOpen((v) => !v)}
+            className={cn(findBarOpen ? pillButtonActiveClass : pillButtonClass)}
+            aria-pressed={findBarOpen}
+            aria-label="Find in book"
+            title="Find (⌘F)"
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        </ViewerToolbarPill>
+
         <FindBar
           open={findBarOpen}
           onClose={handleFindClose}
