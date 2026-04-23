@@ -185,4 +185,41 @@ describe('SettingsShell', () => {
     const closeBtn = screen.getByLabelText('Close settings');
     expect(closeBtn).toBeTruthy();
   });
+
+  it('Escape closes the dialog (calls onOpenChange with false)', () => {
+    const onOpenChange = vi.fn();
+    renderWithProvidersOpen({ onOpenChange });
+    act(() => {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key: 'Escape',
+      });
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('renders the dialog content with role="dialog" (Radix focus trap host)', () => {
+    // Radix Dialog provides the focus trap. Confirming the dialog content
+    // exists is our regression lock that we are still mounted on top of
+    // DialogPrimitive.Content (not a div) so the trap stays active.
+    renderShell({});
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.getAttribute('data-slot')).toBe('settings-shell-content');
+  });
 });
+
+function renderWithProvidersOpen(props: {
+  onOpenChange: (open: boolean) => void;
+}) {
+  return renderWithProviders(
+    <SettingsShell
+      open
+      onOpenChange={props.onOpenChange}
+      nav={NAV}
+      activeItem="appearance"
+      onActiveItemChange={() => {}}
+    >
+      <div />
+    </SettingsShell>,
+  );
+}

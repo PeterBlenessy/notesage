@@ -595,6 +595,7 @@ export function AppearanceSettings() {
       <SettingsGroup label="Preview">
         <div
           data-testid="appearance-preview"
+          aria-hidden="true"
           className="px-4 py-4"
         >
           <div
