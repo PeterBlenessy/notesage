@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { formatSavedLabel, pickTimerInterval } from "@/lib/saved-ago";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -100,26 +101,6 @@ function basename(path: string): string {
 interface SavedLabelProps {
   lastSavedAt: number | undefined;
   isDirty: boolean;
-}
-
-function formatSavedLabel(elapsedMs: number): string {
-  const seconds = Math.max(0, Math.floor(elapsedMs / 1000));
-  if (seconds < 60) return `saved ${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `saved ${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `saved ${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `saved ${days}d ago`;
-}
-
-function pickTimerInterval(elapsedMs: number): number {
-  // Timer resolution switches at each bucket boundary so the visible label
-  // doesn't lie and the setInterval doesn't waste wakeups on stable values.
-  if (elapsedMs < 60_000) return 5_000;
-  if (elapsedMs < 3_600_000) return 30_000;
-  if (elapsedMs < 86_400_000) return 5 * 60_000;
-  return 30 * 60_000;
 }
 
 function SavedLabel({ lastSavedAt, isDirty }: SavedLabelProps) {
