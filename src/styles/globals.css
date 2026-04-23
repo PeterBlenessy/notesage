@@ -464,3 +464,43 @@ body {
     animation: none;
   }
 }
+
+/* =========================================================================
+ * Fade-on-type (#50)
+ *
+ * `useFadeOnType` toggles the `.typing` class on the QuietLayout root
+ * (`.app[data-quiet-layout-root]`) while the user is actively typing.
+ * Targets are pre-stamped via data-* attributes by the components that
+ * opt in to the fade: #48 `DocHead` uses `data-doc-head`; #49 Toolbar pill
+ * uses `data-quiet-toolbar`. The `:not(:hover):not(:focus-within)` guards
+ * keep a target visible when the user interacts with it directly — the
+ * mouse-move cancel also covers this, but hover/focus is a belt-and-braces
+ * fallback for keyboard-driven focus changes that don't emit mousemove.
+ *
+ * The hook itself is the single source of truth for exclusions: typing
+ * events originating inside `[data-cmd-bar]` do NOT flip the class, so
+ * the FloatingCommandBar never needs a CSS opt-out.
+ *
+ * Respects `prefers-reduced-motion`: the hook is a no-op when reduce is
+ * set, and the transition duration is zeroed here so that components
+ * whose opacity happens to be mutated by other code still render without
+ * animation.
+ * ========================================================================= */
+.app [data-quiet-toolbar],
+.app [data-doc-head] {
+  transition-property: opacity;
+  transition-duration: 340ms;
+  transition-timing-function: ease-in-out;
+}
+
+.app.typing [data-quiet-toolbar]:not(:hover):not(:focus-within),
+.app.typing [data-doc-head]:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app [data-quiet-toolbar],
+  .app [data-doc-head] {
+    transition-duration: 0ms;
+  }
+}

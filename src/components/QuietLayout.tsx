@@ -12,6 +12,7 @@ import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
+import { useFadeOnType } from "@/hooks/useFadeOnType";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -70,6 +71,12 @@ export function QuietLayout(_props: QuietLayoutProps) {
   // App.tsx → <Layout {...layoutProps} /> works without a per-branch
   // adapter. They will be wired into the real components in later tasks.
   void _props;
+
+  // #50 — Fade pre-stamped chrome while the user is typing. No-op under
+  // `prefers-reduced-motion`. Keyed off the DOM class `.typing` on the
+  // `[data-quiet-layout-root]` node below, so state lives on the DOM and
+  // typing never triggers a React re-render.
+  useFadeOnType();
 
   // Inert handlers for the toggle buttons — the real chat panel and
   // activity strip aren't part of the placeholder.
@@ -221,8 +228,9 @@ export function QuietLayout(_props: QuietLayoutProps) {
   return (
     <div
       data-quiet-layout-placeholder
+      data-quiet-layout-root
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
-      className="relative flex flex-col h-screen w-full bg-background overflow-hidden"
+      className="app relative flex flex-col h-screen w-full bg-background overflow-hidden"
     >
       <TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />
 
