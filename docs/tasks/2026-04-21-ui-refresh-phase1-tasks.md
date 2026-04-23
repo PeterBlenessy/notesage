@@ -717,7 +717,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #63 |
 | Files | `src/components/settings/v2/AISettings.tsx` |
 
-### #68 — "Review external diff" setting placement + semantics clarified
+### #68 — "Review external diff" setting placement + semantics clarified ✅
 
 | Field | Value |
 | --- | --- |
@@ -731,7 +731,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.5 Removals + external-change rewire (6 tasks)
 
-### #69 — Delete `NewNoteDialog` + callers
+### #69 — Delete `NewNoteDialog` + callers ✅
 
 | Field | Value |
 | --- | --- |
@@ -741,7 +741,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #41 |
 | Files | `src/components/NewNoteDialog.tsx` (kept until Phase 3), `src/App.tsx` |
 
-### #70 — Delete `NewProjectDialog` + callers (preview-gated)
+### #70 — Delete `NewProjectDialog` + callers (preview-gated) ✅
 
 | Field | Value |
 | --- | --- |
@@ -751,7 +751,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #42 |
 | Files | `src/components/NewProjectDialog.tsx` (kept until Phase 3) |
 
-### #71 — Rewire external-change flow + delete `DiffReviewBanner`
+### #71 — Rewire external-change flow + delete `DiffReviewBanner` ✅
 
 | Field | Value |
 | --- | --- |
@@ -761,7 +761,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none (independent of preview flag — this applies to both paths) |
 | Files | `src/components/editor/DiffReviewBanner.tsx` (delete), `src/lib/notifications.ts`, `src/hooks/useFileWatcher.ts`, `docs/features/workspace.md` |
 
-### #72 — Delete Preview-as-HTML mode
+### #72 — Delete Preview-as-HTML mode ✅
 
 | Field | Value |
 | --- | --- |
@@ -771,7 +771,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src/components/editor/viewers/HtmlViewer.tsx` (delete), keyboard shortcut hook, `docs/keyboard-shortcuts.md` |
 
-### #73 — Delete cross-project-mode banner; replace with context-row pill
+### #73 — Delete cross-project-mode banner; replace with context-row pill ✅
 
 | Field | Value |
 | --- | --- |
@@ -781,7 +781,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10 |
 | Files | chat input markup, `src/components/cmd/CommandBarContext.tsx` |
 
-### #74 — Hide legacy components under preview flag (TabBar, ChatPanel, ActivityStrip, CommandPalette, ChatFooter)
+### #74 — Hide legacy components under preview flag (TabBar, ChatPanel, ActivityStrip, CommandPalette, ChatFooter) ✅
 
 | Field | Value |
 | --- | --- |
