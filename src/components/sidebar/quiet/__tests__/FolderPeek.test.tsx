@@ -379,3 +379,70 @@ describe("FolderPeek (#36)", () => {
     expect(triggerWrap.getAttribute("data-peek-trigger")).toBe("true");
   });
 });
+
+// ---------------------------------------------------------------------------
+// derivePeekChildren — shared helper for hover popover (#36) + inline
+// keyboard expansion (#37). These assertions lock the contract so the two
+// surfaces never drift apart.
+// ---------------------------------------------------------------------------
+
+import { derivePeekChildren } from "../FolderPeek";
+
+describe("derivePeekChildren", () => {
+  it("returns empty state for an empty tree", () => {
+    const result = derivePeekChildren([]);
+    expect(result.isEmpty).toBe(true);
+    expect(result.folders).toEqual([]);
+    expect(result.files).toEqual([]);
+    expect(result.folderOverflow).toBe(0);
+    expect(result.fileOverflow).toBe(0);
+  });
+
+  it("puts folders before files, alphabetical case-insensitive", () => {
+    const tree: FileEntry[] = [
+      makeFile("zeta.md", "/p/zeta.md"),
+      makeDir("Beta", "/p/Beta"),
+      makeFile("alpha.md", "/p/alpha.md"),
+      makeDir("alpha-dir", "/p/alpha-dir"),
+    ];
+    const result = derivePeekChildren(tree);
+    expect(result.folders.map((f) => f.name)).toEqual(["alpha-dir", "Beta"]);
+    expect(result.files.map((f) => f.name)).toEqual(["alpha.md", "zeta.md"]);
+    expect(result.isEmpty).toBe(false);
+  });
+
+  it("caps folders at 8 and reports the overflow count", () => {
+    const tree: FileEntry[] = [];
+    for (let i = 1; i <= 10; i++) {
+      tree.push(
+        makeDir(`dir-${String(i).padStart(2, "0")}`, `/p/dir-${i}`)
+      );
+    }
+    const result = derivePeekChildren(tree);
+    expect(result.folders).toHaveLength(8);
+    expect(result.folderOverflow).toBe(2);
+  });
+
+  it("caps files at 6 and reports the overflow count", () => {
+    const tree: FileEntry[] = [];
+    for (let i = 1; i <= 9; i++) {
+      tree.push(makeFile(`f${i}.md`, `/p/f${i}.md`));
+    }
+    const result = derivePeekChildren(tree);
+    expect(result.files).toHaveLength(6);
+    expect(result.fileOverflow).toBe(3);
+  });
+
+  it("filters out hidden entries and .DS_Store", () => {
+    const tree: FileEntry[] = [
+      makeFile(".hidden.md", "/p/.hidden.md"),
+      makeFile(".DS_Store", "/p/.DS_Store"),
+      makeFile("visible.md", "/p/visible.md"),
+      makeDir(".git", "/p/.git"),
+      makeDir("docs", "/p/docs"),
+    ];
+    const result = derivePeekChildren(tree);
+    expect(result.folders.map((f) => f.name)).toEqual(["docs"]);
+    expect(result.files.map((f) => f.name)).toEqual(["visible.md"]);
+  });
+});
