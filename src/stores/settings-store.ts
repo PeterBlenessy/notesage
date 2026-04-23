@@ -147,6 +147,20 @@ interface SettingsStore {
    * hidden entirely from the quiet-composer sidebar. Default false.
    */
   sidebarTagsHidden: boolean;
+  /**
+   * Timestamp (ms since epoch) when the preview-invitation banner was last
+   * shown to the user, or null if it has never been shown. Used by
+   * `shouldShowPreviewInvitation` to gate the 30-day re-appearance window
+   * after a dismissal. Persisted. ui-refresh task #97.
+   */
+  previewInvitationShownAt: number | null;
+  /**
+   * Timestamp (ms since epoch) when the user last dismissed the preview-
+   * invitation banner, or null if it has never been dismissed. Used by
+   * `shouldShowPreviewInvitation` to compute the 30-day cooldown. Persisted.
+   * ui-refresh task #97.
+   */
+  previewInvitationDismissedAt: number | null;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -225,6 +239,10 @@ interface SettingsStore {
   setSidebarRecentCap: (n: number) => void;
   setSidebarTagsCap: (n: number) => void;
   setSidebarTagsHidden: (hidden: boolean) => void;
+  /** Mark the preview-invitation banner as shown right now. ui-refresh #97. */
+  markPreviewInvitationShown: () => void;
+  /** Mark the preview-invitation banner as dismissed right now. ui-refresh #97. */
+  dismissPreviewInvitation: () => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -268,6 +286,8 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarTagsHidden: false,
+      previewInvitationShownAt: null,
+      previewInvitationDismissedAt: null,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -559,6 +579,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ sidebarTagsHidden: hidden });
       },
 
+      markPreviewInvitationShown: () => {
+        set({ previewInvitationShownAt: Date.now() });
+      },
+
+      dismissPreviewInvitation: () => {
+        set({ previewInvitationDismissedAt: Date.now() });
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -581,7 +609,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 8,
+      version: 9,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -659,6 +687,18 @@ export const useSettingsStore = create<SettingsStore>()(
             state.sidebarTagsHidden = false;
           }
         }
+        if (version < 9) {
+          // ui-refresh task #97 — preview invitation banner timestamps.
+          // Default both to null so the banner shows on the first launch
+          // after upgrade for users still on the legacy shell, then enters
+          // the 30-day cooldown after dismissal.
+          if (typeof state.previewInvitationShownAt !== 'number') {
+            state.previewInvitationShownAt = null;
+          }
+          if (typeof state.previewInvitationDismissedAt !== 'number') {
+            state.previewInvitationDismissedAt = null;
+          }
+        }
         return state;
       },
 
@@ -670,3 +710,44 @@ export const useSettingsStore = create<SettingsStore>()(
     }
   )
 );
+
+/**
+ * Window (in milliseconds) before the preview-invitation banner reappears
+ * after dismissal — 30 days.
+ */
+export const PREVIEW_INVITATION_REAPPEAR_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Pure helper — given the relevant slice of settings state and a "now"
+ * timestamp, decide whether the preview-invitation banner should be shown.
+ *
+ * Returns false if the user has already opted into the new UI (uiPreview is
+ * "quiet-composer"). Otherwise returns true if the banner has never been
+ * shown, or if 30 days have elapsed since both the last appearance and the
+ * last dismissal (so a freshly-dismissed banner doesn't immediately re-pop
+ * but reappears one more time after the cooldown).
+ *
+ * Pure: no Date.now() lookup, no store reads — caller passes both inputs so
+ * the helper is trivially testable. ui-refresh task #97.
+ */
+export function shouldShowPreviewInvitation(
+  state: Pick<
+    SettingsStore,
+    "uiPreview" | "previewInvitationShownAt" | "previewInvitationDismissedAt"
+  >,
+  now: number,
+): boolean {
+  // Already on the new UI — no need to invite.
+  if (state.uiPreview === "quiet-composer") return false;
+
+  // Never shown before — show on first launch.
+  if (state.previewInvitationShownAt === null) return true;
+
+  // Shown but never dismissed — the user hasn't actively closed it yet, so
+  // keep showing it on subsequent launches in the same session window.
+  if (state.previewInvitationDismissedAt === null) return true;
+
+  // Previously dismissed — re-appear once after the 30-day cooldown from
+  // the last dismissal.
+  return now - state.previewInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS;
+}

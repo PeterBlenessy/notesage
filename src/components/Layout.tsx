@@ -6,6 +6,7 @@ import { ActivityRail, ActivityPanel } from "@/components/activity/ActivityStrip
 import { TitleBar } from "@/components/TitleBar";
 import { SidebarPanel } from "@/components/SidebarPanel";
 import { QuietLayout } from "@/components/QuietLayout";
+import { PreviewInvitation } from "@/components/PreviewInvitation";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -316,6 +317,16 @@ function LegacyLayout({
           {!focusMode && !stripExpanded && <ActivityRail />}
         </div>
       </div>
+
+      {/*
+        Preview invitation banner (PRD `2026-04-21-ui-refresh`, task #97).
+        Floating bottom-centre overlay that nudges legacy users to try the
+        Quiet Composer preview. Self-gates on `shouldShowPreviewInvitation`,
+        so this mount is cheap when the banner has nothing to render. Not
+        mounted in `QuietLayout` — users already on the new UI don't need
+        to be invited. Hidden in focus mode to avoid distractions.
+       */}
+      {!focusMode && <PreviewInvitation />}
     </>
   );
 }
