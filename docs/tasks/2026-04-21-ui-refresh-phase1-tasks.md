@@ -933,7 +933,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.8 Performance benchmarks (5 tasks)
 
-### #88 — `cmdbar.perf.test.ts`
+### #88 — `cmdbar.perf.test.ts` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -943,7 +943,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9 |
 | Files | `src/perf/cmdbar.perf.test.ts` |
 
-### #89 — `orb.perf.test.ts`
+### #89 — `orb.perf.test.ts` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -953,7 +953,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #29 |
 | Files | `src/perf/orb.perf.test.ts` |
 
-### #90 — `status-tray.perf.test.ts`
+### #90 — `status-tray.perf.test.ts` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -963,7 +963,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #53 |
 | Files | `src/perf/status-tray.perf.test.ts` |
 
-### #91 — `sidebar-filter.perf.test.ts`
+### #91 — `sidebar-filter.perf.test.ts` 🚧
 
 | Field | Value |
 | --- | --- |
@@ -973,7 +973,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #43 |
 | Files | `src/perf/sidebar-filter.perf.test.ts` |
 
-### #92 — Update `docs/performance-baseline.md` with new budgets and post-Phase-1 measurements
+### #92 — Update `docs/performance-baseline.md` with new budgets and post-Phase-1 measurements 🚧
 
 | Field | Value |
 | --- | --- |
