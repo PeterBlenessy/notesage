@@ -162,6 +162,9 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
     sidebar: false,
     orb: false,
   },
+  sidebarRecentCap: 5,
+  sidebarTagsCap: 5,
+  sidebarTagsHidden: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -1103,7 +1106,7 @@ describe('uiPreview flag', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(7);
+    expect(parsed.version).toBe(8);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1245,7 +1248,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(7);
+    expect(parsed.version).toBe(8);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1391,7 +1394,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(7);
+    expect(parsed.version).toBe(8);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1496,5 +1499,226 @@ describe('quiet-chrome setters', () => {
     expect(useSettingsStore.getState().quietChromeOverrides.orb).toBe(true);
     // Other overrides unchanged.
     expect(useSettingsStore.getState().quietChromeOverrides.toolbar).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Sidebar composition (ui-refresh task #35)
+// ===========================================================================
+
+describe('sidebar composition — defaults', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('sidebarRecentCap defaults to 5', () => {
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(5);
+  });
+
+  it('sidebarTagsCap defaults to 5', () => {
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(5);
+  });
+
+  it('sidebarTagsHidden defaults to false', () => {
+    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
+  });
+});
+
+describe('setSidebarRecentCap clamping', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('sets value within [3, 15]', () => {
+    useSettingsStore.getState().setSidebarRecentCap(7);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(7);
+  });
+
+  it('clamps values below 3 to 3', () => {
+    useSettingsStore.getState().setSidebarRecentCap(1);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(3);
+
+    useSettingsStore.getState().setSidebarRecentCap(-5);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(3);
+  });
+
+  it('clamps values above 15 to 15', () => {
+    useSettingsStore.getState().setSidebarRecentCap(20);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(15);
+
+    useSettingsStore.getState().setSidebarRecentCap(1000);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(15);
+  });
+
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setSidebarRecentCap(8.6);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(9);
+  });
+
+  it('handles exact boundary values', () => {
+    useSettingsStore.getState().setSidebarRecentCap(3);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(3);
+
+    useSettingsStore.getState().setSidebarRecentCap(15);
+    expect(useSettingsStore.getState().sidebarRecentCap).toBe(15);
+  });
+});
+
+describe('setSidebarTagsCap clamping', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('sets value within [3, 15]', () => {
+    useSettingsStore.getState().setSidebarTagsCap(10);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(10);
+  });
+
+  it('clamps values below 3 to 3', () => {
+    useSettingsStore.getState().setSidebarTagsCap(0);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(3);
+  });
+
+  it('clamps values above 15 to 15', () => {
+    useSettingsStore.getState().setSidebarTagsCap(100);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(15);
+  });
+
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setSidebarTagsCap(12.4);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(12);
+  });
+});
+
+describe('setSidebarTagsHidden', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('toggles from false to true and back', () => {
+    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
+    useSettingsStore.getState().setSidebarTagsHidden(true);
+    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(true);
+    useSettingsStore.getState().setSidebarTagsHidden(false);
+    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
+  });
+});
+
+describe('sidebar composition — persistence round-trip', () => {
+  it('persists sidebarRecentCap, sidebarTagsCap, and sidebarTagsHidden across restart', async () => {
+    useSettingsStore.getState().setSidebarRecentCap(12);
+    useSettingsStore.getState().setSidebarTagsCap(8);
+    useSettingsStore.getState().setSidebarTagsHidden(true);
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarRecentCap).toBe(12);
+    expect(s.sidebarTagsCap).toBe(8);
+    expect(s.sidebarTagsHidden).toBe(true);
+  });
+});
+
+// ===========================================================================
+// v7 → v8 migration (sidebar composition)
+// ===========================================================================
+
+describe('v7 → v8 migration (sidebar composition)', () => {
+  it('adds sidebarRecentCap: 5, sidebarTagsCap: 5, sidebarTagsHidden: false to a v7 state lacking them', async () => {
+    const v7State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+      },
+      version: 7,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v7State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarRecentCap).toBe(5);
+    expect(s.sidebarTagsCap).toBe(5);
+    expect(s.sidebarTagsHidden).toBe(false);
+
+    // Persisted JSON should reflect the bumped version + new fields so the
+    // migration doesn't re-run on the next launch.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(8);
+    expect(parsed.state.sidebarRecentCap).toBe(5);
+    expect(parsed.state.sidebarTagsCap).toBe(5);
+    expect(parsed.state.sidebarTagsHidden).toBe(false);
+  });
+
+  it('preserves existing sidebar composition values when present (idempotent)', async () => {
+    const v8State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+        sidebarRecentCap: 10,
+        sidebarTagsCap: 7,
+        sidebarTagsHidden: true,
+      },
+      version: 8,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v8State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarRecentCap).toBe(10);
+    expect(s.sidebarTagsCap).toBe(7);
+    expect(s.sidebarTagsHidden).toBe(true);
   });
 });

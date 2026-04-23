@@ -21,6 +21,7 @@ import {
 import { QuietSidebar } from '../QuietSidebar';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Mocks that keep the heavier sections quiet — we exercise data filtering
@@ -66,6 +67,13 @@ function resetStores() {
     tabs: [],
     activeTabId: null,
     recentFiles: [],
+  });
+  // Reset sidebar composition settings so tests don't bleed hidden state
+  // across each other.
+  useSettingsStore.setState({
+    sidebarRecentCap: 5,
+    sidebarTagsCap: 5,
+    sidebarTagsHidden: false,
   });
 }
 
@@ -303,5 +311,48 @@ describe('QuietSidebar — type-to-filter (#43)', () => {
     });
     nav.dispatchEvent(ev);
     expect(ev.defaultPrevented).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #35 — sidebar composition (hide Tags section)
+// ---------------------------------------------------------------------------
+
+describe('QuietSidebar — sidebar composition (#35)', () => {
+  it('renders the Tags section by default', () => {
+    renderWithProviders(<QuietSidebar />);
+    const sections = screen.getAllByRole('region');
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toContain('Tags');
+  });
+
+  it('does NOT render the Tags section when sidebarTagsHidden is true', () => {
+    useSettingsStore.setState({ sidebarTagsHidden: true });
+    renderWithProviders(<QuietSidebar />);
+
+    const sections = screen.getAllByRole('region');
+    expect(sections).toHaveLength(3);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Pinned',
+      'Projects',
+      'Recent',
+    ]);
+    // Tags heading is gone.
+    const headings = screen.getAllByRole('heading', { level: 2 });
+    expect(headings.map((h) => h.textContent)).not.toContain('Tags');
+  });
+
+  it('re-renders Tags when sidebarTagsHidden flips back to false', () => {
+    useSettingsStore.setState({ sidebarTagsHidden: true });
+    const { rerender } = renderWithProviders(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(3);
+
+    useSettingsStore.setState({ sidebarTagsHidden: false });
+    rerender(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(4);
+    expect(
+      screen
+        .getAllByRole('region')
+        .map((s) => s.getAttribute('aria-label')),
+    ).toContain('Tags');
   });
 });

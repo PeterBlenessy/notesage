@@ -190,6 +190,15 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
   const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
   const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
   const [quietChromeAdvancedOpen, setQuietChromeAdvancedOpen] = useState(false);
+  // Sidebar composition (#35) — Recent / Tags caps + Tags hidden toggle.
+  // Same rationale as the quiet-chrome block: narrow selectors keep the
+  // unit-test stub small and avoid re-renders when unrelated settings change.
+  const sidebarRecentCap = useSettingsStore((s) => s.sidebarRecentCap);
+  const sidebarTagsCap = useSettingsStore((s) => s.sidebarTagsCap);
+  const sidebarTagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
+  const setSidebarRecentCap = useSettingsStore((s) => s.setSidebarRecentCap);
+  const setSidebarTagsCap = useSettingsStore((s) => s.setSidebarTagsCap);
+  const setSidebarTagsHidden = useSettingsStore((s) => s.setSidebarTagsHidden);
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -638,6 +647,86 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       })}
                     </CollapsibleContent>
                   </Collapsible>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* Sidebar composition (#35) — per-section caps and hide toggles */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Sidebar composition</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      How many items each sidebar section shows, and which sections are visible
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Recent cap — always active, clamped 3–15 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-sm">Recent items</span>
+                          <p className="text-xs text-muted-foreground">
+                            Maximum recent files shown in the sidebar
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+                          {sidebarRecentCap}
+                        </span>
+                      </div>
+                      <Slider
+                        min={3}
+                        max={15}
+                        step={1}
+                        value={[sidebarRecentCap]}
+                        onValueChange={([v]) => setSidebarRecentCap(v)}
+                      />
+                    </div>
+
+                    {/* Tags cap — disabled when tags hidden */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className={cn("text-sm", sidebarTagsHidden && "text-muted-foreground")}>
+                            Top tags
+                          </span>
+                          <p className="text-xs text-muted-foreground">
+                            {sidebarTagsHidden
+                              ? "Hidden — enable the toggle below to show tags"
+                              : "Maximum tags shown, sorted by usage"}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+                          {sidebarTagsCap}
+                        </span>
+                      </div>
+                      <Slider
+                        min={3}
+                        max={15}
+                        step={1}
+                        disabled={sidebarTagsHidden}
+                        value={[sidebarTagsCap]}
+                        onValueChange={([v]) => setSidebarTagsCap(v)}
+                      />
+                    </div>
+
+                    {/* Tags hidden switch */}
+                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-border">
+                      <div>
+                        <Label htmlFor="sidebar-tags-hidden" className="text-sm font-medium cursor-pointer">
+                          Hide Tags section
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Remove the tags list from the sidebar entirely
+                        </p>
+                      </div>
+                      <Switch
+                        id="sidebar-tags-hidden"
+                        checked={sidebarTagsHidden}
+                        onCheckedChange={setSidebarTagsHidden}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="h-px bg-border" />

@@ -17,22 +17,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { tauriApi, type IndexedTag } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 
 /**
  * Default maximum number of tag rows shown before "Show more" expands the
- * list. Task #35 will replace this constant with a per-section cap read from
- * `settings-store`; exporting the value keeps that migration trivial (a
- * single call-site swap) and lets tests assert against the same constant
- * the component uses.
+ * list. Used as a fallback when neither an explicit `cap` prop nor the
+ * persisted `sidebarTagsCap` setting is available. Task #35 threaded the
+ * setting through; this constant remains exported for tests that want to
+ * assert against the same value the store starts from.
  */
 export const DEFAULT_TAG_CAP = 5;
 
 export interface TagsSectionProps {
   /**
-   * Maximum number of tags shown before the "Show more" toggle. Omitted call
-   * sites fall back to `DEFAULT_TAG_CAP`. Task #35 will thread the settings-
-   * store value through here once the sidebar-composition panel ships.
+   * Maximum number of tags shown before the "Show more" toggle. Production
+   * callers should rely on the `sidebarTagsCap` setting (task #35); the prop
+   * remains for tests and edge cases that need an explicit override.
    */
   cap?: number;
   /**
@@ -49,7 +50,7 @@ interface TagRow {
 }
 
 export function TagsSection({
-  cap = DEFAULT_TAG_CAP,
+  cap,
   filter,
 }: TagsSectionProps = {}) {
   const projects = useWorkspaceStore((s) => s.projects);
@@ -57,6 +58,11 @@ export function TagsSection({
     () => projects.map((p) => p.path),
     [projects],
   );
+  // Task #35 — read cap from settings. Explicit `cap` prop still wins for
+  // tests/edge cases. Falls back to DEFAULT_TAG_CAP if the setting is missing
+  // (shouldn't happen in production — the migration backfills it).
+  const settingCap = useSettingsStore((s) => s.sidebarTagsCap);
+  const effectiveCap = cap ?? settingCap ?? DEFAULT_TAG_CAP;
 
   const [tags, setTags] = useState<TagRow[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -99,13 +105,13 @@ export function TagsSection({
   // stale "Show fewer" state after a project is removed, the tag count
   // drops, or the user narrows the type-to-filter past the overflow point.
   useEffect(() => {
-    if (expanded && filteredTags.length <= cap) {
+    if (expanded && filteredTags.length <= effectiveCap) {
       setExpanded(false);
     }
-  }, [filteredTags.length, cap, expanded]);
+  }, [filteredTags.length, effectiveCap, expanded]);
 
-  const visibleTags = expanded ? filteredTags : filteredTags.slice(0, cap);
-  const hasOverflow = filteredTags.length > cap;
+  const visibleTags = expanded ? filteredTags : filteredTags.slice(0, effectiveCap);
+  const hasOverflow = filteredTags.length > effectiveCap;
 
   /**
    * Open the FloatingCommandBar in TagMode. Phase 1 limitation: the

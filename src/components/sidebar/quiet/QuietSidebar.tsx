@@ -2,6 +2,7 @@ import { useCallback, useState, type KeyboardEvent } from "react";
 import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
 import { RecentSection } from "./RecentSection";
@@ -43,6 +44,10 @@ export function QuietSidebar() {
   const setPendingCreateProject = useQuietSidebarStore(
     (s) => s.setPendingCreateProject,
   );
+  // Task #35 — the Tags section can be hidden entirely via sidebar
+  // composition settings. Read as a fine-grained selector so flipping the
+  // toggle re-renders only QuietSidebar (not every section).
+  const tagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
 
   // Projects section header `+` button opens the top-of-list inline
   // project-create row via the quiet-sidebar-store flag (task #42).
@@ -97,7 +102,7 @@ export function QuietSidebar() {
       <PinnedSection filter={filter} />
       <ProjectsSection filter={filter} onAdd={handleAddProject} />
       <RecentSection filter={filter} />
-      <TagsSection filter={filter} />
+      {!tagsHidden && <TagsSection filter={filter} />}
     </nav>
   );
 }
