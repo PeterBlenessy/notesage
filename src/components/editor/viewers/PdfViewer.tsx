@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ZoomIn, ZoomOut, RectangleVertical, SquareDashedBottom } from "lucide-react";
+import {
+  ZoomIn,
+  ZoomOut,
+  RectangleVertical,
+  SquareDashedBottom,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { getBinaryData } from "@/lib/binary-cache";
 import { FindBar } from "@/components/editor/FindBar";
+import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { usePdfStore } from "@/stores/pdf-store";
+import { cn } from "@/lib/utils";
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
@@ -819,6 +828,19 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
   // Always use text-based match count (accurate across all pages)
   const displayMatchCount = searchMatches.length;
 
+  // Page navigation handlers — scroll to neighbouring page
+  const goToPrevPage = useCallback(() => {
+    if (currentPage > 1) scrollToPage(currentPage - 1);
+  }, [currentPage, scrollToPage]);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage < totalPages) scrollToPage(currentPage + 1);
+  }, [currentPage, totalPages, scrollToPage]);
+
+  const toggleFindBar = useCallback(() => {
+    setFindBarOpen((open) => !open);
+  }, []);
+
   // Compute placeholder dimensions for unrendered pages so scroll positions are correct
   // even before canvases render (critical for deterministic search navigation)
   const placeholderScale = pageBaseDims
@@ -841,49 +863,74 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
   }
 
   return (
-    <div ref={viewerRef} className="h-full flex flex-col" tabIndex={-1}>
-      {/* Toolbar */}
-      <div className="h-9 border-b border-border px-3 flex items-center gap-1 shrink-0 bg-background">
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {fileName}
-        </span>
-        <Separator orientation="vertical" className="h-4 mx-1" />
-        <Button variant="ghost" size="icon-xs" onClick={zoomOut} title="Zoom out">
-          <ZoomOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <span className="text-xs text-muted-foreground tabular-nums min-w-[40px] text-center">
-          {getDisplayZoom()}
-        </span>
-        <Button variant="ghost" size="icon-xs" onClick={zoomIn} title="Zoom in">
-          <ZoomIn className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Separator orientation="vertical" className="h-4 mx-1" />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={toggleFitWidth}
-          className={fitMode === "width" ? "bg-accent text-foreground" : "text-muted-foreground"}
-          title="Fit to width"
-        >
-          <SquareDashedBottom className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={toggleFitPage}
-          className={fitMode === "page" ? "bg-accent text-foreground" : "text-muted-foreground"}
-          title="Fit to page"
-        >
-          <RectangleVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </Button>
-        <Separator orientation="vertical" className="h-4 mx-1" />
-        <span className="text-xs text-muted-foreground tabular-nums">
-          Page {currentPage} / {totalPages}
-        </span>
-      </div>
-
-      {/* Scrollable page area with FindBar overlay */}
+    <div
+      ref={viewerRef}
+      className="h-full flex flex-col"
+      tabIndex={-1}
+      aria-label={`PDF viewer: ${fileName}`}
+    >
+      {/* Scrollable page area with floating pill toolbar + FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
+        <ViewerToolbarPill viewerId="pdf" scrollRef={scrollContainerRef}>
+          <PillIconButton
+            onClick={zoomOut}
+            title="Zoom out"
+            disabled={!!fitMode ? false : zoomIndex <= 0}
+          >
+            <ZoomOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <span className="text-xs text-muted-foreground tabular-nums min-w-[40px] text-center select-none">
+            {getDisplayZoom()}
+          </span>
+          <PillIconButton
+            onClick={zoomIn}
+            title="Zoom in"
+            disabled={!!fitMode ? false : zoomIndex >= ZOOM_STEPS.length - 1}
+          >
+            <ZoomIn className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <PillSeparator />
+          <PillIconButton
+            onClick={toggleFitWidth}
+            title="Fit to width"
+            active={fitMode === "width"}
+          >
+            <SquareDashedBottom className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <PillIconButton
+            onClick={toggleFitPage}
+            title="Fit to page"
+            active={fitMode === "page"}
+          >
+            <RectangleVertical className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <PillSeparator />
+          <PillIconButton
+            onClick={goToPrevPage}
+            title="Previous page"
+            disabled={currentPage <= 1}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <span className="text-xs text-muted-foreground tabular-nums min-w-[60px] text-center select-none">
+            {totalPages > 0 ? `${currentPage} / ${totalPages}` : "— / —"}
+          </span>
+          <PillIconButton
+            onClick={goToNextPage}
+            title="Next page"
+            disabled={currentPage >= totalPages}
+          >
+            <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+          <PillSeparator />
+          <PillIconButton
+            onClick={toggleFindBar}
+            title="Find (Cmd+F)"
+            active={findBarOpen}
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </PillIconButton>
+        </ViewerToolbarPill>
         <FindBar
           open={findBarOpen}
           onClose={handleFindClose}
@@ -898,7 +945,7 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
         />
         <div
           ref={scrollContainerRef}
-          className="h-full overflow-auto bg-muted/50 p-8"
+          className="h-full overflow-auto bg-muted/50 px-8 pb-8 pt-16"
         >
           <div className="flex flex-col items-center" style={{ gap: `${PAGE_GAP}px` }}>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
@@ -936,5 +983,45 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+// --- Pill toolbar helpers (scoped to PdfViewer) ---
+
+function PillSeparator() {
+  return (
+    <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
+  );
+}
+
+function PillIconButton({
+  onClick,
+  title,
+  disabled,
+  active,
+  children,
+}: {
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      aria-pressed={active ? true : undefined}
+      className={cn(
+        "disabled:opacity-50 active:scale-90",
+        active ? "bg-accent text-foreground" : "text-muted-foreground",
+      )}
+    >
+      {children}
+    </Button>
   );
 }
