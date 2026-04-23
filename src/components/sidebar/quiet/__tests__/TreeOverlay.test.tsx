@@ -432,3 +432,110 @@ describe('TreeOverlay — empty state', () => {
     expect(screen.getByText(/no projects open/i)).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Focus trap — Tab/Shift+Tab cycle within the overlay only (task #81)
+// ---------------------------------------------------------------------------
+
+describe('TreeOverlay — focus trap', () => {
+  beforeEach(() => {
+    seedWorkspace();
+  });
+
+  /**
+   * Renders a sibling button outside the overlay and returns it. Used to
+   * assert that Tab cannot escape the overlay — if focus ever lands on
+   * this button, the trap has leaked.
+   */
+  function mountSiblingButton(): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = 'outside-overlay';
+    btn.setAttribute('data-testid', 'outside-overlay');
+    document.body.appendChild(btn);
+    return btn;
+  }
+
+  it('Tab from the last focusable wraps back to the first (search input)', async () => {
+    const sibling = mountSiblingButton();
+    renderWithProviders(<TreeOverlay />);
+    act(() => {
+      useTreeOverlayStore.getState().openOverlay();
+    });
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
+    const dialog = getOverlayDialog();
+    const input = screen.getByRole('searchbox') as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+
+    // Move keyboard focus onto the last focusable inside the overlay: the
+    // currently-focused tree row (the only treeitem with tabIndex=0).
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    const focusedRow = getFocusedNode();
+    expect(focusedRow).not.toBeNull();
+    expect(document.activeElement).toBe(focusedRow);
+
+    // Tab on the last focusable should wrap back to the first (search).
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(input);
+
+    // Sanity: focus never escaped to the outside sibling.
+    expect(document.activeElement).not.toBe(sibling);
+
+    document.body.removeChild(sibling);
+  });
+
+  it('Shift+Tab from the first focusable (search input) wraps to the last', async () => {
+    const sibling = mountSiblingButton();
+    renderWithProviders(<TreeOverlay />);
+    act(() => {
+      useTreeOverlayStore.getState().openOverlay();
+    });
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
+    const dialog = getOverlayDialog();
+    const input = screen.getByRole('searchbox') as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+
+    // Shift+Tab on the first focusable should wrap to the last — which
+    // is the currently-focused tree row (alpha, the first visible node).
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    const focusedRow = getFocusedNode();
+    expect(focusedRow).not.toBeNull();
+    expect(document.activeElement).toBe(focusedRow);
+
+    // Sanity: focus never escaped to the outside sibling.
+    expect(document.activeElement).not.toBe(sibling);
+
+    document.body.removeChild(sibling);
+  });
+
+  it('Tab does not move focus to elements outside the overlay', async () => {
+    const sibling = mountSiblingButton();
+    renderWithProviders(<TreeOverlay />);
+    act(() => {
+      useTreeOverlayStore.getState().openOverlay();
+    });
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
+    const dialog = getOverlayDialog();
+    const input = screen.getByRole('searchbox') as HTMLInputElement;
+
+    // Move onto the last focusable (the focused tree row)…
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(getFocusedNode());
+
+    // Tab and Shift+Tab repeatedly — focus should cycle within the
+    // overlay only, never landing on the outside sibling.
+    for (let i = 0; i < 5; i += 1) {
+      fireEvent.keyDown(dialog, { key: 'Tab' });
+      expect(document.activeElement).not.toBe(sibling);
+      expect(dialog.contains(document.activeElement)).toBe(true);
+
+      fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).not.toBe(sibling);
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    }
+
+    document.body.removeChild(sibling);
+  });
+});

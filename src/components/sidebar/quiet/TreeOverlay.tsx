@@ -430,6 +430,41 @@ export function TreeOverlay() {
       return;
     }
 
+    // Focus trap: Tab / Shift+Tab cycle within the overlay only. Keeps
+    // keyboard focus from escaping into the editor, sidebar, or chat
+    // panel behind us while the overlay is open.
+    if (event.key === "Tab") {
+      const overlayEl = overlayRef.current;
+      if (!overlayEl) return;
+      // In DOM order: search input first, then the currently-focused tree
+      // row (only one treeitem has tabIndex={0} at a time). Any stray
+      // focusable element that gets added later (buttons, links, etc.)
+      // is picked up automatically.
+      const focusables = Array.from(
+        overlayEl.querySelectorAll<HTMLElement>(
+          'input, button, a[href], [role="treeitem"][tabindex="0"], [tabindex="0"]',
+        ),
+      ).filter((el) => !el.hasAttribute("disabled"));
+      if (focusables.length === 0) return;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        // Shift+Tab on the first focusable wraps to the last.
+        if (active === first || !overlayEl.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        // Tab on the last focusable wraps to the first.
+        if (active === last || !overlayEl.contains(active)) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      return;
+    }
+
     // If the search input has focus and the user presses ArrowDown, move
     // focus to the first tree node so they can navigate without reaching
     // for the mouse.
