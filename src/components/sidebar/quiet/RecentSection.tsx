@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { toast } from "sonner";
@@ -19,8 +20,12 @@ import {
 } from "@/components/sidebar/quiet/rename-utils";
 import {
   chainKeyHandlers,
+  isContextMenuKey,
+  openContextMenuOnElement,
   useSidebarItemShortcuts,
 } from "@/components/sidebar/quiet/useSidebarItemShortcuts";
+import { announce } from "@/components/sidebar/quiet/aria-announcer";
+import { useRovingTabindex } from "@/components/sidebar/quiet/useRovingTabindex";
 import { useEditorStore, type RecentFile } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -78,20 +83,28 @@ interface RecentRowProps {
   entry: RecentFile;
   isActive: boolean;
   isRenaming: boolean;
+  tabIndex: 0 | -1;
   onOpen: (entry: RecentFile) => void;
   onStartRename: (path: string) => void;
   onCommitRename: (oldPath: string, newBasename: string) => void;
   onCancelRename: () => void;
+  onFocus: () => void;
+  onNavigate: (event: KeyboardEvent<HTMLElement>) => void;
+  registerRef: (el: HTMLDivElement | null) => void;
 }
 
 function RecentRow({
   entry,
   isActive,
   isRenaming,
+  tabIndex,
   onOpen,
   onStartRename,
   onCommitRename,
   onCancelRename,
+  onFocus,
+  onNavigate,
+  registerRef,
 }: RecentRowProps) {
   const parentHint = useMemo(() => getParentFolderHint(entry.path), [entry.path]);
   const [isDragging, setIsDragging] = useState(false);
@@ -104,18 +117,34 @@ function RecentRow({
     kind: "file",
   });
 
-  // Shortcuts (⌘⌥C / ⌘⌥R) first. When they match they preventDefault and
-  // chainKeyHandlers short-circuits so Enter/Space doesn't double-fire.
-  const onKeyDown = chainKeyHandlers(shortcutKeyDown, (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
+  // Row-local handler: Enter/Space → activate, F2 → rename, ContextMenu key
+  // (or ⌘⇧,) → synthetic right-click on the row so SidebarContextMenu opens.
+  const handleOpenKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isContextMenuKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (rowRef.current) openContextMenuOnElement(rowRef.current);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
       handleActivate();
-    } else if (e.key === "F2") {
+    } else if (event.key === "F2") {
       // F2 enters rename mode (task #40). See PinnedRow for rationale.
-      e.preventDefault();
+      event.preventDefault();
       onStartRename(entry.path);
     }
-  });
+  };
+
+  // Shortcuts (⌘⌥C / ⌘⌥R) first → roving tabindex (↑/↓) → row-local handler.
+  // chainKeyHandlers short-circuits whenever an earlier handler calls
+  // preventDefault, so the navigation hook never double-fires for plain
+  // Enter / F2 / ContextMenu keystrokes.
+  const onKeyDown = chainKeyHandlers(
+    shortcutKeyDown,
+    onNavigate,
+    handleOpenKeys,
+  );
 
   // Double-click via event.detail === 2 — see PinnedRow for the same pattern.
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -128,6 +157,16 @@ function RecentRow({
     handleActivate();
   };
 
+  // #80 — announce the rename transition to screen readers via aria-live.
+  // Mirrors PinnedRow exactly so every section produces the same SR output.
+  const prevRenamingRef = useRef(false);
+  useEffect(() => {
+    if (isRenaming && !prevRenamingRef.current) {
+      announce(`Renaming ${entry.name}`);
+    }
+    prevRenamingRef.current = isRenaming;
+  }, [isRenaming, entry.name]);
+
   // Restore focus to the row when rename mode ends.
   const wasRenamingRef = useRef(false);
   useEffect(() => {
@@ -137,6 +176,11 @@ function RecentRow({
     wasRenamingRef.current = isRenaming;
   }, [isRenaming]);
 
+  const setRowRef = (el: HTMLDivElement | null) => {
+    rowRef.current = el;
+    registerRef(el);
+  };
+
   return (
     <FilePreview filePath={entry.path}>
       <SidebarContextMenu
@@ -145,9 +189,9 @@ function RecentRow({
         onOpen={handleActivate}
       >
         <div
-          ref={rowRef}
+          ref={setRowRef}
           role="button"
-          tabIndex={0}
+          tabIndex={tabIndex}
           draggable={!isRenaming}
           aria-current={isActive ? "page" : undefined}
           data-active={isActive ? "true" : undefined}
@@ -155,6 +199,7 @@ function RecentRow({
           data-renaming={isRenaming ? "true" : undefined}
           onClick={isRenaming ? undefined : handleClick}
           onKeyDown={isRenaming ? undefined : onKeyDown}
+          onFocus={onFocus}
           onDragStart={(e) => {
             beginFileDrag(e, entry.path);
             setIsDragging(true);
@@ -245,6 +290,14 @@ export function RecentSection({
     ? filteredFiles
     : filteredFiles.slice(0, effectiveCap);
 
+  // #80 — roving tabindex + ↑/↓ navigation. Stable row ids = file paths
+  // (recent-files paths are unique by definition — the store dedupes them).
+  const rowIds = useMemo(
+    () => visibleFiles.map((entry) => entry.path),
+    [visibleFiles],
+  );
+  const roving = useRovingTabindex({ rowIds });
+
   const handleOpen = async (entry: RecentFile) => {
     try {
       await openFile(entry.path, entry.name);
@@ -310,10 +363,14 @@ export function RecentSection({
                 entry={entry}
                 isActive={entry.path === activeFilePath}
                 isRenaming={renamingPath === entry.path}
+                tabIndex={roving.getTabIndex(entry.path)}
                 onOpen={handleOpen}
                 onStartRename={startRename}
                 onCommitRename={commitRename}
                 onCancelRename={cancelRename}
+                onFocus={() => roving.handleFocus(entry.path)}
+                onNavigate={(e) => roving.handleKeyDown(e, entry.path)}
+                registerRef={(el) => roving.registerRef(entry.path, el)}
               />
             ))}
           </div>

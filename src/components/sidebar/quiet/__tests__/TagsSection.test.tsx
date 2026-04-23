@@ -3,6 +3,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   waitFor,
@@ -357,5 +358,95 @@ describe('TagsSection', () => {
       .getAllByRole('button')
       .filter((el) => (el.getAttribute('aria-label') ?? '').startsWith('Search for'));
     expect(rows).toHaveLength(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Task #80 — roving tabindex (↑/↓ wraps within section, Tab between)
+  // -------------------------------------------------------------------------
+
+  describe('roving tabindex (#80)', () => {
+    it('only the first tag row carries tabIndex=0 before any focus lands', async () => {
+      indexTagsMock.mockResolvedValue([
+        { tag: 'alpha', file_count: 4 },
+        { tag: 'beta', file_count: 2 },
+        { tag: 'gamma', file_count: 1 },
+      ]);
+      renderWithProviders(<TagsSection />);
+
+      await waitFor(() => {
+        expect(screen.getByText('alpha')).toBeTruthy();
+      });
+
+      const rows = screen
+        .getAllByRole('button')
+        .filter((el) =>
+          (el.getAttribute('aria-label') ?? '').startsWith('Search for'),
+        );
+      expect(rows[0].getAttribute('tabindex')).toBe('0');
+      expect(rows[1].getAttribute('tabindex')).toBe('-1');
+      expect(rows[2].getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('ArrowDown moves focus to the next tag row', async () => {
+      indexTagsMock.mockResolvedValue([
+        { tag: 'alpha', file_count: 4 },
+        { tag: 'beta', file_count: 2 },
+      ]);
+      renderWithProviders(<TagsSection />);
+
+      await waitFor(() => {
+        expect(screen.getByText('alpha')).toBeTruthy();
+      });
+
+      const alpha = screen.getByRole('button', { name: /search for #alpha/i });
+      const beta = screen.getByRole('button', { name: /search for #beta/i });
+
+      alpha.focus();
+      fireEvent.keyDown(alpha, { key: 'ArrowDown' });
+
+      expect(document.activeElement).toBe(beta);
+    });
+
+    it('ArrowUp at the top wraps to the bottom of the tag list', async () => {
+      indexTagsMock.mockResolvedValue([
+        { tag: 'alpha', file_count: 4 },
+        { tag: 'beta', file_count: 2 },
+        { tag: 'gamma', file_count: 1 },
+      ]);
+      renderWithProviders(<TagsSection />);
+
+      await waitFor(() => {
+        expect(screen.getByText('alpha')).toBeTruthy();
+      });
+
+      const alpha = screen.getByRole('button', { name: /search for #alpha/i });
+      const gamma = screen.getByRole('button', { name: /search for #gamma/i });
+
+      alpha.focus();
+      fireEvent.keyDown(alpha, { key: 'ArrowUp' });
+
+      expect(document.activeElement).toBe(gamma);
+    });
+
+    it('ArrowDown at the bottom wraps to the top of the tag list', async () => {
+      indexTagsMock.mockResolvedValue([
+        { tag: 'alpha', file_count: 4 },
+        { tag: 'beta', file_count: 2 },
+        { tag: 'gamma', file_count: 1 },
+      ]);
+      renderWithProviders(<TagsSection />);
+
+      await waitFor(() => {
+        expect(screen.getByText('alpha')).toBeTruthy();
+      });
+
+      const alpha = screen.getByRole('button', { name: /search for #alpha/i });
+      const gamma = screen.getByRole('button', { name: /search for #gamma/i });
+
+      gamma.focus();
+      fireEvent.keyDown(gamma, { key: 'ArrowDown' });
+
+      expect(document.activeElement).toBe(alpha);
+    });
   });
 });

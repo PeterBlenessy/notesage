@@ -361,6 +361,103 @@ describe('RecentSection — inline rename (#40)', () => {
   });
 });
 
+describe('RecentSection — roving tabindex + ARIA (#80)', () => {
+  it('only the first row carries tabIndex=0 before any focus lands', () => {
+    setRecent(makeRecent(3));
+    renderWithProviders(<RecentSection />);
+
+    const rows = screen
+      .getAllByRole('button')
+      .filter((el) => (el.textContent ?? '').match(/file-/));
+    expect(rows[0].getAttribute('tabindex')).toBe('0');
+    expect(rows[1].getAttribute('tabindex')).toBe('-1');
+    expect(rows[2].getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('ArrowDown moves focus to the next row', () => {
+    setRecent(makeRecent(2));
+    renderWithProviders(<RecentSection />);
+
+    const first = screen.getByText('file-1.md').closest('[role="button"]') as HTMLElement;
+    const second = screen.getByText('file-2.md').closest('[role="button"]') as HTMLElement;
+
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(second);
+  });
+
+  it('ArrowUp at the top wraps to the bottom', () => {
+    setRecent(makeRecent(3));
+    renderWithProviders(<RecentSection />);
+
+    const first = screen.getByText('file-1.md').closest('[role="button"]') as HTMLElement;
+    const last = screen.getByText('file-3.md').closest('[role="button"]') as HTMLElement;
+
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('F2 surfaces a "Renaming <filename>" announcement via aria-live', async () => {
+    // Clear any leftover announcer node from previous tests (TTL is 2s).
+    document
+      .querySelectorAll('[data-sidebar-announcer]')
+      .forEach((n) => n.remove());
+
+    setRecent([{ path: '/ws/notes/alpha.md', name: 'alpha.md' }]);
+    renderWithProviders(<RecentSection />);
+
+    const row = screen.getByText('alpha.md').closest('[role="button"]') as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'F2' });
+
+    await waitFor(() => {
+      const announcer = document.querySelector(
+        '[data-sidebar-announcer]',
+      ) as HTMLElement | null;
+      expect(announcer).toBeTruthy();
+      expect(announcer?.textContent).toBe('Renaming alpha.md');
+    });
+  });
+
+  it('the ContextMenu key dispatches a contextmenu event on the row', () => {
+    setRecent([{ path: '/ws/notes/alpha.md', name: 'alpha.md' }]);
+    renderWithProviders(<RecentSection />);
+
+    const row = screen.getByText('alpha.md').closest('[role="button"]') as HTMLElement;
+    let captured: MouseEvent | null = null;
+    row.addEventListener('contextmenu', (e) => {
+      captured = e as MouseEvent;
+      e.preventDefault();
+    });
+
+    row.focus();
+    fireEvent.keyDown(row, { key: 'ContextMenu' });
+
+    expect(captured).not.toBeNull();
+    expect(captured!.button).toBe(2);
+  });
+
+  it('⌘⇧, also dispatches a contextmenu event on the row', () => {
+    setRecent([{ path: '/ws/notes/alpha.md', name: 'alpha.md' }]);
+    renderWithProviders(<RecentSection />);
+
+    const row = screen.getByText('alpha.md').closest('[role="button"]') as HTMLElement;
+    let captured: MouseEvent | null = null;
+    row.addEventListener('contextmenu', (e) => {
+      captured = e as MouseEvent;
+      e.preventDefault();
+    });
+
+    row.focus();
+    fireEvent.keyDown(row, { key: ',', metaKey: true, shiftKey: true });
+
+    expect(captured).not.toBeNull();
+  });
+});
+
 describe('RecentSection — settings-driven cap (#35)', () => {
   it('uses sidebarRecentCap from settings when no explicit `cap` prop is passed', () => {
     useSettingsStore.setState({ sidebarRecentCap: 3 });

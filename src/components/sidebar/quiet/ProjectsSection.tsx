@@ -31,6 +31,11 @@ import {
   validateCreateBasename,
   validateRenameBasename,
 } from "@/components/sidebar/quiet/rename-utils";
+import {
+  isContextMenuKey,
+  openContextMenuOnElement,
+} from "@/components/sidebar/quiet/useSidebarItemShortcuts";
+import { announce } from "@/components/sidebar/quiet/aria-announcer";
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
@@ -518,6 +523,21 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const handleProjectKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, project: WorkspaceProject) => {
+      // #80 — keyboard context-menu gesture (Menu key / Shift+F10 / ⌘⇧,).
+      // Synthesises a contextmenu event on the focused row so the project's
+      // SidebarContextMenu opens from the keyboard. Currently no
+      // SidebarContextMenu is mounted on the project row itself (only on
+      // child file rows), so this is wired forward-compatibly: the synthetic
+      // event bubbles, and any future ContextMenuTrigger on the project
+      // level will pick it up. Today it's a no-op for projects but matches
+      // the gesture across all sections.
+      if (isContextMenuKey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const el = rowRefs.current.get(project.path);
+        if (el) openContextMenuOnElement(el);
+        return;
+      }
       const isExpanded = expandedPaths.has(project.path);
       if (event.key === "ArrowRight") {
         event.preventDefault();
@@ -560,6 +580,17 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const handleChildKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: RowDescriptor) => {
+      // #80 — keyboard context-menu gesture on a child row (file or folder).
+      // Files have a SidebarContextMenu wrapper in this section's children
+      // hierarchy so the synthetic event opens the menu; folders do not yet
+      // (out of scope), but the dispatch is harmless for them.
+      if (isContextMenuKey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const el = rowRefs.current.get(row.id);
+        if (el) openContextMenuOnElement(el);
+        return;
+      }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         focusRow(row.project.path);
@@ -910,6 +941,18 @@ function ChildRow({
     }
     wasRenamingRef.current = isRenaming;
   }, [isRenaming]);
+
+  // #80 — announce the rename transition to screen readers via aria-live.
+  // Mirrors PinnedRow / RecentRow exactly so every section produces the same
+  // SR output ("Renaming <filename>") on F2 / double-click / context-menu
+  // entry into rename mode.
+  const prevRenamingRef = useRef(false);
+  useEffect(() => {
+    if (isRenaming && !prevRenamingRef.current && row.entry) {
+      announce(`Renaming ${row.entry.name}`);
+    }
+    prevRenamingRef.current = isRenaming;
+  }, [isRenaming, row.entry]);
 
   if (row.overflow) {
     // Overflow rows are focusable markers with no interactive action, so

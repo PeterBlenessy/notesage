@@ -5,6 +5,48 @@ import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 
 /**
+ * Dispatch a synthetic `contextmenu` event on the given element so Radix's
+ * ContextMenu opens from a keyboard action (#80). The macOS Menu key and
+ * Shift+F10 both map to `KeyboardEvent.key === "ContextMenu"`; we also wire
+ * ⌘⇧, as a fallback that users can press without a dedicated key.
+ *
+ * The event is bubbling + cancelable so Radix's listener on the
+ * ContextMenuTrigger picks it up. `button: 2` mirrors the right-click path.
+ */
+export function openContextMenuOnElement(element: HTMLElement): void {
+  const rect = element.getBoundingClientRect();
+  // Center-ish point inside the row — gives Radix a sensible anchor for the
+  // popover, avoiding a 0,0 origin that would drift into the viewport corner.
+  const clientX = rect.left + Math.min(rect.width / 2, 32);
+  const clientY = rect.top + rect.height / 2;
+  const ev = new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    clientX,
+    clientY,
+  });
+  element.dispatchEvent(ev);
+}
+
+/**
+ * True when the event represents an "open the context menu" keyboard gesture:
+ *
+ *   - `KeyboardEvent.key === "ContextMenu"` — the macOS Menu key and the
+ *     Windows Application key surface as this. Shift+F10 also reports
+ *     `key === "ContextMenu"` in most browsers.
+ *   - `⌘⇧,` / `Ctrl+Shift+,` — user-pressable fallback that doesn't require
+ *     a dedicated key. Matches `metaKey || ctrlKey` to stay consistent with
+ *     the rest of the sidebar's key handling.
+ */
+export function isContextMenuKey(event: KeyboardEvent<HTMLElement>): boolean {
+  if (event.key === "ContextMenu") return true;
+  const mod = event.metaKey || event.ctrlKey;
+  if (mod && event.shiftKey && event.key === ",") return true;
+  return false;
+}
+
+/**
  * useSidebarItemShortcuts — row-level keyboard shortcuts for the quiet-
  * composer sidebar (task #46).
  *
