@@ -29,6 +29,22 @@ export interface ResearchModeProps {
   filter: string;
   onPick: (chip: AttachmentChip) => void;
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 /** Hard cap on results — keep the dropdown short and snappy. */
@@ -41,6 +57,8 @@ function ResearchMode({
   filter,
   onPick,
   onDismiss,
+  listboxId = 'cmd-research-listbox',
+  onActiveOptionChange,
 }: ResearchModeProps) {
   const [results, setResults] = useState<IndexResearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -84,6 +102,19 @@ function ResearchMode({
       }
     };
   }, [filter]);
+
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      results.length > 0 ? `${listboxId}-opt-${highlightedIndex}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: results.length,
+    });
+  }, [onActiveOptionChange, listboxId, highlightedIndex, results.length]);
 
   // ------------------------------------------------------------------
   // Selection helpers.
@@ -158,6 +189,7 @@ function ResearchMode({
   if (results.length === 0) {
     return (
       <div
+        id={listboxId}
         role="listbox"
         aria-label="Research results"
         className="px-3 py-2 text-xs text-muted-foreground"
@@ -169,6 +201,7 @@ function ResearchMode({
 
   return (
     <div
+      id={listboxId}
       role="listbox"
       aria-label="Research results"
       className="flex flex-col py-1"
@@ -178,6 +211,7 @@ function ResearchMode({
         return (
           <button
             type="button"
+            id={`${listboxId}-opt-${index}`}
             role="option"
             aria-selected={isActive}
             key={`${result.file}-${index}`}

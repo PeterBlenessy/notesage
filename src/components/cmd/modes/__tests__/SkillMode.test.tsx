@@ -145,4 +145,87 @@ describe('SkillMode', () => {
       expect(rows[i].getAttribute('aria-selected')).toBe('false');
     }
   });
+
+  // -------------------------------------------------------------------------
+  // ARIA wiring contract (#78) — the picker exposes a stable listbox id so
+  // the parent FloatingCommandBar combobox input can wire `aria-controls` /
+  // `aria-activedescendant`. activeIndex changes are reported up via the
+  // optional `onActiveOptionChange` callback.
+  // -------------------------------------------------------------------------
+
+  it('listbox carries the supplied id (default fallback when omitted)', () => {
+    const { container } = renderWithProviders(
+      <SkillMode filter="" onPick={vi.fn()} />,
+    );
+    const list = container.querySelector('[role="listbox"]') as HTMLElement;
+    expect(list).toBeTruthy();
+    expect(list.id).toBe('cmd-skill-listbox');
+  });
+
+  it('listbox honours an explicit listboxId prop', () => {
+    const { container } = renderWithProviders(
+      <SkillMode filter="" onPick={vi.fn()} listboxId="custom-id" />,
+    );
+    const list = container.querySelector('[role="listbox"]') as HTMLElement;
+    expect(list.id).toBe('custom-id');
+  });
+
+  it('each option carries id="${listboxId}-opt-${i}"', () => {
+    const { container } = renderWithProviders(
+      <SkillMode filter="" onPick={vi.fn()} listboxId="lb" />,
+    );
+    const rows = container.querySelectorAll<HTMLElement>('[role="option"]');
+    rows.forEach((row, i) => {
+      expect(row.id).toBe(`lb-opt-${i}`);
+    });
+  });
+
+  it('reports active option upward via onActiveOptionChange on mount + ↓', () => {
+    const onActiveOptionChange = vi.fn();
+    const { container } = renderWithProviders(
+      <SkillMode
+        filter=""
+        onPick={vi.fn()}
+        listboxId="lb"
+        onActiveOptionChange={onActiveOptionChange}
+      />,
+    );
+
+    // Initial mount → activeIndex 0.
+    expect(onActiveOptionChange).toHaveBeenCalled();
+    const lastCall = onActiveOptionChange.mock.calls[onActiveOptionChange.mock.calls.length - 1][0];
+    expect(lastCall).toMatchObject({
+      listboxId: 'lb',
+      activeOptionId: 'lb-opt-0',
+    });
+    expect(lastCall.count).toBeGreaterThan(0);
+
+    // ↓ moves the highlight to index 1 → next callback fires.
+    onActiveOptionChange.mockClear();
+    const list = container.querySelector('[role="listbox"]') as HTMLElement;
+    fireEvent.keyDown(list, { key: 'ArrowDown' });
+
+    const afterDown = onActiveOptionChange.mock.calls[onActiveOptionChange.mock.calls.length - 1][0];
+    expect(afterDown.activeOptionId).toBe('lb-opt-1');
+  });
+
+  it('reports activeOptionId=null when the empty-state ("No skills match") is rendered', () => {
+    const onActiveOptionChange = vi.fn();
+    renderWithProviders(
+      <SkillMode
+        filter="zzz-no-match"
+        onPick={vi.fn()}
+        listboxId="lb"
+        onActiveOptionChange={onActiveOptionChange}
+      />,
+    );
+
+    expect(onActiveOptionChange).toHaveBeenCalled();
+    const lastCall = onActiveOptionChange.mock.calls[onActiveOptionChange.mock.calls.length - 1][0];
+    expect(lastCall).toMatchObject({
+      listboxId: 'lb',
+      activeOptionId: null,
+      count: 0,
+    });
+  });
 });

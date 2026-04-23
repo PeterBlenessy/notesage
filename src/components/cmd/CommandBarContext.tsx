@@ -255,8 +255,8 @@ function CommandBarContext({ className }: CommandBarContextProps) {
       <IconButton
         ariaLabel={
           cmdBarPinned
-            ? "Unpin chat (return to floating)"
-            : "Pin chat to side"
+            ? "Return chat to floating bar"
+            : "Pin chat to side panel"
         }
         icon={cmdBarPinned ? PinOff : Pin}
         onClick={() => {

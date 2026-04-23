@@ -38,6 +38,23 @@ export interface SkillModeProps {
    * parent). Optional — parent owns the dismiss logic.
    */
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input. Optional — defaults to
+   * a stable fallback so standalone use stays ARIA-valid.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 function filterSkills(skills: SkillEntry[], filter: string): SkillEntry[] {
@@ -58,7 +75,13 @@ function filterSkills(skills: SkillEntry[], filter: string): SkillEntry[] {
   return [...nameHits, ...descHits].slice(0, MAX_RESULTS);
 }
 
-function SkillMode({ filter, onPick, onDismiss }: SkillModeProps) {
+function SkillMode({
+  filter,
+  onPick,
+  onDismiss,
+  listboxId = 'cmd-skill-listbox',
+  onActiveOptionChange,
+}: SkillModeProps) {
   const allSkills = useSkillStore((state) => state.getActiveSkills());
   const results = useMemo(() => filterSkills(allSkills, filter), [allSkills, filter]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -74,6 +97,19 @@ function SkillMode({ filter, onPick, onDismiss }: SkillModeProps) {
   useEffect(() => {
     listRef.current?.focus();
   }, []);
+
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      results.length > 0 ? `${listboxId}-opt-${activeIndex}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: results.length,
+    });
+  }, [onActiveOptionChange, listboxId, activeIndex, results.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (results.length === 0) {
@@ -104,6 +140,7 @@ function SkillMode({ filter, onPick, onDismiss }: SkillModeProps) {
     return (
       <div
         ref={listRef}
+        id={listboxId}
         role="listbox"
         aria-label="Skill picker"
         tabIndex={-1}
@@ -118,6 +155,7 @@ function SkillMode({ filter, onPick, onDismiss }: SkillModeProps) {
   return (
     <div
       ref={listRef}
+      id={listboxId}
       role="listbox"
       aria-label="Skill picker"
       tabIndex={-1}
@@ -130,6 +168,7 @@ function SkillMode({ filter, onPick, onDismiss }: SkillModeProps) {
           <button
             type="button"
             key={skill.path}
+            id={`${listboxId}-opt-${i}`}
             role="option"
             aria-selected={active}
             data-active={active ? 'true' : 'false'}

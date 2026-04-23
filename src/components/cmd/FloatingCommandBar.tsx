@@ -88,6 +88,15 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const [expanded, setExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [activePrefix, setActivePrefix] = useState<ActivePrefix | null>(null);
+  // Tracks the currently-highlighted option in the active mode picker so the
+  // composer input can mirror it via `aria-activedescendant`. The picker
+  // reports updates upward via its `onActiveOptionChange` callback (#78);
+  // we reset to null whenever the active prefix flips off (no listbox open).
+  const [activeOption, setActiveOption] = useState<{
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const reducedMotion = useReducedMotion();
 
@@ -125,6 +134,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       inputRef.current.focus();
     }
   }, [effectiveExpanded]);
+
+  // Drop the cached active-option info whenever the picker closes — there's
+  // no listbox to point at, so `aria-activedescendant` and `aria-controls`
+  // must be cleared together.
+  useEffect(() => {
+    if (!activePrefix) setActiveOption(null);
+  }, [activePrefix]);
 
   const expand = useCallback(() => {
     setExpanded(true);
@@ -429,6 +445,11 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       data-cmd-bar-pinned={isPinned ? "true" : "false"}
       data-expanded={effectiveExpanded ? "true" : "false"}
       data-prefix-mode={activePrefix?.mode.id ?? ""}
+      // Pinned mode is a permanent docked panel — give AT users a landmark to
+      // jump to. Floating mode is a transient overlay; no region role applied
+      // there per the spec (#82).
+      role={isPinned ? "region" : undefined}
+      aria-label={isPinned ? "Chat panel" : undefined}
       style={inlineStyle}
       className={cn(
         positionClasses,
@@ -457,6 +478,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           inputRef={inputRef}
           inputValue={inputValue}
           activePrefix={activePrefix}
+          activeOption={activeOption}
+          onActiveOptionChange={setActiveOption}
           onInputChange={handleInputChange}
           onSelectionChange={handleSelectionChange}
           onKeyDown={handleKeyDown}
@@ -635,10 +658,23 @@ function CompactContent({ onActivate }: CompactContentProps) {
   );
 }
 
+interface ActiveOptionInfo {
+  listboxId: string;
+  activeOptionId: string | null;
+  count: number;
+}
+
 interface ExpandedContentProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
   inputValue: string;
   activePrefix: ActivePrefix | null;
+  /**
+   * Currently-highlighted option in the open mode picker, reported up by the
+   * picker via `onActiveOptionChange`. Wired through to `aria-controls` /
+   * `aria-activedescendant` on the combobox input below (#78).
+   */
+  activeOption: ActiveOptionInfo | null;
+  onActiveOptionChange: (info: ActiveOptionInfo) => void;
   onInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onSelectionChange: (event: React.SyntheticEvent<HTMLInputElement>) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
@@ -657,6 +693,8 @@ function ExpandedContent({
   inputRef,
   inputValue,
   activePrefix,
+  activeOption,
+  onActiveOptionChange,
   onInputChange,
   onSelectionChange,
   onKeyDown,
@@ -692,6 +730,7 @@ function ExpandedContent({
         <ModePickerDispatch
           activePrefix={activePrefix}
           isComposing={isComposing}
+          onActiveOptionChange={onActiveOptionChange}
           onPickSkill={onPickSkill}
           onPickReference={onPickReference}
           onPickTag={onPickTag}
@@ -705,7 +744,17 @@ function ExpandedContent({
         <input
           ref={inputRef}
           type="text"
-          role="textbox"
+          // The input doubles as a combobox when a prefix-mode picker is open
+          // (#78): the picker's listbox stays focus-free, and the input
+          // mirrors the highlighted option via `aria-activedescendant`. When
+          // no picker is open, the combobox is collapsed (`aria-expanded` is
+          // false) and `aria-controls`/`aria-activedescendant` are unset.
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-expanded={Boolean(activePrefix)}
+          aria-autocomplete="list"
+          aria-controls={activeOption?.listboxId}
+          aria-activedescendant={activeOption?.activeOptionId ?? undefined}
           value={inputValue}
           onChange={onInputChange}
           onKeyUp={onSelectionChange}
@@ -756,6 +805,7 @@ function PrefixModeBadge({ prefix }: PrefixModeBadgeProps) {
 interface ModePickerDispatchProps {
   activePrefix: ActivePrefix;
   isComposing: boolean;
+  onActiveOptionChange: (info: ActiveOptionInfo) => void;
   onPickSkill: (name: string) => void;
   onPickReference: (chip: AttachmentChip) => void;
   onPickTag: (name: string) => void;
@@ -765,13 +815,31 @@ interface ModePickerDispatchProps {
 }
 
 /**
+ * Stable per-mode listbox ids — used by the input's `aria-controls` and as
+ * the option-id prefix every picker emits (`${listboxId}-opt-${i}`). Keeping
+ * one fixed id per mode means tests and DOM queries can target a known id
+ * without race conditions on `useId()` regeneration across renders.
+ */
+const MODE_LISTBOX_IDS: Record<string, string> = {
+  skill: "cmd-skill-listbox",
+  reference: "cmd-reference-listbox",
+  tag: "cmd-tag-listbox",
+  task: "cmd-task-listbox",
+  research: "cmd-research-listbox",
+  palette: "cmd-palette-listbox",
+};
+
+/**
  * Picker dispatcher — selects the mode-specific picker based on the active
  * prefix's mode id. Each picker is a standalone component (#14–#19); the
- * dispatcher is just the route table.
+ * dispatcher is just the route table. Forwards the stable listbox id and
+ * the active-option callback so the parent can mirror highlight state on
+ * the combobox input via `aria-activedescendant` (#78).
  */
 function ModePickerDispatch({
   activePrefix,
   isComposing,
+  onActiveOptionChange,
   onPickSkill,
   onPickReference,
   onPickTag,
@@ -780,19 +848,63 @@ function ModePickerDispatch({
   onPickPalette,
 }: ModePickerDispatchProps) {
   const filter = activePrefix.filter;
+  const listboxId = MODE_LISTBOX_IDS[activePrefix.mode.id];
   switch (activePrefix.mode.id) {
     case "skill":
-      return <SkillMode filter={filter} onPick={onPickSkill} />;
+      return (
+        <SkillMode
+          filter={filter}
+          onPick={onPickSkill}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
     case "reference":
-      return <ReferenceMode filter={filter} onPick={onPickReference} />;
+      return (
+        <ReferenceMode
+          filter={filter}
+          onPick={onPickReference}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
     case "tag":
-      return <TagMode filter={filter} onPick={onPickTag} />;
+      return (
+        <TagMode
+          filter={filter}
+          onPick={onPickTag}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
     case "task":
-      return <TaskMode filter={filter} onPick={onPickTask} isComposing={isComposing} />;
+      return (
+        <TaskMode
+          filter={filter}
+          onPick={onPickTask}
+          isComposing={isComposing}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
     case "research":
-      return <ResearchMode filter={filter} onPick={onPickResearch} />;
+      return (
+        <ResearchMode
+          filter={filter}
+          onPick={onPickResearch}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
     case "palette":
-      return <PaletteMode filter={filter} onPick={onPickPalette} />;
+      return (
+        <PaletteMode
+          filter={filter}
+          onPick={onPickPalette}
+          listboxId={listboxId}
+          onActiveOptionChange={onActiveOptionChange}
+        />
+      );
   }
 }
 

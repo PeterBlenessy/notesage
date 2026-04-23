@@ -42,6 +42,22 @@ interface ReferenceModeProps {
   /** Called when the user picks a reference. */
   onPick: (chip: AttachmentChip) => void;
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 type ResultKind = "file" | "person" | "comment";
@@ -209,7 +225,12 @@ function mixResults(
 // Component
 // ---------------------------------------------------------------------------
 
-function ReferenceMode({ filter, onPick }: ReferenceModeProps) {
+function ReferenceMode({
+  filter,
+  onPick,
+  listboxId = 'cmd-reference-listbox',
+  onActiveOptionChange,
+}: ReferenceModeProps) {
   // Workspace file tree slices.
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -283,6 +304,19 @@ function ReferenceMode({ filter, onPick }: ReferenceModeProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultsKey]);
 
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      results.length > 0 ? `${listboxId}-opt-${highlightIndex}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: results.length,
+    });
+  }, [onActiveOptionChange, listboxId, highlightIndex, results.length]);
+
   const handlePick = useCallback(
     (result: ReferenceResult) => {
       onPick(result.chip);
@@ -323,8 +357,10 @@ function ReferenceMode({ filter, onPick }: ReferenceModeProps) {
   return (
     <div
       ref={listRef}
+      id={listboxId}
       data-reference-list
       role="listbox"
+      aria-label="References"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       className={cn(
@@ -342,6 +378,7 @@ function ReferenceMode({ filter, onPick }: ReferenceModeProps) {
         results.map((r, i) => (
           <ResultRow
             key={r.id}
+            id={`${listboxId}-opt-${i}`}
             result={r}
             highlighted={i === highlightIndex}
             onMouseEnter={() => setHighlightIndex(i)}
@@ -354,6 +391,7 @@ function ReferenceMode({ filter, onPick }: ReferenceModeProps) {
 }
 
 interface ResultRowProps {
+  id: string;
   result: ReferenceResult;
   highlighted: boolean;
   onClick: () => void;
@@ -361,6 +399,7 @@ interface ResultRowProps {
 }
 
 function ResultRow({
+  id,
   result,
   highlighted,
   onClick,
@@ -371,6 +410,7 @@ function ResultRow({
 
   return (
     <div
+      id={id}
       data-result-kind={result.kind}
       role="option"
       aria-selected={highlighted}
