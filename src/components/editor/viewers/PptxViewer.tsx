@@ -1,7 +1,13 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { StickyNote, ChevronLeft, ChevronRight, Box, MessageSquare } from "lucide-react";
+import {
+  StickyNote,
+  ChevronLeft,
+  ChevronRight,
+  Box,
+  MessageSquare,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { getBinaryData } from "@/lib/binary-cache";
 import { parsePptx } from "@/lib/pptx-parser";
 import type { PptxPresentation } from "@/lib/pptx-types";
@@ -9,6 +15,7 @@ import { SlideRenderer } from "./PptxSlideRenderer";
 import { PptxSearchBar, usePptxSearch } from "./PptxSearchBar";
 import { PptxZoomControls, usePptxZoom } from "./PptxZoomControls";
 import { PptxCommentOverlay } from "./PptxCommentOverlay";
+import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useEditorStore } from "@/stores/editor-store";
 
 // ---------------------------------------------------------------------------
@@ -132,7 +139,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
       const clamped = Math.max(0, Math.min(index, presentation.slides.length - 1));
       setCurrentSlide(clamped);
     },
-    [presentation],
+    [presentation, setCurrentSlide],
   );
 
   const goNext = useCallback(() => goToSlide(currentSlide + 1), [currentSlide, goToSlide]);
@@ -189,6 +196,11 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
     viewerRef.current?.focus();
   }, [jumpValue, goToSlide]);
 
+  const openFindBar = useCallback(() => {
+    // Dispatch the shared find-open event that the search hook listens for.
+    window.dispatchEvent(new Event("notesage:find-open"));
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -217,21 +229,72 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
   const slideH = presentation ? presentation.slideHeight / EMU_PER_PX : 540;
 
   return (
-    <div ref={viewerRef} className="h-full flex flex-col outline-none" tabIndex={-1}>
-      {/* Toolbar */}
-      <div className="h-9 border-b border-border px-3 flex items-center gap-1 shrink-0 bg-background">
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {fileName}
-        </span>
-        <Separator orientation="vertical" className="h-4 mx-1" />
+    <div ref={viewerRef} className="h-full flex flex-col outline-none relative" tabIndex={-1}>
+      {/* Floating toolbar pill */}
+      <ViewerToolbarPill viewerId="pptx" scrollRef={scrollContainerRef}>
         <PptxZoomControls zoom={zoom} />
-        <Separator orientation="vertical" className="h-4 mx-1" />
+        {slideCount > 0 && (
+          <>
+            <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={goPrev}
+              disabled={currentSlide === 0}
+              title="Previous slide"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </Button>
+            {jumpInput ? (
+              <input
+                ref={jumpInputRef}
+                className="w-12 text-center text-xs bg-transparent border border-border rounded px-1 py-0.5 outline-none tabular-nums"
+                value={jumpValue}
+                onChange={(e) => setJumpValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleJumpSubmit();
+                  if (e.key === "Escape") {
+                    setJumpInput(false);
+                    viewerRef.current?.focus();
+                  }
+                }}
+                onBlur={() => {
+                  handleJumpSubmit();
+                }}
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground tabular-nums hover:text-foreground transition-colors px-1"
+                onClick={() => {
+                  setJumpInput(true);
+                  setJumpValue(String(currentSlide + 1));
+                }}
+                title="Click to jump to slide"
+              >
+                {currentSlide + 1} / {slideCount}
+              </button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={goNext}
+              disabled={currentSlide === slideCount - 1}
+              title="Next slide"
+            >
+              <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </Button>
+          </>
+        )}
+        <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
         <Button
           variant="ghost"
           size="icon-xs"
           onClick={() => setNotesOpen(!notesOpen)}
           className={notesOpen ? "bg-accent text-foreground" : "text-muted-foreground"}
           title="Speaker notes"
+          aria-pressed={notesOpen}
         >
           <StickyNote className="h-3.5 w-3.5" strokeWidth={1.5} />
         </Button>
@@ -242,27 +305,33 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
             onClick={() => setCommentsVisible(!commentsVisible)}
             className={commentsVisible ? "bg-accent text-foreground" : "text-muted-foreground"}
             title="Comments"
+            aria-pressed={commentsVisible}
           >
             <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
           </Button>
         )}
-        {slideCount > 0 && (
-          <>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              Slide {currentSlide + 1} / {slideCount}
-            </span>
-          </>
-        )}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={openFindBar}
+          className={search.findBarOpen ? "bg-accent text-foreground" : "text-muted-foreground"}
+          title="Find in slides"
+          aria-pressed={search.findBarOpen}
+        >
+          <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </Button>
         {currentSection && (
           <>
-            <Separator orientation="vertical" className="h-4 mx-1" />
-            <span className="text-xs text-muted-foreground truncate max-w-[160px]" title={currentSection.name}>
+            <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
+            <span
+              className="text-xs text-muted-foreground truncate max-w-[140px] px-1"
+              title={currentSection.name}
+            >
               {currentSection.name}
             </span>
           </>
         )}
-      </div>
+      </ViewerToolbarPill>
 
       {/* Content area */}
       <div className="flex-1 overflow-hidden relative flex flex-col">
@@ -274,10 +343,11 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
           </div>
         )}
 
-        {/* Slide area */}
+        {/* Slide area. pt-14 reserves space for the floating pill at top-4 so
+            the first slide doesn't collide with the toolbar on short viewports. */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-auto bg-muted/50 flex flex-col items-center justify-start"
+          className="flex-1 overflow-auto bg-muted/50 flex flex-col items-center justify-start pt-14"
         >
           {slide && (
             <div className="flex-1 flex items-center justify-center p-8 min-h-0">
@@ -312,57 +382,10 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
             </div>
           )}
 
-          {/* Navigation bar */}
+          {/* Slide counter text (accessible readout — pill handles nav buttons). */}
           {slideCount > 0 && (
-            <div className="shrink-0 flex items-center justify-center gap-2 pb-4">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={goPrev}
-                disabled={currentSlide === 0}
-                title="Previous slide"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={1.5} />
-              </Button>
-              {jumpInput ? (
-                <input
-                  ref={jumpInputRef}
-                  className="w-12 text-center text-xs bg-transparent border border-border rounded px-1 py-0.5 outline-none"
-                  value={jumpValue}
-                  onChange={(e) => setJumpValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleJumpSubmit();
-                    if (e.key === "Escape") {
-                      setJumpInput(false);
-                      viewerRef.current?.focus();
-                    }
-                  }}
-                  onBlur={() => {
-                    handleJumpSubmit();
-                  }}
-                  autoFocus
-                />
-              ) : (
-                <button
-                  className="text-xs text-muted-foreground tabular-nums hover:text-foreground transition-colors"
-                  onClick={() => {
-                    setJumpInput(true);
-                    setJumpValue(String(currentSlide + 1));
-                  }}
-                  title="Click to jump to slide"
-                >
-                  Slide {currentSlide + 1} of {slideCount}
-                </button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={goNext}
-                disabled={currentSlide === slideCount - 1}
-                title="Next slide"
-              >
-                <ChevronRight className="h-4 w-4" strokeWidth={1.5} />
-              </Button>
+            <div className="shrink-0 pb-4 text-xs text-muted-foreground tabular-nums" aria-live="polite">
+              Slide {currentSlide + 1} of {slideCount}
             </div>
           )}
         </div>
