@@ -1073,19 +1073,130 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ---
 
+## M1.11 Functionality — wire the editor + chat into QuietLayout (2 tasks)
+
+This milestone closes the planning gap surfaced during the Phase 1 trial (2026-04-23): the Foundation milestones (M1.1–M1.10) built the new shell + design system + ARIA + perf, but never assigned tasks to mount the actual editor or chat inside QuietLayout. **Phase 1 cannot ship without these tasks** — the new UI is non-functional until they land.
+
+### #101 — Mount the editor inside QuietLayout center column
+
+| Field | Value |
+| --- | --- |
+| Description | Replace the `<div data-doc-area-placeholder>Document area (placeholder)</div>` in `QuietLayout.tsx` (line 264) with the real `<Editor />` mount from `Layout.tsx`. Verify `editor-store` integration: clicking a file in QuietSidebar opens it in the editor; tab switching works; per-tab undo/redo cache survives. May need to also mount `<FindBar />`, the floating `<Toolbar />`, and any editor-area chrome that lives alongside. |
+| Complexity | L |
+| Category | frontend |
+| Depends on | #30, #48 |
+| Files | `src/components/QuietLayout.tsx`, possibly `src/components/editor/Editor.tsx` |
+| Surfaced as | F7 in `phase1-followups.md` (promoted to numbered task) |
+
+### #102 — Decide and mount the chat in QuietLayout right column
+
+| Field | Value |
+| --- | --- |
+| Description | When the FloatingCommandBar is NOT pinned, the right column is `<ZonePlaceholder label="Reserved (placeholder)" />`. The intent: the FloatingCommandBar IS the chat in Quiet Composer mode. Replace the placeholder with either (a) an empty div (if the column is purely for layout balance — likely correct), or (b) a compact "Recent threads" rail. Don't re-mount the full classic `<ChatPanel />` — that defeats the purpose of the FloatingCommandBar. |
+| Complexity | S–M |
+| Category | frontend |
+| Depends on | #101 |
+| Files | `src/components/QuietLayout.tsx` |
+| Surfaced as | F8 in `phase1-followups.md` (promoted to numbered task) |
+
+---
+
+## M1.12 Trial-finding polish — close 5 gaps from the project lead's first trial (5 tasks)
+
+### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons
+
+| Field | Value |
+| --- | --- |
+| Description | `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />` in `QuietLayout.tsx` line 251 mounts the same TitleBar as classic, including chat-toggle and agent-strip-toggle buttons that do nothing in Quiet Composer (props are stubs). Add `mode?: 'classic' \| 'quiet'` to TitleBar to suppress those buttons in quiet mode. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/TitleBar.tsx`, `src/components/QuietLayout.tsx` |
+| Surfaced as | F9 in `phase1-followups.md` |
+
+### #104 — TreeOverlay UX bugs: ⌘⇧E toggle, Esc dismiss, traffic-light overlap
+
+| Field | Value |
+| --- | --- |
+| Description | Three bugs in TreeOverlay: (a) `⌘⇧E` is open-only — re-pressing while open is a no-op visually; should toggle close. (b) Esc doesn't dismiss reliably — investigate whether focus is escaping the overlay or being swallowed elsewhere. (c) The overlay's `top: 0` covers macOS traffic-light buttons (red/yellow/green); add `padding-top: var(--titlebar-inset, 28px)` so it sits below them. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/QuietLayout.tsx` (toggle logic), `src/components/sidebar/quiet/TreeOverlay.tsx` (positioning + Esc investigation) |
+| Surfaced as | F10 in `phase1-followups.md` |
+
+### #105 — Set window title from active document
+
+| Field | Value |
+| --- | --- |
+| Description | The macOS window title (very top, OS-rendered) currently stays as "Notesage" regardless of which file is open. Set `document.title` from `editor-store` active tab. Format: `${activeFileName} — Notesage` when a doc is open; `Notesage` when no tab. Applies to both classic + Quiet Composer. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/App.tsx` or `src/hooks/useAppLifecycle.ts` |
+| Surfaced as | F11 in `phase1-followups.md` |
+
+### #106 — AgentOrb hover state polish
+
+| Field | Value |
+| --- | --- |
+| Description | The orb uses `hover:scale-105` which is too subtle. Add either (a) a Radix Tooltip showing the same aria-label text on hover, (b) a soft `hover:shadow-lg` glow, or (c) both. Keep ambient — the orb shouldn't grab attention. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/activity/AgentOrb.tsx` |
+| Surfaced as | F12 in `phase1-followups.md` |
+
+### #107 — Switch-back-to-legacy banner inside QuietLayout
+
+| Field | Value |
+| --- | --- |
+| Description | The legacy Layout already has a one-time `<PreviewInvitation />` banner inviting users to try Quiet Composer (#97). The reverse direction is missing — when in Quiet Composer mode, the user has no obvious affordance to flip back to classic without digging into Settings. Add a symmetric dismissible banner in QuietLayout — "Prefer the classic UI? \[Switch back\]" — that dismisses to a settings flag (similar to `previewInvitationDismissedAt`). Suggest reusing `<PreviewInvitation />` as a generalized two-direction banner OR creating a peer `<RevertInvitation />` component. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/PreviewInvitation.tsx` (or new `src/components/RevertInvitation.tsx`), `src/components/QuietLayout.tsx`, `src/stores/settings-store.ts` |
+| Surfaced from | Project lead's 2026-04-23 trial — discoverability of the toggle is asymmetric |
+
+---
+
+## M1.13 Manual QA — run the checklists (2 tasks)
+
+### #108 — VoiceOver walkthrough — manual run
+
+| Field | Value |
+| --- | --- |
+| Description | Manual VoiceOver run-through following the checklist drafted in #99 (`docs/tasks/qa/2026-04-21-voiceover-checklist.md`). Tester opens Notesage with VoiceOver enabled and walks every surface in the checklist. Findings logged in the file's "Findings log" table; P0/P1 items become bug tasks before Phase 1 ships. |
+| Complexity | L |
+| Category | qa |
+| Depends on | #101 (editor mount — many checklist items need a real editor), #102 |
+| Files | `docs/tasks/qa/2026-04-21-voiceover-checklist.md` (update inline) |
+
+### #109 — Keyboard-only walkthrough — manual run
+
+| Field | Value |
+| --- | --- |
+| Description | Manual keyboard-only run-through following the checklist drafted in #100 (`docs/tasks/qa/2026-04-21-keyboard-only.md`). Tester disconnects mouse and runs the 5 spec flows + the Phase-1-shell coverage section. Any mouse-required step in the 5 flows = P0 blocker. |
+| Complexity | M |
+| Category | qa |
+| Depends on | #101, #102 |
+| Files | `docs/tasks/qa/2026-04-21-keyboard-only.md` (update inline) |
+
+---
+
 ## Ship gate — all of Phase 1
 
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
-- [ ] All 100 tasks completed
+- [ ] All 109 tasks completed (M1.1–M1.13)
 
 - [ ] All new perf suites pass within budget at 1× multiplier
 
 - [ ] No existing baseline regressed by &gt; 20%
 
-- [ ] VoiceOver walk-through: 0 P0/P1 findings
+- [ ] VoiceOver walk-through: 0 P0/P1 findings (#108)
 
-- [ ] Keyboard-only walkthrough: all 5 flows pass
+- [ ] Keyboard-only walkthrough: all 5 flows pass (#109)
 
 - [ ] Contrast audit: 0 AA failures
 
@@ -1096,5 +1207,7 @@ Before promoting "preview" to "ready for general availability" (which gates Phas
 - [ ] Feature docs updated (editor, ai-workflows, workspace, keyboard-shortcuts, design-system)
 
 - [ ] Preview invitation banner tested on fresh install
+
+- [ ] Switch-back banner in QuietLayout tested (symmetric to preview invitation)
 
 Phase 2 (default-on for new installs) and Phase 3 (legacy deletion) tracked separately in [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md).

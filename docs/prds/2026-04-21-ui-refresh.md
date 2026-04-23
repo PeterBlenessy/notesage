@@ -851,20 +851,22 @@ Google does this constantly — Material You preview, Drive new home, Gmail rede
 **Phase 1 — Preview (v0.40 — target \~6 weeks after start).**
 
 - `newUiPreview` setting in Settings &gt; Advanced, default **off** for existing installs. A small "Try the new UI" button in the default location.
+- **All today's user flows work in the new UI** — open / edit / save documents, chat with AI (direct API + ACP), tool calling, agent delegation, dictation, exports, focus mode, tag/mention/research search, settings, skills management. The new UI is a unified vision shipped intact (per "Why not piecewise" above) — that means it must be functionally complete on its own, not a hollow shell. Switching the toggle on must not regress any existing user flow.
 - All new components behind the flag. Old tab strip, chat panel, activity strip, and settings shell still work when flag is off.
-- Changelog and release notes explicitly call this out.
+- Changelog and release notes explicitly call this out as opt-in.
 - In-app invitation (tasteful, one-time, dismissible) on first launch of v0.40.
-- Telemetry: opt-in usage counters only — did the user enable it, did they disable it after 24 h, did they stay 7 days? No per-action tracking.
-- Gather feedback via a discrete `?` help button in the new command bar that opens a feedback form.
+- Documentation refresh: design-system, feature docs, keyboard-shortcuts, architecture all reflect the new UI.
 
-**Phase 2 — Default on for new installs (v0.42 — target \~10 weeks after Phase 1).**
+**Implementation milestones for Phase 1.** The Phase 1 task breakdown (`docs/tasks/2026-04-21-ui-refresh-phase1-tasks.md`) groups the work into milestones M1.1–M1.X. Foundation milestones (M1.1–M1.10 — built the new shell, surfaces, and design system) landed first. Functionality milestones (M1.11+ — wire the editor + chat into the new shell, polish trial findings, run manual a11y QA) close Phase 1 by satisfying the success criteria below. **Phase 1 ships as one release** — Foundation alone is not shippable because the new UI is non-functional without the editor and chat mounted.
+
+**Phase 2 — Default on for new installs (target \~10 weeks after Phase 1).**
 
 - New installs default to `quiet-composer`. Existing installs still default to `legacy` unless they've opted in.
-- All blocking issues from Phase 1 feedback resolved; the preview is no longer "preview".
+- All blocking issues from Phase 1 trial feedback resolved; the preview is no longer "preview".
 - In-app banner on legacy installs: "You're using the classic UI. The new UI is now our recommended default — \[Try it\]".
 - Preview flag promoted out of Advanced into a top-level Appearance section toggle.
 
-**Phase 3 — Removal of legacy (v0.44 or later — ≥3 months after Phase 2).**
+**Phase 3 — Removal of legacy (≥3 months after Phase 2).**
 
 - Legacy tab strip, chat panel, activity strip components removed from the codebase.
 - Preview flag removed.
@@ -872,6 +874,18 @@ Google does this constantly — Material You preview, Drive new home, Gmail rede
 - Users who *still* want the legacy layout get a read-only "classic look" preset that restores only the easily-preservable bits (e.g., `Show sidebar as tree` setting) — but the fundamental layout is the new one.
 
 Each phase's entry is gated on concrete criteria (see Success Criteria below), not on a calendar date.
+
+### Note on user-base reality (added 2026-04-23)
+
+When this PRD was first drafted, the rollout strategy borrowed Google's preview / default / removal pattern and assumed a non-trivial user base providing feedback signal. **Today, the user base is effectively one person (the project lead, on a single laptop).** No public posts about the app exist on social media; no GitHub forks; downloads are limited to the lead's own dev machine.
+
+This affects the original Phase 2 / Phase 3 wording around "user feedback", "subjective sentiment", and "&lt;5% of active users on legacy":
+
+- **Phase 1 trial signal** comes from the project lead alone for now. No telemetry / call-home is needed at this scale — the lead reports findings directly.
+- **Phase 2 / Phase 3 sentiment criteria** become moot when there's no user base to measure. Treat them as placeholders that activate once the app is publicly known and downloaded.
+- **Lightweight "call home" idea (deferred):** if/when a wider user base materializes, a single-endpoint usage-counter ping (e.g., `POST` to a GitHub-hosted endpoint or a static file in a public repo via PR) would give Phase 2/3 the signal without committing to a SaaS analytics service. Not analyzing options now — capturing the thought so it's not lost.
+
+Update Phase 2 / Phase 3 success criteria below to reflect this reality.
 
 ### What if Phase 1 feedback is hostile?
 
@@ -969,41 +983,71 @@ Every flow that exists today must continue to work in the Quiet Composer. This t
 
 ### Phase 1 (Preview) ships when:
 
-- [ ] Mockups D + E + F + G + H + all signed off visually
+**Functional (the new UI must be a usable app, not a hollow shell):**
 
-- [ ] All new components built, typed, unit-tested
+- [ ] Editor (Tiptap) mounts and works inside QuietLayout — open / edit / save markdown documents
 
-- [ ] Preview flag lives in Settings &gt; Advanced and flips the layout cleanly (no stale state, no leaked styles)
+- [ ] Chat works inside QuietLayout via the FloatingCommandBar — direct API + ACP + Copilot LSP all reachable
+
+- [ ] All of today's user flows verifiable in the new UI via a manual test plan: new note, open project, delegate comment, export PDF, voice dictation, ACP agent chat, direct-API chat, inline completion, focus mode, tag / mention / research search, settings, skills management
+
+- [ ] Switching the preview flag mid-session flips the layout cleanly (no stale state, no leaked styles, no broken IPC)
 
 - [ ] All of today's documented keyboard shortcuts still work inside the new UI
 
-- [ ] All of today's user flows (new note, open project, delegate comment, export, voice dictation, ACP agent chat, direct-API chat, inline completion, focus mode, tag search, mention search, research search, settings, skills management) verifiable in the new UI via a manual test plan
+**Foundation (the new components themselves):**
 
-- [ ] Documentation updated (design-system.md, editor.md, ai-workflows.md, workspace.md, keyboard-shortcuts.md)
+- [ ] Mockups D + E + F + G + H + I signed off visually (project-lead sign-off pending)
 
-- [ ] Changelog release notes describe the preview and how to enable it
+- [x] All new components built, typed, unit-tested (M1.1–M1.10 complete; 4103/4103 unit tests pass)
+
+- [x] Preview flag lives in Settings &gt; Appearance and is reachable
+
+- [x] One-time invitation banner ("Try the new UI") in legacy Layout (#97)
+
+- [ ] Symmetric "Switch back to legacy UI" affordance in QuietLayout (dismissible) so the toggle is discoverable in both directions (#107)
+
+**A11y + perf gates (regression-locked):**
+
+- [ ] Manual VoiceOver run-through: 0 P0 / P1 findings (per `docs/tasks/qa/2026-04-21-voiceover-checklist.md`) — checklist drafted (#99); manual run pending (#108)
+
+- [ ] Manual keyboard-only run-through: all 5 spec flows pass mouse-free (per `docs/tasks/qa/2026-04-21-keyboard-only.md`) — checklist drafted (#100); manual run pending (#109)
+
+- [x] Reduced-motion: every Phase 1 animation disabled (not shortened) under `prefers-reduced-motion: reduce` (#86; 19 regression-lock tests)
+
+- [x] Contrast audit (`pnpm audit:contrast`) passes 0 AA failures across both light and dark themes (#87; 22/22 pairs pass + new `--color-border-strong` token)
+
+- [x] All perf benchmarks (M1.8 + existing) within budget at 1× multiplier; no existing baseline regressed by &gt; 20% (#88–#92; 43/43 perf benchmarks pass)
+
+**Documentation:**
+
+- [x] Updated: `design-system.md`, `editor.md`, `ai-workflows.md`, `workspace.md`, `keyboard-shortcuts.md`, `architecture.md` (#93–#96)
+
+- [x] Phase 1 release notes drafted in `docs/history/release-vX.Y.Z.md` (set version + finalize at /release time) (#98 → `docs/history/105-release-v0.39.0.md`)
 
 ### Phase 2 (Default for new installs) ships when:
 
-- [ ] Phase 1 has been live ≥4 weeks
+- [ ] Phase 1 has been in active use for a meaningful trial window (length scaled to actual user base — see "Note on user-base reality" in Rollout strategy above; for the current solo-user phase, the project lead's own daily use over ≥2 weeks is the trial)
 
-- [ ] No P0/P1 issue reports from preview users outstanding for &gt;2 weeks
+- [ ] No P0/P1 issues outstanding from the trial
 
-- [ ] Subjective sentiment on GitHub issues / Slack is net-positive (defined: more positive than negative comments on the preview, not requiring a formal NPS survey)
+- [ ] Project lead (and any other active users at that time) confirms net-positive sentiment vs the legacy UI
 
-- [ ] Every surface rebuilt under the new UI is verified pixel-polished against the design system doc
+- [ ] Every surface rebuilt under the new UI is verified pixel-polished against the design system doc and the mockups
 
 - [ ] Settings banner copy written and approved
 
+- [ ] (If a wider user base exists by then) lightweight call-home or GitHub-hosted usage signal in place to track flag-flip ratios
+
 ### Phase 3 (Legacy removal) ships when:
 
-- [ ] Phase 2 has been live ≥12 weeks
+- [ ] Phase 2 has been live for a meaningful adoption window (length scaled to user base — see "Note on user-base reality")
 
-- [ ] &lt;5% of active users are on the legacy UI (measured by a *local* setting-state check at app start, aggregated only in-memory for a single release window — no persistent telemetry)
+- [ ] (If wider user base exists) &lt;5% of active users on the legacy UI, measured by a local setting-state check at app start, aggregated only in-memory for a single release window — no persistent telemetry
 
 - [ ] Codebase delta from removal is reviewed and merged
 
-- [ ] One-release-cycle advance notice given in release notes and blog
+- [ ] One-release-cycle advance notice given in release notes
 
 ## References
 

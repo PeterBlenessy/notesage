@@ -86,7 +86,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none. Production users rarely have >50 items in either section, so this is performance hygiene, not a user-facing bug.
 
-## F7 — Mount the editor inside QuietLayout center column (Phase 2 scope)
+## F7 — Mount the editor inside QuietLayout center column → promoted to Phase 1 task #101
 
 **Surfaced by:** First-user trial of the Quiet Composer Preview, 2026-04-23
 
@@ -98,7 +98,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none, but this is the largest gap in Phase 1; everything else is polish without this.
 
-## F8 — Mount the chat panel inside QuietLayout right column (Phase 2 scope)
+## F8 — Mount the chat panel inside QuietLayout right column → promoted to Phase 1 task #102
 
 **Surfaced by:** Same trial as F7
 
@@ -110,7 +110,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** depends on F7 (editor mount); this is the second gap blocking real use.
 
-## F9 — TitleBar in QuietLayout still shows legacy chat / agent toggle buttons
+## F9 — TitleBar in QuietLayout still shows legacy chat / agent toggle buttons → promoted to Phase 1 task #103
 
 **Surfaced by:** Same trial — title bar visual leak, 2026-04-23
 
@@ -122,7 +122,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none.
 
-## F10 — TreeOverlay covers macOS traffic-light buttons; ⌘⇧E toggle + Esc dismiss broken
+## F10 — TreeOverlay covers macOS traffic-light buttons; ⌘⇧E toggle + Esc dismiss broken → promoted to Phase 1 task #104
 
 **Surfaced by:** Same trial — TreeOverlay UX, 2026-04-23
 
@@ -137,7 +137,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none.
 
-## F11 — Document name should appear in window title bar
+## F11 — Document name should appear in window title bar → promoted to Phase 1 task #105
 
 **Surfaced by:** Same trial, 2026-04-23
 
@@ -149,7 +149,7 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none.
 
-## F12 — AgentOrb hover state lacks polish
+## F12 — AgentOrb hover state lacks polish → promoted to Phase 1 task #106
 
 **Surfaced by:** Same trial — orb visual, 2026-04-23
 
