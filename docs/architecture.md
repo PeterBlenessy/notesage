@@ -96,9 +96,10 @@ note-sage/
 │   └── capabilities/
 ├── src/                    # React frontend
 │   ├── main.tsx            # Entry point
-│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders Layout + dialogs
+│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders Layout (or QuietLayout) + dialogs
 │   ├── components/
-│   │   ├── Layout.tsx      # Main layout (ResizablePanelGroup: sidebar, editor, chat, activity)
+│   │   ├── Layout.tsx      # Legacy layout (ResizablePanelGroup: sidebar, editor, chat, activity)
+│   │   ├── QuietLayout.tsx # Quiet Composer layout — gated on settings.uiPreview === "quiet-composer" (PRD 2026-04-21-ui-refresh)
 │   │   ├── ErrorBoundary.tsx # Reusable error boundary (wraps editor, chat, sidebar)
 │   │   ├── editor/         # Tiptap editor components
 │   │   │   ├── Editor.tsx, EditorContent.tsx, Toolbar.tsx, SlashCommand.tsx
@@ -107,19 +108,28 @@ note-sage/
 │   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
 │   │   │   ├── DrawingPreview.tsx, DrawingEditor.tsx
 │   │   │   ├── ChangeListPopover.tsx, FindBar.tsx, StatusBar.tsx
+│   │   │   ├── DocHead.tsx       # Quiet Composer breadcrumb header (replaces TabBar)
+│   │   │   ├── FocusPill.tsx     # Floating exit affordance for focus mode
+│   │   │   ├── StatusTray.tsx    # Quiet Composer status tray popover
 │   │   │   ├── TableHeaderMenu.tsx  # Column type/aggregation context menu
 │   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
+│   │   ├── cmd/            # Floating command bar (Quiet Composer)
+│   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx, CommandBarHistory.tsx
+│   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts
+│   │   │   └── modes/      # Prefix-mode pickers (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
+│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
-│   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
+│   │   ├── settings/       # Legacy SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
+│   │   │   └── v2/         # Quiet Composer settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
 │   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, AttachmentStrip, segments/, etc.
-│   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
+│   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx, AgentOrb.tsx, AgentPanel.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, etc.)
-│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, etc.)
-│   └── styles/             # globals.css, editor.css
+│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useReducedMotion, useCommandBarShortcuts, useDoubleTapCmd, useRecentDocumentCycle, etc.)
+│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, tree-overlay, quiet-sidebar, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, etc.)
+│   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
 │   └── logos/              # AI provider logos
@@ -149,6 +159,7 @@ note-sage/
 ├── scripts/                # Build and test scripts
 │   ├── coverage-check.sh   # Coverage regression detection vs baseline
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
+│   ├── contrast-audit.ts   # WCAG contrast audit for design-system palette (`pnpm audit:contrast`)
 │   └── run-real-e2e.sh     # Full real E2E orchestrator (app + driver lifecycle)
 ├── docs/                   # Documentation
 │   ├── features/           # Feature-specific docs (editor, ai-providers, ai-workflows, etc.)
@@ -211,7 +222,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open tabs, active tab, per-tab flags | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
-| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), home directory | Full (except `startupReady`) |
+| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap`, `sidebarTagsHidden`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
@@ -234,6 +245,8 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
 | `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
 | `agent-status-store` | ACP agent unresponsive/exited banner state | None |
+| `tree-overlay-store` | Quiet Composer TreeOverlay open/closed state + optional `focusedPath` for FolderPeek footer link (PRD 2026-04-21-ui-refresh) | None |
+| `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project under notes root) | None |
 
 ### Styling
 
