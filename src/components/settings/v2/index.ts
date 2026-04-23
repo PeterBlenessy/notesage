@@ -20,3 +20,4 @@ export { SettingsDialogV2 } from './SettingsDialogV2';
 export type { SettingsDialogV2Props } from './SettingsDialogV2';
 
 export { AISettings } from './AISettings';
+export { AppearanceSettings } from './AppearanceSettings';

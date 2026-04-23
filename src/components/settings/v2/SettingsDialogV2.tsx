@@ -9,6 +9,7 @@ import {
   matchesSettingsQuery,
   useSettingsSearchShortcut,
 } from './SettingsSearch';
+import { AppearanceSettings } from './AppearanceSettings';
 
 export interface SettingsDialogV2Props {
   open: boolean;
@@ -115,22 +116,28 @@ export function SettingsDialogV2({
         onActiveItemChange={setActive}
         navHeader={navHeader}
       >
-        <header className="mb-8 pb-6 border-b border-border">
-          <h2 className="text-[24px] font-semibold tracking-tight">
-            {currentLabel ?? 'Settings'}
-          </h2>
-          <p className="mt-1 text-[13px] text-muted-foreground max-w-[520px] leading-relaxed">
-            Panel coming soon. Real content lands in follow-up tasks (#65, #66,
-            #67).
-          </p>
-        </header>
+        {active === 'appearance' ? (
+          <AppearanceSettings />
+        ) : (
+          <>
+            <header className="mb-8 pb-6 border-b border-border">
+              <h2 className="text-[24px] font-semibold tracking-tight">
+                {currentLabel ?? 'Settings'}
+              </h2>
+              <p className="mt-1 text-[13px] text-muted-foreground max-w-[520px] leading-relaxed">
+                Panel coming soon. Real content lands in follow-up tasks (#66,
+                #67).
+              </p>
+            </header>
 
-        <SettingsGroup label="Placeholder">
-          <SettingsRow
-            label="This is a preview"
-            description="The real panels are migrated in later tasks. The shell, row, and group primitives are ready."
-          />
-        </SettingsGroup>
+            <SettingsGroup label="Placeholder">
+              <SettingsRow
+                label="This is a preview"
+                description="The real panels are migrated in later tasks. The shell, row, and group primitives are ready."
+              />
+            </SettingsGroup>
+          </>
+        )}
       </SettingsShell>
     </SettingsSearchContext.Provider>
   );
