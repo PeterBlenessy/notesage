@@ -95,15 +95,48 @@ describe('Toolbar — variants', () => {
       expect(classes).not.toContain('border-b');
     });
 
-    it('renders formatting buttons in pill variant', () => {
+    it('renders the reduced 8-button set in pill variant (#110)', () => {
       const editor = createMockEditor() as unknown as Editor;
       const { container } = renderWithProviders(
         <Toolbar editor={editor} variant="pill" />,
       );
 
-      // Same button content as inline; only the chrome changes.
+      // Pill variant renders exactly: Heading | Quote | Task list | sep |
+      // TextColor | Highlight | sep | Callout | Table | Typography. With the
+      // popover/picker sub-components mocked to `null`, only the two raw
+      // ToolbarButton entries (Quote, Task List) survive as `<button>`
+      // elements; HeadingPicker remains as a stub div. The rest collapse
+      // into nothing under the test mocks. Assert the count so the test
+      // fails if a button is added or removed.
       const buttons = container.querySelectorAll('button');
-      expect(buttons.length).toBeGreaterThan(5);
+      expect(buttons.length).toBe(2);
+    });
+
+    it('does NOT render legacy buttons (Bold/Italic/Underline/etc.) in pill variant', () => {
+      const editor = createMockEditor() as unknown as Editor;
+      const { container } = renderWithProviders(
+        <Toolbar editor={editor} variant="pill" />,
+      );
+      // The reduced set is much smaller than the inline variant. Inline
+      // renders ~25 buttons; pill renders 2 raw buttons + composed pickers.
+      // Use button count as the safety net — anything > 5 means legacy
+      // buttons leaked into the pill branch.
+      const buttons = container.querySelectorAll('button');
+      expect(buttons.length).toBeLessThanOrEqual(2);
+    });
+
+    it('inline variant still renders the full button set (legacy parity)', () => {
+      const editor = createMockEditor() as unknown as Editor;
+      const { container } = renderWithProviders(
+        <Toolbar editor={editor} variant="inline" />,
+      );
+      // Inline variant must stay byte-identical to today's behaviour. With
+      // the same picker mocks in place, the inline variant renders ~22+
+      // raw `<button>` entries (formatting, lists, alignment, undo/redo,
+      // indent, mic, view-mode, etc.) — `> 15` is a comfortable lower bound
+      // that catches accidental pruning.
+      const buttons = container.querySelectorAll('button');
+      expect(buttons.length).toBeGreaterThan(15);
     });
 
     it('renders gracefully with editor=null (no crash, wrapper still tagged)', () => {

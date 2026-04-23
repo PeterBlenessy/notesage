@@ -451,6 +451,14 @@ interface StatusBarProps {
    * `StatusTray` popover (task #53). Has no effect on the full variant.
    */
   onOpenTray?: () => void;
+  /**
+   * Source-mode toggle callback. When provided in the `quiet` variant the
+   * StatusTray hosts a WYSIWYG ↔ Source switcher that calls this. Mirrors the
+   * inline Toolbar's `onToggleViewMode` so the keyboard shortcut behaviour
+   * stays untouched. Used only by the StatusTray; pass-through prop in the
+   * full variant.
+   */
+  onToggleViewMode?: () => void;
 }
 
 export function StatusBar({
@@ -487,6 +495,7 @@ export function StatusBar({
   onShortcutsOpen,
   variant = "full",
   onOpenTray,
+  onToggleViewMode,
 }: StatusBarProps) {
   // The quiet variant short-circuits before the full-variant render path —
   // it owns its own data reads (word count + lastSavedAt) and never touches
@@ -502,6 +511,8 @@ export function StatusBar({
         onDelegateAll={onDelegateAll}
         canDelegate={canDelegate}
         onShortcutsOpen={onShortcutsOpen}
+        viewMode={viewMode}
+        onToggleViewMode={onToggleViewMode}
       />
     );
   }
@@ -899,6 +910,8 @@ function QuietStatusBar({
   onDelegateAll,
   canDelegate,
   onShortcutsOpen,
+  viewMode,
+  onToggleViewMode,
 }: {
   editor: Editor | null;
   onOpenTray?: () => void;
@@ -908,6 +921,8 @@ function QuietStatusBar({
   onDelegateAll?: () => void;
   canDelegate?: boolean;
   onShortcutsOpen?: () => void;
+  viewMode?: ViewMode;
+  onToggleViewMode?: () => void;
 }) {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const tab = useEditorStore((s) =>
@@ -1046,6 +1061,9 @@ function QuietStatusBar({
         canDelegate={canDelegate}
         onShortcutsOpen={onShortcutsOpen}
         initialExpandedGroup={initialGroup}
+        editor={editor}
+        viewMode={viewMode}
+        onToggleViewMode={onToggleViewMode}
       />
     </>
   );

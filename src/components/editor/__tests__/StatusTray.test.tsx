@@ -3,6 +3,8 @@
 import '@/test/tauri-mock';
 import React, { useRef } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createMockEditor } from '@/test/mock-editor';
+import type { Editor } from '@tiptap/react';
 import {
   renderWithProviders,
   registerDefaultHandlers,
@@ -448,5 +450,77 @@ describe('StatusTray — task #53', () => {
     });
 
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Editor tools (#110) — MicButton + source-mode toggle
+  // -------------------------------------------------------------------------
+
+  it('renders MicButton when editor is provided (#110)', () => {
+    const editor = createMockEditor() as unknown as Editor;
+    renderWithProviders(
+      <TrayHost open={true} onOpenChange={() => {}} editor={editor} />,
+    );
+    // The Editor tools section is labelled "Editor tools" via aria-label.
+    const section = document.querySelector('[aria-label="Editor tools"]');
+    expect(section).toBeTruthy();
+    // MicButton — the icon-only Mic button is the first <button> in the
+    // section.
+    const buttons = section?.querySelectorAll('button');
+    expect((buttons?.length ?? 0)).toBeGreaterThan(0);
+  });
+
+  it('renders the source-mode toggle when onToggleViewMode is provided (#110)', () => {
+    const onToggleViewMode = vi.fn();
+    renderWithProviders(
+      <TrayHost
+        open={true}
+        onOpenChange={() => {}}
+        viewMode="wysiwyg"
+        onToggleViewMode={onToggleViewMode}
+      />,
+    );
+    const toggle = document.querySelector('[aria-label="Switch to Markdown source"]') as HTMLElement;
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('source-mode toggle reflects current viewMode and calls callback on click (#110)', () => {
+    const onToggleViewMode = vi.fn();
+    renderWithProviders(
+      <TrayHost
+        open={true}
+        onOpenChange={() => {}}
+        viewMode="source"
+        onToggleViewMode={onToggleViewMode}
+      />,
+    );
+    const toggle = document.querySelector('[aria-label="Switch to Rich text"]') as HTMLElement;
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onToggleViewMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the Editor tools section when neither editor nor onToggleViewMode is provided (#110)', () => {
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    expect(document.querySelector('[aria-label="Editor tools"]')).toBeNull();
+  });
+
+  it('source-mode toggle is hidden when onToggleViewMode is omitted (#110)', () => {
+    const editor = createMockEditor() as unknown as Editor;
+    renderWithProviders(
+      <TrayHost
+        open={true}
+        onOpenChange={() => {}}
+        editor={editor}
+        viewMode="wysiwyg"
+      />,
+    );
+    // Editor tools section should still render (MicButton present), but
+    // no source-mode toggle without the callback.
+    expect(document.querySelector('[aria-label="Editor tools"]')).toBeTruthy();
+    expect(document.querySelector('[aria-label="Switch to Markdown source"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Switch to Rich text"]')).toBeNull();
   });
 });

@@ -2,6 +2,17 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Radix Popover positioning (used by the StatusTray that the quiet variant
+// mounts) calls ResizeObserver in a layout effect — provide a no-op shim so
+// jsdom doesn't crash when popover content mounts.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof globalThis.ResizeObserver;
+}
 import {
   renderWithProviders,
   registerDefaultHandlers,

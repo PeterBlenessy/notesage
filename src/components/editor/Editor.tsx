@@ -97,6 +97,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
+  const uiPreview = useSettingsStore((s) => s.uiPreview);
   const contentWidth = useSettingsStore((s) => s.contentWidth);
   const marginTop = useSettingsStore((s) => s.marginTop);
   const marginBottom = useSettingsStore((s) => s.marginBottom);
@@ -577,9 +578,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
+  const isQuietComposer = uiPreview === "quiet-composer";
+  const toolbarVariant = isQuietComposer ? "pill" : "inline";
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {toolbarVisible && !focusMode && (
+      {toolbarVisible && !focusMode && !isQuietComposer && (
         <div className="flex items-center border-b border-border shrink-0 bg-background">
           <Toolbar
             editor={editor}
@@ -588,6 +592,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
             sourceWordWrap={sourceWordWrap}
             onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
+            variant={toolbarVariant}
           />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
             <div className="shrink-0 pr-2">
@@ -614,6 +619,26 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         />
       ) : (
         <div className="flex-1 overflow-hidden relative">
+          {/*
+            Quiet Composer pill toolbar (#110). Floats over the document area
+            anchored to the top-centre of this `relative` container. Hidden in
+            focus mode; source mode renders SourceModeEditor instead so this
+            branch is already wysiwyg-only. The StatusTray hosts the source-
+            mode toggle for the quiet shell.
+          */}
+          {isQuietComposer && toolbarVisible && !focusMode && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+              <Toolbar
+                editor={editor}
+                onImageInsert={() => setImageDialogOpen(true)}
+                viewMode={activeTab?.viewMode}
+                onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
+                sourceWordWrap={sourceWordWrap}
+                onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
+                variant="pill"
+              />
+            </div>
+          )}
           {findBarOpen && activeTab?.fileType === "markdown" && (
             <FindBar
               open={findBarOpen}
@@ -683,6 +708,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           editor={editor}
           maxWidth={maxWidth}
           renderedWidth={renderedWidth}
+          variant={isQuietComposer ? "quiet" : "full"}
+          onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
           comments={commentOps.comments}
           branchName={repo?.currentBranch ?? ""}
           isGitRepo={gitEnabled && isGitRepo}
