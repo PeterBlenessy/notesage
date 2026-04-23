@@ -795,7 +795,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.6 State + plumbing (3 tasks)
 
-### #75 — Rename `editor-store.openTabs` → `openDocuments`
+### #75 — Rename `editor-store.openTabs` → `openDocuments` ✅
 
 | Field | Value |
 | --- | --- |
@@ -805,7 +805,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src/stores/editor-store.ts`, all consumers, tests |
 
-### #76 — Consolidated keyboard shortcut hook
+### #76 — Consolidated keyboard shortcut hook ✅
 
 | Field | Value |
 | --- | --- |
@@ -815,7 +815,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #20, #56 |
 | Files | `src/hooks/useKeyboardShortcuts.ts` |
 
-### #77 — `⌘⇧[` / `⌘⇧]` cycle Recent
+### #77 — `⌘⇧[` / `⌘⇧]` cycle Recent ✅
 
 | Field | Value |
 | --- | --- |
