@@ -161,6 +161,22 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none. Pure polish.
 
+## F13 — Auto-sort overflow menu contents by usage (only IF an overflow is added)
+
+**Surfaced by:** Project lead's 2026-04-23 trial — toolbar simplification discussion
+
+**Problem:** Phase 1 task #110 trims the visible toolbar pill to the mockup-D 8-button set with no overflow `•••` menu. If a future iteration adds an overflow menu (because power features feel one click too far via slash commands alone), the contents should be sorted by recent usage — like macOS recent files or browser search history. This avoids the "I never use Strikethrough so it sank to the bottom" discoverability problem on the visible bar (we kept the visible bar fixed for muscle memory) while still making frequently-overflow-used items reachable in two clicks.
+
+**Why NOT auto-sort the visible pill:** The pill is small precisely so the user can aim without looking. Reordering breaks muscle memory. Cold-start ordering still requires a designed default; auto-sort doesn't remove the design call, just adds drift. Discoverability also suffers when buttons migrate out of view.
+
+**Why auto-sort the overflow IS safe:** The visible bar doesn't change, so muscle memory is preserved. Inside a dropdown that the user has explicitly opened, they're already scanning the list — surfacing the most-recent items at the top is just helpful sorting, not surprise reordering. Pattern matches macOS recent files, search history, command palette MRU.
+
+**Fix approach:** Implement only IF and WHEN an overflow `•••` menu is added to the pill toolbar. Add a `formattingActionUsage: Record<string, number>` (or `lastUsed: Record<string, number>`) field to `settings-store`. Increment on click. Sort overflow items by frequency or last-used timestamp (lean toward MRU for recency bias). Persist via Zustand persist. Optional "reset usage" button in Settings > Editor.
+
+**Scope:** S–M. Hinges entirely on whether overflow is added.
+
+**Blockers:** depends on overflow existing (not added in #110 — #110 keeps the pill at exactly 8 buttons, no overflow).
+
 ## How to use this file
 
 - Add entries here when a task returns with a well-scoped follow-up that's outside the numbered 100-task Phase 1 plan.

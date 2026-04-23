@@ -1158,6 +1158,17 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/PreviewInvitation.tsx` (or new `src/components/RevertInvitation.tsx`), `src/components/QuietLayout.tsx`, `src/stores/settings-store.ts` |
 | Surfaced from | Project lead's 2026-04-23 trial — discoverability of the toggle is asymmetric |
 
+### #110 — Quiet Composer toolbar — wire pill variant + simplified button set 🚧
+
+| Field | Value |
+| --- | --- |
+| Description | Task #49 built `Toolbar.tsx`'s `variant="pill"` mode (rounded shape, backdrop-blur, fade-on-type via `data-quiet-toolbar`) but `Editor.tsx` never opts in — it always renders the legacy `"inline"` variant. Two-part fix: (a) Wire `variant="pill"` through `Editor.tsx` when `settings.uiPreview === "quiet-composer"`. (b) Reduce the visible button set in pill mode to **mockup D's 8-button shape** with the user's revisions: `Heading ▾ | Quote | Task list | sep | Text color ▾ | Highlight ▾ | sep | Callout ▾ | Table | Typography ▾`. Drops Bold/Italic/Underline (⌘B/I/U muscle memory), Link/Code (low priority), bullet/ordered lists (auto-form via input rules), strikethrough/sub/sup/inline code (rare), image/drawing (slash commands), alignment/indent/outdent (Bubble Menu / list keys), undo/redo (⌘Z). Move Dictation (⌘⇧R) and Source-mode toggle to the StatusTray (left edge of the bottom strip). Inline (legacy) variant unchanged — byte-identical to today's flat strip. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #49, #101 |
+| Files | `src/components/editor/Editor.tsx` (read uiPreview, pass variant), `src/components/editor/Toolbar.tsx` (conditional button set), `src/components/editor/StatusTray.tsx` (host dictation + source-mode toggle), unit tests |
+| Surfaced from | Project lead's 2026-04-23 trial — Quiet Composer still showed the flat legacy toolbar; planning gap from the original 100-task plan |
+
 ---
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
