@@ -453,7 +453,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #39 |
 | Files | `src/components/sidebar/QuietSidebar.tsx`, keyboard hook |
 
-### #42 — Inline create project (⌘⇧N + `+` on Projects header) 🚧
+### #42 — Inline create project (⌘⇧N + `+` on Projects header) ✅
 
 | Field | Value |
 | --- | --- |

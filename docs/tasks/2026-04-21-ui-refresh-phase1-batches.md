@@ -4,8 +4,8 @@ Pointer document for continuing `docs/tasks/2026-04-21-ui-refresh-phase1-tasks.m
 
 ## Status as of 2026-04-23
 
-- **Tasks done (45/100)**: #1-#29 except #22, plus Batch G1 (#30, #39, #48, #49), G2 (#31, #32, #33, #34), G3 (#36, #38, #45, #47), G4 (#37, #43, #44, #46). All of M1.1 Foundation (8/8), all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser and the full M1.3 sidebar stack up through Round G4 (shell + 4 wired sections + hover peek + tree overlay + right-click menu + file preview + inline-edit primitive + breadcrumb + toolbar pill + keyboard peek + copy/reveal shortcuts + type-to-filter + drag-to-pin). Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings.
-- **Tests passing**: 3611/3611 frontend, typecheck clean. (Rust unchanged this batch.)
+- **Tasks done (48/100)**: #1-#29 except #22, plus Batch G1 (#30, #39, #48, #49), G2 (#31, #32, #33, #34), G3 (#36, #38, #45, #47), G4 (#37, #43, #44, #46), G5 (#40, #41, #42). All of M1.1 Foundation (8/8), all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser and the full M1.3 sidebar stack through G5 (inline edit modes: rename, create-note, create-project). M1.3 remaining: only #35 Sidebar composition settings (deferred to G7 chrome batch). Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings.
+- **Tests passing**: 3694/3694 frontend, typecheck clean. (Rust unchanged this batch.)
 - **Task status marks**: 🚧 on launch, ✅ on merge. Both via `git apply --cached` to bypass the markdown formatter. Expected by user; see `feedback_task_status_marks.md` in auto-memory.
 - **Known follow-ups tracked in** `2026-04-21-ui-refresh-phase1-followups.md` (F1 pinned-delete cleanup; F2 tag-seed wiring).
 - **Workflow**: manual worktrees + parent-commits — see `.claude/skills/implement-tasks/SKILL.md` (validated 2026-04-22). Ignore `Agent isolation: "worktree"` for this codebase.
