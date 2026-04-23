@@ -21,6 +21,7 @@ import {
 import { tauriApi } from "@/lib/tauri";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 
 /**
  * SidebarContextMenu — shared right-click menu for sidebar file rows (task #45).
@@ -64,15 +65,6 @@ function extension(name: string): { stem: string; ext: string } {
   const dot = name.lastIndexOf(".");
   if (dot <= 0) return { stem: name, ext: "" };
   return { stem: name.slice(0, dot), ext: name.slice(dot) };
-}
-
-async function copyToClipboard(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast.success(label);
-  } catch (error) {
-    toast.error(`Failed to copy: ${error}`);
-  }
 }
 
 export function SidebarContextMenu({

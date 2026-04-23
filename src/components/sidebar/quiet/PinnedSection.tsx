@@ -4,6 +4,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/sidebar/FileIcon";
 import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  chainKeyHandlers,
+  useSidebarItemShortcuts,
+} from "@/components/sidebar/quiet/useSidebarItemShortcuts";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -33,6 +37,67 @@ function basename(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
+interface PinnedRowProps {
+  path: string;
+  isActive: boolean;
+  onOpen: (path: string) => void | Promise<void>;
+}
+
+/**
+ * Single row in the pinned list. Extracted from PinnedSection so we can
+ * install the row-level ⌘⌥C / ⌘⌥R shortcut hook per row (#46). The hook
+ * must run inside a component because it captures `filePath` in the
+ * returned handler.
+ */
+function PinnedRow({ path, isActive, onOpen }: PinnedRowProps) {
+  const name = basename(path);
+  const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
+    filePath: path,
+    kind: "file",
+  });
+
+  const handleOpenKeys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      void onOpen(path);
+    }
+  };
+
+  // Shortcuts first (⌘⌥C / ⌘⌥R). When a shortcut matches it calls
+  // preventDefault and chainKeyHandlers short-circuits so Enter/Space
+  // handling doesn't double-fire on the same keystroke.
+  const onKeyDown = chainKeyHandlers(shortcutKeyDown, handleOpenKeys);
+
+  return (
+    <FilePreview filePath={path}>
+      <SidebarContextMenu
+        filePath={path}
+        kind="file"
+        onOpen={() => void onOpen(path)}
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          data-active={isActive ? "true" : undefined}
+          aria-current={isActive ? "page" : undefined}
+          title={path}
+          onClick={() => void onOpen(path)}
+          onKeyDown={onKeyDown}
+          className={cn(
+            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
+            "hover:bg-muted/50",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+            isActive && "bg-muted",
+          )}
+        >
+          <FileIcon fileName={name} />
+          <span className="truncate min-w-0">{name}</span>
+        </div>
+      </SidebarContextMenu>
+    </FilePreview>
+  );
+}
+
 export function PinnedSection({ onAdd }: PinnedSectionProps) {
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
@@ -58,16 +123,6 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
     }
   };
 
-  const handleKeyDown = (
-    event: KeyboardEvent<HTMLDivElement>,
-    path: string,
-  ) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      void handleOpen(path);
-    }
-  };
-
   return (
     <section
       aria-label="Pinned"
@@ -90,40 +145,15 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
       </header>
       {pinnedFiles.length > 0 && (
         <ul className="flex flex-col gap-0.5">
-          {pinnedFiles.map((path) => {
-            const name = basename(path);
-            const isActive = activeFilePath === path;
-            return (
-              <li key={path}>
-                <FilePreview filePath={path}>
-                  <SidebarContextMenu
-                    filePath={path}
-                    kind="file"
-                    onOpen={() => void handleOpen(path)}
-                  >
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      data-active={isActive ? "true" : undefined}
-                      aria-current={isActive ? "page" : undefined}
-                      title={path}
-                      onClick={() => void handleOpen(path)}
-                      onKeyDown={(event) => handleKeyDown(event, path)}
-                      className={cn(
-                        "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
-                        "hover:bg-muted/50",
-                        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                        isActive && "bg-muted",
-                      )}
-                    >
-                      <FileIcon fileName={name} />
-                      <span className="truncate min-w-0">{name}</span>
-                    </div>
-                  </SidebarContextMenu>
-                </FilePreview>
-              </li>
-            );
-          })}
+          {pinnedFiles.map((path) => (
+            <li key={path}>
+              <PinnedRow
+                path={path}
+                isActive={activeFilePath === path}
+                onOpen={handleOpen}
+              />
+            </li>
+          ))}
         </ul>
       )}
     </section>

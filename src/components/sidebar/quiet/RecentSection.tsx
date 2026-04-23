@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FileIcon } from "../FileIcon";
 import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  chainKeyHandlers,
+  useSidebarItemShortcuts,
+} from "@/components/sidebar/quiet/useSidebarItemShortcuts";
 import { useEditorStore, type RecentFile } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
@@ -48,6 +52,20 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
 
   const handleActivate = () => onOpen(entry);
 
+  const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
+    filePath: entry.path,
+    kind: "file",
+  });
+
+  // Shortcuts (⌘⌥C / ⌘⌥R) first. When they match they preventDefault and
+  // chainKeyHandlers short-circuits so Enter/Space doesn't double-fire.
+  const onKeyDown = chainKeyHandlers(shortcutKeyDown, (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleActivate();
+    }
+  });
+
   return (
     <FilePreview filePath={entry.path}>
       <SidebarContextMenu
@@ -61,12 +79,7 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
           aria-current={isActive ? "page" : undefined}
           data-active={isActive ? "true" : undefined}
           onClick={handleActivate}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              handleActivate();
-            }
-          }}
+          onKeyDown={onKeyDown}
           title={entry.path}
           className={cn(
             "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
