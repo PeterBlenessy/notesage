@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LogLevel } from '@/lib/logger';
 import type { AccentName } from '@/lib/accent';
+import {
+  QUIET_CHROME_PRESETS,
+  type QuietChromePreset,
+  type QuietChromeTargets,
+} from '@/lib/quiet-chrome-presets';
 
 
 type Theme = "light" | "dark" | "system";
@@ -115,6 +120,18 @@ interface SettingsStore {
    * restarts. Clamped to 280–800. Default 400.
    */
   cmdBarPinnedWidth: number;
+  /**
+   * Quiet-chrome preset controlling which chrome targets fade under the
+   * `.app.typing` pulse (ui-refresh #51). One of the named presets, or
+   * "custom" when any per-element override has been toggled. Default
+   * "default" — recommended balance of fade targets.
+   */
+  quietChromePreset: QuietChromePreset | "custom";
+  /**
+   * Per-element fade overrides applied when `quietChromePreset === "custom"`.
+   * Named presets ignore this field. Default mirrors `PRESETS.default`.
+   */
+  quietChromeOverrides: QuietChromeTargets;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -184,6 +201,12 @@ interface SettingsStore {
   setUiPreview: (preview: UiPreview) => void;
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
+  setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
+  /**
+   * Toggle a single per-element override. Automatically flips the preset to
+   * "custom" so the override is actually used at read time.
+   */
+  setQuietChromeOverride: (key: keyof QuietChromeTargets, value: boolean) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -222,6 +245,8 @@ export const useSettingsStore = create<SettingsStore>()(
       uiPreview: "legacy",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
+      quietChromePreset: "default",
+      quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -479,6 +504,27 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ cmdBarPinnedWidth: Math.round(Math.max(280, Math.min(800, width))) });
       },
 
+      setQuietChromePreset: (preset: QuietChromePreset | "custom") => {
+        // Picking a named preset resets the overrides to that preset's
+        // mapping so the Advanced switches mirror the effective state if
+        // the user later flips back to "custom".
+        if (preset === "custom") {
+          set({ quietChromePreset: "custom" });
+        } else {
+          set({
+            quietChromePreset: preset,
+            quietChromeOverrides: { ...QUIET_CHROME_PRESETS[preset] },
+          });
+        }
+      },
+
+      setQuietChromeOverride: (key: keyof QuietChromeTargets, value: boolean) => {
+        set((state) => ({
+          quietChromePreset: "custom",
+          quietChromeOverrides: { ...state.quietChromeOverrides, [key]: value },
+        }));
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -501,7 +547,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 6,
+      version: 7,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -547,6 +593,22 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (typeof state.cmdBarPinnedWidth !== 'number') {
             state.cmdBarPinnedWidth = 400;
+          }
+        }
+        if (version < 7) {
+          // ui-refresh task #51 — quiet-chrome presets. Existing users
+          // default to the recommended preset so upgrading doesn't silently
+          // fade more (or less) chrome than before. The overrides mirror
+          // the preset mapping so flipping to "custom" later starts from a
+          // sane baseline.
+          if (typeof state.quietChromePreset !== 'string') {
+            state.quietChromePreset = 'default';
+          }
+          if (
+            state.quietChromeOverrides === null ||
+            typeof state.quietChromeOverrides !== 'object'
+          ) {
+            state.quietChromeOverrides = { ...QUIET_CHROME_PRESETS.default };
           }
         }
         return state;

@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw, ShieldCheck, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -45,6 +45,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useState, useCallback, useEffect } from 'react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import type { QuietChromeTargets } from '@/lib/quiet-chrome';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
@@ -180,6 +182,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     notifyAgentCompletion, setNotifyAgentCompletion,
     notifyExternalChanges, setNotifyExternalChanges,
   } = useSettingsStore();
+  // Quiet chrome (#51) — preset + per-element overrides. Kept separate from
+  // the main destructure so the unit tests that stub the store can mount
+  // the dialog without having to know about every preset helper.
+  const quietChromePreset = useSettingsStore((s) => s.quietChromePreset);
+  const quietChromeOverrides = useSettingsStore((s) => s.quietChromeOverrides);
+  const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
+  const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
+  const [quietChromeAdvancedOpen, setQuietChromeAdvancedOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -507,6 +517,127 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </>
                     )}
                   </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* Quiet chrome (#51) */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Quiet chrome</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Fade chrome elements (toolbar, status bar, document
+                      header, sidebar, agent orb) while you type. The
+                      composer is never faded.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      {
+                        value: "relaxed" as const,
+                        label: "Relaxed",
+                        description: "Minimal fade — only the toolbar and status strip",
+                      },
+                      {
+                        value: "default" as const,
+                        label: "Default",
+                        description: "Balanced — fades toolbar, status, and document header",
+                        recommended: true,
+                      },
+                      {
+                        value: "aggressive" as const,
+                        label: "Aggressive",
+                        description: "Deep focus — everything fades, sidebar and orb dim",
+                      },
+                    ]).map(({ value, label, description, recommended }) => {
+                      const isActive = quietChromePreset === value;
+                      return (
+                        <button
+                          key={value}
+                          onClick={() => setQuietChromePreset(value)}
+                          className={cn(
+                            "flex flex-col items-start gap-1 p-3 text-left rounded-lg border transition-colors duration-150 hover:bg-accent active:opacity-80",
+                            isActive
+                              ? "border-foreground bg-accent text-foreground font-medium"
+                              : "border-border text-muted-foreground"
+                          )}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm">{label}</span>
+                            {recommended && (
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                                Recommended
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground font-normal leading-snug">
+                            {description}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {quietChromePreset === "custom" && (
+                    <p className="text-xs text-muted-foreground">
+                      Custom overrides active — preset switched to Custom.
+                      Pick a preset above to reset.
+                    </p>
+                  )}
+
+                  <Collapsible
+                    open={quietChromeAdvancedOpen}
+                    onOpenChange={setQuietChromeAdvancedOpen}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors duration-150"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3 w-3 transition-transform duration-150",
+                            quietChromeAdvancedOpen && "rotate-180"
+                          )}
+                          strokeWidth={1.5}
+                        />
+                        Advanced — per-element toggles
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-2 mt-3">
+                      {(
+                        [
+                          { key: "toolbar", label: "Toolbar" },
+                          { key: "status", label: "Status bar" },
+                          { key: "docHead", label: "Document header" },
+                          { key: "sidebar", label: "Sidebar" },
+                          { key: "orb", label: "Agent orb" },
+                        ] as Array<{ key: keyof QuietChromeTargets; label: string }>
+                      ).map(({ key, label }) => {
+                        const id = `quiet-chrome-${String(key)}`;
+                        return (
+                          <div
+                            key={String(key)}
+                            className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <Label htmlFor={id} className="text-sm font-medium cursor-pointer">
+                                Fade {label.toLowerCase()}
+                              </Label>
+                              <Switch
+                                id={id}
+                                checked={quietChromeOverrides[key]}
+                                onCheckedChange={(checked) => {
+                                  setQuietChromeOverride(key, checked);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
                 <div className="h-px bg-border" />

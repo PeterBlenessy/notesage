@@ -63,6 +63,17 @@ let mockCmdBarPinned = false;
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
+    // Quiet-chrome (#51) — the real store seeds these defaults on startup.
+    // QuietLayout mounts `useQuietChrome()` which reads both slices, so the
+    // mock has to supply them or the hook crashes with "undefined.toolbar".
+    quietChromePreset: 'default' as const,
+    quietChromeOverrides: {
+      toolbar: true,
+      status: true,
+      docHead: true,
+      sidebar: false,
+      orb: false,
+    },
   };
   return {
     useSettingsStore: Object.assign(

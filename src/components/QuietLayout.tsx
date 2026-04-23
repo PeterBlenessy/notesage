@@ -13,6 +13,7 @@ import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useFadeOnType } from "@/hooks/useFadeOnType";
+import { useQuietChrome } from "@/lib/quiet-chrome";
 
 /**
  * QuietLayout — placeholder shell for the Quiet Composer UI refresh
@@ -77,6 +78,12 @@ export function QuietLayout(_props: QuietLayoutProps) {
   // `[data-quiet-layout-root]` node below, so state lives on the DOM and
   // typing never triggers a React re-render.
   useFadeOnType();
+
+  // #51 — Apply quiet-chrome preset data attributes onto the layout root.
+  // CSS in globals.css keys off the attributes to decide which chrome
+  // targets fade under the `.app.typing` pulse (toolbar, status, doc-head,
+  // sidebar, orb). Pure attribute writes — no React re-render on typing.
+  useQuietChrome();
 
   // Inert handlers for the toggle buttons — the real chat panel and
   // activity strip aren't part of the placeholder.
