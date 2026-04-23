@@ -54,6 +54,17 @@ interface ToolbarProps {
   onToggleHtmlPreview?: () => void;
   sourceWordWrap?: boolean;
   onToggleWordWrap?: () => void;
+  /**
+   * Visual variant.
+   * - `"inline"` (default, legacy): flat bar, relies on the parent wrapper for
+   *   the bottom border. Byte-identical to pre-#49 rendering.
+   * - `"pill"` (quiet composer): self-contained rounded pill with
+   *   `backdrop-blur`, subtle border + shadow. Positioning is the caller's
+   *   responsibility (e.g. `QuietLayout` absolutely positions at top-centre).
+   *   Tagged with `data-quiet-toolbar` so the `.typing` fade-on-type class
+   *   (#50) can target it without coupling to Tailwind classnames.
+   */
+  variant?: "inline" | "pill";
 }
 
 function ToolbarButton({
@@ -100,9 +111,10 @@ function ToolbarSeparator() {
 
 // --- Main Toolbar ---
 
-export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, onToggleHtmlPreview, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
+export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, onToggleHtmlPreview, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
   const isSource = viewMode === "source";
   const isPreview = viewMode === "html-preview";
+  const isPill = variant === "pill";
 
   // Force re-render on editor transactions so active state (heading level, bold, etc.) stays current
   const [, setTick] = useState(0);
@@ -117,10 +129,25 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
     ? editor.isActive("bulletList") || editor.isActive("orderedList") || editor.isActive("taskList")
     : false;
 
+  // Inline (legacy) variant: byte-identical to pre-#49 behaviour — flat bar
+  // that relies on the parent for the bottom border, fills available width.
+  // Pill (quiet-composer) variant: self-contained floating chrome — rounded,
+  // bordered, backdrop-blurred, subtle shadow. Inner row keeps the scroll
+  // fallback for narrow widths but the pill itself sits at its natural size.
+  const wrapperClassName = isPill
+    ? cn(
+        "inline-flex items-center gap-0.5 px-1.5 py-1 min-w-0",
+        "rounded-full border border-border bg-background/70 shadow-sm",
+        "backdrop-blur-[14px]",
+        "transition-opacity duration-[340ms] ease-in-out",
+      )
+    : "h-9 px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden flex-1 min-w-0";
+
   return (
     <TooltipProvider delayDuration={300}>
     <div
-      className="h-9 px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden flex-1 min-w-0"
+      data-quiet-toolbar={isPill ? "" : undefined}
+      className={wrapperClassName}
     >
       {!isSource && editor && (
         <>
