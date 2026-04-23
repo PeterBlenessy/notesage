@@ -44,6 +44,13 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 
 **Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
+## Sidebar Surfaces
+
+The workspace tree is exposed through two different shells. Both read from the same `workspace-store` (explorer folders, projects, notes tree) — only the chrome differs.
+
+- **Classic Layout** (`src/components/Layout.tsx`, default): the recursive `Sidebar` (`src/components/sidebar/Sidebar.tsx`) renders the full file tree inline (`FileTree.tsx` + `FileTreeItem.tsx`) with expand/collapse, file icons, drag-to-reorder, the right-click context menu, and inline rename. Cmd+Shift+L toggles visibility.
+- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the sidebar is the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) showing four stacked sections — Pinned, Projects, Recent, Tags — instead of the recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). The full hierarchical workspace tree is reached on demand via the `TreeOverlay` (`src/components/sidebar/quiet/TreeOverlay.tsx`), a focus-trapped slide-in panel triggered by `⌘⇧E` with its own search box, keyboard navigation (arrows, Home/End, Enter/Space, Esc), and per-session expansion state. The Tags section can be hidden entirely via `settings.sidebarTagsHidden`.
+
 ## Notesage Library & iCloud Sync
 
 **Library:**
@@ -80,9 +87,9 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 
 **Git branch diff review:**
 
-- Compare current branch against any other branch
+- Compare current branch against any other branch via the `BranchDiffSelector` dropdown
 - ProseMirror decorations showing additions (green) and deletions (red)
-- Accept all / reject all controls in review banner
+- Per-hunk accept/reject through inline controls on each decoration; end review from the same dropdown
 
 ## External Change Detection & Review
 
@@ -119,9 +126,11 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 | File | Purpose |
 | --- | --- |
-| `src/components/sidebar/Sidebar.tsx` | Main sidebar container |
+| `src/components/sidebar/Sidebar.tsx` | Main sidebar container (Classic Layout) |
 | `src/components/sidebar/FileTree.tsx` | File/folder tree |
 | `src/components/sidebar/FileTreeItem.tsx` | Individual tree node |
+| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Quiet Composer Layout) |
+| `src/components/sidebar/quiet/TreeOverlay.tsx` | Slide-in workspace tree (⌘⇧E, Quiet Composer Layout) |
 | `src/components/NewProjectDialog.tsx` | New project creation |
 | `src/components/NewNoteDialog.tsx` | New note creation |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |

@@ -33,9 +33,18 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - ~~Block drag handles~~ — deferred, needs unified left-gutter design
 - ~~Item annotations~~ — deferred, needs unified left-gutter design
 - Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
-- Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s), drag-to-reorder tabs
-- Per-tab undo/redo history preserved across tab switches (in-memory EditorState cache)
-- Open tabs restored on app restart (persisted file paths, re-opened from disk; undo history starts fresh)
+- Multi-document editing with dirty indicator, auto-save on blur/document switch (debounced 1s)
+- Per-document undo/redo history preserved across document switches (in-memory EditorState cache)
+- Open documents restored on app restart (persisted file paths, re-opened from disk; undo history starts fresh)
+
+## Document Switching Surface
+
+The editor exposes the active document and switching affordance differently depending on which layout shell is mounted:
+
+- **Classic Layout** (`src/components/Layout.tsx`, default): a `TabBar` (`src/components/tabs/TabBar.tsx`) renders along the top of the editor area with one tab per open document, drag-to-reorder, middle-click to close, dirty-dot indicator, and the standard `Cmd+W` close shortcut.
+- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the tab bar is replaced by `DocHead` (`src/components/editor/DocHead.tsx`), a single-line breadcrumb (`Notesage / project / folder / file.md`) with a dirty-dot, a right-aligned "saved Xs ago" timer, and a reserved right zone for future affordances. Document switching happens via the `QuietSidebar`, the `TreeOverlay` (⌘⇧E), the recent-document cycle (⌘⇧[ / ⌘⇧]), or the command bar.
+
+Both shells read from the same `editor-store.openDocuments` array — only the surface is different, the underlying state is shared.
 
 ## File Management
 
@@ -156,6 +165,8 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | --- | --- |
 | `src/components/editor/Editor.tsx` | Main editor wrapper |
 | `src/components/editor/EditorContent.tsx` | Tiptap content area |
+| `src/components/editor/DocHead.tsx` | Quiet Composer document breadcrumb (replaces TabBar in `QuietLayout`) |
+| `src/components/tabs/TabBar.tsx` | Classic Layout tab bar (legacy shell) |
 | `src/components/editor/Toolbar.tsx` | Floating format toolbar |
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |
 | `src/components/editor/BubbleMenu.tsx` | Selection bubble menu |
