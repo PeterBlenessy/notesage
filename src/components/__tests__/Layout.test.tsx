@@ -155,9 +155,10 @@ describe('Layout uiPreview branching', () => {
     renderWithProviders(<Layout {...defaultProps()} />);
     // Placeholder marker present
     expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeTruthy();
-    // Legacy tree's heavy children are NOT rendered
+    // Legacy tree's heavy children are NOT rendered. Editor itself IS still
+    // mounted by QuietLayout (#101) — the legacy SidebarPanel chrome is the
+    // tell-tale that the legacy shell is gone.
     expect(screen.queryByTestId('sidebar-panel')).toBeNull();
-    expect(screen.queryByTestId('editor')).toBeNull();
   });
 
   // Task #74: Hide legacy components under preview flag.
@@ -174,15 +175,18 @@ describe('Layout uiPreview branching', () => {
     useSettingsStore.setState({ uiPreview: 'legacy' });
     const { rerender } = renderWithProviders(<Layout {...defaultProps()} />);
     expect(screen.getByTestId('editor')).toBeTruthy();
+    // Legacy mode renders SidebarPanel; quiet mode does not.
+    expect(screen.getByTestId('sidebar-panel')).toBeTruthy();
 
     useSettingsStore.setState({ uiPreview: 'quiet-composer' });
     rerender(<Layout {...defaultProps()} />);
     expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeTruthy();
-    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(screen.queryByTestId('sidebar-panel')).toBeNull();
 
     useSettingsStore.setState({ uiPreview: 'legacy' });
     rerender(<Layout {...defaultProps()} />);
     expect(screen.getByTestId('editor')).toBeTruthy();
+    expect(screen.getByTestId('sidebar-panel')).toBeTruthy();
     expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeNull();
   });
 });

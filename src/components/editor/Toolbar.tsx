@@ -143,10 +143,66 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
       )
     : "h-9 px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden flex-1 min-w-0";
 
+  // Pill (quiet-composer) variant: reduced 8-button set per task #110.
+  // Inline (legacy) variant: full button set, byte-identical to pre-#110.
+  // Source mode in pill is handled in the StatusTray's source-mode toggle —
+  // the pill itself never renders for source mode (Editor short-circuits).
+  if (isPill) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <div
+          data-quiet-toolbar=""
+          className={wrapperClassName}
+        >
+          {!isSource && editor && (
+            <>
+              {/* Heading */}
+              <HeadingPicker editor={editor} />
+
+              {/* Quote */}
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                active={editor.isActive("blockquote")}
+                title="Blockquote"
+              >
+                <Quote className="size-4" strokeWidth={1.5} />
+              </ToolbarButton>
+
+              {/* Task list */}
+              <ToolbarButton
+                onClick={() => editor.chain().focus().toggleTaskList().run()}
+                active={editor.isActive("taskList")}
+                title="Task List"
+              >
+                <ListChecks className="size-4" strokeWidth={1.5} />
+              </ToolbarButton>
+
+              <ToolbarSeparator />
+
+              {/* Text color & Highlight */}
+              <TextColorPopover editor={editor} />
+              <HighlightPopover editor={editor} />
+
+              <ToolbarSeparator />
+
+              {/* Callout */}
+              <CalloutPicker editor={editor} />
+
+              {/* Table */}
+              <TableGridPicker editor={editor} />
+
+              {/* Typography */}
+              <TypographyPopover editor={editor} />
+            </>
+          )}
+        </div>
+      </TooltipProvider>
+    );
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
     <div
-      data-quiet-toolbar={isPill ? "" : undefined}
       className={wrapperClassName}
     >
       {!isSource && editor && (
