@@ -15,11 +15,13 @@ describe('Switch — accent wiring (UI Refresh #6)', () => {
     expect(root.style.backgroundColor).toBe('var(--accent, var(--color-foreground))');
   });
 
-  it('OFF state inline backgroundColor stays neutral border (no accent)', () => {
+  it('OFF state inline backgroundColor uses border-strong (no accent, WCAG 1.4.11)', () => {
     const { container } = renderWithProviders(<Switch checked={false} />);
     const root = container.querySelector('[data-slot="switch"]') as HTMLElement;
     expect(root).toBeTruthy();
-    // OFF must NOT carry the accent — accent is for affordance, the OFF track is chrome.
-    expect(root.style.backgroundColor).toBe('var(--color-border)');
+    // OFF must NOT carry the accent — accent is for affordance.
+    // Uses --color-border-strong (not the soft hairline --color-border) because
+    // when off, the track fill IS the only visual cue — must clear WCAG 1.4.11 (3:1).
+    expect(root.style.backgroundColor).toBe('var(--color-border-strong)');
   });
 });
