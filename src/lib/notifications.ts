@@ -3,6 +3,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
+import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 
 type NotificationType = "agent_completion" | "agent_error" | "external_change";
@@ -41,4 +42,69 @@ export async function notify(
   } catch {
     // Notification not supported or permission denied — silent degradation
   }
+}
+
+// ---------------------------------------------------------------------------
+// External-change toast helpers
+// ---------------------------------------------------------------------------
+
+/** Extract a short filename from an absolute file path. */
+function fileNameFromPath(filePath: string): string {
+  const idx = filePath.lastIndexOf("/");
+  return idx >= 0 ? filePath.slice(idx + 1) : filePath;
+}
+
+export interface ExternalChangeToastOptions {
+  /** Absolute path of the file that changed on disk. */
+  filePath: string;
+  /** Invoked when the user clicks "Accept" — reload from disk. */
+  onAccept: () => void;
+  /** Invoked when the user clicks "Reject" — keep in-memory version. */
+  onReject: () => void;
+  /**
+   * Invoked when the user dismisses the toast (X button or auto-dismiss).
+   * Decorations remain in the editor for per-hunk review.
+   */
+  onDismiss?: () => void;
+}
+
+/**
+ * Sticky action toast shown when "Review external diff" is ON and a file is
+ * modified on disk. Accept reloads from disk, Reject keeps the in-memory
+ * version, Dismiss leaves the decorations visible so the user can review them
+ * via the inline per-hunk controls.
+ *
+ * Uses a stable id derived from the file path so repeated changes to the same
+ * file collapse into one toast instead of stacking.
+ */
+export function toastExternalChange(options: ExternalChangeToastOptions): string | number {
+  const { filePath, onAccept, onReject, onDismiss } = options;
+  const fileName = fileNameFromPath(filePath);
+  return toast(`${fileName} changed externally`, {
+    id: `external-change:${filePath}`,
+    duration: Infinity,
+    closeButton: true,
+    action: {
+      label: "Accept",
+      onClick: onAccept,
+    },
+    cancel: {
+      label: "Reject",
+      onClick: onReject,
+    },
+    onDismiss: onDismiss,
+  });
+}
+
+/**
+ * Info toast shown when "Review external diff" is OFF and a file is
+ * modified on disk — the tab has already been silently auto-reloaded.
+ * Auto-dismisses after ~3 seconds, no actions.
+ */
+export function toastExternalReload(filePath: string): void {
+  const fileName = fileNameFromPath(filePath);
+  toast.info(`${fileName} reloaded from disk`, {
+    id: `external-change:${filePath}`,
+    duration: 3000,
+  });
 }

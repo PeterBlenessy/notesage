@@ -49,8 +49,21 @@ function normalizePath(p: string): string {
 }
 
 /**
- * Listens for `file-changed` Tauri events from the filesystem watcher
- * and handles auto-reload (clean tabs) or external-change toasts (dirty tabs).
+ * Listens for `file-changed` Tauri events from the filesystem watcher and
+ * routes modify events to the right review flow based on
+ * `externalChangeDiffReview`:
+ *
+ * - OFF (default): route to `editor-store.setExternalChange()` → the consumer
+ *   in `useFileWatcherIntegration` silently auto-reloads the tab (clean and
+ *   dirty alike) and emits a 3 s info toast via `toastExternalReload`. Users
+ *   who want protection against losing in-memory edits opt in via the setting.
+ * - ON: route to `external-change-store.addChange()` → inline diff decorations
+ *   appear in the editor and a sticky action toast (`toastExternalChange`)
+ *   offers Accept / Reject / Dismiss.
+ *
+ * Create / delete events trigger a debounced file-tree refresh. Git status is
+ * refreshed for every change. A self-write filter in the Rust backend prevents
+ * our own writes from bouncing back as "external" changes.
  */
 export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
