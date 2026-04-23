@@ -21,3 +21,11 @@ export type { SettingsDialogV2Props } from './SettingsDialogV2';
 
 export { AISettings } from './AISettings';
 export { AppearanceSettings } from './AppearanceSettings';
+export { GeneralSettings } from './GeneralSettings';
+export { EditorSettings } from './EditorSettings';
+export { SkillsSettings } from './SkillsSettings';
+export { ProjectsSettings } from './ProjectsSettings';
+export { PrivacySettings } from './PrivacySettings';
+export { AdvancedSettings } from './AdvancedSettings';
+export { AboutSettings } from './AboutSettings';
+export type { AboutSettingsProps } from './AboutSettings';
