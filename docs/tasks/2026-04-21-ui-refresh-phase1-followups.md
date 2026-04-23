@@ -86,6 +86,81 @@ Additionally, `FloatingCommandBar` currently does **not** subscribe to the `cmd-
 
 **Blockers:** none. Production users rarely have >50 items in either section, so this is performance hygiene, not a user-facing bug.
 
+## F7 — Mount the editor inside QuietLayout center column (Phase 2 scope)
+
+**Surfaced by:** First-user trial of the Quiet Composer Preview, 2026-04-23
+
+**Problem:** `QuietLayout.tsx` line 264–269 renders `<div data-doc-area-placeholder>Document area (placeholder)</div>` instead of the actual Tiptap editor. Clicking a file in the QuietSidebar opens it in `editor-store` but the editor itself never mounts in the new shell. Phase 1 built the perimeter (sidebar, doc-head, command bar, orb, overlay) but the `Editor` component / `EditorContent` / `Toolbar` were never wired in.
+
+**Fix approach:** Port the editor mount from `Layout.tsx` (which renders `<Editor />` from `src/components/editor/Editor.tsx`). Replace the placeholder div with the real component. May need to also mount `<FindBar />`, the floating `<Toolbar />`, and the editor-area chrome that lives alongside the editor. Verify `editor-store` integration (active tab → editor content) flows through.
+
+**Scope:** L. This is a Phase 2 cornerstone task — the Quiet Composer is unusable without it.
+
+**Blockers:** none, but this is the largest gap in Phase 1; everything else is polish without this.
+
+## F8 — Mount the chat panel inside QuietLayout right column (Phase 2 scope)
+
+**Surfaced by:** Same trial as F7
+
+**Problem:** When the FloatingCommandBar is NOT in pinned mode, the right column is `<ZonePlaceholder label="Reserved (placeholder)" />`. The classic Layout has `<ChatPanel />` in this slot. The intent for QuietLayout was for the FloatingCommandBar (pinned mode) to BE the chat surface, but unpinned mode leaves the slot empty — and even pinned, there's no separate "agent activity panel" surface (only the orb-anchored Popover).
+
+**Fix approach:** Decide whether the right column in QuietLayout's unpinned mode shows (a) nothing — keep the column for layout balance only, removing the placeholder text; (b) a compact "Recent threads" rail; or (c) the full ChatPanel for users who want both surfaces. Probably (a) is correct — the FloatingCommandBar IS the chat. Replace the `ZonePlaceholder` with either an empty div or the full ChatPanel based on the resolved decision.
+
+**Scope:** S–M depending on decision.
+
+**Blockers:** depends on F7 (editor mount); this is the second gap blocking real use.
+
+## F9 — TitleBar in QuietLayout still shows legacy chat / agent toggle buttons
+
+**Surfaced by:** Same trial — title bar visual leak, 2026-04-23
+
+**Problem:** `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />` in `QuietLayout.tsx` line 251 mounts the same TitleBar as the legacy Layout, including the chat-toggle and agent-strip-toggle buttons. In Quiet Composer those buttons do nothing (the props are `noop` stubs), but the buttons still render — visual clutter that contradicts the "calmer UI" promise.
+
+**Fix approach:** Either (a) extend `TitleBar` with `mode?: 'classic' | 'quiet'` to suppress the toggle buttons in quiet mode, or (b) make them conditional on the prop being a real handler vs `noop`. Option (a) is cleaner.
+
+**Scope:** S. Single component prop + conditional render.
+
+**Blockers:** none.
+
+## F10 — TreeOverlay covers macOS traffic-light buttons; ⌘⇧E toggle + Esc dismiss broken
+
+**Surfaced by:** Same trial — TreeOverlay UX, 2026-04-23
+
+**Problem:** Pressing `⌘⇧E` while TreeOverlay is open does NOT close it (it's open-only, never toggle). Esc doesn't dismiss reliably either — the user needs to click in the document area to close. Additionally, the overlay's `top: 0` positioning covers the macOS window-control buttons (red/yellow/green) at the top-left, blocking close/minimize/maximize.
+
+**Fix approach:**
+- Make `⌘⇧E` toggle: in `QuietLayout.tsx` line 117–150, check `useTreeOverlayStore.getState().open` and call `closeOverlay()` if true.
+- Verify Esc handling: `TreeOverlay.tsx` line 426 has the keydown handler, but it depends on focus being inside the overlay. The search input auto-focuses on open, so Esc SHOULD work — investigate whether focus is escaping the overlay or whether some intermediate component is swallowing the key.
+- Move the overlay's `top: 0` down by the `--titlebar-inset` (~28px on macOS) so it sits below the traffic lights. Or add `padding-top` to the overlay's first row so the top of the search input clears the controls.
+
+**Scope:** S. Three small fixes.
+
+**Blockers:** none.
+
+## F11 — Document name should appear in window title bar
+
+**Surfaced by:** Same trial, 2026-04-23
+
+**Problem:** In QuietLayout, the active document name appears in the DocHead breadcrumb (project / folder / file.md) but NOT in the macOS window title (the OS title bar at the very top, which is usually "Notesage" — should be e.g. "Notesage — file.md" or "file.md — Notesage" per macOS convention). Power users use ⌘` (window switcher) and rely on the title-bar text to find the right window.
+
+**Fix approach:** Extend `TitleBar` (or wherever the window title is set — possibly `document.title` driven by an effect on active tab change) to set the title to `${activeFileName} — Notesage` when a document is active, falling back to `Notesage` when no tab is open. The classic Layout has the same gap; consider fixing both surfaces.
+
+**Scope:** S. One effect in `App.tsx` (or `useAppLifecycle`) reading from `editor-store`.
+
+**Blockers:** none.
+
+## F12 — AgentOrb hover state lacks polish
+
+**Surfaced by:** Same trial — orb visual, 2026-04-23
+
+**Problem:** The AgentOrb uses `hover:scale-105` (a 5% scale grow on hover) per `AgentOrb.tsx`, which is subtle. The user expected richer hover feedback — possibly a soft glow ring, a tooltip showing "Agent — N tasks running" on hover, or a small label preview next to the orb.
+
+**Fix approach:** Add either (a) a Radix Tooltip with the same aria-label text, (b) a soft `box-shadow` ring on hover via `hover:shadow-lg` or a custom glow, or (c) both. Keep it subtle — the orb is meant to be ambient, not attention-grabbing.
+
+**Scope:** S. Component-only change, no store work.
+
+**Blockers:** none. Pure polish.
+
 ## How to use this file
 
 - Add entries here when a task returns with a well-scoped follow-up that's outside the numbered 100-task Phase 1 plan.
