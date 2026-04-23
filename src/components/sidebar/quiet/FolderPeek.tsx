@@ -65,16 +65,26 @@ function projectBasename(path: string): string {
 }
 
 /**
- * Partition the immediate children of a project folder into visible folders
- * and files, each sorted alphabetically (case-insensitive) and capped. The
- * hidden / `.DS_Store` filter matches what the file tree already hides.
+ * Children derivation output — the one-level preview that both the hover
+ * popover and the inline keyboard expansion (#37) render. Folders come
+ * first, files second, each sorted alphabetically (case-insensitive) and
+ * capped. Overflow counts surface as "+N more…" hints in both surfaces.
  */
-function partitionChildren(tree: FileEntry[]): {
+export interface PeekChildren {
   folders: FileEntry[];
   files: FileEntry[];
-  totalFolders: number;
-  totalFiles: number;
-} {
+  folderOverflow: number;
+  fileOverflow: number;
+  isEmpty: boolean;
+}
+
+/**
+ * Pure helper shared by `FolderPeek` (hover popover) and
+ * `ProjectsSection` (inline keyboard expansion for task #37). Hidden
+ * entries and `.DS_Store` are filtered out; caps are applied after
+ * sorting so the visible slice is always the alphabetical head.
+ */
+export function derivePeekChildren(tree: FileEntry[]): PeekChildren {
   const folders: FileEntry[] = [];
   const files: FileEntry[] = [];
   for (const entry of tree) {
@@ -86,11 +96,14 @@ function partitionChildren(tree: FileEntry[]): {
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   folders.sort(byName);
   files.sort(byName);
+  const visibleFolders = folders.slice(0, MAX_FOLDERS);
+  const visibleFiles = files.slice(0, MAX_FILES);
   return {
-    folders: folders.slice(0, MAX_FOLDERS),
-    files: files.slice(0, MAX_FILES),
-    totalFolders: folders.length,
-    totalFiles: files.length,
+    folders: visibleFolders,
+    files: visibleFiles,
+    folderOverflow: Math.max(0, folders.length - visibleFolders.length),
+    fileOverflow: Math.max(0, files.length - visibleFiles.length),
+    isEmpty: visibleFolders.length === 0 && visibleFiles.length === 0,
   };
 }
 
@@ -111,11 +124,10 @@ export function FolderPeek({
   const openTab = useEditorStore((s) => s.openTab);
 
   const projectName = useMemo(() => projectBasename(projectPath), [projectPath]);
-  const { folders, files, totalFolders, totalFiles } = useMemo(
-    () => partitionChildren(fileTree),
+  const { folders, files, folderOverflow, fileOverflow, isEmpty } = useMemo(
+    () => derivePeekChildren(fileTree),
     [fileTree],
   );
-  const isEmpty = folders.length === 0 && files.length === 0;
 
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
@@ -206,9 +218,6 @@ export function FolderPeek({
     },
     [],
   );
-
-  const folderOverflow = Math.max(0, totalFolders - folders.length);
-  const fileOverflow = Math.max(0, totalFiles - files.length);
 
   // Radix-style data-state so the same Tailwind animation classes used
   // across the codebase pick up fade-in/fade-out. Reduced motion: we strip
