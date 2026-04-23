@@ -7,7 +7,7 @@
 | **PRD** | [ui-refresh](../prds/2026-04-21-ui-refresh.md) |
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
-| **Total** | 100 tasks across 10 milestones |
+| **Total** | 117 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 15 with #103–#107, #110, #111, #112, #113 parity audit, and #114–#120 integration-gap fixes; M1.13 = #108–#109). |
 | **Complexity mix** | \~30 S, \~50 M, \~20 L |
 | **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
@@ -229,7 +229,8 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #13 |
 | Files | `src/components/cmd/modes/PaletteMode.tsx` |
 
-### #20 — Command-bar keyboard shortcuts ✅
+### #20 — Command-bar keyboard shortcuts ⚠️
+<!-- Reverted 2026-04-23: hook emits on cmd-bar-events bus but no production subscriber. ⌘K / ⌘⇧P / ⌘1-4 / Esc dead. See #114 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -239,7 +240,8 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #13 |
 | Files | `src/hooks/useCommandBarShortcuts.ts` |
 
-### #21 — Double-tap ⌘ detection (alternate bar focus) ✅
+### #21 — Double-tap ⌘ detection (alternate bar focus) ⚠️
+<!-- Reverted 2026-04-23: hook is defined but never mounted anywhere (grep shows zero call sites outside its own file). Double-tap dead. See #115 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -259,7 +261,8 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src-tauri/src/commands/skills_tool_parser.rs`, `src/stores/skill-store.ts` (frontend helper), tests |
 
-### #23 — Wire composer send → chat-store ✅
+### #23 — Wire composer send → chat-store ⚠️
+<!-- Reverted 2026-04-23: `sendChatMessage` is called but user reports send shows bubble with no streaming response. Needs live repro + investigation. See #116 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -269,7 +272,8 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #11, #12 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/stores/chat-store.ts` wiring |
 
-### #24 — Provider pill — wire to connections-store ✅
+### #24 — Provider pill — wire to connections-store ⚠️
+<!-- Reverted 2026-04-23: provider switch fires routing action, but AgentSwitchCard (context-isolation warning) is only rendered in classic ChatMessageList, not in CommandBarStream. User never sees the warning in Quiet Composer. See #117 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -299,7 +303,8 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #10 |
 | Files | `src/components/cmd/CommandBarContext.tsx` |
 
-### #27 — History view inside stream ✅
+### #27 — History view inside stream ⚠️
+<!-- Reverted 2026-04-23: ChatHistoryView is only imported by classic ChatPanel, never by any command-bar component. History list is unreachable in Quiet Composer. See #118 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -1191,6 +1196,94 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/editor/Editor.tsx` (read uiPreview, pass variant), `src/components/editor/Toolbar.tsx` (conditional button set), `src/components/editor/StatusTray.tsx` (host dictation + source-mode toggle), unit tests |
 | Surfaced from | Project lead's 2026-04-23 trial — Quiet Composer still showed the flat legacy toolbar; planning gap from the original 100-task plan |
 
+### #113 — Functional-parity audit (separate from #111 visual audit)
+
+| Field | Value |
+| --- | --- |
+| Description | Inventory every user-reachable action in the legacy Layout and assert each has a working path in QuietLayout. Scope: every keyboard shortcut, every button in TitleBar / ChatFooter / ChatPanel / ActivityStrip / Sidebar / TabBar, every right-click menu item, every slash/prefix mode. Deliverable: `docs/tasks/qa/2026-04-23-functional-parity.md` with one row per action: surface, legacy path, Quiet Composer path, status, fix task. Any row with status ≠ "reachable" spawns or references a numbered fix task. This audit is **separate from #111**: #111 is visual mockup fidelity only; #113 is functional parity with the existing legacy shell. Must run before Phase 1 ships. |
+| Complexity | L |
+| Category | qa |
+| Depends on | #101, #102 |
+| Files | `docs/tasks/qa/2026-04-23-functional-parity.md` (artifact) + fix tasks it spawns |
+| Surfaced from | 2026-04-23 trial revealed five functional regressions (⌘K, ⌘⌘, send, history, AgentSwitchCard) that unit tests passed. Root cause: no gate existed to prove functional reachability through the new shell. |
+
+### #114 — Wire `subscribeToCmdBarEvents` in FloatingCommandBar + Esc fall-through
+
+| Field | Value |
+| --- | --- |
+| Description | `useCommandBarShortcuts` emits focus / dismiss intents on the `cmd-bar-events` bus, but no production component subscribes. Fix: `FloatingCommandBar` subscribes via `subscribeToCmdBarEvents` in a `useEffect`, maps `{ type: 'focus', prefix? }` → `expand()` + optional prefix prefill, maps `{ type: 'dismiss' }` → `collapse()`. Update Esc handling: Esc from ANYWHERE dismisses the expanded bar first (not gated on focus being inside the bar); when the bar is collapsed, Esc passes through to the rest of the chain (editor FindBar → Radix popover → focus mode → etc.). **Outcome-shaped acceptance**: (a) press ⌘K in a fresh app → bar expands within one tick; (b) press ⌘⇧P → bar expands with `>` prefix; (c) press ⌘2 → bar expands with `@` prefix; (d) press Esc from the editor with the bar expanded → bar collapses, editor keeps its focus; (e) press Esc from the editor with the bar collapsed → editor Esc handlers fire normally. **Composition test mandatory**: `<QuietLayout />` mounted with real stores, dispatch real KeyboardEvent, assert `[data-cmd-bar]` has `data-expanded="true"` after each shortcut. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #20 (reverted) |
+| Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/hooks/useCommandBarShortcuts.ts` (Esc policy update), composition test in `src/components/cmd/__tests__/` |
+| Surfaced from | 2026-04-23 trial: ⌘K / ⌘⇧P / ⌘1–4 / Esc did not open or dismiss the bar. |
+
+### #115 — Mount `useDoubleTapCmd` in `useKeyboardShortcuts`
+
+| Field | Value |
+| --- | --- |
+| Description | The hook is defined and unit-tested in isolation but never called from any production file. Fix: call `useDoubleTapCmd()` inside `useKeyboardShortcuts` alongside `useCommandBarShortcuts` (same gating: only active when `uiPreview === 'quiet-composer'`). **Outcome-shaped acceptance**: press and release ⌘ twice within 300 ms in a fresh app → bar expands. **Composition test mandatory**: `<QuietLayout />` mounted, dispatch two `keydown key='Meta'` within 300 ms, assert bar expanded. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #21 (reverted), #114 (the bar must subscribe to the bus first, otherwise the emitted focus event is dead) |
+| Files | `src/hooks/useKeyboardShortcuts.ts`, composition test |
+| Surfaced from | 2026-04-23 trial: double-tap ⌘ did not open the bar. |
+
+### #116 — Debug "send shows bubble, no streaming response"
+
+| Field | Value |
+| --- | --- |
+| Description | User reports: typing in the bar and pressing Enter shows a user-message bubble but no assistant response streams in. `sendChatMessage` is called per the code, but the observable outcome is missing. Investigate in order: (a) does `CommandBarStream` re-render on `chat-store` updates (selector correctness); (b) does the `ai_chat_stream` Tauri invocation actually fire (check devtools network / Rust log); (c) is there a silent error (missing connection, `aiLock`, empty routing); (d) is the assistant message being written to a conversation the bar isn't watching. Add a composition test that mocks `ai_chat_stream` via `tauri-mock.ts` to emit `ai-stream-chunk` events and asserts an assistant message with the streamed content appears in `CommandBarStream`. **Outcome-shaped acceptance**: send "hello" with a valid interactive connection configured → assistant message bubble appears and streams content. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #23 (reverted), #114 (so the bar opens before this is tested) |
+| Files | TBD — investigate first. Candidates: `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/stores/chat-store.ts` |
+| Surfaced from | 2026-04-23 trial: user's bubble appeared but no assistant response. |
+
+### #117 — Render AgentSwitchCard inside CommandBarStream
+
+| Field | Value |
+| --- | --- |
+| Description | `AgentSwitchCard` is the context-isolation warning shown when the user switches provider mid-conversation. Currently only rendered inside `ChatMessageList.tsx` (classic `ChatPanel`). `CommandBarStream` does not render it, so Quiet Composer users never see the warning and silently lose context. Fix: render `AgentSwitchCard` inside `CommandBarStream` at the appropriate segment boundary, matching the legacy behavior. **Outcome-shaped acceptance**: open chat in Quiet Composer, send a message with Provider A, switch to Provider B, send another message → `AgentSwitchCard` appears in the stream. **Composition test mandatory**: seed chat-store with a provider-switch segment, render `CommandBarStream`, assert `AgentSwitchCard` is present. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #24 (reverted) |
+| Files | `src/components/cmd/CommandBarStream.tsx`, composition test |
+| Surfaced from | 2026-04-23 trial: provider switch did not fire the context warning. |
+
+### #118 — Render conversation history inside FloatingCommandBar
+
+| Field | Value |
+| --- | --- |
+| Description | `ChatHistoryView` is only imported by classic `ChatPanel`. Quiet Composer's `FloatingCommandBar` has no history affordance — the clock icon in `CommandBarContext` was planned (#10, #27) but never wired. Fix: add a history-mode branch to `FloatingCommandBar` (or `CommandBarStream`) that renders `ChatHistoryView` when active; trigger from the context-row clock icon (and `⌘⇧H` via the bus). **Outcome-shaped acceptance**: click the clock icon → history list renders; click a past conversation → loads it into the stream; click the clock again (or Esc) → returns to current chat. **Composition test mandatory**: `<QuietLayout />` mounted with seeded past conversations, click the clock icon, assert history list renders with the expected conversations. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #27 (reverted), #114 |
+| Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/components/cmd/CommandBarContext.tsx` (wire clock icon), composition test |
+| Surfaced from | 2026-04-23 trial: history list was unreachable in Quiet Composer. |
+
+### #119 — Fix AgentOrb pulse (CSS cascade conflict)
+
+| Field | Value |
+| --- | --- |
+| Description | The orb applies `orb-pulsing` while running tasks > 0, but the pulse is not visible. Root cause visible from code review: (a) the button has `transition-transform duration-150 ease-in-out` on the same element as the `transform: scale(X)` keyframe, which interpolates each keyframe stop; (b) `hover:scale-105` engages Tailwind v4's composed transform chain (`transform: ... scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))`) which resolves to `scale(1)` when not hovered — overriding the keyframe's `scale(1.05)`. Fix: either (a) replace `hover:scale-105` with `hover:[transform:scale(1.05)]` to bypass the transform chain, (b) drop `transition-transform` and let the animation be the sole driver of transform, or (c) refactor to wrap the pulse in an inner span so hover polish and ambient pulse live on different elements (cleaner, preferred). Upgrade the existing unit test: instead of asserting `className.contains('orb-pulsing')`, assert `getComputedStyle(orb).animationName === 'orb-pulse'` — proves no cascade is wiping the animation. **Outcome-shaped acceptance**: with a running task, the orb visibly scales up and down on a 1.4 s cycle in the running app. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/activity/AgentOrb.tsx`, `src/components/activity/__tests__/AgentOrb.test.tsx` |
+| Surfaced from | 2026-04-23 trial: orb did not pulse under activity. User directive: "you MUST be able to conclude from looking at the code." |
+
+### #120 — Entering focus mode collapses the command bar
+
+| Field | Value |
+| --- | --- |
+| Description | Per `design-system.md`'s documented Esc fall-through chain, the expanded command bar should consume Esc before focus mode. Symmetric expectation: entering focus mode (⌘.) should collapse the bar — focus mode is distraction-free writing, and the composer is chrome. Fix: `useFocusMode`'s enter path emits a `dismiss` on the cmd-bar-events bus (or calls `collapse()` via a shared store). **Outcome-shaped acceptance**: expand the bar, press ⌘. → focus mode enters AND bar collapses. Exiting focus mode does NOT auto-re-expand the bar (collapsed is the safe default). **Composition test mandatory**: `<QuietLayout />` mounted, expand bar, dispatch `⌘.`, assert `focus-mode` class on layout root AND bar has `data-expanded="false"`. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #114 |
+| Files | `src/hooks/useFocusMode.ts`, composition test |
+| Surfaced from | 2026-04-23 trial: user observed Esc only collapsed bar when focused in input; same class of bug — focus mode did not trigger collapse. |
+
 ---
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
@@ -1221,7 +1314,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
-- [ ] All 109 tasks completed (M1.1–M1.13)
+- [ ] All 117 tasks completed (M1.1–M1.13)
 
 - [ ] All new perf suites pass within budget at 1× multiplier
 
