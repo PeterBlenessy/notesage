@@ -5,6 +5,7 @@ import { useEditorStore, type RecentFile } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
 import { cn } from "@/lib/utils";
+import { FilePreview } from "./FilePreview";
 
 /**
  * RecentSection — quiet-composer sidebar recent-documents list (task #33).
@@ -47,39 +48,41 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
   const handleActivate = () => onOpen(entry);
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-current={isActive ? "page" : undefined}
-      data-active={isActive ? "true" : undefined}
-      onClick={handleActivate}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleActivate();
-        }
-      }}
-      title={entry.path}
-      className={cn(
-        "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
-        "transition-colors duration-150",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        isActive
-          ? "bg-muted text-foreground font-medium"
-          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-      )}
-    >
-      <FileIcon fileName={entry.name} />
-      <span className="truncate min-w-0 flex-1">{entry.name}</span>
-      {parentHint && (
-        <span
-          aria-hidden="true"
-          className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
-        >
-          {parentHint}
-        </span>
-      )}
-    </div>
+    <FilePreview filePath={entry.path}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-current={isActive ? "page" : undefined}
+        data-active={isActive ? "true" : undefined}
+        onClick={handleActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleActivate();
+          }
+        }}
+        title={entry.path}
+        className={cn(
+          "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+          "transition-colors duration-150",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          isActive
+            ? "bg-muted text-foreground font-medium"
+            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+        )}
+      >
+        <FileIcon fileName={entry.name} />
+        <span className="truncate min-w-0 flex-1">{entry.name}</span>
+        {parentHint && (
+          <span
+            aria-hidden="true"
+            className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
+          >
+            {parentHint}
+          </span>
+        )}
+      </div>
+    </FilePreview>
   );
 }
 

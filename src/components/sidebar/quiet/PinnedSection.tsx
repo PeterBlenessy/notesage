@@ -7,6 +7,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
+import { FilePreview } from "./FilePreview";
 
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
@@ -93,24 +94,26 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
             const isActive = activeFilePath === path;
             return (
               <li key={path}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  data-active={isActive ? "true" : undefined}
-                  aria-current={isActive ? "page" : undefined}
-                  title={path}
-                  onClick={() => void handleOpen(path)}
-                  onKeyDown={(event) => handleKeyDown(event, path)}
-                  className={cn(
-                    "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
-                    "hover:bg-muted/50",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                    isActive && "bg-muted",
-                  )}
-                >
-                  <FileIcon fileName={name} />
-                  <span className="truncate min-w-0">{name}</span>
-                </div>
+                <FilePreview filePath={path}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    data-active={isActive ? "true" : undefined}
+                    aria-current={isActive ? "page" : undefined}
+                    title={path}
+                    onClick={() => void handleOpen(path)}
+                    onKeyDown={(event) => handleKeyDown(event, path)}
+                    className={cn(
+                      "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
+                      "hover:bg-muted/50",
+                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                      isActive && "bg-muted",
+                    )}
+                  >
+                    <FileIcon fileName={name} />
+                    <span className="truncate min-w-0">{name}</span>
+                  </div>
+                </FilePreview>
               </li>
             );
           })}
