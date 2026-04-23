@@ -3,6 +3,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/sidebar/FileIcon";
+import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -95,24 +96,30 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
             return (
               <li key={path}>
                 <FilePreview filePath={path}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    data-active={isActive ? "true" : undefined}
-                    aria-current={isActive ? "page" : undefined}
-                    title={path}
-                    onClick={() => void handleOpen(path)}
-                    onKeyDown={(event) => handleKeyDown(event, path)}
-                    className={cn(
-                      "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
-                      "hover:bg-muted/50",
-                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                      isActive && "bg-muted",
-                    )}
+                  <SidebarContextMenu
+                    filePath={path}
+                    kind="file"
+                    onOpen={() => void handleOpen(path)}
                   >
-                    <FileIcon fileName={name} />
-                    <span className="truncate min-w-0">{name}</span>
-                  </div>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      data-active={isActive ? "true" : undefined}
+                      aria-current={isActive ? "page" : undefined}
+                      title={path}
+                      onClick={() => void handleOpen(path)}
+                      onKeyDown={(event) => handleKeyDown(event, path)}
+                      className={cn(
+                        "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
+                        "hover:bg-muted/50",
+                        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                        isActive && "bg-muted",
+                      )}
+                    >
+                      <FileIcon fileName={name} />
+                      <span className="truncate min-w-0">{name}</span>
+                    </div>
+                  </SidebarContextMenu>
                 </FilePreview>
               </li>
             );

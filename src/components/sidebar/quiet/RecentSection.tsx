@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FileIcon } from "../FileIcon";
+import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { useEditorStore, type RecentFile } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
@@ -49,39 +50,45 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
 
   return (
     <FilePreview filePath={entry.path}>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-current={isActive ? "page" : undefined}
-        data-active={isActive ? "true" : undefined}
-        onClick={handleActivate}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleActivate();
-          }
-        }}
-        title={entry.path}
-        className={cn(
-          "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
-          "transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          isActive
-            ? "bg-muted text-foreground font-medium"
-            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-        )}
+      <SidebarContextMenu
+        filePath={entry.path}
+        kind="file"
+        onOpen={handleActivate}
       >
-        <FileIcon fileName={entry.name} />
-        <span className="truncate min-w-0 flex-1">{entry.name}</span>
-        {parentHint && (
-          <span
-            aria-hidden="true"
-            className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
-          >
-            {parentHint}
-          </span>
-        )}
-      </div>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-current={isActive ? "page" : undefined}
+          data-active={isActive ? "true" : undefined}
+          onClick={handleActivate}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleActivate();
+            }
+          }}
+          title={entry.path}
+          className={cn(
+            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+            "transition-colors duration-150",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            isActive
+              ? "bg-muted text-foreground font-medium"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+          )}
+        >
+          <FileIcon fileName={entry.name} />
+          <span className="truncate min-w-0 flex-1">{entry.name}</span>
+          {parentHint && (
+            <span
+              aria-hidden="true"
+              className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
+            >
+              {parentHint}
+            </span>
+          )}
+        </div>
+      </SidebarContextMenu>
     </FilePreview>
   );
 }
