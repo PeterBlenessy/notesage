@@ -2,7 +2,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
+import {
+  renderWithProviders,
+  screen,
+  fireEvent,
+  waitFor,
+} from '@/test/component-harness';
 import { PinnedSection } from '../PinnedSection';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -27,6 +32,23 @@ vi.mock('@/hooks/useFileOperations', () => ({
   })),
 }));
 
+// ---------------------------------------------------------------------------
+// Clipboard mock for ⌘⌥C regression test. jsdom's clipboard getter cannot
+// be directly assigned, so we redefine the property.
+// ---------------------------------------------------------------------------
+
+const mockClipboardWrite = vi
+  .fn<(text: string) => Promise<void>>()
+  .mockImplementation(() => Promise.resolve());
+
+function installClipboardMock() {
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    get: () => ({ writeText: mockClipboardWrite }),
+  });
+}
+installClipboardMock();
+
 function resetStores() {
   useWorkspaceStore.setState({
     explorerFolders: [],
@@ -50,6 +72,8 @@ describe('PinnedSection', () => {
     resetStores();
     mockOpenFile.mockReset();
     mockOpenFile.mockResolvedValue(undefined);
+    mockClipboardWrite.mockClear();
+    installClipboardMock();
   });
 
   it('renders the uppercase "Pinned" heading', () => {
@@ -139,5 +163,17 @@ describe('PinnedSection', () => {
     expect(activeRow.getAttribute('data-active')).toBe('true');
     expect(otherRow.getAttribute('aria-current')).toBeNull();
     expect(otherRow.getAttribute('data-active')).toBeNull();
+  });
+
+  it('copies the path to the clipboard on ⌘⌥C when a row is focused (#46)', async () => {
+    useWorkspaceStore.setState({ pinnedFiles: ['/notes/gamma.md'] });
+
+    renderWithProviders(<PinnedSection />);
+    const row = screen.getByText('gamma.md').closest('[role="button"]') as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'c', metaKey: true, altKey: true });
+
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
+    expect(mockClipboardWrite).toHaveBeenCalledWith('/notes/gamma.md');
   });
 });

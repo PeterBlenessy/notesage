@@ -2,7 +2,13 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { act, renderWithProviders, screen } from '@/test/component-harness';
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  waitFor,
+} from '@/test/component-harness';
 import { RecentSection, DEFAULT_RECENT_CAP } from '../RecentSection';
 import { useEditorStore, type RecentFile } from '@/stores/editor-store';
 
@@ -13,6 +19,23 @@ vi.mock('@/hooks/useFileOperations', () => ({
     openFile: openFileMock,
   }),
 }));
+
+// ---------------------------------------------------------------------------
+// Clipboard mock for the ⌘⌥C regression test. jsdom's clipboard getter is
+// not directly assignable, so we redefine the property.
+// ---------------------------------------------------------------------------
+
+const mockClipboardWrite = vi
+  .fn<(text: string) => Promise<void>>()
+  .mockImplementation(() => Promise.resolve());
+
+function installClipboardMock() {
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    get: () => ({ writeText: mockClipboardWrite }),
+  });
+}
+installClipboardMock();
 
 function makeRecent(n: number): RecentFile[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -45,6 +68,8 @@ function setRecent(recentFiles: RecentFile[], opts?: { activeFilePath?: string }
 beforeEach(() => {
   openFileMock.mockReset();
   openFileMock.mockResolvedValue(undefined);
+  mockClipboardWrite.mockClear();
+  installClipboardMock();
   useEditorStore.setState({
     recentFiles: [],
     tabs: [],
@@ -191,5 +216,17 @@ describe('RecentSection — activation', () => {
 
     const inactiveRow = screen.getByText('file-1.md').closest('[role="button"]') as HTMLElement;
     expect(inactiveRow.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('copies the path to the clipboard on ⌘⌥C when a row is focused (#46)', async () => {
+    setRecent(makeRecent(2));
+    renderWithProviders(<RecentSection />);
+
+    const row = screen.getByText('file-1.md').closest('[role="button"]') as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'c', metaKey: true, altKey: true });
+
+    await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
+    expect(mockClipboardWrite).toHaveBeenCalledWith('/workspace/notes/file-1.md');
   });
 });
