@@ -65,4 +65,58 @@ describe('SettingsRow', () => {
     expect(textNode.closest('label')).toBeNull();
     expect(textNode.tagName).toBe('SPAN');
   });
+
+  it('wires control to description via aria-describedby when both are provided', () => {
+    renderWithProviders(
+      <SettingsRow
+        label="Reduce motion"
+        description="Turn off non-essential animations across the app."
+        control={<input type="checkbox" data-testid="rm-toggle" />}
+      />,
+    );
+    const control = screen.getByTestId('rm-toggle');
+    const describedBy = control.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    // The description paragraph should carry that exact id.
+    const desc = document.getElementById(describedBy!);
+    expect(desc).not.toBeNull();
+    expect(desc!.textContent).toBe(
+      'Turn off non-essential animations across the app.',
+    );
+  });
+
+  it('does not inject aria-describedby when there is no description', () => {
+    renderWithProviders(
+      <SettingsRow
+        label="Reduce motion"
+        control={<input type="checkbox" data-testid="rm-toggle" />}
+      />,
+    );
+    const control = screen.getByTestId('rm-toggle');
+    expect(control.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('preserves existing aria-describedby on the control and appends the description id', () => {
+    renderWithProviders(
+      <SettingsRow
+        label="Reduce motion"
+        description="Turn off non-essential animations across the app."
+        control={
+          <input
+            type="checkbox"
+            data-testid="rm-toggle"
+            aria-describedby="external-help"
+          />
+        }
+      />,
+    );
+    const control = screen.getByTestId('rm-toggle');
+    const describedBy = control.getAttribute('aria-describedby') ?? '';
+    // Existing id preserved + description id appended.
+    expect(describedBy.split(/\s+/)).toContain('external-help');
+    const ids = describedBy.split(/\s+/);
+    // Locate the description id (the one that actually resolves to a node).
+    const descId = ids.find((id) => document.getElementById(id) !== null && id !== 'external-help');
+    expect(descId).toBeTruthy();
+  });
 });

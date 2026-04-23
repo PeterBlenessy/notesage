@@ -30,6 +30,13 @@ export interface SettingsRowProps {
  *
  * If `htmlFor` is supplied, the label becomes a real `<label>` bound to a
  * control for assistive tech.
+ *
+ * Accessibility:
+ *   When both a `description` and a `control` (as a single React element) are
+ *   provided, the control is automatically wired with `aria-describedby`
+ *   pointing to the description paragraph. Existing `aria-describedby` values
+ *   on the control are preserved (the description id is appended). Pass the
+ *   control as a non-element node (string, fragment, etc.) to opt out.
  */
 export function SettingsRow({
   label,
@@ -39,6 +46,9 @@ export function SettingsRow({
   htmlFor,
   className,
 }: SettingsRowProps) {
+  const reactId = React.useId();
+  const descriptionId = description ? `${htmlFor ?? reactId}-desc` : undefined;
+
   const labelNode = htmlFor ? (
     <label
       htmlFor={htmlFor}
@@ -50,6 +60,23 @@ export function SettingsRow({
     <span className="text-[13px] font-medium text-foreground">{label}</span>
   );
 
+  // When we have both a description and a single-element control, inject
+  // aria-describedby so assistive tech reads the description alongside the
+  // control. Multiple-element / primitive controls are rendered as-is.
+  let controlNode: React.ReactNode = control;
+  if (descriptionId && React.isValidElement(control)) {
+    const existing = (control.props as { 'aria-describedby'?: string })[
+      'aria-describedby'
+    ];
+    const merged = existing
+      ? `${existing} ${descriptionId}`
+      : descriptionId;
+    controlNode = React.cloneElement(
+      control as React.ReactElement<{ 'aria-describedby'?: string }>,
+      { 'aria-describedby': merged },
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -60,14 +87,17 @@ export function SettingsRow({
       <div className="min-w-0 flex-1">
         {labelNode}
         {description ? (
-          <p className="text-[12px] text-muted-foreground mt-0.5 max-w-[460px] leading-relaxed">
+          <p
+            id={descriptionId}
+            className="text-[12px] text-muted-foreground mt-0.5 max-w-[460px] leading-relaxed"
+          >
             {description}
           </p>
         ) : null}
       </div>
-      {control !== undefined || controlSublabel !== undefined ? (
+      {controlNode !== undefined || controlSublabel !== undefined ? (
         <div className="shrink-0 flex flex-col items-end gap-1">
-          {control}
+          {controlNode}
           {controlSublabel ? (
             <span className="text-[11px] text-muted-foreground">
               {controlSublabel}
