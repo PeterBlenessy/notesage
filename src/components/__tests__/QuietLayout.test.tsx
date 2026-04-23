@@ -53,6 +53,20 @@ vi.mock('@/components/activity/AgentOrb', () => ({
   AgentOrb: () => <div data-testid="agent-orb-stub" />,
 }));
 
+// Stub the Editor mount (#101). The real Editor pulls in Tiptap, the
+// markdown serializer, the file watcher, Copilot LSP / local-completion
+// hooks, and a half-dozen other heavy dependencies — none of which add
+// signal to a layout-shell test. The stub lets us assert that QuietLayout
+// reaches the mount point with the correct props.
+vi.mock('@/components/editor/Editor', () => ({
+  Editor: (props: Record<string, unknown>) => (
+    <div
+      data-testid="editor-stub"
+      data-focus-mode={props.focusMode ? 'true' : 'false'}
+    />
+  ),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock settings-store so QuietLayout can read `cmdBarPinned` to decide
 // whether to apply right-padding to the document area.
@@ -141,11 +155,18 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByTestId('titlebar')).toBeTruthy();
   });
 
-  it('renders the QuietSidebar plus placeholder document + reserved zones', () => {
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    // Sidebar is now the real QuietSidebar (#30), centre + right remain placeholders.
+  it('renders the QuietSidebar, real Editor mount, and reserved zone', () => {
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    // Sidebar is the real QuietSidebar (#30); centre column hosts the real
+    // Editor (#101) instead of the old "Document area (placeholder)" stub;
+    // right zone remains a reserved placeholder until #102.
     expect(screen.getByRole('navigation', { name: /workspace sidebar/i })).toBeTruthy();
-    expect(screen.getByText(/Document area \(placeholder\)/i)).toBeTruthy();
+    expect(screen.getByTestId('editor-stub')).toBeTruthy();
+    // Old placeholder text and its `data-doc-area-placeholder` hook must be gone.
+    expect(screen.queryByText(/Document area \(placeholder\)/i)).toBeNull();
+    expect(container.querySelector('[data-doc-area-placeholder]')).toBeNull();
+    // The new mount carries `data-doc-area` so the focus-mode CSS rule applies.
+    expect(container.querySelector('[data-doc-area]')).toBeTruthy();
     expect(screen.getByText(/Reserved \(placeholder\)/i)).toBeTruthy();
   });
 
@@ -157,6 +178,20 @@ describe('QuietLayout (placeholder)', () => {
   it('mounts the AgentOrb (#29)', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     expect(screen.getByTestId('agent-orb-stub')).toBeTruthy();
+  });
+
+  it('forwards a falsy focusMode to the Editor by default', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const editor = screen.getByTestId('editor-stub') as HTMLElement;
+    expect(editor.getAttribute('data-focus-mode')).toBe('false');
+  });
+
+  it('forwards focusMode=true when the App-level prop is set', () => {
+    renderWithProviders(
+      <QuietLayout {...defaultProps({ focusMode: true })} />,
+    );
+    const editor = screen.getByTestId('editor-stub') as HTMLElement;
+    expect(editor.getAttribute('data-focus-mode')).toBe('true');
   });
 
   // -------------------------------------------------------------------------

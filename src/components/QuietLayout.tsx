@@ -7,6 +7,8 @@ import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { TreeOverlay } from "@/components/sidebar/quiet/TreeOverlay";
 import { DocHead } from "@/components/editor/DocHead";
+import { Editor } from "@/components/editor/Editor";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
@@ -18,20 +20,22 @@ import { FocusPill } from "@/components/editor/FocusPill";
 import { useQuietChrome } from "@/lib/quiet-chrome";
 
 /**
- * QuietLayout — placeholder shell for the Quiet Composer UI refresh
- * (PRD `2026-04-21-ui-refresh`, Phase 1).
+ * QuietLayout — Quiet Composer shell (PRD `2026-04-21-ui-refresh`, Phase 1).
  *
  * Mounted only when `settings.uiPreview === "quiet-composer"`. Renders a
- * three-zone scaffold under a TitleBar so subsequent tasks can drop in
- * the real components:
+ * three-zone grid under a TitleBar:
  *
- *   - #30 QuietSidebar  → left zone (240px)
- *   - #48 DocHead etc.  → centre document area
- *   - composer pinned mode → right reserved zone (240px)
+ *   - QuietSidebar (#30)        → left zone (240px)
+ *   - DocHead + Editor (#48,#101) → centre document area
+ *   - Reserved (placeholder)    → right zone (240px) — chat moves here in #102
  *
- * This file is intentionally a stub. It does NOT mount the editor, chat
- * panel, sidebar, or activity strip — those arrive in later tasks. The
- * placeholder is the point.
+ * The centre column hosts the same `<Editor />` mount tree that
+ * `Layout.tsx → EditorArea` uses on the legacy path; `editor-store` is
+ * shared, so document switches, dirty tracking, and the per-tab
+ * EditorState cache work identically across both shells. The editor
+ * component itself owns its inner chrome (Toolbar, FindBar, BubbleMenu,
+ * StatusBar, ExportDialog, CommentPopover, etc.) — QuietLayout just
+ * supplies the slot and forwards the layout-level callbacks.
  */
 
 export type QuietLayoutProps = LayoutProps;
@@ -69,11 +73,27 @@ export function resolveCreateParent(
   return null;
 }
 
-export function QuietLayout(_props: QuietLayoutProps) {
-  // Props are accepted to mirror Layout's signature so the call site at
-  // App.tsx → <Layout {...layoutProps} /> works without a per-branch
-  // adapter. They will be wired into the real components in later tasks.
-  void _props;
+export function QuietLayout(props: QuietLayoutProps) {
+  // Editor props — forwarded from App.tsx so the Editor mount inside the
+  // centre column behaves identically to the legacy `EditorArea`. The
+  // remaining props (chat / activity callbacks) wait for #102 + later.
+  const {
+    onNewNote,
+    onNewProject,
+    onOpenFolder,
+    onOpenProject,
+    onOpenFile,
+    exportOpen,
+    onExportOpenChange,
+    outlineOpen,
+    onOutlineOpenChange,
+    updateAvailable,
+    updateVersion,
+    onUpdateClick,
+    onShortcutsOpen,
+    onOpenActions,
+    focusMode: focusModeProp,
+  } = props;
 
   // #50 — Fade pre-stamped chrome while the user is typing. No-op under
   // `prefers-reduced-motion`. Keyed off the DOM class `.typing` on the
@@ -97,6 +117,13 @@ export function QuietLayout(_props: QuietLayoutProps) {
   // Inert handlers for the toggle buttons — the real chat panel and
   // activity strip aren't part of the placeholder.
   const noop = () => {};
+
+  // The editor reads `focusMode` to gate its own chrome (Toolbar, StatusBar).
+  // QuietLayout owns the live focus-mode flag via `useFocusMode()` above (the
+  // app-level legacy flag isn't flipped in this preview because the legacy
+  // `⌘.` listener is suppressed at capture phase). OR with the prop too in
+  // case a future code path drives it from App.
+  const editorFocusMode = focus.active || !!focusModeProp;
 
   // When the command bar is pinned (#28), the document column needs to
   // reserve the equivalent right padding so editor content doesn't slide
@@ -261,11 +288,39 @@ export function QuietLayout(_props: QuietLayoutProps) {
         <QuietSidebar />
         <div className="flex flex-col min-h-0 min-w-0">
           <DocHead />
-          <div
-            data-doc-area-placeholder
-            className="flex-1 min-h-0 flex items-center justify-center rounded-md border border-dashed border-border bg-muted/30"
-          >
-            <span className="text-muted-foreground text-sm">Document area (placeholder)</span>
+          {/*
+            Editor mount (#101). Same `<Editor />` instance the legacy
+            `EditorArea` mounts in `Layout.tsx` — `editor-store` is shared
+            across both shells, so document switches, dirty tracking, and
+            the per-tab EditorState cache work identically. The editor
+            itself owns its inner chrome (Toolbar, FindBar, BubbleMenu,
+            StatusBar, ExportDialog, CommentPopover, TranscriptionOverlay,
+            DocumentOutline). `focusMode` is driven by QuietLayout's local
+            `useFocusMode` hook (see `editorFocusMode` above) so the
+            editor hides its toolbar / status while focus mode is active.
+            `data-doc-area` is the focus-mode CSS hook (see globals.css
+            `.app.focus-mode [data-doc-area]`).
+          */}
+          <div data-doc-area className="flex-1 min-h-0 bg-muted">
+            <ErrorBoundary name="Editor">
+              <Editor
+                onNewNote={onNewNote}
+                onNewProject={onNewProject}
+                onOpenFolder={onOpenFolder}
+                onOpenProject={onOpenProject}
+                onOpenFile={onOpenFile}
+                exportOpen={exportOpen}
+                onExportOpenChange={onExportOpenChange}
+                focusMode={editorFocusMode}
+                outlineOpen={outlineOpen}
+                onOutlineOpenChange={onOutlineOpenChange}
+                updateAvailable={updateAvailable}
+                updateVersion={updateVersion}
+                onUpdateClick={onUpdateClick}
+                onShortcutsOpen={onShortcutsOpen}
+                onOpenActions={onOpenActions}
+              />
+            </ErrorBoundary>
           </div>
         </div>
         <ZonePlaceholder label="Reserved (placeholder)" />
