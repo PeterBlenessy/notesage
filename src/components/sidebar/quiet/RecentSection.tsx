@@ -1,7 +1,22 @@
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { toast } from "sonner";
 import { FileIcon } from "../FileIcon";
-import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  SIDEBAR_ENTER_RENAME_MODE_EVENT,
+  SidebarContextMenu,
+} from "@/components/sidebar/quiet/SidebarContextMenu";
+import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
+import {
+  basename as pathBasename,
+  resolveRenamePath,
+  validateRenameBasename,
+} from "@/components/sidebar/quiet/rename-utils";
 import {
   chainKeyHandlers,
   useSidebarItemShortcuts,
@@ -52,12 +67,25 @@ function getParentFolderHint(filePath: string): string {
 interface RecentRowProps {
   entry: RecentFile;
   isActive: boolean;
+  isRenaming: boolean;
   onOpen: (entry: RecentFile) => void;
+  onStartRename: (path: string) => void;
+  onCommitRename: (oldPath: string, newBasename: string) => void;
+  onCancelRename: () => void;
 }
 
-function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
+function RecentRow({
+  entry,
+  isActive,
+  isRenaming,
+  onOpen,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+}: RecentRowProps) {
   const parentHint = useMemo(() => getParentFolderHint(entry.path), [entry.path]);
   const [isDragging, setIsDragging] = useState(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
 
   const handleActivate = () => onOpen(entry);
 
@@ -72,8 +100,32 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       handleActivate();
+    } else if (e.key === "F2") {
+      // F2 enters rename mode (task #40). See PinnedRow for rationale.
+      e.preventDefault();
+      onStartRename(entry.path);
     }
   });
+
+  // Double-click via event.detail === 2 — see PinnedRow for the same pattern.
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.detail === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+      onStartRename(entry.path);
+      return;
+    }
+    handleActivate();
+  };
+
+  // Restore focus to the row when rename mode ends.
+  const wasRenamingRef = useRef(false);
+  useEffect(() => {
+    if (wasRenamingRef.current && !isRenaming) {
+      rowRef.current?.focus();
+    }
+    wasRenamingRef.current = isRenaming;
+  }, [isRenaming]);
 
   return (
     <FilePreview filePath={entry.path}>
@@ -83,14 +135,16 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
         onOpen={handleActivate}
       >
         <div
+          ref={rowRef}
           role="button"
           tabIndex={0}
-          draggable
+          draggable={!isRenaming}
           aria-current={isActive ? "page" : undefined}
           data-active={isActive ? "true" : undefined}
           data-dragging={isDragging ? "true" : undefined}
-          onClick={handleActivate}
-          onKeyDown={onKeyDown}
+          data-renaming={isRenaming ? "true" : undefined}
+          onClick={isRenaming ? undefined : handleClick}
+          onKeyDown={isRenaming ? undefined : onKeyDown}
           onDragStart={(e) => {
             beginFileDrag(e, entry.path);
             setIsDragging(true);
@@ -98,24 +152,41 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
           onDragEnd={() => setIsDragging(false)}
           title={entry.path}
           className={cn(
-            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+            "h-7 px-2 flex items-center gap-2 rounded-sm text-sm",
             "transition-colors duration-150",
+            !isRenaming && "cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             isActive
               ? "bg-muted text-foreground font-medium"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+              : cn(
+                  "text-muted-foreground",
+                  !isRenaming && "hover:bg-muted/50 hover:text-foreground",
+                ),
             isDragging && "opacity-50",
           )}
         >
           <FileIcon fileName={entry.name} />
-          <span className="truncate min-w-0 flex-1">{entry.name}</span>
-          {parentHint && (
-            <span
-              aria-hidden="true"
-              className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
-            >
-              {parentHint}
-            </span>
+          {isRenaming ? (
+            <SidebarInlineEdit
+              mode="rename"
+              initialValue={entry.name}
+              validate={validateRenameBasename}
+              onCommit={(value) => onCommitRename(entry.path, value)}
+              onCancel={onCancelRename}
+              className="flex-1 min-w-0"
+            />
+          ) : (
+            <>
+              <span className="truncate min-w-0 flex-1">{entry.name}</span>
+              {parentHint && (
+                <span
+                  aria-hidden="true"
+                  className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
+                >
+                  {parentHint}
+                </span>
+              )}
+            </>
           )}
         </div>
       </SidebarContextMenu>
@@ -132,9 +203,11 @@ export function RecentSection({
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
-  const { openFile } = useFileOperations();
+  const { openFile, renamePath } = useFileOperations();
 
   const [expanded, setExpanded] = useState(false);
+  // Task #40 — inline rename state, same pattern as PinnedSection.
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
   // Apply the filter before cap/overflow logic so "Show more" only fires
   // when there are additional matches hidden behind the cap.
@@ -165,6 +238,44 @@ export function RecentSection({
     }
   };
 
+  // Rename handlers (task #40). Same semantics as PinnedSection.
+  const startRename = (path: string) => setRenamingPath(path);
+  const cancelRename = () => setRenamingPath(null);
+  const commitRename = async (oldPath: string, newBasename: string) => {
+    setRenamingPath(null);
+    const oldName = pathBasename(oldPath);
+    if (newBasename === oldName) return;
+    const newPath = resolveRenamePath(oldPath, newBasename);
+    try {
+      await renamePath(oldPath, newPath);
+      toast.success(`Renamed to ${pathBasename(newPath)}`);
+    } catch (error) {
+      toast.error(`Failed to rename: ${error}`);
+    }
+  };
+
+  // Listen for the Rename context-menu event. Only activate if the path is
+  // visible in this section's recent list — the other sections' listeners
+  // gracefully no-op on non-matching paths.
+  useEffect(() => {
+    function handleRenameEvent(event: Event) {
+      const detail = (event as CustomEvent<{ filePath: string }>).detail;
+      if (!detail?.filePath) return;
+      if (!recentFiles.some((entry) => entry.path === detail.filePath)) return;
+      setRenamingPath(detail.filePath);
+    }
+    window.addEventListener(
+      SIDEBAR_ENTER_RENAME_MODE_EVENT,
+      handleRenameEvent,
+    );
+    return () => {
+      window.removeEventListener(
+        SIDEBAR_ENTER_RENAME_MODE_EVENT,
+        handleRenameEvent,
+      );
+    };
+  }, [recentFiles]);
+
   return (
     <section
       aria-label="Recent"
@@ -183,7 +294,11 @@ export function RecentSection({
                 key={entry.path}
                 entry={entry}
                 isActive={entry.path === activeFilePath}
+                isRenaming={renamingPath === entry.path}
                 onOpen={handleOpen}
+                onStartRename={startRename}
+                onCommitRename={commitRename}
+                onCancelRename={cancelRename}
               />
             ))}
           </div>

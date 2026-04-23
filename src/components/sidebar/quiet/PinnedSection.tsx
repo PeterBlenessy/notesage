@@ -1,9 +1,25 @@
-import { useState, type DragEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/sidebar/FileIcon";
-import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  SIDEBAR_ENTER_RENAME_MODE_EVENT,
+  SidebarContextMenu,
+} from "@/components/sidebar/quiet/SidebarContextMenu";
+import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
+import {
+  basename as pathBasename,
+  resolveRenamePath,
+  validateRenameBasename,
+} from "@/components/sidebar/quiet/rename-utils";
 import {
   chainKeyHandlers,
   useSidebarItemShortcuts,
@@ -70,7 +86,11 @@ interface PinnedRowProps {
   isActive: boolean;
   isDragging: boolean;
   dropEdge: DropEdge;
+  isRenaming: boolean;
   onOpen: (path: string) => void | Promise<void>;
+  onStartRename: (path: string) => void;
+  onCommitRename: (oldPath: string, newBasename: string) => void;
+  onCancelRename: () => void;
   onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragEnd: () => void;
   onDragOverRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
@@ -90,7 +110,11 @@ function PinnedRow({
   isActive,
   isDragging,
   dropEdge,
+  isRenaming,
   onOpen,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
   onDragStart,
   onDragEnd,
   onDragOverRow,
@@ -98,6 +122,7 @@ function PinnedRow({
   onDropRow,
 }: PinnedRowProps) {
   const name = basename(path);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
     filePath: path,
     kind: "file",
@@ -107,6 +132,12 @@ function PinnedRow({
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       void onOpen(path);
+    } else if (event.key === "F2") {
+      // F2 enters rename mode (task #40). Only fires when the row itself is
+      // focused — SidebarInlineEdit's own keydown handler runs inside the
+      // input once rename mode is active and won't bubble back here.
+      event.preventDefault();
+      onStartRename(path);
     }
   };
 
@@ -114,6 +145,31 @@ function PinnedRow({
   // preventDefault and chainKeyHandlers short-circuits so Enter/Space
   // handling doesn't double-fire on the same keystroke.
   const onKeyDown = chainKeyHandlers(shortcutKeyDown, handleOpenKeys);
+
+  // Restore focus to the row after a rename session ends (commit or cancel).
+  // SidebarInlineEdit steals focus on mount; when it unmounts we want the
+  // user's keyboard context back on the row they were editing.
+  const wasRenamingRef = useRef(false);
+  useEffect(() => {
+    if (wasRenamingRef.current && !isRenaming) {
+      rowRef.current?.focus();
+    }
+    wasRenamingRef.current = isRenaming;
+  }, [isRenaming]);
+
+  // Use native click event's `detail` to distinguish single vs double click.
+  // detail === 2 signals a double-click: start rename instead of opening.
+  // We intercept here rather than wire a separate onDoubleClick handler so
+  // the single-click path never fires when the user is double-clicking.
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.detail === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+      onStartRename(path);
+      return;
+    }
+    void onOpen(path);
+  };
 
   return (
     <FilePreview filePath={path}>
@@ -123,24 +179,26 @@ function PinnedRow({
         onOpen={() => void onOpen(path)}
       >
         <div
+          ref={rowRef}
           role="button"
           tabIndex={0}
-          draggable
+          draggable={!isRenaming}
           data-active={isActive ? "true" : undefined}
           data-dragging={isDragging ? "true" : undefined}
           data-drop-edge={dropEdge ?? undefined}
+          data-renaming={isRenaming ? "true" : undefined}
           aria-current={isActive ? "page" : undefined}
           title={path}
-          onClick={() => void onOpen(path)}
-          onKeyDown={onKeyDown}
+          onClick={isRenaming ? undefined : handleClick}
+          onKeyDown={isRenaming ? undefined : onKeyDown}
           onDragStart={(e) => onDragStart(e, index)}
           onDragEnd={onDragEnd}
           onDragOver={(e) => onDragOverRow(e, index)}
           onDragLeave={(e) => onDragLeaveRow(e, index)}
           onDrop={(e) => onDropRow(e, index)}
           className={cn(
-            "relative h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm transition-colors duration-150",
-            "hover:bg-muted/50",
+            "relative h-7 px-2 flex items-center gap-2 rounded-sm text-sm transition-colors duration-150",
+            !isRenaming && "hover:bg-muted/50 cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
             isActive && "bg-muted",
             isDragging && "opacity-50",
@@ -159,7 +217,18 @@ function PinnedRow({
             />
           )}
           <FileIcon fileName={name} />
-          <span className="truncate min-w-0">{name}</span>
+          {isRenaming ? (
+            <SidebarInlineEdit
+              mode="rename"
+              initialValue={name}
+              validate={validateRenameBasename}
+              onCommit={(value) => onCommitRename(path, value)}
+              onCancel={onCancelRename}
+              className="flex-1 min-w-0"
+            />
+          ) : (
+            <span className="truncate min-w-0">{name}</span>
+          )}
         </div>
       </SidebarContextMenu>
     </FilePreview>
@@ -174,7 +243,12 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab?.filePath ?? null;
   });
-  const { openFile } = useFileOperations();
+  const { openFile, renamePath } = useFileOperations();
+
+  // Task #40 — inline rename state. Only one row at a time can be in rename
+  // mode; when `renamingPath` matches a row's path it renders its inline
+  // editor. Null = no row in rename mode.
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
   // Apply the case-insensitive filter at render time — transient UI state,
   // no re-fetch. Empty filter leaves the list untouched.
@@ -211,6 +285,57 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
       toast.error(`Failed to open file: ${error}`);
     }
   };
+
+  // -----------------------------------------------------------------------
+  // Rename handlers (task #40).
+  // -----------------------------------------------------------------------
+
+  const startRename = (path: string) => {
+    setRenamingPath(path);
+  };
+
+  const cancelRename = () => {
+    setRenamingPath(null);
+  };
+
+  const commitRename = async (oldPath: string, newBasename: string) => {
+    setRenamingPath(null);
+    const oldName = pathBasename(oldPath);
+    if (newBasename === oldName) {
+      // No-op commit — user pressed Enter without changing anything.
+      return;
+    }
+    const newPath = resolveRenamePath(oldPath, newBasename);
+    try {
+      await renamePath(oldPath, newPath);
+      toast.success(`Renamed to ${pathBasename(newPath)}`);
+    } catch (error) {
+      toast.error(`Failed to rename: ${error}`);
+    }
+  };
+
+  // Listen for the Rename context-menu event. Only activate if the path is
+  // visible in this section — other sections' listeners will see the same
+  // event but their paths won't match, so activation is effectively
+  // deduplicated at the path-membership level.
+  useEffect(() => {
+    function handleRenameEvent(event: Event) {
+      const detail = (event as CustomEvent<{ filePath: string }>).detail;
+      if (!detail?.filePath) return;
+      if (!pinnedFiles.includes(detail.filePath)) return;
+      setRenamingPath(detail.filePath);
+    }
+    window.addEventListener(
+      SIDEBAR_ENTER_RENAME_MODE_EVENT,
+      handleRenameEvent,
+    );
+    return () => {
+      window.removeEventListener(
+        SIDEBAR_ENTER_RENAME_MODE_EVENT,
+        handleRenameEvent,
+      );
+    };
+  }, [pinnedFiles]);
 
   // -----------------------------------------------------------------------
   // Drag source — pinned rows being reordered within the list.
@@ -400,6 +525,7 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
               ? activeDrop.edge
               : null;
           const isDragging = draggingIndex === originalIndex;
+          const isRenaming = renamingPath === path;
           return (
             <li key={path}>
               <PinnedRow
@@ -408,7 +534,11 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
                 isActive={activeFilePath === path}
                 isDragging={isDragging}
                 dropEdge={dropEdge}
+                isRenaming={isRenaming}
                 onOpen={handleOpen}
+                onStartRename={startRename}
+                onCommitRename={commitRename}
+                onCancelRename={cancelRename}
                 onDragStart={handleRowDragStart}
                 onDragEnd={handleRowDragEnd}
                 onDragOverRow={handleRowDragOver}

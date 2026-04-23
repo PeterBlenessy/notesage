@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import {
   renderWithProviders,
   screen,
@@ -12,6 +13,27 @@ import { ProjectsSection, countMarkdownFiles } from '../ProjectsSection';
 import { useWorkspaceStore, type WorkspaceProject } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 import type { FileEntry } from '@/lib/tauri';
+
+// ----------------------------------------------------------------------------
+// useFileOperations mock — rename wiring (#40) asserts against renamePath.
+// Kept minimal: ProjectsSection only calls `renamePath` from this hook today.
+// ----------------------------------------------------------------------------
+
+const mockRenamePath = vi.fn();
+
+vi.mock('@/hooks/useFileOperations', () => ({
+  useFileOperations: vi.fn(() => ({
+    openFile: vi.fn(),
+    openFileAtTag: vi.fn(),
+    openFileAtText: vi.fn(),
+    saveFile: vi.fn(),
+    createFile: vi.fn(),
+    createFolder: vi.fn(),
+    renamePath: mockRenamePath,
+    deletePath: vi.fn(),
+    refreshFileTree: vi.fn(),
+  })),
+}));
 
 // ----------------------------------------------------------------------------
 // Test helpers
@@ -52,6 +74,8 @@ function resetStores(): void {
 
 beforeEach(() => {
   resetStores();
+  mockRenamePath.mockReset();
+  mockRenamePath.mockResolvedValue(true);
 });
 
 // ----------------------------------------------------------------------------
@@ -549,5 +573,178 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
       .filter((el) => el.getAttribute('aria-level') === '2')
       .map((el) => el.textContent?.trim());
     expect(names).toEqual(['alpha-dir', 'Beta', 'alpha.md', 'zeta.md']);
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Task #40 — inline rename for child file rows
+// ----------------------------------------------------------------------------
+
+describe('ProjectsSection — inline rename (#40)', () => {
+  const project: WorkspaceProject = {
+    path: '/Users/me/Notesage/alpha',
+    fileTree: [
+      makeFile('note.md', '/Users/me/Notesage/alpha/note.md'),
+      makeDir('docs', '/Users/me/Notesage/alpha/docs', [
+        makeFile('intro.md', '/Users/me/Notesage/alpha/docs/intro.md'),
+      ]),
+    ],
+  };
+
+  it('F2 on an expanded child file row enters rename mode', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' }); // expand
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+    noteRow.focus();
+    fireEvent.keyDown(noteRow, { key: 'F2' });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('note.md');
+  });
+
+  it('F2 on a project row does NOT enter rename mode', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    projectRow.focus();
+    fireEvent.keyDown(projectRow, { key: 'F2' });
+
+    // No rename input appears — project roots aren't renameable in this task.
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('F2 on a folder child row does NOT enter rename mode', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder docs/i,
+    }) as HTMLElement;
+    folderRow.focus();
+    fireEvent.keyDown(folderRow, { key: 'F2' });
+
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('double-click on a child file row enters rename mode (and does not open)', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+    fireEvent.click(noteRow, { detail: 2 });
+
+    const input = await screen.findByLabelText(/rename/i);
+    expect(input).toBeTruthy();
+    // Should not open the file (no new tab created).
+    expect(useEditorStore.getState().tabs).toHaveLength(0);
+  });
+
+  it('commits the rename by calling renamePath', async () => {
+    const user = userEvent.setup();
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+    noteRow.focus();
+    fireEvent.keyDown(noteRow, { key: 'F2' });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, 'renamed.md{Enter}');
+
+    await waitFor(() => {
+      expect(mockRenamePath).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha/note.md',
+        '/Users/me/Notesage/alpha/renamed.md',
+      );
+    });
+  });
+
+  it('Escape cancels rename on a child file row', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+    noteRow.focus();
+    fireEvent.keyDown(noteRow, { key: 'F2' });
+
+    const input = await screen.findByLabelText(/rename/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    });
+    expect(mockRenamePath).not.toHaveBeenCalled();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT on a visible child file path enters rename mode', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Expand the project so note.md is visible.
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/alpha/note.md' },
+      }),
+    );
+
+    const input = await screen.findByLabelText(/rename/i);
+    expect(input).toBeTruthy();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT on a NON-visible path is ignored', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+    // Project is NOT expanded → note.md is not a visible row yet.
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/alpha/note.md' },
+      }),
+    );
+
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
   });
 });

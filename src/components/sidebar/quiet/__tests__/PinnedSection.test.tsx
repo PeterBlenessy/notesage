@@ -13,10 +13,12 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 
 // ---------------------------------------------------------------------------
-// Mock useFileOperations — PinnedSection calls openFile on item click
+// Mock useFileOperations — PinnedSection calls openFile on item click and
+// renamePath on rename commit (#40).
 // ---------------------------------------------------------------------------
 
 const mockOpenFile = vi.fn();
+const mockRenamePath = vi.fn();
 
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: vi.fn(() => ({
@@ -26,7 +28,7 @@ vi.mock('@/hooks/useFileOperations', () => ({
     saveFile: vi.fn(),
     createFile: vi.fn(),
     createFolder: vi.fn(),
-    renamePath: vi.fn(),
+    renamePath: mockRenamePath,
     deletePath: vi.fn(),
     refreshFileTree: vi.fn(),
   })),
@@ -72,6 +74,8 @@ describe('PinnedSection', () => {
     resetStores();
     mockOpenFile.mockReset();
     mockOpenFile.mockResolvedValue(undefined);
+    mockRenamePath.mockReset();
+    mockRenamePath.mockResolvedValue(true);
     mockClipboardWrite.mockClear();
     installClipboardMock();
   });
@@ -210,5 +214,152 @@ describe('PinnedSection', () => {
     renderWithProviders(<PinnedSection filter="" />);
     expect(screen.getByText('alpha.md')).toBeTruthy();
     expect(screen.getByText('beta.md')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Task #40 — inline rename (F2, double-click, context-menu event)
+  // -------------------------------------------------------------------------
+
+  describe('inline rename (#40)', () => {
+    async function renderWithRow(path: string) {
+      useWorkspaceStore.setState({ pinnedFiles: [path] });
+      renderWithProviders(<PinnedSection />);
+      const name = path.split('/').pop() ?? path;
+      const row = screen
+        .getByText(name)
+        .closest('[role="button"]') as HTMLElement;
+      expect(row).toBeTruthy();
+      return { row, name };
+    }
+
+    it('enters rename mode on F2 when the row is focused', async () => {
+      const { row, name } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      expect(input.value).toBe(name);
+      // The row marks itself as renaming via data attribute.
+      expect(row.getAttribute('data-renaming')).toBe('true');
+    });
+
+    it('enters rename mode on double-click and does NOT open the file', async () => {
+      const { row } = await renderWithRow('/notes/alpha.md');
+      // `click({ detail: 2 })` emits a DOM click with detail === 2 — the
+      // row inspects `event.detail` to distinguish single vs double click.
+      fireEvent.click(row, { detail: 2 });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      expect(input).toBeTruthy();
+      expect(mockOpenFile).not.toHaveBeenCalled();
+    });
+
+    it('commits the rename by calling renamePath with the derived new path', async () => {
+      const user = userEvent.setup();
+      const { row } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      await user.clear(input);
+      await user.type(input, 'renamed.md{Enter}');
+
+      await waitFor(() => {
+        expect(mockRenamePath).toHaveBeenCalledWith(
+          '/notes/alpha.md',
+          '/notes/renamed.md',
+        );
+      });
+    });
+
+    it('preserves the original extension when the user omits one', async () => {
+      const user = userEvent.setup();
+      const { row } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      await user.clear(input);
+      await user.type(input, 'newname{Enter}');
+
+      await waitFor(() => {
+        expect(mockRenamePath).toHaveBeenCalledWith(
+          '/notes/alpha.md',
+          '/notes/newname.md',
+        );
+      });
+    });
+
+    it('Escape cancels — no renamePath call', async () => {
+      const { row } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      fireEvent.keyDown(input, { key: 'Escape' });
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText(/rename/i)).toBeNull();
+      });
+      expect(mockRenamePath).not.toHaveBeenCalled();
+    });
+
+    it('is entered when the SIDEBAR_ENTER_RENAME_MODE_EVENT fires with a matching path', async () => {
+      const { row } = await renderWithRow('/notes/alpha.md');
+      expect(row.getAttribute('data-renaming')).toBeNull();
+
+      window.dispatchEvent(
+        new CustomEvent('sidebar:enter-rename-mode', {
+          detail: { filePath: '/notes/alpha.md' },
+        }),
+      );
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      expect(input).toBeTruthy();
+    });
+
+    it('ignores SIDEBAR_ENTER_RENAME_MODE_EVENT when the path is not in this section', async () => {
+      await renderWithRow('/notes/alpha.md');
+
+      window.dispatchEvent(
+        new CustomEvent('sidebar:enter-rename-mode', {
+          detail: { filePath: '/somewhere/else.md' },
+        }),
+      );
+
+      // No input rendered because this section doesn't own the path.
+      expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    });
+
+    it('validation rejects a slash in the input (input stays open, no rename)', async () => {
+      const user = userEvent.setup();
+      const { row } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      await user.clear(input);
+      await user.type(input, 'bad/name{Enter}');
+
+      // Validation error rendered, renamePath never called, input stays.
+      expect(screen.getByRole('alert').textContent).toMatch(/slash/i);
+      expect(mockRenamePath).not.toHaveBeenCalled();
+      expect(input).toBeTruthy();
+    });
+
+    it('committing with no change is a no-op (does not call renamePath)', async () => {
+      const { row } = await renderWithRow('/notes/alpha.md');
+      row.focus();
+      fireEvent.keyDown(row, { key: 'F2' });
+
+      const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+      // Enter with the original value.
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText(/rename/i)).toBeNull();
+      });
+      expect(mockRenamePath).not.toHaveBeenCalled();
+    });
   });
 });
