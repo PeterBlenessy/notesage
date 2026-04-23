@@ -8,7 +8,7 @@ import {
   screen,
   registerDefaultHandlers,
 } from '@/test/component-harness';
-import { Layout, type LayoutProps } from '@/components/Layout';
+import { Layout, shouldRenderLegacyChrome, type LayoutProps } from '@/components/Layout';
 import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
@@ -160,6 +160,16 @@ describe('Layout uiPreview branching', () => {
     expect(screen.queryByTestId('editor')).toBeNull();
   });
 
+  // Task #74: Hide legacy components under preview flag.
+  it('does NOT render TabBar / ChatPanel / ActivityStrip / ActivityRail when uiPreview is "quiet-composer"', () => {
+    useSettingsStore.setState({ uiPreview: 'quiet-composer' });
+    renderWithProviders(<Layout {...defaultProps({ stripExpanded: true })} />);
+    expect(screen.queryByTestId('tabbar')).toBeNull();
+    expect(screen.queryByTestId('chat-panel')).toBeNull();
+    expect(screen.queryByTestId('activity-panel')).toBeNull();
+    expect(screen.queryByTestId('activity-rail')).toBeNull();
+  });
+
   it('swaps between layouts when the flag flips', () => {
     useSettingsStore.setState({ uiPreview: 'legacy' });
     const { rerender } = renderWithProviders(<Layout {...defaultProps()} />);
@@ -174,5 +184,27 @@ describe('Layout uiPreview branching', () => {
     rerender(<Layout {...defaultProps()} />);
     expect(screen.getByTestId('editor')).toBeTruthy();
     expect(document.querySelector('[data-quiet-layout-placeholder]')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldRenderLegacyChrome — pure helper (task #74)
+// ---------------------------------------------------------------------------
+
+describe('shouldRenderLegacyChrome (task #74 preview gate)', () => {
+  it('returns true for the default "legacy" preview value', () => {
+    expect(shouldRenderLegacyChrome('legacy')).toBe(true);
+  });
+
+  it('returns false for "quiet-composer" so TabBar / ChatPanel / ActivityStrip / ChatFooter do not mount', () => {
+    expect(shouldRenderLegacyChrome('quiet-composer')).toBe(false);
+  });
+
+  it('returns true for any unrecognised value (fail-open to legacy)', () => {
+    // Forwards-compatibility: if a future preview key leaks through
+    // without a migration, the user should keep seeing the legacy chrome
+    // rather than a broken Quiet Composer placeholder.
+    expect(shouldRenderLegacyChrome('something-else')).toBe(true);
+    expect(shouldRenderLegacyChrome('')).toBe(true);
   });
 });
