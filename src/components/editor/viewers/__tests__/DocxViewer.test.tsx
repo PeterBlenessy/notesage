@@ -109,14 +109,25 @@ describe("DocxViewer", () => {
     });
   });
 
-  it("renders toolbar with filename", () => {
+  it("renders floating ViewerToolbarPill with zoom controls", () => {
     mockGetBinaryData.mockReturnValue(new Uint8Array([1, 2, 3]));
 
     render(
       <DocxViewer filePath="/test/doc.docx" fileName="doc.docx" />
     );
 
-    expect(screen.getByText("doc.docx")).toBeTruthy();
+    // Pill is identifiable by its role=toolbar with the shared aria-label.
+    const toolbar = screen.getByRole("toolbar", { name: "Viewer toolbar" });
+    expect(toolbar).toBeTruthy();
+    expect(toolbar.getAttribute("data-viewer-id")).toBe("docx");
+    // Zoom in/out buttons live inside the pill.
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Zoom out" })).toBeTruthy();
+    // Fit controls.
+    expect(screen.getByRole("button", { name: "Fit to width" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Fit to page" })).toBeTruthy();
+    // Search toggle.
+    expect(screen.getByRole("button", { name: "Find" })).toBeTruthy();
   });
 
   it("renders Convert to Markdown button when callback provided", () => {
@@ -131,7 +142,7 @@ describe("DocxViewer", () => {
       />
     );
 
-    expect(screen.getByText("Convert to Markdown")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Convert to Markdown" })).toBeTruthy();
   });
 
   it("calls onConvertToMarkdown with fileName when clicked", async () => {
@@ -146,7 +157,7 @@ describe("DocxViewer", () => {
       />
     );
 
-    const button = screen.getByText("Convert to Markdown");
+    const button = screen.getByRole("button", { name: "Convert to Markdown" });
     button.click();
 
     expect(onConvert).toHaveBeenCalledWith("doc.docx");
@@ -159,6 +170,6 @@ describe("DocxViewer", () => {
       <DocxViewer filePath="/test/doc.docx" fileName="doc.docx" />
     );
 
-    expect(screen.queryByText("Convert to Markdown")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Convert to Markdown" })).toBeNull();
   });
 });
