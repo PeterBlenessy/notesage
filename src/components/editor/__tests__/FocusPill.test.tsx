@@ -24,12 +24,15 @@ describe("FocusPill (#55)", () => {
   });
 
   it("renders the hint text and exit button when active", () => {
-    renderWithProviders(<FocusPill active={true} onExit={() => {}} />);
+    const { container } = renderWithProviders(
+      <FocusPill active={true} onExit={() => {}} />,
+    );
 
-    const root = screen.getByRole("status");
-    expect(root.textContent).toContain("Focus");
-    expect(root.textContent).toContain("⌘.");
-    expect(root.textContent).toContain("to exit");
+    const root = container.querySelector<HTMLElement>('[data-focus-pill="true"]');
+    expect(root).not.toBeNull();
+    expect(root!.textContent).toContain("Focus");
+    expect(root!.textContent).toContain("⌘.");
+    expect(root!.textContent).toContain("to exit");
 
     expect(
       screen.getByRole("button", { name: "Exit focus mode" }),
@@ -63,19 +66,53 @@ describe("FocusPill (#55)", () => {
     expect(button.getAttribute("aria-label")).toBe("Exit focus mode");
   });
 
-  it("sets role=\"status\" and aria-live=\"polite\" on the root", () => {
-    renderWithProviders(<FocusPill active={true} onExit={() => {}} />);
+  it("does not add a duplicate aria-live region (hook owns the announcement)", () => {
+    // The hint is pure visual chrome — `useFocusMode` already announces the
+    // enter / exit transition via its own short-lived aria-live region using
+    // the canonical PRD wording. Adding role=\"status\" here would cause
+    // double-announcements.
+    const { container } = renderWithProviders(
+      <FocusPill active={true} onExit={() => {}} />,
+    );
 
-    const root = screen.getByRole("status");
-    expect(root.getAttribute("aria-live")).toBe("polite");
+    const root = container.querySelector<HTMLElement>('[data-focus-pill="true"]');
+    expect(root).not.toBeNull();
+    expect(root!.getAttribute("role")).toBeNull();
+    expect(root!.getAttribute("aria-live")).toBeNull();
+  });
+
+  it("marks the hint span as aria-hidden but keeps the exit button accessible", () => {
+    // Per the 2026-04-21 UI-refresh PRD #84: \"FocusPill is aria-hidden\".
+    // We hide the decorative hint text from AT (the hook's announcer already
+    // carries the 'Press Command period to exit' message) but keep the exit
+    // button in the accessibility tree so keyboard/AT users can still click
+    // it beyond the global ⌘. shortcut.
+    const { container } = renderWithProviders(
+      <FocusPill active={true} onExit={() => {}} />,
+    );
+
+    const hint = container.querySelector<HTMLElement>(
+      '[data-focus-pill="true"] > span[aria-hidden="true"]',
+    );
+    expect(hint).not.toBeNull();
+    expect(hint!.textContent).toContain("Focus");
+
+    // Exit button remains reachable via role="button" + aria-label.
+    const button = screen.getByRole("button", { name: "Exit focus mode" });
+    expect(button.getAttribute("aria-hidden")).toBeNull();
   });
 
   it("omits animation classes when prefers-reduced-motion: reduce matches", () => {
     useReducedMotionMock.mockReturnValue(true);
-    renderWithProviders(<FocusPill active={true} onExit={() => {}} />);
+    const { container } = renderWithProviders(
+      <FocusPill active={true} onExit={() => {}} />,
+    );
 
-    const root = screen.getByRole("status");
-    const className = root.className ?? "";
+    const root = container.querySelector<HTMLElement>(
+      '[data-focus-pill="true"]',
+    );
+    expect(root).not.toBeNull();
+    const className = root!.className ?? "";
     expect(className).not.toContain("animate-in");
     expect(className).not.toContain("fade-in");
     expect(className).not.toContain("slide-in-from-top");
@@ -83,9 +120,14 @@ describe("FocusPill (#55)", () => {
   });
 
   it("carries the data-focus-pill attribute on the root", () => {
-    renderWithProviders(<FocusPill active={true} onExit={() => {}} />);
+    const { container } = renderWithProviders(
+      <FocusPill active={true} onExit={() => {}} />,
+    );
 
-    const root = screen.getByRole("status");
-    expect(root.getAttribute("data-focus-pill")).toBe("true");
+    const root = container.querySelector<HTMLElement>(
+      '[data-focus-pill="true"]',
+    );
+    expect(root).not.toBeNull();
+    expect(root!.getAttribute("data-focus-pill")).toBe("true");
   });
 });
