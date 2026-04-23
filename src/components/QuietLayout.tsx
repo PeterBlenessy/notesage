@@ -23,11 +23,18 @@ import { useQuietChrome } from "@/lib/quiet-chrome";
  * QuietLayout — Quiet Composer shell (PRD `2026-04-21-ui-refresh`, Phase 1).
  *
  * Mounted only when `settings.uiPreview === "quiet-composer"`. Renders a
- * three-zone grid under a TitleBar:
+ * two-column grid under a TitleBar:
  *
- *   - QuietSidebar (#30)        → left zone (240px)
- *   - DocHead + Editor (#48,#101) → centre document area
- *   - Reserved (placeholder)    → right zone (240px) — chat moves here in #102
+ *   - QuietSidebar (#30)          → left column (240px)
+ *   - DocHead + Editor (#48,#101) → centre document area (1fr)
+ *
+ * There is no separate right column for chat (#102). The chat surface
+ * in Quiet Composer IS the `<FloatingCommandBar />` mounted below the
+ * grid — in floating mode it portal-mounts over the workspace, in
+ * pinned mode it docks as a fixed-position right-edge panel and the
+ * document area reserves matching padding-right via the
+ * `--cmd-bar-pinned-width` CSS variable. Re-introducing a classic
+ * `<ChatPanel />` here would duplicate the composer surface.
  *
  * The centre column hosts the same `<Editor />` mount tree that
  * `Layout.tsx → EditorArea` uses on the legacy path; `editor-store` is
@@ -281,7 +288,7 @@ export function QuietLayout(props: QuietLayoutProps) {
         data-quiet-layout-document-area
         className="flex-1 grid min-h-0 gap-2 p-2"
         style={{
-          gridTemplateColumns: "240px 1fr 240px",
+          gridTemplateColumns: "240px 1fr",
           ...documentAreaStyle,
         }}
       >
@@ -323,7 +330,6 @@ export function QuietLayout(props: QuietLayoutProps) {
             </ErrorBoundary>
           </div>
         </div>
-        <ZonePlaceholder label="Reserved (placeholder)" />
       </div>
 
       {/*
@@ -359,18 +365,6 @@ export function QuietLayout(props: QuietLayoutProps) {
         `⌘.` is owned by `useFocusMode` above.
        */}
       <FocusPill active={focus.active} onExit={focus.exit} />
-    </div>
-  );
-}
-
-interface ZonePlaceholderProps {
-  label: string;
-}
-
-function ZonePlaceholder({ label }: ZonePlaceholderProps) {
-  return (
-    <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-muted/30 min-h-0">
-      <span className="text-muted-foreground text-sm">{label}</span>
     </div>
   );
 }

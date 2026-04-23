@@ -155,11 +155,12 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByTestId('titlebar')).toBeTruthy();
   });
 
-  it('renders the QuietSidebar, real Editor mount, and reserved zone', () => {
+  it('renders the QuietSidebar and real Editor mount without a right column', () => {
     const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
     // Sidebar is the real QuietSidebar (#30); centre column hosts the real
-    // Editor (#101) instead of the old "Document area (placeholder)" stub;
-    // right zone remains a reserved placeholder until #102.
+    // Editor (#101) instead of the old "Document area (placeholder)" stub.
+    // The right column is gone (#102) — FloatingCommandBar IS the chat
+    // surface in Quiet Composer, so a third zone would duplicate it.
     expect(screen.getByRole('navigation', { name: /workspace sidebar/i })).toBeTruthy();
     expect(screen.getByTestId('editor-stub')).toBeTruthy();
     // Old placeholder text and its `data-doc-area-placeholder` hook must be gone.
@@ -167,7 +168,18 @@ describe('QuietLayout (placeholder)', () => {
     expect(container.querySelector('[data-doc-area-placeholder]')).toBeNull();
     // The new mount carries `data-doc-area` so the focus-mode CSS rule applies.
     expect(container.querySelector('[data-doc-area]')).toBeTruthy();
-    expect(screen.getByText(/Reserved \(placeholder\)/i)).toBeTruthy();
+    // The pre-#102 reserved placeholder must not render.
+    expect(screen.queryByText(/Reserved \(placeholder\)/i)).toBeNull();
+  });
+
+  it('uses a two-column grid (sidebar + editor) in QuietLayout (#102)', () => {
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const docArea = container.querySelector(
+      '[data-quiet-layout-document-area]',
+    ) as HTMLElement;
+    expect(docArea).toBeTruthy();
+    // Two tracks: 240px sidebar + 1fr centre. No third 240px column.
+    expect(docArea.style.gridTemplateColumns).toBe('240px 1fr');
   });
 
   it('mounts the FloatingCommandBar', () => {
