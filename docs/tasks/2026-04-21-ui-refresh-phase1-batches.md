@@ -2,10 +2,10 @@
 
 Pointer document for continuing `docs/tasks/2026-04-21-ui-refresh-phase1-tasks.md` across sessions.
 
-## Status as of 2026-04-22
+## Status as of 2026-04-23
 
-- **Tasks done (29/100)**: #1-#29 except #22 in numerical order — that is, all of M1.1 Foundation (8/8) and all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser. Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings.
-- **Tests passing**: 3379/3379 frontend, 657/657 Rust, typecheck clean.
+- **Tasks done (33/100)**: #1-#29 except #22, plus Batch G1 (#30, #39, #48, #49). All of M1.1 Foundation (8/8), all of M1.2 Composer + Orb (21/21), plus #22 backend skill parser and the four G1 foundations of M1.3 (shell + primitive + breadcrumb + toolbar pill). Verify against the ✅ markers in `2026-04-21-ui-refresh-phase1-tasks.md` headings.
+- **Tests passing**: 3432/3432 frontend, typecheck clean. (Rust unchanged this batch.)
 - **Workflow**: manual worktrees + parent-commits — see `.claude/skills/implement-tasks/SKILL.md` (validated 2026-04-22). Ignore `Agent isolation: "worktree"` for this codebase.
 - **Markdown formatter quirk**: a hidden formatter strips ✅ markers and `\|` table escapes on every Edit/sed of `*.md` files. Use `git apply --cached` for ✅ marks (writes directly to git index).
 

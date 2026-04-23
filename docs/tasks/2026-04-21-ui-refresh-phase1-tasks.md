@@ -333,7 +333,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 
 ## M1.3 Sidebar + Chrome (33 tasks)
 
-### #30 — Flat-list `Sidebar` component
+### #30 — Flat-list `Sidebar` component ✅
 
 | Field | Value |
 | --- | --- |
@@ -423,7 +423,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/TreeOverlay.tsx` |
 
-### #39 — `SidebarInlineEdit` primitive
+### #39 — `SidebarInlineEdit` primitive ✅
 
 | Field | Value |
 | --- | --- |
@@ -513,7 +513,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/FilePreview.tsx` |
 
-### #48 — `DocHead` breadcrumb
+### #48 — `DocHead` breadcrumb ✅
 
 | Field | Value |
 | --- | --- |
@@ -523,7 +523,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #5 |
 | Files | `src/components/editor/DocHead.tsx` |
 
-### #49 — Toolbar floating pill refactor
+### #49 — Toolbar floating pill refactor ✅
 
 | Field | Value |
 | --- | --- |
