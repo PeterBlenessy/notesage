@@ -1,5 +1,5 @@
 export type FileType = "markdown" | "pdf" | "docx" | "epub" | "pptx" | "image" | "other";
-export type ViewMode = "wysiwyg" | "source" | "html-preview";
+export type ViewMode = "wysiwyg" | "source";
 
 const EXTENSION_MAP: Record<string, FileType> = {
   // Markdown
