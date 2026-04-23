@@ -119,11 +119,13 @@ export function EditorSettings() {
           }
         />
         <SettingsRow
-          label="Review External Changes"
+          label="Review external diff"
           description={
             <>
-              Show inline diff when files change on disk. When off, changes are
-              auto-accepted.{' '}
+              When on, files modified on disk show inline diff decorations
+              and a sticky Accept / Reject toast. When off, changes
+              auto-reload silently with a 3-second info toast — applies to
+              both clean and dirty tabs (in-memory edits are overwritten).{' '}
               <span className="text-muted-foreground/60">
                 Beta — may not preserve formatting perfectly.
               </span>

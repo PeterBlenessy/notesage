@@ -901,7 +901,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
                       <div className="flex items-center justify-between gap-3">
                         <Label htmlFor="external-diff-review" className="text-sm font-medium cursor-pointer">
-                          Review External Changes
+                          Review external diff
                         </Label>
                         <Switch
                           id="external-diff-review"
@@ -910,7 +910,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                         />
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Show inline diff when files change on disk. When off, changes are auto-accepted.
+                        When on, files modified on disk show inline diff decorations and a sticky Accept / Reject toast. When off, changes auto-reload silently with a 3-second info toast — applies to both clean and dirty tabs (in-memory edits are overwritten).
                         <span className="text-muted-foreground/60"> Beta — may not preserve formatting perfectly.</span>
                       </p>
                     </div>
