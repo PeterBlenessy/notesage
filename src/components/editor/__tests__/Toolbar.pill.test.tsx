@@ -95,21 +95,22 @@ describe('Toolbar — variants', () => {
       expect(classes).not.toContain('border-b');
     });
 
-    it('renders the reduced 8-button set in pill variant (#110)', () => {
+    it('renders the reduced 8-button set + overflow trigger in pill variant (#110, #112)', () => {
       const editor = createMockEditor() as unknown as Editor;
       const { container } = renderWithProviders(
         <Toolbar editor={editor} variant="pill" />,
       );
 
-      // Pill variant renders exactly: Heading | Quote | Task list | sep |
-      // TextColor | Highlight | sep | Callout | Table | Typography. With the
-      // popover/picker sub-components mocked to `null`, only the two raw
-      // ToolbarButton entries (Quote, Task List) survive as `<button>`
-      // elements; HeadingPicker remains as a stub div. The rest collapse
-      // into nothing under the test mocks. Assert the count so the test
-      // fails if a button is added or removed.
+      // Pill variant renders: Heading | Quote | Task list | sep |
+      // TextColor | Highlight | sep | Callout | Table | Typography | sep |
+      // ••• overflow. With the popover/picker sub-components mocked to
+      // `null`, only the two raw ToolbarButton entries (Quote, Task List)
+      // and the overflow DropdownMenuTrigger button (#112) survive as
+      // `<button>` elements; HeadingPicker remains as a stub div. The rest
+      // collapse into nothing under the test mocks. Assert the count so the
+      // test fails if a button is added or removed.
       const buttons = container.querySelectorAll('button');
-      expect(buttons.length).toBe(2);
+      expect(buttons.length).toBe(3);
     });
 
     it('does NOT render legacy buttons (Bold/Italic/Underline/etc.) in pill variant', () => {
@@ -118,11 +119,24 @@ describe('Toolbar — variants', () => {
         <Toolbar editor={editor} variant="pill" />,
       );
       // The reduced set is much smaller than the inline variant. Inline
-      // renders ~25 buttons; pill renders 2 raw buttons + composed pickers.
-      // Use button count as the safety net — anything > 5 means legacy
-      // buttons leaked into the pill branch.
+      // renders ~25 buttons; pill renders 2 raw buttons + composed pickers
+      // + 1 overflow trigger (#112). Use button count as the safety net —
+      // anything > 5 means legacy buttons leaked into the pill branch.
       const buttons = container.querySelectorAll('button');
-      expect(buttons.length).toBeLessThanOrEqual(2);
+      expect(buttons.length).toBeLessThanOrEqual(3);
+    });
+
+    it('renders the ••• overflow trigger in pill variant (#112)', () => {
+      const editor = createMockEditor() as unknown as Editor;
+      const { container } = renderWithProviders(
+        <Toolbar editor={editor} variant="pill" />,
+      );
+
+      // The overflow DropdownMenuTrigger carries title="More" — assert by
+      // attribute so we don't couple to icon class names. The icon itself
+      // is `MoreHorizontal` from lucide.
+      const overflowTrigger = container.querySelector('button[title="More"]');
+      expect(overflowTrigger).toBeTruthy();
     });
 
     it('inline variant still renders the full button set (legacy parity)', () => {

@@ -27,10 +27,18 @@ import {
   BarChart3,
   Subscript,
   Superscript,
+  MoreHorizontal,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { ViewMode } from "@/lib/file-utils";
 import {
@@ -193,6 +201,106 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
               {/* Typography */}
               <TypographyPopover editor={editor} />
+
+              <ToolbarSeparator />
+
+              {/* Overflow menu — power-user actions kept off the pill (#112).
+                  Fixed order, no auto-sort (see followup F13): muscle memory
+                  matters more than usage frequency for a 7-item list. */}
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground"
+                        title="More"
+                      >
+                        <MoreHorizontal className="size-4" strokeWidth={1.5} />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    More
+                  </TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("strike") && "bg-accent",
+                    )}
+                    onClick={() => editor.chain().focus().toggleStrike().run()}
+                  >
+                    <Strikethrough className="size-4 shrink-0" strokeWidth={1.5} />
+                    Strikethrough
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("code") && "bg-accent",
+                    )}
+                    onClick={() => editor.chain().focus().toggleCode().run()}
+                  >
+                    <Code className="size-4 shrink-0" strokeWidth={1.5} />
+                    Inline code
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => {
+                      // The toolbar's polished LinkButton is a Popover — it
+                      // can't be nested inside DropdownMenuItem without
+                      // fighting Radix focus management. Fall back to a
+                      // native prompt for the overflow path; selection-based
+                      // link insertion still goes through the BubbleMenu.
+                      const current = editor.getAttributes("link").href ?? "";
+                      const href = window.prompt("Link URL", current);
+                      if (href === null) return;
+                      const trimmed = href.trim();
+                      if (trimmed === "") {
+                        editor.chain().focus().unsetLink().run();
+                        return;
+                      }
+                      editor.chain().focus().setLink({ href: trimmed }).run();
+                    }}
+                  >
+                    <LinkIcon className="size-4 shrink-0" strokeWidth={1.5} />
+                    Link
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => onImageInsert?.()}
+                  >
+                    <ImageIcon className="size-4 shrink-0" strokeWidth={1.5} />
+                    Image
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => editor.chain().focus().insertDrawing().run()}
+                  >
+                    <Pencil className="size-4 shrink-0" strokeWidth={1.5} />
+                    Drawing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("codeBlock") && "bg-accent",
+                    )}
+                    onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                  >
+                    <CodeSquare className="size-4 shrink-0" strokeWidth={1.5} />
+                    Code block
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                  >
+                    <Minus className="size-4 shrink-0" strokeWidth={1.5} />
+                    Horizontal rule
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           )}
         </div>
