@@ -71,9 +71,66 @@ vi.mock('@/components/cmd/CommandBarStream', () => ({
 // Stub all 6 mode pickers (#14–#19). They each have their own dedicated test
 // file. The FloatingCommandBar test verifies that the dispatcher mounts the
 // right picker for the active prefix, not the picker's internals.
-vi.mock('@/components/cmd/modes/SkillMode', () => ({
-  default: () => <div data-testid="skill-mode-stub" />,
-}));
+//
+// SkillMode also forwards `listboxId` + `onActiveOptionChange` so the ARIA
+// wiring tests (#78) can verify the combobox attributes update as the
+// picker reports active-option info upward.
+vi.mock('@/components/cmd/modes/SkillMode', async () => {
+  const React = await import('react');
+  return {
+    default: ({
+      listboxId,
+      onActiveOptionChange,
+    }: {
+      filter: string;
+      onPick: (name: string) => void;
+      listboxId?: string;
+      onActiveOptionChange?: (info: {
+        listboxId: string;
+        activeOptionId: string | null;
+        count: number;
+      }) => void;
+    }) => {
+      const id = listboxId ?? 'cmd-skill-listbox';
+      const [activeIndex, setActiveIndex] = React.useState(0);
+      // Mock 3 options so we can drive ↓ keyboard navigation.
+      const count = 3;
+      React.useEffect(() => {
+        onActiveOptionChange?.({
+          listboxId: id,
+          activeOptionId: count > 0 ? `${id}-opt-${activeIndex}` : null,
+          count,
+        });
+      }, [id, activeIndex, onActiveOptionChange]);
+      return (
+        <div
+          data-testid="skill-mode-stub"
+          id={id}
+          role="listbox"
+          tabIndex={-1}
+        >
+          <button
+            type="button"
+            data-testid="skill-mode-down"
+            onClick={() => setActiveIndex((i) => (i + 1) % count)}
+          >
+            down
+          </button>
+          {Array.from({ length: count }).map((_, i) => (
+            <div
+              key={i}
+              id={`${id}-opt-${i}`}
+              role="option"
+              aria-selected={i === activeIndex}
+            >
+              opt {i}
+            </div>
+          ))}
+        </div>
+      );
+    },
+  };
+});
 vi.mock('@/components/cmd/modes/ReferenceMode', () => ({
   default: ({ onPick }: { filter: string; onPick: (chip: { id: string; kind: 'file'; name: string }) => void }) => (
     <div data-testid="reference-mode-stub">
@@ -151,7 +208,7 @@ describe('FloatingCommandBar', () => {
     renderWithProviders(<FloatingCommandBar />);
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
     // The input must NOT be present in compact state.
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 
   it('expands to show an autofocused input when the compact pill is clicked', () => {
@@ -159,7 +216,7 @@ describe('FloatingCommandBar', () => {
     const compact = screen.getByText(/press ⌘k to ask/i);
     fireEvent.click(compact);
 
-    const input = screen.getByRole('textbox') as HTMLInputElement;
+    const input = screen.getByRole('combobox') as HTMLInputElement;
     expect(input).toBeTruthy();
     // Autofocus should be active on expansion.
     expect(document.activeElement).toBe(input);
@@ -171,12 +228,12 @@ describe('FloatingCommandBar', () => {
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('combobox');
     fireEvent.keyDown(input, { key: 'Escape' });
 
     // Compact placeholder is back, input is gone.
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 
   it('portals to document.body when not pinned (bar is NOT inside the result container)', () => {
@@ -235,7 +292,7 @@ describe('FloatingCommandBar', () => {
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    const input = screen.getByRole('textbox') as HTMLInputElement;
+    const input = screen.getByRole('combobox') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '/' } });
 
     // Badge announces the active mode for screen readers + visual users.
@@ -255,7 +312,7 @@ describe('FloatingCommandBar', () => {
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    const input = screen.getByRole('textbox') as HTMLInputElement;
+    const input = screen.getByRole('combobox') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '/' } });
 
     // Sanity: badge is up.
@@ -268,12 +325,12 @@ describe('FloatingCommandBar', () => {
     expect(
       document.body.querySelector('[data-cmd-bar-prefix-badge]'),
     ).toBeNull();
-    expect(screen.queryByRole('textbox')).toBeTruthy();
+    expect(screen.queryByRole('combobox')).toBeTruthy();
 
     // Second Esc → bar collapses.
-    const stillThere = screen.getByRole('textbox') as HTMLInputElement;
+    const stillThere = screen.getByRole('combobox') as HTMLInputElement;
     fireEvent.keyDown(stillThere, { key: 'Escape' });
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
   });
 
@@ -288,7 +345,7 @@ describe('FloatingCommandBar', () => {
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    const input = screen.getByRole('textbox') as HTMLInputElement;
+    const input = screen.getByRole('combobox') as HTMLInputElement;
     fireEvent.change(input, { target: { value: prefix } });
 
     expect(screen.getByTestId(stubTestId)).toBeTruthy();
@@ -330,7 +387,7 @@ describe('FloatingCommandBar', () => {
       // No compact placeholder text in pinned mode.
       expect(screen.queryByText(/press ⌘k to ask/i)).toBeNull();
       // Input is always rendered.
-      expect(screen.getByRole('textbox')).toBeTruthy();
+      expect(screen.getByRole('combobox')).toBeTruthy();
     });
 
     it('renders the resize handle with role="slider" and ARIA orientation', () => {
@@ -402,18 +459,18 @@ describe('FloatingCommandBar', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<FloatingCommandBar />);
 
-      const input = screen.getByRole('textbox');
+      const input = screen.getByRole('combobox');
       fireEvent.keyDown(input, { key: 'Escape' });
 
       // Input is still there — no collapse.
-      expect(screen.queryByRole('textbox')).toBeTruthy();
+      expect(screen.queryByRole('combobox')).toBeTruthy();
     });
 
     it('Esc with an active prefix clears just the prefix, not the bar', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<FloatingCommandBar />);
 
-      const input = screen.getByRole('textbox') as HTMLInputElement;
+      const input = screen.getByRole('combobox') as HTMLInputElement;
       fireEvent.change(input, { target: { value: '/' } });
       // Prefix badge appears.
       expect(
@@ -426,14 +483,14 @@ describe('FloatingCommandBar', () => {
       expect(
         document.body.querySelector('[data-cmd-bar-prefix-badge]'),
       ).toBeNull();
-      expect(screen.queryByRole('textbox')).toBeTruthy();
+      expect(screen.queryByRole('combobox')).toBeTruthy();
     });
 
     it('focusing the input does NOT un-pin (⌘K-equivalent in pinned mode)', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<FloatingCommandBar />);
 
-      const input = screen.getByRole('textbox') as HTMLInputElement;
+      const input = screen.getByRole('combobox') as HTMLInputElement;
       input.focus();
 
       // Setter should NOT have been called — focus alone does not toggle pin.
@@ -463,7 +520,7 @@ describe('FloatingCommandBar', () => {
     function expand() {
       renderWithProviders(<FloatingCommandBar />);
       fireEvent.click(screen.getByText(/press ⌘k to ask/i));
-      return screen.getByRole('textbox') as HTMLInputElement;
+      return screen.getByRole('combobox') as HTMLInputElement;
     }
 
     it('Enter with non-empty input calls sendChatMessage with the typed text', () => {
@@ -512,7 +569,7 @@ describe('FloatingCommandBar', () => {
       expect(chipsStripBefore.getAttribute('data-chip-count')).toBe('1');
 
       // Type a message and send.
-      const inputAfter = screen.getByRole('textbox') as HTMLInputElement;
+      const inputAfter = screen.getByRole('combobox') as HTMLInputElement;
       fireEvent.change(inputAfter, { target: { value: 'check this' } });
       fireEvent.keyDown(inputAfter, { key: 'Enter' });
 
@@ -541,12 +598,146 @@ describe('FloatingCommandBar', () => {
 
       // Clear the input again so it's empty when we press Enter — the chip
       // alone should still be enough to send.
-      const inputAfter = screen.getByRole('textbox') as HTMLInputElement;
+      const inputAfter = screen.getByRole('combobox') as HTMLInputElement;
       fireEvent.change(inputAfter, { target: { value: '' } });
 
       fireEvent.keyDown(inputAfter, { key: 'Enter' });
 
       expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // ARIA wiring (#78) — input becomes a combobox; mode pickers expose stable
+  // option ids; activeIndex moves are reported up via the picker callback so
+  // the input can mirror them via aria-activedescendant.
+  // -------------------------------------------------------------------------
+
+  describe('combobox ARIA wiring (#78)', () => {
+    it('input has role="combobox" + listbox haspopup, aria-autocomplete="list"', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      expect(input.getAttribute('aria-haspopup')).toBe('listbox');
+      expect(input.getAttribute('aria-autocomplete')).toBe('list');
+    });
+
+    it('aria-expanded flips with the active prefix', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      // Before any prefix → collapsed.
+      expect(input.getAttribute('aria-expanded')).toBe('false');
+
+      // Type "/" → SkillMode active → expanded.
+      fireEvent.change(input, { target: { value: '/' } });
+      expect(input.getAttribute('aria-expanded')).toBe('true');
+
+      // Esc clears the prefix → collapsed again.
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(input.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('aria-controls + aria-activedescendant are unset when no picker is open', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      expect(input.hasAttribute('aria-controls')).toBe(false);
+      expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    });
+
+    it('aria-controls points to the active picker listbox id', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '/' } });
+
+      expect(input.getAttribute('aria-controls')).toBe('cmd-skill-listbox');
+    });
+
+    it('aria-activedescendant points to the highlighted option id and updates on ↓', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '/' } });
+
+      // Initial highlight is on option 0.
+      expect(input.getAttribute('aria-activedescendant')).toBe(
+        'cmd-skill-listbox-opt-0',
+      );
+
+      // Drive the picker stub's ↓ action — this advances the active index
+      // and the picker reports it back via onActiveOptionChange.
+      fireEvent.click(screen.getByTestId('skill-mode-down'));
+
+      expect(input.getAttribute('aria-activedescendant')).toBe(
+        'cmd-skill-listbox-opt-1',
+      );
+    });
+
+    it('clears aria-controls + aria-activedescendant when the prefix is dismissed via Esc', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '/' } });
+      expect(input.getAttribute('aria-controls')).toBe('cmd-skill-listbox');
+
+      fireEvent.keyDown(input, { key: 'Escape' });
+
+      expect(input.hasAttribute('aria-controls')).toBe(false);
+      expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    });
+
+    it('PrefixModeBadge has role="status" + aria-live="polite"', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '/' } });
+
+      const badge = document.body.querySelector(
+        '[data-cmd-bar-prefix-badge]',
+      ) as HTMLElement | null;
+      expect(badge).toBeTruthy();
+      expect(badge!.getAttribute('role')).toBe('status');
+      expect(badge!.getAttribute('aria-live')).toBe('polite');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Pinned region landmark (#82) — pinned panel exposes a region landmark
+  // with an explicit aria-label so screen-reader users can jump to it.
+  // -------------------------------------------------------------------------
+
+  describe('pinned panel region landmark (#82)', () => {
+    it('renders the bar as role="region" with aria-label="Chat panel" when pinned', () => {
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<FloatingCommandBar />);
+
+      const region = container.querySelector(
+        '[data-cmd-bar][role="region"]',
+      ) as HTMLElement | null;
+      expect(region).toBeTruthy();
+      expect(region!.getAttribute('aria-label')).toBe('Chat panel');
+    });
+
+    it('does NOT add the region role when floating (transient overlay)', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<FloatingCommandBar />);
+
+      const bar = document.body.querySelector(
+        '[data-cmd-bar]',
+      ) as HTMLElement | null;
+      expect(bar).toBeTruthy();
+      expect(bar!.hasAttribute('role')).toBe(false);
+      expect(bar!.hasAttribute('aria-label')).toBe(false);
     });
   });
 });

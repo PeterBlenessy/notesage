@@ -61,6 +61,9 @@ function CommandBarStream() {
     <div
       ref={scrollRef}
       data-cmd-stream
+      role="log"
+      aria-live="polite"
+      aria-label="Chat stream"
       className={cn(
         "flex flex-1 flex-col min-h-0",
         "max-h-[50vh] overflow-y-auto",

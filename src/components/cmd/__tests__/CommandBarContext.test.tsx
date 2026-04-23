@@ -426,19 +426,20 @@ describe('CommandBarContext', () => {
   it('renders the clock and pin icon buttons with explicit aria-labels', () => {
     renderWithProviders(<CommandBarContext />);
     expect(screen.getByLabelText(/open history/i)).toBeTruthy();
-    expect(screen.getByLabelText(/pin chat/i)).toBeTruthy();
+    expect(screen.getByLabelText(/pin chat to side panel/i)).toBeTruthy();
   });
 
   // -------------------------------------------------------------------------
-  // Pin toggle (#28) — wires settings-store cmdBarPinned
+  // Pin toggle (#28 / #82) — wires settings-store cmdBarPinned and surfaces
+  // explicit accessibility labels for both pin / unpin states.
   // -------------------------------------------------------------------------
 
-  describe('pin toggle (#28)', () => {
+  describe('pin toggle (#28 / #82)', () => {
     it('clicking the pin icon while floating calls setCmdBarPinned(true)', () => {
       mockCmdBarPinned = false;
       renderWithProviders(<CommandBarContext />);
 
-      const pinButton = screen.getByLabelText(/pin chat to side/i);
+      const pinButton = screen.getByLabelText(/pin chat to side panel/i);
       fireEvent.click(pinButton);
 
       expect(setCmdBarPinnedMock).toHaveBeenCalledWith(true);
@@ -448,22 +449,24 @@ describe('CommandBarContext', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<CommandBarContext />);
 
-      const unpinButton = screen.getByLabelText(/unpin chat/i);
+      const unpinButton = screen.getByLabelText(
+        /return chat to floating bar/i,
+      );
       fireEvent.click(unpinButton);
 
       expect(setCmdBarPinnedMock).toHaveBeenCalledWith(false);
     });
 
-    it('aria-label says "Pin chat to side" when not pinned', () => {
+    it('aria-label says "Pin chat to side panel" when not pinned', () => {
       mockCmdBarPinned = false;
       renderWithProviders(<CommandBarContext />);
-      expect(screen.getByLabelText(/pin chat to side/i)).toBeTruthy();
+      expect(screen.getByLabelText('Pin chat to side panel')).toBeTruthy();
     });
 
-    it('aria-label contains "Unpin" when pinned', () => {
+    it('aria-label says "Return chat to floating bar" when pinned (#82)', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<CommandBarContext />);
-      expect(screen.getByLabelText(/unpin/i)).toBeTruthy();
+      expect(screen.getByLabelText('Return chat to floating bar')).toBeTruthy();
     });
   });
 

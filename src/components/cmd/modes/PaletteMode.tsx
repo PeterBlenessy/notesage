@@ -61,6 +61,22 @@ interface PaletteModeProps {
   onPick: (commandId: string) => void;
   /** Optional Escape handler. Hooked from the parent if needed. */
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +217,13 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
 // short if/when filter results expand it later.
 const MAX_RESULTS = 12;
 
-function PaletteMode({ filter, onPick, onDismiss }: PaletteModeProps) {
+function PaletteMode({
+  filter,
+  onPick,
+  onDismiss,
+  listboxId = 'cmd-palette-listbox',
+  onActiveOptionChange,
+}: PaletteModeProps) {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return PALETTE_COMMANDS.slice(0, MAX_RESULTS);
@@ -221,6 +243,19 @@ function PaletteMode({ filter, onPick, onDismiss }: PaletteModeProps) {
   useEffect(() => {
     setHighlightedIndex(0);
   }, [filter, filtered.length]);
+
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      filtered.length > 0 ? `${listboxId}-opt-${highlightedIndex}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: filtered.length,
+    });
+  }, [onActiveOptionChange, listboxId, highlightedIndex, filtered.length]);
 
   // Focus the list root so keyboard handlers receive events immediately.
   // The parent FloatingCommandBar owns the input; we listen on the list
@@ -258,6 +293,7 @@ function PaletteMode({ filter, onPick, onDismiss }: PaletteModeProps) {
   return (
     <div
       ref={listRef}
+      id={listboxId}
       role="listbox"
       tabIndex={0}
       aria-label="Command palette results"
@@ -275,6 +311,7 @@ function PaletteMode({ filter, onPick, onDismiss }: PaletteModeProps) {
           <button
             type="button"
             key={cmd.id}
+            id={`${listboxId}-opt-${index}`}
             data-palette-row={cmd.id}
             data-highlighted={isHighlighted ? 'true' : undefined}
             role="option"

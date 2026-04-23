@@ -34,6 +34,22 @@ export interface TagModeProps {
   onPick: (tagName: string) => void;
   /** Optional callback for explicit dismissal (currently unused — parent owns Esc). */
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 interface TagRow {
@@ -43,7 +59,12 @@ interface TagRow {
 
 const MAX_RESULTS = 10;
 
-function TagMode({ filter, onPick }: TagModeProps) {
+function TagMode({
+  filter,
+  onPick,
+  listboxId = 'cmd-tag-listbox',
+  onActiveOptionChange,
+}: TagModeProps) {
   const projects = useWorkspaceStore((s) => s.projects);
   const projectPaths = useMemo(
     () => projects.map((p) => p.path),
@@ -93,6 +114,19 @@ function TagMode({ filter, onPick }: TagModeProps) {
     setHighlighted(0);
   }, [results.length]);
 
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      results.length > 0 ? `${listboxId}-opt-${highlighted}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: results.length,
+    });
+  }, [onActiveOptionChange, listboxId, highlighted, results.length]);
+
   // Document-level keyboard nav. The host bar's input keeps focus, so we can't
   // attach listeners to the picker — we bind to `window` and check that there
   // are results before consuming the event.
@@ -119,6 +153,7 @@ function TagMode({ filter, onPick }: TagModeProps) {
     return (
       <div
         data-cmd-mode="tag"
+        id={listboxId}
         role="listbox"
         aria-label="Tags"
         className={cn(
@@ -134,6 +169,7 @@ function TagMode({ filter, onPick }: TagModeProps) {
   return (
     <ul
       data-cmd-mode="tag"
+      id={listboxId}
       role="listbox"
       aria-label="Tags"
       className={cn(
@@ -146,6 +182,7 @@ function TagMode({ filter, onPick }: TagModeProps) {
         return (
           <li
             key={row.name}
+            id={`${listboxId}-opt-${idx}`}
             role="option"
             aria-selected={selected ? "true" : "false"}
             onMouseEnter={() => setHighlighted(idx)}

@@ -51,6 +51,22 @@ interface TaskModeProps {
    */
   isComposing: boolean;
   onDismiss?: () => void;
+  /**
+   * DOM id used as the listbox's `id` attribute and as the prefix for option
+   * ids. Enables the parent `FloatingCommandBar` to wire `aria-controls` and
+   * `aria-activedescendant` on its combobox input.
+   */
+  listboxId?: string;
+  /**
+   * Fires whenever the active option / result count changes. Lets the parent
+   * FloatingCommandBar keep `aria-activedescendant` in sync without the
+   * picker moving DOM focus away from the input.
+   */
+  onActiveOptionChange?: (info: {
+    listboxId: string;
+    activeOptionId: string | null;
+    count: number;
+  }) => void;
 }
 
 /** Maximum number of rows shown — keeps the popover scannable. */
@@ -95,7 +111,14 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max - 1) + "…";
 }
 
-function TaskMode({ filter, onPick, isComposing, onDismiss }: TaskModeProps) {
+function TaskMode({
+  filter,
+  onPick,
+  isComposing,
+  onDismiss,
+  listboxId = 'cmd-task-listbox',
+  onActiveOptionChange,
+}: TaskModeProps) {
   // Pull scan paths from the workspace + library root. Mirrors the subset of
   // `getAllScanPaths()` from action-store but keeps the picker self-contained.
   const projectPaths = useWorkspaceStore((s) => s.projects.map((p) => p.path));
@@ -157,6 +180,19 @@ function TaskMode({ filter, onPick, isComposing, onDismiss }: TaskModeProps) {
     };
   }, [filter, scanPaths]);
 
+  // Report active option state upward so the parent can mirror it on its
+  // combobox input via aria-activedescendant.
+  useEffect(() => {
+    if (!onActiveOptionChange) return;
+    const activeOptionId =
+      rows.length > 0 ? `${listboxId}-opt-${highlight}` : null;
+    onActiveOptionChange({
+      listboxId,
+      activeOptionId,
+      count: rows.length,
+    });
+  }, [onActiveOptionChange, listboxId, highlight, rows.length]);
+
   // Keyboard navigation. The picker is typically mounted in a popover whose
   // text input lives elsewhere (the FloatingCommandBar input field), so we
   // attach to `window` rather than the picker root — that way ↑/↓/Enter
@@ -204,6 +240,7 @@ function TaskMode({ filter, onPick, isComposing, onDismiss }: TaskModeProps) {
   return (
     <div
       ref={containerRef}
+      id={listboxId}
       tabIndex={-1}
       className={cn(
         "flex flex-col py-1 outline-none",
@@ -222,6 +259,7 @@ function TaskMode({ filter, onPick, isComposing, onDismiss }: TaskModeProps) {
           return (
             <button
               key={row.id}
+              id={`${listboxId}-opt-${index}`}
               type="button"
               data-task-row
               data-active={active ? "true" : undefined}

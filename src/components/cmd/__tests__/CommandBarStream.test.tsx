@@ -156,4 +156,19 @@ describe('CommandBarStream', () => {
     expect(scrollRegion.className).toMatch(/max-h-\[50vh\]/);
     expect(scrollRegion.className).toMatch(/overflow-y-auto/);
   });
+
+  // -------------------------------------------------------------------------
+  // ARIA wiring (#78) — the stream container is a polite live region with
+  // an explicit accessible name so screen readers announce new chunks.
+  // -------------------------------------------------------------------------
+
+  it('container has role="log", aria-live="polite", aria-label="Chat stream"', () => {
+    setMockMessages([makeMessage('a')]);
+    const { container } = renderWithProviders(<CommandBarStream />);
+    const region = container.querySelector('[data-cmd-stream]') as HTMLElement;
+    expect(region).toBeTruthy();
+    expect(region.getAttribute('role')).toBe('log');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region.getAttribute('aria-label')).toBe('Chat stream');
+  });
 });
