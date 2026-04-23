@@ -403,7 +403,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/FolderPeek.tsx` |
 
-### #37 — FolderPeek keyboard equivalent 🚧
+### #37 — FolderPeek keyboard equivalent ✅
 
 | Field | Value |
 | --- | --- |
@@ -463,7 +463,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #39 |
 | Files | same |
 
-### #43 — Type-to-filter per section 🚧
+### #43 — Type-to-filter per section ✅
 
 | Field | Value |
 | --- | --- |
@@ -473,7 +473,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/QuietSidebar.tsx` |
 
-### #44 — Drag-to-pin + drag-to-reorder Pinned 🚧
+### #44 — Drag-to-pin + drag-to-reorder Pinned ✅
 
 | Field | Value |
 | --- | --- |
@@ -493,7 +493,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #30 |
 | Files | `src/components/sidebar/SidebarContextMenu.tsx` |
 
-### #46 — Copy path / Reveal in Finder 🚧
+### #46 — Copy path / Reveal in Finder ✅
 
 | Field | Value |
 | --- | --- |
