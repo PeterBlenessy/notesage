@@ -230,3 +230,40 @@ describe('RecentSection — activation', () => {
     expect(mockClipboardWrite).toHaveBeenCalledWith('/workspace/notes/file-1.md');
   });
 });
+
+describe('RecentSection — filter (#43)', () => {
+  it('filters rows by basename substring (case-insensitive)', () => {
+    setRecent([
+      { path: '/ws/notes/readme.md', name: 'readme.md' },
+      { path: '/ws/notes/todo.md', name: 'todo.md' },
+      { path: '/ws/notes/ideas.md', name: 'ideas.md' },
+    ]);
+    renderWithProviders(<RecentSection filter="READ" />);
+    expect(screen.getByText('readme.md')).toBeTruthy();
+    expect(screen.queryByText('todo.md')).toBeNull();
+    expect(screen.queryByText('ideas.md')).toBeNull();
+  });
+
+  it('filters rows by parent folder hint substring', () => {
+    setRecent([
+      { path: '/ws/research/paper.md', name: 'paper.md' },
+      { path: '/ws/journal/today.md', name: 'today.md' },
+    ]);
+    renderWithProviders(<RecentSection filter="research" />);
+    expect(screen.getByText('paper.md')).toBeTruthy();
+    expect(screen.queryByText('today.md')).toBeNull();
+  });
+
+  it('renders no rows when no recent file matches the filter', () => {
+    setRecent(makeRecent(3));
+    renderWithProviders(<RecentSection filter="zzz" />);
+    expect(screen.queryByText(/file-/)).toBeNull();
+  });
+
+  it('empty filter preserves full list (up to cap)', () => {
+    setRecent(makeRecent(2));
+    renderWithProviders(<RecentSection filter="" />);
+    expect(screen.getByText('file-1.md')).toBeTruthy();
+    expect(screen.getByText('file-2.md')).toBeTruthy();
+  });
+});

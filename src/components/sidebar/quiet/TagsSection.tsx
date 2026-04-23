@@ -35,6 +35,12 @@ export interface TagsSectionProps {
    * store value through here once the sidebar-composition panel ships.
    */
   cap?: number;
+  /**
+   * Case-insensitive substring filter applied to tag names. Task #43 —
+   * sidebar type-to-filter. Matching is client-side; no re-fetch of the
+   * SQLite index. Empty / undefined = no filter.
+   */
+  filter?: string;
 }
 
 interface TagRow {
@@ -42,7 +48,10 @@ interface TagRow {
   usageCount: number;
 }
 
-export function TagsSection({ cap = DEFAULT_TAG_CAP }: TagsSectionProps = {}) {
+export function TagsSection({
+  cap = DEFAULT_TAG_CAP,
+  filter,
+}: TagsSectionProps = {}) {
   const projects = useWorkspaceStore((s) => s.projects);
   const projectPaths = useMemo(
     () => projects.map((p) => p.path),
@@ -51,6 +60,14 @@ export function TagsSection({ cap = DEFAULT_TAG_CAP }: TagsSectionProps = {}) {
 
   const [tags, setTags] = useState<TagRow[]>([]);
   const [expanded, setExpanded] = useState(false);
+
+  // Client-side filter on the cached tag list. Applied BEFORE cap/overflow
+  // so "Show more" only surfaces when additional matches exist.
+  const filteredTags = useMemo(() => {
+    if (!filter) return tags;
+    const needle = filter.toLowerCase();
+    return tags.filter((t) => t.name.toLowerCase().includes(needle));
+  }, [tags, filter]);
 
   // Latest-request guard so a stale fetch doesn't overwrite fresh state.
   // Mirrors the pattern used by `TagMode.tsx`.
@@ -78,16 +95,17 @@ export function TagsSection({ cap = DEFAULT_TAG_CAP }: TagsSectionProps = {}) {
     // `projects` is re-created but paths are unchanged.
   }, [projectPaths]);
 
-  // Auto-collapse when the list shrinks below the cap — avoids a stale
-  // "Show fewer" state after a project is removed and the tag count drops.
+  // Auto-collapse when the filtered list shrinks below the cap — avoids a
+  // stale "Show fewer" state after a project is removed, the tag count
+  // drops, or the user narrows the type-to-filter past the overflow point.
   useEffect(() => {
-    if (expanded && tags.length <= cap) {
+    if (expanded && filteredTags.length <= cap) {
       setExpanded(false);
     }
-  }, [tags.length, cap, expanded]);
+  }, [filteredTags.length, cap, expanded]);
 
-  const visibleTags = expanded ? tags : tags.slice(0, cap);
-  const hasOverflow = tags.length > cap;
+  const visibleTags = expanded ? filteredTags : filteredTags.slice(0, cap);
+  const hasOverflow = filteredTags.length > cap;
 
   /**
    * Open the FloatingCommandBar in TagMode. Phase 1 limitation: the

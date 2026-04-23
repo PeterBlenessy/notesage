@@ -31,6 +31,13 @@ export const DEFAULT_RECENT_CAP = 5;
 export interface RecentSectionProps {
   /** Override the display cap. When omitted, `DEFAULT_RECENT_CAP` is used. */
   cap?: number;
+  /**
+   * Case-insensitive substring filter applied to recent rows. Matches
+   * against both `entry.name` (basename) AND the parent-folder hint so
+   * "notes" matches either a file named `notes-today.md` or any file
+   * inside a `notes/` folder. Task #43 — sidebar type-to-filter.
+   */
+  filter?: string;
 }
 
 /** Derive a compact parent-folder hint from a file path (last directory component). */
@@ -106,7 +113,10 @@ function RecentRow({ entry, isActive, onOpen }: RecentRowProps) {
   );
 }
 
-export function RecentSection({ cap = DEFAULT_RECENT_CAP }: RecentSectionProps = {}) {
+export function RecentSection({
+  cap = DEFAULT_RECENT_CAP,
+  filter,
+}: RecentSectionProps = {}) {
   const recentFiles = useEditorStore((s) => s.recentFiles);
   const activeFilePath = useEditorStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
@@ -116,11 +126,26 @@ export function RecentSection({ cap = DEFAULT_RECENT_CAP }: RecentSectionProps =
 
   const [expanded, setExpanded] = useState(false);
 
-  const hasOverflow = recentFiles.length > cap;
+  // Apply the filter before cap/overflow logic so "Show more" only fires
+  // when there are additional matches hidden behind the cap.
+  const filteredFiles = useMemo(() => {
+    if (!filter) return recentFiles;
+    const needle = filter.toLowerCase();
+    return recentFiles.filter((entry) => {
+      const parent = getParentFolderHint(entry.path).toLowerCase();
+      return (
+        entry.name.toLowerCase().includes(needle) || parent.includes(needle)
+      );
+    });
+  }, [recentFiles, filter]);
+
+  const hasOverflow = filteredFiles.length > cap;
   // Auto-collapse when the list shrinks below the cap so the "Show more"
   // button never lingers with nothing extra to reveal.
   const effectiveExpanded = expanded && hasOverflow;
-  const visibleFiles = effectiveExpanded ? recentFiles : recentFiles.slice(0, cap);
+  const visibleFiles = effectiveExpanded
+    ? filteredFiles
+    : filteredFiles.slice(0, cap);
 
   const handleOpen = async (entry: RecentFile) => {
     try {
@@ -140,7 +165,7 @@ export function RecentSection({ cap = DEFAULT_RECENT_CAP }: RecentSectionProps =
           Recent
         </h2>
       </header>
-      {recentFiles.length > 0 && (
+      {filteredFiles.length > 0 && (
         <>
           <div className="flex flex-col gap-0.5">
             {visibleFiles.map((entry) => (

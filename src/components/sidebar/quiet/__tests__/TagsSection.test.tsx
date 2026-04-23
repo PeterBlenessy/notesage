@@ -215,6 +215,54 @@ describe('TagsSection', () => {
     expect(screen.getByRole('heading', { level: 2, name: /tags/i })).toBeTruthy();
   });
 
+  it('filters tag rows by name substring when `filter` is set (#43)', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'finance', file_count: 4 },
+      { tag: 'fiction', file_count: 2 },
+      { tag: 'work', file_count: 7 },
+    ]);
+
+    renderWithProviders(<TagsSection filter="fi" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('finance')).toBeTruthy();
+    });
+    expect(screen.getByText('fiction')).toBeTruthy();
+    expect(screen.queryByText('work')).toBeNull();
+  });
+
+  it('filter is case-insensitive on tag names (#43)', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'Finance', file_count: 4 },
+      { tag: 'work', file_count: 7 },
+    ]);
+
+    renderWithProviders(<TagsSection filter="FIN" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Finance')).toBeTruthy();
+    });
+    expect(screen.queryByText('work')).toBeNull();
+  });
+
+  it('renders no rows when no tag matches the filter (#43)', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'alpha', file_count: 2 },
+      { tag: 'beta', file_count: 1 },
+    ]);
+
+    renderWithProviders(<TagsSection filter="zzz" />);
+
+    await waitFor(() => {
+      expect(indexTagsMock).toHaveBeenCalled();
+    });
+
+    const section = screen.getByRole('region', { name: /tags/i });
+    expect(section.querySelectorAll('li')).toHaveLength(0);
+    // Show more button should not appear either.
+    expect(screen.queryByRole('button', { name: /show more/i })).toBeNull();
+  });
+
   it('drops stale fetches — a newer request wins even if it resolves first', async () => {
     // Set up mutable workspace state so the component's projectPaths memo
     // changes identity when we mutate `mockWorkspaceState.projects` — that

@@ -31,6 +31,13 @@ export interface PinnedSectionProps {
    * exercised by visual regression tests.
    */
   onAdd?: () => void;
+  /**
+   * Case-insensitive substring filter applied to pinned file basenames. When
+   * non-empty, rows whose basename doesn't contain `filter` are hidden from
+   * the list. Task #43 — sidebar type-to-filter. Empty / undefined = no
+   * filter (default behavior).
+   */
+  filter?: string;
 }
 
 function basename(path: string): string {
@@ -98,7 +105,7 @@ function PinnedRow({ path, isActive, onOpen }: PinnedRowProps) {
   );
 }
 
-export function PinnedSection({ onAdd }: PinnedSectionProps) {
+export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const activeFilePath = useEditorStore((s) => {
@@ -106,6 +113,14 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
     return tab?.filePath ?? null;
   });
   const { openFile } = useFileOperations();
+
+  // Apply the case-insensitive filter at render time — transient UI state,
+  // no re-fetch. Empty filter leaves the list untouched.
+  const visibleFiles = filter
+    ? pinnedFiles.filter((path) =>
+        basename(path).toLowerCase().includes(filter.toLowerCase()),
+      )
+    : pinnedFiles;
 
   const handleDefaultAdd = () => {
     if (!activeFilePath) {
@@ -143,9 +158,9 @@ export function PinnedSection({ onAdd }: PinnedSectionProps) {
           <Plus strokeWidth={1.5} />
         </Button>
       </header>
-      {pinnedFiles.length > 0 && (
+      {visibleFiles.length > 0 && (
         <ul className="flex flex-col gap-0.5">
-          {pinnedFiles.map((path) => (
+          {visibleFiles.map((path) => (
             <li key={path}>
               <PinnedRow
                 path={path}
