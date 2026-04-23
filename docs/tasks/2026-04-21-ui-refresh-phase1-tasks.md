@@ -1169,6 +1169,17 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `docs/tasks/qa/2026-04-23-mockup-audit.md` (artifact) + new task entries it spawns |
 | Surfaced from | Project lead's 2026-04-23 trial: "the design is in several aspects different than the mockups we created before the implementation" |
 
+### #112 — Toolbar pill — add `•••` overflow menu (7 items) 🚧
+
+| Field | Value |
+| --- | --- |
+| Description | Surfaced 2026-04-23 by the project lead — they expected an overflow menu in the pill but #110 shipped without one (F13 had deferred it). Add a `•••` (MoreHorizontal icon) button on the right edge of the pill (after Typography), with a separator before it. Clicking opens a shadcn `DropdownMenu` with these 7 items in this order: Strikethrough (⌘⇧X) · Inline code (⌘E) · Link (⌘K) · Image · Drawing · Code block · Horizontal rule. Each item dispatches the same editor command as the corresponding legacy-toolbar button. No auto-sort (per F13 — visible order is fixed for muscle memory; auto-sort idea revisited if/when overflow grows). Inline (legacy) variant unchanged. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #110 |
+| Files | `src/components/editor/Toolbar.tsx` (add overflow render branch in pill mode), unit test |
+| Surfaced from | Project lead's 2026-04-23 trial — "the ... menu is missing in the toolbar" |
+
 ### #110 — Quiet Composer toolbar — wire pill variant + simplified button set ✅
 
 | Field | Value |
