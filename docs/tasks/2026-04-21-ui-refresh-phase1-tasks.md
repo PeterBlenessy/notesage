@@ -463,7 +463,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #39 |
 | Files | same |
 
-### #43 — Type-to-filter per section
+### #43 — Type-to-filter per section 🚧
 
 | Field | Value |
 | --- | --- |
