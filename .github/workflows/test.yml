@@ -37,6 +37,9 @@ jobs:
       - name: TypeScript type check
         run: pnpm typecheck
 
+      - name: Run contrast audit
+        run: pnpm audit:contrast
+
       - name: Unit tests with coverage
         run: pnpm test:coverage
 
