@@ -14,9 +14,11 @@ import { useEditorStore, type RecentFile } from '@/stores/editor-store';
 
 // Mock useFileOperations so tests never hit Tauri IPC.
 const openFileMock = vi.fn();
+const renamePathMock = vi.fn();
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: () => ({
     openFile: openFileMock,
+    renamePath: renamePathMock,
   }),
 }));
 
@@ -68,6 +70,8 @@ function setRecent(recentFiles: RecentFile[], opts?: { activeFilePath?: string }
 beforeEach(() => {
   openFileMock.mockReset();
   openFileMock.mockResolvedValue(undefined);
+  renamePathMock.mockReset();
+  renamePathMock.mockResolvedValue(true);
   mockClipboardWrite.mockClear();
   installClipboardMock();
   useEditorStore.setState({
@@ -265,5 +269,91 @@ describe('RecentSection — filter (#43)', () => {
     renderWithProviders(<RecentSection filter="" />);
     expect(screen.getByText('file-1.md')).toBeTruthy();
     expect(screen.getByText('file-2.md')).toBeTruthy();
+  });
+});
+
+describe('RecentSection — inline rename (#40)', () => {
+  const samplePath = '/workspace/notes/file-1.md';
+
+  async function renderWithSingleRow() {
+    setRecent([{ path: samplePath, name: 'file-1.md' }]);
+    renderWithProviders(<RecentSection />);
+    const row = screen
+      .getByText('file-1.md')
+      .closest('[role="button"]') as HTMLElement;
+    expect(row).toBeTruthy();
+    return row;
+  }
+
+  it('enters rename mode on F2', async () => {
+    const row = await renderWithSingleRow();
+    row.focus();
+    fireEvent.keyDown(row, { key: 'F2' });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('file-1.md');
+    expect(row.getAttribute('data-renaming')).toBe('true');
+  });
+
+  it('double-click enters rename mode and does NOT call openFile', async () => {
+    const row = await renderWithSingleRow();
+    fireEvent.click(row, { detail: 2 });
+
+    const input = await screen.findByLabelText(/rename/i);
+    expect(input).toBeTruthy();
+    expect(openFileMock).not.toHaveBeenCalled();
+  });
+
+  it('committing calls renamePath with the resolved new path', async () => {
+    const user = userEvent.setup();
+    const row = await renderWithSingleRow();
+    row.focus();
+    fireEvent.keyDown(row, { key: 'F2' });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, 'renamed.md{Enter}');
+
+    await waitFor(() => {
+      expect(renamePathMock).toHaveBeenCalledWith(
+        samplePath,
+        '/workspace/notes/renamed.md',
+      );
+    });
+  });
+
+  it('Escape cancels rename — no renamePath call', async () => {
+    const row = await renderWithSingleRow();
+    row.focus();
+    fireEvent.keyDown(row, { key: 'F2' });
+
+    const input = await screen.findByLabelText(/rename/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    });
+    expect(renamePathMock).not.toHaveBeenCalled();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT enters rename mode when the path is visible', async () => {
+    await renderWithSingleRow();
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: samplePath },
+      }),
+    );
+    const input = await screen.findByLabelText(/rename/i);
+    expect(input).toBeTruthy();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT is ignored when the path is NOT in the recent list', async () => {
+    await renderWithSingleRow();
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/not/recent.md' },
+      }),
+    );
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
   });
 });

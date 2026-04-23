@@ -1,9 +1,11 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Folder, FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,12 +14,20 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
+import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType } from "@/lib/file-utils";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
 import { beginFileDrag } from "./file-drag";
+import { SIDEBAR_ENTER_RENAME_MODE_EVENT } from "@/components/sidebar/quiet/SidebarContextMenu";
+import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
+import {
+  basename as pathBasename,
+  resolveRenamePath,
+  validateRenameBasename,
+} from "@/components/sidebar/quiet/rename-utils";
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
@@ -172,6 +182,31 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // absolute project paths that the user has expanded via ArrowRight.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
+  // Task #40 — inline rename for child FILE rows. Project roots are NOT
+  // renameable in this task (bigger blast radius; separate follow-up).
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const { renamePath } = useFileOperations();
+
+  const startRename = useCallback((path: string) => {
+    setRenamingPath(path);
+  }, []);
+  const cancelRename = useCallback(() => setRenamingPath(null), []);
+  const commitRename = useCallback(
+    async (oldPath: string, newBasename: string) => {
+      setRenamingPath(null);
+      const oldName = pathBasename(oldPath);
+      if (newBasename === oldName) return;
+      const newPath = resolveRenamePath(oldPath, newBasename);
+      try {
+        await renamePath(oldPath, newPath);
+        toast.success(`Renamed to ${pathBasename(newPath)}`);
+      } catch (error) {
+        toast.error(`Failed to rename: ${error}`);
+      }
+    },
+    [renamePath],
+  );
+
   // Roving tabindex: only one row is focusable at a time. `focusedRowId`
   // stays in sync with the DOM via the keydown handlers, and unrelated
   // clicks / pointer focus also update it so Tab returning to the section
@@ -234,6 +269,45 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       el.focus();
     }
   }, []);
+
+  // Collect every currently-visible child FILE path so the event listener
+  // can decide whether it owns this rename request. Projects + folders +
+  // overflow markers are intentionally excluded — they are not renameable
+  // in this task.
+  const visibleChildFilePaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const row of rows) {
+      if (
+        row.kind === "child" &&
+        row.entry &&
+        !row.entry.is_directory
+      ) {
+        paths.add(row.entry.path);
+      }
+    }
+    return paths;
+  }, [rows]);
+
+  // Rename context-menu event. Only activate on visible child file paths;
+  // project roots and folders are skipped.
+  useEffect(() => {
+    function handleRenameEvent(event: Event) {
+      const detail = (event as CustomEvent<{ filePath: string }>).detail;
+      if (!detail?.filePath) return;
+      if (!visibleChildFilePaths.has(detail.filePath)) return;
+      setRenamingPath(detail.filePath);
+    }
+    window.addEventListener(
+      SIDEBAR_ENTER_RENAME_MODE_EVENT,
+      handleRenameEvent,
+    );
+    return () => {
+      window.removeEventListener(
+        SIDEBAR_ENTER_RENAME_MODE_EVENT,
+        handleRenameEvent,
+      );
+    };
+  }, [visibleChildFilePaths]);
 
   const openProject = useCallback(async (project: WorkspaceProject) => {
     if (project.fileTree.length === 0) return;
@@ -415,6 +489,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                           row={row}
                           isFocused={focusedRowId === row.id}
                           hasFocusWithin={focusedRowId !== null}
+                          isRenaming={
+                            !!row.entry && renamingPath === row.entry.path
+                          }
                           onActivate={() => {
                             if (!row.entry) return;
                             if (row.entry.is_directory) {
@@ -425,6 +502,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                           }}
                           onKeyDown={(e) => handleChildKeyDown(e, row)}
                           onFocus={() => setFocusedRowId(row.id)}
+                          onStartRename={startRename}
+                          onCommitRename={commitRename}
+                          onCancelRename={cancelRename}
                           registerRef={(el) => rowRefs.current.set(row.id, el)}
                         />
                       ))}
@@ -546,9 +626,13 @@ interface ChildRowProps {
   row: RowDescriptor;
   isFocused: boolean;
   hasFocusWithin: boolean;
+  isRenaming: boolean;
   onActivate: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
+  onStartRename: (path: string) => void;
+  onCommitRename: (oldPath: string, newBasename: string) => void;
+  onCancelRename: () => void;
   registerRef: (el: HTMLDivElement | null) => void;
 }
 
@@ -556,14 +640,32 @@ function ChildRow({
   row,
   isFocused,
   hasFocusWithin,
+  isRenaming,
   onActivate,
   onKeyDown,
   onFocus,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
   registerRef,
 }: ChildRowProps) {
   // Roving tabindex — child rows only participate in focus order once the
   // user has entered the tree. Otherwise they stay out of the Tab sequence.
   const tabIndex = isFocused ? 0 : -1;
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  const setRef = (el: HTMLDivElement | null) => {
+    internalRef.current = el;
+    registerRef(el);
+  };
+
+  // Restore focus to the row when rename mode ends.
+  const wasRenamingRef = useRef(false);
+  useEffect(() => {
+    if (wasRenamingRef.current && !isRenaming) {
+      internalRef.current?.focus();
+    }
+    wasRenamingRef.current = isRenaming;
+  }, [isRenaming]);
 
   if (row.overflow) {
     // Overflow rows are focusable markers with no interactive action, so
@@ -571,7 +673,7 @@ function ChildRow({
     // as activatable — Enter is a no-op.
     return (
       <div
-        ref={registerRef}
+        ref={setRef}
         role="treeitem"
         aria-level={2}
         aria-disabled="true"
@@ -601,32 +703,56 @@ function ChildRow({
   // not — only file paths can be pinned in Phase 1. Projects themselves
   // (row.kind === "project") stay non-draggable too.
   const draggable = !entry.is_directory;
+  // Rename support — files only. Folders and project roots are explicitly
+  // out of scope in this task.
+  const renameable = !entry.is_directory;
+
+  // Chain rename-aware handling with the parent's navigation handler.
+  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (renameable && event.key === "F2") {
+      event.preventDefault();
+      onStartRename(entry.path);
+      return;
+    }
+    onKeyDown(event);
+  };
+
+  const handleRowClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (renameable && event.detail === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+      onStartRename(entry.path);
+      return;
+    }
+    onActivate();
+  };
 
   return (
     <div
-      ref={registerRef}
+      ref={setRef}
       role="treeitem"
       aria-level={2}
       aria-selected={isFocused ? "true" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"
       data-row-kind={entry.is_directory ? "folder" : "file"}
+      data-renaming={isRenaming ? "true" : undefined}
       tabIndex={hasFocusWithin ? tabIndex : -1}
-      draggable={draggable}
-      onClick={onActivate}
-      onKeyDown={onKeyDown}
+      draggable={draggable && !isRenaming}
+      onClick={isRenaming ? undefined : handleRowClick}
+      onKeyDown={isRenaming ? undefined : handleRowKeyDown}
       onFocus={onFocus}
       onDragStart={
-        draggable
+        draggable && !isRenaming
           ? (e) => {
               beginFileDrag(e, entry.path);
             }
           : undefined
       }
       className={cn(
-        "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+        "h-7 px-2 flex items-center gap-2 rounded-sm text-sm",
         "text-foreground/90 transition-colors duration-150",
-        "hover:bg-muted/50",
+        !isRenaming && "hover:bg-muted/50 cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
       )}
     >
@@ -635,7 +761,18 @@ function ChildRow({
         strokeWidth={1.5}
         aria-hidden="true"
       />
-      <span className="truncate min-w-0 flex-1">{entry.name}</span>
+      {isRenaming ? (
+        <SidebarInlineEdit
+          mode="rename"
+          initialValue={entry.name}
+          validate={validateRenameBasename}
+          onCommit={(value) => onCommitRename(entry.path, value)}
+          onCancel={onCancelRename}
+          className="flex-1 min-w-0"
+        />
+      ) : (
+        <span className="truncate min-w-0 flex-1">{entry.name}</span>
+      )}
     </div>
   );
 }
