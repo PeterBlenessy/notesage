@@ -159,7 +159,12 @@ function CommandBarContext({ className }: CommandBarContextProps) {
       className={cn(
         "flex items-center gap-1.5 px-3 py-2 border-b border-border",
         "text-xs text-muted-foreground",
-        "overflow-x-auto",
+        // Root is NOT scrollable: the chip group below owns overflow so the
+        // trailing pickers/icons (mode pill, history, pin) stay pinned to the
+        // right edge no matter how many project chips are selected. Without
+        // this, flex children default to `min-width: auto` and push trailing
+        // siblings off-screen when the conversation has >2 projects.
+        "overflow-hidden",
         className,
       )}
     >
@@ -179,26 +184,40 @@ function CommandBarContext({ className }: CommandBarContextProps) {
 
       <Divider />
 
-      {/* Project chips ----------------------------------------------------- */}
-      {projectPaths.map((path) => {
-        const metadata = metadataMap[path];
-        const locked = Boolean(metadata?.aiLock);
-        return (
-          <ProjectChip
-            key={path}
-            path={path}
-            locked={locked}
-            onRemove={() => toggleProjectPath(path)}
-            onLockClick={() => setExplainLockPaths([path])}
-          />
-        );
-      })}
+      {/*
+       * Project chip group — the one flex child that is allowed to shrink
+       * below its intrinsic content width. `min-w-0` releases the default
+       * `min-width: auto` that would otherwise propagate each chip's
+       * content width upward, and `overflow-hidden` clips anything that
+       * spills past the available space. Chips themselves carry `min-w-0`
+       * + internal `truncate` so their labels ellipsize rather than the
+       * chips disappearing entirely. The `+ project` button sits inside
+       * the same group and shares the shrink budget.
+       */}
+      <div
+        data-cmd-chip-group
+        className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden"
+      >
+        {projectPaths.map((path) => {
+          const metadata = metadataMap[path];
+          const locked = Boolean(metadata?.aiLock);
+          return (
+            <ProjectChip
+              key={path}
+              path={path}
+              locked={locked}
+              onRemove={() => toggleProjectPath(path)}
+              onLockClick={() => setExplainLockPaths([path])}
+            />
+          );
+        })}
 
-      {/* Dashed "+ project" button ---------------------------------------- */}
-      <AddProjectButton
-        addableProjects={addableProjects}
-        onPick={handleAddProject}
-      />
+        {/* Dashed "+ project" button -------------------------------------- */}
+        <AddProjectButton
+          addableProjects={addableProjects}
+          onPick={handleAddProject}
+        />
+      </div>
 
       {/* Explain-lock dialog (rendered once, controlled by chip click) ---- */}
       <ExplainLockDialog
@@ -233,7 +252,13 @@ function CommandBarContext({ className }: CommandBarContextProps) {
        * permanent affordance).
        */}
       {interactiveConnection ? (
-        <AcpModePicker connection={interactiveConnection} />
+        // `shrink-0` is a regression-lock on the overflow fix: the chip
+        // group (above) owns the shrink budget; every trailing flex item —
+        // mode picker, warning pill, history, pin — must stay at its
+        // intrinsic width no matter how many project chips are in scope.
+        <div className="shrink-0">
+          <AcpModePicker connection={interactiveConnection} />
+        </div>
       ) : null}
 
       {/* Spacer pushes the warning pill + trailing icons to the right. */}
@@ -356,7 +381,12 @@ function ProjectChip({ path, locked, onRemove, onLockClick }: ProjectChipProps) 
   return (
     <span
       className={cn(
-        "flex items-center gap-1 px-2 py-0.5 rounded-md shrink-0",
+        // `min-w-0 shrink` lets the chip collapse below its intrinsic
+        // content width so the label inside can truncate when the row
+        // runs out of horizontal space. Without this the chip would
+        // flex-default to `min-width: auto` and push trailing siblings
+        // (mode picker, pin icon) out of view.
+        "flex items-center gap-1 px-2 py-0.5 rounded-md min-w-0 shrink",
         "border border-border bg-muted/30",
       )}
       title={path}
@@ -367,7 +397,7 @@ function ProjectChip({ path, locked, onRemove, onLockClick }: ProjectChipProps) 
           onClick={onLockClick}
           aria-label={`${name} is locked to a provider`}
           className={cn(
-            "flex items-center justify-center",
+            "flex items-center justify-center shrink-0",
             "text-foreground hover:text-foreground/80 transition-colors",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded",
           )}
@@ -375,13 +405,18 @@ function ProjectChip({ path, locked, onRemove, onLockClick }: ProjectChipProps) 
           <Lock className="w-3 h-3" strokeWidth={1.5} />
         </button>
       ) : null}
-      <span className="text-foreground">{name}</span>
+      {/*
+       * The label is the only element inside the chip that is allowed to
+       * ellipsize — the lock icon and × button stay full-size via
+       * `shrink-0` so the affordance is never clipped.
+       */}
+      <span className="text-foreground truncate min-w-0">{name}</span>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${name}`}
         className={cn(
-          "flex items-center justify-center -mr-0.5",
+          "flex items-center justify-center -mr-0.5 shrink-0",
           "text-muted-foreground hover:text-foreground transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded",
         )}

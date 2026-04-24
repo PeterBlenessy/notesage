@@ -1037,4 +1037,134 @@ describe('CommandBarContext', () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Overflow / shrink layout (regression lock for the 5-project bug where
+  // the agent mode picker and trailing icons got pushed out of view when
+  // the chat footer carried more than 2 project chips).
+  // -------------------------------------------------------------------------
+
+  describe('project chip overflow (regression lock)', () => {
+    it('wraps project chips in a shrinkable group container', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: [
+          '/Users/p/Projects/alpha',
+          '/Users/p/Projects/beta',
+          '/Users/p/Projects/gamma',
+        ],
+      });
+      const { container } = renderWithProviders(<CommandBarContext />);
+
+      const group = container.querySelector('[data-cmd-chip-group]');
+      expect(group).toBeTruthy();
+
+      const klass = group!.className;
+      // The group MUST own the shrink budget so trailing pickers stay pinned
+      // to the right edge. Any regression here causes the 5-project bug.
+      expect(klass).toMatch(/\bmin-w-0\b/);
+      expect(klass).toMatch(/\bshrink\b/);
+      expect(klass).toMatch(/\boverflow-hidden\b/);
+    });
+
+    it('clips overflow at the context-row root so trailing pickers stay in view', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/Users/p/Projects/alpha'],
+      });
+      const { container } = renderWithProviders(<CommandBarContext />);
+
+      const root = container.querySelector('[data-cmd-context]');
+      expect(root).toBeTruthy();
+      // Root must NOT scroll horizontally — if chips push the row wider
+      // than the container, they get clipped via the inner chip group
+      // instead of pushing the mode picker/pin icon off-screen.
+      expect(root!.className).toMatch(/\boverflow-hidden\b/);
+      expect(root!.className).not.toMatch(/\boverflow-x-auto\b/);
+    });
+
+    it('project chips carry min-w-0 + shrink so their labels can truncate', () => {
+      mockActiveConversation = makeConversation({
+        projectPaths: [
+          '/Users/p/Projects/very-long-project-name-alpha',
+          '/Users/p/Projects/very-long-project-name-beta',
+        ],
+      });
+      renderWithProviders(<CommandBarContext />);
+
+      // Each chip wraps the label in a span with `truncate` so the content
+      // ellipsizes rather than forcing the row wider.
+      const alphaLabel = screen.getByText('very-long-project-name-alpha');
+      expect(alphaLabel.className).toMatch(/\btruncate\b/);
+      expect(alphaLabel.className).toMatch(/\bmin-w-0\b/);
+
+      // The chip itself must be shrinkable (NOT shrink-0) so the group can
+      // collapse it when space is tight.
+      const chip = alphaLabel.closest('[title="/Users/p/Projects/very-long-project-name-alpha"]');
+      expect(chip).toBeTruthy();
+      expect(chip!.className).toMatch(/\bmin-w-0\b/);
+      expect(chip!.className).toMatch(/\bshrink\b/);
+      expect(chip!.className).not.toMatch(/\bshrink-0\b/);
+    });
+
+    it('the agent mode picker slot is marked shrink-0 so it never collapses when many chips are selected', () => {
+      // Five-project scenario that triggered the original bug report.
+      mockActiveConversation = makeConversation({
+        projectPaths: [
+          '/Users/p/Projects/alpha',
+          '/Users/p/Projects/beta',
+          '/Users/p/Projects/gamma',
+          '/Users/p/Projects/delta',
+          '/Users/p/Projects/epsilon',
+        ],
+      });
+      const acp = makeConnection({
+        id: 'conn-acp',
+        provider: 'openai',
+        authMethod: 'agent_managed',
+        label: 'Codex',
+        acpCapabilities: {
+          availableModes: [
+            { id: 'read-only', name: 'Read Only' },
+            { id: 'auto', name: 'Agent' },
+            { id: 'full-access', name: 'Full Access' },
+            { id: 'plan', name: 'Plan' },
+          ],
+        },
+      });
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+
+      const { container } = renderWithProviders(<CommandBarContext />);
+
+      // All five chips render.
+      expect(screen.getByText('alpha')).toBeTruthy();
+      expect(screen.getByText('beta')).toBeTruthy();
+      expect(screen.getByText('gamma')).toBeTruthy();
+      expect(screen.getByText('delta')).toBeTruthy();
+      expect(screen.getByText('epsilon')).toBeTruthy();
+
+      // The mode picker is still in the DOM — its wrapper slot carries
+      // shrink-0 so the flex layout can't compress it to zero width.
+      // We locate the wrapper by walking up from one of the common-mode
+      // labels inside the rendered picker popover/trigger.
+      const readOnlyNodes = screen.getAllByText('Read Only');
+      expect(readOnlyNodes.length).toBeGreaterThanOrEqual(1);
+
+      // Structural check: the context row has a shrink-0 wrapper sibling
+      // before the spacer (flex-1). This wrapper exists only when an
+      // interactive connection is active, which it is in this test.
+      const root = container.querySelector('[data-cmd-context]');
+      expect(root).toBeTruthy();
+      const shrinkZeroChildren = root!.querySelectorAll(':scope > .shrink-0');
+      // At minimum: mode-picker wrapper + history icon + pin icon all have
+      // shrink-0 either directly or via their own `shrink-0` class.
+      expect(shrinkZeroChildren.length).toBeGreaterThanOrEqual(1);
+
+      // And the trailing pin icon is still reachable (would be clipped out
+      // of view under the original bug — here we assert it's still in DOM
+      // and carries shrink-0 so the browser can't hide it).
+      const pinButton = screen.getByLabelText(/pin chat to side panel/i);
+      expect(pinButton).toBeTruthy();
+      expect(pinButton.className).toMatch(/\bshrink-0\b/);
+    });
+  });
 });
