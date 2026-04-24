@@ -1,179 +1,139 @@
 // @vitest-environment jsdom
 
+/**
+ * CommandBarStream tests — post-consolidation (2026-04-24).
+ *
+ * After the consolidation that rewrote CommandBarStream as a thin wrapper
+ * around `<ChatMessageList />`, the component's own surface is small:
+ *   - Outer wrapper carries `data-cmd-stream`, `role="log"`,
+ *     `aria-live="polite"`, `aria-label="Chat stream"`, and the
+ *     `max-h-[50vh]` height cap.
+ *   - Inner `<ChatMessageList />` receives `selectedProjectPaths` from the
+ *     chat-store selector, plus the `onSend` / `onResend` / `onEdit` /
+ *     `onPrefill` handlers the parent passed in.
+ *
+ * Tests that used to assert message-loop or switch-card behaviour are
+ * gone — those features now live inside `ChatMessageList` and are covered
+ * by that suite (see `src/components/chat/__tests__/`). We test the
+ * wrapper shape + prop pass-through here; duplicating the full list suite
+ * would just drift.
+ */
+
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders, screen, act } from '@/test/component-harness';
-import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
-
-// ---------------------------------------------------------------------------
-// Mock useReducedMotion — flip per test via mockReturnValue
-// ---------------------------------------------------------------------------
-
-const useReducedMotionMock = vi.fn<() => boolean>(() => false);
-vi.mock('@/hooks/useReducedMotion', () => ({
-  useReducedMotion: () => useReducedMotionMock(),
-}));
-
-// ---------------------------------------------------------------------------
-// Mock chat-store — the active conversation drives the renderer.
-//
-// We model the bare minimum surface CommandBarStream needs: a `selectMessages`
-// selector and a `useChatStore` hook that returns the loading flag. The store
-// is fully replaceable per test via setMockMessages().
-// ---------------------------------------------------------------------------
-
-let mockMessages: ChatMessageType[] = [];
-
-function setMockMessages(msgs: ChatMessageType[]) {
-  mockMessages = msgs;
-}
-
-vi.mock('@/stores/chat-store', () => {
-  // useChatStore is called as `useChatStore(selector)`. We feed it a shallow
-  // state object containing the bits CommandBarStream may want to read.
-  function useChatStore<T>(selector: (state: { isLoading: boolean }) => T): T {
-    return selector({ isLoading: false });
-  }
-  return {
-    useChatStore,
-    selectMessages: () => mockMessages,
-    // #117 — pending switch selectors return null here; baseline tests don't
-    // exercise the provider/project switch cards. The dedicated switch-cards
-    // test file overrides these via its own vi.mock.
-    selectPendingAgentSwitch: () => null,
-    selectPendingProjectSwitch: () => null,
-  };
-});
-
-// ---------------------------------------------------------------------------
-// Mock ChatMessage so we can count renders without dragging the full segment
-// renderer + markdown stack into the test.
-// ---------------------------------------------------------------------------
-
-vi.mock('@/components/chat/ChatMessage', () => ({
-  ChatMessage: ({ message }: { message: ChatMessageType }) => (
-    <div data-testid="chat-message-stub">{message.id}</div>
-  ),
-}));
-
+import { renderWithProviders } from '@/test/component-harness';
 import CommandBarStream from '@/components/cmd/CommandBarStream';
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Stub ChatMessageList so we can inspect which props the wrapper forwarded.
 // ---------------------------------------------------------------------------
 
-function makeMessage(id: string, role: ChatMessageType['role'] = 'user'): ChatMessageType {
-  return { id, role, content: `msg-${id}`, timestamp: Date.now() };
-}
+const chatMessageListSpy = vi.fn();
+
+vi.mock('@/components/chat/ChatMessageList', () => ({
+  ChatMessageList: (props: Record<string, unknown>) => {
+    chatMessageListSpy(props);
+    return <div data-testid="chat-message-list-stub" />;
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Mock chat-store — only need `selectProjectPaths` to return a stable value.
+// ---------------------------------------------------------------------------
+
+let mockProjectPaths: string[] = [];
+
+vi.mock('@/stores/chat-store', () => ({
+  selectProjectPaths: vi.fn(() => mockProjectPaths),
+  useChatStore: vi.fn((selector: (state: unknown) => unknown) =>
+    selector(undefined),
+  ),
+}));
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('CommandBarStream', () => {
+describe('CommandBarStream (wrapper around ChatMessageList)', () => {
   beforeEach(() => {
-    useReducedMotionMock.mockReturnValue(false);
-    setMockMessages([]);
-    document.body.innerHTML = '';
+    chatMessageListSpy.mockClear();
+    mockProjectPaths = [];
   });
 
-  it('renders the empty placeholder when there are no messages', () => {
-    setMockMessages([]);
-    renderWithProviders(<CommandBarStream />);
-    expect(screen.getByText(/no messages yet/i)).toBeTruthy();
-    expect(screen.queryAllByTestId('chat-message-stub')).toHaveLength(0);
+  it('renders an outer container with ARIA log semantics', () => {
+    const { container } = renderWithProviders(
+      <CommandBarStream onSend={() => undefined} />,
+    );
+
+    const outer = container.querySelector('[data-cmd-stream]') as HTMLElement | null;
+    expect(outer).toBeTruthy();
+    expect(outer?.getAttribute('role')).toBe('log');
+    expect(outer?.getAttribute('aria-live')).toBe('polite');
+    expect(outer?.getAttribute('aria-label')).toBe('Chat stream');
   });
 
-  it('renders a ChatMessage for each message in the active conversation', () => {
-    setMockMessages([makeMessage('a', 'user'), makeMessage('b', 'assistant')]);
-    renderWithProviders(<CommandBarStream />);
-    const stubs = screen.getAllByTestId('chat-message-stub');
-    expect(stubs).toHaveLength(2);
-    expect(stubs[0].textContent).toBe('a');
-    expect(stubs[1].textContent).toBe('b');
-    expect(screen.queryByText(/no messages yet/i)).toBeNull();
+  it('uses flex-1 + min-h-0 (no hard height cap — parent drives height)', () => {
+    // 2026-04-24 regression: an earlier iteration had `max-h-[50vh]` which
+    // broke pinned mode (input floated mid-screen). The wrapper now relies
+    // on the enclosing bar's `h-[480px]` (floating) or `h-screen` (pinned)
+    // to constrain; flex-1 grows to fill whatever's available.
+    const { container } = renderWithProviders(
+      <CommandBarStream onSend={() => undefined} />,
+    );
+    const outer = container.querySelector('[data-cmd-stream]') as HTMLElement | null;
+    const tokens = outer?.className.split(/\s+/) ?? [];
+    expect(tokens).toContain('flex-1');
+    expect(tokens).toContain('min-h-0');
+    expect(tokens).not.toContain('max-h-[50vh]');
   });
 
-  it('auto-scrolls the container to the bottom when message count grows', () => {
-    setMockMessages([makeMessage('a'), makeMessage('b')]);
+  it('renders <ChatMessageList /> inside the wrapper', () => {
+    const { container } = renderWithProviders(
+      <CommandBarStream onSend={() => undefined} />,
+    );
 
-    // Make scrollHeight non-zero in jsdom — it returns 0 by default.
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get() {
-        return 1234;
-      },
-    });
-
-    const { rerender, container } = renderWithProviders(<CommandBarStream />);
-    const scrollRegion = container.querySelector('[data-cmd-stream]') as HTMLDivElement;
-    expect(scrollRegion).toBeTruthy();
-
-    // Reset scrollTop after the initial mount auto-scroll.
-    scrollRegion.scrollTop = 0;
-
-    // Grow from 2 → 3 messages.
-    setMockMessages([makeMessage('a'), makeMessage('b'), makeMessage('c')]);
-    act(() => {
-      rerender(<CommandBarStream />);
-    });
-
-    expect(scrollRegion.scrollTop).toBe(scrollRegion.scrollHeight);
+    expect(container.querySelector('[data-testid="chat-message-list-stub"]')).toBeTruthy();
+    expect(chatMessageListSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('uses non-smooth scroll behavior when prefers-reduced-motion is reduce', () => {
-    useReducedMotionMock.mockReturnValue(true);
+  it('forwards onSend / onPrefill / onResend / onEdit to ChatMessageList', () => {
+    const onSend = vi.fn();
+    const onPrefill = vi.fn();
+    const onResend = vi.fn();
+    const onEdit = vi.fn();
 
-    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-      configurable: true,
-      get() {
-        return 999;
-      },
-    });
+    renderWithProviders(
+      <CommandBarStream
+        onSend={onSend}
+        onPrefill={onPrefill}
+        onResend={onResend}
+        onEdit={onEdit}
+      />,
+    );
 
-    // Spy on scrollTo so we can read the behavior arg.
-    const scrollToSpy = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
-      configurable: true,
-      writable: true,
-      value: scrollToSpy,
-    });
-
-    setMockMessages([makeMessage('a')]);
-    const { rerender } = renderWithProviders(<CommandBarStream />);
-
-    // Trigger a length change to fire the scroll effect.
-    setMockMessages([makeMessage('a'), makeMessage('b')]);
-    act(() => {
-      rerender(<CommandBarStream />);
-    });
-
-    expect(scrollToSpy).toHaveBeenCalled();
-    const lastArgs = scrollToSpy.mock.calls[scrollToSpy.mock.calls.length - 1][0];
-    expect(lastArgs.behavior).toBe('auto');
+    const props = chatMessageListSpy.mock.calls[0]?.[0];
+    expect(props?.onSend).toBe(onSend);
+    expect(props?.onPrefill).toBe(onPrefill);
+    expect(props?.onResend).toBe(onResend);
+    expect(props?.onEdit).toBe(onEdit);
   });
 
-  it('caps the scroll region height at 50vh', () => {
-    setMockMessages([makeMessage('a')]);
-    const { container } = renderWithProviders(<CommandBarStream />);
-    const scrollRegion = container.querySelector('[data-cmd-stream]') as HTMLDivElement;
-    expect(scrollRegion).toBeTruthy();
-    expect(scrollRegion.className).toMatch(/max-h-\[50vh\]/);
-    expect(scrollRegion.className).toMatch(/overflow-y-auto/);
+  it('forwards selectedProjectPaths from the chat-store selector', () => {
+    mockProjectPaths = ['/Users/me/Notesage/alpha', '/Users/me/Notesage/beta'];
+    renderWithProviders(<CommandBarStream onSend={() => undefined} />);
+
+    const props = chatMessageListSpy.mock.calls[0]?.[0];
+    expect(props?.selectedProjectPaths).toEqual([
+      '/Users/me/Notesage/alpha',
+      '/Users/me/Notesage/beta',
+    ]);
   });
 
-  // -------------------------------------------------------------------------
-  // ARIA wiring (#78) — the stream container is a polite live region with
-  // an explicit accessible name so screen readers announce new chunks.
-  // -------------------------------------------------------------------------
+  it('forwards an empty project path list when no active conversation', () => {
+    mockProjectPaths = [];
+    renderWithProviders(<CommandBarStream onSend={() => undefined} />);
 
-  it('container has role="log", aria-live="polite", aria-label="Chat stream"', () => {
-    setMockMessages([makeMessage('a')]);
-    const { container } = renderWithProviders(<CommandBarStream />);
-    const region = container.querySelector('[data-cmd-stream]') as HTMLElement;
-    expect(region).toBeTruthy();
-    expect(region.getAttribute('role')).toBe('log');
-    expect(region.getAttribute('aria-live')).toBe('polite');
-    expect(region.getAttribute('aria-label')).toBe('Chat stream');
+    const props = chatMessageListSpy.mock.calls[0]?.[0];
+    expect(props?.selectedProjectPaths).toEqual([]);
   });
 });

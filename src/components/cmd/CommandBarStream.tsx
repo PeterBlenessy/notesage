@@ -1,122 +1,71 @@
-import { useEffect, useRef } from "react";
-import { cn } from "@/lib/utils";
-import {
-  useChatStore,
-  selectMessages,
-  selectPendingAgentSwitch,
-  selectPendingProjectSwitch,
-} from "@/stores/chat-store";
-import { ChatMessage } from "@/components/chat/ChatMessage";
-import { AgentSwitchCard } from "@/components/chat/AgentSwitchCard";
-import { ProjectSwitchCard } from "@/components/chat/ProjectSwitchCard";
-import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
+import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
 
 /**
- * CommandBarStream — chat-stream renderer for the FloatingCommandBar's
- * expanded scroll region (PRD `2026-04-21-ui-refresh`, Phase 1, task #12).
+ * CommandBarStream — thin wrapper around `<ChatMessageList />` for the
+ * FloatingCommandBar's expanded scroll region (PRD `2026-04-21-ui-refresh`,
+ * Phase 1, task #12 — re-consolidated 2026-04-24).
  *
- * This is a pure container. It selects the active conversation's messages
- * from `chat-store` and delegates rendering to the existing `ChatMessage`
- * component — segments, permission cards, quick replies, branching pills,
- * etc. all flow through unchanged.
+ * Consolidation note (2026-04-24 / supersedes #127 + #130 + #116 stream gap):
+ * this component used to roll its own message loop + render a subset of
+ * per-message affordances + switch cards. The #113 functional-parity audit
+ * catalogued ten features missing relative to the legacy `ChatMessageList`:
+ * QuickReplies, ContextDivider, BranchSwitcher, empty-state onboarding,
+ * LocalAISetupCard, per-message Edit / Resend / Retry / Branch, edit-mode
+ * banner, Permission / Domain / ToolCall / AgentStatus cards, streaming
+ * indicator.
  *
- * Behaviour:
- *   - Empty state ("No messages yet") when the active conversation has no
- *     messages or there is no active conversation.
- *   - One `<ChatMessage>` per message in the active branch.
- *   - Auto-scrolls the scroll region to the bottom whenever the message
- *     count changes (new chunk, new turn, branch switch).
- *   - Honours `prefers-reduced-motion: reduce` — uses `behavior: 'auto'`
- *     (instant) instead of `'smooth'`.
+ * Rather than re-implement each in the Quiet Composer surface, the command
+ * bar now renders the same `<ChatMessageList />` the legacy ChatPanel uses —
+ * identical pattern to AgentOrb wrapping `<AgentPanel />`. Single source of
+ * truth for chat rendering across both shells; every future chat feature
+ * lands in one place.
  *
- * The scroll region is capped at 50 vh so the bar never explodes past
- * half the viewport. Future tasks (#23 send wiring, #24 provider switch,
- * #27 history view) wire interactivity around this; the stream itself
- * stays read-only.
+ * Height: the wrapper uses `flex flex-1 min-h-0` and inherits its cap
+ * from the enclosing FloatingCommandBar — floating mode sets the bar to
+ * `h-[480px]`, pinned mode to `h-screen`. A hard `max-h-[50vh]` cap was
+ * briefly tried but broke pinned mode (the input floated mid-screen);
+ * removed 2026-04-24. The list itself owns its own scroll container +
+ * autoscroll so internal overflow is handled.
+ *
+ * Adds ARIA log role for AT and passes through the prop surface
+ * FloatingCommandBar provides.
  */
-function CommandBarStream() {
-  const messages = useChatStore(selectMessages) as ChatMessageType[];
-  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
-  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
-  const reducedMotion = useReducedMotion();
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const lastCountRef = useRef<number>(messages.length);
 
-  useEffect(() => {
-    const region = scrollRef.current;
-    if (!region) return;
-    // Only scroll on count change — avoids jumping when an in-flight
-    // segment updates without growing the message list.
-    if (messages.length === lastCountRef.current) return;
-    lastCountRef.current = messages.length;
+interface CommandBarStreamProps {
+  /** Called when a QuickReply or onboarding prompt fires a send. */
+  onSend: (content: string) => void;
+  /** Called when the user clicks Resend on a user message. Optional — */
+  /** cmd-bar-origin resend UX is pending follow-up work. */
+  onResend?: (message: ChatMessageType) => void;
+  /** Called when the user clicks Edit on a user message. Optional. */
+  onEdit?: (message: ChatMessageType) => void;
+  /** Called when the empty-state onboarding prompts are clicked. */
+  onPrefill?: (text: string) => void;
+}
 
-    const behavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
-    if (typeof region.scrollTo === "function") {
-      region.scrollTo({ top: region.scrollHeight, behavior });
-    } else {
-      // Fallback for environments without scrollTo (older jsdom). Setting
-      // scrollTop directly is always synchronous and instant.
-      region.scrollTop = region.scrollHeight;
-    }
-    // Always ensure scrollTop reflects the bottom — the spec asserts this
-    // and `scrollTo` in jsdom is a no-op without polyfills.
-    region.scrollTop = region.scrollHeight;
-  }, [messages.length, reducedMotion]);
-
-  const isEmpty =
-    messages.length === 0 && !pendingProjectSwitch && !pendingAgentSwitch;
+function CommandBarStream({ onSend, onResend, onEdit, onPrefill }: CommandBarStreamProps) {
+  // Scope the list to the active conversation's selected projects — same
+  // read the classic ChatPanel uses to drive sandbox-scope / domain
+  // auto-approval decisions inside the list.
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
 
   return (
     <div
-      ref={scrollRef}
       data-cmd-stream
       role="log"
       aria-live="polite"
       aria-label="Chat stream"
-      className={cn(
-        "flex flex-1 flex-col min-h-0",
-        "max-h-[50vh] overflow-y-auto",
-        "px-4 py-3",
-      )}
+      className="flex flex-1 flex-col min-h-0"
     >
-      {isEmpty ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-xs text-muted-foreground">No messages yet</p>
-        </div>
-      ) : (
-        <>
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id ?? `${message.role}-${message.timestamp ?? 0}`}
-              message={message}
-            />
-          ))}
-          {/*
-           * Provider context-isolation cards (PRD 2026-04-21-ui-refresh, task
-           * #117). Mirrors the render condition in `ChatMessageList.tsx` so
-           * both shells surface mid-conversation provider/project switches —
-           * the silent-context-loss bug from the #113 functional-parity audit.
-           *
-           * State + resolvers live entirely in `chat-store`; this surface
-           * only reads `selectPendingProjectSwitch` / `selectPendingAgentSwitch`
-           * and delegates button wiring to the cards themselves (which call
-           * `resolveProjectSwitch` / `resolveAgentSwitch` on the store).
-           */}
-          {pendingProjectSwitch && (
-            <ProjectSwitchCard
-              newPaths={pendingProjectSwitch.newPaths}
-              previousPaths={pendingProjectSwitch.previousPaths}
-            />
-          )}
-          {pendingAgentSwitch && (
-            <AgentSwitchCard
-              newAgent={pendingAgentSwitch.newAgent}
-              previousAgent={pendingAgentSwitch.previousAgent}
-            />
-          )}
-        </>
-      )}
+      <ChatMessageList
+        onSend={onSend}
+        selectedProjectPaths={selectedProjectPaths}
+        onResend={onResend}
+        onEdit={onEdit}
+        onPrefill={onPrefill}
+      />
     </div>
   );
 }
