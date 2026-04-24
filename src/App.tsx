@@ -13,6 +13,10 @@ const SettingsDialog = lazy(() => import("@/components/settings/SettingsDialog")
 const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
 const KeyboardShortcutsDialog = lazy(() => import("@/components/KeyboardShortcutsDialog").then(m => ({ default: m.KeyboardShortcutsDialog })));
 const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
+// #128 — Sidebar-driven commit dialog. Same `CommitDialog` component
+// used by the legacy `ProjectItem`; lazy-loaded here so the classic
+// path is unaffected.
+const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -81,6 +85,13 @@ function App() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
+  // #128 — global commit dialog state for Quiet Composer's sidebar
+  // context menu. The classic shell still owns its own per-project
+  // commit state inside `ProjectItem`; this App-level dialog is an
+  // additional mount path driven by `SIDEBAR_COMMIT_FILE_EVENT`.
+  const [commitDialogState, setCommitDialogState] = useState<{
+    projectPath: string;
+  } | null>(null);
 
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
   const { addProject, addExplorerFolder } = useWorkspaceStore();
@@ -321,6 +332,58 @@ function App() {
     }
   }, [addProject]);
 
+  // #128 — Quiet Composer sidebar context menu fires DOM CustomEvents
+  // for actions that need App-level state (commit dialog, make-project,
+  // export). We listen once here and proxy to the existing handlers so
+  // we don't have to prop-drill through QuietSidebar → sections →
+  // SidebarContextMenu.
+  // Forward-declared above; the export listener reads the current binding
+  // at event-dispatch time via a ref-stable closure workaround. We can't
+  // reference `handleExportFile` yet because it's declared below — a ref
+  // mirror keeps the listener stable without participating in the
+  // render cycle.
+  const handleExportFileRef = useRef<
+    ((filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => Promise<void>) | null
+  >(null);
+
+  useEffect(() => {
+    const onMakeProject = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ path?: string }>).detail;
+      if (detail?.path) void handleMakeProject(detail.path);
+    };
+    const onCommitFile = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ filePath?: string }>).detail;
+      if (!detail?.filePath) return;
+      // Find the owning project so the CommitDialog has a repo root.
+      const projects = useWorkspaceStore.getState().projects;
+      const sorted = [...projects].sort(
+        (a, b) => b.path.length - a.path.length,
+      );
+      const owning = sorted.find(
+        (p) => detail.filePath === p.path || detail.filePath!.startsWith(p.path + "/"),
+      );
+      if (!owning) {
+        toast.error("Commit requires the file to sit inside an open project.");
+        return;
+      }
+      setCommitDialogState({ projectPath: owning.path });
+    };
+    const onExportFile = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ filePath?: string; format?: 'pdf' | 'docx' | 'pptx' | 'html' }>).detail;
+      if (!detail?.filePath) return;
+      const fileName = detail.filePath.split("/").filter(Boolean).pop() ?? detail.filePath;
+      handleExportFileRef.current?.(detail.filePath, fileName, detail.format);
+    };
+    window.addEventListener("sidebar:make-project", onMakeProject);
+    window.addEventListener("sidebar:commit-file", onCommitFile);
+    window.addEventListener("sidebar:export-file", onExportFile);
+    return () => {
+      window.removeEventListener("sidebar:make-project", onMakeProject);
+      window.removeEventListener("sidebar:commit-file", onCommitFile);
+      window.removeEventListener("sidebar:export-file", onExportFile);
+    };
+  }, [handleMakeProject]);
+
   const handleNoteCreated = useCallback(async (filePath: string, fileName: string) => {
     try {
       await tauriApi.createFile(filePath);
@@ -449,6 +512,11 @@ function App() {
     }
     setExportOpen(true);
   }, [openFile]);
+
+  // #128 — Keep the CustomEvent listener's ref in sync with the latest
+  // `handleExportFile` binding. Running this on every render is cheap
+  // (ref write, no effect re-subscription).
+  handleExportFileRef.current = handleExportFile;
 
   const handleOpenProjectSettings = useCallback((projectPath: string) => {
     setProjectSettingsPath(projectPath);
@@ -658,6 +726,24 @@ function App() {
             onOpenChange={setShortcutsOpen}
           />
         </Suspense>
+        {/*
+          #128 — Global commit dialog for the Quiet Composer sidebar's
+          "Commit…" menu item. Mounted here so it survives sidebar row
+          unmount / re-render cycles. Legacy `ProjectItem` keeps its own
+          commit dialog (different project context); this one is driven
+          exclusively by the `sidebar:commit-file` CustomEvent.
+        */}
+        {commitDialogState && (
+          <Suspense fallback={null}>
+            <SidebarCommitDialog
+              repoPath={commitDialogState.projectPath}
+              open={commitDialogState !== null}
+              onOpenChange={(next) => {
+                if (!next) setCommitDialogState(null);
+              }}
+            />
+          </Suspense>
+        )}
         <Suspense fallback={null}>
         <ActionsDialog
           open={actionsDialogOpen}

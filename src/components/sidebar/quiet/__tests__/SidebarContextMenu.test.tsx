@@ -335,4 +335,127 @@ describe("SidebarContextMenu", () => {
       content: "hello",
     });
   });
+
+  // -------------------------------------------------------------------
+  // #128 — FileTreeItem parity (New File/Folder, Make Project, Add to
+  // chat, Export as…, Commit…). Each test seeds the relevant store /
+  // mock and asserts the menu item is either rendered or suppressed
+  // per the outcome-shaped acceptance criteria.
+  // -------------------------------------------------------------------
+
+  it("shows New File + New Folder on folder rows (#128)", () => {
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/sub" kind="folder">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+
+    expect(screen.getByText("New File")).toBeTruthy();
+    expect(screen.getByText("New Folder")).toBeTruthy();
+  });
+
+  it("shows New File (but NOT New Folder) on file rows (#128)", () => {
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/b.md" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+
+    expect(screen.getByText("New File")).toBeTruthy();
+    expect(screen.queryByText("New Folder")).toBeNull();
+  });
+
+  it("shows Make Project on folder rows only (#128)", () => {
+    const { unmount } = renderWithProviders(
+      <SidebarContextMenu filePath="/a/sub" kind="folder">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.getByText("Make Project")).toBeTruthy();
+    unmount();
+
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/b.md" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.queryByText("Make Project")).toBeNull();
+  });
+
+  it("Make Project dispatches the sidebar:make-project CustomEvent (#128)", async () => {
+    const listener = vi.fn();
+    window.addEventListener("sidebar:make-project", listener);
+    const user = userEvent.setup();
+
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/sub" kind="folder">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    await user.click(screen.getByText("Make Project"));
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const evt = listener.mock.calls[0][0] as CustomEvent<{ path: string }>;
+    expect(evt.detail).toEqual({ path: "/a/sub" });
+
+    window.removeEventListener("sidebar:make-project", listener);
+  });
+
+  it("shows Add to chat on image files only (#128)", () => {
+    const { unmount } = renderWithProviders(
+      <SidebarContextMenu filePath="/a/pic.png" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.getByText("Add to chat")).toBeTruthy();
+    unmount();
+
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/notes.md" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.queryByText("Add to chat")).toBeNull();
+  });
+
+  it("shows Export as… on markdown files only (#128)", () => {
+    const { unmount } = renderWithProviders(
+      <SidebarContextMenu filePath="/a/doc.md" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.getByText("Export as…")).toBeTruthy();
+    unmount();
+
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/pic.png" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.queryByText("Export as…")).toBeNull();
+  });
+
+  it("Export as… submenu trigger is present on markdown rows (#128)", () => {
+    // Submenu open-on-hover doesn't reliably fire in jsdom, so assert the
+    // trigger is present; the dispatch itself is exercised by the
+    // component's own code (single-line wrapper around
+    // `dispatchEvent(new CustomEvent(…))`) and by the App-level listener
+    // in `App.tsx`.
+    renderWithProviders(
+      <SidebarContextMenu filePath="/a/doc.md" kind="file">
+        {trigger()}
+      </SidebarContextMenu>,
+    );
+    openMenu();
+    expect(screen.getByText("Export as…")).toBeTruthy();
+  });
 });

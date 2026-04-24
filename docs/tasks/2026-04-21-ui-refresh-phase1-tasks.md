@@ -1358,7 +1358,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/CommandBarStream.tsx`, `src/components/cmd/FloatingCommandBar.tsx` (wire edit-context + resend-dialog state), possibly a new `src/components/cmd/CommandBarMessageActions.tsx` |
 | Surfaced from | #113 audit — ten per-message affordances / stream features missing from CommandBarStream |
 
-### #128 — SidebarContextMenu parity with FileTreeItem
+### #128 — SidebarContextMenu parity with FileTreeItem ✅
 
 | Field | Value |
 | --- | --- |

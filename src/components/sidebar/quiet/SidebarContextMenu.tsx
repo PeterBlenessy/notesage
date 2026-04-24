@@ -6,6 +6,9 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -21,6 +24,8 @@ import {
 import { tauriApi } from "@/lib/tauri";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
+import { useGitStore } from "@/stores/git-store";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 
 /**
@@ -42,6 +47,45 @@ import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 
 /** Event name dispatched when the user clicks the Rename menu item. */
 export const SIDEBAR_ENTER_RENAME_MODE_EVENT = "sidebar:enter-rename-mode";
+
+/**
+ * App-level CustomEvents dispatched by the menu (#128). `App.tsx` subscribes
+ * and proxies to the legacy handlers so we don't have to prop-drill through
+ * QuietSidebar → each section → SidebarContextMenu. Mirrors the approach
+ * already used by `SIDEBAR_ENTER_RENAME_MODE_EVENT` above.
+ */
+export const SIDEBAR_MAKE_PROJECT_EVENT = "sidebar:make-project";
+export const SIDEBAR_COMMIT_FILE_EVENT = "sidebar:commit-file";
+export const SIDEBAR_EXPORT_FILE_EVENT = "sidebar:export-file";
+
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
+const MARKDOWN_EXTENSIONS = /\.md$/i;
+
+function isImageFilename(name: string): boolean {
+  return IMAGE_EXTENSIONS.test(name);
+}
+
+function isMarkdownFilename(name: string): boolean {
+  return MARKDOWN_EXTENSIONS.test(name);
+}
+
+/**
+ * Walks up `filePath` against the open projects to find the owning project
+ * root (if any). Used for the "Commit…" gate (only tracked if the owning
+ * project is a git repo) and as the working-copy root for export/commit
+ * handlers dispatched to App.tsx.
+ */
+function findOwningProject(filePath: string, projects: Array<{ path: string }>): string | null {
+  // Longest match wins — sort descending so nested projects pick the
+  // closest ancestor rather than a top-level workspace entry.
+  const sorted = [...projects].sort((a, b) => b.path.length - a.path.length);
+  for (const p of sorted) {
+    if (filePath === p.path || filePath.startsWith(p.path + "/")) {
+      return p.path;
+    }
+  }
+  return null;
+}
 
 export interface SidebarContextMenuProps {
   /** Absolute path of the sidebar item. */
@@ -74,14 +118,33 @@ export function SidebarContextMenu({
   onOpen,
 }: SidebarContextMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const { openFile, deletePath } = useFileOperations();
+  const { openFile, deletePath, refreshFileTree } = useFileOperations();
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const unpinFile = useWorkspaceStore((s) => s.unpinFile);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
 
   const name = basename(filePath);
   const isPinned = pinnedFiles.includes(filePath);
   const isFile = kind === "file";
+  const isFolder = kind === "folder";
+  const isProject = kind === "project";
+  const isContainer = isFolder || isProject;
+  const isImage = isFile && isImageFilename(name);
+  const isMarkdown = isFile && isMarkdownFilename(name);
+
+  // Owning project is used for git-status gating + export working dir.
+  // Projects themselves own themselves; files walk up to find their project.
+  const owningProject = isProject
+    ? filePath
+    : findOwningProject(filePath, projects);
+  const repoState = useGitStore((s) =>
+    owningProject ? s.getRepo(owningProject) : null,
+  );
+  const isTrackedUnderGit = Boolean(
+    repoState?.isGitRepo && repoState.fileStatusMap?.has(filePath),
+  );
 
   const handleOpen = async () => {
     if (onOpen) {
@@ -168,6 +231,97 @@ export function SidebarContextMenu({
     }
   };
 
+  // #128 — New File under this row. Files route the create to their
+  // parent directory; folders/projects route to themselves.
+  const handleNewFile = () => {
+    const parentDir = isContainer
+      ? filePath
+      : filePath.slice(0, filePath.lastIndexOf("/")) || filePath;
+    setPendingCreate({ parentDir });
+  };
+
+  // #128 — New Folder. Creates the directory immediately + refreshes the
+  // tree. Uses a deterministic default name "Untitled Folder" with numeric
+  // suffixes until a non-colliding path is found; rename follows up via
+  // inline-rename if the user wants a different name. Mirrors the legacy
+  // FileTreeItem's `handleNewFolder` flow without the extra dialog.
+  const handleNewFolder = async () => {
+    if (!isContainer) return;
+    try {
+      let candidate = `${filePath}/Untitled Folder`;
+      let counter = 2;
+      for (let i = 0; i < 100; i++) {
+        const exists = await tauriApi.pathExists(candidate);
+        if (!exists) break;
+        candidate = `${filePath}/Untitled Folder ${counter}`;
+        counter++;
+      }
+      await tauriApi.createDirectory(candidate);
+      await refreshFileTree(filePath);
+      toast.success(`Created "${basename(candidate)}"`);
+    } catch (error) {
+      toast.error(`Failed to create folder: ${error}`);
+    }
+  };
+
+  // #128 — Make Project / Open as Project. Folder rows only. Dispatches
+  // to App.tsx via CustomEvent so we don't have to prop-drill through
+  // QuietSidebar → sections → this component.
+  const handleMakeProject = () => {
+    if (!isFolder) return;
+    window.dispatchEvent(
+      new CustomEvent(SIDEBAR_MAKE_PROJECT_EVENT, { detail: { path: filePath } }),
+    );
+  };
+
+  // #128 — Add to chat. Image files only. Compresses the bytes
+  // client-side and hands off to the vision event bus so the chat panel
+  // attaches the image (same handler `FileTreeItem` uses).
+  const handleAddToChat = async () => {
+    if (!isImage) return;
+    try {
+      const { compressImage } = await import("@/lib/image-compress");
+      const { sendImageToChat } = await import("@/lib/ai/vision");
+      const bytes = await tauriApi.readBinaryFile(filePath);
+      const ext = name.split(".").pop()?.toLowerCase() ?? "";
+      const mimeMap: Record<string, string> = {
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        gif: "image/gif",
+        webp: "image/webp",
+        bmp: "image/bmp",
+        svg: "image/svg+xml",
+      };
+      const blob = new Blob([new Uint8Array(bytes)], {
+        type: mimeMap[ext] ?? "image/png",
+      });
+      const attachment = await compressImage(blob, { name });
+      sendImageToChat(attachment);
+      toast.success("Image added to chat");
+    } catch (error) {
+      toast.error(`Failed to add image to chat: ${error}`);
+    }
+  };
+
+  // #128 — Commit… Dispatches to App.tsx; gated by isTrackedUnderGit so
+  // we don't surface it on files outside any git repo.
+  const handleCommitFile = () => {
+    window.dispatchEvent(
+      new CustomEvent(SIDEBAR_COMMIT_FILE_EVENT, { detail: { filePath } }),
+    );
+  };
+
+  // #128 — Export as… (submenu PDF/DOCX/PPTX/HTML). Dispatches with the
+  // requested format so App.tsx can drive the existing `handleExportFile`.
+  const handleExport = (format: "pdf" | "docx" | "pptx" | "html") => {
+    window.dispatchEvent(
+      new CustomEvent(SIDEBAR_EXPORT_FILE_EVENT, {
+        detail: { filePath, format },
+      }),
+    );
+  };
+
   return (
     <>
       <ContextMenu>
@@ -180,6 +334,32 @@ export function SidebarContextMenu({
             Rename
             <ContextMenuShortcut>F2</ContextMenuShortcut>
           </ContextMenuItem>
+
+          {/* #128 — New File / New Folder for container rows. Files get the
+             *  New-File-in-parent-dir convenience too so the menu reaches
+             *  parity with the legacy FileTreeItem. */}
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={handleNewFile}>
+            New File
+          </ContextMenuItem>
+          {isContainer && (
+            <ContextMenuItem onSelect={() => void handleNewFolder()}>
+              New Folder
+            </ContextMenuItem>
+          )}
+
+          {/* #128 — Make Project / Open as Project. Folder rows only. The
+             *  `isProject` kind is already a project, so this never renders
+             *  for that kind. App.tsx decides between the two labels via
+             *  its own state. */}
+          {isFolder && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={handleMakeProject}>
+                Make Project
+              </ContextMenuItem>
+            </>
+          )}
 
           <ContextMenuSeparator />
 
@@ -194,6 +374,14 @@ export function SidebarContextMenu({
             {isPinned ? "Unpin" : "Pin"}
           </ContextMenuItem>
 
+          {/* #128 — Add to chat. Image files only; hands off to the vision
+             *  event bus so the chat panel attaches the image. */}
+          {isImage && (
+            <ContextMenuItem onSelect={() => void handleAddToChat()}>
+              Add to chat
+            </ContextMenuItem>
+          )}
+
           <ContextMenuSeparator />
 
           <ContextMenuItem onSelect={() => void handleRevealInFinder()}>
@@ -207,6 +395,43 @@ export function SidebarContextMenu({
           <ContextMenuItem onSelect={handleCopyFilename}>
             Copy filename
           </ContextMenuItem>
+
+          {/* #128 — Export as… Markdown files only. Submenu fans out into
+             *  the four formats the legacy export-file handler supports. */}
+          {isMarkdown && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Export as…</ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  <ContextMenuItem onSelect={() => handleExport("pdf")}>
+                    PDF
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => handleExport("docx")}>
+                    Word (.docx)
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => handleExport("pptx")}>
+                    PowerPoint
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => handleExport("html")}>
+                    HTML
+                  </ContextMenuItem>
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            </>
+          )}
+
+          {/* #128 — Commit… Only surfaces for files tracked under a git
+             *  repo we know about. App.tsx handles the actual commit flow
+             *  (same dialog Layout uses). */}
+          {isTrackedUnderGit && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={handleCommitFile}>
+                Commit…
+              </ContextMenuItem>
+            </>
+          )}
 
           <ContextMenuSeparator />
 
