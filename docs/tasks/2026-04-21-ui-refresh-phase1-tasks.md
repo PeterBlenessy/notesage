@@ -1207,7 +1207,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `docs/tasks/qa/2026-04-23-functional-parity.md` (artifact) + fix tasks it spawns |
 | Surfaced from | 2026-04-23 trial revealed five functional regressions (⌘K, ⌘⌘, send, history, AgentSwitchCard) that unit tests passed. Root cause: no gate existed to prove functional reachability through the new shell. |
 
-### #114 — Wire `subscribeToCmdBarEvents` in FloatingCommandBar + Esc fall-through
+### #114 — Wire `subscribeToCmdBarEvents` in FloatingCommandBar + Esc fall-through ✅
 
 | Field | Value |
 | --- | --- |
