@@ -339,7 +339,10 @@ export function FilePreview({
         // (more robust than chasing inline-style shadowing through Radix).
         data-reduced-motion={reducedMotion ? "true" : undefined}
         className={cn(
-          "w-[360px] p-0 overflow-hidden",
+          // 300px + 14px inner padding matches the mockup-L peek
+          // dimensions exactly. Slightly tighter than our prior 360px
+          // so the preview feels more like a tooltip than a panel.
+          "w-[300px] p-0 overflow-hidden",
           "motion-reduce:!animate-none motion-reduce:!duration-0",
         )}
       >
@@ -384,9 +387,14 @@ export function FilePreview({
                 // raw markdown in a `<pre>` felt like a dev tool;
                 // moving to rendered output matches the writing-surface
                 // aesthetic the rest of the Quiet Composer already has.
+                //
+                // `font-serif` + muted foreground matches mockup-L's
+                // reading aesthetic (the mockup uses `var(--serif)` at
+                // 12.5px/1.55 with muted colour). Code blocks flip
+                // back to monospace via the `[&_code]` selector.
                 <MarkdownContent
                   content={state.body}
-                  className="text-xs [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_p]:mb-1 [&_ul]:pl-4 [&_ol]:pl-4 [&_code]:text-[11px]"
+                  className="font-serif text-xs leading-[1.55] text-muted-foreground [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:text-foreground [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:mb-2 [&_ul]:pl-4 [&_ol]:pl-4 [&_code]:font-mono [&_code]:text-[11px] [&_pre]:font-mono"
                 />
               ) : (
                 <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words m-0">
