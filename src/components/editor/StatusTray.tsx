@@ -394,18 +394,28 @@ function LocalAIStatusRow() {
       ? "Error"
       : "Stopped";
 
+  // Server-state-driven dot colour. Mirrors the sibling semantics used by
+  // `LocalAIIndicator` (legacy full StatusBar) and the `StatusDot` component
+  // in the quiet strip: green = running, amber pulse = starting, red = error,
+  // neutral = idle. This is the same "content-state" colour exception the
+  // other indicators in this file already take — keep the three surfaces in
+  // sync so the user sees one story.
   const dot =
     serverStatus === "running"
-      ? "bg-foreground/70"
+      ? "bg-green-500"
       : serverStatus === "starting"
-      ? "bg-muted-foreground/70 animate-pulse"
+      ? "bg-amber-500 animate-pulse"
       : serverStatus === "error"
-      ? "bg-destructive"
+      ? "bg-red-500"
       : "bg-muted-foreground/30";
 
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)} />
+      <span
+        className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)}
+        data-testid="local-ai-status-dot"
+        data-server-status={serverStatus}
+      />
       <span className="truncate">Local AI · {label}</span>
     </div>
   );
