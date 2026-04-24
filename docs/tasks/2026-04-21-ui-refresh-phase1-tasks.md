@@ -1218,7 +1218,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/hooks/useCommandBarShortcuts.ts` (Esc policy update), composition test in `src/components/cmd/__tests__/` |
 | Surfaced from | 2026-04-23 trial: ⌘K / ⌘⇧P / ⌘1–4 / Esc did not open or dismiss the bar. |
 
-### #115 — Mount `useDoubleTapCmd` in `useKeyboardShortcuts`
+### #115 — Mount `useDoubleTapCmd` in `useKeyboardShortcuts` ✅
 
 | Field | Value |
 | --- | --- |
@@ -1262,7 +1262,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/components/cmd/CommandBarContext.tsx` (wire clock icon), composition test |
 | Surfaced from | 2026-04-23 trial: history list was unreachable in Quiet Composer. |
 
-### #119 — Fix AgentOrb pulse (CSS cascade conflict)
+### #119 — Fix AgentOrb pulse (CSS cascade conflict) ✅
 
 | Field | Value |
 | --- | --- |
@@ -1273,7 +1273,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/activity/AgentOrb.tsx`, `src/components/activity/__tests__/AgentOrb.test.tsx` |
 | Surfaced from | 2026-04-23 trial: orb did not pulse under activity. User directive: "you MUST be able to conclude from looking at the code." |
 
-### #120 — Entering focus mode collapses the command bar
+### #120 — Entering focus mode collapses the command bar ✅
 
 | Field | Value |
 | --- | --- |
