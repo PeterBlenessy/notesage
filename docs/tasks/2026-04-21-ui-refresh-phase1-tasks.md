@@ -7,7 +7,7 @@
 | **PRD** | [ui-refresh](../prds/2026-04-21-ui-refresh.md) |
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
-| **Total** | 127 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 25 with #103–#107 polish, #110–#112 toolbar + audit, #113 parity audit, #114–#120 first integration-gap batch, and #121–#130 second batch surfaced by the #113 audit; M1.13 = #108–#109). |
+| **Total** | 129 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 27 with #103–#107 polish, #110–#112 toolbar + audit, #113 parity audit, #114–#120 first integration-gap batch, #121–#130 second batch surfaced by the #113 audit, and #131–#132 third batch surfaced by 2026-04-24 live test; M1.13 = #108–#109). |
 | **Complexity mix** | \~30 S, \~50 M, \~20 L |
 | **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
@@ -1145,7 +1145,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | The orb uses `hover:scale-105` which is too subtle. Add either (a) a Radix Tooltip showing the same aria-label text on hover, (b) a soft `hover:shadow-lg` glow, or (c) both. Keep ambient — the orb shouldn't grab attention. |
+| Description | The orb uses `hover:scale-105` which is too subtle. Add either (a) a Radix Tooltip showing the same aria-label text on hover, (b) a soft `hover:shadow-lg` glow, or (c) both. Keep ambient — the orb shouldn't grab attention. **Scope extension 2026-04-24 (live test)**: user reports the hover is instant, not subtle — 150 ms transition may not be reaching the DOM. Investigate whether `transition-transform duration-150 ease-in-out` on the button is being emitted by Tailwind v4 and applied when `hover:scale-105` triggers. If emitted correctly, consider a longer duration (200-250 ms) or a more pronounced hover cue (soft shadow, subtle ring tint). Composition test: assert transition class is present; manual live-check the feel. |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
@@ -1240,16 +1240,16 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | TBD — investigate first. Candidates: `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/stores/chat-store.ts` |
 | Surfaced from | 2026-04-23 trial: user's bubble appeared but no assistant response. |
 
-### #117 — Render AgentSwitchCard inside CommandBarStream ✅
+### #117 — Signal agent/project switches via footer icons (NOT disruptive stream cards) 🔁
 
 | Field | Value |
 | --- | --- |
-| Description | `AgentSwitchCard` is the context-isolation warning shown when the user switches provider mid-conversation. Currently only rendered inside `ChatMessageList.tsx` (classic `ChatPanel`). `CommandBarStream` does not render it, so Quiet Composer users never see the warning and silently lose context. Fix: render `AgentSwitchCard` inside `CommandBarStream` at the appropriate segment boundary, matching the legacy behavior. **Outcome-shaped acceptance**: open chat in Quiet Composer, send a message with Provider A, switch to Provider B, send another message → `AgentSwitchCard` appears in the stream. **Composition test mandatory**: seed chat-store with a provider-switch segment, render `CommandBarStream`, assert `AgentSwitchCard` is present. |
-| Complexity | S |
+| Description | **REOPENED 2026-04-24** after live test: the switch-card pattern shipped in the first pass was rejected by the user — "I think the agent selector in legacy was better, just displaying the icon. Same for project selector." The disruptive card was also not appearing (pending-state wiring issue). Pivot: **remove both card renders from `CommandBarStream`**. Surface the same information as persistent icons inside `CommandBarContext`'s context row (provider pill + project chip already there) — flag them with a small visual change (e.g., border tint, info badge) when a pending-switch condition exists, and resolve-on-send instead of resolve-on-explicit-click. This matches legacy ChatFooter's compact pattern and keeps the stream focused on conversation content. **Outcome-shaped acceptance**: switch provider mid-chat → the provider pill gets a subtle "context will reset on next send" indicator; sending clears it. Same for project switch. No card renders in the stream. **Composition test**: seed chat-store with pending-switch state; assert indicator appears on the correct pill; no card in stream. |
+| Complexity | M |
 | Category | frontend |
-| Depends on | #24 (reverted) |
-| Files | `src/components/cmd/CommandBarStream.tsx`, composition test |
-| Surfaced from | 2026-04-23 trial: provider switch did not fire the context warning. |
+| Depends on | #24 (reverted), #125 (footer work) |
+| Files | `src/components/cmd/CommandBarContext.tsx`, `src/components/cmd/CommandBarStream.tsx` (remove card render), composition tests (invert existing assertions) |
+| Surfaced from | 2026-04-24 live test: cards not appearing + design pivot per user. |
 
 ### #118 — Render conversation history inside FloatingCommandBar
 
@@ -1333,7 +1333,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | `CommandBarContext.tsx` is missing three pieces of ChatFooter: the `AcpConfigOptionPicker` (thinking effort + model dropdowns), the "N goals" indicator pill, and the `showAgentModePicker` gate (legacy hides the mode picker unless the setting is on; Quiet Composer shows it unconditionally). Port each across from `src/components/chat/ChatFooter.tsx` and `src/components/chat/AcpSessionControls.tsx`. **Outcome-shaped acceptance**: thinking effort, model, goals, and agent-mode-picker settings behave identically in both footers. **Composition test mandatory**: render `<CommandBarContext />` with seeded ACP state + goals, assert each affordance is present and wired. |
+| Description | `CommandBarContext.tsx` is missing three pieces of ChatFooter: the `AcpConfigOptionPicker` (thinking effort + model dropdowns), the "N goals" indicator pill, and the `showAgentModePicker` gate (legacy hides the mode picker unless the setting is on; Quiet Composer shows it unconditionally). Port each across from `src/components/chat/ChatFooter.tsx` and `src/components/chat/AcpSessionControls.tsx`. **Outcome-shaped acceptance**: thinking effort, model, goals, and agent-mode-picker settings behave identically in both footers. **Composition test mandatory**: render `<CommandBarContext />` with seeded ACP state + goals, assert each affordance is present and wired. **Scope extension 2026-04-24 (live test)**: when the user selects more than 2 projects in the footer, the agent mode picker gets pushed out of view (horizontal overflow). Add responsive handling — project chips should truncate/wrap/scroll so the mode picker remains visible. Regression test: seed 4+ projects; assert mode picker is still visible in the viewport. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | none |
@@ -1395,6 +1395,28 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/CommandBarStream.tsx`, `src/components/activity/AgentOrb.tsx`, `src/components/activity/AgentPanel.tsx` |
 | Surfaced from | #113 audit — seven permission/approval/banner types and orb panel wiring missing |
 
+### #131 — Remove DocHead breadcrumb; move dirty dot + saved-ago into TitleBar
+
+| Field | Value |
+| --- | --- |
+| Description | Live test 2026-04-24: user finds the DocHead breadcrumb (`Notesage / project / folder / file.md`) duplicates the filename already shown in the native macOS title bar. Remove `DocHead` from `QuietLayout.tsx`. Move the active-document surface into `TitleBar.tsx` in quiet mode: the OS title bar already renders the filename; add a dirty-dot + "saved Xs ago" timer inline next to it (or as a subtle status zone next to the traffic lights). The `buildBreadcrumb()` helper stays in `DocHead.tsx` but the component mount is dropped. **Outcome-shaped acceptance**: in Quiet Composer, no breadcrumb row renders above the editor; filename + dirty state + saved timer visible in the top chrome. **Composition test**: render `<QuietLayout />` with a dirty tab, assert no `[data-doc-head]` element is in the DOM; assert dirty indicator is in the title-bar area. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #103 (TitleBar mode prop already exists) |
+| Files | `src/components/QuietLayout.tsx` (drop DocHead mount), `src/components/TitleBar.tsx` (add dirty + saved-ago when `mode="quiet"`), optionally `src/components/editor/DocHead.tsx` (keep `buildBreadcrumb` helper, remove component export if no other callers), composition tests |
+| Surfaced from | 2026-04-24 live test: user — "I actually think we could get rid of the breadcrumb, I don't see the value it brings. The file name is displayed in the title bar, I think that is enough." Decision: option (c) from triage — integrate into TitleBar. |
+
+### #132 — `uiPreview` toggle progress indicator
+
+| Field | Value |
+| --- | --- |
+| Description | Live test 2026-04-24: switching between `legacy` and `quiet-composer` in Settings takes several seconds as React unmounts one layout tree and mounts another. Currently there is no visual feedback — the UI freezes briefly, which reads as "the app hung". Add a progress indicator: during the transition, overlay a lightweight spinner or skeleton on top of the viewport so the user sees something is happening. Consider: (a) render a `<div class="fixed inset-0 grid place-items-center bg-background z-50"><Spinner /></div>` while the new layout is mounting, gated by a short delay (&gt;200ms) to avoid flashing on fast transitions; (b) use React's `useTransition` to mark the `setUiPreview` as a non-urgent transition with a pending state. Option (a) is simpler; (b) is more idiomatic React 19. **Outcome-shaped acceptance**: toggle the preview flag in Settings → visible progress indicator for the duration of the remount, no perceived hang. **Composition test**: mock a slow layout unmount; assert the spinner appears within one tick of the setting change. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/settings/...` (wherever `setUiPreview` is called), possibly `src/App.tsx` or `src/components/Layout.tsx` for the overlay render, new spinner component (or reuse an existing one) |
+| Surfaced from | 2026-04-24 live test: "toggling on/off the new UI takes a lot of time. I think it would improve UX to display some kind of progress indication while waiting." |
+
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
 
@@ -1424,7 +1446,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
-- [ ] All 127 tasks completed (M1.1–M1.13)
+- [ ] All 129 tasks completed (M1.1–M1.13)
 
 - [ ] All new perf suites pass within budget at 1× multiplier
 
