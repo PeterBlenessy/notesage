@@ -7,7 +7,7 @@
 | **PRD** | [ui-refresh](../prds/2026-04-21-ui-refresh.md) |
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
-| **Total** | 117 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 15 with #103–#107, #110, #111, #112, #113 parity audit, and #114–#120 integration-gap fixes; M1.13 = #108–#109). |
+| **Total** | 127 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 25 with #103–#107 polish, #110–#112 toolbar + audit, #113 parity audit, #114–#120 first integration-gap batch, and #121–#130 second batch surfaced by the #113 audit; M1.13 = #108–#109). |
 | **Complexity mix** | \~30 S, \~50 M, \~20 L |
 | **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
@@ -1196,7 +1196,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/editor/Editor.tsx` (read uiPreview, pass variant), `src/components/editor/Toolbar.tsx` (conditional button set), `src/components/editor/StatusTray.tsx` (host dictation + source-mode toggle), unit tests |
 | Surfaced from | Project lead's 2026-04-23 trial — Quiet Composer still showed the flat legacy toolbar; planning gap from the original 100-task plan |
 
-### #113 — Functional-parity audit (separate from #111 visual audit)
+### #113 — Functional-parity audit (separate from #111 visual audit) ✅
 
 | Field | Value |
 | --- | --- |
@@ -1285,6 +1285,116 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Surfaced from | 2026-04-23 trial: user observed Esc only collapsed bar when focused in input; same class of bug — focus mode did not trigger collapse. |
 
 ---
+### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer
+
+| Field | Value |
+| --- | --- |
+| Description | ⌘⇧C (toggle chat panel) and ⌘⇧A (toggle agent panel) fire in Quiet Composer but both legacy panels are gone — `settings-store.chatPanelOpen` toggles a store value nothing observes, and the orb's popover state is local. Decide and wire the Quiet Composer semantics: ⌘⇧C summons or pins/unpins the floating command bar; ⌘⇧A opens/closes the AgentOrb popover. No `noop` callbacks left in `QuietLayout.tsx`. **Outcome-shaped acceptance**: press ⌘⇧C → command bar expands (or toggles pinned if already expanded); press ⌘⇧A → orb popover opens/closes. **Composition test mandatory**: dispatch both chords on a mounted `<QuietLayout />`, assert observable state. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #114 (bus subscription prerequisite) |
+| Files | `src/hooks/useKeyboardShortcuts.ts`, `src/components/QuietLayout.tsx`, `src/lib/cmd-bar-events.ts` (possibly a new event type), `src/components/activity/AgentOrb.tsx` (expose open-state via bus or ref) |
+| Surfaced from | #113 audit — ⌘⇧C / ⌘⇧A had no Quiet Composer binding |
+
+### #122 — DocHead parity: tab close affordance + tab strip decision
+
+| Field | Value |
+| --- | --- |
+| Description | DocHead is a read-only breadcrumb; legacy users rely on middle-click-to-close, drag-to-reorder, per-tab dirty dots, and visual tab switching. ⌘W still closes the active tab via the editor-store action, but there is no equivalent of middle-click or drag. Decide: (a) add a compact `QuietTabStrip` component that renders a thin row of tabs above DocHead, or (b) declare `⌘W` + sidebar/TreeOverlay + `⌘⇧[` / `⌘⇧]` as the parity surface and document the decision in keyboard-shortcuts.md and design-system.md. **Outcome-shaped acceptance**: PRD decision committed; whichever path is chosen has parity with legacy close/reorder behavior. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | none |
+| Files | PRD update in `docs/prds/2026-04-21-ui-refresh.md`; either a new `src/components/editor/QuietTabStrip.tsx` or a doc note; `docs/keyboard-shortcuts.md` + `docs/design-system.md` updated |
+| Surfaced from | #113 audit — missing middle-click close / drag-reorder in Quiet Composer |
+
+### #123 — ⌘⇧L toggles Quiet sidebar visibility
+
+| Field | Value |
+| --- | --- |
+| Description | `⌘⇧L` flips `settings-store.sidebarPinned` (existing behavior) but `QuietSidebar` renders unconditionally and `QuietLayout`'s grid-template-columns is static — the setting isn't observed. Fix: `QuietLayout` reads the setting and either conditionally renders the sidebar OR uses a CSS variable to toggle the column width (prefer the latter for zero re-renders during drag). **Outcome-shaped acceptance**: press ⌘⇧L → sidebar column hides; press again → reappears. **Composition test mandatory**: dispatch the chord, assert the grid-template-columns (or a data attribute) flips. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/QuietLayout.tsx`, `src/components/sidebar/quiet/QuietSidebar.tsx` |
+| Surfaced from | #113 audit — ⌘⇧L chord fires but no visible effect |
+
+### #124 — TitleBar buttons in Quiet Composer
+
+| Field | Value |
+| --- | --- |
+| Description | `QuietLayout.tsx` mounts `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />`. The chat and activity-strip toggle buttons still render but do nothing. Options: (a) extend `TitleBar` with `mode?: 'classic' \| 'quiet'` and suppress those buttons in quiet mode, or (b) rewire to Quiet Composer equivalents (summon command bar, open orb popover). Option (a) is cleaner — the command bar pill and the orb are themselves the affordances, the title bar shouldn't duplicate them. **Outcome-shaped acceptance**: no dead buttons visible in Quiet Composer TitleBar. **Composition test mandatory**: render with `mode="quiet"`, assert the chat / activity toggle buttons are not in the DOM. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/TitleBar.tsx`, `src/components/QuietLayout.tsx` |
+| Surfaced from | #113 audit + project lead's 2026-04-23 trial. Note: this overlaps with the already-filed #103 — either fold #103 into this or keep #103 as the parent and close #124 as a duplicate. |
+
+### #125 — CommandBarContext feature parity with ChatFooter
+
+| Field | Value |
+| --- | --- |
+| Description | `CommandBarContext.tsx` is missing three pieces of ChatFooter: the `AcpConfigOptionPicker` (thinking effort + model dropdowns), the "N goals" indicator pill, and the `showAgentModePicker` gate (legacy hides the mode picker unless the setting is on; Quiet Composer shows it unconditionally). Port each across from `src/components/chat/ChatFooter.tsx` and `src/components/chat/AcpSessionControls.tsx`. **Outcome-shaped acceptance**: thinking effort, model, goals, and agent-mode-picker settings behave identically in both footers. **Composition test mandatory**: render `<CommandBarContext />` with seeded ACP state + goals, assert each affordance is present and wired. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/cmd/CommandBarContext.tsx`, minor refactor in `src/components/chat/AcpSessionControls.tsx` to expose sub-pickers |
+| Surfaced from | #113 audit — three ChatFooter affordances missing from CommandBarContext |
+
+### #126 — FloatingCommandBar ChatInput parity
+
+| Field | Value |
+| --- | --- |
+| Description | The floating bar uses a raw `<input type="text">`. Legacy `ChatInput` provides image paste / drag-drop / file-picker, attachment thumbnails, vision-capability gating, a Stop-generation button, `/skill-name` body expansion, `@agent-name` intercept, sandbox-scope computation for comment conversations, explicit-attach offer, and attached-files context chips. Fix: either (a) replace the raw input with `ChatInput` (may need minor generalization), or (b) port the missing features into `FloatingCommandBar`. Option (a) is preferred — one surface, one set of tests. **Outcome-shaped acceptance**: user can paste an image into the bar; drag a file in; press Stop during streaming; send `/skill-name task` with skill expansion; send `@agent-name message` with agent addressing; comment-delegated conversations receive the correct sandbox scope. **Composition test mandatory**: exercise paste, drop, Stop, `/skill` expansion, and `@agent` intercept via integration-level tests with `tauri-mock.ts`. |
+| Complexity | L |
+| Category | frontend |
+| Depends on | #114 (bar opens), #116 (send flow investigated) |
+| Files | `src/components/cmd/FloatingCommandBar.tsx`, possibly `src/components/chat/ChatInput.tsx` (minor generalization), `src/components/cmd/AttachmentChips.tsx` (unify image + reference chips) |
+| Surfaced from | #113 audit — six ChatInput features absent from the floating bar |
+
+### #127 — CommandBarStream per-message parity
+
+| Field | Value |
+| --- | --- |
+| Description | `CommandBarStream.tsx` does not pass `onEdit` / `onResend` / `onBranch` / `onRetry` / `branchCount` to `<ChatMessage>`, does not render `<QuickReplies>`, `<ContextDivider>`, the branch-point separator, the empty-state onboarding prompts + `<LocalAISetupCard>`, the edit-mode banner, or the `<ResendProviderDialog>` flow. Port the surrounding `ChatMessageList.tsx` glue — including the autoscroll ref, edit/resend/branch state, and the resend-dialog state machine. **Outcome-shaped acceptance**: every per-message control, divider, quick-reply, empty-state affordance, edit banner, and resend dialog works identically in both shells. **Composition test mandatory**: seed chat-store with messages spanning all segment types, exercise each per-message action, assert observable behavior matches the legacy equivalent. |
+| Complexity | L |
+| Category | frontend |
+| Depends on | #117 (AgentSwitchCard scope includes ProjectSwitchCard — same root cause), #118 (history view) |
+| Files | `src/components/cmd/CommandBarStream.tsx`, `src/components/cmd/FloatingCommandBar.tsx` (wire edit-context + resend-dialog state), possibly a new `src/components/cmd/CommandBarMessageActions.tsx` |
+| Surfaced from | #113 audit — ten per-message affordances / stream features missing from CommandBarStream |
+
+### #128 — SidebarContextMenu parity with FileTreeItem
+
+| Field | Value |
+| --- | --- |
+| Description | `SidebarContextMenu.tsx` is missing "New File", "New Folder", "Make / Open as Project", "Move to…" (currently hard-coded disabled with "Coming soon"), "Add to chat" (for image files), "Export as…" sub-menu, and "Commit…". Also missing: drag-to-chat for sidebar rows. Legacy `FileTreeItem.tsx` has all of these. Port the actions across and wire `src/components/sidebar/quiet/file-drag.ts` to the vision event bus for image drops to the chat. **Outcome-shaped acceptance**: right-click any sidebar row → every context menu item available in legacy FileTreeItem appears and works; drag an image file onto the command bar → attachment appears. **Composition test mandatory**: render `SidebarContextMenu`, assert each menu item is present and wired. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/sidebar/quiet/SidebarContextMenu.tsx`, `src/components/sidebar/quiet/file-drag.ts`, new-folder dialog plumbing |
+| Surfaced from | #113 audit — seven context-menu actions and drag-to-chat missing |
+
+### #129 — Quiet sidebar visual state parity
+
+| Field | Value |
+| --- | --- |
+| Description | `FileTreeItem.tsx` surfaces git status indicators (modified / staged / untracked / deleted / renamed / conflicted), external-change indicators (pending diff dot), and AI-lock padlock overlays on project folders. `QuietSidebar`'s sections (`ProjectsSection`, `PinnedSection`, `RecentSection`, `FolderPeek`, `TreeOverlay`) render none of these. Extract the shared rendering logic from the existing `useFileTreeItemState` hook (or equivalent) and reuse it across each Quiet sidebar surface. **Outcome-shaped acceptance**: a file modified externally, dirty under git, or owned by an AI-locked project shows the same visual cues in Quiet sidebar surfaces as in the legacy FileTree. **Composition test mandatory**: seed the relevant stores, render each section, assert the indicators are present. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | none |
+| Files | `src/components/sidebar/quiet/ProjectsSection.tsx`, `PinnedSection.tsx`, `RecentSection.tsx`, `FolderPeek.tsx`, `TreeOverlay.tsx` (+ shared hook if one needs extracting) |
+| Surfaced from | #113 audit — three classes of visual state missing across all Quiet sidebar surfaces |
+
+### #130 — CommandBarStream chat-card + banner parity
+
+| Field | Value |
+| --- | --- |
+| Description | `CommandBarStream.tsx` does not render `PermissionCard`, `DomainApprovalCard` (plus the `network-domain-request` listener that currently lives inside `ChatMessageList`), `ToolCallPermissionCard`, `AgentStatusBanner`, or the "AI is thinking…" / `activeTool` loading indicators. Additionally, `AgentOrb`'s popover does not pass `onCancelTask` or `onClickTask` through to `AgentPanel` — tasks render but cannot be cancelled and do not navigate to their source. Port each card/banner render branch + the domain-request listener across; wire the orb popover callbacks. **Outcome-shaped acceptance**: a tool call that requires approval → `ToolCallPermissionCard` appears in the stream; a domain request → `DomainApprovalCard` appears with a 30s timeout; agent goes unresponsive → `AgentStatusBanner` appears; orb popover → clicking a task navigates, cancel button terminates. **Composition test mandatory**: seed each scenario via `tauri-mock.ts` events and assert the corresponding UI appears. |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #117 (the AgentSwitchCard render is the same slot) |
+| Files | `src/components/cmd/CommandBarStream.tsx`, `src/components/activity/AgentOrb.tsx`, `src/components/activity/AgentPanel.tsx` |
+| Surfaced from | #113 audit — seven permission/approval/banner types and orb panel wiring missing |
+
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
 
@@ -1314,7 +1424,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
-- [ ] All 117 tasks completed (M1.1–M1.13)
+- [ ] All 127 tasks completed (M1.1–M1.13)
 
 - [ ] All new perf suites pass within budget at 1× multiplier
 
