@@ -1114,7 +1114,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/TitleBar.tsx`, `src/components/QuietLayout.tsx` |
 | Surfaced as | F9 in `phase1-followups.md` |
 
-### #104 — TreeOverlay UX bugs: ⌘⇧E toggle, Esc dismiss, traffic-light overlap
+### #104 — TreeOverlay UX bugs: ⌘⇧E toggle, Esc dismiss, traffic-light overlap ✅
 
 | Field | Value |
 | --- | --- |
@@ -1125,7 +1125,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx` (toggle logic), `src/components/sidebar/quiet/TreeOverlay.tsx` (positioning + Esc investigation) |
 | Surfaced as | F10 in `phase1-followups.md` |
 
-### #105 — Set window title from active document
+### #105 — Set window title from active document ✅
 
 | Field | Value |
 | --- | --- |
@@ -1136,7 +1136,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/App.tsx` or `src/hooks/useAppLifecycle.ts` |
 | Surfaced as | F11 in `phase1-followups.md` |
 
-### #106 — AgentOrb hover state polish
+### #106 — AgentOrb hover state polish ✅
 
 | Field | Value |
 | --- | --- |
@@ -1147,7 +1147,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/activity/AgentOrb.tsx` |
 | Surfaced as | F12 in `phase1-followups.md` |
 
-### #107 — Switch-back-to-legacy banner inside QuietLayout
+### #107 — Switch-back-to-legacy banner inside QuietLayout ✅
 
 | Field | Value |
 | --- | --- |
@@ -1235,11 +1235,11 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | TBD — investigate first. Candidates: `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/stores/chat-store.ts` |
 | Surfaced from | 2026-04-23 trial: user's bubble appeared but no assistant response. |
 
-### #117 — Render AgentSwitchCard inside CommandBarStream
+### #117 — Render AgentSwitchCard inside CommandBarStream ✅
 
 | Field | Value |
 | --- | --- |
-| Description | `AgentSwitchCard` is the context-isolation warning shown when the user switches provider mid-conversation. Currently only rendered inside `ChatMessageList.tsx` (classic `ChatPanel`). `CommandBarStream` does not render it, so Quiet Composer users never see the warning and silently lose context. Fix: render `AgentSwitchCard` inside `CommandBarStream` at the appropriate segment boundary, matching the legacy behavior. **Outcome-shaped acceptance**: open chat in Quiet Composer, send a message with Provider A, switch to Provider B, send another message → `AgentSwitchCard` appears in the stream. **Composition test mandatory**: seed chat-store with a provider-switch segment, render `CommandBarStream`, assert `AgentSwitchCard` is present. |
+| Description | **Resolved by the CommandBarStream consolidation** — `CommandBarStream` is now a thin wrapper around `<ChatMessageList />`, which already renders `AgentSwitchCard` at the appropriate segment boundary (line 334). Both shells use the same rendering path; the provider-switch warning appears identically in Quiet Composer. No further work needed. |
 | Complexity | S |
 | Category | frontend |
 | Depends on | #24 (reverted) |

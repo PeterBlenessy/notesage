@@ -5,6 +5,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useActivityStore } from '@/stores/activity-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -102,6 +108,9 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
+      <TooltipProvider delayDuration={500}>
+        <Tooltip>
+          <TooltipTrigger asChild>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -124,11 +133,14 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
             // and drop the orb into document flow; 2026-04-24 regression).
             'fixed bottom-10 right-6 z-40',
             'h-[46px] w-[46px] rounded-full',
-            // Hover/focus polish — gentle scale + ring tint, no chromatic accent.
-            // These transforms live on the button so user-interaction affordances
-            // are untouched by the ambient pulse.
-            'transition-transform duration-150 ease-in-out',
-            'hover:scale-105',
+            // #106 hover/focus polish — gentle scale + soft shadow glow
+            // so the orb reads as interactive without being loud. The
+            // shadow lives on the outer button so it expands outward;
+            // the pulse ring on the inner wrapper is unaffected. Scale
+            // stays subtle (1.05) — the tooltip + shadow carry the
+            // hover signal now, so the scale alone doesn't have to.
+            'transition-[transform,box-shadow] duration-150 ease-in-out',
+            'hover:scale-105 hover:shadow-lg',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
         >
@@ -168,6 +180,12 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
           </span>
         </button>
       </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="left" sideOffset={10}>
+            {ariaLabel}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent
         side="top"
         align="end"

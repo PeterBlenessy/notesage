@@ -161,6 +161,15 @@ interface SettingsStore {
    * ui-refresh task #97.
    */
   previewInvitationDismissedAt: number | null;
+  /**
+   * Mirror of the preview-invitation timestamps for the REVERT banner
+   * (task #107). When a user is in Quiet Composer mode, we surface a
+   * symmetric "Prefer the classic UI? Switch back" banner once and then
+   * honour a 30-day cooldown on dismissal. Persisted. Separate fields
+   * so the two banners' show/dismiss state doesn't interfere.
+   */
+  revertInvitationShownAt: number | null;
+  revertInvitationDismissedAt: number | null;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -243,6 +252,10 @@ interface SettingsStore {
   markPreviewInvitationShown: () => void;
   /** Mark the preview-invitation banner as dismissed right now. ui-refresh #97. */
   dismissPreviewInvitation: () => void;
+  /** Mark the revert-invitation banner as shown right now. ui-refresh #107. */
+  markRevertInvitationShown: () => void;
+  /** Mark the revert-invitation banner as dismissed right now. ui-refresh #107. */
+  dismissRevertInvitation: () => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -288,6 +301,8 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarTagsHidden: false,
       previewInvitationShownAt: null,
       previewInvitationDismissedAt: null,
+      revertInvitationShownAt: null,
+      revertInvitationDismissedAt: null,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -587,6 +602,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ previewInvitationDismissedAt: Date.now() });
       },
 
+      markRevertInvitationShown: () => {
+        set({ revertInvitationShownAt: Date.now() });
+      },
+
+      dismissRevertInvitation: () => {
+        set({ revertInvitationDismissedAt: Date.now() });
+      },
+
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -750,4 +773,24 @@ export function shouldShowPreviewInvitation(
   // Previously dismissed — re-appear once after the 30-day cooldown from
   // the last dismissal.
   return now - state.previewInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS;
+}
+
+/**
+ * Mirror of `shouldShowPreviewInvitation` for the revert banner (task
+ * #107). Only eligible when the user is currently on Quiet Composer;
+ * same 30-day cooldown shape so the two banners feel symmetric. Pure.
+ */
+export function shouldShowRevertInvitation(
+  state: Pick<
+    SettingsStore,
+    "uiPreview" | "revertInvitationShownAt" | "revertInvitationDismissedAt"
+  >,
+  now: number,
+): boolean {
+  if (state.uiPreview !== "quiet-composer") return false;
+  if (state.revertInvitationShownAt === null) return true;
+  if (state.revertInvitationDismissedAt === null) return true;
+  return (
+    now - state.revertInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS
+  );
 }

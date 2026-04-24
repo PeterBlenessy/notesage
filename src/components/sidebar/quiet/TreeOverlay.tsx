@@ -576,7 +576,13 @@ export function TreeOverlay() {
       aria-label="Workspace tree"
       onKeyDown={handleKeyDown}
       className={cn(
-        "absolute left-0 top-0 bottom-0 z-40",
+        // #104 traffic-light fix — the overlay's parent is the
+        // QuietLayout root, which includes the 36 px `TitleBar` at the
+        // top. Starting at `top-0` previously covered the macOS
+        // traffic-light buttons (red/yellow/green). `top-9` matches the
+        // TitleBar's `h-9` so the overlay begins just below the drag
+        // region and the window controls stay clickable.
+        "absolute left-0 top-9 bottom-0 z-40",
         "w-[320px] max-w-full flex flex-col min-h-0",
         "bg-background border-r border-border shadow-lg",
         "translate-x-0",

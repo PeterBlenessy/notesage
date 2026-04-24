@@ -31,6 +31,14 @@ interface TreeOverlayStore {
 
   /** Closes the overlay and clears the focused path. */
   closeOverlay: () => void;
+
+  /**
+   * Toggles the overlay. Fix for #104: previously `⌘⇧E` always called
+   * `openOverlay()`, so re-pressing the chord while the overlay was open
+   * was a visual no-op (the state was already `open: true`). Toggling
+   * lets the same chord dismiss.
+   */
+  toggleOverlay: () => void;
 }
 
 export const useTreeOverlayStore = create<TreeOverlayStore>((set) => ({
@@ -39,4 +47,10 @@ export const useTreeOverlayStore = create<TreeOverlayStore>((set) => ({
   openOverlay: (focusedPath) =>
     set({ open: true, focusedPath: focusedPath ?? null }),
   closeOverlay: () => set({ open: false, focusedPath: null }),
+  toggleOverlay: () =>
+    set((state) =>
+      state.open
+        ? { open: false, focusedPath: null }
+        : { open: true, focusedPath: null },
+    ),
 }));

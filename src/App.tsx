@@ -25,6 +25,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
+import { useWindowTitle } from "@/hooks/useWindowTitle";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
@@ -126,6 +127,10 @@ function App() {
   useProjectMetadata();
   useStartWatchers();
   useSkillDiscovery();
+  // #105 — keep the OS window title in sync with the active tab
+  // (e.g. "On Craft.md — Notesage"). Falls back to "Notesage" when no
+  // document is active. Shared across Classic + Quiet Composer.
+  useWindowTitle();
   useMcpDiscovery();
   useLocalAI();
   useSandboxViolations();

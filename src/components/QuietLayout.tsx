@@ -16,6 +16,7 @@ import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-sto
 import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
 import { FocusPill } from "@/components/editor/FocusPill";
+import { RevertInvitation } from "@/components/RevertInvitation";
 import { useQuietChrome } from "@/lib/quiet-chrome";
 
 /**
@@ -160,7 +161,7 @@ export function QuietLayout(props: QuietLayoutProps) {
   // quiet-composer preview. We preventDefault + stopImmediatePropagation so
   // the legacy handler, which registers a window-level listener at App
   // mount, never gets to open its dialog while this layout is active.
-  const openOverlay = useTreeOverlayStore((s) => s.openOverlay);
+  const toggleOverlay = useTreeOverlayStore((s) => s.toggleOverlay);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -183,7 +184,8 @@ export function QuietLayout(props: QuietLayoutProps) {
 
       event.preventDefault();
       event.stopImmediatePropagation();
-      openOverlay();
+      // #104 fix — chord toggles; second press dismisses.
+      toggleOverlay();
     };
 
     // `capture: true` runs our handler before the legacy App-level listener,
@@ -193,7 +195,7 @@ export function QuietLayout(props: QuietLayoutProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
     };
-  }, [openOverlay]);
+  }, [toggleOverlay]);
 
   // `⌘N` — inline create note (task #41). Routes to the QuietSidebar's
   // inline-edit row by setting `quiet-sidebar-store.pendingCreate` to the
@@ -383,6 +385,15 @@ export function QuietLayout(props: QuietLayoutProps) {
         `⌘.` is owned by `useFocusMode` above.
        */}
       <FocusPill active={focus.active} onExit={focus.exit} />
+
+      {/*
+        RevertInvitation (#107) — symmetric counterpart to the
+        PreviewInvitation banner mounted in `Layout.tsx`. Gives Quiet
+        Composer users a visible path back to the classic shell without
+        digging into Settings. One-time show + 30-day cooldown on
+        dismissal, same lifecycle as the forward-direction banner.
+      */}
+      <RevertInvitation />
     </div>
   );
 }

@@ -266,9 +266,17 @@ describe('AgentOrb (#29)', () => {
     expect(pulseTokens).not.toContain('transition-transform');
 
     // Button keeps the hover-scale affordance — we do NOT want to lose the
-    // user-interaction polish when fixing the pulse.
+    // user-interaction polish when fixing the pulse. The transition now
+    // covers `box-shadow` as well (#106 hover polish adds a soft glow),
+    // so the exact utility is `transition-[transform,box-shadow]`.
     expect(orbTokens).toContain('hover:scale-105');
-    expect(orbTokens).toContain('transition-transform');
+    expect(
+      orbTokens.some(
+        (t) =>
+          t === 'transition-transform' ||
+          t.startsWith('transition-[transform'),
+      ),
+    ).toBe(true);
   });
 
   // #119 follow-up regression (2026-04-24): an earlier iteration added
