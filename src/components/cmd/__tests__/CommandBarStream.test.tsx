@@ -37,6 +37,11 @@ vi.mock('@/stores/chat-store', () => {
   return {
     useChatStore,
     selectMessages: () => mockMessages,
+    // #117 — pending switch selectors return null here; baseline tests don't
+    // exercise the provider/project switch cards. The dedicated switch-cards
+    // test file overrides these via its own vi.mock.
+    selectPendingAgentSwitch: () => null,
+    selectPendingProjectSwitch: () => null,
   };
 });
 
