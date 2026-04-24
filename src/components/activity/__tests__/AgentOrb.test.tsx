@@ -201,16 +201,26 @@ describe('AgentOrb (#29)', () => {
     expect(screen.queryByTestId('agent-orb-badge')).toBeNull();
   });
 
-  it('adds the orb-pulsing class when running tasks > 0', () => {
+  it('adds the orb-pulsing class to the inner pulse wrapper when running tasks > 0', () => {
     mockTasks = [makeTask('t1', 'running')];
     renderWithProviders(<AgentOrb />);
+    // #119: pulse class lives on the inner wrapper span, NOT the button —
+    // moving it off the button lets the keyframe's `transform: scale(X)`
+    // frame land without Tailwind's composed-transform chain from
+    // `hover:scale-105` resolving to `scale(1)` and overriding.
+    const pulse = screen.getByTestId('agent-orb-pulse');
+    expect(pulse.className.split(/\s+/)).toContain('orb-pulsing');
+    // The button itself must NOT carry the pulse class.
     const orb = screen.getByTestId('agent-orb');
-    expect(orb.className.split(/\s+/)).toContain('orb-pulsing');
+    expect(orb.className.split(/\s+/)).not.toContain('orb-pulsing');
   });
 
   it('does NOT add the orb-pulsing class when running tasks == 0', () => {
     mockTasks = [];
     renderWithProviders(<AgentOrb />);
+    const pulse = screen.getByTestId('agent-orb-pulse');
+    expect(pulse.className.split(/\s+/)).not.toContain('orb-pulsing');
+    // Button must stay clean in the idle state as well.
     const orb = screen.getByTestId('agent-orb');
     expect(orb.className.split(/\s+/)).not.toContain('orb-pulsing');
   });
@@ -219,11 +229,46 @@ describe('AgentOrb (#29)', () => {
     useReducedMotionMock.mockReturnValue(true);
     mockTasks = [makeTask('t1', 'running'), makeTask('t2', 'running')];
     renderWithProviders(<AgentOrb />);
+    // Reduced motion: the pulse class is omitted entirely on BOTH the button
+    // and the inner wrapper. The badge still renders because the count > 0 —
+    // only the animation is suppressed.
     const orb = screen.getByTestId('agent-orb');
-    // Reduced motion: the pulse class is omitted entirely. The badge still
-    // renders because the count > 0 — only the animation is suppressed.
+    const pulse = screen.getByTestId('agent-orb-pulse');
     expect(orb.className.split(/\s+/)).not.toContain('orb-pulsing');
+    expect(pulse.className.split(/\s+/)).not.toContain('orb-pulsing');
     expect(screen.getByTestId('agent-orb-badge').textContent).toBe('2');
+  });
+
+  // #119 regression lock: the pulse animation must land on an element that does
+  // NOT carry Tailwind's `hover:scale-*` utility. If someone re-adds the hover
+  // scale to the pulse element (or moves the pulse class back onto the button),
+  // Tailwind's composed-transform chain resolves to `scale(1)` while not
+  // hovered and overrides the keyframe's `scale(1.05)` frame — the pulse would
+  // silently stop animating visually. This asserts the invariant directly so
+  // the regression surfaces at test time, not in manual QA.
+  it('keeps the pulse and the hover:scale-105 utility on different elements (#119)', () => {
+    mockTasks = [makeTask('t1', 'running')];
+    renderWithProviders(<AgentOrb />);
+    const orb = screen.getByTestId('agent-orb');
+    const pulse = screen.getByTestId('agent-orb-pulse');
+
+    const pulseTokens = pulse.className.split(/\s+/);
+    const orbTokens = orb.className.split(/\s+/);
+
+    // Pulse carries the animation class.
+    expect(pulseTokens).toContain('orb-pulsing');
+    // Pulse must NOT carry any hover:scale-* or transition-transform utility —
+    // those would re-engage Tailwind's composed-transform chain on the same
+    // element the keyframe mutates.
+    expect(
+      pulseTokens.some((t) => t.startsWith('hover:scale-')),
+    ).toBe(false);
+    expect(pulseTokens).not.toContain('transition-transform');
+
+    // Button keeps the hover-scale affordance — we do NOT want to lose the
+    // user-interaction polish when fixing the pulse.
+    expect(orbTokens).toContain('hover:scale-105');
+    expect(orbTokens).toContain('transition-transform');
   });
 
   it('hides the orb (display: none) when cmdBarPinned is true', () => {
