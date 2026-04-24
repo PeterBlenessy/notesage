@@ -233,4 +233,72 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     expect(getBar()?.getAttribute('data-expanded')).toBe('false');
     expect(event.defaultPrevented).toBe(false);
   });
+
+  // -------------------------------------------------------------------
+  // 2026-04-24 live-test regression locks (#114 iteration 2)
+  // -------------------------------------------------------------------
+
+  it('⌘1 prefills EXACTLY "!" — no trailing space (2026-04-24 regression)', () => {
+    renderWithProviders(<Harness />);
+
+    dispatchKey({ key: '1', metaKey: true });
+
+    // The bar's input should contain exactly the prefix character. An
+    // earlier version added a trailing space which (a) showed a visible
+    // cursor-offset the user had to delete and (b) polluted the picker's
+    // post-prefix filter state.
+    const input = document.querySelector(
+      '[data-cmd-bar] input',
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    expect(input?.value).toBe('!');
+  });
+
+  it('⌘⇧P with contenteditable (editor) focused STILL fires (2026-04-24 regression)', () => {
+    renderWithProviders(<Harness />);
+
+    // Simulate the editor's contenteditable surface taking focus, which
+    // is the default state when the user reaches for a keyboard shortcut
+    // in the Tiptap editor. An earlier gate (`isOutsideCmdBarTextEntry`)
+    // short-circuited ⌘⇧P / ⌘1–4 here — a silent P0 that live-testing
+    // caught. ⌘-chords are NOT raw typing and must fire regardless.
+    const fakeEditor = document.createElement('div');
+    fakeEditor.setAttribute('contenteditable', 'true');
+    // jsdom doesn't set `isContentEditable` from the attribute alone, so
+    // we stub the getter — isOutsideCmdBarTextEntry checks that exact
+    // property.
+    Object.defineProperty(fakeEditor, 'isContentEditable', {
+      value: true,
+      configurable: true,
+    });
+    document.body.appendChild(fakeEditor);
+    fakeEditor.focus();
+
+    dispatchKey({ key: 'p', metaKey: true, shiftKey: true, bubbles: true });
+
+    const bar = getBar();
+    expect(bar?.getAttribute('data-expanded')).toBe('true');
+    expect(bar?.getAttribute('data-prefix-mode')).toBe('palette');
+
+    fakeEditor.remove();
+  });
+
+  it('⌘1 with a non-cmd-bar input focused STILL fires (2026-04-24 regression)', () => {
+    renderWithProviders(<Harness />);
+
+    // Same class as the ⌘⇧P case: focus is in a regular <input> (e.g. a
+    // settings field). The Cmd modifier marks the chord as an app-level
+    // shortcut — no mid-typing hijack risk to avoid. Bar must expand.
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+
+    dispatchKey({ key: '1', metaKey: true });
+
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('task');
+
+    input.remove();
+  });
 });

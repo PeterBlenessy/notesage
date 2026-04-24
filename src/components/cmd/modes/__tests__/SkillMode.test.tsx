@@ -40,14 +40,26 @@ const mockSkills: SkillEntry[] = [
 
 let activeSkills: SkillEntry[] = [];
 
-vi.mock('@/stores/skill-store', () => ({
-  useSkillStore: vi.fn((selector?: (state: unknown) => unknown) => {
-    const state = {
-      getActiveSkills: () => activeSkills,
-    };
-    return selector ? selector(state) : state;
-  }),
-}));
+// Mock shape mirrors the real skill-store API SkillMode consumes:
+//  - `skills` / `enabledOverrides` are selected as stable inputs (2026-04-24
+//    fix for a getSnapshot-caching crash — see SkillMode.tsx for context).
+//  - `getState()` is called imperatively from a useMemo to derive the active
+//    set.
+vi.mock('@/stores/skill-store', () => {
+  const state = {
+    skills: [] as SkillEntry[],
+    enabledOverrides: {} as Record<string, boolean>,
+    getActiveSkills: () => activeSkills,
+  };
+  return {
+    useSkillStore: Object.assign(
+      vi.fn((selector?: (s: typeof state) => unknown) =>
+        selector ? selector(state) : state,
+      ),
+      { getState: () => state },
+    ),
+  };
+});
 
 import SkillMode from '@/components/cmd/modes/SkillMode';
 

@@ -179,7 +179,7 @@ describe('useCommandBarShortcuts (Esc + input-skip rule)', () => {
     expect(captured).toEqual([{ type: 'focus' }]);
   });
 
-  it('⌘1 inside a non-cmd-bar input does NOT fire (typing context)', () => {
+  it('⌘1 inside a non-cmd-bar input DOES fire (2026-04-24 — ⌘-chord, not raw typing)', () => {
     renderHook(() => useCommandBarShortcuts());
 
     const input = document.createElement('input');
@@ -189,7 +189,7 @@ describe('useCommandBarShortcuts (Esc + input-skip rule)', () => {
 
     dispatchKey('1', { metaKey: true, target: input });
 
-    expect(captured).toEqual([]);
+    expect(captured).toEqual([{ type: 'focus', prefix: '!' }]);
   });
 });
 
