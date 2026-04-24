@@ -158,6 +158,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     originalContent: string;
     originalConnectionId?: string;
   } | null>(null);
+  // Mirror on a ref so the bus-subscription effect can read the latest
+  // edit-mode state without being in its deps. Drives the Esc stage
+  // chain: typed-prefix → clear prefix; edit mode → cancel edit; neither
+  // → collapse.
+  const editContextRef = useRef<typeof editContext>(null);
+  useEffect(() => {
+    editContextRef.current = editContext;
+  }, [editContext]);
 
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
@@ -361,19 +369,37 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       }
 
       if (event.type === 'dismiss') {
-        // Two-stage Esc mirror of the in-input `handleKeyDown`: if the user
-        // typed a prefix character (`#`, `@`, `!`, …) the first Esc should
-        // only close the picker + clear the prefix, leaving the bar expanded
-        // so they can keep composing. A chord-seeded prefix (⌘1/2/3/4,
-        // ⌘⇧P, ⌘⇧F) collapses in one stage — the chord IS the only reason
-        // the user landed here, so undoing it in full makes sense.
+        // Three-stage Esc mirror of the in-input `handleKeyDown`:
+        //   1. Typed prefix (`#`, `@`, `!`, …) → clear the prefix only;
+        //      the bar stays expanded so the user keeps composing. A
+        //      chord-seeded prefix (⌘1/2/3/4, ⌘⇧P, ⌘⇧F) skips this
+        //      stage and falls through to collapse — the chord was the
+        //      only reason we landed there.
+        //   2. Edit mode active (#127 iter-2 fix) → cancel the edit
+        //      (clear context + the pre-filled input + chips). Bar
+        //      stays expanded; the next Esc collapses it.
+        //   3. Nothing to cancel → collapse the bar.
         //
-        // `activePrefixRef.current` reads the live prefix (the subscription
-        // closure itself captures a stale `activePrefix`; we mirror the state
-        // via ref to avoid re-subscribing on every prefix change).
+        // Refs mirror the live state so the once-mounted subscriber
+        // doesn't need them in its deps.
         const currentPrefix = activePrefixRef.current;
         if (currentPrefix?.source === 'typed') {
           setActivePrefix(null);
+          // #126 focus-regression fix — the skill / tag / reference
+          // picker takes keyboard focus while open; clearing the
+          // prefix alone leaves focus on a now-hidden picker DOM, so
+          // the next keystroke lands nowhere. Explicitly restore focus
+          // to the input after the prefix state update settles.
+          requestAnimationFrame(() => inputRef.current?.focus());
+          return;
+        }
+
+        if (editContextRef.current) {
+          // #127 iter-2 — Esc cancels edit mode before collapsing.
+          setEditContext(null);
+          setInputValue('');
+          setChips([]);
+          requestAnimationFrame(() => inputRef.current?.focus());
           return;
         }
 
@@ -759,12 +785,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        // Two-stage Esc fall-through: when a prefix is active, the first Esc
-        // dismisses the picker only and leaves the input + bar alone. The
-        // user's literal text (including the prefix character) stays put.
-        // A subsequent Esc collapses the bar.
+        // Three-stage Esc fall-through: same chain the bus-subscriber
+        // honours (typed prefix → edit mode → collapse). Keeps the
+        // in-input path in sync with Esc pressed from outside the bar.
         if (activePrefix) {
           setActivePrefix(null);
+          return;
+        }
+        if (editContext) {
+          // #127 iter-2 — cancel edit mode before collapsing.
+          setEditContext(null);
+          setInputValue('');
+          setChips([]);
           return;
         }
         collapse();
@@ -789,7 +821,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         return;
       }
     },
-    [activePrefix, collapse, handleSend],
+    [activePrefix, editContext, collapse, handleSend],
   );
 
   // ---------------------------------------------------------------------

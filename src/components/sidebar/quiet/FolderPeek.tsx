@@ -174,6 +174,19 @@ export function FolderPeek({
     }, CLOSE_GRACE_MS);
   }, [clearCloseTimer, clearOpenTimer, isOpen, projectPath]);
 
+  // #128 iter-2 — right-click dismisses the peek immediately (no grace
+  // period) so the `SidebarContextMenu` doesn't render on top of it.
+  // Without this, the peek popover and the context menu would both be
+  // visible at once, and moving the cursor to click a menu item tends
+  // to trip the peek's hover/leave logic. Cancelling the open timer
+  // also covers the case where the user right-clicks before the peek
+  // has opened.
+  const handleContextMenu = useCallback(() => {
+    clearOpenTimer();
+    clearCloseTimer();
+    setIsOpen(false);
+  }, [clearOpenTimer, clearCloseTimer]);
+
   const openFile = useCallback(
     async (entry: FileEntry) => {
       try {
@@ -234,6 +247,7 @@ export function FolderPeek({
         data-peek-trigger="true"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        onContextMenu={handleContextMenu}
       >
         {children}
       </div>

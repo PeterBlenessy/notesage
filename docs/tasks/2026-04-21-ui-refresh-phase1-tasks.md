@@ -1446,6 +1446,17 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/SidebarContextMenu.tsx`, `src/components/sidebar/quiet/file-drag.ts` |
 | Surfaced from | #128 scope cut |
 
+### #136 — Quiet sidebar: project-row right-hand slot polish
+
+| Field | Value |
+| --- | --- |
+| Description | Live-test feedback (2026-04-24) on the approved mockup-D sidebar: project rows currently render the file count + the new `SidebarRowIndicators` + the `+` button side-by-side, which pushes the count out of alignment on hover (the `+` button only appears on hover, so the row shifts visually between states). Mockup-D approved a design where the `+` button *covers* the file-count number on hover — a stable right-hand slot. Update the Projects row layout so file count + indicators occupy a fixed-width right zone; the `+` button absolutely positions over that zone on `group-hover`, swapping from count → plus without shifting sibling rows. Apply the same pattern to any other hover-swapped count/action pairs in the sidebar. **Outcome-shaped acceptance**: hovering a project row reveals the `+` in the exact screen position where the count was, with no perceptible layout shift; counts in adjacent rows stay pixel-aligned. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #129 (the indicators compete for the same slot) |
+| Files | `src/components/sidebar/quiet/ProjectsSection.tsx` (project row), possibly `PinnedSection.tsx` / `RecentSection.tsx` if they share the pattern |
+| Surfaced from | 2026-04-24 user live-test — "the sidebar does not have the same design as the mockup-d which i approved… the + that appears on hovering projects could cover the numbers displayed" |
+
 ## M1.13 Manual QA — run the checklists (2 tasks)
 
 ### #108 — VoiceOver walkthrough — manual run

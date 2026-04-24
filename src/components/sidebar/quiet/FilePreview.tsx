@@ -268,6 +268,24 @@ export function FilePreview({
     }, CLOSE_GRACE_MS);
   }, [open]);
 
+  // #128 iter-2 — right-click dismisses the preview immediately (no
+  // grace period) so the `SidebarContextMenu` never renders on top of
+  // it. Also cancels a pending open timer, which matters when the user
+  // right-clicks a row before the preview has unfurled.
+  const handleContextMenu = useCallback(() => {
+    if (openTimerRef.current !== null) {
+      window.clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    activePathRef.current = null;
+    setOpen(false);
+    setState({ status: "idle" });
+  }, [open]);
+
   const name = basename(filePath);
   const typeLabel = formatTypeLabel(filePath);
 
@@ -277,6 +295,7 @@ export function FilePreview({
         <div
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
+          onContextMenu={handleContextMenu}
           // Reset the anchor — div isn't focusable; we don't interfere with
           // the child row's own focus semantics.
         >
