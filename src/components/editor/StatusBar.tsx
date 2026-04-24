@@ -778,7 +778,13 @@ function StatusDot({
 }: {
   tone: "green" | "orange" | "red";
   ariaLabel: string;
-  onActivate: () => void;
+  /**
+   * Called with the pointer coordinates when activated by a mouse click
+   * (so the popover can anchor to the pointer), or `undefined` when
+   * activated by keyboard (Enter / Space) — the caller should then fall
+   * back to anchoring against the strip rect.
+   */
+  onActivate: (coords?: { x: number; y: number }) => void;
 }) {
   const color =
     tone === "green"
@@ -792,7 +798,7 @@ function StatusDot({
     // group hint. We call onActivate ourselves so the click both opens
     // the tray AND targets the correct group.
     e.stopPropagation();
-    onActivate();
+    onActivate({ x: e.clientX, y: e.clientY });
   };
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -956,13 +962,54 @@ function QuietStatusBar({
   );
   const anchorRef = useRef<HTMLDivElement | null>(null);
 
-  const handleActivate = () => {
+  // Virtual anchor — feeds `PopoverAnchor.virtualRef`. Its `getBoundingClientRect()`
+  // returns a zero-size rect at the last click location so the popover opens
+  // near the pointer (via `side="top" align="start"`) rather than pinned to
+  // the far-left of the whole status strip. For keyboard activation we fall
+  // back to the strip's own bounding rect so the popover still has something
+  // meaningful to anchor against.
+  const virtualRectRef = useRef<DOMRect | null>(null);
+  const virtualAnchorRef = useRef<{ getBoundingClientRect(): DOMRect }>({
+    getBoundingClientRect() {
+      if (virtualRectRef.current) return virtualRectRef.current;
+      const el = anchorRef.current;
+      if (el) return el.getBoundingClientRect();
+      // Fallback zero-rect (shouldn't normally hit this path — the strip is
+      // always mounted when the tray can open).
+      return new DOMRect(0, 0, 0, 0);
+    },
+  });
+
+  /** Stash a zero-size DOMRect at (x, y) so the popover anchors to the click. */
+  const setAnchorAt = (x: number, y: number) => {
+    virtualRectRef.current = new DOMRect(x, y, 0, 0);
+  };
+
+  /** Fall back to anchoring against the strip's own rect (keyboard activation). */
+  const clearAnchor = () => {
+    virtualRectRef.current = null;
+  };
+
+  const handleActivate = (e?: ReactMouseEvent<HTMLDivElement>) => {
+    if (e && typeof e.clientX === "number" && typeof e.clientY === "number") {
+      setAnchorAt(e.clientX, e.clientY);
+    } else {
+      clearAnchor();
+    }
     setInitialGroup(undefined);
     setTrayOpen(true);
     onOpenTray?.();
   };
 
-  const openTrayForGroup = (group: StatusTrayGroup) => {
+  const openTrayForGroup = (
+    group: StatusTrayGroup,
+    coords?: { x: number; y: number },
+  ) => {
+    if (coords) {
+      setAnchorAt(coords.x, coords.y);
+    } else {
+      clearAnchor();
+    }
     setInitialGroup(group);
     setTrayOpen(true);
     onOpenTray?.();
@@ -971,7 +1018,11 @@ function QuietStatusBar({
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      handleActivate();
+      // Keyboard activation has no pointer — anchor against the strip rect.
+      clearAnchor();
+      setInitialGroup(undefined);
+      setTrayOpen(true);
+      onOpenTray?.();
     }
   };
 
@@ -993,7 +1044,7 @@ function QuietStatusBar({
         role="button"
         tabIndex={0}
         aria-label="Open status tray"
-        onClick={handleActivate}
+        onClick={(e) => handleActivate(e)}
         onKeyDown={handleKeyDown}
         className={cn(
           "h-8 flex items-center gap-3 px-3 text-xs text-muted-foreground",
@@ -1012,21 +1063,21 @@ function QuietStatusBar({
             <StatusDot
               tone="green"
               ariaLabel="Local AI running — opens Session group"
-              onActivate={() => openTrayForGroup("session")}
+              onActivate={(coords) => openTrayForGroup("session", coords)}
             />
           )}
           {showOrange && (
             <StatusDot
               tone="orange"
               ariaLabel="Inline completions active — opens Completions group"
-              onActivate={() => openTrayForGroup("completions")}
+              onActivate={(coords) => openTrayForGroup("completions", coords)}
             />
           )}
           {showRed && (
             <StatusDot
               tone="red"
               ariaLabel="Recording active — opens Session group"
-              onActivate={() => openTrayForGroup("session")}
+              onActivate={(coords) => openTrayForGroup("session", coords)}
             />
           )}
         </div>
@@ -1052,7 +1103,7 @@ function QuietStatusBar({
       <StatusTray
         open={trayOpen}
         onOpenChange={handleOpenChange}
-        anchor={anchorRef}
+        anchor={virtualAnchorRef}
         wordCount={editor ? words : undefined}
         comments={comments}
         onSelectComment={onSelectComment}

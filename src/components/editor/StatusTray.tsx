@@ -93,11 +93,18 @@ export interface StatusTrayProps {
   /** Notified on any open/close transition, including Escape and outside clicks. */
   onOpenChange: (open: boolean) => void;
   /**
-   * Anchor element — the quiet status strip — used to position the popover.
-   * Required because the tray is mounted as a sibling, not a descendant of
-   * a trigger button.
+   * Anchor — used to position the popover. Required because the tray is
+   * mounted as a sibling, not a descendant of a trigger button.
+   *
+   * Accepts either a ref to a real DOM element (Radix calls
+   * `getBoundingClientRect()` on it directly), or a "virtual" ref holding
+   * an object that exposes `getBoundingClientRect()` — used by
+   * `QuietStatusBar` to anchor the popover to the click coordinates rather
+   * than the whole status strip.
    */
-  anchor: React.RefObject<HTMLElement | null>;
+  anchor: React.RefObject<
+    HTMLElement | { getBoundingClientRect(): DOMRect } | null
+  >;
 
   /** Word count for the Help > Word count breakdown row. Undefined hides it. */
   wordCount?: number;
@@ -607,7 +614,9 @@ export function StatusTray({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverAnchor
-        virtualRef={anchor as React.RefObject<{ getBoundingClientRect(): DOMRect }>}
+        virtualRef={
+          anchor as React.RefObject<{ getBoundingClientRect(): DOMRect }>
+        }
       />
       <PopoverContent
         side="top"
