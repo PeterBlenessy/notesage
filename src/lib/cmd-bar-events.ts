@@ -13,7 +13,13 @@
 
 export type CmdBarEvent =
   | { type: 'focus'; prefix?: string }
-  | { type: 'dismiss' };
+  | { type: 'dismiss' }
+  // `toggle-pin` — fired by ⌘⇧C under Quiet Composer when the bar is already
+  // expanded AND pinned. The bar's subscriber calls `setCmdBarPinned(false)`
+  // to unpin (flipping it back to the floating overlay). When the bar is
+  // collapsed or floating-but-expanded, the chord instead emits `focus` —
+  // see `useKeyboardShortcuts` for the decision table.
+  | { type: 'toggle-pin' };
 
 type Handler = (event: CmdBarEvent) => void;
 

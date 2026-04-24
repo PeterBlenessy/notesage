@@ -58,8 +58,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Toggle chat panel | `⌘⇧C` | Show/hide AI chat sidebar |
-| Toggle agent panel | `⌘⇧A` | Show/hide agent activity panel |
+| Toggle chat panel | `⌘⇧C` | Legacy: show/hide AI chat sidebar. Quiet Composer: expand the command bar (the command bar IS the chat); press again while pinned to unpin back to the floating overlay |
+| Toggle agent panel | `⌘⇧A` | Legacy: show/hide agent activity panel. Quiet Composer: toggle the AgentOrb popover (the orb IS the agent panel) |
 | Add comment | `⌘⇧M` | Create inline comment on selected text |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
