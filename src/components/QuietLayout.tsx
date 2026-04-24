@@ -121,10 +121,6 @@ export function QuietLayout(props: QuietLayoutProps) {
   // sidebar, orb). Pure attribute writes — no React re-render on typing.
   useQuietChrome();
 
-  // Inert handlers for the toggle buttons — the real chat panel and
-  // activity strip aren't part of the placeholder.
-  const noop = () => {};
-
   // The editor reads `focusMode` to gate its own chrome (Toolbar, StatusBar).
   // QuietLayout owns the live focus-mode flag via `useFocusMode()` above (the
   // app-level legacy flag isn't flipped in this preview because the legacy
@@ -282,7 +278,13 @@ export function QuietLayout(props: QuietLayoutProps) {
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
       className="app relative flex flex-col h-screen w-full bg-background overflow-hidden"
     >
-      <TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />
+      {/*
+        TitleBar in Quiet Composer mode (tasks #103 + #124). Suppresses the
+        chat-toggle and activity-strip-toggle buttons — their classic-mode
+        targets (ChatPanel, ActivityStrip) aren't mounted here; the
+        FloatingCommandBar and AgentOrb own those affordances instead.
+       */}
+      <TitleBar mode="quiet" />
 
       <div
         data-quiet-layout-document-area
