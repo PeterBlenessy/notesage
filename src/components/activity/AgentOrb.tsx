@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import {
   Popover,
@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { cn } from '@/lib/utils';
 import { log, PERF } from '@/lib/logger';
+import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
 import { AgentPanel } from './AgentPanel';
 
 /**
@@ -67,6 +68,22 @@ export function AgentOrb() {
     setOpen(next);
   };
 
+  // ⌘⇧A handler (#121) — the keyboard hook emits `{ type: 'toggle' }` on the
+  // agent-orb bus under Quiet Composer. We flip the popover's open state,
+  // reusing `handleOpenChange` so the perf:orb breadcrumb still fires when
+  // the chord opens the panel (matching the click path). Radix handles focus
+  // trapping and focus restoration automatically via the PopoverContent.
+  useEffect(() => {
+    return subscribeToAgentOrbEvents((event) => {
+      if (event.type === 'toggle') {
+        handleOpenChange(!open);
+      }
+    });
+    // `handleOpenChange` closes over `open` + `runningCount`; re-subscribe
+    // when `open` flips so the toggle reads the current state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, runningCount]);
+
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
@@ -74,6 +91,11 @@ export function AgentOrb() {
           type="button"
           data-testid="agent-orb"
           data-running={isActive ? 'true' : 'false'}
+          // Test hook (#121) — exposes the popover's open state on the DOM so
+          // the composition tests can assert toggle behaviour without having
+          // to introspect Radix's portal structure under jsdom. Production
+          // code does not read this attribute; it's purely for observability.
+          data-orb-open={open ? 'true' : 'false'}
           aria-label={ariaLabel}
           style={cmdBarPinned ? { display: 'none' } : undefined}
           className={cn(

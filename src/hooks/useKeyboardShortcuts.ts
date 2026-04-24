@@ -34,8 +34,8 @@
  *   | ⌘⇧E         | Open Export dialog                 | —                                              | QuietLayout (capture)    |
  *   | ⌘⇧O         | Open document outline              | Open document outline                          | this hook                |
  *   | ⌘⇧L         | Toggle sidebar pin                 | Toggle sidebar pin                             | this hook                |
- *   | ⌘⇧A         | Toggle activity strip              | Toggle activity strip                          | this hook                |
- *   | ⌘⇧C         | Toggle chat panel                  | Toggle chat panel                              | this hook                |
+ *   | ⌘⇧A         | Toggle activity strip              | emit agent-orb `toggle`                        | this hook                |
+ *   | ⌘⇧C         | Toggle chat panel                  | unpin cmd bar (if expanded+pinned) else focus  | this hook                |
  *   | ⌘⇧R         | Toggle recording                   | Toggle recording                               | this hook                |
  *   | ⌘⇧K         | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
  *   | ⌘7          | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
@@ -75,6 +75,7 @@ import { useEffect } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
 import type { PaletteMode } from "@/lib/command-palette";
@@ -284,17 +285,53 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘⇧A — toggle activity strip
+      // ⌘⇧A — toggle activity strip (legacy) / toggle agent orb popover
+      // (quiet-composer). Under Quiet Composer there is no activity strip,
+      // so we emit on the agent-orb bus instead; `AgentOrb` subscribes and
+      // flips its popover open/closed state. Under legacy, the callback
+      // drives the classic ActivityStrip resizable panel.
       if (isMod && e.shiftKey && keyLower === "a") {
         e.preventDefault();
-        callbacks.onToggleActivityStrip?.();
+        if (isQuiet) {
+          emitAgentOrbEvent({ type: "toggle" });
+        } else {
+          callbacks.onToggleActivityStrip?.();
+        }
         return;
       }
 
-      // ⌘⇧C — toggle chat panel
+      // ⌘⇧C — toggle chat panel (legacy) / cmd bar semantics (quiet-composer).
+      // Under Quiet Composer the command bar IS the chat (per PRD intent), so
+      // this chord summons the bar rather than toggling a non-existent
+      // `chatPanelOpen` sidebar. Decision table:
+      //
+      //   collapsed        → emit `focus` (expand)
+      //   expanded+float   → no-op (Esc is the documented dismiss path)
+      //   expanded+pinned  → emit `toggle-pin` (unpin → float; same chord
+      //                     twice unpins)
+      //
+      // We read expand/pin state via the DOM — the bar writes
+      // `data-expanded` and `data-cmd-bar-pinned` on its root. Reading DOM
+      // in a one-off keyboard handler avoids a circular React dependency
+      // (keyboard hook → bar ref → keyboard hook) that the cmd-bar-events
+      // bus was introduced to prevent.
       if (isMod && e.shiftKey && keyLower === "c" && !e.altKey) {
         e.preventDefault();
-        setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
+        if (isQuiet) {
+          const bar = document.querySelector(
+            "[data-cmd-bar]",
+          ) as HTMLElement | null;
+          const isExpanded = bar?.getAttribute("data-expanded") === "true";
+          const isPinned = bar?.getAttribute("data-cmd-bar-pinned") === "true";
+          if (isExpanded && isPinned) {
+            emitCmdBarEvent({ type: "toggle-pin" });
+          } else if (!isExpanded) {
+            emitCmdBarEvent({ type: "focus" });
+          }
+          // else: expanded + floating → no-op (user should use Esc)
+        } else {
+          setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
+        }
         return;
       }
 
