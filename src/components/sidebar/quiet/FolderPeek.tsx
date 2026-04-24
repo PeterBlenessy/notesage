@@ -17,6 +17,7 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { log, PERF } from "@/lib/logger";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { SidebarRowIndicators } from "./SidebarRowIndicators";
 
 /**
  * Hover-triggered popover that previews one level of a project's contents.
@@ -289,6 +290,12 @@ export function FolderPeek({
                           <span className="truncate min-w-0 flex-1">
                             {entry.name}
                           </span>
+                          {/* #129 — aggregate git "●" indicator + external-
+                             *  change dot for folder rows inside the peek. */}
+                          <SidebarRowIndicators
+                            path={entry.path}
+                            kind="folder"
+                          />
                         </button>
                       ))}
                       {folderOverflow > 0 && (
@@ -330,6 +337,12 @@ export function FolderPeek({
                           <span className="truncate min-w-0 flex-1">
                             {entry.name}
                           </span>
+                          {/* #129 — git status + external-change dot for
+                             *  file rows inside the peek. */}
+                          <SidebarRowIndicators
+                            path={entry.path}
+                            kind="file"
+                          />
                         </button>
                       ))}
                       {fileOverflow > 0 && (

@@ -25,6 +25,7 @@ import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek"
 import { beginFileDrag } from "./file-drag";
 import { SIDEBAR_ENTER_RENAME_MODE_EVENT } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
+import { SidebarRowIndicators } from "@/components/sidebar/quiet/SidebarRowIndicators";
 import {
   basename as pathBasename,
   resolveRenamePath,
@@ -874,6 +875,10 @@ function ProjectRow({
         aria-hidden="true"
       />
       <span className="truncate min-w-0 flex-1">{name}</span>
+      {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
+         *  the aggregate git "●" glyph when any file inside the project
+         *  has changes, and the pending-external-change dot. */}
+      <SidebarRowIndicators path={project.path} kind="project" />
       {fileCount !== null && (
         <span className="text-xs text-muted-foreground tabular-nums">
           {fileCount}
@@ -1058,7 +1063,16 @@ function ChildRow({
           className="flex-1 min-w-0"
         />
       ) : (
-        <span className="truncate min-w-0 flex-1">{entry.name}</span>
+        <>
+          <span className="truncate min-w-0 flex-1">{entry.name}</span>
+          {/* #129 — per-row visual state. File rows surface git status +
+             *  external-change; folder rows only surface the aggregate
+             *  "●" when the folder contains changes. */}
+          <SidebarRowIndicators
+            path={entry.path}
+            kind={entry.is_directory ? "folder" : "file"}
+          />
+        </>
       )}
     </div>
   );

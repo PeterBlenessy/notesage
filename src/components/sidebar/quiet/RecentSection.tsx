@@ -32,6 +32,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFileError } from "@/lib/file-errors";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
+import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import { beginFileDrag } from "./file-drag";
 
 /**
@@ -241,6 +242,12 @@ function RecentRow({
                   {parentHint}
                 </span>
               )}
+              {/* #129 — git status + external-change dot. Recent rows are
+                 *  always files, so `kind="file"` is hard-coded. When the
+                 *  parent-hint is present the indicators push to its right
+                 *  via the flex-row; `ml-auto` inside the indicators only
+                 *  fires when the hint is absent. */}
+              <SidebarRowIndicators path={entry.path} kind="file" />
             </>
           )}
         </div>

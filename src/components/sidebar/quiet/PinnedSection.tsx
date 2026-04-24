@@ -34,6 +34,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
+import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import {
   FILE_DRAG_MIME,
   beginFileDrag,
@@ -269,7 +270,12 @@ function PinnedRow({
               className="flex-1 min-w-0"
             />
           ) : (
-            <span className="truncate min-w-0">{name}</span>
+            <>
+              <span className="truncate min-w-0">{name}</span>
+              {/* #129 — git status + external-change dot. Pinned rows are
+                 *  always files, so `kind="file"` is hard-coded. */}
+              <SidebarRowIndicators path={path} kind="file" />
+            </>
           )}
         </div>
       </SidebarContextMenu>

@@ -1369,7 +1369,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/SidebarContextMenu.tsx`, `src/components/sidebar/quiet/file-drag.ts`, new-folder dialog plumbing |
 | Surfaced from | #113 audit — seven context-menu actions and drag-to-chat missing |
 
-### #129 — Quiet sidebar visual state parity
+### #129 — Quiet sidebar visual state parity ✅
 
 | Field | Value |
 | --- | --- |

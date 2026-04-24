@@ -16,6 +16,7 @@ import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { SidebarRowIndicators } from "./SidebarRowIndicators";
 
 /**
  * TreeOverlay — slide-in workspace-tree panel for the Quiet Composer UI
@@ -218,6 +219,14 @@ function TreeNodeRow({
         <FileIcon fileName={node.name} />
       )}
       <span className="truncate min-w-0 flex-1">{node.name}</span>
+      {/* #129 — git status + external-change dot. The overlay renders
+         *  project-owned subtrees, so `kind` flips based on node type
+         *  (projects vs. files vs. folders). Projects only show up as
+         *  top-level nodes here; child rows are file / folder. */}
+      <SidebarRowIndicators
+        path={node.path}
+        kind={node.isDirectory ? "folder" : "file"}
+      />
     </div>
   );
 }
