@@ -76,6 +76,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
+import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
 import type { PaletteMode } from "@/lib/command-palette";
 
 /**
@@ -116,6 +117,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
   // bar). The hook short-circuits itself to a no-op under legacy, so it's
   // safe to mount unconditionally from here.
   useCommandBarShortcuts();
+
+  // Quiet-composer-only double-tap ⌘ → emit cmd-bar `focus` on the bus.
+  // Internally gated on `uiPreview === "quiet-composer"` — legacy is a
+  // zero-listener no-op, so it's safe to mount unconditionally here.
+  useDoubleTapCmd();
 
   const { openDocuments, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
   const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
