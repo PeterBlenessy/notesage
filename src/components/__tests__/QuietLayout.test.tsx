@@ -84,10 +84,12 @@ vi.mock('@/components/editor/Editor', () => ({
 // ---------------------------------------------------------------------------
 
 let mockCmdBarPinned = false;
+let mockSidebarPinned = true;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
+    get sidebarPinned() { return mockSidebarPinned; },
     // Quiet-chrome (#51) — the real store seeds these defaults on startup.
     // QuietLayout mounts `useQuietChrome()` which reads both slices, so the
     // mock has to supply them or the hook crashes with "undefined.toolbar".
@@ -149,6 +151,7 @@ describe('QuietLayout (placeholder)', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     mockCmdBarPinned = false;
+    mockSidebarPinned = true;
   });
 
   it('renders without crashing', () => {
@@ -263,6 +266,84 @@ describe('QuietLayout (placeholder)', () => {
       expect(wrapper.getAttribute('data-cmd-bar-pinned')).toBe('true');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Sidebar visibility toggle (#123 — ⌘⇧L observer side)
+  // -------------------------------------------------------------------------
+  //
+  // `⌘⇧L` flips `settings-store.sidebarPinned` (done in
+  // `useKeyboardShortcuts`); QuietLayout observes the flag and either
+  // renders the sidebar with a 240px grid track, or omits it entirely with
+  // a single `1fr` column. These tests cover the observer side only — the
+  // chord wiring has its own test in `useKeyboardShortcuts.test.tsx`.
+
+  describe('sidebar visibility (#123)', () => {
+    it('renders the QuietSidebar and 240px 1fr grid when sidebarPinned is true', () => {
+      mockSidebarPinned = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      // Nav landmark from QuietSidebar is present.
+      expect(
+        screen.getByRole('navigation', { name: /workspace sidebar/i }),
+      ).toBeTruthy();
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      expect(docArea.style.gridTemplateColumns).toBe('240px 1fr');
+      expect(docArea.getAttribute('data-sidebar-pinned')).toBe('true');
+    });
+
+    it('omits the QuietSidebar and collapses grid to 1fr when sidebarPinned is false', () => {
+      mockSidebarPinned = false;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      // Nav landmark is gone — the whole QuietSidebar subtree is unmounted.
+      expect(
+        screen.queryByRole('navigation', { name: /workspace sidebar/i }),
+      ).toBeNull();
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+      expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');
+    });
+
+    it('flips visibility between renders when sidebarPinned changes', () => {
+      mockSidebarPinned = true;
+      const { container, rerender } = renderWithProviders(
+        <QuietLayout {...defaultProps()} />,
+      );
+      expect(
+        screen.queryByRole('navigation', { name: /workspace sidebar/i }),
+      ).toBeTruthy();
+
+      // Flip the setting and re-render. The mock's getter returns the new
+      // value, so the selector produces the new `sidebarPinned=false` state
+      // on the next render — QuietSidebar unmounts, grid collapses.
+      mockSidebarPinned = false;
+      rerender(<QuietLayout {...defaultProps()} />);
+
+      expect(
+        screen.queryByRole('navigation', { name: /workspace sidebar/i }),
+      ).toBeNull();
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+    });
+
+    it('regression: sidebar hidden + cmd bar pinned coexist (grid 1fr, padding preserved)', () => {
+      mockSidebarPinned = false;
+      mockCmdBarPinned = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      // Grid collapses because sidebar is hidden.
+      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+      // Pinned cmd bar still reserves right padding via the CSS variable.
+      expect(docArea.style.paddingRight).toContain('--cmd-bar-pinned-width');
+      expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -310,6 +391,7 @@ describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     mockCmdBarPinned = false;
+    mockSidebarPinned = true;
     vi.mocked(mockedToast.info).mockReset();
     useQuietSidebarStore.setState({ pendingCreate: null });
     useWorkspaceStore.setState({
@@ -515,6 +597,7 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     mockCmdBarPinned = false;
+    mockSidebarPinned = true;
     useQuietSidebarStore.setState({
       pendingCreate: null,
       pendingCreateProject: false,
