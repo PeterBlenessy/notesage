@@ -101,6 +101,11 @@ export function QuietLayout(props: QuietLayoutProps) {
     onShortcutsOpen,
     onOpenActions,
     focusMode: focusModeProp,
+    // #130 — agent task cancel/navigate callbacks flow from App.tsx →
+    // QuietLayout → AgentOrb → AgentPanel so task rows inside the orb
+    // popover are wired up identically to the classic ActivityPanel.
+    onCancelTask,
+    onClickTask,
   } = props;
 
   // #50 — Fade pre-stamped chrome while the user is typing. No-op under
@@ -361,7 +366,7 @@ export function QuietLayout(props: QuietLayoutProps) {
         FloatingCommandBar is in pinned mode (the right side panel covers
         the same screen real estate).
        */}
-      <AgentOrb />
+      <AgentOrb onCancelTask={onCancelTask} onClickTask={onClickTask} />
 
       {/*
         TreeOverlay (PRD `2026-04-21-ui-refresh`, task #38). Slide-in

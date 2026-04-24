@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore, selectMessages } from "@/stores/chat-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { useRoutingStore } from "@/stores/routing-store";
+import { useConnectionsStore } from "@/stores/connections-store";
+import { X } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
+import {
+  ResendProviderDialog,
+  type ResendProviderChoice,
+  type ResendProviderOption,
+} from "@/components/chat/ResendProviderDialog";
 import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
@@ -117,6 +125,42 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage } = useAIOperations();
+
+  // #127 parity — connection + routing state for the cross-provider
+  // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
+  // per-project `ai.provider` override layer; a follow-up can extract
+  // that into a shared hook if needed).
+  const interactiveConnection = useRoutingStore((s) =>
+    s.getConnectionForUseCase("interactive"),
+  );
+  const allConnections = useConnectionsStore((s) => s.connections);
+  const setRouting = useRoutingStore((s) => s.setRouting);
+
+  // #127 parity — edit-mode state. When the user clicks Edit on a user
+  // message, we capture the original parentId + connectionId so the
+  // follow-up send can (a) branch from the edited message's parent
+  // instead of appending to the leaf, and (b) surface a cross-provider
+  // dialog if the active connection now differs.
+  const [editContext, setEditContext] = useState<{
+    parentId: string | null;
+    originalContent: string;
+    originalConnectionId?: string;
+  } | null>(null);
+
+  // #127 parity — cross-provider resend/edit dialog state. Opens when
+  // the message's recorded connectionId differs from the active
+  // `interactiveConnection`. ChatPanel owns the same state machine for
+  // the legacy surface.
+  interface ResendDialogState {
+    mode: "resend" | "edit";
+    content: string;
+    messageIdToDelete?: string;
+    originalConnectionId: string;
+    currentConnectionId: string | null;
+  }
+  const [resendDialog, setResendDialog] = useState<ResendDialogState | null>(
+    null,
+  );
 
   // Attachment chips above the input (#11). Populated by the reference / task /
   // research mode pickers (#15 / #17 / #18) via the dispatchers below.
@@ -329,15 +373,40 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         : "";
     const content = `${refsBlock}${trimmed}`;
 
+    // #127 parity — if we're editing a message and the active connection
+    // now differs from the message's original connectionId, open the
+    // dialog instead of sending. On confirm the dialog will fire the
+    // actual send with the selected routing.
+    if (
+      editContext?.originalConnectionId &&
+      editContext.originalConnectionId !== (interactiveConnection?.id ?? null)
+    ) {
+      setResendDialog({
+        mode: "edit",
+        content,
+        originalConnectionId: editContext.originalConnectionId,
+        currentConnectionId: interactiveConnection?.id ?? null,
+      });
+      // Leave editContext in place — the dialog's confirm path clears it
+      // via `doSend` (same semantics as ChatPanel).
+      return;
+    }
+
     // Reset the composer optimistically — the send is async but the user
     // expects the input to clear immediately so they can keep typing.
     setInputValue("");
     setChips([]);
     setActivePrefix(null);
 
+    // #127 parity — when editing, branch from the edited message's
+    // parent instead of appending to the leaf. The chat-store's send
+    // pipeline honours `parentId` in opts.
+    const sendOpts = editContext ? { parentId: editContext.parentId } : undefined;
+    if (editContext) setEditContext(null);
+
     // Fire-and-forget — the chat-store handles its own loading + error state
     // and the chat stream renders the assistant response.
-    void sendChatMessage(content, messagesForSend);
+    void sendChatMessage(content, messagesForSend, sendOpts);
 
     // Keep focus in the input for the next message. The autofocus effect on
     // `effectiveExpanded` doesn't re-fire when only the input value changes,
@@ -345,7 +414,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
-  }, [inputValue, chips, sendChatMessage, messagesForSend]);
+  }, [
+    inputValue,
+    chips,
+    sendChatMessage,
+    messagesForSend,
+    editContext,
+    interactiveConnection?.id,
+  ]);
 
   // ---------------------------------------------------------------------
   // Stream → send bridge. `ChatMessageList` fires `onSend(content)` for
@@ -376,12 +452,26 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [],
   );
 
-  // Resend a user message — delete it + its descendants and send the same
-  // content again. Matches the same-provider branch in
-  // `ChatPanel.handleResend`; the cross-provider dialog is deferred to a
-  // follow-up (needs shared extraction so both shells can render it).
+  // Resend a user message — same-provider path deletes + re-sends. On
+  // cross-provider mismatch we open `ResendProviderDialog` so the user
+  // can pick which connection receives the resend. Mirrors
+  // `ChatPanel.handleResend` for #127 parity.
   const handleStreamResend = useCallback(
     (message: ChatMessageType) => {
+      const currentId = interactiveConnection?.id ?? null;
+      const originalId = message.connectionId ?? null;
+
+      if (originalId && originalId !== currentId) {
+        setResendDialog({
+          mode: "resend",
+          content: message.content,
+          messageIdToDelete: message.id,
+          originalConnectionId: originalId,
+          currentConnectionId: currentId,
+        });
+        return;
+      }
+
       if (message.id) {
         useChatStore.getState().deleteMessageAndDescendants(message.id);
       }
@@ -389,22 +479,134 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       if (trimmed.length === 0) return;
       void sendChatMessage(trimmed, messagesForSend);
     },
-    [sendChatMessage, messagesForSend],
+    [sendChatMessage, messagesForSend, interactiveConnection?.id],
   );
 
-  // Edit a user message — prefill the composer with its content so the
-  // user can tweak and send. Simplified vs `ChatPanel.handleEdit`: this
-  // path doesn't track `parentId` for branching yet (send will append to
-  // the current leaf instead of branching from the edited message's
-  // parent). Branching parity is a follow-up.
+  // Edit a user message — prefill the composer + capture edit context so
+  // (a) the next send branches from the edited message's parent and (b)
+  // a provider-mismatch dialog can fire at send time if the active
+  // connection differs from the message's original `connectionId`.
   const handleStreamEdit = useCallback(
     (message: ChatMessageType) => {
+      setEditContext({
+        parentId: message.parentId !== undefined ? message.parentId : null,
+        originalContent: message.content,
+        originalConnectionId: message.connectionId,
+      });
       setInputValue(message.content);
       setExpanded(true);
       requestAnimationFrame(() => inputRef.current?.focus());
     },
     [],
   );
+
+  const clearEditContext = useCallback(() => setEditContext(null), []);
+
+  // #127 parity — dialog confirm/cancel + memoized options for the
+  // `ResendProviderDialog` render. Mirrors ChatPanel's handlers.
+  const handleResendDialogConfirm = useCallback(
+    (choice: ResendProviderChoice) => {
+      const dialog = resendDialog;
+      if (!dialog) return;
+      setResendDialog(null);
+
+      const targetId =
+        choice === "original"
+          ? dialog.originalConnectionId
+          : dialog.currentConnectionId;
+
+      // Resend path deletes the original response tree; edit-send never
+      // deletes — it branches from the parentId captured in editContext.
+      if (dialog.mode === "resend" && dialog.messageIdToDelete) {
+        useChatStore
+          .getState()
+          .deleteMessageAndDescendants(dialog.messageIdToDelete);
+      }
+
+      // Per-dialog send opts differ by mode:
+      //   - resend: always a fresh send of `dialog.content`
+      //   - edit:   honor editContext.parentId so the edit branches from
+      //             the right place; clear editContext after scheduling.
+      const parentId =
+        dialog.mode === "edit" ? editContext?.parentId ?? null : undefined;
+
+      // Reset composer optimistically for edit sends (resend doesn't touch
+      // the input — the content came straight from the message record).
+      if (dialog.mode === "edit") {
+        setInputValue("");
+        setChips([]);
+        setActivePrefix(null);
+        setEditContext(null);
+      }
+
+      const runSend = () => {
+        void sendChatMessage(
+          dialog.content,
+          messagesForSend,
+          parentId !== undefined ? { parentId } : undefined,
+        );
+      };
+
+      if (targetId && targetId !== (interactiveConnection?.id ?? null)) {
+        // Reroute then schedule the send after React flush so the send
+        // hooks pick up the rebuilt routing closure.
+        setRouting("interactive", targetId);
+        setTimeout(runSend, 0);
+      } else {
+        runSend();
+      }
+    },
+    [
+      resendDialog,
+      editContext?.parentId,
+      interactiveConnection?.id,
+      setRouting,
+      sendChatMessage,
+      messagesForSend,
+    ],
+  );
+
+  const handleResendDialogCancel = useCallback(() => {
+    setResendDialog(null);
+    // Leave editContext in place on cancel so the user can adjust or
+    // abandon the edit themselves.
+  }, []);
+
+  const resendDialogOptions = useMemo<
+    | { original: ResendProviderOption; current: ResendProviderOption; isEdit: boolean }
+    | null
+  >(() => {
+    if (!resendDialog) return null;
+    const originalConn =
+      allConnections.find((c) => c.id === resendDialog.originalConnectionId) ??
+      null;
+    const currentConn = resendDialog.currentConnectionId
+      ? allConnections.find((c) => c.id === resendDialog.currentConnectionId) ??
+        null
+      : null;
+
+    const original: ResendProviderOption = {
+      id: resendDialog.originalConnectionId,
+      label:
+        originalConn?.label ??
+        `Removed connection (${resendDialog.originalConnectionId.slice(0, 8)}…)`,
+      provider: originalConn?.provider ?? null,
+      disabled: !originalConn,
+      disabledReason: !originalConn
+        ? `Original provider (${resendDialog.originalConnectionId}) is no longer connected.`
+        : undefined,
+    };
+    const current: ResendProviderOption = {
+      id: resendDialog.currentConnectionId,
+      label: currentConn?.label ?? "No provider selected",
+      provider: currentConn?.provider ?? null,
+      disabled: !currentConn,
+      disabledReason: !currentConn
+        ? "No provider is currently selected. Configure one in Settings."
+        : undefined,
+    };
+    return { original, current, isEdit: resendDialog.mode === "edit" };
+  }, [resendDialog, allConnections]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -649,10 +851,32 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onStreamPrefill={handleStreamPrefill}
           onStreamResend={handleStreamResend}
           onStreamEdit={handleStreamEdit}
+          editing={editContext !== null}
+          onCancelEdit={clearEditContext}
         />
       ) : (
         <CompactContent onActivate={expand} />
       )}
+
+      {/* #127 parity — cross-provider resend/edit confirmation dialog.
+       *  Rendered inside the bar so it participates in the portal (when
+       *  the bar is floating-portaled) and in-flow (when pinned).
+       *  `ResendProviderDialog` itself uses a Radix `AlertDialog` which
+       *  portal-mounts its content, so actual placement is handled by
+       *  Radix regardless of where this JSX lives.
+       */}
+      {resendDialogOptions && resendDialog ? (
+        <ResendProviderDialog
+          open={!!resendDialog}
+          onOpenChange={(next) => {
+            if (!next) handleResendDialogCancel();
+          }}
+          original={resendDialogOptions.original}
+          current={resendDialogOptions.current}
+          isEdit={resendDialogOptions.isEdit}
+          onConfirm={handleResendDialogConfirm}
+        />
+      ) : null}
     </div>
   );
 
@@ -864,6 +1088,10 @@ interface ExpandedContentProps {
    * message content and focuses.
    */
   onStreamEdit: (message: ChatMessageType) => void;
+  /** Whether the composer is in edit mode (#127 — shows banner). */
+  editing: boolean;
+  /** Cancel edit mode (× on banner or Esc when banner is visible). */
+  onCancelEdit: () => void;
 }
 
 function ExpandedContent({
@@ -888,6 +1116,8 @@ function ExpandedContent({
   onStreamPrefill,
   onStreamResend,
   onStreamEdit,
+  editing,
+  onCancelEdit,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -906,6 +1136,25 @@ function ExpandedContent({
         onResend={onStreamResend}
         onEdit={onStreamEdit}
       />
+
+      {/* #127 parity — edit-mode banner. Appears above the input when the
+       *  user clicked Edit on a previous user message. Clicking the × or
+       *  pressing Cancel abandons the edit without sending.
+       */}
+      {editing ? (
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <span className="text-xs text-muted-foreground">Editing message</span>
+          <button
+            type="button"
+            onClick={onCancelEdit}
+            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            title="Cancel editing"
+            aria-label="Cancel editing"
+          >
+            <X className="h-3 w-3" strokeWidth={1.5} />
+          </button>
+        </div>
+      ) : null}
 
       {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}
       <AttachmentChips chips={chips} onRemove={onRemoveChip} />

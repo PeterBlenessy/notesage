@@ -11,7 +11,23 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { cn } from '@/lib/utils';
 import { log, PERF } from '@/lib/logger';
 import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
+import type { AgentTask } from '@/stores/activity-store';
 import { AgentPanel } from './AgentPanel';
+
+export interface AgentOrbProps {
+  /**
+   * Cancel a running agent task. Forwarded to `AgentPanel` so the cancel
+   * affordance on each task row terminates the task. Without this the
+   * tasks render but cannot be cancelled (#130 gap).
+   */
+  onCancelTask?: (taskId: string) => void | Promise<void>;
+  /**
+   * Click-to-navigate on a completed task. Forwarded to `AgentPanel` so
+   * task rows jump back to the source comment / document. Without this
+   * the tasks render but do not navigate (#130 gap).
+   */
+  onClickTask?: (task: AgentTask) => void;
+}
 
 /**
  * AgentOrb (#29 + #79) — 46 px ambient indicator pinned to the bottom-right of
@@ -44,7 +60,7 @@ import { AgentPanel } from './AgentPanel';
  * the ambient pulse sits on an inner absolutely-positioned wrapper that has no
  * transform utilities — the keyframe wins on that element.
  */
-export function AgentOrb() {
+export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   const tasks = useActivityStore((s) => s.tasks);
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
   const reducedMotion = useReducedMotion();
@@ -161,7 +177,7 @@ export function AgentOrb() {
         // own width and padding so the list fills the popover cleanly.
         className="w-auto p-0"
       >
-        <AgentPanel />
+        <AgentPanel onCancelTask={onCancelTask} onClickTask={onClickTask} />
       </PopoverContent>
     </Popover>
   );

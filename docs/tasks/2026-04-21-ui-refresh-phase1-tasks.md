@@ -1347,7 +1347,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, possibly `src/components/chat/ChatInput.tsx` (minor generalization), `src/components/cmd/AttachmentChips.tsx` (unify image + reference chips) |
 | Surfaced from | #113 audit — six ChatInput features absent from the floating bar |
 
-### #127 — CommandBarStream per-message parity
+### #127 — CommandBarStream per-message parity ✅
 
 | Field | Value |
 | --- | --- |
@@ -1380,7 +1380,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/ProjectsSection.tsx`, `PinnedSection.tsx`, `RecentSection.tsx`, `FolderPeek.tsx`, `TreeOverlay.tsx` (+ shared hook if one needs extracting) |
 | Surfaced from | #113 audit — three classes of visual state missing across all Quiet sidebar surfaces |
 
-### #130 — CommandBarStream chat-card + banner parity
+### #130 — CommandBarStream chat-card + banner parity ✅
 
 | Field | Value |
 | --- | --- |
