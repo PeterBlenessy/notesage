@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+
 /**
  * useFocusMode — Phase 1 #56.
  *
@@ -117,6 +119,16 @@ export function useFocusMode(): UseFocusModeResult {
           : null;
 
       root.classList.add(FOCUS_MODE_CLASS);
+
+      // Task #120: entering focus mode collapses the expanded command bar —
+      // focus mode is distraction-free writing and the composer is chrome
+      // that belongs out of the way. The bar's bus subscriber (landed in
+      // #114) no-ops if the bar is already collapsed, so we emit
+      // unconditionally. This `useEffect` runs exactly on the off→on
+      // transition (not on every render, not on exit), guaranteeing one
+      // emit per enter. The emit is decoupled from the bar's state — the
+      // bus is the only bridge between the two modules.
+      emitCmdBarEvent({ type: "dismiss" });
     } else {
       root.classList.remove(FOCUS_MODE_CLASS);
 
