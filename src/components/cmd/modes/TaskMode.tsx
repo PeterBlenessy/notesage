@@ -121,11 +121,23 @@ function TaskMode({
 }: TaskModeProps) {
   // Pull scan paths from the workspace + library root. Mirrors the subset of
   // `getAllScanPaths()` from action-store but keeps the picker self-contained.
-  const projectPaths = useWorkspaceStore((s) => s.projects.map((p) => p.path));
-  const explorerFolderPaths = useWorkspaceStore((s) =>
-    s.explorerFolders.map((f) => f.path),
-  );
+  //
+  // Select the RAW arrays (stable references — Zustand holds the same object
+  // identity until the underlying data changes) and derive the path-only
+  // lists with useMemo. Calling `.map()` inside the selector would return
+  // a new array on every render and trigger "getSnapshot should be cached"
+  // errors under React 19 / throw a "Maximum update depth exceeded"
+  // infinite-loop exception. This is the pattern flagged in
+  // `feedback_perf_store_selectors.md` and was the root cause of the
+  // 2026-04-24 ⌘1 crash that live-tested #114.
+  const projects = useWorkspaceStore((s) => s.projects);
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const projectPaths = useMemo(() => projects.map((p) => p.path), [projects]);
+  const explorerFolderPaths = useMemo(
+    () => explorerFolders.map((f) => f.path),
+    [explorerFolders],
+  );
 
   const scanPaths = useMemo(() => {
     const paths: string[] = [...projectPaths, ...explorerFolderPaths];

@@ -82,7 +82,20 @@ function SkillMode({
   listboxId = 'cmd-skill-listbox',
   onActiveOptionChange,
 }: SkillModeProps) {
-  const allSkills = useSkillStore((state) => state.getActiveSkills());
+  // Subscribe to the RAW state fields (`skills`, `enabledOverrides`) so
+  // Zustand's snapshot comparison sees stable references. Calling
+  // `state.getActiveSkills()` inside the selector would compute a new array
+  // on every render → "getSnapshot should be cached" / infinite-loop crash
+  // under React 19 (same root cause as the 2026-04-24 TaskMode fix).
+  // We invoke `getActiveSkills` imperatively from a useMemo whose deps are
+  // the raw state, which ensures re-computation only when the underlying
+  // data actually changes.
+  const skills = useSkillStore((state) => state.skills);
+  const enabledOverrides = useSkillStore((state) => state.enabledOverrides);
+  const allSkills = useMemo(
+    () => useSkillStore.getState().getActiveSkills(),
+    [skills, enabledOverrides],
+  );
   const results = useMemo(() => filterSkills(allSkills, filter), [allSkills, filter]);
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);

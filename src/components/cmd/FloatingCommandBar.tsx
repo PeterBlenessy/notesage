@@ -185,13 +185,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
             (m) => m.prefix === event.prefix,
           );
           if (mode) {
-            const value = `${event.prefix} `;
-            setInputValue(value);
+            // Prefill with the prefix character only — no trailing space.
+            // A space would (a) show an extra cursor-offset the user has to
+            // delete, (b) count as post-prefix typed filter text and mis-seed
+            // the picker's filter state. The input's onChange / selection
+            // handlers handle cursor/filter state from here on as the user
+            // types after the prefix.
+            setInputValue(event.prefix);
             setActivePrefix({
               mode,
               prefixIndex: 0,
               tokenStart: 0,
-              tokenEnd: value.length,
+              tokenEnd: 1,
               filter: '',
             });
           }

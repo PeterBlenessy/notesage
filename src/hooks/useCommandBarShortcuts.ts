@@ -22,11 +22,15 @@
  *                     editor / popover / focus-mode chain per the
  *                     documented fall-through order)
  *
- * Input-skip rule: when the user is typing in a regular `<input>` or
- * `<textarea>` that's NOT inside `[data-cmd-bar]`, none of the prefix
- * shortcuts fire — they would otherwise hijack a "1" or "2" mid-edit.
- * ⌘K is the single exception: it always fires, even mid-typing, because
- * it's the universal "summon the bar" gesture.
+ * Input-skip rule: REMOVED 2026-04-24. Earlier versions gated the ⌘⇧P /
+ * ⌘1–⌘4 chords on `isOutsideCmdBarTextEntry` to avoid "hijacking a 1 or 2
+ * mid-edit". That gate was over-cautious — every binding in this hook is a
+ * ⌘-modifier chord, so there is no mid-edit conflict to avoid (the Cmd key
+ * takes the keystroke out of the typing plane). The gate's practical effect
+ * was a silent P0 regression: the chords did nothing when focus was in the
+ * editor's contenteditable, which is the default state. ⌘K already behaved
+ * this way; the others now match. The helper function is retained for any
+ * future non-modifier binding.
  *
  * Cross-platform note: today the codebase targets macOS, so this hook
  * uses `event.metaKey` exclusively (matching the rest of the keymap
@@ -51,23 +55,14 @@ const DIGIT_TO_PREFIX: Record<string, string> = {
   '4': '?',
 };
 
-/** Returns true when the event target is an editable surface OUTSIDE the
- * floating command bar. Matches `<input>`, `<textarea>`, and any element
- * with `contenteditable=""` / `="true"` / `="plaintext-only"`. */
-function isOutsideCmdBarTextEntry(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-
-  const tag = target.tagName;
-  const isTextInput =
-    tag === 'INPUT' ||
-    tag === 'TEXTAREA' ||
-    target.isContentEditable;
-
-  if (!isTextInput) return false;
-
-  // Inside the cmd bar — let the bar's own handlers see the keystroke.
-  return target.closest('[data-cmd-bar]') === null;
-}
+// NOTE: earlier versions of this hook also defined an
+// `isOutsideCmdBarTextEntry` helper to gate ⌘⇧P / ⌘1–4 on whether focus was
+// in an editable surface. The gate produced a silent P0 (the chords did
+// nothing when focus was in the editor, which is the default state). Every
+// remaining binding in this hook is a ⌘-modifier chord, so the gate is
+// unnecessary — ⌘-chords are app-level shortcuts, not raw typing. Helper
+// removed to keep the file focused; re-introduce it if a non-modifier
+// binding lands here in the future.
 
 export function useCommandBarShortcuts(): void {
   const uiPreview = useSettingsStore((s) => s.uiPreview);
@@ -89,14 +84,20 @@ export function useCommandBarShortcuts(): void {
         return;
       }
 
-      // Everything below is suppressed when the user is typing in a
-      // non-bar text-entry surface (the editor, a settings field, etc.).
-      const skipBecauseTyping = isOutsideCmdBarTextEntry(event.target);
+      // Note: every binding below is a ⌘-modifier chord, not raw typing.
+      // Unlike a bare "1" or "P" keystroke (which COULD hijack editor
+      // typing), ⌘1 / ⌘⇧P are command chords — the Cmd modifier marks
+      // them as app-level shortcuts regardless of focus location. We
+      // therefore do NOT gate them on `isOutsideCmdBarTextEntry` (the
+      // live-test repro: these chords did nothing when focus was in the
+      // editor's contenteditable, which is the default state when the
+      // user reaches for a shortcut). ⌘K already behaved this way; the
+      // others now match. The helper is kept imported for future
+      // non-modifier bindings that might need it.
 
       // ⌘⇧P — palette prefix ">" (must come before the ⌘ digit branch
       // because P + Shift could otherwise look like a regular keystroke).
       if (mod && event.shiftKey && event.key.toLowerCase() === 'p') {
-        if (skipBecauseTyping) return;
         event.preventDefault();
         emitCmdBarEvent({ type: 'focus', prefix: '>' });
         return;
@@ -110,7 +111,6 @@ export function useCommandBarShortcuts(): void {
       if (mod && !event.altKey) {
         const prefix = DIGIT_TO_PREFIX[event.key];
         if (prefix) {
-          if (skipBecauseTyping) return;
           event.preventDefault();
           emitCmdBarEvent({ type: 'focus', prefix });
           return;
