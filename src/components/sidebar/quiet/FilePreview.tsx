@@ -406,14 +406,10 @@ export function FilePreview({
             )
           )}
         </div>
-        {/* Footer — mockup-L shows a "Click to open · ⌘click for new
-            tab" hint. We keep it short and in the muted text color so
-            it reads as a tooltip annotation, not content. */}
-        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border/60 text-[10px] text-muted-foreground">
-          <span>Click to open</span>
-          <span aria-hidden="true">·</span>
-          <span>⌘click for new tab</span>
-        </div>
+        {/* No footer — mockup-L had a "Click to open · ⌘click for new
+            tab" hint, but live-test feedback 2026-04-24 said it's
+            noise. Click + ⌘-click are the expected verbs for any file
+            row and don't need an inline legend. */}
       </PopoverContent>
     </Popover>
   );

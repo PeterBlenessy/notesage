@@ -206,7 +206,11 @@ function RecentRow({
             setIsDragging(true);
           }}
           onDragEnd={() => setIsDragging(false)}
-          title={entry.path}
+          // No native `title` — the native tooltip races with the
+          // richer `FilePreview` popover that wraps this row, and the
+          // two overlapping made the preview unusable (live-test
+          // feedback 2026-04-24). The preview already carries the full
+          // path + rendered body.
           className={cn(
             "h-7 px-2 flex items-center gap-2 rounded-sm text-sm",
             "transition-colors duration-150",

@@ -230,7 +230,11 @@ function PinnedRow({
           data-drop-edge={dropEdge ?? undefined}
           data-renaming={isRenaming ? "true" : undefined}
           aria-current={isActive ? "page" : undefined}
-          title={path}
+          // No native `title` — the `FilePreview` popover that wraps
+          // this row covers the same "what is this file?" need with a
+          // richer rendered body. Having both on hover caused the
+          // native tooltip to overlay the preview (live-test feedback
+          // 2026-04-24).
           onClick={isRenaming ? undefined : handleClick}
           onKeyDown={isRenaming ? undefined : onKeyDown}
           onFocus={onFocus}
