@@ -16,6 +16,8 @@ const SettingsDialog = lazy(() => import("@/components/settings/SettingsDialog")
 const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDialogV2").then(m => ({ default: m.SettingsDialogV2 })));
 const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
 const KeyboardShortcutsDialog = lazy(() => import("@/components/KeyboardShortcutsDialog").then(m => ({ default: m.KeyboardShortcutsDialog })));
+// Quiet Composer variant (#137) — same catalogue, v2 visual style.
+const KeyboardShortcutsDialogV2 = lazy(() => import("@/components/KeyboardShortcutsDialogV2").then(m => ({ default: m.KeyboardShortcutsDialogV2 })));
 const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
 // #128 — Sidebar-driven commit dialog. Same `CommitDialog` component
 // used by the legacy `ProjectItem`; lazy-loaded here so the classic
@@ -755,10 +757,24 @@ function App() {
           onDismiss={dismissUpdate}
         />
         <Suspense fallback={null}>
-          <KeyboardShortcutsDialog
-            open={shortcutsOpen}
-            onOpenChange={setShortcutsOpen}
-          />
+          {/*
+            #137 — pick the dialog variant per active shell. Same
+            `shortcutsOpen` state drives both; the v2 variant restyles
+            the chrome (wider dialog, larger type, card-surface groups)
+            so it feels consistent with SettingsDialogV2. The legacy
+            dialog stays until Phase 2 deletes the legacy layout.
+          */}
+          {uiPreview === "quiet-composer" ? (
+            <KeyboardShortcutsDialogV2
+              open={shortcutsOpen}
+              onOpenChange={setShortcutsOpen}
+            />
+          ) : (
+            <KeyboardShortcutsDialog
+              open={shortcutsOpen}
+              onOpenChange={setShortcutsOpen}
+            />
+          )}
         </Suspense>
         {/*
           #128 — Global commit dialog for the Quiet Composer sidebar's

@@ -1457,7 +1457,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/ProjectsSection.tsx` (project row), possibly `PinnedSection.tsx` / `RecentSection.tsx` if they share the pattern |
 | Surfaced from | 2026-04-24 user live-test — "the sidebar does not have the same design as the mockup-d which i approved… the + that appears on hovering projects could cover the numbers displayed" |
 
-### #137 — Keyboard Shortcuts dialog — v2 visual parity
+### #137 — Keyboard Shortcuts dialog — v2 visual parity ✅
 
 | Field | Value |
 | --- | --- |
