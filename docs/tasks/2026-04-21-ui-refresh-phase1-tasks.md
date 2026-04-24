@@ -229,7 +229,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #13 |
 | Files | `src/components/cmd/modes/PaletteMode.tsx` |
 
-### #20 — Command-bar keyboard shortcuts ⚠️
+### #20 — Command-bar keyboard shortcuts ✅
 
 | Field | Value |
 | --- | --- |
@@ -239,7 +239,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #13 |
 | Files | `src/hooks/useCommandBarShortcuts.ts` |
 
-### #21 — Double-tap ⌘ detection (alternate bar focus) ⚠️
+### #21 — Double-tap ⌘ detection (alternate bar focus) ✅
 
 | Field | Value |
 | --- | --- |
@@ -259,7 +259,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | none |
 | Files | `src-tauri/src/commands/skills_tool_parser.rs`, `src/stores/skill-store.ts` (frontend helper), tests |
 
-### #23 — Wire composer send → chat-store ⚠️
+### #23 — Wire composer send → chat-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -269,7 +269,7 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Depends on | #9, #11, #12 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/stores/chat-store.ts` wiring |
 
-### #24 — Provider pill — wire to connections-store ⚠️
+### #24 — Provider pill — wire to connections-store ✅
 
 | Field | Value |
 | --- | --- |
@@ -1103,7 +1103,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 ## M1.12 Trial-finding polish — close 5 gaps from the project lead's first trial (5 tasks)
 
-### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons
+### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons ✅
 
 | Field | Value |
 | --- | --- |
@@ -1224,7 +1224,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/hooks/useKeyboardShortcuts.ts`, composition test |
 | Surfaced from | 2026-04-23 trial: double-tap ⌘ did not open the bar. |
 
-### #116 — Debug "send shows bubble, no streaming response"
+### #116 — Debug "send shows bubble, no streaming response" ✅
 
 | Field | Value |
 | --- | --- |
@@ -1281,7 +1281,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 ---
 
-### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer
+### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer ✅
 
 | Field | Value |
 | --- | --- |
@@ -1292,18 +1292,18 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/hooks/useKeyboardShortcuts.ts`, `src/components/QuietLayout.tsx`, `src/lib/cmd-bar-events.ts` (possibly a new event type), `src/components/activity/AgentOrb.tsx` (expose open-state via bus or ref) |
 | Surfaced from | #113 audit — ⌘⇧C / ⌘⇧A had no Quiet Composer binding |
 
-### #122 — DocHead parity: tab close affordance + tab strip decision
+### #122 — DocHead parity: tab close affordance + tab strip decision ✅
 
 | Field | Value |
 | --- | --- |
-| Description | DocHead is a read-only breadcrumb; legacy users rely on middle-click-to-close, drag-to-reorder, per-tab dirty dots, and visual tab switching. ⌘W still closes the active tab via the editor-store action, but there is no equivalent of middle-click or drag. Decide: (a) add a compact `QuietTabStrip` component that renders a thin row of tabs above DocHead, or (b) declare `⌘W` + sidebar/TreeOverlay + `⌘⇧[` / `⌘⇧]` as the parity surface and document the decision in keyboard-shortcuts.md and design-system.md. **Outcome-shaped acceptance**: PRD decision committed; whichever path is chosen has parity with legacy close/reorder behavior. |
+| Description | **Resolved by #131** — DocHead was removed entirely; there is no breadcrumb row any more, so the "tab strip above DocHead" option is moot. The decision committed by #131 is effectively option (b): ⌘W + the Quiet sidebar + TreeOverlay + ⌘⇧\[ / ⌘⇧\] are the parity surface for close + reorder + switch. Middle-click-to-close and drag-to-reorder remain unimplemented in the Quiet Composer; file a targeted Phase 2 follow-up if either turns out to be a blocker in practice. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | none |
 | Files | PRD update in `docs/prds/2026-04-21-ui-refresh.md`; either a new `src/components/editor/QuietTabStrip.tsx` or a doc note; `docs/keyboard-shortcuts.md` + `docs/design-system.md` updated |
 | Surfaced from | #113 audit — missing middle-click close / drag-reorder in Quiet Composer |
 
-### #123 — ⌘⇧L toggles Quiet sidebar visibility
+### #123 — ⌘⇧L toggles Quiet sidebar visibility ✅
 
 | Field | Value |
 | --- | --- |
