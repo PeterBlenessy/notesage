@@ -1108,7 +1108,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 ## M1.12 Trial-finding polish — close 5 gaps from the project lead's first trial (5 tasks)
 
-### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons
+### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons ✅
 
 | Field | Value |
 | --- | --- |
@@ -1240,7 +1240,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | TBD — investigate first. Candidates: `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/stores/chat-store.ts` |
 | Surfaced from | 2026-04-23 trial: user's bubble appeared but no assistant response. |
 
-### #117 — Render AgentSwitchCard inside CommandBarStream
+### #117 — Render AgentSwitchCard inside CommandBarStream ✅
 
 | Field | Value |
 | --- | --- |
@@ -1285,7 +1285,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Surfaced from | 2026-04-23 trial: user observed Esc only collapsed bar when focused in input; same class of bug — focus mode did not trigger collapse. |
 
 ---
-### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer
+### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer ✅
 
 | Field | Value |
 | --- | --- |
@@ -1307,7 +1307,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | PRD update in `docs/prds/2026-04-21-ui-refresh.md`; either a new `src/components/editor/QuietTabStrip.tsx` or a doc note; `docs/keyboard-shortcuts.md` + `docs/design-system.md` updated |
 | Surfaced from | #113 audit — missing middle-click close / drag-reorder in Quiet Composer |
 
-### #123 — ⌘⇧L toggles Quiet sidebar visibility
+### #123 — ⌘⇧L toggles Quiet sidebar visibility ✅
 
 | Field | Value |
 | --- | --- |
@@ -1318,7 +1318,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx`, `src/components/sidebar/quiet/QuietSidebar.tsx` |
 | Surfaced from | #113 audit — ⌘⇧L chord fires but no visible effect |
 
-### #124 — TitleBar buttons in Quiet Composer
+### #124 — TitleBar buttons in Quiet Composer ✅ (folded into #103)
 
 | Field | Value |
 | --- | --- |
