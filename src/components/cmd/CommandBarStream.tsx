@@ -1,7 +1,14 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useChatStore, selectMessages } from "@/stores/chat-store";
+import {
+  useChatStore,
+  selectMessages,
+  selectPendingAgentSwitch,
+  selectPendingProjectSwitch,
+} from "@/stores/chat-store";
 import { ChatMessage } from "@/components/chat/ChatMessage";
+import { AgentSwitchCard } from "@/components/chat/AgentSwitchCard";
+import { ProjectSwitchCard } from "@/components/chat/ProjectSwitchCard";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
 
@@ -30,6 +37,8 @@ import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
  */
 function CommandBarStream() {
   const messages = useChatStore(selectMessages) as ChatMessageType[];
+  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
+  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const reducedMotion = useReducedMotion();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastCountRef = useRef<number>(messages.length);
@@ -55,7 +64,8 @@ function CommandBarStream() {
     region.scrollTop = region.scrollHeight;
   }, [messages.length, reducedMotion]);
 
-  const isEmpty = messages.length === 0;
+  const isEmpty =
+    messages.length === 0 && !pendingProjectSwitch && !pendingAgentSwitch;
 
   return (
     <div
@@ -75,12 +85,37 @@ function CommandBarStream() {
           <p className="text-xs text-muted-foreground">No messages yet</p>
         </div>
       ) : (
-        messages.map((message) => (
-          <ChatMessage
-            key={message.id ?? `${message.role}-${message.timestamp ?? 0}`}
-            message={message}
-          />
-        ))
+        <>
+          {messages.map((message) => (
+            <ChatMessage
+              key={message.id ?? `${message.role}-${message.timestamp ?? 0}`}
+              message={message}
+            />
+          ))}
+          {/*
+           * Provider context-isolation cards (PRD 2026-04-21-ui-refresh, task
+           * #117). Mirrors the render condition in `ChatMessageList.tsx` so
+           * both shells surface mid-conversation provider/project switches —
+           * the silent-context-loss bug from the #113 functional-parity audit.
+           *
+           * State + resolvers live entirely in `chat-store`; this surface
+           * only reads `selectPendingProjectSwitch` / `selectPendingAgentSwitch`
+           * and delegates button wiring to the cards themselves (which call
+           * `resolveProjectSwitch` / `resolveAgentSwitch` on the store).
+           */}
+          {pendingProjectSwitch && (
+            <ProjectSwitchCard
+              newPaths={pendingProjectSwitch.newPaths}
+              previousPaths={pendingProjectSwitch.previousPaths}
+            />
+          )}
+          {pendingAgentSwitch && (
+            <AgentSwitchCard
+              newAgent={pendingAgentSwitch.newAgent}
+              previousAgent={pendingAgentSwitch.previousAgent}
+            />
+          )}
+        </>
       )}
     </div>
   );
