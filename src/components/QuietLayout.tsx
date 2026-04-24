@@ -134,6 +134,16 @@ export function QuietLayout(props: QuietLayoutProps) {
   // bar's drag handle drives — sharing the variable means a single source
   // of truth and zero React re-renders during drag.
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
+
+  // `⌘⇧L` — sidebar visibility (#123). The chord flips
+  // `settings-store.sidebarPinned` via `useKeyboardShortcuts`; QuietLayout
+  // observes the flag and either renders the sidebar + reserves the 240px
+  // grid track, or omits the sidebar entirely and collapses the grid to a
+  // single `1fr` column. Both shells share the setting — toggling here
+  // also affects the Classic layout's pinned state, which is the intended
+  // unified behaviour. Default is `true` (sidebar visible out of the box).
+  const sidebarPinned = useSettingsStore((s) => s.sidebarPinned);
+
   const documentAreaStyle: React.CSSProperties = cmdBarPinned
     ? { paddingRight: "var(--cmd-bar-pinned-width, 400px)" }
     : {};
@@ -288,13 +298,14 @@ export function QuietLayout(props: QuietLayoutProps) {
 
       <div
         data-quiet-layout-document-area
+        data-sidebar-pinned={sidebarPinned ? "true" : "false"}
         className="flex-1 grid min-h-0 gap-2 p-2"
         style={{
-          gridTemplateColumns: "240px 1fr",
+          gridTemplateColumns: sidebarPinned ? "240px 1fr" : "1fr",
           ...documentAreaStyle,
         }}
       >
-        <QuietSidebar />
+        {sidebarPinned ? <QuietSidebar /> : null}
         <div className="flex flex-col min-h-0 min-w-0">
           <DocHead />
           {/*
