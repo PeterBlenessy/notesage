@@ -91,6 +91,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const [expanded, setExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [activePrefix, setActivePrefix] = useState<ActivePrefix | null>(null);
+  // Mirror `activePrefix` onto a ref so the bus-subscription effect (which
+  // mounts once) can read the latest value without being in its deps.
+  // `activePrefix.source` drives Esc behaviour (typed → two-stage, chord →
+  // one-stage collapse).
+  const activePrefixRef = useRef<ActivePrefix | null>(null);
+  useEffect(() => {
+    activePrefixRef.current = activePrefix;
+  }, [activePrefix]);
   // Tracks the currently-highlighted option in the active mode picker so the
   // composer input can mirror it via `aria-activedescendant`. The picker
   // reports updates upward via its `onActiveOptionChange` callback (#78);
@@ -199,6 +207,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
               tokenStart: 0,
               tokenEnd: 1,
               filter: '',
+              // Chord-seeded: Esc collapses the bar in one stage (see the
+              // dismiss branch below). A `'typed'` prefix would instead
+              // require two Escs (first clears prefix, second collapses).
+              source: 'chord',
             });
           }
         }
@@ -209,6 +221,22 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       }
 
       if (event.type === 'dismiss') {
+        // Two-stage Esc mirror of the in-input `handleKeyDown`: if the user
+        // typed a prefix character (`#`, `@`, `!`, …) the first Esc should
+        // only close the picker + clear the prefix, leaving the bar expanded
+        // so they can keep composing. A chord-seeded prefix (⌘1/2/3/4,
+        // ⌘⇧P, ⌘⇧F) collapses in one stage — the chord IS the only reason
+        // the user landed here, so undoing it in full makes sense.
+        //
+        // `activePrefixRef.current` reads the live prefix (the subscription
+        // closure itself captures a stale `activePrefix`; we mirror the state
+        // via ref to avoid re-subscribing on every prefix change).
+        const currentPrefix = activePrefixRef.current;
+        if (currentPrefix?.source === 'typed') {
+          setActivePrefix(null);
+          return;
+        }
+
         // In pinned mode the bar can't collapse — fall through to the
         // prefix-clearing behaviour in `collapse` (gated internally).
         // Otherwise collapse fully.

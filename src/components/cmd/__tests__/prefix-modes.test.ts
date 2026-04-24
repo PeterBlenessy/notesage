@@ -133,6 +133,15 @@ describe('detectActivePrefix', () => {
     expect(result?.filter).toBe('palette');
   });
 
+  it('tags detected prefixes as typed (drives two-stage Esc)', () => {
+    // `source: 'typed'` is the signal that the user typed the prefix
+    // character — Esc clears the prefix only. Chord-seeded prefixes
+    // (⌘1/2/3/4 etc.) override to `'chord'` and collapse in one stage.
+    expect(detectActivePrefix('/', 1)?.source).toBe('typed');
+    expect(detectActivePrefix('@user', 5)?.source).toBe('typed');
+    expect(detectActivePrefix('#tag', 4)?.source).toBe('typed');
+  });
+
   it('returns null for a non-prefix character at start-of-input', () => {
     expect(detectActivePrefix('hello', 5)).toBeNull();
   });

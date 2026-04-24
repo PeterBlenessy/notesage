@@ -301,4 +301,68 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
 
     input.remove();
   });
+
+  // -------------------------------------------------------------------
+  // 2026-04-24 Esc two-stage behaviour — typed vs chord prefix.
+  //
+  // Typed prefix: the user typed `#`, `@`, `!`, `?`, `>` into the input.
+  //   First Esc clears the prefix only (bar stays expanded — user keeps
+  //   composing). Second Esc collapses.
+  // Chord-seeded prefix: ⌘1/2/3/4 / ⌘⇧P / ⌘⇧F put the prefix there.
+  //   First Esc collapses immediately — the chord was the only reason
+  //   the user landed here.
+  // -------------------------------------------------------------------
+
+  it('Esc after a chord-seeded prefix (⌘3 → #) collapses in ONE stage', () => {
+    renderWithProviders(<Harness />);
+
+    // Chord seeds the `#` prefix. `source: 'chord'` is set on the active
+    // prefix record so Esc can distinguish from a typed `#`.
+    dispatchKey({ key: '3', metaKey: true });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('tag');
+
+    // A single Esc should collapse the bar outright — no two-stage
+    // clearing step. The chord is the only reason we got here; Esc
+    // undoes it in full.
+    dispatchKey({ key: 'Escape' });
+
+    expect(getBar()?.getAttribute('data-expanded')).toBe('false');
+  });
+
+  it('Esc after a typed prefix (# typed into input) is TWO-STAGE (clear, then collapse)', () => {
+    renderWithProviders(<Harness />);
+
+    // Expand the bar (no prefix yet) and type `#` into the input. The
+    // input's onChange recomputes active prefix from (value, cursor);
+    // source defaults to `'typed'`.
+    dispatchKey({ key: 'k', metaKey: true });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+
+    const input = document.querySelector(
+      '[data-cmd-bar] input',
+    ) as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+
+    // Simulate typing `#` — set value and fire input event so the onChange
+    // handler fires and the selection lands after the `#`.
+    act(() => {
+      if (!input) return;
+      input.value = '#';
+      input.setSelectionRange(1, 1);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('tag');
+
+    // First Esc: clears the prefix only. Bar stays expanded so the user
+    // can keep composing; the picker closes.
+    dispatchKey({ key: 'Escape' });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('');
+
+    // Second Esc: no prefix active → collapse the bar.
+    dispatchKey({ key: 'Escape' });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('false');
+  });
 });

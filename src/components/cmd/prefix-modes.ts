@@ -122,6 +122,19 @@ export interface ActivePrefix {
   tokenEnd: number;
   /** The text after the prefix up to `tokenEnd` (excludes the prefix itself). */
   filter: string;
+  /**
+   * How the prefix came to be active. Drives Esc behaviour:
+   *   - `'typed'`: the user typed the prefix character into the input.
+   *     First Esc clears the prefix only (bar stays expanded so the
+   *     user can keep composing); a second Esc collapses the bar.
+   *   - `'chord'`: the prefix was seeded by a keyboard chord
+   *     (⌘1/2/3/4, ⌘⇧P, ⌘⇧F). The chord was the only thing that put
+   *     the user into this mode, so Esc collapses the bar immediately.
+   *
+   * `detectActivePrefix` always returns `'typed'`; chord-seeding call
+   * sites override to `'chord'`.
+   */
+  source: 'typed' | 'chord';
 }
 
 /**
@@ -204,6 +217,9 @@ export function detectActivePrefix(
     tokenStart: prefixIndex,
     tokenEnd,
     filter: input.slice(prefixIndex + 1, tokenEnd),
+    // Typed into the input (as opposed to seeded by a ⌘-chord — the
+    // chord-seeding call sites override this to 'chord').
+    source: 'typed',
   };
 }
 
