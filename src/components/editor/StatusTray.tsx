@@ -14,6 +14,7 @@ import type { Editor } from "@tiptap/react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
@@ -620,32 +621,42 @@ export function StatusTray({
         // group, `handleOpenAutoFocus` preventDefaults Radix and steers
         // focus + scroll to that group root instead.
       >
-        <div className="divide-y divide-border">
-          {(editor || onToggleViewMode) && (
-            <div className="p-3">
-              <EditorToolsGroup
-                editor={editor}
-                viewMode={viewMode}
-                onToggleViewMode={onToggleViewMode}
+        {/*
+          TooltipProvider is REQUIRED here because PopoverContent portal-
+          mounts to document.body — any TooltipProvider higher in the React
+          tree doesn't reach into this portal. MicButton and other children
+          use <Tooltip> which throws "Tooltip must be used within
+          TooltipProvider" without this wrapper (see
+          feedback_code_review_mandatory_gate in auto-memory).
+        */}
+        <TooltipProvider delayDuration={300}>
+          <div className="divide-y divide-border">
+            {(editor || onToggleViewMode) && (
+              <div className="p-3">
+                <EditorToolsGroup
+                  editor={editor}
+                  viewMode={viewMode}
+                  onToggleViewMode={onToggleViewMode}
+                />
+              </div>
+            )}
+            <div ref={completionsRef} tabIndex={-1} className="p-3 focus:outline-none">
+              <CompletionsGroup />
+            </div>
+            <div ref={commentsRef} tabIndex={-1} className="p-3 focus:outline-none">
+              <CommentsGroup
+                comments={comments}
+                onOpenCommentList={openCommentList}
               />
             </div>
-          )}
-          <div ref={completionsRef} tabIndex={-1} className="p-3 focus:outline-none">
-            <CompletionsGroup />
+            <div ref={sessionRef} tabIndex={-1} className="p-3 focus:outline-none">
+              <SessionGroup />
+            </div>
+            <div ref={helpRef} tabIndex={-1} className="p-3 focus:outline-none">
+              <HelpGroup wordCount={wordCount} onShortcutsOpen={handleShortcuts} />
+            </div>
           </div>
-          <div ref={commentsRef} tabIndex={-1} className="p-3 focus:outline-none">
-            <CommentsGroup
-              comments={comments}
-              onOpenCommentList={openCommentList}
-            />
-          </div>
-          <div ref={sessionRef} tabIndex={-1} className="p-3 focus:outline-none">
-            <SessionGroup />
-          </div>
-          <div ref={helpRef} tabIndex={-1} className="p-3 focus:outline-none">
-            <HelpGroup wordCount={wordCount} onShortcutsOpen={handleShortcuts} />
-          </div>
-        </div>
+        </TooltipProvider>
       </PopoverContent>
     </Popover>
   );
