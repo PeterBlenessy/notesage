@@ -23,15 +23,33 @@ vi.mock('@/stores/settings-store', () => {
   };
 });
 
+// Mutable editor-store state so per-test `setActiveTab()` can seed a tab
+// for the #131 quiet-mode dirty-dot + saved-ago assertions.
+const editorState = {
+  openDocuments: [] as Array<{
+    id: string;
+    fileName: string;
+    isDirty: boolean;
+    lastSavedAt?: number;
+  }>,
+  activeTabId: null as string | null,
+};
+
+function setActiveTab(tab: { id: string; fileName: string; isDirty: boolean; lastSavedAt?: number }) {
+  editorState.openDocuments = [tab];
+  editorState.activeTabId = tab.id;
+}
+
+function clearActiveTab() {
+  editorState.openDocuments = [];
+  editorState.activeTabId = null;
+}
+
 vi.mock('@/stores/editor-store', () => {
-  const state = {
-    openDocuments: [],
-    activeTabId: null,
-  };
   return {
     useEditorStore: Object.assign(
-      vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
-      { getState: () => state },
+      vi.fn((sel: (s: typeof editorState) => unknown) => sel(editorState)),
+      { getState: () => editorState },
     ),
   };
 });
@@ -56,6 +74,7 @@ vi.mock('@/stores/activity-store', () => {
 describe('TitleBar', () => {
   beforeEach(() => {
     registerDefaultHandlers();
+    clearActiveTab();
   });
 
   describe('classic mode (default)', () => {
@@ -174,6 +193,76 @@ describe('TitleBar', () => {
       const root = container.querySelector('[data-titlebar-mode]') as HTMLElement;
       expect(root).toBeTruthy();
       expect(root.getAttribute('data-titlebar-mode')).toBe('classic');
+    });
+
+    // ---------------------------------------------------------------------
+    // #131 — DocHead breadcrumb removed; dirty dot + "saved Xs ago"
+    // moved into TitleBar's quiet-mode right zone. The classic shell keeps
+    // its TabBar-owned dirty dots and does NOT render these two indicators.
+    // ---------------------------------------------------------------------
+
+    it('renders the filename from the active tab (not "Notesage") when a tab is active (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      expect(screen.getByText('draft.md')).toBeTruthy();
+    });
+
+    it('renders the dirty dot when the active tab is dirty (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true });
+      const { container } = renderWithProviders(<TitleBar mode="quiet" />);
+
+      // Dirty dot is a role=status span with aria-label="Unsaved changes".
+      const dot = container.querySelector('[aria-label="Unsaved changes"]');
+      expect(dot).toBeTruthy();
+    });
+
+    it('does NOT render the dirty dot when the active tab is clean (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      const { container } = renderWithProviders(<TitleBar mode="quiet" />);
+
+      expect(container.querySelector('[aria-label="Unsaved changes"]')).toBeNull();
+    });
+
+    it('renders a "saved Xs ago" label for a clean tab with lastSavedAt (#131)', () => {
+      const tenSecondsAgo = Date.now() - 10_000;
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false, lastSavedAt: tenSecondsAgo });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      // Should render "saved Ns ago" for N = 10 (±1 second tolerance).
+      expect(screen.getByText(/saved \d+s ago/i)).toBeTruthy();
+    });
+
+    it('renders an em-dash placeholder for a clean tab without lastSavedAt (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      // SavedLabel renders "—" for tabs that have never been saved this session.
+      expect(screen.getByLabelText('Not yet saved this session')).toBeTruthy();
+    });
+
+    it('suppresses the "saved Xs ago" label while the tab is dirty (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true, lastSavedAt: Date.now() - 5_000 });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      // The saved label should NOT render while the doc is dirty — showing
+      // "saved 5s ago" mid-edit would be misleading.
+      expect(screen.queryByText(/saved \d+s ago/i)).toBeNull();
+    });
+
+    it('renders NO dirty-dot / saved-ago chrome in classic mode (#131)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true, lastSavedAt: Date.now() - 5_000 });
+      const { container } = renderWithProviders(
+        <TitleBar
+          onToggleChat={vi.fn()}
+          onToggleActivityStrip={vi.fn()}
+        />,
+      );
+
+      // Classic shell's TabBar owns the per-tab dirty dot; TitleBar must
+      // not duplicate it.
+      expect(container.querySelector('[aria-label="Unsaved changes"]')).toBeNull();
+      expect(screen.queryByText(/saved \d+s ago/i)).toBeNull();
     });
   });
 });

@@ -42,7 +42,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 The editor exposes the active document and switching affordance differently depending on which layout shell is mounted:
 
 - **Classic Layout** (`src/components/Layout.tsx`, default): a `TabBar` (`src/components/tabs/TabBar.tsx`) renders along the top of the editor area with one tab per open document, drag-to-reorder, middle-click to close, dirty-dot indicator, and the standard `Cmd+W` close shortcut.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the tab bar is replaced by `DocHead` (`src/components/editor/DocHead.tsx`), a single-line breadcrumb (`Notesage / project / folder / file.md`) with a dirty-dot, a right-aligned "saved Xs ago" timer, and a reserved right zone for future affordances. Document switching happens via the `QuietSidebar`, the `TreeOverlay` (⌘⇧E), the recent-document cycle (⌘⇧[ / ⌘⇧]), or the command bar.
+- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): there is no tab bar and no breadcrumb row — the active document's filename surfaces in the macOS window title and the `TitleBar` (`src/components/TitleBar.tsx`), which also shows a dirty dot + right-aligned "saved Xs ago" timer (via `src/components/SavedLabel.tsx`) when a document is active. Document switching happens via the `QuietSidebar`, the `TreeOverlay` (⌘⇧E), the recent-document cycle (⌘⇧[ / ⌘⇧]), or the command bar. An earlier `DocHead` breadcrumb component originally carried this chrome; it was removed in task #131 of the 2026-04-21 UI refresh because the breadcrumb felt redundant against the window title.
 
 Both shells read from the same `editor-store.openDocuments` array — only the surface is different, the underlying state is shared.
 
@@ -165,7 +165,7 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | --- | --- |
 | `src/components/editor/Editor.tsx` | Main editor wrapper |
 | `src/components/editor/EditorContent.tsx` | Tiptap content area |
-| `src/components/editor/DocHead.tsx` | Quiet Composer document breadcrumb (replaces TabBar in `QuietLayout`) |
+| `src/components/SavedLabel.tsx` | Shared "saved Xs ago" label used by TitleBar (quiet) and StatusBar |
 | `src/components/tabs/TabBar.tsx` | Classic Layout tab bar (legacy shell) |
 | `src/components/editor/Toolbar.tsx` | Floating format toolbar |
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |

@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { Button } from "@/components/ui/button";
+import { SavedLabel } from "@/components/SavedLabel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,6 +47,28 @@ export function TitleBar(props: TitleBarProps) {
   const hasRunning = useActivityStore((s) => s.tasks.some((t) => t.status === 'running'));
 
   const title = activeTab?.fileName ?? "Notesage";
+  const isDirty = Boolean(activeTab?.isDirty);
+  const lastSavedAt = activeTab?.lastSavedAt;
+
+  // Quiet Composer has no DocHead breadcrumb (#131) — the dirty dot and
+  // "saved Xs ago" readout moved here so users still see both pieces of
+  // info. Rendered in the right zone only when a document is active and
+  // the mode is `quiet`. The classic shell keeps its existing TabBar
+  // where per-tab dirty dots already live.
+  const quietDocChrome =
+    props.mode === "quiet" && activeTab ? (
+      <div className="flex items-center gap-2 pr-3 shrink-0">
+        {isDirty ? (
+          <span
+            role="status"
+            aria-label="Unsaved changes"
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ background: "var(--accent, var(--primary))" }}
+          />
+        ) : null}
+        <SavedLabel lastSavedAt={lastSavedAt} isDirty={isDirty} />
+      </div>
+    ) : null;
 
   // Narrow the discriminated union up front so the JSX below can reference
   // the classic-mode callbacks without triggering TS2339 on the quiet-mode
@@ -109,13 +132,13 @@ export function TitleBar(props: TitleBarProps) {
       </div>
 
       {/*
-        Right: chat toggle + activity strip toggle. Suppressed in Quiet
-        Composer (tasks #103 + #124) — the FloatingCommandBar replaces the
-        chat panel and the AgentOrb replaces the activity strip, so these
-        two buttons would be dead controls in that shell. See the JSDoc on
-        `TitleBarProps` above for the rationale.
+        Right: chat toggle + activity strip toggle (classic) OR dirty dot
+        + "saved Xs ago" (quiet). Both variants never render together —
+        `classicControls` is null in quiet mode and `quietDocChrome` is
+        null in classic mode.
        */}
       {classicControls}
+      {quietDocChrome}
     </div>
   );
 }

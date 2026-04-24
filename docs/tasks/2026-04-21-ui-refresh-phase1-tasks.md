@@ -7,7 +7,7 @@
 | **PRD** | [ui-refresh](../prds/2026-04-21-ui-refresh.md) |
 | **Phase** | 1 of 3 — ship the preview behind a flag; legacy stays working |
 | **Rollout tasks** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) (Phase 2 + 3) |
-| **Total** | 129 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 27 with #103–#107 polish, #110–#112 toolbar + audit, #113 parity audit, #114–#120 first integration-gap batch, #121–#130 second batch surfaced by the #113 audit, and #131–#132 third batch surfaced by 2026-04-24 live test; M1.13 = #108–#109). |
+| **Total** | 127 tasks across 13 milestones (M1.11 adds #101–#102; M1.12 grew from 5 → 25 with #103–#107 polish, #110–#112 toolbar + audit, #113 parity audit, #114–#120 first integration-gap batch, and #121–#130 second batch surfaced by the #113 audit; M1.13 = #108–#109). |
 | **Complexity mix** | \~30 S, \~50 M, \~20 L |
 | **Suggested order** | M1.1 Foundation (#1–#8) → M1.2 Composer + Orb (#9–#29) → M1.3 Sidebar + Chrome (#30–#62) → M1.4 Settings (#63–#68) → M1.5 Removals (#69–#74) → M1.6 State (#75–#77) → M1.7 Accessibility (#78–#87) → M1.8 Perf (#88–#92) → M1.9 Docs + release (#93–#98) → M1.10 Pre-ship validation (#99–#100) |
 
@@ -230,7 +230,6 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Files | `src/components/cmd/modes/PaletteMode.tsx` |
 
 ### #20 — Command-bar keyboard shortcuts ⚠️
-<!-- Reverted 2026-04-23: hook emits on cmd-bar-events bus but no production subscriber. ⌘K / ⌘⇧P / ⌘1-4 / Esc dead. See #114 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -241,7 +240,6 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Files | `src/hooks/useCommandBarShortcuts.ts` |
 
 ### #21 — Double-tap ⌘ detection (alternate bar focus) ⚠️
-<!-- Reverted 2026-04-23: hook is defined but never mounted anywhere (grep shows zero call sites outside its own file). Double-tap dead. See #115 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -262,7 +260,6 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Files | `src-tauri/src/commands/skills_tool_parser.rs`, `src/stores/skill-store.ts` (frontend helper), tests |
 
 ### #23 — Wire composer send → chat-store ⚠️
-<!-- Reverted 2026-04-23: `sendChatMessage` is called but user reports send shows bubble with no streaming response. Needs live repro + investigation. See #116 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -273,7 +270,6 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/stores/chat-store.ts` wiring |
 
 ### #24 — Provider pill — wire to connections-store ⚠️
-<!-- Reverted 2026-04-23: provider switch fires routing action, but AgentSwitchCard (context-isolation warning) is only rendered in classic ChatMessageList, not in CommandBarStream. User never sees the warning in Quiet Composer. See #117 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -304,7 +300,6 @@ Everything required to land the Quiet Composer UI *behind the* `uiPreview` *flag
 | Files | `src/components/cmd/CommandBarContext.tsx` |
 
 ### #27 — History view inside stream ⚠️
-<!-- Reverted 2026-04-23: ChatHistoryView is only imported by classic ChatPanel, never by any command-bar component. History list is unreachable in Quiet Composer. See #118 fix task. -->
 
 | Field | Value |
 | --- | --- |
@@ -1108,7 +1103,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 ## M1.12 Trial-finding polish — close 5 gaps from the project lead's first trial (5 tasks)
 
-### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons ✅
+### #103 — TitleBar in QuietLayout: hide legacy chat / agent toggle buttons
 
 | Field | Value |
 | --- | --- |
@@ -1145,7 +1140,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | The orb uses `hover:scale-105` which is too subtle. Add either (a) a Radix Tooltip showing the same aria-label text on hover, (b) a soft `hover:shadow-lg` glow, or (c) both. Keep ambient — the orb shouldn't grab attention. **Scope extension 2026-04-24 (live test)**: user reports the hover is instant, not subtle — 150 ms transition may not be reaching the DOM. Investigate whether `transition-transform duration-150 ease-in-out` on the button is being emitted by Tailwind v4 and applied when `hover:scale-105` triggers. If emitted correctly, consider a longer duration (200-250 ms) or a more pronounced hover cue (soft shadow, subtle ring tint). Composition test: assert transition class is present; manual live-check the feel. |
+| Description | The orb uses `hover:scale-105` which is too subtle. Add either (a) a Radix Tooltip showing the same aria-label text on hover, (b) a soft `hover:shadow-lg` glow, or (c) both. Keep ambient — the orb shouldn't grab attention. |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
@@ -1240,16 +1235,16 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | TBD — investigate first. Candidates: `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarStream.tsx`, `src/stores/chat-store.ts` |
 | Surfaced from | 2026-04-23 trial: user's bubble appeared but no assistant response. |
 
-### #117 — Signal agent/project switches via footer icons (NOT disruptive stream cards) 🔁
+### #117 — Render AgentSwitchCard inside CommandBarStream
 
 | Field | Value |
 | --- | --- |
-| Description | **REOPENED 2026-04-24** after live test: the switch-card pattern shipped in the first pass was rejected by the user — "I think the agent selector in legacy was better, just displaying the icon. Same for project selector." The disruptive card was also not appearing (pending-state wiring issue). Pivot: **remove both card renders from `CommandBarStream`**. Surface the same information as persistent icons inside `CommandBarContext`'s context row (provider pill + project chip already there) — flag them with a small visual change (e.g., border tint, info badge) when a pending-switch condition exists, and resolve-on-send instead of resolve-on-explicit-click. This matches legacy ChatFooter's compact pattern and keeps the stream focused on conversation content. **Outcome-shaped acceptance**: switch provider mid-chat → the provider pill gets a subtle "context will reset on next send" indicator; sending clears it. Same for project switch. No card renders in the stream. **Composition test**: seed chat-store with pending-switch state; assert indicator appears on the correct pill; no card in stream. |
-| Complexity | M |
+| Description | `AgentSwitchCard` is the context-isolation warning shown when the user switches provider mid-conversation. Currently only rendered inside `ChatMessageList.tsx` (classic `ChatPanel`). `CommandBarStream` does not render it, so Quiet Composer users never see the warning and silently lose context. Fix: render `AgentSwitchCard` inside `CommandBarStream` at the appropriate segment boundary, matching the legacy behavior. **Outcome-shaped acceptance**: open chat in Quiet Composer, send a message with Provider A, switch to Provider B, send another message → `AgentSwitchCard` appears in the stream. **Composition test mandatory**: seed chat-store with a provider-switch segment, render `CommandBarStream`, assert `AgentSwitchCard` is present. |
+| Complexity | S |
 | Category | frontend |
-| Depends on | #24 (reverted), #125 (footer work) |
-| Files | `src/components/cmd/CommandBarContext.tsx`, `src/components/cmd/CommandBarStream.tsx` (remove card render), composition tests (invert existing assertions) |
-| Surfaced from | 2026-04-24 live test: cards not appearing + design pivot per user. |
+| Depends on | #24 (reverted) |
+| Files | `src/components/cmd/CommandBarStream.tsx`, composition test |
+| Surfaced from | 2026-04-23 trial: provider switch did not fire the context warning. |
 
 ### #118 — Render conversation history inside FloatingCommandBar
 
@@ -1266,7 +1261,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | The orb applies `orb-pulsing` while running tasks > 0, but the pulse is not visible. Root cause visible from code review: (a) the button has `transition-transform duration-150 ease-in-out` on the same element as the `transform: scale(X)` keyframe, which interpolates each keyframe stop; (b) `hover:scale-105` engages Tailwind v4's composed transform chain (`transform: ... scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))`) which resolves to `scale(1)` when not hovered — overriding the keyframe's `scale(1.05)`. Fix: either (a) replace `hover:scale-105` with `hover:[transform:scale(1.05)]` to bypass the transform chain, (b) drop `transition-transform` and let the animation be the sole driver of transform, or (c) refactor to wrap the pulse in an inner span so hover polish and ambient pulse live on different elements (cleaner, preferred). Upgrade the existing unit test: instead of asserting `className.contains('orb-pulsing')`, assert `getComputedStyle(orb).animationName === 'orb-pulse'` — proves no cascade is wiping the animation. **Outcome-shaped acceptance**: with a running task, the orb visibly scales up and down on a 1.4 s cycle in the running app. |
+| Description | The orb applies `orb-pulsing` while running tasks &gt; 0, but the pulse is not visible. Root cause visible from code review: (a) the button has `transition-transform duration-150 ease-in-out` on the same element as the `transform: scale(X)` keyframe, which interpolates each keyframe stop; (b) `hover:scale-105` engages Tailwind v4's composed transform chain (`transform: ... scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))`) which resolves to `scale(1)` when not hovered — overriding the keyframe's `scale(1.05)`. Fix: either (a) replace `hover:scale-105` with `hover:[transform:scale(1.05)]` to bypass the transform chain, (b) drop `transition-transform` and let the animation be the sole driver of transform, or (c) refactor to wrap the pulse in an inner span so hover polish and ambient pulse live on different elements (cleaner, preferred). Upgrade the existing unit test: instead of asserting `className.contains('orb-pulsing')`, assert `getComputedStyle(orb).animationName === 'orb-pulse'` — proves no cascade is wiping the animation. **Outcome-shaped acceptance**: with a running task, the orb visibly scales up and down on a 1.4 s cycle in the running app. |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
@@ -1285,7 +1280,8 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Surfaced from | 2026-04-23 trial: user observed Esc only collapsed bar when focused in input; same class of bug — focus mode did not trigger collapse. |
 
 ---
-### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer ✅
+
+### #121 — Restore semantics for ⌘⇧C / ⌘⇧A under Quiet Composer
 
 | Field | Value |
 | --- | --- |
@@ -1307,7 +1303,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | PRD update in `docs/prds/2026-04-21-ui-refresh.md`; either a new `src/components/editor/QuietTabStrip.tsx` or a doc note; `docs/keyboard-shortcuts.md` + `docs/design-system.md` updated |
 | Surfaced from | #113 audit — missing middle-click close / drag-reorder in Quiet Composer |
 
-### #123 — ⌘⇧L toggles Quiet sidebar visibility ✅
+### #123 — ⌘⇧L toggles Quiet sidebar visibility
 
 | Field | Value |
 | --- | --- |
@@ -1318,11 +1314,11 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx`, `src/components/sidebar/quiet/QuietSidebar.tsx` |
 | Surfaced from | #113 audit — ⌘⇧L chord fires but no visible effect |
 
-### #124 — TitleBar buttons in Quiet Composer ✅ (folded into #103)
+### #124 — TitleBar buttons in Quiet Composer
 
 | Field | Value |
 | --- | --- |
-| Description | `QuietLayout.tsx` mounts `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />`. The chat and activity-strip toggle buttons still render but do nothing. Options: (a) extend `TitleBar` with `mode?: 'classic' \| 'quiet'` and suppress those buttons in quiet mode, or (b) rewire to Quiet Composer equivalents (summon command bar, open orb popover). Option (a) is cleaner — the command bar pill and the orb are themselves the affordances, the title bar shouldn't duplicate them. **Outcome-shaped acceptance**: no dead buttons visible in Quiet Composer TitleBar. **Composition test mandatory**: render with `mode="quiet"`, assert the chat / activity toggle buttons are not in the DOM. |
+| Description | `QuietLayout.tsx` mounts `<TitleBar onToggleChat={noop} onToggleActivityStrip={noop} />`. The chat and activity-strip toggle buttons still render but do nothing. Options: (a) extend `TitleBar` with \`mode?: 'classic' |
 | Complexity | S |
 | Category | frontend |
 | Depends on | none |
@@ -1333,7 +1329,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 | Field | Value |
 | --- | --- |
-| Description | `CommandBarContext.tsx` is missing three pieces of ChatFooter: the `AcpConfigOptionPicker` (thinking effort + model dropdowns), the "N goals" indicator pill, and the `showAgentModePicker` gate (legacy hides the mode picker unless the setting is on; Quiet Composer shows it unconditionally). Port each across from `src/components/chat/ChatFooter.tsx` and `src/components/chat/AcpSessionControls.tsx`. **Outcome-shaped acceptance**: thinking effort, model, goals, and agent-mode-picker settings behave identically in both footers. **Composition test mandatory**: render `<CommandBarContext />` with seeded ACP state + goals, assert each affordance is present and wired. **Scope extension 2026-04-24 (live test)**: when the user selects more than 2 projects in the footer, the agent mode picker gets pushed out of view (horizontal overflow). Add responsive handling — project chips should truncate/wrap/scroll so the mode picker remains visible. Regression test: seed 4+ projects; assert mode picker is still visible in the viewport. |
+| Description | `CommandBarContext.tsx` is missing three pieces of ChatFooter: the `AcpConfigOptionPicker` (thinking effort + model dropdowns), the "N goals" indicator pill, and the `showAgentModePicker` gate (legacy hides the mode picker unless the setting is on; Quiet Composer shows it unconditionally). Port each across from `src/components/chat/ChatFooter.tsx` and `src/components/chat/AcpSessionControls.tsx`. **Outcome-shaped acceptance**: thinking effort, model, goals, and agent-mode-picker settings behave identically in both footers. **Composition test mandatory**: render `<CommandBarContext />` with seeded ACP state + goals, assert each affordance is present and wired. |
 | Complexity | M |
 | Category | frontend |
 | Depends on | none |
@@ -1395,28 +1391,27 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/CommandBarStream.tsx`, `src/components/activity/AgentOrb.tsx`, `src/components/activity/AgentPanel.tsx` |
 | Surfaced from | #113 audit — seven permission/approval/banner types and orb panel wiring missing |
 
-### #131 — Remove DocHead breadcrumb; move dirty dot + saved-ago into TitleBar
+### #131 — Remove DocHead breadcrumb, fold dirty + saved-ago into TitleBar ✅
 
 | Field | Value |
 | --- | --- |
-| Description | Live test 2026-04-24: user finds the DocHead breadcrumb (`Notesage / project / folder / file.md`) duplicates the filename already shown in the native macOS title bar. Remove `DocHead` from `QuietLayout.tsx`. Move the active-document surface into `TitleBar.tsx` in quiet mode: the OS title bar already renders the filename; add a dirty-dot + "saved Xs ago" timer inline next to it (or as a subtle status zone next to the traffic lights). The `buildBreadcrumb()` helper stays in `DocHead.tsx` but the component mount is dropped. **Outcome-shaped acceptance**: in Quiet Composer, no breadcrumb row renders above the editor; filename + dirty state + saved timer visible in the top chrome. **Composition test**: render `<QuietLayout />` with a dirty tab, assert no `[data-doc-head]` element is in the DOM; assert dirty indicator is in the title-bar area. |
+| Description | User-requested at 2026-04-24 (option c): drop the `DocHead` breadcrumb from QuietLayout entirely — the filename already appears in the macOS window title and the TitleBar, so the breadcrumb is redundant chrome. Fold the dirty dot + "saved Xs ago" indicator into the TitleBar (quiet mode only) so users still see both pieces of information. Delete `src/components/editor/DocHead.tsx` + its test. Strip `[data-doc-head]` CSS from globals.css and the reduced-motion-sweep expectation. Keep the `docHead` quiet-chrome preset target in quiet-chrome.ts / settings-store migrations so persisted user settings stay valid — the target simply has no element receiving the attribute now. **Outcome-shaped acceptance**: QuietLayout renders with no breadcrumb row between the TitleBar and the editor; the TitleBar shows a dirty dot + saved-ago label whenever a document is active; all DocHead unit tests are gone; no stale CSS / test references to `[data-doc-head]`. |
 | Complexity | M |
 | Category | frontend |
-| Depends on | #103 (TitleBar mode prop already exists) |
-| Files | `src/components/QuietLayout.tsx` (drop DocHead mount), `src/components/TitleBar.tsx` (add dirty + saved-ago when `mode="quiet"`), optionally `src/components/editor/DocHead.tsx` (keep `buildBreadcrumb` helper, remove component export if no other callers), composition tests |
-| Surfaced from | 2026-04-24 live test: user — "I actually think we could get rid of the breadcrumb, I don't see the value it brings. The file name is displayed in the title bar, I think that is enough." Decision: option (c) from triage — integrate into TitleBar. |
+| Depends on | #48 (DocHead shipped), #103/#124 (TitleBar quiet mode) |
+| Files | `src/components/QuietLayout.tsx`, `src/components/TitleBar.tsx`, `src/components/editor/DocHead.tsx` (delete), `src/components/editor/__tests__/DocHead.test.tsx` (delete), `src/styles/globals.css`, `src/styles/__tests__/reduced-motion-sweep.test.ts`, `src/lib/saved-ago.ts` (extract SavedLabel to shared module), `docs/features/editor.md`, `docs/design-system.md`, `docs/architecture.md` |
+| Surfaced from | 2026-04-24 user live-test: breadcrumb felt redundant with the TitleBar + window title |
 
-### #132 — `uiPreview` toggle progress indicator
+### #132 — Editor flows under translucent TitleBar + StatusBar (toggleable)
 
 | Field | Value |
 | --- | --- |
-| Description | Live test 2026-04-24: switching between `legacy` and `quiet-composer` in Settings takes several seconds as React unmounts one layout tree and mounts another. Currently there is no visual feedback — the UI freezes briefly, which reads as "the app hung". Add a progress indicator: during the transition, overlay a lightweight spinner or skeleton on top of the viewport so the user sees something is happening. Consider: (a) render a `<div class="fixed inset-0 grid place-items-center bg-background z-50"><Spinner /></div>` while the new layout is mounting, gated by a short delay (&gt;200ms) to avoid flashing on fast transitions; (b) use React's `useTransition` to mark the `setUiPreview` as a non-urgent transition with a pending state. Option (a) is simpler; (b) is more idiomatic React 19. **Outcome-shaped acceptance**: toggle the preview flag in Settings → visible progress indicator for the duration of the remount, no perceived hang. **Composition test**: mock a slow layout unmount; assert the spinner appears within one tick of the setting change. |
-| Complexity | S |
+| Description | User-requested at 2026-04-24 as a follow-up to #131. Two related changes: (a) the editor document area spans the full layout height and scrolls **under** a sticky/absolute TitleBar + StatusBar instead of being pushed below them; (b) the TitleBar and StatusBar gain a semi-transparent bg + `backdrop-filter: blur` so the content behind reads as frosted glass, matching Bear/Craft chrome. Optional user preference: when enabled, the centre slice of the TitleBar (the area directly above the editor column) goes fully transparent — only the two edge zones keep the frosted bg — to give the writing surface a more airy feel. Persisted as `settings.quietChromeTransparent` (default off so existing users see no change). **Contrast audit required**: the dirty dot, accent moments, and saved-ago label must clear 3:1 against every realistic content bg (page white, dark mode, images, code blocks). **Outcome-shaped acceptance**: toggling the setting changes the effect live; scrolling an image / code block up to the top of the editor is visible as a subtle frosted layer behind the TitleBar; all a11y contrast checks still pass. |
+| Complexity | M |
 | Category | frontend |
-| Depends on | none |
-| Files | `src/components/settings/...` (wherever `setUiPreview` is called), possibly `src/App.tsx` or `src/components/Layout.tsx` for the overlay render, new spinner component (or reuse an existing one) |
-| Surfaced from | 2026-04-24 live test: "toggling on/off the new UI takes a lot of time. I think it would improve UX to display some kind of progress indication while waiting." |
-
+| Depends on | #131 (TitleBar owns dirty + saved readouts), #103/#124 (TitleBar quiet mode) |
+| Files | `src/components/QuietLayout.tsx` (layering), `src/components/TitleBar.tsx`, `src/components/editor/StatusBar.tsx`, `src/stores/settings-store.ts`, `src/components/settings/v2/AppearanceSettings.tsx`, `src/styles/globals.css` |
+| Surfaced from | 2026-04-24 user live-test after #131 landed: "could we make both the title bar and the status bar somewhat transparent? the document editor flows behind the title bar, which would create a layer" |
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
 
@@ -1446,7 +1441,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 
 Before promoting "preview" to "ready for general availability" (which gates Phase 2):
 
-- [ ] All 129 tasks completed (M1.1–M1.13)
+- [ ] All 127 tasks completed (M1.1–M1.13)
 
 - [ ] All new perf suites pass within budget at 1× multiplier
 

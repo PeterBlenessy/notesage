@@ -108,7 +108,6 @@ note-sage/
 │   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
 │   │   │   ├── DrawingPreview.tsx, DrawingEditor.tsx
 │   │   │   ├── ChangeListPopover.tsx, FindBar.tsx, StatusBar.tsx
-│   │   │   ├── DocHead.tsx       # Quiet Composer breadcrumb header (replaces TabBar)
 │   │   │   ├── FocusPill.tsx     # Floating exit affordance for focus mode
 │   │   │   ├── StatusTray.tsx    # Quiet Composer status tray popover
 │   │   │   ├── TableHeaderMenu.tsx  # Column type/aggregation context menu

@@ -491,17 +491,19 @@ body {
  *
  *   data-quiet-chrome-toolbar="fade" | "stay"
  *   data-quiet-chrome-status="fade"  | "stay"
- *   data-quiet-chrome-dochead="fade" | "stay"
+ *   data-quiet-chrome-dochead="fade" | "stay"  (inert since #131 — the
+ *     DocHead breadcrumb was removed but the preset key is kept so
+ *     persisted user settings remain valid)
  *   data-quiet-chrome-sidebar="fade" | "stay"
  *   data-quiet-chrome-orb="fade"     | "stay"
  *
  * CSS rules below key off BOTH the `.typing` class AND the per-element
  * attribute — a target only fades when the preset says so. Targets are
  * pre-stamped with their own data-* attributes by the components that
- * opt in (#48 `DocHead` uses `data-doc-head`; #49 Toolbar pill uses
- * `data-quiet-toolbar`; StatusBar carries `data-quiet-status`; the
- * workspace sidebar carries `aria-label="Workspace sidebar"`; AgentOrb
- * is `[data-testid="agent-orb"]`).
+ * opt in (#49 Toolbar pill uses `data-quiet-toolbar`; StatusBar carries
+ * `data-quiet-status`; the workspace sidebar carries
+ * `aria-label="Workspace sidebar"`; AgentOrb is
+ * `[data-testid="agent-orb"]`).
  *
  * The `:not(:hover):not(:focus-within)` guards keep a target visible when
  * the user interacts with it directly — the mouse-move cancel also covers
@@ -520,7 +522,6 @@ body {
  * animation.
  * ========================================================================= */
 .app [data-quiet-toolbar],
-.app [data-doc-head],
 .app [data-quiet-status],
 .app nav[aria-label="Workspace sidebar"],
 .app [data-testid="agent-orb"] {
@@ -537,9 +538,11 @@ body {
   opacity: 0;
 }
 
-.app.typing[data-quiet-chrome-dochead="fade"] [data-doc-head]:not(:hover):not(:focus-within) {
-  opacity: 0;
-}
+/*
+ * `data-quiet-chrome-dochead` is persisted in user settings but inert since
+ * #131 removed the DocHead breadcrumb — no element receives the attribute
+ * any more, so no CSS rule is needed here.
+ */
 
 .app.typing[data-quiet-chrome-sidebar="fade"] nav[aria-label="Workspace sidebar"]:not(:hover):not(:focus-within) {
   opacity: 0.4;
@@ -551,7 +554,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .app [data-quiet-toolbar],
-  .app [data-doc-head],
   .app [data-quiet-status],
   .app nav[aria-label="Workspace sidebar"],
   .app [data-testid="agent-orb"] {
@@ -582,7 +584,6 @@ body {
   pointer-events: none;
   transition: opacity 220ms ease-out, transform 220ms ease-out;
 }
-.app.focus-mode [data-doc-head],
 .app.focus-mode [data-quiet-toolbar],
 .app.focus-mode [data-quiet-status] {
   opacity: 0;
@@ -603,7 +604,6 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .app.focus-mode [data-quiet-layout-document-area] > nav[aria-label="Workspace sidebar"],
-  .app.focus-mode [data-doc-head],
   .app.focus-mode [data-quiet-toolbar],
   .app.focus-mode [data-quiet-status],
   .app.focus-mode [data-testid="agent-orb"],

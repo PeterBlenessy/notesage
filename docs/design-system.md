@@ -231,13 +231,11 @@ Both the hover popover and the keyboard expansion use the same `derivePeekChildr
 
 Implementation: `src/components/sidebar/quiet/FolderPeek.tsx`.
 
-### DocHead Breadcrumb
+### TitleBar (quiet mode)
 
-Replaces the legacy `TabBar` in QuietLayout. Renders `Notesage / project / folder / file.md` with a dirty dot, a right-aligned "saved Xs ago" timer, and a 130 px right-zone reservation for the future accent / theme affordance. Read-only — interactive segments land in a follow-up task.
+QuietLayout replaces the legacy `TabBar` with nothing between the `TitleBar` and the editor surface — the breadcrumb row previously rendered here (`DocHead`) was removed in task #131. Instead, the `TitleBar` in quiet mode (`src/components/TitleBar.tsx`, `mode="quiet"`) carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a right-aligned "saved Xs ago" timer (`src/components/SavedLabel.tsx`). The filename itself is still centred in the bar via `editor-store.activeTabId`.
 
-Long paths collapse middle segments to `…` (4-segment middle limit) so the breadcrumb stays single-line. Owning project takes precedence over the Library root when resolving the anchor.
-
-Implementation: `src/components/editor/DocHead.tsx` (the pure `buildBreadcrumb()` helper is exported for unit tests).
+The classic shell keeps its `TabBar` row where per-tab dirty dots live; `TitleBar` in `mode="classic"` renders the chat + activity toggle buttons instead of the saved-ago chrome.
 
 ### Status Tray + Status Bar
 
@@ -251,7 +249,7 @@ Toggle distraction-free focus mode. Single source of truth lives in `useFocusMod
 
 - `⌘.` (or `Ctrl+.` on non-mac) toggles focus from any state, captured at window level so the legacy bubble-phase listener never double-fires while QuietLayout is mounted.
 - `Esc` exits focus mode **with fall-through priority** — open Radix popovers/dialogs/menus, the expanded command bar, and inline rename rows all consume `Esc` first. Focus mode only exits when nothing else claims the key.
-- Applies `.focus-mode` to the QuietLayout root. CSS in `globals.css` (`.app.focus-mode …`) fades the sidebar, hides DocHead/Toolbar/StatusBar, dims the orb to 30%, and adds +110 px top-padding so text clears the macOS traffic lights.
+- Applies `.focus-mode` to the QuietLayout root. CSS in `globals.css` (`.app.focus-mode …`) fades the sidebar, hides the pill Toolbar + StatusBar, dims the orb to 30%, and adds +110 px top-padding so text clears the macOS traffic lights.
 - Announces enter/exit to AT via a short-lived `aria-live` region appended to `document.body` ("Focus mode on. Press Command period to exit." / "Focus mode off. Chrome restored.") — exact wording from the PRD.
 - **Pre-enter focus restoration:** the active element is captured on enter and restored on exit so the user lands back where they started.
 - Reduced-motion: the hook is unaffected (the class toggles instantly either way); the CSS honours the preference via a `@media` rule that zeros the transitions.
@@ -276,14 +274,14 @@ Components opt into the fade by carrying a stable data attribute, and `useQuietC
 | --- | --- | --- |
 | `toolbar` | `data-quiet-toolbar` | `data-quiet-chrome-toolbar` |
 | `status` | `data-quiet-status` | `data-quiet-chrome-status` |
-| `docHead` | `data-doc-head` | `data-quiet-chrome-dochead` |
+| `docHead` | _(none — inert since #131)_ | `data-quiet-chrome-dochead` |
 | `sidebar` | `nav[aria-label="Workspace sidebar"]` | `data-quiet-chrome-sidebar` |
 | `orb` | `[data-testid="agent-orb"]` | `data-quiet-chrome-orb` |
 
 **Three presets** (Settings > General > Quiet chrome):
 
 - **Relaxed** — toolbar + status only ("hide minimum")
-- **Default** — toolbar + status + DocHead (recommended)
+- **Default** — toolbar + status (recommended; the DocHead option is legacy since #131)
 - **Aggressive** — everything including sidebar dim and orb dim ("hide all")
 - **Custom** — per-element overrides from settings; the resolver returns overrides as-is
 

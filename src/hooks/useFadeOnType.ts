@@ -9,10 +9,13 @@ import { useEffect } from "react";
  * the mouse, scrolls, shifts focus, or otherwise signals non-typing intent.
  *
  * CSS selectors in `globals.css` (`.app.typing [data-quiet-toolbar]`,
- * `.app.typing [data-doc-head]`, …) use the class to fade pre-stamped chrome
- * targets during active typing. The pre-stamped components (#48 DocHead, #49
- * Toolbar pill) already carry a 340 ms `transition-opacity` so the fade is
- * applied by this hook flipping the class alone.
+ * `.app.typing [data-quiet-status]`, …) use the class to fade pre-stamped
+ * chrome targets during active typing. The pre-stamped components (#49
+ * Toolbar pill, StatusBar, sidebar, AgentOrb) already carry a 340 ms
+ * `transition-opacity` so the fade is applied by this hook flipping the
+ * class alone. (The original DocHead breadcrumb was a fifth target; #131
+ * removed it but the `docHead` preset key is still persisted for
+ * settings-migration safety.)
  *
  * Behaviour:
  *

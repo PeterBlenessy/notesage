@@ -23,7 +23,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from 'react';
-import { renderWithProviders } from '@/test/component-harness';
+import { renderWithProviders, fireEvent } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
 import { useCommandBarShortcuts } from '@/hooks/useCommandBarShortcuts';
 
@@ -344,14 +344,12 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     ) as HTMLInputElement | null;
     expect(input).not.toBeNull();
 
-    // Simulate typing `#` — set value and fire input event so the onChange
-    // handler fires and the selection lands after the `#`.
-    act(() => {
-      if (!input) return;
-      input.value = '#';
-      input.setSelectionRange(1, 1);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    // Simulate typing `#` — fireEvent.change goes through React's synthetic
+    // event system so the controlled input's onChange handler actually runs
+    // (a raw `dispatchEvent('input')` doesn't trigger React's listener in
+    // jsdom and leaves state stale).
+    if (!input) throw new Error('input missing');
+    fireEvent.change(input, { target: { value: '#' } });
 
     expect(getBar()?.getAttribute('data-prefix-mode')).toBe('tag');
 

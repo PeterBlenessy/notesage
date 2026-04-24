@@ -6,7 +6,6 @@ import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { TreeOverlay } from "@/components/sidebar/quiet/TreeOverlay";
-import { DocHead } from "@/components/editor/DocHead";
 import { Editor } from "@/components/editor/Editor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -26,7 +25,9 @@ import { useQuietChrome } from "@/lib/quiet-chrome";
  * two-column grid under a TitleBar:
  *
  *   - QuietSidebar (#30)          → left column (240px)
- *   - DocHead + Editor (#48,#101) → centre document area (1fr)
+ *   - Editor (#101) → centre document area (1fr); the DocHead breadcrumb
+ *     that originally shipped here was removed in #131 — dirty + saved-ago
+ *     readouts moved to the TitleBar's quiet-mode right zone.
  *
  * There is no separate right column for chat (#102). The chat surface
  * in Quiet Composer IS the `<FloatingCommandBar />` mounted below the
@@ -307,7 +308,6 @@ export function QuietLayout(props: QuietLayoutProps) {
       >
         {sidebarPinned ? <QuietSidebar /> : null}
         <div className="flex flex-col min-h-0 min-w-0">
-          <DocHead />
           {/*
             Editor mount (#101). Same `<Editor />` instance the legacy
             `EditorArea` mounts in `Layout.tsx` — `editor-store` is shared

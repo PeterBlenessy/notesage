@@ -1,6 +1,8 @@
 /**
- * Shared formatter for the "saved Xs ago" indicator used by `DocHead` and
- * the quiet `StatusBar` (tasks #48 and #52 in the 2026-04-21 UI refresh).
+ * Shared formatter for the "saved Xs ago" indicator used by the Quiet
+ * Composer TitleBar (task #131 — replaces the DocHead breadcrumb that
+ * originally carried the readout) and the quiet `StatusBar` (task #52
+ * in the 2026-04-21 UI refresh).
  *
  * Buckets:
  *   < 60s  → "saved Ns ago"

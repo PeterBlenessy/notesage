@@ -40,8 +40,9 @@ export interface Tab {
    *  self-writes from external changes when the user continues typing after a save. */
   lastSavedContent?: string;
   /** Session-only: epoch millis of the last time this tab transitioned from dirty → clean
-   *  (i.e. was saved). Drives the "saved Xs ago" indicator in `DocHead`. Undefined means
-   *  the tab has never been saved this session. */
+   *  (i.e. was saved). Drives the "saved Xs ago" indicator rendered by the quiet-mode
+   *  `TitleBar` (post-#131) and the `StatusBar`. Undefined means the tab has never been
+   *  saved this session. */
   lastSavedAt?: number;
 }
 

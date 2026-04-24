@@ -52,9 +52,12 @@ describe('Reduced-motion sweep (#86) — global CSS guards', () => {
 
   it('globals.css zeros typing-fade chrome transitions under reduce', () => {
     // The fade-on-type pulse fades multiple chrome surfaces. Under reduce
-    // every one must have transition-duration: 0ms.
+    // every one must have transition-duration: 0ms. The `data-doc-head`
+    // target was dropped in #131 (DocHead removed); the `docHead` preset
+    // key is still persisted for settings-migration safety but no element
+    // carries the attribute any more.
     const block = globals.match(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.app \[data-quiet-toolbar\][\s\S]*?\.app \[data-doc-head\][\s\S]*?\.app \[data-quiet-status\][\s\S]*?\.app nav\[aria-label="Workspace sidebar"\][\s\S]*?\.app \[data-testid="agent-orb"\][\s\S]*?transition-duration:\s*0ms/,
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.app \[data-quiet-toolbar\][\s\S]*?\.app \[data-quiet-status\][\s\S]*?\.app nav\[aria-label="Workspace sidebar"\][\s\S]*?\.app \[data-testid="agent-orb"\][\s\S]*?transition-duration:\s*0ms/,
     );
     expect(block).toBeTruthy();
   });
@@ -147,11 +150,6 @@ describe('Reduced-motion sweep (#86) — component-level guards', () => {
     {
       name: 'StatusBar dirty-dot pulse',
       file: 'src/components/editor/StatusBar.tsx',
-      requireMotionReduce: /motion-reduce:transition-none/,
-    },
-    {
-      name: 'DocHead typing-fade transition-opacity',
-      file: 'src/components/editor/DocHead.tsx',
       requireMotionReduce: /motion-reduce:transition-none/,
     },
     {
