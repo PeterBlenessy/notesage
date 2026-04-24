@@ -10,6 +10,10 @@ import { Layout } from "@/components/Layout";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
 const SettingsDialog = lazy(() => import("@/components/settings/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
+// Quiet Composer variant — mounted when `uiPreview === 'quiet-composer'`.
+// Same `open` / `initialTab` contract; wraps the v2 panels in the new
+// `SettingsShell` chrome (Mockup E).
+const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDialogV2").then(m => ({ default: m.SettingsDialogV2 })));
 const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
 const KeyboardShortcutsDialog = lazy(() => import("@/components/KeyboardShortcutsDialog").then(m => ({ default: m.KeyboardShortcutsDialog })));
 const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
@@ -638,6 +642,30 @@ function App() {
         )}
 
         <Suspense fallback={null}>
+          {/*
+            #131/#4 live-test fix — the legacy `SettingsDialog` is the
+            only dialog mounted in the app until the v2 shell landed,
+            but `SettingsDialogV2` was never wired. Quiet Composer users
+            opening Settings saw the legacy chrome (which some of them
+            reported as "disabled" because of a visual-style drift).
+            Mount the right dialog for the active shell: v2 under the
+            Quiet Composer preview, legacy otherwise. Both respect the
+            same `settingsOpen` / `initialTab` state so the App-level
+            entry points don't have to branch.
+          */}
+          {uiPreview === "quiet-composer" ? (
+            <SettingsDialogV2
+              open={settingsOpen}
+              onOpenChange={(open) => {
+                setSettingsOpen(open);
+                if (!open) setSettingsInitialTab(undefined);
+              }}
+              initialActiveItem={settingsInitialTab}
+              updateState={updateState}
+              onCheckForUpdate={checkForUpdate}
+              onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
+            />
+          ) : (
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={(open) => {
@@ -649,6 +677,7 @@ function App() {
             onCheckForUpdate={checkForUpdate}
             onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
           />
+          )}
           {projectSettingsPath && (
             <ProjectSettingsDialog
               open={projectSettingsOpen}

@@ -1457,6 +1457,17 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/ProjectsSection.tsx` (project row), possibly `PinnedSection.tsx` / `RecentSection.tsx` if they share the pattern |
 | Surfaced from | 2026-04-24 user live-test — "the sidebar does not have the same design as the mockup-d which i approved… the + that appears on hovering projects could cover the numbers displayed" |
 
+### #137 — Keyboard Shortcuts dialog — v2 visual parity
+
+| Field | Value |
+| --- | --- |
+| Description | User-requested 2026-04-24: the keyboard-shortcuts dialog (opened via `⌘⇧K`) still uses the legacy chrome while the Quiet Composer is active. Rebuild it to match the v2 settings aesthetic — same `Dialog` primitive, same typographic scale, same overall feel as `SettingsDialogV2`. No behavioural changes beyond the restyle; the existing shortcut data + grouping stays. Can live alongside the legacy version gated on `uiPreview === 'quiet-composer'` (same pattern #4 just used for SettingsDialogV2). **Outcome-shaped acceptance**: opening the dialog under Quiet Composer shows the new chrome; opening it under legacy shows the existing chrome; both render the same shortcut catalogue. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #63 (SettingsShell primitives) |
+| Files | `src/components/KeyboardShortcutsDialog.tsx` (legacy remains), possibly new `src/components/KeyboardShortcutsDialogV2.tsx` + App-level branching |
+| Surfaced from | 2026-04-24 user live-test feedback: "File the shortcut ui" after noticing the shortcuts dialog hadn't been redesigned alongside Settings |
+
 ## M1.13 Manual QA — run the checklists (2 tasks)
 
 ### #108 — VoiceOver walkthrough — manual run

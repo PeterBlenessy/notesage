@@ -1,8 +1,16 @@
 import * as React from 'react';
-import { Sun, Sliders, Sparkles, Blocks, FolderOpen, ShieldCheck, Code, Info } from 'lucide-react';
+import {
+  Sun,
+  Settings as SettingsIcon,
+  Sliders,
+  Sparkles,
+  Blocks,
+  FolderOpen,
+  ShieldCheck,
+  Code,
+  Info,
+} from 'lucide-react';
 import { SettingsShell, type SettingsShellNavGroup } from './SettingsShell';
-import { SettingsGroup } from './SettingsGroup';
-import { SettingsRow } from './SettingsRow';
 import {
   SettingsSearch,
   SettingsSearchContext,
@@ -10,12 +18,25 @@ import {
   useSettingsSearchShortcut,
 } from './SettingsSearch';
 import { AppearanceSettings } from './AppearanceSettings';
+import { GeneralSettings } from './GeneralSettings';
+import { EditorSettings } from './EditorSettings';
+import { AISettings } from './AISettings';
+import { SkillsSettings } from './SkillsSettings';
+import { ProjectsSettings } from './ProjectsSettings';
+import { PrivacySettings } from './PrivacySettings';
+import { AdvancedSettings } from './AdvancedSettings';
+import { AboutSettings } from './AboutSettings';
+import type { UpdateState } from '@/hooks/useAutoUpdate';
 
 export interface SettingsDialogV2Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Optional initial active nav item id. Defaults to "appearance". */
   initialActiveItem?: string;
+  /** Auto-update hook state + callbacks forwarded to the About panel. */
+  updateState?: UpdateState;
+  onCheckForUpdate?: () => Promise<void>;
+  onOpenUpdateDialog?: () => void;
 }
 
 /**
@@ -29,6 +50,7 @@ const NAV: SettingsShellNavGroup[] = [
     label: 'Notesage',
     items: [
       { id: 'appearance', label: 'Appearance', icon: Sun },
+      { id: 'general', label: 'General', icon: SettingsIcon },
       { id: 'editor', label: 'Editor', icon: Sliders },
       { id: 'ai', label: 'AI & Agents', icon: Sparkles },
     ],
@@ -66,16 +88,21 @@ function filterNav(
 }
 
 /**
- * Internal demo / scaffold for the new settings shell. Not mounted in the
- * app yet — task #63 delivered the shell and primitives, #64 adds the
- * search header (⌘F + nav filter + content-row cooperation via context).
- * Real panel migration happens in #65, #66, #67, at which point the panel
- * components will call `useSettingsSearchQuery()` to hide/highlight rows.
+ * New settings dialog mounted in App.tsx under the Quiet Composer
+ * preview (`uiPreview === 'quiet-composer'`). Wraps the per-area panel
+ * components delivered by tasks #65 / #66 / #67 in the shared
+ * `SettingsShell` + `SettingsSearch` chrome.
+ *
+ * The search ⌘F header narrows both the nav list (via `filterNav`) and
+ * individual rows inside each panel (via `SettingsSearchContext`).
  */
 export function SettingsDialogV2({
   open,
   onOpenChange,
   initialActiveItem = 'appearance',
+  updateState,
+  onCheckForUpdate,
+  onOpenUpdateDialog,
 }: SettingsDialogV2Props) {
   const [active, setActive] = React.useState(initialActiveItem);
   const [query, setQuery] = React.useState('');
@@ -103,9 +130,6 @@ export function SettingsDialogV2({
     />
   );
 
-  const currentLabel = NAV.flatMap((g) => g.items).find((i) => i.id === active)
-    ?.label;
-
   return (
     <SettingsSearchContext.Provider value={{ query }}>
       <SettingsShell
@@ -116,27 +140,21 @@ export function SettingsDialogV2({
         onActiveItemChange={setActive}
         navHeader={navHeader}
       >
-        {active === 'appearance' ? (
-          <AppearanceSettings />
-        ) : (
-          <>
-            <header className="mb-8 pb-6 border-b border-border">
-              <h2 className="text-[24px] font-semibold tracking-tight">
-                {currentLabel ?? 'Settings'}
-              </h2>
-              <p className="mt-1 text-[13px] text-muted-foreground max-w-[520px] leading-relaxed">
-                Panel coming soon. Real content lands in follow-up tasks (#66,
-                #67).
-              </p>
-            </header>
-
-            <SettingsGroup label="Placeholder">
-              <SettingsRow
-                label="This is a preview"
-                description="The real panels are migrated in later tasks. The shell, row, and group primitives are ready."
-              />
-            </SettingsGroup>
-          </>
+        {active === 'appearance' && <AppearanceSettings />}
+        {active === 'general' && <GeneralSettings />}
+        {active === 'editor' && <EditorSettings />}
+        {active === 'ai' && <AISettings />}
+        {active === 'skills' && <SkillsSettings />}
+        {active === 'projects' && <ProjectsSettings />}
+        {active === 'privacy' && <PrivacySettings />}
+        {active === 'advanced' && <AdvancedSettings />}
+        {active === 'about' && (
+          <AboutSettings
+            updateState={updateState}
+            onCheckForUpdate={onCheckForUpdate}
+            onOpenUpdateDialog={onOpenUpdateDialog}
+            onDismissSettings={() => onOpenChange(false)}
+          />
         )}
       </SettingsShell>
     </SettingsSearchContext.Provider>
