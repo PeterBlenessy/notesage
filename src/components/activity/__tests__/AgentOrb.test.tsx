@@ -271,6 +271,30 @@ describe('AgentOrb (#29)', () => {
     expect(orbTokens).toContain('transition-transform');
   });
 
+  // #119 follow-up regression (2026-04-24): an earlier iteration added
+  // `'relative'` to the button's className to "establish a positioning
+  // context for the inner pulse wrapper". Both `fixed` and `relative` set
+  // the `position` property, and Tailwind's class order resolved `relative`
+  // last — dropping the orb out of viewport-fixed positioning and into
+  // document flow (user saw it rendered on the left, half-offscreen). The
+  // fix is to rely on `fixed` alone (it already establishes a positioning
+  // context for absolute children). This test fails if `relative` sneaks
+  // back in.
+  it('anchors the orb with `fixed` — never adds `relative` (regression)', () => {
+    mockTasks = [];
+    renderWithProviders(<AgentOrb />);
+    const orb = screen.getByTestId('agent-orb');
+    const tokens = orb.className.split(/\s+/);
+    expect(tokens).toContain('fixed');
+    // bottom-10 matches FloatingCommandBar's `bottom-10` — both sit on the
+    // same vertical baseline so the orb and the bar share the bottom edge.
+    expect(tokens).toContain('bottom-10');
+    expect(tokens).toContain('right-6');
+    expect(tokens).not.toContain('relative');
+    // Earlier value; fails if someone regresses the alignment.
+    expect(tokens).not.toContain('bottom-6');
+  });
+
   it('hides the orb (display: none) when cmdBarPinned is true', () => {
     mockCmdBarPinned = true;
     mockTasks = [makeTask('t1', 'running')];

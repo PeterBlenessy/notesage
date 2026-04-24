@@ -77,11 +77,14 @@ export function AgentOrb() {
           aria-label={ariaLabel}
           style={cmdBarPinned ? { display: 'none' } : undefined}
           className={cn(
-            // Layout & position — fixed bottom-right with breathing room.
-            'fixed bottom-6 right-6 z-40',
-            // The button is a positioning anchor for the inner pulse wrapper.
-            // Content is centred by the inner wrapper, not the button itself.
-            'relative',
+            // Layout & position — fixed bottom-right. The bottom offset
+            // matches FloatingCommandBar's `bottom-10` so both sit on the
+            // same vertical baseline (orb and bar share the bottom edge).
+            // `fixed` also establishes the positioning context for the
+            // inner pulse wrapper's `absolute inset-0` — NO explicit
+            // `relative` utility (it would win the cascade over `fixed`
+            // and drop the orb into document flow; 2026-04-24 regression).
+            'fixed bottom-10 right-6 z-40',
             'h-[46px] w-[46px] rounded-full',
             // Hover/focus polish — gentle scale + ring tint, no chromatic accent.
             // These transforms live on the button so user-interaction affordances
