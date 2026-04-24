@@ -1336,7 +1336,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/CommandBarContext.tsx`, minor refactor in `src/components/chat/AcpSessionControls.tsx` to expose sub-pickers |
 | Surfaced from | #113 audit — three ChatFooter affordances missing from CommandBarContext |
 
-### #126 — FloatingCommandBar ChatInput parity
+### #126 — FloatingCommandBar ChatInput parity ✅
 
 | Field | Value |
 | --- | --- |
@@ -1412,6 +1412,39 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Depends on | #131 (TitleBar owns dirty + saved readouts), #103/#124 (TitleBar quiet mode) |
 | Files | `src/components/QuietLayout.tsx` (layering), `src/components/TitleBar.tsx`, `src/components/editor/StatusBar.tsx`, `src/stores/settings-store.ts`, `src/components/settings/v2/AppearanceSettings.tsx`, `src/styles/globals.css` |
 | Surfaced from | 2026-04-24 user live-test after #131 landed: "could we make both the title bar and the status bar somewhat transparent? the document editor flows behind the title bar, which would create a layer" |
+
+### #133 — FloatingCommandBar dictation mic button
+
+| Field | Value |
+| --- | --- |
+| Description | Follow-up from #126: the legacy `ChatInput` renders a Mic button wired to `useSpeechRecognition` (Whisper + browser SpeechRecognition). Port the button + dictation UI into the command bar input row so Quiet Composer users can dictate chat messages. Includes interim/final text replacement in the input + recording indicator. **Outcome-shaped acceptance**: clicking the mic starts dictation, final transcription lands as the input value, clicking again stops. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #126 (the input row exists) |
+| Files | `src/components/cmd/FloatingCommandBar.tsx`, optionally share a `useDictationControl` hook with ChatInput |
+| Surfaced from | #126 scope cut — deferred to keep the main parity PR focused |
+
+### #134 — FloatingCommandBar context chips + explicit-attach offer
+
+| Field | Value |
+| --- | --- |
+| Description | Follow-up from #126: legacy `ChatInput` renders a `ContextPill` row for auto-attached files (active tab when in scope) + an "Add this file to chat" offer when the active tab sits outside the scoped projects. The command bar does not surface either today. Port both so sandbox-scope transparency is consistent across shells. **Outcome-shaped acceptance**: opening a tab outside the selected project shows the "Add to chat" offer above the command bar input; clicking it attaches; dismiss button removes context items. |
+| Complexity | S |
+| Category | frontend |
+| Depends on | #126 |
+| Files | `src/components/cmd/FloatingCommandBar.tsx`, reuse `ContextPill` + `useChatContext` |
+| Surfaced from | #126 scope cut |
+
+### #135 — SidebarContextMenu Move to… + drag-to-chat
+
+| Field | Value |
+| --- | --- |
+| Description | Follow-up from #128: the legacy FileTreeItem's "Move to…" submenu discovers every workspace root + its subfolders, categorises them (Quick Notes / Projects / Folders), and dispatches a move via rename_path. Port the discovery + submenu render into `SidebarContextMenu`. Also wire `src/components/sidebar/quiet/file-drag.ts` to the vision event bus so image file drops onto the command bar inject attachments (paired with the `onDrop` handler added in #126). |
+| Complexity | M |
+| Category | frontend |
+| Depends on | #126 (for the drag-to-chat half), #128 (for the menu half) |
+| Files | `src/components/sidebar/quiet/SidebarContextMenu.tsx`, `src/components/sidebar/quiet/file-drag.ts` |
+| Surfaced from | #128 scope cut |
 
 ## M1.13 Manual QA — run the checklists (2 tasks)
 

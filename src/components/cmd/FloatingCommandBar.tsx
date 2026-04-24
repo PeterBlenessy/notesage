@@ -7,13 +7,24 @@ import { useChatStore, selectMessages } from "@/stores/chat-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
-import { X } from "lucide-react";
-import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
+import { toast } from "sonner";
+import { ArrowUp, ImagePlus, Square, X } from "lucide-react";
+import type { ChatMessage as ChatMessageType, ImageAttachment } from "@/lib/ai/types";
+import { compressImage } from "@/lib/image-compress";
+import {
+  registerSendImageHandler,
+  unregisterSendImageHandler,
+} from "@/lib/ai/vision";
+import { AttachmentStrip } from "@/components/chat/AttachmentStrip";
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
   type ResendProviderOption,
 } from "@/components/chat/ResendProviderDialog";
+import {
+  expandSkillPrefix,
+  interpretAgentPrefix,
+} from "@/lib/ai/chat-expansion";
 import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
@@ -124,7 +135,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // routing (direct API / ACP / Copilot LSP / local), provider lock checks,
   // segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
-  const { sendChatMessage } = useAIOperations();
+  const { sendChatMessage, cancelChat } = useAIOperations();
+  const isLoading = useChatStore((s) => s.isLoading);
 
   // #127 parity — connection + routing state for the cross-provider
   // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
@@ -146,6 +158,90 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     originalContent: string;
     originalConnectionId?: string;
   } | null>(null);
+
+  // #126 parity — image attachments. Paste, drag-drop, and the file
+  // picker all dump ImageAttachments into this state; `handleSend` then
+  // hands them to `sendChatMessage` where the Rust backend serializes
+  // them per-provider. Cleared on successful send. The legacy
+  // `AttachmentStrip` component handles thumbnail rendering (see the
+  // render block below the input).
+  const [pendingAttachments, setPendingAttachments] = useState<
+    ImageAttachment[]
+  >([]);
+  const addImageAttachment = useCallback((att: ImageAttachment) => {
+    setPendingAttachments((prev) => {
+      // Cap at 5 to match ChatInput's limit (user-facing toast if we
+      // hit it — simpler than growing the strip unboundedly).
+      if (prev.length >= 5) {
+        toast.error("Max 5 images per message");
+        return prev;
+      }
+      return [...prev, att];
+    });
+  }, []);
+  const removeImageAttachment = useCallback((id: string) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  // #126 parity — subscribe to the vision event bus so editor "Add to
+  // chat" actions and sidebar drops route their images into the
+  // composer. Legacy `ChatInput` owns the same subscription; we mirror
+  // it here so the Quiet shell gets the same behaviour. Mounted once
+  // per bar instance — the bus rejects duplicate registrations.
+  useEffect(() => {
+    registerSendImageHandler((attachment) => {
+      addImageAttachment(attachment);
+      setExpanded(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    });
+    return () => unregisterSendImageHandler();
+  }, [addImageAttachment]);
+
+  // #126 parity — pick images via the native dialog. Mirrors
+  // `ChatInput.handleAttachClick`: read bytes + compress + push to the
+  // strip. The file dialog is dynamically imported so the Tauri plugin
+  // only loads when the user actually clicks the button.
+  const handleImagePick = useCallback(async () => {
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: "Images",
+            extensions: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"],
+          },
+        ],
+      });
+      if (!selected) return;
+      const paths = Array.isArray(selected) ? selected : [selected];
+      for (const path of paths) {
+        try {
+          const bytes = await (await import("@/lib/tauri")).tauriApi.readBinaryFile(path);
+          const name = path.split("/").pop() ?? "image";
+          const ext = name.split(".").pop()?.toLowerCase() ?? "";
+          const mimeMap: Record<string, string> = {
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            png: "image/png",
+            gif: "image/gif",
+            webp: "image/webp",
+            bmp: "image/bmp",
+            svg: "image/svg+xml",
+          };
+          const blob = new Blob([new Uint8Array(bytes)], {
+            type: mimeMap[ext] ?? "image/png",
+          });
+          const attachment = await compressImage(blob, { name });
+          addImageAttachment(attachment);
+        } catch (err) {
+          toast.error(`Failed to attach ${path}: ${err}`);
+        }
+      }
+    } catch (err) {
+      toast.error(`Failed to open image picker: ${err}`);
+    }
+  }, [addImageAttachment]);
 
   // #127 parity — cross-provider resend/edit dialog state. Opens when
   // the message's recorded connectionId differs from the active
@@ -360,10 +456,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // today's image-attachment thumbnails).
   // ---------------------------------------------------------------------
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = inputValue.trim();
-    if (trimmed.length === 0 && chips.length === 0) {
-      // Empty input AND no chips → no-op. Don't fire blank messages.
+    if (trimmed.length === 0 && chips.length === 0 && pendingAttachments.length === 0) {
+      // Empty input AND no chips AND no images → no-op.
       return;
     }
 
@@ -371,7 +467,25 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       chips.length > 0
         ? `[refs: ${chips.map((c) => `${c.kind}:${c.name}`).join(", ")}] `
         : "";
-    const content = `${refsBlock}${trimmed}`;
+    const rawContent = `${refsBlock}${trimmed}`;
+
+    // #126 parity — `@agent-name` / `/skill-name` expansion at send time.
+    // ChatPanel.doSend does the same pipeline via the shared helpers in
+    // `src/lib/ai/chat-expansion.ts`. Skipping these would send the
+    // literal prefix as model input, losing the agent swap + skill-body
+    // injection the user expects.
+    const agentResult = interpretAgentPrefix(rawContent, interactiveConnection);
+    if (agentResult.skipSend) {
+      // Only a bare `@agent-name` was typed — active agent has been
+      // swapped; nothing more to do.
+      setInputValue("");
+      setChips([]);
+      setActivePrefix(null);
+      return;
+    }
+    const skillResult = await expandSkillPrefix(agentResult.content);
+    if (skillResult.abortSend) return;
+    const content = skillResult.content;
 
     // #127 parity — if we're editing a message and the active connection
     // now differs from the message's original connectionId, open the
@@ -401,12 +515,31 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // #127 parity — when editing, branch from the edited message's
     // parent instead of appending to the leaf. The chat-store's send
     // pipeline honours `parentId` in opts.
-    const sendOpts = editContext ? { parentId: editContext.parentId } : undefined;
+    // #126 parity — when a skill expanded, pass `displayContent` +
+    // `skillName` so the user-visible bubble shows the original text
+    // (not the expanded prompt) and the activity log tags the skill.
+    const sendOpts: Record<string, unknown> = {};
+    if (editContext) sendOpts.parentId = editContext.parentId;
+    if (skillResult.skillName) {
+      sendOpts.displayContent = rawContent;
+      sendOpts.skillName = skillResult.skillName;
+    }
+    // #126 parity — image attachments reach the provider via the same
+    // `attachments` opt ChatPanel uses. Cleared optimistically alongside
+    // the input / chips.
+    if (pendingAttachments.length > 0) {
+      sendOpts.attachments = pendingAttachments;
+      setPendingAttachments([]);
+    }
     if (editContext) setEditContext(null);
 
     // Fire-and-forget — the chat-store handles its own loading + error state
     // and the chat stream renders the assistant response.
-    void sendChatMessage(content, messagesForSend, sendOpts);
+    void sendChatMessage(
+      content,
+      messagesForSend,
+      Object.keys(sendOpts).length > 0 ? sendOpts : undefined,
+    );
 
     // Keep focus in the input for the next message. The autofocus effect on
     // `effectiveExpanded` doesn't re-fire when only the input value changes,
@@ -417,10 +550,11 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   }, [
     inputValue,
     chips,
+    pendingAttachments,
     sendChatMessage,
     messagesForSend,
     editContext,
-    interactiveConnection?.id,
+    interactiveConnection,
   ]);
 
   // ---------------------------------------------------------------------
@@ -433,12 +567,25 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // ---------------------------------------------------------------------
 
   const handleStreamSend = useCallback(
-    (content: string) => {
+    async (content: string) => {
       const trimmed = content.trim();
       if (trimmed.length === 0) return;
-      void sendChatMessage(trimmed, messagesForSend);
+
+      // #126 parity — stream-originated sends (QuickReplies / onboarding
+      // prompts) run through the same `@agent` / `/skill` pipeline as
+      // the composer send. A quick-reply chip that begins with
+      // `/research-source` should still hydrate the skill body.
+      const agentResult = interpretAgentPrefix(trimmed, interactiveConnection);
+      if (agentResult.skipSend) return;
+      const skillResult = await expandSkillPrefix(agentResult.content);
+      if (skillResult.abortSend) return;
+
+      const sendOpts = skillResult.skillName
+        ? { displayContent: trimmed, skillName: skillResult.skillName }
+        : undefined;
+      void sendChatMessage(skillResult.content, messagesForSend, sendOpts);
     },
-    [sendChatMessage, messagesForSend],
+    [sendChatMessage, messagesForSend, interactiveConnection],
   );
 
   // onPrefill: stream's empty-state onboarding prompts. Drop the content
@@ -635,7 +782,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // when the bar grows a textarea).
         if (event.shiftKey) return;
         event.preventDefault();
-        handleSend();
+        // `handleSend` is async (the `/skill-name` pipeline loads the skill
+        // body via Tauri before dispatching the send). Fire and forget —
+        // the chat stream owns the loading state.
+        void handleSend();
         return;
       }
     },
@@ -853,6 +1003,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onStreamEdit={handleStreamEdit}
           editing={editContext !== null}
           onCancelEdit={clearEditContext}
+          pendingAttachments={pendingAttachments}
+          onRemoveAttachment={removeImageAttachment}
+          onAddAttachment={addImageAttachment}
+          onPickImage={handleImagePick}
+          isLoading={isLoading}
+          onStop={cancelChat}
+          onSend={handleSend}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -1092,6 +1249,20 @@ interface ExpandedContentProps {
   editing: boolean;
   /** Cancel edit mode (× on banner or Esc when banner is visible). */
   onCancelEdit: () => void;
+  /** #126 — pending image attachments for the next send. */
+  pendingAttachments: ImageAttachment[];
+  /** #126 — remove a pending image attachment by id. */
+  onRemoveAttachment: (id: string) => void;
+  /** #126 — push a new image attachment (paste + drop handlers). */
+  onAddAttachment: (attachment: ImageAttachment) => void;
+  /** #126 — open the native image picker dialog. */
+  onPickImage: () => void;
+  /** #126 — whether a send is currently streaming (drives the Stop button). */
+  isLoading: boolean;
+  /** #126 — cancel the in-flight send. */
+  onStop: () => void;
+  /** #126 — fire the send pipeline (click-to-send button). */
+  onSend: () => void;
 }
 
 function ExpandedContent({
@@ -1118,6 +1289,13 @@ function ExpandedContent({
   onStreamEdit,
   editing,
   onCancelEdit,
+  pendingAttachments,
+  onRemoveAttachment,
+  onAddAttachment,
+  onPickImage,
+  isLoading,
+  onStop,
+  onSend,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -1175,7 +1353,80 @@ function ExpandedContent({
         />
       ) : null}
 
-      <div className="border-t border-border px-3 py-2">
+      {/* #126 parity — image attachment thumbnails. Renders nothing when
+         *  `pendingAttachments` is empty. Shares the exact `AttachmentStrip`
+         *  component the legacy shell uses so thumbnails + remove buttons
+         *  behave identically. */}
+      {pendingAttachments.length > 0 && (
+        <AttachmentStrip
+          attachments={pendingAttachments}
+          onRemove={onRemoveAttachment}
+        />
+      )}
+
+      <div
+        className="border-t border-border px-3 py-2 flex items-center gap-2"
+        onPaste={async (event) => {
+          // #126 parity — paste handler reads the first image item off
+          // the clipboard and compresses it before pushing onto the strip.
+          const items = event.clipboardData?.items;
+          if (!items) return;
+          for (const item of items) {
+            if (item.kind === "file" && item.type.startsWith("image/")) {
+              const file = item.getAsFile();
+              if (!file) continue;
+              event.preventDefault();
+              try {
+                const attachment = await compressImage(file, { name: file.name });
+                onAddAttachment(attachment);
+              } catch (err) {
+                toast.error(`Failed to attach pasted image: ${err}`);
+              }
+            }
+          }
+        }}
+        onDragOver={(event) => {
+          // Signal the drop target — prevent default so the drop event fires.
+          if (event.dataTransfer?.types?.includes("Files")) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={async (event) => {
+          // #126 parity — accept image file drops. Non-image drops fall
+          // through to the existing reference-chip handler in the prefix
+          // system (files dropped from the sidebar already route through
+          // `beginFileDrag` + reference-mode).
+          const files = event.dataTransfer?.files;
+          if (!files || files.length === 0) return;
+          const images = Array.from(files).filter((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (images.length === 0) return;
+          event.preventDefault();
+          for (const file of images) {
+            try {
+              const attachment = await compressImage(file, { name: file.name });
+              onAddAttachment(attachment);
+            } catch (err) {
+              toast.error(`Failed to attach ${file.name}: ${err}`);
+            }
+          }
+        }}
+      >
+        <button
+          type="button"
+          onClick={onPickImage}
+          aria-label="Attach image"
+          title="Attach image"
+          className={cn(
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+            "text-muted-foreground hover:text-foreground hover:bg-muted",
+            "transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          )}
+        >
+          <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
         <input
           ref={inputRef}
           type="text"
@@ -1197,10 +1448,51 @@ function ExpandedContent({
           onKeyDown={onKeyDown}
           placeholder="Ask, search, or type / for skills…"
           className={cn(
-            "w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
+            "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
             "outline-none",
           )}
         />
+        {/* #126 parity — Stop (while streaming) / Send affordance. The
+           *  legacy ChatInput uses the same icon-flip pattern. Keyboard
+           *  Enter still sends via the input's onKeyDown handler; this
+           *  button is for mouse users + accessibility parity. */}
+        {isLoading ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop generation"
+            title="Stop generation"
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+              "bg-destructive/10 text-destructive hover:bg-destructive/20",
+              "transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+            )}
+          >
+            <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSend}
+            aria-label="Send message"
+            title="Send"
+            disabled={
+              inputValue.trim().length === 0 &&
+              chips.length === 0 &&
+              pendingAttachments.length === 0
+            }
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+              "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
+              "transition-opacity",
+              "disabled:opacity-40 disabled:cursor-not-allowed",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            )}
+          >
+            <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </div>
   );

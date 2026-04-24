@@ -376,7 +376,11 @@ describe('ChatPanel — cross-provider resend/edit confirmation', () => {
   it('resend: "Resend with current" sends without rerouting', async () => {
     seedConnections([CONN_X, CONN_Y], CONN_Y);
     mockMessages = [makeUserMessage({ connectionId: 'conn-X' })];
-    vi.useFakeTimers();
+    // #126 — do NOT use fake timers here. The "current" branch runs
+    // `runSend()` synchronously (no setTimeout reroute), but
+    // `doSend` itself is now async (awaits `expandSkillPrefix`). Fake
+    // timers stall the microtask queue under `vi.waitFor`, so real
+    // timers let the promise chain flush naturally.
     renderWithProviders(<ChatPanel />);
 
     act(() => {
@@ -387,14 +391,13 @@ describe('ChatPanel — cross-provider resend/edit confirmation', () => {
     });
 
     expect(chatStoreState.deleteMessageAndDescendants).toHaveBeenCalledWith('msg-user-1');
-    // Target matches current — no routing change required.
     expect(mockSetRouting).not.toHaveBeenCalled();
-    // Send runs synchronously when no reroute is needed.
-    expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
+    await vi.waitFor(() =>
+      expect(mockSendChatMessage).toHaveBeenCalledTimes(1),
+    );
   });
 
-  it('resend: matching connections skip the dialog entirely and send immediately', () => {
+  it('resend: matching connections skip the dialog entirely and send immediately', async () => {
     // Message was originally sent to conn-Y, chat is still on conn-Y.
     seedConnections([CONN_Y], CONN_Y);
     mockMessages = [makeUserMessage({ connectionId: 'conn-Y' })];
@@ -408,10 +411,13 @@ describe('ChatPanel — cross-provider resend/edit confirmation', () => {
     // No dialog prop captured with open=true.
     expect(capturedDialogProps === null || capturedDialogProps.open !== true).toBe(true);
     expect(chatStoreState.deleteMessageAndDescendants).toHaveBeenCalledWith('msg-user-1');
-    expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
+    // #126 — async doSend.
+    await vi.waitFor(() =>
+      expect(mockSendChatMessage).toHaveBeenCalledTimes(1),
+    );
   });
 
-  it('resend: legacy message without connectionId skips the dialog (back-compat)', () => {
+  it('resend: legacy message without connectionId skips the dialog (back-compat)', async () => {
     seedConnections([CONN_X, CONN_Y], CONN_Y);
     mockMessages = [makeUserMessage({ connectionId: undefined })];
 
@@ -422,7 +428,10 @@ describe('ChatPanel — cross-provider resend/edit confirmation', () => {
     });
 
     expect(capturedDialogProps === null || capturedDialogProps.open !== true).toBe(true);
-    expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
+    // #126 — async doSend.
+    await vi.waitFor(() =>
+      expect(mockSendChatMessage).toHaveBeenCalledTimes(1),
+    );
   });
 
   it('edit: send-time mismatch opens the dialog with isEdit=true', () => {

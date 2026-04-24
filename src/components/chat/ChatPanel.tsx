@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Plus, MessageSquare, History } from 'lucide-react';
-import { toast } from 'sonner';
 import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch, sliceThreadBySegment } from '@/stores/chat-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useSkillStore } from '@/stores/skill-store';
-import { tauriApi } from '@/lib/tauri';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatContext } from '@/hooks/useChatContext';
@@ -20,6 +18,7 @@ import { supportsVision as checkVision, type VisionCheckContext } from '@/lib/ai
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { getProjectLock } from '@/lib/ai/project-lock';
 import { ResendProviderDialog, type ResendProviderOption, type ResendProviderChoice } from './ResendProviderDialog';
+import { interpretAgentPrefix, expandSkillPrefix } from '@/lib/ai/chat-expansion';
 import {
   Tooltip,
   TooltipContent,
@@ -207,49 +206,16 @@ export function ChatPanel() {
       return;
     }
 
-    // Detect @agent-name prefix — behavior depends on connection type
-    let expandedContent = content;
-    const atMatch = content.match(/^@([a-z0-9][a-z0-9-]*)\s*(.*)/s);
-    if (atMatch) {
-      const agentName = atMatch[1];
-      const restOfMessage = atMatch[2];
-      const isPassThrough = effectiveConnection?.authMethod === 'agent_managed';
-
-      if (isPassThrough) {
-        // ACP / Copilot LSP: pass @agent-name through verbatim — the provider handles delegation
-        expandedContent = content;
-      } else {
-        // Direct API: intercept, strip prefix, swap system prompt
-        const agent = useSkillStore.getState().getAgentByName(agentName);
-        if (agent) {
-          setActiveAgent(agentName);
-          if (!restOfMessage.trim()) {
-            // Just "@agent-name" with no text — only switch, don't send
-            return;
-          }
-          expandedContent = restOfMessage;
-        }
-      }
-    }
-
-    // Detect /skill-name prefix and expand with skill body
-    let skillName: string | undefined;
-    const slashMatch = expandedContent.match(/^\/([a-z0-9][a-z0-9-]*)\s*(.*)/s);
-    if (slashMatch) {
-      const matchedName = slashMatch[1];
-      const restOfMessage = slashMatch[2];
-      const skill = useSkillStore.getState().skills.find((s) => s.name === matchedName);
-      if (skill) {
-        try {
-          const skillContent = await tauriApi.readSkillContent(skill.path);
-          skillName = matchedName;
-          expandedContent = `[Using skill: ${matchedName}]\n\n${skillContent.body}\n\n---\n\nUser request: ${restOfMessage}`;
-        } catch {
-          toast.error(`Failed to load skill "${matchedName}"`);
-          return;
-        }
-      }
-    }
+    // #126 — `@agent-name` and `/skill-name` expansion shared with
+    // FloatingCommandBar via `src/lib/ai/chat-expansion.ts`. Extracting
+    // the regex + store access into the helpers keeps the two shells in
+    // sync (same pass-through / swap / expand semantics).
+    const agentResult = interpretAgentPrefix(content, effectiveConnection ?? undefined);
+    if (agentResult.skipSend) return;
+    const skillResult = await expandSkillPrefix(agentResult.content);
+    if (skillResult.abortSend) return;
+    const expandedContent = skillResult.content;
+    const skillName = skillResult.skillName;
 
     // Comment-sourced conversations: restrict sandbox to the source project only
     const convs = useChatStore.getState().conversations;

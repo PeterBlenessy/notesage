@@ -6,6 +6,7 @@ import {
   renderWithProviders,
   screen,
   fireEvent,
+  waitFor,
 } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
 
@@ -523,12 +524,15 @@ describe('FloatingCommandBar', () => {
       return screen.getByRole('combobox') as HTMLInputElement;
     }
 
-    it('Enter with non-empty input calls sendChatMessage with the typed text', () => {
+    it('Enter with non-empty input calls sendChatMessage with the typed text', async () => {
       const input = expand();
       fireEvent.change(input, { target: { value: 'hello world' } });
       fireEvent.keyDown(input, { key: 'Enter' });
 
-      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+      // #126 — handleSend is now async (awaits `@agent` / `/skill`
+      // expansion helpers before dispatching). Await a microtask so the
+      // send dispatches.
+      await waitFor(() => expect(sendChatMessageMock).toHaveBeenCalledTimes(1));
       const [content] = sendChatMessageMock.mock.calls[0];
       expect(content).toBe('hello world');
     });
@@ -539,12 +543,15 @@ describe('FloatingCommandBar', () => {
       expect(sendChatMessageMock).not.toHaveBeenCalled();
     });
 
-    it('clears the input after a successful send', () => {
+    it('clears the input after a successful send', async () => {
       const input = expand();
       fireEvent.change(input, { target: { value: 'hi' } });
       fireEvent.keyDown(input, { key: 'Enter' });
 
-      expect((input as HTMLInputElement).value).toBe('');
+      // #126 — async handleSend; wait for the post-send state update.
+      await waitFor(() =>
+        expect((input as HTMLInputElement).value).toBe(''),
+      );
     });
 
     it('keeps focus in the input after send (ready for the next message)', () => {
@@ -557,7 +564,7 @@ describe('FloatingCommandBar', () => {
       expect(document.activeElement).toBe(input);
     });
 
-    it('clears chips after send (chip count drops to 0)', () => {
+    it('clears chips after send (chip count drops to 0)', async () => {
       const input = expand();
 
       // Drive a chip into state via the @ ReferenceMode picker stub.
@@ -573,8 +580,10 @@ describe('FloatingCommandBar', () => {
       fireEvent.change(inputAfter, { target: { value: 'check this' } });
       fireEvent.keyDown(inputAfter, { key: 'Enter' });
 
-      // Chips reset.
-      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+      // #126 — async handleSend.
+      await waitFor(() =>
+        expect(sendChatMessageMock).toHaveBeenCalledTimes(1),
+      );
       const chipsStripAfter = screen.getByTestId('chips-stub');
       expect(chipsStripAfter.getAttribute('data-chip-count')).toBe('0');
     });
@@ -589,7 +598,7 @@ describe('FloatingCommandBar', () => {
       expect(sendChatMessageMock).not.toHaveBeenCalled();
     });
 
-    it('Enter with empty input but non-empty chips still sends (chips are content)', () => {
+    it('Enter with empty input but non-empty chips still sends (chips are content)', async () => {
       const input = expand();
 
       // Add one chip via the @ picker stub.
@@ -603,7 +612,44 @@ describe('FloatingCommandBar', () => {
 
       fireEvent.keyDown(inputAfter, { key: 'Enter' });
 
-      expect(sendChatMessageMock).toHaveBeenCalledTimes(1);
+      // #126 — async handleSend.
+      await waitFor(() => expect(sendChatMessageMock).toHaveBeenCalledTimes(1));
+    });
+
+    // ---------------------------------------------------------------------
+    // #126 — ChatInput parity: image attach button + Send / Stop affordance.
+    // The paste / drop handlers rely on clipboard/DnD APIs that jsdom only
+    // partially emulates, so those flows are exercised at the integration
+    // tier; here we assert the visible affordances render correctly.
+    // ---------------------------------------------------------------------
+
+    it('renders the image-attach button in the input row (#126)', () => {
+      expand();
+      expect(screen.getByLabelText('Attach image')).toBeTruthy();
+    });
+
+    it('renders the Send button and disables it while the composer is empty (#126)', () => {
+      const input = expand();
+      const send = screen.getByLabelText('Send message') as HTMLButtonElement;
+      expect(send).toBeTruthy();
+      expect(send.disabled).toBe(true);
+
+      // Typing a character should enable the send button.
+      fireEvent.change(input, { target: { value: 'hi' } });
+      expect(
+        (screen.getByLabelText('Send message') as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    it('clicking the Send button dispatches sendChatMessage (#126)', async () => {
+      const input = expand();
+      fireEvent.change(input, { target: { value: 'from button' } });
+      fireEvent.click(screen.getByLabelText('Send message'));
+
+      await waitFor(() =>
+        expect(sendChatMessageMock).toHaveBeenCalledTimes(1),
+      );
+      expect(sendChatMessageMock.mock.calls[0][0]).toBe('from button');
     });
   });
 
