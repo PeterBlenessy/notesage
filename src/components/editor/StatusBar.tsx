@@ -357,6 +357,8 @@ function LocalAIIndicator() {
           <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
             <Cpu className="h-3 w-3 shrink-0" strokeWidth={1.5} />
             <span
+              data-testid="local-ai-status-dot"
+              data-server-status={serverStatus}
               className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                 serverStatus === 'running'
                   ? 'bg-green-500'

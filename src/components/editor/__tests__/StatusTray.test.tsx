@@ -352,6 +352,66 @@ describe('StatusTray — task #53', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Local AI status dot — colour reflects server state
+  // -------------------------------------------------------------------------
+  //
+  // User feedback: "local ai dot should be green when running, orange when
+  // starting up". The dot lives in the Session group's `LocalAIStatusRow`.
+  // We assert via the `data-server-status` data attribute AND the class-list
+  // so the test survives Tailwind class ordering tweaks while still
+  // pinning the semantic colour mapping.
+
+  function renderTrayWithStatus(status: 'stopped' | 'starting' | 'running' | 'error') {
+    addConnection({
+      id: 'c-local',
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      label: 'Local AI',
+    });
+    useLocalAIStore.setState({ serverStatus: status });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    return document.querySelector(
+      '[data-testid="local-ai-status-dot"]',
+    ) as HTMLElement | null;
+  }
+
+  it('Local AI dot is neutral (idle) when the server is stopped', () => {
+    const dot = renderTrayWithStatus('stopped');
+    expect(dot).toBeTruthy();
+    expect(dot?.getAttribute('data-server-status')).toBe('stopped');
+    expect(dot?.className).toContain('bg-muted-foreground/30');
+    expect(dot?.className).not.toContain('bg-green');
+    expect(dot?.className).not.toContain('bg-amber');
+    expect(dot?.className).not.toContain('animate-pulse');
+  });
+
+  it('Local AI dot is amber and pulsing when the server is starting', () => {
+    const dot = renderTrayWithStatus('starting');
+    expect(dot).toBeTruthy();
+    expect(dot?.getAttribute('data-server-status')).toBe('starting');
+    expect(dot?.className).toContain('bg-amber-500');
+    expect(dot?.className).toContain('animate-pulse');
+    expect(dot?.className).not.toContain('bg-green');
+  });
+
+  it('Local AI dot is green when the server is running', () => {
+    const dot = renderTrayWithStatus('running');
+    expect(dot).toBeTruthy();
+    expect(dot?.getAttribute('data-server-status')).toBe('running');
+    expect(dot?.className).toContain('bg-green-500');
+    expect(dot?.className).not.toContain('bg-amber');
+    expect(dot?.className).not.toContain('animate-pulse');
+  });
+
+  it('Local AI dot is red when the server reports an error', () => {
+    const dot = renderTrayWithStatus('error');
+    expect(dot).toBeTruthy();
+    expect(dot?.getAttribute('data-server-status')).toBe('error');
+    expect(dot?.className).toContain('bg-red-500');
+    expect(dot?.className).not.toContain('bg-green');
+  });
+
+  // -------------------------------------------------------------------------
   // initialExpandedGroup (task #54)
   // -------------------------------------------------------------------------
 
