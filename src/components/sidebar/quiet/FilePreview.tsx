@@ -7,6 +7,7 @@ import {
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { MarkdownContent } from "@/components/MarkdownContent";
 
 /**
  * FilePreview — hover popover that shows the first N lines of a file.
@@ -102,12 +103,27 @@ export function isPreviewable(path: string): boolean {
   return PREVIEWABLE_EXTENSIONS.has(ext);
 }
 
-/** Human-readable file-type label for the preview header. */
+/**
+ * Short file-type label for the preview header. Live-test feedback
+ * 2026-04-24: the previous "Markdown" label felt techy; the filename
+ * already ends in `.md` so the label just needs to be a compact badge
+ * ("md", "txt", etc.) that lets the user scan at a glance.
+ */
 function formatTypeLabel(path: string): string {
   const ext = getExtension(path);
-  if (!ext) return "File";
-  if (ext === "md" || ext === "markdown") return "Markdown";
-  return `.${ext}`;
+  if (!ext) return "file";
+  return ext;
+}
+
+/**
+ * Whether the file should be rendered as markdown (vs. raw monospace)
+ * in the preview body. Only `.md` / `.markdown` get the rendered view
+ * — other text formats (json, yaml, code) stay in the monospace `<pre>`
+ * because their structure is best conveyed by preserving whitespace.
+ */
+function shouldRenderMarkdown(path: string): boolean {
+  const ext = getExtension(path);
+  return ext === "md" || ext === "markdown";
 }
 
 /**
@@ -327,13 +343,18 @@ export function FilePreview({
           "motion-reduce:!animate-none motion-reduce:!duration-0",
         )}
       >
+        {/* Header — title + short type badge. Mockup-L (mockup-l-sidebar-
+            interactions.html) puts the filename in bold with a subtle
+            meta line underneath; we follow the same structure. Type
+            label is lowercase and compact ("md", "txt") — the earlier
+            uppercase "MARKDOWN" felt techy, per live-test feedback. */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
           <span className="text-sm font-medium truncate">{name}</span>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground shrink-0">
+          <span className="text-[10px] font-medium tracking-wide text-muted-foreground shrink-0 rounded-sm bg-muted/50 px-1.5 py-0.5">
             {typeLabel}
           </span>
         </div>
-        <div className="px-3 py-2 max-h-72 overflow-hidden">
+        <div className="px-3 py-2 max-h-72 overflow-y-auto overflow-x-hidden">
           {state.status === "loading" && (
             <div className="flex flex-col gap-1.5" aria-hidden="true">
               {[0.9, 0.75, 0.85, 0.6, 0.7].map((width, i) => (
@@ -356,12 +377,34 @@ export function FilePreview({
             </p>
           )}
           {state.status === "ready" && (
-            <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words m-0">
-              {state.body || (
-                <span className="italic">Empty file</span>
-              )}
-            </pre>
+            state.body ? (
+              shouldRenderMarkdown(filePath) ? (
+                // Rendered markdown — honors headings, bold, italic,
+                // lists, links, etc. Live-test feedback 2026-04-24:
+                // raw markdown in a `<pre>` felt like a dev tool;
+                // moving to rendered output matches the writing-surface
+                // aesthetic the rest of the Quiet Composer already has.
+                <MarkdownContent
+                  content={state.body}
+                  className="text-xs [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_p]:mb-1 [&_ul]:pl-4 [&_ol]:pl-4 [&_code]:text-[11px]"
+                />
+              ) : (
+                <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words m-0">
+                  {state.body}
+                </pre>
+              )
+            ) : (
+              <p className="text-xs italic text-muted-foreground">Empty file</p>
+            )
           )}
+        </div>
+        {/* Footer — mockup-L shows a "Click to open · ⌘click for new
+            tab" hint. We keep it short and in the muted text color so
+            it reads as a tooltip annotation, not content. */}
+        <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border/60 text-[10px] text-muted-foreground">
+          <span>Click to open</span>
+          <span aria-hidden="true">·</span>
+          <span>⌘click for new tab</span>
         </div>
       </PopoverContent>
     </Popover>
