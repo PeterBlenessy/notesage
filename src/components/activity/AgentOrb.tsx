@@ -33,6 +33,15 @@ import { AgentPanel } from './AgentPanel';
  * Reduced motion: when `useReducedMotion()` is true the `orb-pulsing` class is
  * omitted. The keyframe definition in globals.css also has a media-query
  * guard as defence-in-depth.
+ *
+ * CSS-cascade note (#119): the pulse keyframe writes raw `transform: scale(X)`
+ * values. Tailwind's `hover:scale-105` utility engages the composed-transform
+ * chain (`translate(...) rotate(...) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))`),
+ * which resolves to `scale(1)` when not hovered and overrides the keyframe's
+ * `scale(1.05)` frame. To keep both affordances live without interference,
+ * the hover-scale + transition sit on the `<button>` (user interaction), and
+ * the ambient pulse sits on an inner absolutely-positioned wrapper that has no
+ * transform utilities — the keyframe wins on that element.
  */
 export function AgentOrb() {
   const tasks = useActivityStore((s) => s.tasks);
@@ -70,35 +79,52 @@ export function AgentOrb() {
           className={cn(
             // Layout & position — fixed bottom-right with breathing room.
             'fixed bottom-6 right-6 z-40',
-            'flex items-center justify-center',
+            // The button is a positioning anchor for the inner pulse wrapper.
+            // Content is centred by the inner wrapper, not the button itself.
+            'relative',
             'h-[46px] w-[46px] rounded-full',
-            // Surface — neutral dark surface in both themes, subtle elevation.
-            'bg-foreground/85 text-background',
-            'shadow-md ring-1 ring-border/50',
             // Hover/focus polish — gentle scale + ring tint, no chromatic accent.
+            // These transforms live on the button so user-interaction affordances
+            // are untouched by the ambient pulse.
             'transition-transform duration-150 ease-in-out',
             'hover:scale-105',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            // CSS-driven pulse while activity is in flight.
-            shouldPulse && 'orb-pulsing',
           )}
         >
-          {isActive ? (
-            <span
-              data-testid="agent-orb-badge"
-              className="font-mono text-[10px] font-medium leading-none tabular-nums"
-            >
-              {runningCount}
-            </span>
-          ) : (
-            // Idle: subtle Bot glyph — keeps the orb feeling intentional rather
-            // than a stray dot. Muted opacity so it reads as ambient.
-            <Bot
-              className="h-4 w-4 opacity-60"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          )}
+          <span
+            // Inner wrapper carries the ambient pulse. It has NO transform
+            // utilities (no `hover:scale-*`, no `transform`) so the keyframe's
+            // raw `transform: scale(1.05)` frame lands without Tailwind's
+            // composed-transform chain resolving to `scale(1)` and overriding.
+            data-testid="agent-orb-pulse"
+            className={cn(
+              'absolute inset-0',
+              'flex items-center justify-center',
+              'rounded-full',
+              // Surface — neutral dark surface in both themes, subtle elevation.
+              'bg-foreground/85 text-background',
+              'shadow-md ring-1 ring-border/50',
+              // CSS-driven pulse while activity is in flight.
+              shouldPulse && 'orb-pulsing',
+            )}
+          >
+            {isActive ? (
+              <span
+                data-testid="agent-orb-badge"
+                className="font-mono text-[10px] font-medium leading-none tabular-nums"
+              >
+                {runningCount}
+              </span>
+            ) : (
+              // Idle: subtle Bot glyph — keeps the orb feeling intentional rather
+              // than a stray dot. Muted opacity so it reads as ambient.
+              <Bot
+                className="h-4 w-4 opacity-60"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            )}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent
