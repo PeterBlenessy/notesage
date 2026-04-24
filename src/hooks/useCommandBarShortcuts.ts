@@ -15,9 +15,12 @@
  *   ⌘3 / ⌘⇧3        → focus + prefill "#"       — Tags
  *   ⌘4 / ⌘⇧4        → focus + prefill "?"       — Research
  *   ⌘⇧P             → focus + prefill ">"       — Palette
- *   Esc             → dismiss intent (only when focus is inside a
- *                     `[data-cmd-bar]` container — non-bar inputs are
- *                     left alone so the editor's own Esc handlers fire)
+ *   Esc             → dismiss intent (always emits, regardless of focus
+ *                     location — the bar's subscriber decides whether to
+ *                     act based on its own expanded state, and we never
+ *                     preventDefault so Esc continues to propagate to the
+ *                     editor / popover / focus-mode chain per the
+ *                     documented fall-through order)
  *
  * Input-skip rule: when the user is typing in a regular `<input>` or
  * `<textarea>` that's NOT inside `[data-cmd-bar]`, none of the prefix
@@ -114,18 +117,16 @@ export function useCommandBarShortcuts(): void {
         }
       }
 
-      // Esc — dismiss intent. Only fires when the user is actually
-      // inside the bar (otherwise the editor / dialogs / overlays
-      // handle Esc themselves). The bar will run its own fall-through
-      // logic (close suggest dropdown first, then collapse).
+      // Esc — dismiss intent. Emit unconditionally regardless of where
+      // focus currently is (#114 fix). The FloatingCommandBar's subscriber
+      // decides whether to act: if the bar is expanded it collapses,
+      // otherwise it's a no-op. We deliberately do NOT preventDefault on
+      // Esc so the keydown keeps propagating through the rest of the
+      // chain (editor FindBar → Radix popover → focus mode → etc.) —
+      // that's the documented fall-through behaviour in design-system.md
+      // and it's what lets Esc stay useful everywhere else.
       if (event.key === 'Escape') {
-        const target = event.target;
-        if (
-          target instanceof HTMLElement &&
-          target.closest('[data-cmd-bar]') !== null
-        ) {
-          emitCmdBarEvent({ type: 'dismiss' });
-        }
+        emitCmdBarEvent({ type: 'dismiss' });
         return;
       }
     };

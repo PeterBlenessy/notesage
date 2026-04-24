@@ -133,7 +133,12 @@ describe('useCommandBarShortcuts (focus shortcuts)', () => {
 });
 
 describe('useCommandBarShortcuts (Esc + input-skip rule)', () => {
-  it('Esc inside a regular text <input> outside the cmd bar does NOT emit', () => {
+  // #114 — Esc emits `{ type: 'dismiss' }` unconditionally, regardless of
+  // focus location. The FloatingCommandBar's bus subscriber decides whether
+  // to act based on the bar's expanded state; the hook never preventDefaults
+  // Esc, so the keydown continues to propagate to the editor / popover /
+  // focus-mode fall-through chain.
+  it('Esc inside a regular text <input> outside the cmd bar still emits dismiss (#114)', () => {
     renderHook(() => useCommandBarShortcuts());
 
     const input = document.createElement('input');
@@ -143,7 +148,7 @@ describe('useCommandBarShortcuts (Esc + input-skip rule)', () => {
 
     dispatchKey('Escape', { target: input });
 
-    expect(captured).toEqual([]);
+    expect(captured).toEqual([{ type: 'dismiss' }]);
   });
 
   it('Esc inside an <input> WITHIN [data-cmd-bar] DOES emit { type: "dismiss" }', () => {
