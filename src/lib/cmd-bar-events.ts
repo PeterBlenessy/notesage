@@ -19,7 +19,14 @@ export type CmdBarEvent =
   // to unpin (flipping it back to the floating overlay). When the bar is
   // collapsed or floating-but-expanded, the chord instead emits `focus` —
   // see `useKeyboardShortcuts` for the decision table.
-  | { type: 'toggle-pin' };
+  | { type: 'toggle-pin' }
+  // `toggle-history` — fired by the clock icon in `CommandBarContext` (and
+  // by `⌘⇧H` once the keyboard hook is wired) to flip the expanded bar
+  // between "chat stream" mode and "history list" mode. The bar's
+  // subscriber flips its local `chatView` state. Selecting a conversation
+  // from the history list returns to chat via the `onSelectConversation`
+  // callback, same as the legacy `ChatPanel` does (#118).
+  | { type: 'toggle-history' };
 
 type Handler = (event: CmdBarEvent) => void;
 

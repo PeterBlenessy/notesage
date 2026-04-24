@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useChatStore, selectMessages } from "@/stores/chat-store";
+import { useChatStore, selectMessages, selectProjectPaths } from "@/stores/chat-store";
+import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
@@ -137,6 +138,22 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
   const isLoading = useChatStore((s) => s.isLoading);
+
+  // #118 — chatView toggles the expanded bar between its usual chat
+  // stream and a past-conversation list. The clock icon in
+  // `CommandBarContext` fires `toggle-history` on the bus; the
+  // subscription below flips this state. Selecting a conversation from
+  // the list returns to chat mode (same UX as legacy `ChatPanel`).
+  const [chatView, setChatView] = useState<"chat" | "history">("chat");
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const handleSelectConversation = useCallback(
+    (id: string) => {
+      setActiveConversation(id);
+      setChatView("chat");
+    },
+    [setActiveConversation],
+  );
 
   // #127 parity — connection + routing state for the cross-provider
   // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
@@ -415,6 +432,15 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // emit site in `useKeyboardShortcuts` already validated the state,
         // so we can setCmdBarPinned(false) unconditionally here.
         useSettingsStore.getState().setCmdBarPinned(false);
+      }
+
+      if (event.type === 'toggle-history') {
+        // #118 — Clock icon in the context row (and ⌘⇧H when wired)
+        // flips the stream area between the chat view and the past-
+        // conversation list. Ensure the bar is expanded so the new
+        // mode has somewhere to render.
+        setExpanded(true);
+        setChatView((prev) => (prev === 'history' ? 'chat' : 'history'));
       }
     });
   }, [collapse]);
@@ -1042,6 +1068,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           isLoading={isLoading}
           onStop={cancelChat}
           onSend={handleSend}
+          chatView={chatView}
+          onSelectConversation={handleSelectConversation}
+          selectedProjectPaths={selectedProjectPaths}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -1295,6 +1324,12 @@ interface ExpandedContentProps {
   onStop: () => void;
   /** #126 — fire the send pipeline (click-to-send button). */
   onSend: () => void;
+  /** #118 — 'chat' shows the stream, 'history' shows past conversations. */
+  chatView: "chat" | "history";
+  /** #118 — select a conversation from the history list. */
+  onSelectConversation: (id: string) => void;
+  /** #118 — selected projects filter for ChatHistoryView. */
+  selectedProjectPaths: string[];
 }
 
 function ExpandedContent({
@@ -1328,6 +1363,9 @@ function ExpandedContent({
   isLoading,
   onStop,
   onSend,
+  chatView,
+  onSelectConversation,
+  selectedProjectPaths,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -1340,12 +1378,26 @@ function ExpandedContent({
        */}
       <CommandBarContext />
 
-      <CommandBarStream
-        onSend={onStreamSend}
-        onPrefill={onStreamPrefill}
-        onResend={onStreamResend}
-        onEdit={onStreamEdit}
-      />
+      {chatView === "history" ? (
+        // #118 — Past-conversation list. Reuses the legacy
+        // `ChatHistoryView` so selection behaviour + per-conversation
+        // metadata (date, title, message count, branch count) matches
+        // the classic shell. Selecting a conversation flips back to
+        // chat view via `onSelectConversation`.
+        <div className="flex flex-1 flex-col min-h-0">
+          <ChatHistoryView
+            onSelectConversation={onSelectConversation}
+            selectedProjectPaths={selectedProjectPaths}
+          />
+        </div>
+      ) : (
+        <CommandBarStream
+          onSend={onStreamSend}
+          onPrefill={onStreamPrefill}
+          onResend={onStreamResend}
+          onEdit={onStreamEdit}
+        />
+      )}
 
       {/* #127 parity — edit-mode banner. Appears above the input when the
        *  user clicked Edit on a previous user message. Clicking the × or

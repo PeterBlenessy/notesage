@@ -28,6 +28,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ExplainLockDialog } from "@/components/chat/ExplainLockDialog";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { AcpSessionControls } from "@/components/chat/AcpSessionControls";
 import {
   describeLockTarget,
@@ -327,9 +328,12 @@ function CommandBarContext({ className }: CommandBarContextProps) {
         ariaLabel="Open history"
         icon={Clock}
         onClick={() => {
-          // Wired in #27.
-          // eslint-disable-next-line no-console
-          console.log("open history — wired in #27");
+          // #118 — fire a bus event; FloatingCommandBar subscribes and
+          // flips its chatView between 'chat' and 'history'. Keeping
+          // the toggle state in the bar (not here) means `⌘⇧H` from
+          // the global shortcut hook can drive the same flip without
+          // needing this component on screen.
+          emitCmdBarEvent({ type: "toggle-history" });
         }}
       />
       <IconButton

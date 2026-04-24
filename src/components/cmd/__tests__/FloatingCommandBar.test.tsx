@@ -176,14 +176,34 @@ vi.mock('@/hooks/useAIOperations', () => ({
 }));
 
 vi.mock('@/stores/chat-store', () => {
-  function useChatStore<T>(selector: (state: { isLoading: boolean }) => T): T {
-    return selector({ isLoading: false });
+  // State surface for the selectors used by FloatingCommandBar. Keep
+  // minimal — the bar reads `isLoading` directly and `setActiveConversation`
+  // via store API; history mode (#118) reads `selectProjectPaths`.
+  const state = {
+    isLoading: false,
+    setActiveConversation: vi.fn(),
+  };
+  function useChatStore<T>(selector: (s: typeof state) => T): T {
+    return selector(state);
   }
   return {
-    useChatStore,
+    useChatStore: Object.assign(useChatStore, {
+      getState: () => state,
+    }),
     selectMessages: () => [],
+    // #118 — the history-mode selector is a pure projection of
+    // `conv.projectPaths`. Stubbed to an empty list; the ChatHistoryView
+    // render is mocked separately.
+    selectProjectPaths: () => [],
   };
 });
+
+// #118 — ChatHistoryView pulls in the full chat stack (providers, routing).
+// Stub to a visible marker so tests can assert the history view renders
+// without dragging the rest of the chat tree into the mock surface.
+vi.mock('@/components/chat/ChatHistoryView', () => ({
+  ChatHistoryView: () => <div data-testid="chat-history-stub" />,
+}));
 
 // ---------------------------------------------------------------------------
 // Tests

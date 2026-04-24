@@ -1246,7 +1246,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/CommandBarStream.tsx`, composition test |
 | Surfaced from | 2026-04-23 trial: provider switch did not fire the context warning. |
 
-### #118 — Render conversation history inside FloatingCommandBar
+### #118 — Render conversation history inside FloatingCommandBar ✅
 
 | Field | Value |
 | --- | --- |

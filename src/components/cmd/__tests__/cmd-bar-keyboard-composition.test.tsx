@@ -109,8 +109,16 @@ vi.mock('@/hooks/useAIOperations', () => ({
 }));
 
 vi.mock('@/stores/chat-store', () => ({
-  useChatStore: vi.fn(() => []),
+  useChatStore: Object.assign(
+    vi.fn(() => []),
+    { getState: () => ({ setActiveConversation: vi.fn() }) },
+  ),
   selectMessages: vi.fn(() => []),
+  selectProjectPaths: vi.fn(() => []),
+}));
+
+vi.mock('@/components/chat/ChatHistoryView', () => ({
+  ChatHistoryView: () => <div data-testid="chat-history-stub" />,
 }));
 
 // Harness: render the bar AND mount the shortcut hook in one tree so the
