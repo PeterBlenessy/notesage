@@ -5,6 +5,8 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore, selectMessages } from "@/stores/chat-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
+import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
 import AttachmentChips, {
   type AttachmentChip,
@@ -158,6 +160,56 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // but if we ever animate the input out we still want the focus released.
     inputRef.current?.blur();
   }, [isPinned]);
+
+  // #114 — Subscribe to the `cmd-bar-events` bus so `useCommandBarShortcuts`
+  // (⌘K, ⌘⇧P, ⌘1–4, Esc from outside the bar) and `useDoubleTapCmd` can drive
+  // the bar's state. Previously the shortcut hook emitted on this bus but
+  // nothing subscribed — the ⌘K gesture was silently dropped. Subscribing
+  // here is the missing wire; once mounted, every chord observed by the
+  // hook reaches the bar.
+  //
+  // focus events: expand the bar; if the intent carries a prefix character,
+  // prefill the input with that character and pre-arm the active-prefix
+  // state so the mode picker opens on the same tick.
+  //
+  // dismiss events: if the bar is expanded, collapse; if it's already
+  // collapsed the handler is a no-op and the Esc keydown keeps propagating
+  // to the editor / popover / focus-mode chain (the hook intentionally
+  // does not preventDefault on Esc).
+  useEffect(() => {
+    return subscribeToCmdBarEvents((event) => {
+      if (event.type === 'focus') {
+        setExpanded(true);
+        if (event.prefix) {
+          const mode = Object.values(MODES).find(
+            (m) => m.prefix === event.prefix,
+          );
+          if (mode) {
+            const value = `${event.prefix} `;
+            setInputValue(value);
+            setActivePrefix({
+              mode,
+              prefixIndex: 0,
+              tokenStart: 0,
+              tokenEnd: value.length,
+              filter: '',
+            });
+          }
+        }
+        // Defer focus to the next tick so the input has rendered when the
+        // bar transitioned from collapsed → expanded in the same pass.
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+
+      if (event.type === 'dismiss') {
+        // In pinned mode the bar can't collapse — fall through to the
+        // prefix-clearing behaviour in `collapse` (gated internally).
+        // Otherwise collapse fully.
+        collapse();
+      }
+    });
+  }, [collapse]);
 
   // ---------------------------------------------------------------------
   // Prefix detection — runs on every input change AND on selection moves.
