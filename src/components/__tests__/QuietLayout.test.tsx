@@ -37,8 +37,19 @@ import { toast as mockedToast } from 'sonner';
 // Mock TitleBar — heavy dependency tree, not relevant to placeholder shell
 // ---------------------------------------------------------------------------
 
+// Stub the TitleBar. Echoes back the `mode` prop via a data attribute so
+// tests can assert QuietLayout passes `mode="quiet"` (tasks #103 + #124 —
+// hide the chat / activity-strip toggle buttons in Quiet Composer because
+// the FloatingCommandBar + AgentOrb replace their targets).
 vi.mock('@/components/TitleBar', () => ({
-  TitleBar: () => <div data-testid="titlebar">TitleBar</div>,
+  TitleBar: (props: { mode?: string }) => (
+    <div
+      data-testid="titlebar"
+      data-titlebar-mode={props.mode ?? 'classic'}
+    >
+      TitleBar
+    </div>
+  ),
 }));
 
 // Stub FloatingCommandBar so we can assert it's mounted without pulling in
@@ -153,6 +164,16 @@ describe('QuietLayout (placeholder)', () => {
   it('renders the title bar at the top', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     expect(screen.getByTestId('titlebar')).toBeTruthy();
+  });
+
+  it('passes mode="quiet" to the TitleBar (tasks #103 + #124)', () => {
+    // Hides the chat-toggle + activity-strip-toggle buttons in the TitleBar
+    // because the FloatingCommandBar and AgentOrb replace their targets in
+    // Quiet Composer. Dead toggles in the top chrome would contradict the
+    // "quieter UI" promise.
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const titlebar = screen.getByTestId('titlebar');
+    expect(titlebar.getAttribute('data-titlebar-mode')).toBe('quiet');
   });
 
   it('renders the QuietSidebar and real Editor mount without a right column', () => {
