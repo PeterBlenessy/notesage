@@ -318,6 +318,35 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     });
   }, [inputValue, chips, sendChatMessage, messagesForSend]);
 
+  // ---------------------------------------------------------------------
+  // Stream → send bridge. `ChatMessageList` fires `onSend(content)` for
+  // QuickReplies (user clicks a suggested follow-up) and onboarding
+  // prompts (empty-state bubble buttons). Neither flows through the
+  // composer input — they're direct send-a-specific-string calls, so
+  // we bypass `handleSend`'s input-reading path and send `content`
+  // verbatim.
+  // ---------------------------------------------------------------------
+
+  const handleStreamSend = useCallback(
+    (content: string) => {
+      const trimmed = content.trim();
+      if (trimmed.length === 0) return;
+      void sendChatMessage(trimmed, messagesForSend);
+    },
+    [sendChatMessage, messagesForSend],
+  );
+
+  // onPrefill: stream's empty-state onboarding prompts. Drop the content
+  // into the input so the user can tweak before sending.
+  const handleStreamPrefill = useCallback(
+    (text: string) => {
+      setInputValue(text);
+      setExpanded(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [],
+  );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
@@ -557,6 +586,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onPickTask={handlePickTask}
           onPickResearch={handlePickResearch}
           onPickPalette={handlePickPalette}
+          onStreamSend={handleStreamSend}
+          onStreamPrefill={handleStreamPrefill}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -752,6 +783,16 @@ interface ExpandedContentProps {
   onPickTask: (action: TaskAction) => void;
   onPickResearch: (chip: AttachmentChip) => void;
   onPickPalette: (commandId: string) => void;
+  /**
+   * Stream-originated send (QuickReplies, onboarding prompts). Bypasses
+   * the composer input — content is sent verbatim.
+   */
+  onStreamSend: (content: string) => void;
+  /**
+   * Stream-originated prefill (empty-state onboarding prompts). Drops
+   * the content into the composer input and focuses.
+   */
+  onStreamPrefill: (text: string) => void;
 }
 
 function ExpandedContent({
@@ -772,6 +813,8 @@ function ExpandedContent({
   onPickTask,
   onPickResearch,
   onPickPalette,
+  onStreamSend,
+  onStreamPrefill,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -784,7 +827,10 @@ function ExpandedContent({
        */}
       <CommandBarContext />
 
-      <CommandBarStream />
+      <CommandBarStream
+        onSend={onStreamSend}
+        onPrefill={onStreamPrefill}
+      />
 
       {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}
       <AttachmentChips chips={chips} onRemove={onRemoveChip} />
