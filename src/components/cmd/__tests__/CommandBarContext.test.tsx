@@ -146,6 +146,11 @@ vi.mock('@/stores/chat-store', () => {
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
+    // `selectProjectPaths` (#125) — used by CommandBarContext to drive the
+    // goals pill + single-project discovery. Return the active
+    // conversation's project paths so tests can seed a single-project case
+    // via `mockActiveConversation.projectPaths`.
+    selectProjectPaths: () => mockActiveConversation?.projectPaths ?? [],
   };
 });
 
@@ -203,17 +208,44 @@ vi.mock('@/stores/project-metadata-store', () => {
   };
 });
 
+// #125 — `showAgentModePicker` gates whether the mode picker renders in
+// both shells (legacy + quiet). Flip per-test to cover both paths.
+let mockShowAgentModePicker = false;
+
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     setCmdBarPinned: (v: boolean) => setCmdBarPinnedMock(v),
     get crossProjectMode() { return mockCrossProjectMode; },
+    get showAgentModePicker() { return mockShowAgentModePicker; },
   };
   return {
     useSettingsStore: Object.assign(
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
+  };
+});
+
+// #125 — Goals discovery drives the "N goals" pill. The real hook reads
+// from the SQLite document index via a Tauri IPC call; we stub it to a
+// deterministic list so the pill's render branch is testable.
+let mockGoalFiles: Array<{ path: string; title: string }> = [];
+vi.mock('@/hooks/useGoalsDiscovery', () => ({
+  useGoalsDiscovery: () => ({ goalFiles: mockGoalFiles, reload: vi.fn() }),
+}));
+
+// #125 — Tooltip mock so the pill's tooltip trigger renders the pill
+// markup without the Radix portal machinery.
+vi.mock('@/components/ui/tooltip', () => {
+  const Pass = ({ children }: { children?: React.ReactNode }) => <>{children}</>;
+  return {
+    Tooltip: Pass,
+    TooltipProvider: Pass,
+    TooltipTrigger: ({ children }: { children?: React.ReactNode; asChild?: boolean }) =>
+      <>{children}</>,
+    TooltipContent: ({ children }: { children?: React.ReactNode }) =>
+      <div data-testid="tooltip-content">{children}</div>,
   };
 });
 
@@ -361,6 +393,8 @@ describe('CommandBarContext', () => {
     mockCmdBarPinned = false;
     mockCrossProjectMode = false;
     mockWorkspaceProjects = [];
+    mockShowAgentModePicker = false;
+    mockGoalFiles = [];
     mockAcpAgent = { instanceId: null, connectionId: null, chatSessionId: null };
     mockSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
     sessionInfoListeners.clear();
@@ -779,6 +813,13 @@ describe('CommandBarContext', () => {
   // -------------------------------------------------------------------------
 
   describe('mode pill (#26)', () => {
+    // #125 — The mode pill is now gated on `settings.showAgentModePicker`
+    // (parity with ChatFooter). These tests exercise the mode-picker
+    // behaviour directly, so flip the toggle on for the whole block.
+    beforeEach(() => {
+      mockShowAgentModePicker = true;
+    });
+
     /**
      * Build a minimal ACP-capable connection that exposes all four common
      * permission levels via `acpCapabilities.availableModes`. Mode IDs come
@@ -1106,6 +1147,9 @@ describe('CommandBarContext', () => {
     });
 
     it('the agent mode picker slot is marked shrink-0 so it never collapses when many chips are selected', () => {
+      // #125 — mode picker is now gated on showAgentModePicker; flip on so
+      // this regression-lock test can still assert the slot exists.
+      mockShowAgentModePicker = true;
       // Five-project scenario that triggered the original bug report.
       mockActiveConversation = makeConversation({
         projectPaths: [
@@ -1165,6 +1209,96 @@ describe('CommandBarContext', () => {
       const pinButton = screen.getByLabelText(/pin chat to side panel/i);
       expect(pinButton).toBeTruthy();
       expect(pinButton.className).toMatch(/\bshrink-0\b/);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #125 — Parity with ChatFooter (showAgentModePicker gate + goals pill +
+  // AcpSessionControls wiring). Each assertion exercises observable behaviour
+  // rather than internal wiring so a refactor that preserves the UX keeps
+  // these tests green.
+  // -------------------------------------------------------------------------
+
+  describe('ChatFooter parity (#125)', () => {
+    function makeAcp(): Connection {
+      return makeConnection({
+        id: 'conn-acp',
+        provider: 'openai',
+        authMethod: 'agent_managed',
+        label: 'Codex',
+        capabilities: ['interactive', 'agent_tasks'],
+        acpCapabilities: {
+          availableModes: [
+            { id: 'read-only', name: 'Read Only' },
+            { id: 'auto', name: 'Agent' },
+            { id: 'full-access', name: 'Full Access' },
+            { id: 'plan', name: 'Plan' },
+          ],
+        },
+      });
+    }
+
+    it('hides the mode picker when showAgentModePicker=false, even for an ACP connection', () => {
+      mockShowAgentModePicker = false;
+      const acp = makeAcp();
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+
+      renderWithProviders(<CommandBarContext />);
+
+      // The picker exposes the "Read Only" label when rendered; if the
+      // setting gates it off, none of the mode-level labels should be in
+      // the DOM.
+      expect(screen.queryByText('Read Only')).toBeNull();
+      expect(screen.queryByText('Full Access')).toBeNull();
+    });
+
+    it('shows the mode picker when showAgentModePicker=true', () => {
+      mockShowAgentModePicker = true;
+      const acp = makeAcp();
+      mockInteractiveConnection = acp;
+      mockConnections = [acp];
+
+      renderWithProviders(<CommandBarContext />);
+
+      // When the gate is on, all four common-mode labels render inside the
+      // AcpSessionControls picker (mocked dropdown shows content inline).
+      expect(screen.getAllByText('Read Only').length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders the "N goals" pill when the single-project selection has goals', () => {
+      mockGoalFiles = [
+        { path: '/p/alpha/goals/q1.md', title: 'Q1 objectives' },
+        { path: '/p/alpha/goals/q2.md', title: 'Q2 objectives' },
+      ];
+      mockActiveConversation = makeConversation({
+        projectPaths: ['/p/alpha'],
+      });
+
+      renderWithProviders(<CommandBarContext />);
+
+      // The pill shows the count + the "goals" noun (pluralized).
+      expect(screen.getByText(/2 goals/i)).toBeTruthy();
+    });
+
+    it('renders "1 goal" (singular) when there is exactly one goal file', () => {
+      mockGoalFiles = [{ path: '/p/alpha/goals/q1.md', title: 'Q1' }];
+      mockActiveConversation = makeConversation({ projectPaths: ['/p/alpha'] });
+
+      renderWithProviders(<CommandBarContext />);
+
+      expect(screen.getByText(/1 goal\b/i)).toBeTruthy();
+    });
+
+    it('suppresses the goals pill when no goals are discovered', () => {
+      mockGoalFiles = [];
+      mockActiveConversation = makeConversation({ projectPaths: ['/p/alpha'] });
+
+      renderWithProviders(<CommandBarContext />);
+
+      // The pill is rendered conditionally on goalFiles.length > 0; when
+      // the count is zero, neither "1 goal" nor "N goals" should appear.
+      expect(screen.queryByText(/\bgoals?\b/i)).toBeNull();
     });
   });
 });

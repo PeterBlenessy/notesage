@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Clock, Pin, PinOff, Plus, Lock, X, Check } from "lucide-react";
+import { AlertTriangle, Clock, Pin, PinOff, Plus, Lock, Target, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRoutingStore } from "@/stores/routing-store";
-import { useChatStore } from "@/stores/chat-store";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useGoalsDiscovery } from "@/hooks/useGoalsDiscovery";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +21,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ExplainLockDialog } from "@/components/chat/ExplainLockDialog";
-import { AcpModePicker } from "@/components/chat/AcpSessionControls";
+import { AcpSessionControls } from "@/components/chat/AcpSessionControls";
 import {
   describeLockTarget,
   getProjectLock,
@@ -108,6 +115,17 @@ function CommandBarContext({ className }: CommandBarContextProps) {
   // the pill opens Settings > Advanced (the "developer" tab) so the user can
   // toggle the mode off in one jump.
   const crossProjectMode = useSettingsStore((s) => s.crossProjectMode);
+
+  // #125 — Parity with ChatFooter. The mode picker is gated on
+  // `showAgentModePicker` (Settings > Advanced toggle, same as legacy).
+  // Goals discovery runs for the single-project case; the pill surfaces
+  // the count as "N goals" so users know what's being injected as AI
+  // context.
+  const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const singleProjectPath =
+    selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
+  const { goalFiles } = useGoalsDiscovery(singleProjectPath);
 
   // Locked-paths derived view drives the explain-lock dialog when the user
   // clicks a chip's lock icon. The dialog accepts an array (multiple chips
@@ -254,11 +272,48 @@ function CommandBarContext({ className }: CommandBarContextProps) {
       {interactiveConnection ? (
         // `shrink-0` is a regression-lock on the overflow fix: the chip
         // group (above) owns the shrink budget; every trailing flex item —
-        // mode picker, warning pill, history, pin — must stay at its
-        // intrinsic width no matter how many project chips are in scope.
+        // mode picker, config pickers, usage indicator, goals pill,
+        // warning pill, history, pin — must stay at its intrinsic width no
+        // matter how many project chips are in scope.
+        //
+        // `AcpSessionControls` bundles the mode picker (gated by
+        // `showAgentModePicker` per #125), the config option pickers
+        // (thinking effort + any other agent-reported options), and the
+        // usage indicator. Swapping in this one component replaces what
+        // used to be a bare `<AcpModePicker />` + hidden config pickers
+        // with feature parity against `ChatFooter`.
         <div className="shrink-0">
-          <AcpModePicker connection={interactiveConnection} />
+          <AcpSessionControls
+            showModePicker={showAgentModePicker}
+            connection={interactiveConnection}
+          />
         </div>
+      ) : null}
+
+      {/* Goals indicator (#125) — mirrors ChatFooter's "N goals" pill.
+       *  Only surfaces when the selection resolves to a single project
+       *  that has goal files; multi-project or zero-project selections
+       *  don't carry an unambiguous goal context.
+       */}
+      {goalFiles.length > 0 ? (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0 items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground bg-accent">
+                <Target className="h-2.5 w-2.5" />
+                {goalFiles.length}{" "}
+                {goalFiles.length === 1 ? "goal" : "goals"}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-64">
+              <p className="text-xs">
+                {goalFiles.length} project{" "}
+                {goalFiles.length === 1 ? "goal is" : "goals are"} included
+                as AI context
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ) : null}
 
       {/* Spacer pushes the warning pill + trailing icons to the right. */}

@@ -1325,7 +1325,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/TitleBar.tsx`, `src/components/QuietLayout.tsx` |
 | Surfaced from | #113 audit + project lead's 2026-04-23 trial. Note: this overlaps with the already-filed #103 — either fold #103 into this or keep #103 as the parent and close #124 as a duplicate. |
 
-### #125 — CommandBarContext feature parity with ChatFooter
+### #125 — CommandBarContext feature parity with ChatFooter ✅
 
 | Field | Value |
 | --- | --- |
