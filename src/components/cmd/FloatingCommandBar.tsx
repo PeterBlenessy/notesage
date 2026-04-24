@@ -5,6 +5,7 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore, selectMessages } from "@/stores/chat-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
 import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
@@ -347,6 +348,36 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [],
   );
 
+  // Resend a user message — delete it + its descendants and send the same
+  // content again. Matches the same-provider branch in
+  // `ChatPanel.handleResend`; the cross-provider dialog is deferred to a
+  // follow-up (needs shared extraction so both shells can render it).
+  const handleStreamResend = useCallback(
+    (message: ChatMessageType) => {
+      if (message.id) {
+        useChatStore.getState().deleteMessageAndDescendants(message.id);
+      }
+      const trimmed = message.content.trim();
+      if (trimmed.length === 0) return;
+      void sendChatMessage(trimmed, messagesForSend);
+    },
+    [sendChatMessage, messagesForSend],
+  );
+
+  // Edit a user message — prefill the composer with its content so the
+  // user can tweak and send. Simplified vs `ChatPanel.handleEdit`: this
+  // path doesn't track `parentId` for branching yet (send will append to
+  // the current leaf instead of branching from the edited message's
+  // parent). Branching parity is a follow-up.
+  const handleStreamEdit = useCallback(
+    (message: ChatMessageType) => {
+      setInputValue(message.content);
+      setExpanded(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [],
+  );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
@@ -588,6 +619,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onPickPalette={handlePickPalette}
           onStreamSend={handleStreamSend}
           onStreamPrefill={handleStreamPrefill}
+          onStreamResend={handleStreamResend}
+          onStreamEdit={handleStreamEdit}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -793,6 +826,16 @@ interface ExpandedContentProps {
    * the content into the composer input and focuses.
    */
   onStreamPrefill: (text: string) => void;
+  /**
+   * Per-user-message Resend button (same-provider path). Deletes the
+   * message + descendants and re-sends the content.
+   */
+  onStreamResend: (message: ChatMessageType) => void;
+  /**
+   * Per-user-message Edit button — prefills the composer with the
+   * message content and focuses.
+   */
+  onStreamEdit: (message: ChatMessageType) => void;
 }
 
 function ExpandedContent({
@@ -815,6 +858,8 @@ function ExpandedContent({
   onPickPalette,
   onStreamSend,
   onStreamPrefill,
+  onStreamResend,
+  onStreamEdit,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -830,6 +875,8 @@ function ExpandedContent({
       <CommandBarStream
         onSend={onStreamSend}
         onPrefill={onStreamPrefill}
+        onResend={onStreamResend}
+        onEdit={onStreamEdit}
       />
 
       {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}

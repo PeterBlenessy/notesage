@@ -321,7 +321,7 @@ export function QuietLayout(props: QuietLayoutProps) {
             `data-doc-area` is the focus-mode CSS hook (see globals.css
             `.app.focus-mode [data-doc-area]`).
           */}
-          <div data-doc-area className="flex-1 min-h-0 bg-muted">
+          <div data-doc-area className="flex-1 min-h-0">
             <ErrorBoundary name="Editor">
               <Editor
                 onNewNote={onNewNote}
