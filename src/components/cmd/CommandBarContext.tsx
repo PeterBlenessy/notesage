@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Clock, Pin, PinOff, Plus, Lock, Target, X, Check } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Plus, Lock, Target, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -61,9 +61,17 @@ import type { ProjectMetadata } from "@/stores/project-metadata-store";
 export interface CommandBarContextProps {
   /** Caller-supplied utility classes appended after the defaults. */
   className?: string;
+  /**
+   * Current chatView from `FloatingCommandBar`. Drives the trailing
+   * history-toggle icon: `Clock` when "chat" (the user can switch INTO
+   * history), `MessageSquare` when "history" (the user can switch BACK
+   * to chat). Live-test 2026-04-25 #158 — without this, both directions
+   * showed the same clock icon and the toggle direction wasn't clear.
+   */
+  chatView?: "chat" | "history";
 }
 
-function CommandBarContext({ className }: CommandBarContextProps) {
+function CommandBarContext({ className, chatView = "chat" }: CommandBarContextProps) {
   // Active interactive connection (the provider pill).
   const interactiveConnection = useRoutingStore((s) =>
     s.getConnectionForUseCase("interactive"),
@@ -325,8 +333,13 @@ function CommandBarContext({ className }: CommandBarContextProps) {
 
       {/* Trailing icons ---------------------------------------------------- */}
       <IconButton
-        ariaLabel="Open history"
-        icon={Clock}
+        ariaLabel={chatView === "history" ? "Back to chat" : "Open history"}
+        // Live-test 2026-04-25 #158 — Clock when the user can switch
+        // INTO history; MessageSquare (chat bubble) when they're
+        // already in history and the click would take them BACK. The
+        // direction-explicit icon makes the toggle's behaviour
+        // self-evident; the previous always-Clock made it ambiguous.
+        icon={chatView === "history" ? MessageSquare : Clock}
         onClick={() => {
           // #118 — fire a bus event; FloatingCommandBar subscribes and
           // flips its chatView between 'chat' and 'history'. Keeping

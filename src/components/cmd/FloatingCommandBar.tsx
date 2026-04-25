@@ -1498,7 +1498,7 @@ function ExpandedContent({
           - Attachment chips (#11) — above the input
           - Mode pickers (#14–#19) — rendered when `activePrefix` is non-null
        */}
-      <CommandBarContext />
+      <CommandBarContext chatView={chatView} />
 
       {chatView === "history" ? (
         // #118 — Past-conversation list. Reuses the legacy
