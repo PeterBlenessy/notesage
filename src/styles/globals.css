@@ -599,7 +599,11 @@ body {
 }
 .app.focus-mode [data-doc-area-placeholder],
 .app.focus-mode [data-doc-area] {
-  padding-top: 110px;
+  /* #111 audit fix — mockup-f-focus-mode specifies 140px top padding
+     in focus mode (110px traffic-light safe zone + 30px extra
+     breathing room). Previous 110px only covered the safe zone and
+     left the document text feeling cramped against the title bar. */
+  padding-top: 140px;
   transition: padding-top 220ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {

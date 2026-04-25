@@ -1158,7 +1158,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/PreviewInvitation.tsx` (or new `src/components/RevertInvitation.tsx`), `src/components/QuietLayout.tsx`, `src/stores/settings-store.ts` |
 | Surfaced from | Project lead's 2026-04-23 trial — discoverability of the toggle is asymmetric |
 
-### #111 — Mockup-vs-implementation audit — inventory + close design drift
+### #111 — Mockup-vs-implementation audit — inventory + close design drift ✅
 
 | Field | Value |
 | --- | --- |

@@ -144,7 +144,7 @@ export function QuietLayout(props: QuietLayoutProps) {
 
   // `⌘⇧L` — sidebar visibility (#123). The chord flips
   // `settings-store.sidebarPinned` via `useKeyboardShortcuts`; QuietLayout
-  // observes the flag and either renders the sidebar + reserves the 240px
+  // observes the flag and either renders the sidebar + reserves the 252px
   // grid track, or omits the sidebar entirely and collapses the grid to a
   // single `1fr` column. Both shells share the setting — toggling here
   // also affects the Classic layout's pinned state, which is the intended
@@ -309,7 +309,11 @@ export function QuietLayout(props: QuietLayoutProps) {
         data-sidebar-pinned={sidebarPinned ? "true" : "false"}
         className="flex-1 grid min-h-0 gap-2 p-2"
         style={{
-          gridTemplateColumns: sidebarPinned ? "240px 1fr" : "1fr",
+          // #111 audit fix — mockup-d-synthesis specifies 252px for the
+          // sidebar grid track. Previous 240px was a 12 px shave that
+          // pinched the project rows and made the right-edge ⋯ button
+          // crowd the file-count number on hover (see also #136).
+          gridTemplateColumns: sidebarPinned ? "252px 1fr" : "1fr",
           ...documentAreaStyle,
         }}
       >

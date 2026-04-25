@@ -249,7 +249,7 @@ Toggle distraction-free focus mode. Single source of truth lives in `useFocusMod
 
 - `⌘.` (or `Ctrl+.` on non-mac) toggles focus from any state, captured at window level so the legacy bubble-phase listener never double-fires while QuietLayout is mounted.
 - `Esc` exits focus mode **with fall-through priority** — open Radix popovers/dialogs/menus, the expanded command bar, and inline rename rows all consume `Esc` first. Focus mode only exits when nothing else claims the key.
-- Applies `.focus-mode` to the QuietLayout root. CSS in `globals.css` (`.app.focus-mode …`) fades the sidebar, hides the pill Toolbar + StatusBar, dims the orb to 30%, and adds +110 px top-padding so text clears the macOS traffic lights.
+- Applies `.focus-mode` to the QuietLayout root. CSS in `globals.css` (`.app.focus-mode …`) fades the sidebar, hides the pill Toolbar + StatusBar, dims the orb to 30%, and adds +140 px top-padding (110 px traffic-light safe zone + 30 px breathing room per mockup-f) so text clears the macOS window controls.
 - Announces enter/exit to AT via a short-lived `aria-live` region appended to `document.body` ("Focus mode on. Press Command period to exit." / "Focus mode off. Chrome restored.") — exact wording from the PRD.
 - **Pre-enter focus restoration:** the active element is captured on enter and restored on exit so the user lands back where they started.
 - Reduced-motion: the hook is unaffected (the class toggles instantly either way); the CSS honours the preference via a `@media` rule that zeros the transitions.

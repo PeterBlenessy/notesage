@@ -218,7 +218,7 @@ describe('QuietLayout (placeholder)', () => {
     ) as HTMLElement;
     expect(docArea).toBeTruthy();
     // Two tracks: 240px sidebar + 1fr centre. No third 240px column.
-    expect(docArea.style.gridTemplateColumns).toBe('240px 1fr');
+    expect(docArea.style.gridTemplateColumns).toBe('252px 1fr');
   });
 
   it('mounts the FloatingCommandBar', () => {
@@ -293,7 +293,7 @@ describe('QuietLayout (placeholder)', () => {
   // chord wiring has its own test in `useKeyboardShortcuts.test.tsx`.
 
   describe('sidebar visibility (#123)', () => {
-    it('renders the QuietSidebar and 240px 1fr grid when sidebarPinned is true', () => {
+    it('renders the QuietSidebar and 252px 1fr grid when sidebarPinned is true', () => {
       mockSidebarPinned = true;
       const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
       // Nav landmark from QuietSidebar is present.
@@ -303,7 +303,7 @@ describe('QuietLayout (placeholder)', () => {
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(docArea.style.gridTemplateColumns).toBe('240px 1fr');
+      expect(docArea.style.gridTemplateColumns).toBe('252px 1fr');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('true');
     });
 
