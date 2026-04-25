@@ -122,9 +122,16 @@ export function SettingsRow({
   }
 
   return (
+    // Live-test 2026-04-25 — `px-0 py-3` (was `px-4 py-3 min-h-[52px]`)
+    // per mockup-e. The card wrapper around the group is gone (see
+    // SettingsGroup), so rows no longer need their own horizontal
+    // padding to inset from a card border. Vertical kept at py-3 for
+    // a comfortable click target; min-height removed because the
+    // description line varies and forcing 52 px sometimes left rows
+    // looking under-padded when there's no description.
     <div
       className={cn(
-        'flex items-center justify-between gap-4 px-4 py-3 min-h-[52px]',
+        'flex items-center justify-between gap-4 px-0 py-3',
         className,
       )}
     >

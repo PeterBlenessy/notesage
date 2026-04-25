@@ -276,7 +276,7 @@ export function ConnectionConfigDialog({
         padding so content lines up with the new header.
       */}
       <DialogContent
-        className="max-w-[640px] p-0 gap-0"
+        className="max-w-[820px] p-0 gap-0"
         aria-describedby={undefined}
       >
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
@@ -335,16 +335,30 @@ export function ConnectionConfigDialog({
                     <SelectContent>
                       {connection.acpCapabilities.availableModes.map((mode) => (
                         <SelectItem key={mode.id} value={mode.id} className="text-xs">
-                          <div>
-                            <span>{mode.name}</span>
-                            {mode.description && (
-                              <span className="ml-2 text-muted-foreground">{mode.description}</span>
-                            )}
-                          </div>
+                          {/* Live-test 2026-04-25 — only `mode.name` in
+                              the dropdown value (and trigger via
+                              SelectValue). Description used to render
+                              inline; long descriptions overflowed the
+                              trigger because shadcn Select's
+                              whitespace-nowrap. The description now
+                              renders as help text below the select. */}
+                          {mode.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {(() => {
+                    const modes = connection.acpCapabilities?.availableModes;
+                    if (!modes) return null;
+                    const selectedMode = modes.find(
+                      (m) => m.id === (acpDefaultMode ?? modes[0]?.id),
+                    );
+                    return selectedMode?.description ? (
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {selectedMode.description}
+                      </p>
+                    ) : null;
+                  })()}
                   <p className="text-[10px] text-muted-foreground">
                     Applied when starting a new chat session
                   </p>
@@ -370,16 +384,26 @@ export function ConnectionConfigDialog({
                       <SelectContent>
                         {thinkingOpt.options.map((opt) => (
                           <SelectItem key={opt.value ?? opt.name} value={opt.value ?? opt.name} className="text-xs">
-                            <div>
-                              <span>{opt.name}</span>
-                              {opt.description && (
-                                <span className="ml-2 text-muted-foreground">{opt.description}</span>
-                              )}
-                            </div>
+                            {/* Live-test 2026-04-25 — name only.
+                                Description rendered as help text
+                                below the select to avoid trigger
+                                overflow. */}
+                            {opt.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {(() => {
+                      const selectedValue = acpDefaultThinkingEffort ?? thinkingOpt.currentValue;
+                      const selected = thinkingOpt.options.find(
+                        (o) => (o.value ?? o.name) === selectedValue,
+                      );
+                      return selected?.description ? (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {selected.description}
+                        </p>
+                      ) : null;
+                    })()}
                     {thinkingOpt.description && (
                       <p className="text-[10px] text-muted-foreground">
                         {thinkingOpt.description}

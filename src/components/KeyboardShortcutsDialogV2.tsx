@@ -132,8 +132,8 @@ export function KeyboardShortcutsDialogV2({
         balanced halves, but ordering by category is more predictable
         for the user — top-to-bottom in column 1, then column 2).
       */}
-      <DialogContent className="max-w-[880px] p-0 gap-0">
-        <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
+      <DialogContent className="max-w-[1040px] p-0 gap-0">
+        <DialogHeader className="px-8 pt-7 pb-3 border-b border-border">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Keyboard Shortcuts
           </DialogTitle>
@@ -143,14 +143,16 @@ export function KeyboardShortcutsDialogV2({
           </p>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh]">
-          {/* Live-test 2026-04-25 — `sm:grid-cols-2` (640 px) instead
-              of `md:grid-cols-2` (768 px). The dialog itself is
-              max-w-[880px] so the 2-column layout activates whenever
-              the WINDOW is ≥ 640 px; on smaller windows the dialog
-              auto-shrinks and we collapse to a single column. The
-              previous 768 breakpoint left the 2-column layout off on
-              typical laptop windows. */}
-          <div className="px-7 py-5 grid gap-x-6 gap-y-6 sm:grid-cols-2">
+          {/* Live-test 2026-04-25 — switched from CSS Grid columns to
+              CSS multi-column (`sm:columns-2`). Grid pairs categories
+              by source order which left big whitespace gaps when
+              category lengths mismatched (Find << Navigation, AI&Voice
+              vs Settings's 2 items). Multi-column flows the
+              `<section>` blocks top-to-bottom and balances height
+              across both columns automatically; `break-inside-avoid`
+              keeps each category intact. Dialog widened to 1040 px
+              for breathing room across both columns. */}
+          <div className="px-8 py-6 sm:columns-2 gap-x-8 [&>section]:break-inside-avoid [&>section]:mb-6 [&>section:last-child]:mb-0">
             {categories.map((category) => (
               <section
                 key={category.label}

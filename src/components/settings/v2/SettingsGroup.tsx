@@ -67,18 +67,24 @@ export function SettingsGroup({
   if (!groupHasVisibleRows(children, query)) return null;
 
   return (
-    <section className={cn('mb-10 last:mb-0', className)}>
+    // Live-test 2026-04-25 — mockup-e parity. Dropped the bordered
+    // card (`rounded-md border border-border bg-background`) around
+    // group children — mockup-e has rows sitting naked under the
+    // group label with only divide-y hairlines between them. Inter-
+    // group margin tightened from `mb-10` (40 px) to `mb-5` (20 px)
+    // and label `mb-3` (12 px) to `mb-1` (4 px) per the same comp.
+    <section className={cn('mb-5 last:mb-0', className)}>
       {label ? (
-        <h3 className="text-[10.5px] font-medium tracking-wider uppercase text-muted-foreground mb-3">
+        <h3 className="text-[10.5px] font-medium tracking-wider uppercase text-muted-foreground mb-1">
           {label}
         </h3>
       ) : null}
       {description ? (
-        <p className="text-[12px] text-muted-foreground mb-3 max-w-[460px] leading-relaxed">
+        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
           {description}
         </p>
       ) : null}
-      <div className="divide-y divide-border rounded-md border border-border bg-background">
+      <div className="divide-y divide-border/60">
         {children}
       </div>
     </section>

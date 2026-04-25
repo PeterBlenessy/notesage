@@ -239,13 +239,11 @@ export function AppearanceSettings() {
 
   return (
     <>
-      <header className="mb-6 pb-4 border-b border-border">
-        <h2 className="text-[24px] font-semibold tracking-tight">Appearance</h2>
-        <p className="mt-1 text-[13px] text-muted-foreground max-w-[520px] leading-relaxed">
-          How Notesage looks. All changes are live — the preview below reflects
-          the current selection instantly.
-        </p>
-      </header>
+      {/* Live-test 2026-04-25 — panel hero dropped. Mockup-e has no
+          per-panel "Appearance" heading + description; the nav already
+          shows which panel is active. The tagline lives there as a
+          column-header tooltip if we ever need it. Removing the hero
+          tightens the panel meaningfully and matches the comp. */}
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">
