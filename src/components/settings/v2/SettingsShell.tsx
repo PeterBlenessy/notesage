@@ -222,13 +222,13 @@ export function SettingsShell({
               user feedback 2026-04-25. */}
           <div className="relative flex min-h-0 flex-col overflow-hidden">
             <ScrollArea className="h-full">
-              {/* Live-test 2026-04-25 — tightened to `px-4 py-3` per
-                  the second pass of the user's mockup-e comparison
-                  (was `px-5 py-4` after #143). The dialog's own 14 px
-                  corner radius + the new accent-driven nav give
-                  enough visual weight that the body padding can drop
-                  to ~16 / 12 px without feeling cramped. */}
-              <div className="mx-auto w-full max-w-[640px] px-4 py-3">
+              {/* Live-test 2026-04-25 — tighter horizontal (`px-4`,
+                  16 px) per mockup-e but top padding bumped to
+                  `pt-8` (32 px) so the first group label has
+                  breathing room from the dialog's top edge.
+                  Bottom kept short (`pb-6`) since the ScrollArea
+                  scrolls and trailing whitespace adds nothing. */}
+              <div className="mx-auto w-full max-w-[640px] px-4 pt-8 pb-6">
                 {children}
               </div>
             </ScrollArea>
