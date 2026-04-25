@@ -490,6 +490,13 @@ export function FilePreview({
           // dimensions exactly. Slightly tighter than our prior 360px
           // so the preview feels more like a tooltip than a panel.
           "w-[300px] p-0 overflow-hidden",
+          // Live-test 2026-04-25 #153 — match FolderPeek's surface
+          // treatment so the two popovers feel like siblings:
+          // 10 px radius (mockup-d's `border-radius: 10px`) and a
+          // stronger `shadow-lg` than the shadcn default `shadow-md`
+          // so the preview reads as a floating card against the
+          // sidebar's `bg-muted/30` surface.
+          "rounded-[10px] shadow-lg",
           "motion-reduce:!animate-none motion-reduce:!duration-0",
         )}
       >

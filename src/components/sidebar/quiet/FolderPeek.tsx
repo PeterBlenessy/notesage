@@ -328,8 +328,12 @@ export function FolderPeek({
               // sidebar — bumping to 280 px (w-[280px]) gives enough
               // room for filenames + the meta indicator without
               // exceeding the mockup's 320 px max.
+              //
+              // #153 — `shadow-lg` (was `shadow-md`) so the surface
+              // matches FilePreview's lift. The two popovers now share
+              // the same family treatment.
               className={cn(
-                "z-50 w-[280px] rounded-[10px] border bg-popover text-popover-foreground shadow-md outline-hidden",
+                "z-50 w-[280px] rounded-[10px] border bg-popover text-popover-foreground shadow-lg outline-hidden",
                 "overflow-auto py-2 px-1.5",
                 animationClasses,
               )}
