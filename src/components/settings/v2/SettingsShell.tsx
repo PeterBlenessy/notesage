@@ -222,13 +222,19 @@ export function SettingsShell({
               user feedback 2026-04-25. */}
           <div className="relative flex min-h-0 flex-col overflow-hidden">
             <ScrollArea className="h-full">
-              {/* Live-test 2026-04-25 — tighter horizontal (`px-4`,
-                  16 px) per mockup-e but top padding bumped to
-                  `pt-8` (32 px) so the first group label has
-                  breathing room from the dialog's top edge.
-                  Bottom kept short (`pb-6`) since the ScrollArea
-                  scrolls and trailing whitespace adds nothing. */}
-              <div className="mx-auto w-full max-w-[640px] px-4 pt-8 pb-6">
+              {/* Live-test 2026-04-25 — dropped the inner
+                  `max-w-[640px] mx-auto` centering. With the dialog
+                  itself max-w-[1040px] and the nav at 236 px, the
+                  right column is ~800 px wide. Constraining content
+                  to 640 px and centering it left ~80 px of empty
+                  margin on each side (visible as orange in dev-tools
+                  — the user spotted the gap explicitly). Letting
+                  content fill the column gives forms / sliders /
+                  segmented controls room to breathe and matches
+                  mockup-e (no inner max-width on the content
+                  column). Top padding stays at `pt-8` for breathing
+                  room from the dialog's top edge. */}
+              <div className="w-full px-6 pt-8 pb-6">
                 {children}
               </div>
             </ScrollArea>
