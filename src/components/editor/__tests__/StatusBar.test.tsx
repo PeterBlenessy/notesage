@@ -16,7 +16,6 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 import {
   renderWithProviders,
   registerDefaultHandlers,
-  act,
   fireEvent,
 } from '@/test/component-harness';
 import { createMockEditor } from '@/test/mock-editor';
@@ -210,7 +209,10 @@ describe('StatusBar — variants', () => {
       expect(slot?.children.length).toBe(0);
     });
 
-    it('renders word count + keyboard hints', () => {
+    it('renders word count + \u2318. focus hint (no \u2318K, no saved-ago)', () => {
+      // Live-test 2026-04-25 \u2014 \u2318K hint and saved-ago were removed
+      // from the QuietStatusBar (duplicated in cmd bar / TitleBar).
+      // Only the focus hint remains as a right-aligned chord.
       const editor = createMockEditor({ text: 'one two three four five' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
@@ -218,10 +220,12 @@ describe('StatusBar — variants', () => {
 
       const text = container.textContent ?? '';
       expect(text).toContain('5 words');
-      expect(text).toContain('\u2318K');
-      expect(text).toContain('ask');
       expect(text).toContain('\u2318.');
       expect(text).toContain('focus');
+      // Trimmed in #157 follow-up:
+      expect(text).not.toContain('\u2318K');
+      expect(text).not.toContain('ask');
+      expect(text).not.toMatch(/saved/);
     });
 
     it('uses the singular "word" label for a single word', () => {
@@ -234,7 +238,7 @@ describe('StatusBar — variants', () => {
       expect(container.textContent ?? '').not.toContain('1 words');
     });
 
-    it('shows "saved Ns ago" when an active tab has lastSavedAt', () => {
+    it('does NOT render the saved-ago label any more (delegated to TitleBar + sidebar)', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       openTab('/p/file.md', 'file.md', Date.now() - 3_000);
 
@@ -242,19 +246,8 @@ describe('StatusBar — variants', () => {
         <StatusBar editor={editor} variant="quiet" />,
       );
 
-      expect(container.textContent ?? '').toMatch(/saved \ds ago/);
-    });
-
-    it('shows an em-dash placeholder when lastSavedAt is undefined', () => {
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      openTab('/p/file.md', 'file.md' /* no lastSavedAt */);
-
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
-      );
-
-      expect(container.textContent ?? '').toContain('\u2014');
-      expect(container.textContent ?? '').not.toMatch(/saved \d/);
+      expect(container.textContent ?? '').not.toMatch(/saved \ds ago/);
+      expect(container.textContent ?? '').not.toContain('\u2014');
     });
 
     it('calls onOpenTray when the strip is clicked', () => {
@@ -282,26 +275,10 @@ describe('StatusBar — variants', () => {
       expect(onOpenTray).toHaveBeenCalledTimes(2);
     });
 
-    it('updates the saved label as time advances (fake timers)', () => {
-      vi.useFakeTimers();
-      const start = new Date('2026-04-22T12:00:00Z').getTime();
-      vi.setSystemTime(start);
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      openTab('/p/file.md', 'file.md', start);
-
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
-      );
-
-      expect(container.textContent ?? '').toContain('saved 0s ago');
-
-      act(() => {
-        vi.advanceTimersByTime(10_000);
-      });
-
-      expect(container.textContent ?? '').toContain('saved 10s ago');
-    });
+    // The "updates the saved label as time advances" test was deleted
+    // along with QuietSavedLabel (live-test 2026-04-25). The shared
+    // `SavedLabel` component still has its own timer test in
+    // `src/components/__tests__/SavedLabel.test.tsx`.
 
     // ---------------------------------------------------------------------
     // Task #53 regression: quiet strip now owns the StatusTray popover.
@@ -322,11 +299,12 @@ describe('StatusBar — variants', () => {
       );
       const strip = container.querySelector('[data-quiet-status]') as HTMLElement;
       fireEvent.click(strip);
-      // All four group headers should now be in the DOM (portal).
+      // The always-visible group headers — Completions, Comments, Help —
+      // should now be in the DOM (portal). The Local AI group is
+      // conditional on a `local_bundled` connection (not present here).
       const text = document.body.textContent ?? '';
       expect(text).toContain('Completions');
       expect(text).toContain('Comments');
-      expect(text).toContain('Session');
       expect(text).toContain('Help');
     });
   });
@@ -339,30 +317,35 @@ describe('StatusBar — variants', () => {
       resetAmbientDotStores();
     });
 
-    it('renders no dots when Local AI is stopped, completions are off, and not recording', () => {
+    /**
+     * Live-test 2026-04-25 — the left dot is now the local-AI status
+     * indicator. Tone mirrors `LocalAIIndicator`'s popover exactly:
+     *   running  → green
+     *   starting → amber (with `animate-pulse`)
+     *   error    → red
+     *   stopped  → muted
+     *
+     * The dot only renders when a `local_bundled` connection exists.
+     * The previous "inline completions active" orange semantic was
+     * dropped — completions surface through the StatusTray popover and
+     * `OutOfScopeCompletionsIndicator` instead.
+     */
+    it('renders no dots when no local_bundled connection AND not recording', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
       const slot = container.querySelector('[data-status-dots]') as HTMLElement;
       expect(slot).toBeTruthy();
-      // The dot slot is present but empty — no ambient signals to surface.
       expect(slot.querySelectorAll('button').length).toBe(0);
     });
 
-    it('renders the green dot when Local AI is running AND routed to interactive', () => {
-      const localAi = addConnection({
+    it('renders a GREEN local-AI dot when local_bundled exists and serverStatus="running"', () => {
+      addConnection({
         id: 'c-local',
         provider: 'local_ai',
         authMethod: 'local_bundled',
         label: 'Local AI',
-      });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: localAi.id },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: null },
-        },
       });
       useLocalAIStore.setState({ serverStatus: 'running' });
 
@@ -370,27 +353,19 @@ describe('StatusBar — variants', () => {
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      const dots = slot.querySelectorAll('button');
+      const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      // aria-label describes both the state AND the target group.
+      expect(dots[0].getAttribute('data-tone')).toBe('green');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
       expect(dots[0].getAttribute('aria-label')).toContain('Session');
     });
 
-    it('does NOT render the green dot when Local AI is routed but not running', () => {
-      const localAi = addConnection({
+    it('renders an AMBER (pulsing) local-AI dot when serverStatus="starting"', () => {
+      addConnection({
         id: 'c-local',
         provider: 'local_ai',
         authMethod: 'local_bundled',
         label: 'Local AI',
-      });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: localAi.id },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: null },
-        },
       });
       useLocalAIStore.setState({ serverStatus: 'starting' });
 
@@ -398,90 +373,92 @@ describe('StatusBar — variants', () => {
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      expect(slot.querySelectorAll('button').length).toBe(0);
-    });
-
-    it('renders the orange dot when inline completions routed AND active tab is in scope', () => {
-      const ollama = addConnection({
-        id: 'c-ollama',
-        provider: 'ollama',
-        authMethod: 'local',
-        label: 'Ollama',
-      });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: null },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: ollama.id },
-        },
-      });
-      // Open a tab inside the notes root so `isUriInScope` returns true.
-      openTab('/Users/peter/Notesage/note.md', 'note.md');
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
-      );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      const dots = slot.querySelectorAll('button');
+      const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('aria-label')).toContain('completions active');
-      expect(dots[0].getAttribute('aria-label')).toContain('Completions');
+      expect(dots[0].getAttribute('data-tone')).toBe('amber');
+      // Amber tone uses `animate-pulse` to match the popover starting state.
+      expect(dots[0].className).toContain('animate-pulse');
+      expect(dots[0].getAttribute('aria-label')).toContain('Local AI starting');
     });
 
-    it('does NOT render the orange dot when the active tab is out of scope', () => {
-      const ollama = addConnection({
-        id: 'c-ollama',
-        provider: 'ollama',
-        authMethod: 'local',
-        label: 'Ollama',
+    it('renders a RED local-AI dot when serverStatus="error"', () => {
+      addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
       });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: null },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: ollama.id },
-        },
-      });
-      // Tab is outside both notes root and any selected project — out of scope.
-      openTab('/etc/hosts', 'hosts');
+      useLocalAIStore.setState({ serverStatus: 'error' });
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      expect(slot.querySelectorAll('button').length).toBe(0);
+      const dots = container.querySelectorAll('[data-status-dots] button');
+      expect(dots.length).toBe(1);
+      expect(dots[0].getAttribute('data-tone')).toBe('red');
+      expect(dots[0].getAttribute('aria-label')).toContain('Local AI error');
     });
 
-    it('renders the red dot when recording-store.isRecording is true', () => {
+    it('renders a MUTED local-AI dot when serverStatus is stopped', () => {
+      addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      // Default `serverStatus` after `resetAmbientDotStores` is `"stopped"`.
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      const dots = container.querySelectorAll('[data-status-dots] button');
+      expect(dots.length).toBe(1);
+      expect(dots[0].getAttribute('data-tone')).toBe('muted');
+      expect(dots[0].getAttribute('aria-label')).toContain('Local AI stopped');
+    });
+
+    it('omits the local-AI dot entirely when no local_bundled connection exists', () => {
+      // Routing inline completions to a non-local provider — the old
+      // orange dot would have shown here. New design: no dot.
+      addConnection({
+        id: 'c-ollama',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+      });
+      useLocalAIStore.setState({ serverStatus: 'stopped' });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+      expect(
+        container.querySelectorAll('[data-status-dots] button').length,
+      ).toBe(0);
+    });
+
+    it('renders a RED dot when recording-store.isRecording is true', () => {
       useRecordingStore.setState({ isRecording: true });
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      const dots = slot.querySelectorAll('button');
+      const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
+      expect(dots[0].getAttribute('data-tone')).toBe('red');
       expect(dots[0].getAttribute('aria-label')).toContain('Recording active');
       expect(dots[0].getAttribute('aria-label')).toContain('Session');
     });
 
-    it('clicking the green dot opens the tray scrolled to the Session group', () => {
-      const localAi = addConnection({
+    it('clicking the local-AI dot opens the tray scrolled to the Session group', () => {
+      addConnection({
         id: 'c-local',
         provider: 'local_ai',
         authMethod: 'local_bundled',
         label: 'Local AI',
-      });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: localAi.id },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: null },
-        },
       });
       useLocalAIStore.setState({ serverStatus: 'running' });
 
@@ -489,14 +466,16 @@ describe('StatusBar — variants', () => {
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
       );
-      // Tray should not be in the DOM before the click.
       expect(document.body.textContent ?? '').not.toContain('Completions');
       const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
       fireEvent.click(dot);
-      // Tray is now mounted — verified via all four group headings in the portal.
       const text = document.body.textContent ?? '';
       expect(text).toContain('Completions');
-      expect(text).toContain('Session');
+      // Live-test 2026-04-25 — the "Session" group was renamed to
+      // "Local AI" and now only renders when a `local_bundled`
+      // connection exists. This test scenario does add such a
+      // connection, so the section header should be present.
+      expect(text).toContain('Local AI');
     });
 
     it('clicking a dot does not also trigger the strip click (no double-fire of onOpenTray)', () => {
@@ -514,30 +493,15 @@ describe('StatusBar — variants', () => {
       expect(onOpenTray).toHaveBeenCalledTimes(1);
     });
 
-    it('dot aria-labels are descriptive (state + target group)', () => {
-      // Turn on all three signals so every dot renders at once.
-      const localAi = addConnection({
+    it('renders both the local-AI dot and the recording dot when both signals are live', () => {
+      addConnection({
         id: 'c-local',
         provider: 'local_ai',
         authMethod: 'local_bundled',
         label: 'Local AI',
       });
-      const ollama = addConnection({
-        id: 'c-ollama',
-        provider: 'ollama',
-        authMethod: 'local',
-        label: 'Ollama',
-      });
-      useRoutingStore.setState({
-        routing: {
-          interactive: { connectionId: localAi.id },
-          agent_tasks: { connectionId: null },
-          inline_completion: { connectionId: ollama.id },
-        },
-      });
       useLocalAIStore.setState({ serverStatus: 'running' });
       useRecordingStore.setState({ isRecording: true });
-      openTab('/Users/peter/Notesage/note.md', 'note.md');
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
@@ -547,10 +511,8 @@ describe('StatusBar — variants', () => {
         container.querySelectorAll('[data-status-dots] button'),
       );
       const labels = dots.map((d) => d.getAttribute('aria-label') ?? '');
-      // All three dots are present with descriptive labels.
-      expect(labels.length).toBe(3);
+      expect(labels.length).toBe(2);
       expect(labels.some((l) => l.includes('Local AI running'))).toBe(true);
-      expect(labels.some((l) => l.includes('completions active'))).toBe(true);
       expect(labels.some((l) => l.includes('Recording active'))).toBe(true);
     });
   });

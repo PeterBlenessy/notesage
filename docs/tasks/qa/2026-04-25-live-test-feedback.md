@@ -9,6 +9,20 @@ Resume point after a `/clear`. Read this file and the related code, then tackle 
 
 ---
 
+## ✅ Done in next batch (2026-04-25 night, uncommitted)
+
+| # | Title | How it was fixed |
+| --- | --- | --- |
+| Cmd+Shift+V plain-text paste | Generic prose-with-markdown-punctuation paste | New `Mod-Shift-v` keyboard shortcut on `PasteHandler` reads `navigator.clipboard.readText()` and inserts the literal text via `tr.insertText` — bypasses both the paste-rule registry AND tiptap-markdown. Tested in `paste-handler.test.ts` (7 tests). Documented in `docs/keyboard-shortcuts.md` + `docs/features/editor.md`. |
+| #144 | Accent colors don't apply when selected | `useAccent()` was defined but never mounted. Added it to `App.tsx` alongside the other lifecycle hooks. AppearanceSettings swatches updated to match the real `--accent` values from `globals.css` (orange `oklch(68% 0.21 37)`, blue `oklch(56% 0.16 253)`). Regression test in `AppearanceSettings.test.tsx` mounts AppearanceSettings + useAccent together and asserts the `.accent-orange` / `.accent-blue` class actually lands on `<html>` after a click. **Follow-ups split out into `docs/tasks/qa/2026-04-25-accent-audit.md`** — the System swatch reads orange (cached fallback) and a wider audit of which UI surfaces should be tinted by the accent vs. stay neutral. |
+| #147 | Settings ⌘F filter only narrows nav, not row content | `SettingsRow` now consults `useSettingsSearchQuery()` and self-hides when the query doesn't match its `label` / string `description` / string `controlSublabel`. `SettingsGroup` walks its `SettingsRow` children and self-hides when none match (so empty bordered boxes never show). Tested in `SettingsRow.test.tsx` (rowMatchesQuery + 4 self-filter tests) + `SettingsGroup.test.tsx` (3 group-hide tests). |
+| #143 | Settings panel padding too generous | `SettingsShell` right-column container went from `px-6 py-6` → `px-5 py-4`. AppearanceSettings header went from `mb-8 pb-6` → `mb-6 pb-4`. Other panels rely on group labels and were not affected. |
+| #157 | Status bar orange dot conflicts with green dot | Removed the orange "inline completions active" dot from the QuietStatusBar — users read it as a SECOND state of the green Local AI indicator. The Completions group is still reachable through the StatusTray popover and via `OutOfScopeCompletionsIndicator`. `useStatusDotsState` still computes `showOrange` for future consumers. Tests updated. |
+
+**Test counts after this batch:** 80 settings v2 tests (up from 68), 24 StatusBar tests, 7 paste-handler tests. Typecheck clean.
+
+---
+
 ## ✅ Done in commit a053328 (2026-04-25 evening)
 
 | # | Title | How it was fixed |
@@ -33,25 +47,25 @@ Resume point after a `/clear`. Read this file and the related code, then tackle 
 
 ## Still open
 
-### Generic "plain prose with markdown punctuation" paste
+### Generic "plain prose with markdown punctuation" paste — option #1 SHIPPED
 
-The path rule and box-drawn rule cover their specific cases. But pasting prose from a terminal, Slack, or an AI response that contains literal `~text~`, `*foo*`, `_bar_`, or backticks STILL hits the markdown parser. Three candidate fixes (pick one or combine):
+The path rule and box-drawn rule cover their specific cases. The new `Cmd+Shift+V` shortcut covers the generic case (insert literal text). Two further candidate fixes still on the table:
 
-1. **`Cmd+Shift+V` "paste as plain text" shortcut.** New keyboard binding that forces a plain-text branch (effectively running a "wrap in `<span>` and insert" rule).
+1. ~~**`Cmd+Shift+V` "paste as plain text" shortcut.**~~ — shipped this batch.
 2. **Fallback paste rule:** if `clipboardData` has only `text/plain` (no `text/html`), insert as plain text. Risk: breaks pasting actual markdown source from `cat foo.md` in a terminal.
 3. **Heuristic "looks like flowing prose" rule:** detect lack of structural markdown markers (no `# `, no `- `, no fenced code, no `> `, no tables) and treat as plain text. Heuristic — false positives possible.
 
-Recommended order: ship #1 first (zero behavior risk), then optionally add #3 with a setting. Skip #2 unless the user confirms they don't paste raw markdown often.
+Skip #2 unless the user confirms they don't paste raw markdown often. #3 is a future opt-in setting.
 
 ### P1 visual / UX queue (untouched this session)
 
 | # | Description | Notes |
 | --- | --- | --- |
-| #143 | Settings panel padding too generous vs mockup-e | `SettingsShell.tsx` right column wraps content in `mx-auto w-full max-w-[640px] px-6 py-6`. Compare to mockup-e and reduce. |
-| #144 | Accent colors don't apply when selected | Investigate `AppearanceSettings.tsx` accent radio handler + `ThemeProvider`. The `--accent` CSS variable likely isn't being set on `<html>`. |
+| ~~#143~~ | ~~Settings panel padding too generous vs mockup-e~~ | ✅ Done — `px-5 py-4` + tighter AppearanceSettings header. |
+| ~~#144~~ | ~~Accent colors don't apply when selected~~ | ✅ Done — `useAccent` mounted in `App.tsx`. Audit follow-up split into `docs/tasks/qa/2026-04-25-accent-audit.md`. |
 | #145 | AI connection config opens legacy dialog | From the v2 AI panel, "Add Connection" / edit opens the OLD `AddConnectionDialog`. Either rebuild to v2 chrome or accept the inconsistency in writing. |
 | #146 | About → View changelog opens legacy dialog | Same pattern as #145. |
-| #147 | Settings ⌘F filter only matches nav titles, not row content | `SettingsSearchContext` is consumed by `SettingsRow` for matching, but the filter pipe in `SettingsDialogV2` only narrows the nav. Verify `useSettingsSearchQuery()` is read by every panel and rows hide on no-match. |
+| ~~#147~~ | ~~Settings ⌘F filter only matches nav titles, not row content~~ | ✅ Done — `SettingsRow` + `SettingsGroup` self-filter. |
 | #148 | Floating toolbar centered relative to editor, not app | The pill toolbar (`Editor.tsx` ~line 630, `absolute top-3 left-1/2 -translate-x-1/2`) is centered inside its `relative` editor parent, not the app. Decide canonical centering and align. |
 | #151 | Cmd bar text input doesn't grow vertically; attachments above input | Legacy ChatInput uses a `<textarea>` with auto-resize; attachments render INSIDE the input area. Quiet Composer uses a single-line `<input>` with attachments ABOVE. Port the textarea + auto-resize + inline attachment placement. |
 | #152 | FolderPeek doesn't match mockup-d | Tighter list with file-type icons and different padding. Compare `FolderPeek.tsx` styling to the mockup HTML and align. |
@@ -59,7 +73,7 @@ Recommended order: ship #1 first (zero behavior risk), then optionally add #3 wi
 | #154 | Sidebar right border too subtle | Increase border opacity or use slightly thicker treatment per mockup-d. |
 | #155 | Cmd bar / popover bg should be whiter | Verify `--color-popover` value or override locally. |
 | #156 | Pinned long file names cover the time hint | Either truncate filename harder (e.g. `max-w-[14ch]`) or move the time hint to a fixed-width slot. |
-| #157 | Status bar orange dot | Probably a Local AI indicator that conflicts with the green dot in the StatusTray popover. Find where the dot is rendered and remove or unify. |
+| ~~#157~~ | ~~Status bar orange dot~~ | ✅ Done — orange "completions active" dot removed from QuietStatusBar. |
 | #158 | Conversation-history toggle: change clock icon when active | When the bar is in history mode, swap the clock to a chat-bubble or back-arrow icon to make the toggle direction clear. |
 | #159 | Keyboard shortcuts dialog: too long, consider 2-column | Current single-column scroll is long. Trim the catalogue or adopt a wider 2-column layout. |
 

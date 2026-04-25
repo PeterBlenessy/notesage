@@ -42,6 +42,7 @@ import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
+import { useAccent } from "@/hooks/useAccent";
 import { useSettingsStore, type UiPreview } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -144,6 +145,12 @@ function App() {
   useTraySync();
   useApprovalMigrationToast();
   useRecentDocumentCycle();
+  // Live-test 2026-04-25 #144 — without this mount the accent radio in
+  // Settings > Appearance writes to settings-store but the DOM never
+  // gets the `.accent-orange` / `.accent-blue` / `.accent-system`
+  // class on `<html>`, so `--accent` stays unset and the chosen accent
+  // never actually applies. The hook owns the class swap effect.
+  useAccent();
 
   // Consolidated startup effects and event listeners
   const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {

@@ -46,6 +46,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Redo | `⌘⇧Z` | Redo last undone change |
 | Find in document | `⌘F` | Open find bar (WYSIWYG) or CodeMirror search panel (source mode) |
 | Find and replace | `⌘⇧H` | Open find bar with replace row expanded |
+| Paste as plain text | `⌘⇧V` | Insert clipboard text literally — bypasses markdown parser and paste rules. Useful for prose containing `~text~`, `*foo*`, `_bar_`, or backticks that should NOT be parsed. |
 
 ## App Settings
 

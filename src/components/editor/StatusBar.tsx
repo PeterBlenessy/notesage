@@ -8,7 +8,9 @@ import {
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatSavedLabel, pickTimerInterval } from "@/lib/saved-ago";
+// `formatSavedLabel` / `pickTimerInterval` import removed —
+// `QuietSavedLabel` was deleted (live-test 2026-04-25). The helpers
+// still live in `@/lib/saved-ago` for the shared `SavedLabel`.
 import { useActionStore } from "@/stores/action-store";
 
 /** Inline completion icon — italic T with horizontal sparkle trail ✦··· representing text being completed. */
@@ -29,7 +31,6 @@ import { useConnectionsStore } from "@/stores/connections-store";
 import { useRecordingStore } from "@/stores/recording-store";
 import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useRoutingStore } from "@/stores/routing-store";
 import { Progress } from "@/components/ui/progress";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -753,32 +754,36 @@ export function StatusBar({
 // ---------------------------------------------------------------------------
 
 /**
- * Task #54 — semantic ambient dot. Appears inside the quiet strip's
- * `data-status-dots` slot to surface three always-relevant pieces of
- * runtime state without opening the tray:
+ * Semantic ambient dot in the quiet strip's `data-status-dots` slot.
  *
- *   green  → Local AI server is the routed interactive/agent provider
- *            AND `serverStatus === "running"` (links to Session group)
- *   orange → inline completions are active on this doc (links to
- *            Completions group)
- *   red    → voice recording / dictation is live (links to Session group)
+ * Two consumers today:
+ *   - Local AI status (left dot). Tone mirrors `LocalAIIndicator`'s
+ *     popover exactly: green=running, amber=starting (pulse), red=error,
+ *     muted=stopped. Always rendered when a `local_bundled` connection
+ *     exists so the strip surfaces the same state the popover does.
+ *     Live-test 2026-04-25 — repeated user request "I want this to look
+ *     exactly like the popover."
+ *   - Recording / dictation (red, no pulse). Independent concept —
+ *     rendered alongside the local AI dot when audio capture is live.
  *
- * The dot sits inside the strip which already handles click-to-open-tray,
- * so the dot's `onClick` must `stopPropagation` — otherwise the parent
- * would ALSO fire and the group-deep-link intent would be lost. Keyboard
- * users still reach these dots through normal tab order; Enter activates
- * the button.
+ * The dot sits inside the strip which already handles
+ * click-to-open-tray, so the dot's `onClick` must `stopPropagation` —
+ * otherwise the parent would ALSO fire and the group-deep-link intent
+ * would be lost. Keyboard users still reach these dots through normal
+ * tab order; Enter activates the button.
  *
  * Neutral-palette exception: these are semantic status indicators, in
  * the same category as the destructive red allowed for errors. Colors
  * mirror the existing `LocalAIIndicator` / recording-row pattern.
  */
+type StatusDotTone = "green" | "amber" | "red" | "muted";
+
 function StatusDot({
   tone,
   ariaLabel,
   onActivate,
 }: {
-  tone: "green" | "orange" | "red";
+  tone: StatusDotTone;
   ariaLabel: string;
   /**
    * Called with the pointer coordinates when activated by a mouse click
@@ -791,9 +796,11 @@ function StatusDot({
   const color =
     tone === "green"
       ? "bg-green-500"
-      : tone === "orange"
-        ? "bg-amber-500"
-        : "bg-red-500";
+      : tone === "amber"
+        ? "bg-amber-500 animate-pulse"
+        : tone === "red"
+          ? "bg-red-500"
+          : "bg-muted-foreground/30"; // muted — server stopped
 
   const handleClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
     // Prevent the enclosing strip from ALSO opening the tray without a
@@ -817,6 +824,7 @@ function StatusDot({
   return (
     <button
       type="button"
+      data-tone={tone}
       aria-label={ariaLabel}
       title={ariaLabel}
       onClick={handleClick}
@@ -831,82 +839,66 @@ function StatusDot({
   );
 }
 
+/** Human-readable label fragment for a local AI dot tone. */
+function localAiToneLabel(tone: StatusDotTone): string {
+  switch (tone) {
+    case "green":
+      return "running";
+    case "amber":
+      return "starting";
+    case "red":
+      return "error";
+    case "muted":
+      return "stopped";
+  }
+}
+
 /**
- * Compute which ambient dots should render in the quiet strip. Reads from
- * the relevant stores and applies the scope gate for inline completions so
- * the orange dot is truthful (it should mirror what the completion hook
- * would actually do, not just "a provider is routed").
+ * Compute the dots that should render in the quiet strip.
+ *
+ * - `localAiTone`: when a `local_bundled` connection exists, the colour
+ *   reflects `serverStatus` directly (running → green, starting →
+ *   amber+pulse, error → red, stopped → muted). When no local AI
+ *   connection exists, returns `null` — the dot is omitted entirely.
+ *   This mirrors the `LocalAIIndicator` popover so the strip and tray
+ *   never disagree.
+ * - `showRecording`: live voice recording or dictation. Independent of
+ *   the local AI dot — both can render at once.
+ *
+ * The previous "inline completions active" orange semantic was removed
+ * (live-test 2026-04-25). Inline completions still surface through the
+ * StatusTray popover and via the existing `OutOfScopeCompletionsIndicator`
+ * when a doc is filtered out of scope.
  */
 function useStatusDotsState(): {
-  showGreen: boolean;
-  showOrange: boolean;
-  showRed: boolean;
+  localAiTone: StatusDotTone | null;
+  showRecording: boolean;
 } {
   const serverStatus = useLocalAIStore((s) => s.serverStatus);
   const connections = useConnectionsStore((s) => s.connections);
-  const routing = useRoutingStore((s) => s.routing);
-
-  const inlineCompletionsDisabled = useSettingsStore(
-    (s) => s.inlineCompletionsDisabled,
-  );
-  const completionsOnOutOfScope = useSettingsStore(
-    (s) => s.completionsOnOutOfScope,
-  );
-  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
-  const homeDir = useSettingsStore((s) => s.homeDir);
-
-  const selectedProjectPaths = useChatStore(selectProjectPaths);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-  const openDocuments = useEditorStore((s) => s.openDocuments);
-  const activeTab = openDocuments.find((t) => t.id === activeTabId);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
   const isDictating = useRecordingStore((s) => s.isDictating);
 
-  // --- Green: Local AI server running AND routed to an active use case ---
-  // "Active provider" per task spec = Local AI connection is wired to
-  // `interactive` OR `agent_tasks`. `inline_completion` alone would be too
-  // narrow since the user might have Copilot for completions and Local AI
-  // for chat — we still want the dot to say "Local AI is active".
-  const localAiConnIds = connections
-    .filter((c) => c.provider === "local_ai" && c.authMethod === "local_bundled")
-    .map((c) => c.id);
-  const localAiRoutedActive =
-    localAiConnIds.length > 0 &&
-    (localAiConnIds.includes(routing.interactive?.connectionId ?? "") ||
-      localAiConnIds.includes(routing.agent_tasks?.connectionId ?? ""));
-  const showGreen = localAiRoutedActive && serverStatus === "running";
+  // The local-AI dot mirrors `LocalAIIndicator`'s popover exactly. It
+  // appears whenever a `local_bundled` connection exists (regardless of
+  // routing), and the colour reflects the live `serverStatus`.
+  const hasLocalAi = connections.some(
+    (c) => c.provider === "local_ai" && c.authMethod === "local_bundled",
+  );
+  const localAiTone: StatusDotTone | null = !hasLocalAi
+    ? null
+    : serverStatus === "running"
+      ? "green"
+      : serverStatus === "starting"
+        ? "amber"
+        : serverStatus === "error"
+          ? "red"
+          : "muted";
 
-  // --- Orange: inline completions active AND active tab in scope ---
-  // Mirror the `OutOfScopeCompletionsIndicator` guard so the dot agrees
-  // with what the completion hook actually does.
-  const completionRouted = Boolean(routing.inline_completion?.connectionId);
-  let showOrange = false;
-  if (completionRouted && !inlineCompletionsDisabled) {
-    if (activeTab?.filePath) {
-      const resolvedNotesRoot =
-        notesRootPath && notesRootPath.startsWith("~")
-          ? homeDir
-            ? notesRootPath.replace("~", homeDir)
-            : null
-          : notesRootPath || null;
-      const scope: UriScope = {
-        projectRoots: selectedProjectPaths,
-        notesRootPath: resolvedNotesRoot,
-      };
-      if (completionsOnOutOfScope || isUriInScope(activeTab.filePath, scope)) {
-        showOrange = true;
-      }
-    } else {
-      // No tab open — completions would noop anyway, so don't light up.
-      showOrange = false;
-    }
-  }
+  const showRecording = isRecording || isDictating;
 
-  // --- Red: voice recording / live dictation ---
-  const showRed = isRecording || isDictating;
-
-  return { showGreen, showOrange, showRed };
+  return { localAiTone, showRecording };
 }
 
 function QuietStatusBar({
@@ -932,10 +924,9 @@ function QuietStatusBar({
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }) {
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tab = useEditorStore((s) =>
-    activeTabId ? s.openDocuments.find((t) => t.id === activeTabId) ?? null : null,
-  );
+  // `tab` / `activeTabId` were only used to feed `QuietSavedLabel`,
+  // which was removed live-test 2026-04-25. `editor` already supplies
+  // everything the strip still renders.
 
   // Re-read word count when the editor transacts so it tracks typing.
   const [, setTick] = useState(0);
@@ -1036,7 +1027,7 @@ function QuietStatusBar({
     if (!next) setInitialGroup(undefined);
   };
 
-  const { showGreen, showOrange, showRed } = useStatusDotsState();
+  const { localAiTone, showRecording } = useStatusDotsState();
 
   return (
     <>
@@ -1057,25 +1048,22 @@ function QuietStatusBar({
           "motion-reduce:transition-none",
         )}
       >
-        {/* Ambient dots (task #54). Each dot is a button, clickable to open
-            the tray scrolled to its owning group. stopPropagation in
-            StatusDot keeps the strip's own click from firing twice. */}
+        {/* Ambient dots — local AI status (left) + recording (right of
+            it). The local AI dot mirrors `LocalAIIndicator`'s popover
+            exactly: green=running, amber=starting (pulse), red=error,
+            muted=stopped. It only renders when a `local_bundled`
+            connection exists. The recording dot is independent.
+            stopPropagation in StatusDot keeps the strip's own click
+            from firing twice. */}
         <div data-status-dots className="flex items-center gap-1">
-          {showGreen && (
+          {localAiTone && (
             <StatusDot
-              tone="green"
-              ariaLabel="Local AI running — opens Session group"
+              tone={localAiTone}
+              ariaLabel={`Local AI ${localAiToneLabel(localAiTone)} — opens Session group`}
               onActivate={(coords) => openTrayForGroup("session", coords)}
             />
           )}
-          {showOrange && (
-            <StatusDot
-              tone="orange"
-              ariaLabel="Inline completions active — opens Completions group"
-              onActivate={(coords) => openTrayForGroup("completions", coords)}
-            />
-          )}
-          {showRed && (
+          {showRecording && (
             <StatusDot
               tone="red"
               ariaLabel="Recording active — opens Session group"
@@ -1088,15 +1076,11 @@ function QuietStatusBar({
           {fmtNum(words)} {words === 1 ? "word" : "words"}
         </span>
 
-        <span aria-hidden="true">·</span>
-
-        <QuietSavedLabel lastSavedAt={tab?.lastSavedAt} />
-
+        {/* Live-test 2026-04-25 — saved-ago and `⌘K ask` removed.
+            Saved-ago is in the quiet TitleBar (right side) + sidebar
+            already. The ⌘K hint duplicates the FloatingCommandBar
+            compact pill. Strip now reads `<words> · ⌘. focus`. */}
         <span className="ml-auto flex items-center gap-3">
-          <span>
-            <kbd className="font-sans">{"\u2318"}K</kbd> ask
-          </span>
-          <span aria-hidden="true">·</span>
           <span>
             <kbd className="font-sans">{"\u2318"}.</kbd> focus
           </span>
@@ -1122,30 +1106,8 @@ function QuietStatusBar({
   );
 }
 
-function QuietSavedLabel({ lastSavedAt }: { lastSavedAt: number | undefined }) {
-  const [now, setNow] = useState<number>(() => Date.now());
-
-  useEffect(() => {
-    if (lastSavedAt === undefined) return;
-    const tick = () => setNow(Date.now());
-    tick();
-    const elapsed = Date.now() - lastSavedAt;
-    const interval = pickTimerInterval(elapsed);
-    const id = window.setInterval(tick, interval);
-    return () => window.clearInterval(id);
-  }, [lastSavedAt]);
-
-  if (lastSavedAt === undefined) {
-    return (
-      <span className="tabular-nums" aria-live="polite" aria-label="Not yet saved this session">
-        {"\u2014"}
-      </span>
-    );
-  }
-
-  return (
-    <span className="tabular-nums" aria-live="polite">
-      {formatSavedLabel(now - lastSavedAt)}
-    </span>
-  );
-}
+// `QuietSavedLabel` was removed in live-test 2026-04-25 \u2014 saved-ago is
+// shown by `SavedLabel` (the shared component used in TitleBar quiet
+// mode + sidebar) and repeating it here was overwhelming. The shared
+// `formatSavedLabel` / `pickTimerInterval` helpers stay in
+// `@/lib/saved-ago` for `SavedLabel.tsx`.

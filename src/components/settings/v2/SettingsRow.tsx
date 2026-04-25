@@ -1,5 +1,9 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import {
+  matchesSettingsQuery,
+  useSettingsSearchQuery,
+} from './SettingsSearch';
 
 /**
  * Props for the settings row primitive.
@@ -38,6 +42,36 @@ export interface SettingsRowProps {
  *   on the control are preserved (the description id is appended). Pass the
  *   control as a non-element node (string, fragment, etc.) to opt out.
  */
+/**
+ * True when this row's label, description, or controlSublabel contains the
+ * query. Used by `SettingsRow` itself to self-filter, and by `SettingsGroup`
+ * to decide whether the wrapping group has any visible rows left.
+ *
+ * `description` and `controlSublabel` are matched only when their value is a
+ * plain string — JSX descriptions are common for inline links / icons and
+ * we don't try to walk arbitrary React trees. The label is always a string.
+ */
+export function rowMatchesQuery(
+  props: Pick<SettingsRowProps, 'label' | 'description' | 'controlSublabel'>,
+  query: string,
+): boolean {
+  if (!query) return true;
+  if (matchesSettingsQuery(props.label, query)) return true;
+  if (
+    typeof props.description === 'string' &&
+    matchesSettingsQuery(props.description, query)
+  ) {
+    return true;
+  }
+  if (
+    typeof props.controlSublabel === 'string' &&
+    matchesSettingsQuery(props.controlSublabel, query)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function SettingsRow({
   label,
   description,
@@ -48,6 +82,16 @@ export function SettingsRow({
 }: SettingsRowProps) {
   const reactId = React.useId();
   const descriptionId = description ? `${htmlFor ?? reactId}-desc` : undefined;
+  // Live-test 2026-04-25 #147 — when the user types into the Settings ⌘F
+  // search the dialog narrows the nav but rows inside the active panel
+  // stayed put, making the filter feel broken. Each row now self-hides
+  // when the query doesn't match its label / description / sublabel.
+  // SettingsGroup hides the wrapper when every child row has filtered
+  // out, so we don't show empty bordered boxes.
+  const query = useSettingsSearchQuery();
+  if (!rowMatchesQuery({ label, description, controlSublabel }, query)) {
+    return null;
+  }
 
   const labelNode = htmlFor ? (
     <label

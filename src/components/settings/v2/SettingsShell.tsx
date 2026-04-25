@@ -222,7 +222,13 @@ export function SettingsShell({
               user feedback 2026-04-25. */}
           <div className="relative flex min-h-0 flex-col overflow-hidden">
             <ScrollArea className="h-full">
-              <div className="mx-auto w-full max-w-[640px] px-6 py-6">
+              {/* Live-test 2026-04-25 #143 — tightened from `px-6 py-6` to
+                  `px-5 py-4` to match mockup-e. The 640 px column with
+                  24 px gutters felt over-padded against the dialog
+                  chrome; 20 px / 16 px brings the rows closer together
+                  while still respecting the dialog's own 14 px corner
+                  radius. */}
+              <div className="mx-auto w-full max-w-[640px] px-5 py-4">
                 {children}
               </div>
             </ScrollArea>

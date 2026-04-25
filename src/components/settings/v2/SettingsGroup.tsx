@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { rowMatchesQuery, SettingsRow, type SettingsRowProps } from './SettingsRow';
+import { useSettingsSearchQuery } from './SettingsSearch';
 
 /**
  * Props for the settings group primitive.
@@ -19,6 +21,38 @@ export interface SettingsGroupProps {
 }
 
 /**
+ * Walk `SettingsRow` children and return `true` when at least one row matches
+ * `query`. Non-`SettingsRow` children (raw JSX, conditionals returning null,
+ * etc.) are ignored — they're treated as decorative and don't keep the group
+ * visible on their own.
+ *
+ * This sits next to the row-level filter in `SettingsRow.rowMatchesQuery`
+ * (live-test 2026-04-25 #147) so the empty-group case never renders an
+ * empty bordered box when the user's query filters out every row.
+ */
+export function groupHasVisibleRows(
+  children: React.ReactNode,
+  query: string,
+): boolean {
+  if (!query) return true;
+  let anyVisibleRow = false;
+  let hasAnyRow = false;
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return;
+    if (child.type !== SettingsRow) return;
+    hasAnyRow = true;
+    if (rowMatchesQuery(child.props as SettingsRowProps, query)) {
+      anyVisibleRow = true;
+    }
+  });
+  // If the group has no SettingsRow children at all (e.g. a custom panel
+  // that only ships JSX), let the parent decide visibility — render so we
+  // don't hide non-row content unintentionally.
+  if (!hasAnyRow) return true;
+  return anyVisibleRow;
+}
+
+/**
  * A bordered container that stacks `SettingsRow` children with 1 px hairline
  * dividers between them (`divide-y`). Groups add a 40 px bottom margin so
  * consumers can drop multiple groups in sequence without extra spacing.
@@ -29,6 +63,9 @@ export function SettingsGroup({
   children,
   className,
 }: SettingsGroupProps) {
+  const query = useSettingsSearchQuery();
+  if (!groupHasVisibleRows(children, query)) return null;
+
   return (
     <section className={cn('mb-10 last:mb-0', className)}>
       {label ? (

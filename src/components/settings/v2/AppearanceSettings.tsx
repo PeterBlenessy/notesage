@@ -77,11 +77,15 @@ interface AccentOption {
   swatch: string;
 }
 
+// Swatches match the actual `--accent` values from `.accent-*` classes in
+// `globals.css` so what the user sees in the picker is what the UI applies.
+// Material Deep Orange 500 / Material Blue 700 — see design-system.md
+// "Accent Token Guardrails".
 const ACCENT_OPTIONS: ReadonlyArray<AccentOption> = [
   { value: 'default', label: 'Default', swatch: 'var(--color-foreground)' },
-  { value: 'orange', label: 'Orange', swatch: 'oklch(70% 0.15 50)' },
-  { value: 'blue', label: 'Blue', swatch: 'oklch(65% 0.15 250)' },
-  { value: 'system', label: 'System', swatch: 'var(--accent-system-value, oklch(65% 0.15 250))' },
+  { value: 'orange', label: 'Orange', swatch: 'oklch(68% 0.21 37)' },
+  { value: 'blue', label: 'Blue', swatch: 'oklch(56% 0.16 253)' },
+  { value: 'system', label: 'System', swatch: 'var(--accent-system-value, oklch(68% 0.21 37))' },
 ];
 
 const QUIET_CHROME_PRESET_OPTIONS = [
@@ -228,7 +232,7 @@ export function AppearanceSettings() {
 
   return (
     <>
-      <header className="mb-8 pb-6 border-b border-border">
+      <header className="mb-6 pb-4 border-b border-border">
         <h2 className="text-[24px] font-semibold tracking-tight">Appearance</h2>
         <p className="mt-1 text-[13px] text-muted-foreground max-w-[520px] leading-relaxed">
           How Notesage looks. All changes are live — the preview below reflects

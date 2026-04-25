@@ -3,7 +3,8 @@
 import '@/test/tauri-mock';
 import { describe, it, expect } from 'vitest';
 import { renderWithProviders, screen } from '@/test/component-harness';
-import { SettingsRow } from '@/components/settings/v2/SettingsRow';
+import { rowMatchesQuery, SettingsRow } from '@/components/settings/v2/SettingsRow';
+import { SettingsSearchContext } from '@/components/settings/v2/SettingsSearch';
 
 describe('SettingsRow', () => {
   it('renders label alone', () => {
@@ -118,5 +119,96 @@ describe('SettingsRow', () => {
     // Locate the description id (the one that actually resolves to a node).
     const descId = ids.find((id) => document.getElementById(id) !== null && id !== 'external-help');
     expect(descId).toBeTruthy();
+  });
+
+  // ----------------------------------------------------------------
+  // Live-test 2026-04-25 #147 — search-driven row filtering.
+  // ----------------------------------------------------------------
+  describe('rowMatchesQuery', () => {
+    it('empty query matches every row (passthrough)', () => {
+      expect(
+        rowMatchesQuery({ label: 'Color mode' }, ''),
+      ).toBe(true);
+    });
+
+    it('matches the label case-insensitively', () => {
+      expect(
+        rowMatchesQuery({ label: 'Color mode' }, 'COLOR'),
+      ).toBe(true);
+      expect(
+        rowMatchesQuery({ label: 'Color mode' }, 'mod'),
+      ).toBe(true);
+      expect(
+        rowMatchesQuery({ label: 'Color mode' }, 'theme'),
+      ).toBe(false);
+    });
+
+    it('matches a string description', () => {
+      expect(
+        rowMatchesQuery(
+          { label: 'Foo', description: 'Match the operating system.' },
+          'operating',
+        ),
+      ).toBe(true);
+    });
+
+    it('does NOT match a JSX description (only strings are searched)', () => {
+      expect(
+        rowMatchesQuery(
+          {
+            label: 'Foo',
+            description: (
+              <span>JSX description with searchable text</span>
+            ),
+          },
+          'searchable',
+        ),
+      ).toBe(false);
+    });
+
+    it('matches a string controlSublabel', () => {
+      expect(
+        rowMatchesQuery(
+          { label: 'Foo', controlSublabel: '20 px' },
+          'px',
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe('search-driven self-filtering', () => {
+    it('renders normally when no query is provided', () => {
+      renderWithProviders(
+        <SettingsRow label="Color mode" description="Light, dark, or system." />,
+      );
+      expect(screen.queryByText('Color mode')).toBeTruthy();
+    });
+
+    it('hides the row when the query does not match label or description', () => {
+      renderWithProviders(
+        <SettingsSearchContext.Provider value={{ query: 'xyzzy' }}>
+          <SettingsRow label="Color mode" description="Light, dark, or system." />
+        </SettingsSearchContext.Provider>,
+      );
+      expect(screen.queryByText('Color mode')).toBeNull();
+    });
+
+    it('renders the row when the query matches the label', () => {
+      renderWithProviders(
+        <SettingsSearchContext.Provider value={{ query: 'COLOR' }}>
+          <SettingsRow label="Color mode" description="Light, dark, or system." />
+        </SettingsSearchContext.Provider>,
+      );
+      expect(screen.queryByText('Color mode')).toBeTruthy();
+    });
+
+    it('renders the row when the query matches the description', () => {
+      renderWithProviders(
+        <SettingsSearchContext.Provider value={{ query: 'system' }}>
+          <SettingsRow label="Color mode" description="Light, dark, or system." />
+        </SettingsSearchContext.Provider>,
+      );
+      expect(screen.queryByText('Color mode')).toBeTruthy();
+    });
   });
 });

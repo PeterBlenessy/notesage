@@ -98,6 +98,59 @@ describe('AppearanceSettings', () => {
     expect(useSettingsStore.getState().accent).toBe('blue');
   });
 
+  /**
+   * Regression lock for live-test 2026-04-25 #144.
+   *
+   * The bug: `setAccent` writes to `settings-store` but `<html>` never
+   * receives the `.accent-blue` / `.accent-orange` / `.accent-system`
+   * class, so `--accent` stays unset and the accent picker visibly
+   * does nothing.
+   *
+   * Fix: mount `useAccent()` in App.tsx alongside the other lifecycle
+   * hooks. The hook owns the class-swap effect.
+   *
+   * This test mirrors the App.tsx mount: render AppearanceSettings AND
+   * useAccent in the same render tree, click an accent, then assert the
+   * class actually lands on `<html>`. If this test fails, the lifecycle
+   * mount probably got removed.
+   */
+  it('regression: clicking an accent applies the class on <html> when useAccent is mounted', async () => {
+    document.documentElement.className = '';
+    const { useAccent } = await import('@/hooks/useAccent');
+    function Mount() {
+      useAccent();
+      return <AppearanceSettings />;
+    }
+    renderWithProviders(<Mount />);
+
+    const group = screen.getByTestId('appearance-accent');
+    const orangeBtn = group.querySelector<HTMLButtonElement>('[aria-label="Orange"]');
+    expect(orangeBtn).toBeTruthy();
+    act(() => {
+      fireEvent.click(orangeBtn!);
+    });
+
+    expect(document.documentElement.classList.contains('accent-orange')).toBe(true);
+    expect(useSettingsStore.getState().accent).toBe('orange');
+
+    // Picking another accent swaps cleanly — no leftover class.
+    const blueBtn = group.querySelector<HTMLButtonElement>('[aria-label="Blue"]');
+    act(() => {
+      fireEvent.click(blueBtn!);
+    });
+    expect(document.documentElement.classList.contains('accent-orange')).toBe(false);
+    expect(document.documentElement.classList.contains('accent-blue')).toBe(true);
+
+    // Picking Default removes the class.
+    const defaultBtn = group.querySelector<HTMLButtonElement>('[aria-label="Default"]');
+    act(() => {
+      fireEvent.click(defaultBtn!);
+    });
+    expect(document.documentElement.classList.contains('accent-blue')).toBe(false);
+    expect(document.documentElement.classList.contains('accent-orange')).toBe(false);
+    expect(document.documentElement.classList.contains('accent-system')).toBe(false);
+  });
+
   it('contrast slider updates contrastLevel and shows the label', () => {
     renderWithProviders(<AppearanceSettings />);
 

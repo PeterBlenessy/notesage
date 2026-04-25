@@ -36,6 +36,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Multi-document editing with dirty indicator, auto-save on blur/document switch (debounced 1s)
 - Per-document undo/redo history preserved across document switches (in-memory EditorState cache)
 - Open documents restored on app restart (persisted file paths, re-opened from disk; undo history starts fresh)
+- Paste-rule registry (`src/lib/editor/paste-rules.ts`) intercepts file paths, terminal-rendered tables, etc. before tiptap-markdown parses them. Default `Cmd+V` runs through the rules; `Cmd+Shift+V` is a paste-as-plain-text escape hatch that reads the system clipboard and inserts the literal text, bypassing both rules AND the markdown parser.
 
 ## Document Switching Surface
 

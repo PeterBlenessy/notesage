@@ -92,16 +92,21 @@ describe('StatusTray — task #53', () => {
       <TrayHost open={false} onOpenChange={() => {}} />,
     );
     expect(document.body.textContent ?? '').not.toContain('Completions');
-    expect(document.body.textContent ?? '').not.toContain('Session');
+    expect(document.body.textContent ?? '').not.toContain('Comments');
   });
 
-  it('renders the four group headings when open=true', () => {
+  it('renders the always-visible group headings when open=true (Completions, Comments, Help)', () => {
+    // Live-test 2026-04-25 — the "Session" group was renamed to
+    // "Local AI" and now only renders when a `local_bundled`
+    // connection exists. With no connection (default test setup), the
+    // section is omitted entirely.
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
     const text = document.body.textContent ?? '';
     expect(text).toContain('Completions');
     expect(text).toContain('Comments');
-    expect(text).toContain('Session');
     expect(text).toContain('Help');
+    // Session header is gone — replaced by conditional Local AI header.
+    expect(text).not.toContain('Session');
   });
 
   it('renders the completion picker with all four options', () => {
@@ -185,26 +190,37 @@ describe('StatusTray — task #53', () => {
     );
   });
 
-  it('tool calling Switch reflects and toggles settings-store.toolCallingEnabled', () => {
+  /**
+   * Live-test 2026-04-25 — the tool-calling row was removed from the
+   * StatusTray. The toggle still exists in Settings > Advanced, but
+   * surfacing it from the status bar wasn't useful and added chrome
+   * the user explicitly asked us to drop. Negative regression: the
+   * switch must NOT reach the DOM.
+   */
+  it('does NOT render a tool-calling switch (removed from the popover)', () => {
     useSettingsStore.setState({ toolCallingEnabled: true });
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const sw = document.querySelector('#status-tray-tool-calling') as HTMLElement;
-    expect(sw).toBeTruthy();
-    expect(sw.getAttribute('data-state')).toBe('checked');
-
-    fireEvent.click(sw);
-    expect(useSettingsStore.getState().toolCallingEnabled).toBe(false);
+    expect(document.querySelector('#status-tray-tool-calling')).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('Tool calling');
   });
 
-  it('shows "Recording…" dot when recording-store.isRecording is true', () => {
+  it('does NOT render a "Recording…" row inside the Session group', () => {
+    // Live-test 2026-04-25 — the dedicated row was removed. The
+    // top-row MicButton conveys recording state with a pulsing,
+    // accent-coloured icon; a duplicate text row was redundant.
     useRecordingStore.setState({ isRecording: true });
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    expect(document.body.textContent ?? '').toContain('Recording\u2026');
+    expect(document.body.textContent ?? '').not.toContain('Recording\u2026');
   });
 
-  it('shows "Idle" when recording is off', () => {
+  /**
+   * Live-test 2026-04-25 — the dedicated `Recording — Idle / Recording…`
+   * row was removed. The popover's top-row `MicButton` already conveys
+   * recording state visually, so a separate text row was redundant.
+   */
+  it('does NOT render an "Idle" row inside the Session group', () => {
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    expect(document.body.textContent ?? '').toContain('Idle');
+    expect(document.body.textContent ?? '').not.toContain('Idle');
   });
 
   it('Help → Keyboard shortcuts calls onShortcutsOpen and closes the tray', () => {
@@ -317,7 +333,17 @@ describe('StatusTray — task #53', () => {
     window.removeEventListener('notesage:open-comment-list', listener);
   });
 
-  it('shows a "Running" indicator for Local AI when a local_bundled connection exists and status=running', () => {
+  /**
+   * Live-test 2026-04-25 — the "Session" group was renamed to "Local AI"
+   * and now uses a 2-row layout:
+   *   row 1: "Local AI" header + status dot (right-aligned)
+   *   row 2: "Model" label + Select with downloaded models
+   *
+   * The status text ("Running" / "Stopped" / etc.) was dropped from the
+   * visible body — it lives on the dot's `aria-label` / `title` for
+   * screen readers + tooltip. These tests pin the new layout.
+   */
+  it('renders the "Local AI" section header when a local_bundled connection exists', () => {
     addConnection({
       id: 'c-local',
       provider: 'local_ai',
@@ -337,18 +363,86 @@ describe('StatusTray — task #53', () => {
       ],
     });
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const text = document.body.textContent ?? '';
-    expect(text).toContain('Local AI');
-    expect(text).toContain('Running');
+    // Section <section aria-label="Local AI"> is mounted.
+    expect(document.querySelector('section[aria-label="Local AI"]')).toBeTruthy();
+    // The status dot exists with the correct server-status attribute.
+    const dot = document.querySelector('[data-testid="local-ai-status-dot"]');
+    expect(dot?.getAttribute('data-server-status')).toBe('running');
+    // Status label lives on aria-label, not visible body text.
+    expect(dot?.getAttribute('aria-label')).toContain('Running');
   });
 
-  it('omits the Local AI row when there is no local_bundled connection', () => {
+  it('omits the Local AI section entirely when there is no local_bundled connection', () => {
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    // "Local AI" appears as a picker label but NOT as a session row label.
-    // The picker is in the radiogroup; the session row label includes the
-    // word "Running" or "Stopped" after the provider name. With no
-    // connection, nothing like "Local AI · Stopped" should render.
-    expect(document.body.textContent ?? '').not.toMatch(/Local AI\s*·/);
+    expect(document.querySelector('section[aria-label="Local AI"]')).toBeNull();
+    // No status dot rendered either.
+    expect(document.querySelector('[data-testid="local-ai-status-dot"]')).toBeNull();
+  });
+
+  it('renders a Model picker populated with downloaded models', () => {
+    addConnection({
+      id: 'c-local',
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      label: 'Local AI',
+    });
+    useLocalAIStore.setState({
+      serverStatus: 'running',
+      activeModelId: 'm-1',
+      models: [
+        {
+          id: 'm-1',
+          name: 'Qwen 7B',
+          downloaded: true,
+        } as unknown as import('@/lib/tauri').LocalModelInfo,
+        {
+          id: 'm-2',
+          name: 'Llama 3 8B',
+          downloaded: true,
+        } as unknown as import('@/lib/tauri').LocalModelInfo,
+        {
+          id: 'm-3',
+          name: 'Not Yet Downloaded',
+          downloaded: false,
+        } as unknown as import('@/lib/tauri').LocalModelInfo,
+      ],
+    });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    const trigger = document.querySelector(
+      '#status-tray-local-ai-model',
+    ) as HTMLElement;
+    expect(trigger).toBeTruthy();
+    // Trigger displays the active model's name.
+    expect(trigger.textContent ?? '').toContain('Qwen 7B');
+    // Trigger is enabled because at least one downloaded model exists.
+    expect(trigger.getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('disables the Model picker when no downloaded models exist', () => {
+    addConnection({
+      id: 'c-local',
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      label: 'Local AI',
+    });
+    useLocalAIStore.setState({
+      serverStatus: 'stopped',
+      activeModelId: null,
+      models: [
+        {
+          id: 'm-1',
+          name: 'Not Yet Downloaded',
+          downloaded: false,
+        } as unknown as import('@/lib/tauri').LocalModelInfo,
+      ],
+    });
+    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+    const trigger = document.querySelector(
+      '#status-tray-local-ai-model',
+    ) as HTMLElement;
+    expect(trigger).toBeTruthy();
+    expect(trigger.getAttribute('data-disabled')).not.toBeNull();
+    expect(trigger.textContent ?? '').toContain('No models downloaded');
   });
 
   // -------------------------------------------------------------------------

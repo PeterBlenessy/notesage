@@ -5,21 +5,24 @@ import {
   MessageSquare,
   HelpCircle,
   Command as CommandIcon,
-  Mic,
-  Wrench,
   FileCode,
   FileText,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
-import { useRecordingStore } from "@/stores/recording-store";
 import type { Comment } from "@/stores/comment-store";
 import type { ViewMode } from "@/lib/file-utils";
 import { MicButton } from "./toolbar/MicButton";
@@ -175,7 +178,12 @@ function EditorToolsGroup({
   return (
     <section className="flex items-center gap-2" aria-label="Editor tools">
       {showMic && (
-        <MicButton editor={editor ?? null} />
+        // Live-test 2026-04-25 — `showTooltip={false}` because the
+        // popover lands initial focus on this button, and Radix's
+        // focus-triggered tooltip would always auto-open on popover
+        // open. The mic button's row inside the tray already conveys
+        // its purpose; no extra tooltip needed here.
+        <MicButton editor={editor ?? null} showTooltip={false} />
       )}
       {showSourceToggle && (
         <button
@@ -368,12 +376,28 @@ function CommentsGroup({
 }
 
 // ---------------------------------------------------------------------------
-// Session group
+// Local AI group
 // ---------------------------------------------------------------------------
+//
+// Live-test 2026-04-25 — this section was previously called "Session" and
+// stacked three rows (Local AI status, Tool calling toggle, Recording).
+// Tool calling and Recording were dropped (toggle wasn't useful from the
+// status tray; recording is conveyed by the top-row MicButton). The
+// section was renamed to "Local AI" and the two remaining concepts
+// (status dot + active model) now sit on a 2-row layout:
+//
+//   row 1: <Cpu icon> "Local AI"          <status-dot right-aligned>
+//   row 2: "Model"                        <select with downloaded models>
+//
+// `SessionGroup` is kept as the export name to avoid touching the
+// `StatusTrayGroup = "session"` deep-link key used by the StatusBar's
+// dot-click navigation. The `aria-label` on the section is now "Local
+// AI" so assistive tech announces the new framing.
 
-function LocalAIStatusRow() {
+function SessionGroup() {
   const serverStatus = useLocalAIStore((s) => s.serverStatus);
   const activeModelId = useLocalAIStore((s) => s.activeModelId);
+  const setActiveModel = useLocalAIStore((s) => s.setActiveModel);
   const models = useLocalAIStore((s) => s.models);
   const connections = useConnectionsStore((s) => s.connections);
 
@@ -382,96 +406,101 @@ function LocalAIStatusRow() {
   );
   if (!hasConnection) return null;
 
-  const activeModel = models.find((m) => m.id === activeModelId);
-  const label =
-    serverStatus === "running" && activeModel
-      ? `Running (${activeModel.name})`
-      : serverStatus === "running"
-      ? "Running"
-      : serverStatus === "starting"
-      ? "Starting…"
-      : serverStatus === "error"
-      ? "Error"
-      : "Stopped";
-
-  // Server-state-driven dot colour. Mirrors the sibling semantics used by
-  // `LocalAIIndicator` (legacy full StatusBar) and the `StatusDot` component
-  // in the quiet strip: green = running, amber pulse = starting, red = error,
-  // neutral = idle. This is the same "content-state" colour exception the
-  // other indicators in this file already take — keep the three surfaces in
-  // sync so the user sees one story.
+  // Server-state-driven dot. Same green/amber/red/muted semantics used
+  // by the QuietStatusBar's left dot — keep the two surfaces in sync.
   const dot =
     serverStatus === "running"
       ? "bg-green-500"
       : serverStatus === "starting"
-      ? "bg-amber-500 animate-pulse"
-      : serverStatus === "error"
-      ? "bg-red-500"
-      : "bg-muted-foreground/30";
+        ? "bg-amber-500 animate-pulse"
+        : serverStatus === "error"
+          ? "bg-red-500"
+          : "bg-muted-foreground/30";
+
+  const statusLabel =
+    serverStatus === "running"
+      ? "Running"
+      : serverStatus === "starting"
+        ? "Starting"
+        : serverStatus === "error"
+          ? "Error"
+          : "Stopped";
+
+  const downloadedModels = models.filter((m) => m.downloaded);
 
   return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <span
-        className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)}
-        data-testid="local-ai-status-dot"
-        data-server-status={serverStatus}
-      />
-      <span className="truncate">Local AI · {label}</span>
-    </div>
-  );
-}
-
-function ToolCallingRow() {
-  const enabled = useSettingsStore((s) => s.toolCallingEnabled);
-  const setEnabled = useSettingsStore((s) => s.setToolCallingEnabled);
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <label
-        htmlFor="status-tray-tool-calling"
-        className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer"
-      >
-        <Wrench className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-        <span>Tool calling</span>
-      </label>
-      <Switch
-        id="status-tray-tool-calling"
-        checked={enabled}
-        onCheckedChange={setEnabled}
-        className="scale-75 origin-center"
-      />
-    </div>
-  );
-}
-
-function RecordingRow() {
-  const isRecording = useRecordingStore((s) => s.isRecording);
-  const isDictating = useRecordingStore((s) => s.isDictating);
-  const active = isRecording || isDictating;
-  const label = isRecording ? "Recording…" : isDictating ? "Dictating…" : "Idle";
-  const dot = active ? "bg-destructive animate-pulse" : "bg-muted-foreground/30";
-  return (
-    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-      <Mic className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-      <span className="flex-1">Recording</span>
-      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)} />
-      <span className="text-[10px] text-muted-foreground/70 min-w-[60px] text-right">
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function SessionGroup() {
-  return (
-    <section className="space-y-2" aria-label="Session">
+    <section className="space-y-2" aria-label="Local AI">
+      {/* Title row — icon + label + right-aligned status dot. */}
       <div className="flex items-center gap-2">
         <Cpu className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-        <span className="text-xs font-medium">Session</span>
+        <span className="text-xs font-medium">Local AI</span>
+        <span
+          className={cn("ml-auto h-1.5 w-1.5 rounded-full shrink-0", dot)}
+          data-testid="local-ai-status-dot"
+          data-server-status={serverStatus}
+          role="status"
+          aria-label={`Local AI ${statusLabel}`}
+          title={statusLabel}
+        />
       </div>
-      <div className="space-y-2">
-        <LocalAIStatusRow />
-        <ToolCallingRow />
-        <RecordingRow />
+
+      {/* Model picker — populated with downloaded models only. Picking a
+          model writes to local-ai-store; useLocalAI auto-restarts the
+          server when activeModelId changes.
+
+          Live-test 2026-04-25 — dense styling: h-6 trigger (24 px),
+          tighter px-2 padding, size-3 chevron, no border (the row sits
+          inside a popover that already has its own surface). The
+          underlying shadcn trigger always renders min-w-fit, so we cap
+          the width at 160 px and rely on the SelectValue's truncation
+          to keep long model names from blowing out the row. */}
+      {/* Live-test 2026-04-25 — `px-2` indent so the row's label and
+          picker align with the `px-2` button content in the Comments /
+          Help groups. Keeps the second-row left edge consistent across
+          the whole popover. */}
+      <div className="flex items-center justify-between gap-2 px-2 min-h-0">
+        <label
+          htmlFor="status-tray-local-ai-model"
+          className="text-xs text-muted-foreground"
+        >
+          Model
+        </label>
+        <Select
+          value={activeModelId ?? undefined}
+          onValueChange={setActiveModel}
+          disabled={downloadedModels.length === 0}
+        >
+          <SelectTrigger
+            id="status-tray-local-ai-model"
+            className={cn(
+              // Live-test 2026-04-25 — tightened further: 20 px tall,
+              // 11 px text, 6 px horizontal padding, 10 px chevron.
+              // The trigger is inside the popover (already a surface),
+              // so no border is needed; a faint muted background marks
+              // the affordance.
+              "h-5 w-[160px] max-w-[160px] text-[11px] leading-none",
+              "px-1.5 py-0 gap-1 border-0 bg-muted/40 hover:bg-muted/70",
+              "[&>svg]:size-2.5",
+              "[&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:min-w-0",
+            )}
+            aria-label="Active local AI model"
+          >
+            <SelectValue
+              placeholder={
+                downloadedModels.length === 0
+                  ? "No models downloaded"
+                  : "Pick a model"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {downloadedModels.map((m) => (
+              <SelectItem key={m.id} value={m.id} className="text-xs">
+                {m.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </section>
   );
