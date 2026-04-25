@@ -1,8 +1,10 @@
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
 import { RecentSection } from "./RecentSection";
@@ -37,6 +39,78 @@ function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
+}
+
+/**
+ * Recursively count markdown files (`.md`) in a `FileEntry[]` tree.
+ *
+ * Used by the workspace header to display "N projects · M notes" —
+ * the count walks every project's tree plus the top-level notes tree.
+ * O(N) over total entry count, memoized at the call site so it only
+ * recomputes when the tree references actually change.
+ */
+export function countMarkdownFiles(entries: readonly FileEntry[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.is_directory) {
+      if (entry.children) count += countMarkdownFiles(entry.children);
+    } else if (entry.name.toLowerCase().endsWith(".md")) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Workspace header per `mockup-d-synthesis.html` — italic "N" avatar +
+ * "Notesage" name + "N projects · M notes" sub-line. Sits above the
+ * Pinned section and inside the sidebar's `pt-10` so it clears the
+ * macOS traffic-light safe zone.
+ */
+function WorkspaceHeader() {
+  const projects = useWorkspaceStore((s) => s.projects);
+  const notesTree = useWorkspaceStore((s) => s.notesTree);
+
+  const projectCount = projects.length;
+  const noteCount = useMemo(() => {
+    // Notes count = `.md` files in the user's notes root + every open
+    // project's tree. Tree references are stable across re-renders
+    // unless the underlying directory changed, so this is cheap.
+    let total = countMarkdownFiles(notesTree);
+    for (const project of projects) {
+      total += countMarkdownFiles(project.fileTree);
+    }
+    return total;
+  }, [notesTree, projects]);
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2.5 px-1 py-1.5 mb-2",
+        "select-none",
+      )}
+      data-tauri-drag-region
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+          "bg-foreground text-background text-[12px] italic font-semibold",
+          "font-serif",
+        )}
+      >
+        N
+      </span>
+      <div className="min-w-0 flex flex-col leading-tight">
+        <span className="text-[13px] font-semibold truncate">Notesage</span>
+        <span className="text-[11px] text-muted-foreground tabular-nums">
+          {projectCount} {projectCount === 1 ? "project" : "projects"}
+          <span aria-hidden="true"> · </span>
+          {noteCount} {noteCount === 1 ? "note" : "notes"}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function QuietSidebar() {
@@ -115,8 +189,14 @@ export function QuietSidebar() {
       // a `data-tauri-drag-region` so the empty top zone above the
       // first row stays a draggable surface (matches Linear/Bear
       // ergonomics — drag the sidebar's empty top to move the window).
-      className="flex flex-col gap-4 overflow-y-auto px-4 pt-10 pb-2 h-full w-[252px] shrink-0 min-h-0 border-r border-border-strong"
+      // `bg-muted/30` so the sidebar surface is visually distinct from
+      // `--color-background` (the doc area). Without it, the sidebar
+      // and the doc area share the same colour and the only signal is
+      // the right border, which makes the "sidebar extends to top
+      // edge" change invisible until content fills the top zone.
+      className="flex flex-col gap-4 overflow-y-auto px-4 pt-10 pb-2 h-full w-[252px] shrink-0 min-h-0 border-r border-border-strong bg-muted/30"
     >
+      <WorkspaceHeader />
       {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
       <PinnedSection filter={filter} />
       <ProjectsSection filter={filter} onAdd={handleAddProject} />

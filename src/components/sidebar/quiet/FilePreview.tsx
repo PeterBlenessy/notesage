@@ -132,28 +132,106 @@ function shouldRenderMarkdown(path: string): boolean {
 
 /**
  * Strip leading YAML frontmatter (a `---`-delimited block at the very top of
- * the file). When no frontmatter is present or it is unterminated, the
- * original content is returned unchanged.
+ * the file). Returns the raw frontmatter block (without fences) AND the
+ * remaining body. When no frontmatter is present or it is unterminated, the
+ * original content is returned as the body and the frontmatter is empty.
  */
-export function stripFrontmatter(content: string): string {
+export function splitFrontmatter(content: string): { frontmatter: string; body: string } {
   if (!content.startsWith("---\n") && !content.startsWith("---\r\n")) {
-    return content;
+    return { frontmatter: "", body: content };
   }
-  // Skip the opening fence and find the closing fence on its own line.
   const lines = content.split(/\r?\n/);
-  if (lines[0] !== "---") return content;
+  if (lines[0] !== "---") return { frontmatter: "", body: content };
   for (let i = 1; i < lines.length; i++) {
     if (lines[i] === "---") {
-      return lines.slice(i + 1).join("\n");
+      return {
+        frontmatter: lines.slice(1, i).join("\n"),
+        body: lines.slice(i + 1).join("\n"),
+      };
     }
   }
-  return content;
+  return { frontmatter: "", body: content };
+}
+
+/** Backward-compatible wrapper used by tests / call-sites that only want body. */
+export function stripFrontmatter(content: string): string {
+  return splitFrontmatter(content).body;
+}
+
+/**
+ * Pull a `title:` value out of a YAML frontmatter block. Handles bare values,
+ * single-quoted, and double-quoted strings. Returns `null` when no title
+ * field is present. We're intentionally permissive — the preview is a
+ * tooltip, not a parser, so an unrecognised title gracefully degrades to
+ * "no subline".
+ */
+export function extractFrontmatterTitle(frontmatter: string): string | null {
+  if (!frontmatter) return null;
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const match = /^\s*title\s*:\s*(.+?)\s*$/i.exec(line);
+    if (!match) continue;
+    let value = match[1];
+    // Strip a single layer of surrounding quotes.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    return value || null;
+  }
+  return null;
+}
+
+/**
+ * Live-test 2026-04-25 — the preview popover used to render a leading
+ * `# Heading` (the document's own title) as a big bold heading at the
+ * top of the body. That made every preview start with an oversized
+ * title that duplicated the filename in the popover header. We now
+ * lift that heading out — either from frontmatter `title:` or from
+ * the first body line if it's an H1 — and return it separately so
+ * the caller can render it as a small grey subline next to the
+ * filename instead of inside the markdown body.
+ */
+export function extractPreviewParts(
+  content: string,
+  lineCount: number,
+): { title: string | null; body: string } {
+  const { frontmatter, body: rawBody } = splitFrontmatter(content);
+  const fmTitle = extractFrontmatterTitle(frontmatter);
+
+  let body = rawBody;
+  let title: string | null = fmTitle;
+
+  // If frontmatter didn't provide a title, look for a leading `# H1`.
+  // Only the FIRST non-empty line is considered — any heading deeper
+  // in the file is real content and should stay in the body.
+  if (!title) {
+    const lines = rawBody.split(/\r?\n/);
+    let firstNonEmpty = 0;
+    while (firstNonEmpty < lines.length && lines[firstNonEmpty].trim() === "") {
+      firstNonEmpty += 1;
+    }
+    if (firstNonEmpty < lines.length) {
+      const headingMatch = /^#\s+(.+?)\s*$/.exec(lines[firstNonEmpty]);
+      if (headingMatch) {
+        title = headingMatch[1];
+        // Drop the heading line + any blank line that immediately follows
+        // so the body picks up at the first paragraph.
+        let drop = firstNonEmpty + 1;
+        while (drop < lines.length && lines[drop].trim() === "") drop += 1;
+        body = lines.slice(drop).join("\n");
+      }
+    }
+  }
+
+  const trimmedBody = body.split(/\r?\n/).slice(0, lineCount).join("\n");
+  return { title, body: trimmedBody };
 }
 
 /** Extract the first N lines of `content`, stripping any leading frontmatter. */
 export function extractPreviewLines(content: string, lineCount: number): string {
-  const body = stripFrontmatter(content);
-  return body.split(/\r?\n/).slice(0, lineCount).join("\n");
+  return splitFrontmatter(content).body.split(/\r?\n/).slice(0, lineCount).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +241,7 @@ export function extractPreviewLines(content: string, lineCount: number): string 
 type LoadState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; body: string }
+  | { status: "ready"; body: string; title: string | null }
   | { status: "error" }
   | { status: "unsupported" };
 
@@ -184,7 +262,9 @@ export function FilePreview({
   const closeTimerRef = useRef<number | null>(null);
 
   // Per-mount cache: previously fetched previews keyed by absolute path.
-  const cacheRef = useRef<Map<string, string>>(new Map());
+  const cacheRef = useRef<Map<string, { body: string; title: string | null }>>(
+    new Map(),
+  );
 
   // Tracks whether the last scheduled open is still valid — set to false when
   // the pointer leaves before the fetch resolves so we don't open a stale
@@ -218,7 +298,7 @@ export function FilePreview({
       const cached = cacheRef.current.get(path);
       if (cached !== undefined) {
         if (mountedRef.current && activePathRef.current === path) {
-          setState({ status: "ready", body: cached });
+          setState({ status: "ready", body: cached.body, title: cached.title });
         }
         return;
       }
@@ -227,10 +307,15 @@ export function FilePreview({
 
       try {
         const content = await tauriApi.readFile(path);
-        const body = extractPreviewLines(content, lineCount);
-        cacheRef.current.set(path, body);
+        // Live-test 2026-04-25 — `extractPreviewParts` lifts the
+        // document's title (frontmatter `title:` or leading H1) out of
+        // the rendered body so it can render as a small grey subline
+        // beneath the popover header instead of as a big heading
+        // duplicated against the filename.
+        const { title, body } = extractPreviewParts(content, lineCount);
+        cacheRef.current.set(path, { body, title });
         if (mountedRef.current && activePathRef.current === path) {
-          setState({ status: "ready", body });
+          setState({ status: "ready", body, title });
         }
       } catch (error) {
         // Log for debugging but do NOT show a toast — hover previews are
@@ -408,13 +493,26 @@ export function FilePreview({
           "motion-reduce:!animate-none motion-reduce:!duration-0",
         )}
       >
-        {/* Header — title + short type badge. Mockup-L (mockup-l-sidebar-
-            interactions.html) puts the filename in bold with a subtle
-            meta line underneath; we follow the same structure. Type
-            label is lowercase and compact ("md", "txt") — the earlier
-            uppercase "MARKDOWN" felt techy, per live-test feedback. */}
+        {/* Header — filename + (optional) document title subline + type
+            badge. Mockup-L (mockup-l-sidebar-interactions.html) puts
+            the filename in bold with a subtle meta line underneath;
+            we follow the same structure. Live-test 2026-04-25: the
+            document's own title (from frontmatter or a leading H1) is
+            rendered HERE as a small grey subline rather than as a
+            heading inside the body — so the popover never starts with
+            an oversized title that duplicates the filename. */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
-          <span className="text-sm font-medium truncate">{name}</span>
+          <div className="min-w-0 flex-1 flex flex-col leading-tight">
+            <span className="text-sm font-medium truncate">{name}</span>
+            {state.status === "ready" && state.title ? (
+              <span
+                className="text-[11px] text-muted-foreground truncate"
+                title={state.title}
+              >
+                {state.title}
+              </span>
+            ) : null}
+          </div>
           <span className="text-[10px] font-medium tracking-wide text-muted-foreground shrink-0 rounded-sm bg-muted/50 px-1.5 py-0.5">
             {typeLabel}
           </span>

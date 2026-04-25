@@ -27,6 +27,9 @@ import {
   isPreviewable,
   stripFrontmatter,
   extractPreviewLines,
+  extractFrontmatterTitle,
+  extractPreviewParts,
+  splitFrontmatter,
 } from "../FilePreview";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +128,114 @@ describe("FilePreview — pure helpers", () => {
     expect(result.split("\n")).toHaveLength(10);
     expect(result.split("\n")[0]).toBe("L1");
     expect(result.split("\n")[9]).toBe("L10");
+  });
+
+  // ----------------------------------------------------------------
+  // Live-test 2026-04-25 — title extraction. The popover used to
+  // render a leading `# Heading` (or whatever was in the frontmatter
+  // `title:` field) as a big bold heading at the top of the body.
+  // The new helpers lift that title out so the caller can render it
+  // as a small grey subline next to the filename.
+  // ----------------------------------------------------------------
+
+  describe("splitFrontmatter", () => {
+    it("returns the frontmatter block (without fences) and the body separately", () => {
+      const input = "---\ntitle: Hello\ntag: x\n---\n# Body\nContent";
+      const { frontmatter, body } = splitFrontmatter(input);
+      expect(frontmatter).toBe("title: Hello\ntag: x");
+      expect(body).toBe("# Body\nContent");
+    });
+
+    it("returns empty frontmatter when no fence is present", () => {
+      const { frontmatter, body } = splitFrontmatter("# Just a heading\nBody");
+      expect(frontmatter).toBe("");
+      expect(body).toBe("# Just a heading\nBody");
+    });
+
+    it("returns empty frontmatter when the block is unterminated", () => {
+      const input = "---\ntitle: Hello\nNo closing fence";
+      const { frontmatter, body } = splitFrontmatter(input);
+      expect(frontmatter).toBe("");
+      expect(body).toBe(input);
+    });
+  });
+
+  describe("extractFrontmatterTitle", () => {
+    it("returns the bare title value", () => {
+      expect(extractFrontmatterTitle("title: Hello")).toBe("Hello");
+    });
+
+    it("strips a single layer of double quotes", () => {
+      expect(extractFrontmatterTitle('title: "Hello, World"')).toBe("Hello, World");
+    });
+
+    it("strips a single layer of single quotes", () => {
+      expect(extractFrontmatterTitle("title: 'Hello'")).toBe("Hello");
+    });
+
+    it("returns null when no title field is present", () => {
+      expect(extractFrontmatterTitle("foo: bar\ntag: x")).toBeNull();
+    });
+
+    it("returns null for an empty frontmatter", () => {
+      expect(extractFrontmatterTitle("")).toBeNull();
+    });
+
+    it("matches title case-insensitively", () => {
+      expect(extractFrontmatterTitle("Title: Hello")).toBe("Hello");
+      expect(extractFrontmatterTitle("TITLE: Hello")).toBe("Hello");
+    });
+  });
+
+  describe("extractPreviewParts", () => {
+    it("extracts the frontmatter title and strips it from the body", () => {
+      const input = "---\ntitle: Document Title\n---\n\nFirst paragraph.\nSecond paragraph.";
+      const { title, body } = extractPreviewParts(input, 10);
+      expect(title).toBe("Document Title");
+      expect(body).toContain("First paragraph.");
+      expect(body).not.toContain("title:");
+    });
+
+    it("falls back to a leading H1 when frontmatter has no title", () => {
+      const input = "# Document Title\n\nFirst paragraph.\nSecond paragraph.";
+      const { title, body } = extractPreviewParts(input, 10);
+      expect(title).toBe("Document Title");
+      // Body should NOT contain the H1 line; it should start at the first
+      // paragraph.
+      expect(body.startsWith("First paragraph.")).toBe(true);
+      expect(body).not.toContain("# Document Title");
+    });
+
+    it("preserves H1 elsewhere in the body", () => {
+      const input = "Intro paragraph.\n\n# Section heading\n\nMore text.";
+      const { title, body } = extractPreviewParts(input, 10);
+      expect(title).toBeNull();
+      expect(body).toContain("# Section heading");
+    });
+
+    it("returns null title when neither frontmatter nor leading H1 present", () => {
+      const input = "Just body text\nMore body text";
+      const { title, body } = extractPreviewParts(input, 10);
+      expect(title).toBeNull();
+      expect(body).toBe(input);
+    });
+
+    it("caps the body at lineCount lines", () => {
+      const lines = Array.from({ length: 30 }, (_, i) => `L${i + 1}`).join("\n");
+      const input = `# Title\n\n${lines}`;
+      const { title, body } = extractPreviewParts(input, 5);
+      expect(title).toBe("Title");
+      expect(body.split("\n")).toHaveLength(5);
+      expect(body.split("\n")[0]).toBe("L1");
+    });
+
+    it("frontmatter title takes precedence over a body H1", () => {
+      const input = "---\ntitle: From frontmatter\n---\n\n# Different heading in body\n\nMore.";
+      const { title, body } = extractPreviewParts(input, 10);
+      expect(title).toBe("From frontmatter");
+      // The body H1 stays — it isn't the title we lifted.
+      expect(body).toContain("# Different heading in body");
+    });
   });
 });
 
