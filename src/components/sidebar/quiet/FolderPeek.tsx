@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Folder, FileText } from "lucide-react";
+import { Folder } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
@@ -20,6 +20,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import { FileIcon } from "@/components/sidebar/FileIcon";
 import {
   isAnyContextMenuOpen,
   subscribeToOpenContextMenus,
@@ -319,9 +320,17 @@ export function FolderPeek({
                 left: position.left,
                 maxHeight: "40vh",
               }}
+              // Live-test 2026-04-25 #152 — width / radius / padding
+              // tightened to match mockup-d-synthesis's `.peek` block:
+              // 260 px min, 10 px corner radius (`rounded-[10px]`), and
+              // 8 px / 6 px inner padding (`py-2 px-1.5`). The narrower
+              // 256 px (w-64) felt cramped against the new 252 px
+              // sidebar — bumping to 280 px (w-[280px]) gives enough
+              // room for filenames + the meta indicator without
+              // exceeding the mockup's 320 px max.
               className={cn(
-                "z-50 w-64 rounded-md border bg-popover text-popover-foreground shadow-md outline-hidden",
-                "overflow-auto p-1.5",
+                "z-50 w-[280px] rounded-[10px] border bg-popover text-popover-foreground shadow-md outline-hidden",
+                "overflow-auto py-2 px-1.5",
                 animationClasses,
               )}
             >
@@ -351,8 +360,12 @@ export function FolderPeek({
                             onKeyDown={(e) =>
                               handleItemKeyDown(e, handleFolderClick)
                             }
+                            // Live-test 2026-04-25 #152 — tighter row
+                            // per mockup-d: 24 px height (`h-6`), 12 px
+                            // text (`text-[12.5px]`), 10 px gap. Matches
+                            // the mockup's `.peek-item` exactly.
                             className={cn(
-                              "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm w-full",
+                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
                               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
@@ -404,17 +417,28 @@ export function FolderPeek({
                             onKeyDown={(e) =>
                               handleItemKeyDown(e, () => handleFileClick(entry))
                             }
+                            // Live-test 2026-04-25 #152 — tighter row
+                            // per mockup-d: 24 px height (`h-6`), 12 px
+                            // text (`text-[12.5px]`), 10 px gap. Matches
+                            // the mockup's `.peek-item` exactly.
                             className={cn(
-                              "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm w-full",
+                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
                               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
                             )}
                           >
-                            <FileText
+                            {/* Live-test 2026-04-25 #152 — `FileIcon`
+                                gives extension-aware icons (md, png,
+                                pdf, etc.) instead of the generic
+                                `FileText` fallback the peek used to
+                                show for every file. Same component
+                                used by Pinned / Recent / TreeOverlay
+                                so the peek now feels like a sibling
+                                of those surfaces. */}
+                            <FileIcon
+                              fileName={entry.name}
                               className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                              strokeWidth={1.5}
-                              aria-hidden="true"
                             />
                             <span className="truncate min-w-0 flex-1">
                               {entry.name}
