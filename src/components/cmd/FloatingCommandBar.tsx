@@ -144,7 +144,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     activeOptionId: string | null;
     count: number;
   } | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const reducedMotion = useReducedMotion();
 
   // Send wiring (#23). We reuse the existing `sendChatMessage` from
@@ -543,18 +543,37 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [],
   );
 
+  // Live-test 2026-04-25 #151 — auto-resize the cmd-bar textarea so it
+  // grows with multi-line content (matches the legacy ChatInput pattern).
+  // Caps at 160 px (~6 lines) so the bar can't push past the doc area;
+  // beyond that the textarea scrolls internally. Called from
+  // `handleInputChange` AND from a `useEffect` on `inputValue` so
+  // programmatic value changes (prefix replacement, dictation append)
+  // resize the textarea too.
+  const autoResize = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
+
+  useEffect(() => {
+    autoResize();
+  }, [inputValue, autoResize]);
+
   const handleInputChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = event.target.value;
       const cursor = event.target.selectionStart ?? value.length;
       setInputValue(value);
       recomputePrefix(value, cursor);
+      autoResize();
     },
-    [recomputePrefix],
+    [recomputePrefix, autoResize],
   );
 
   const handleSelectionChange = useCallback(
-    (event: React.SyntheticEvent<HTMLInputElement>) => {
+    (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
       // Ignore Escape's keyUp — its keyDown handler already cleared (or
       // collapsed) the prefix mode and we don't want to re-detect from the
       // unchanged input value and resurrect a badge the user just dismissed.
@@ -890,7 +909,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   }, [resendDialog, allConnections]);
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (event.key === "Escape") {
         // #127/#126 fix — do NOT handle Esc locally. The window-level
         // `useCommandBarShortcuts` hook also fires Esc → emits a
@@ -1365,7 +1384,7 @@ interface ActiveOptionInfo {
 }
 
 interface ExpandedContentProps {
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
   inputValue: string;
   activePrefix: ActivePrefix | null;
   /**
@@ -1375,9 +1394,9 @@ interface ExpandedContentProps {
    */
   activeOption: ActiveOptionInfo | null;
   onActiveOptionChange: (info: ActiveOptionInfo) => void;
-  onInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onSelectionChange: (event: React.SyntheticEvent<HTMLInputElement>) => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onInputChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onSelectionChange: (event: React.SyntheticEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   chips: AttachmentChip[];
   onRemoveChip: (id: string) => void;
   isComposing: boolean;
@@ -1597,19 +1616,19 @@ function ExpandedContent({
         />
       ) : null}
 
-      {/* #126 parity — image attachment thumbnails. Renders nothing when
-         *  `pendingAttachments` is empty. Shares the exact `AttachmentStrip`
-         *  component the legacy shell uses so thumbnails + remove buttons
-         *  behave identically. */}
-      {pendingAttachments.length > 0 && (
-        <AttachmentStrip
-          attachments={pendingAttachments}
-          onRemove={onRemoveAttachment}
-        />
-      )}
+      {/* Live-test 2026-04-25 #151 — input row container. The
+          `AttachmentStrip` (image thumbnails) used to render OUTSIDE
+          this border-t boundary, which made it visually a sibling of
+          the bar's chrome instead of part of the input area. Moving
+          it inside the same border-t container groups attachments +
+          input + send button as one block — same pattern the legacy
+          ChatInput uses (AttachmentStrip → textarea → send).
 
+          Paste / drag-drop handlers stay on this OUTER container so
+          dropping anywhere in the attachments-or-input area attaches
+          the file. */}
       <div
-        className="border-t border-border px-3 py-2 flex items-center gap-2"
+        className="border-t border-border flex flex-col"
         onPaste={async (event) => {
           // #126 parity — paste handler reads the first image item off
           // the clipboard and compresses it before pushing onto the strip.
@@ -1700,6 +1719,18 @@ function ExpandedContent({
           }
         }}
       >
+        {/* #126 parity — image attachment thumbnails. Live-test
+           2026-04-25 #151 — moved INSIDE the input container so it
+           reads as part of the input area instead of a sibling of the
+           bar's chrome. Renders nothing while `pendingAttachments` is
+           empty; the strip's own `flex-wrap` row adds its own padding. */}
+        {pendingAttachments.length > 0 && (
+          <AttachmentStrip
+            attachments={pendingAttachments}
+            onRemove={onRemoveAttachment}
+          />
+        )}
+        <div className="px-3 py-2 flex items-end gap-2">
         <button
           type="button"
           onClick={onPickImage}
@@ -1739,9 +1770,18 @@ function ExpandedContent({
             <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
           )}
         </button>
-        <input
+        {/* Live-test 2026-04-25 #151 — `<input>` → `<textarea>` so the
+           input grows vertically with multi-line content. Auto-resize
+           is wired in `handleInputChange` (calls `autoResize` after
+           every keystroke); the cap is 160 px (~6 lines) so the bar
+           can't push past the doc area. Beyond that, the textarea
+           scrolls internally. `rows={1}` keeps the initial height the
+           same as the old single-line input. Enter sends, Shift+Enter
+           inserts a newline (handled in `onKeyDown` at the top of the
+           file). */}
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           // The input doubles as a combobox when a prefix-mode picker is open
           // (#78): the picker's listbox stays focus-free, and the input
           // mirrors the highlighted option via `aria-activedescendant`. When
@@ -1765,7 +1805,8 @@ function ExpandedContent({
           }
           className={cn(
             "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
-            "outline-none",
+            "outline-none resize-none leading-relaxed py-0.5",
+            "max-h-[160px] overflow-y-auto",
           )}
         />
         {/* #126 parity — Stop (while streaming) / Send affordance. The
@@ -1809,6 +1850,7 @@ function ExpandedContent({
             <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
           </button>
         )}
+        </div>
       </div>
     </div>
   );

@@ -279,8 +279,8 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     // cursor-offset the user had to delete and (b) polluted the picker's
     // post-prefix filter state.
     const input = document.querySelector(
-      '[data-cmd-bar] input',
-    ) as HTMLInputElement | null;
+      '[data-cmd-bar] textarea',
+    ) as HTMLTextAreaElement | null;
     expect(input).not.toBeNull();
     expect(input?.value).toBe('!');
   });
@@ -371,8 +371,8 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     expect(getBar()?.getAttribute('data-expanded')).toBe('true');
 
     const input = document.querySelector(
-      '[data-cmd-bar] input',
-    ) as HTMLInputElement | null;
+      '[data-cmd-bar] textarea',
+    ) as HTMLTextAreaElement | null;
     expect(input).not.toBeNull();
 
     // Simulate typing `#` — fireEvent.change goes through React's synthetic
@@ -409,8 +409,8 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     // Open the bar and type `/de` (skill prefix).
     dispatchKey({ key: 'k', metaKey: true });
     const input = document.querySelector(
-      '[data-cmd-bar] input',
-    ) as HTMLInputElement | null;
+      '[data-cmd-bar] textarea',
+    ) as HTMLTextAreaElement | null;
     if (!input) throw new Error('input missing');
 
     fireEvent.change(input, { target: { value: '/de' } });
@@ -467,8 +467,8 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
 
     // The composer input should now hold the prefilled content.
     const input = document.querySelector(
-      '[data-cmd-bar] input',
-    ) as HTMLInputElement;
+      '[data-cmd-bar] textarea',
+    ) as HTMLTextAreaElement;
     expect(input.value).toBe('original text');
     expect(getBar()?.getAttribute('data-expanded')).toBe('true');
 
