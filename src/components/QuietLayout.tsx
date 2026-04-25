@@ -18,6 +18,7 @@ import { useFocusMode } from "@/hooks/useFocusMode";
 import { FocusPill } from "@/components/editor/FocusPill";
 import { RevertInvitation } from "@/components/RevertInvitation";
 import { useQuietChrome } from "@/lib/quiet-chrome";
+import { cn } from "@/lib/utils";
 
 /**
  * QuietLayout — Quiet Composer shell (PRD `2026-04-21-ui-refresh`, Phase 1).
@@ -141,6 +142,16 @@ export function QuietLayout(props: QuietLayoutProps) {
   // bar's drag handle drives — sharing the variable means a single source
   // of truth and zero React re-renders during drag.
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
+
+  // #132 — translucent chrome + editor flow-under. When the setting is
+  // on, the TitleBar overlays the document area (absolute positioned)
+  // instead of pushing it down, and the doc area gets top padding so
+  // initial content clears the chrome. Both surfaces become
+  // semi-transparent with a backdrop-blur via classes that key off the
+  // root `data-quiet-chrome-transparent` attribute.
+  const quietChromeTransparent = useSettingsStore(
+    (s) => s.quietChromeTransparent,
+  );
 
   // `⌘⇧L` — sidebar visibility (#123). The chord flips
   // `settings-store.sidebarPinned` via `useKeyboardShortcuts`; QuietLayout
@@ -294,6 +305,7 @@ export function QuietLayout(props: QuietLayoutProps) {
       data-quiet-layout-placeholder
       data-quiet-layout-root
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
+      data-quiet-chrome-transparent={quietChromeTransparent ? "true" : "false"}
       className="app relative flex flex-col h-screen w-full bg-background overflow-hidden"
     >
       {/*
@@ -301,13 +313,33 @@ export function QuietLayout(props: QuietLayoutProps) {
         chat-toggle and activity-strip-toggle buttons — their classic-mode
         targets (ChatPanel, ActivityStrip) aren't mounted here; the
         FloatingCommandBar and AgentOrb own those affordances instead.
+
+        #132 — when `quietChromeTransparent` is on, the title bar
+        overlays the document area instead of pushing it down. We set
+        `absolute top-0 inset-x-0 z-30` so it sits above the grid; the
+        grid below uses `pt-9` to clear the title bar visually.
        */}
-      <TitleBar mode="quiet" />
+      <TitleBar
+        mode="quiet"
+        className={
+          quietChromeTransparent
+            ? "absolute inset-x-0 top-0 z-30"
+            : undefined
+        }
+      />
 
       <div
         data-quiet-layout-document-area
         data-sidebar-pinned={sidebarPinned ? "true" : "false"}
-        className="flex-1 grid min-h-0 gap-2 p-2"
+        className={cn(
+          "flex-1 grid min-h-0 gap-2 p-2",
+          // #132 — when chrome is transparent the title bar is absolute,
+          // so the grid takes the full vertical space starting at y=0.
+          // Padding-top reserves space behind the title bar (h-9 = 36 px
+          // + the existing p-2 = 8 px → 44 px total) so initial content
+          // sits below the chrome edge.
+          quietChromeTransparent && "pt-11",
+        )}
         style={{
           // #111 audit fix — mockup-d-synthesis specifies 252px for the
           // sidebar grid track. Previous 240px was a 12 px shave that

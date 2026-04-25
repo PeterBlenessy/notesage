@@ -28,10 +28,19 @@ interface ClassicTitleBarProps {
   mode?: "classic";
   onToggleChat: () => void;
   onToggleActivityStrip: () => void;
+  /**
+   * Optional extra utility classes appended to the root. Used by
+   * `QuietLayout` (#132) to switch the bar to absolute positioning
+   * when translucent chrome is enabled — accepted on both modes for
+   * symmetry but only set in quiet mode today.
+   */
+  className?: string;
 }
 
 interface QuietTitleBarProps {
   mode: "quiet";
+  /** See `ClassicTitleBarProps.className`. */
+  className?: string;
 }
 
 export type TitleBarProps = ClassicTitleBarProps | QuietTitleBarProps;
@@ -111,7 +120,18 @@ export function TitleBar(props: TitleBarProps) {
 
   return (
     <div
-      className="h-9 flex items-center shrink-0 select-none"
+      className={cn(
+        "h-9 flex items-center shrink-0 select-none",
+        // #132 — when QuietLayout passes the translucent-chrome
+        // classes (`absolute inset-x-0 top-0 z-30`), also paint a
+        // semi-transparent backdrop-blur so editor content scrolling
+        // behind reads as frosted glass. Without `backdrop-blur` the
+        // bar would just look thin; with it, headings/images/code
+        // blocks underneath get a subtle blur as they pass.
+        props.className?.includes("absolute") &&
+          "bg-background/70 backdrop-blur-md",
+        props.className,
+      )}
       data-tauri-drag-region
       data-titlebar-mode={mode}
     >

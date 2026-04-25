@@ -1402,7 +1402,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx`, `src/components/TitleBar.tsx`, `src/components/editor/DocHead.tsx` (delete), `src/components/editor/__tests__/DocHead.test.tsx` (delete), `src/styles/globals.css`, `src/styles/__tests__/reduced-motion-sweep.test.ts`, `src/lib/saved-ago.ts` (extract SavedLabel to shared module), `docs/features/editor.md`, `docs/design-system.md`, `docs/architecture.md` |
 | Surfaced from | 2026-04-24 user live-test: breadcrumb felt redundant with the TitleBar + window title |
 
-### #132 — Editor flows under translucent TitleBar + StatusBar (toggleable)
+### #132 — Editor flows under translucent TitleBar + StatusBar (toggleable) ✅
 
 | Field | Value |
 | --- | --- |
@@ -1413,7 +1413,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/QuietLayout.tsx` (layering), `src/components/TitleBar.tsx`, `src/components/editor/StatusBar.tsx`, `src/stores/settings-store.ts`, `src/components/settings/v2/AppearanceSettings.tsx`, `src/styles/globals.css` |
 | Surfaced from | 2026-04-24 user live-test after #131 landed: "could we make both the title bar and the status bar somewhat transparent? the document editor flows behind the title bar, which would create a layer" |
 
-### #133 — FloatingCommandBar dictation mic button
+### #133 — FloatingCommandBar dictation mic button ✅
 
 | Field | Value |
 | --- | --- |
@@ -1424,7 +1424,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, optionally share a `useDictationControl` hook with ChatInput |
 | Surfaced from | #126 scope cut — deferred to keep the main parity PR focused |
 
-### #134 — FloatingCommandBar context chips + explicit-attach offer
+### #134 — FloatingCommandBar context chips + explicit-attach offer ✅
 
 | Field | Value |
 | --- | --- |
@@ -1435,7 +1435,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, reuse `ContextPill` + `useChatContext` |
 | Surfaced from | #126 scope cut |
 
-### #135 — SidebarContextMenu Move to… + drag-to-chat
+### #135 — SidebarContextMenu Move to… + drag-to-chat ✅
 
 | Field | Value |
 | --- | --- |
@@ -1446,7 +1446,7 @@ This milestone closes the planning gap surfaced during the Phase 1 trial (2026-0
 | Files | `src/components/sidebar/quiet/SidebarContextMenu.tsx`, `src/components/sidebar/quiet/file-drag.ts` |
 | Surfaced from | #128 scope cut |
 
-### #136 — Quiet sidebar: project-row right-hand slot polish
+### #136 — Quiet sidebar: project-row right-hand slot polish ✅
 
 | Field | Value |
 | --- | --- |

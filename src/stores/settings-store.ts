@@ -133,6 +133,14 @@ interface SettingsStore {
    */
   quietChromeOverrides: QuietChromeTargets;
   /**
+   * Quiet Composer translucent chrome (#132). When true, the TitleBar
+   * and StatusBar get a semi-transparent background + backdrop-blur,
+   * and the editor document area scrolls **under** them — matching the
+   * frosted-glass chrome of Bear / Craft. Default off so existing
+   * users see no change.
+   */
+  quietChromeTransparent: boolean;
+  /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
    * the quiet-composer sidebar Recent section. Clamped to [3, 15]. Default 5.
    */
@@ -240,6 +248,8 @@ interface SettingsStore {
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
   setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
+  /** #132 — toggle the translucent chrome + editor flow-under effect. */
+  setQuietChromeTransparent: (enabled: boolean) => void;
   /**
    * Toggle a single per-element override. Automatically flips the preset to
    * "custom" so the override is actually used at read time.
@@ -296,6 +306,7 @@ export const useSettingsStore = create<SettingsStore>()(
       cmdBarPinnedWidth: 400,
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
+      quietChromeTransparent: false,
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarTagsHidden: false,
@@ -581,6 +592,10 @@ export const useSettingsStore = create<SettingsStore>()(
         }));
       },
 
+      setQuietChromeTransparent: (enabled: boolean) => {
+        set({ quietChromeTransparent: enabled });
+      },
+
       setSidebarRecentCap: (n: number) => {
         // Clamp to [3, 15] per PRD; round so the slider value stays integer.
         set({ sidebarRecentCap: Math.round(Math.max(3, Math.min(15, n))) });
@@ -694,6 +709,9 @@ export const useSettingsStore = create<SettingsStore>()(
             typeof state.quietChromeOverrides !== 'object'
           ) {
             state.quietChromeOverrides = { ...QUIET_CHROME_PRESETS.default };
+          }
+          if (typeof state.quietChromeTransparent !== 'boolean') {
+            state.quietChromeTransparent = false;
           }
         }
         if (version < 8) {

@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuSub,
@@ -26,6 +27,9 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useGitStore } from "@/stores/git-store";
+import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import type { FileEntry } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 
 /**
@@ -118,12 +122,16 @@ export function SidebarContextMenu({
   onOpen,
 }: SidebarContextMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const { openFile, deletePath, refreshFileTree } = useFileOperations();
+  const { openFile, deletePath, refreshFileTree, renamePath } = useFileOperations();
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const unpinFile = useWorkspaceStore((s) => s.unpinFile);
   const projects = useWorkspaceStore((s) => s.projects);
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+  const notesTree = useWorkspaceStore((s) => s.notesTree);
   const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
+  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
 
   const name = basename(filePath);
   const isPinned = pinnedFiles.includes(filePath);
@@ -145,6 +153,95 @@ export function SidebarContextMenu({
   const isTrackedUnderGit = Boolean(
     repoState?.isGitRepo && repoState.fileStatusMap?.has(filePath),
   );
+
+  // #135 — "Move to…" destinations. Same shape the legacy
+  // `FileTreeItem` derives (`Quick Notes` root + every project + every
+  // explorer folder, deduped, with the row's own path filtered out for
+  // directory rows so a folder can't be moved into itself). Computed
+  // once per render — the destination list is small.
+  const currentParent = filePath.slice(0, filePath.lastIndexOf("/"));
+  const moveDestinations = useMemo(() => {
+    type Destination = {
+      path: string;
+      label: string;
+      category: "notes" | "project" | "folder";
+      tree: FileEntry[];
+    };
+    const destinations: Destination[] = [];
+    if (notesRootPath && !notesRootPath.startsWith("~")) {
+      destinations.push({
+        path: notesRootPath,
+        label: "Quick Notes",
+        category: "notes",
+        tree: notesTree,
+      });
+    }
+    for (const project of projects) {
+      destinations.push({
+        path: project.path,
+        label:
+          metadataMap[project.path]?.name ??
+          project.path.split("/").filter(Boolean).pop() ??
+          "Project",
+        category: "project",
+        tree: project.fileTree,
+      });
+    }
+    for (const folder of explorerFolders) {
+      destinations.push({
+        path: folder.path,
+        label:
+          folder.path.split("/").filter(Boolean).pop() ?? "Folder",
+        category: "folder",
+        tree: folder.fileTree,
+      });
+    }
+    const seen = new Set<string>();
+    const unique = destinations.filter((d) => {
+      if (seen.has(d.path)) return false;
+      seen.add(d.path);
+      return true;
+    });
+    // A directory can't host itself.
+    return unique.filter((d) => !(isContainer && d.path === filePath));
+  }, [
+    notesRootPath,
+    notesTree,
+    projects,
+    explorerFolders,
+    metadataMap,
+    isContainer,
+    filePath,
+  ]);
+  const hasMoveDestinations = moveDestinations.length > 0;
+  const hasMixedCategories =
+    new Set(moveDestinations.map((d) => d.category)).size > 1;
+
+  const handleMoveTo = async (destFolderPath: string) => {
+    if (destFolderPath === currentParent) return;
+    if (
+      isContainer &&
+      (destFolderPath === filePath ||
+        destFolderPath.startsWith(filePath + "/"))
+    ) {
+      toast.error("Cannot move a folder into itself");
+      return;
+    }
+    const destPath = `${destFolderPath}/${name}`;
+    try {
+      const exists = await tauriApi.pathExists(destPath);
+      if (exists) {
+        toast.error(
+          `A file named "${name}" already exists in the destination`,
+        );
+        return;
+      }
+      await renamePath(filePath, destPath);
+      toast.success(`Moved "${name}"`);
+    } catch (error) {
+      toast.error(`Failed to move: ${error}`);
+    }
+  };
 
   const handleOpen = async () => {
     if (onOpen) {
@@ -435,9 +532,109 @@ export function SidebarContextMenu({
 
           <ContextMenuSeparator />
 
-          <ContextMenuItem disabled title="Coming soon">
-            Move to…
-          </ContextMenuItem>
+          {/* #135 — Move to… submenu. Pulls every workspace root +
+             *  explorer folder from the stores and offers them as
+             *  destinations. Categorised when more than one category
+             *  is present (Quick Notes / Projects / Folders). The
+             *  current parent + the entry itself (if a folder) are
+             *  filtered out to prevent no-op / illegal moves. */}
+          {hasMoveDestinations ? (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>Move to…</ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {hasMixedCategories ? (
+                  <>
+                    {moveDestinations.some((d) => d.category === "notes") && (
+                      <>
+                        <ContextMenuLabel className="text-xs text-muted-foreground">
+                          QUICK NOTES
+                        </ContextMenuLabel>
+                        {moveDestinations
+                          .filter((d) => d.category === "notes")
+                          .map((d) => (
+                            <ContextMenuItem
+                              key={d.path}
+                              disabled={d.path === currentParent}
+                              onSelect={() => void handleMoveTo(d.path)}
+                            >
+                              {d.label}
+                              {d.path === currentParent && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  (current)
+                                </span>
+                              )}
+                            </ContextMenuItem>
+                          ))}
+                      </>
+                    )}
+                    {moveDestinations.some((d) => d.category === "project") && (
+                      <>
+                        <ContextMenuLabel className="text-xs text-muted-foreground">
+                          PROJECTS
+                        </ContextMenuLabel>
+                        {moveDestinations
+                          .filter((d) => d.category === "project")
+                          .map((d) => (
+                            <ContextMenuItem
+                              key={d.path}
+                              disabled={d.path === currentParent}
+                              onSelect={() => void handleMoveTo(d.path)}
+                            >
+                              {d.label}
+                              {d.path === currentParent && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  (current)
+                                </span>
+                              )}
+                            </ContextMenuItem>
+                          ))}
+                      </>
+                    )}
+                    {moveDestinations.some((d) => d.category === "folder") && (
+                      <>
+                        <ContextMenuLabel className="text-xs text-muted-foreground">
+                          FOLDERS
+                        </ContextMenuLabel>
+                        {moveDestinations
+                          .filter((d) => d.category === "folder")
+                          .map((d) => (
+                            <ContextMenuItem
+                              key={d.path}
+                              disabled={d.path === currentParent}
+                              onSelect={() => void handleMoveTo(d.path)}
+                            >
+                              {d.label}
+                              {d.path === currentParent && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  (current)
+                                </span>
+                              )}
+                            </ContextMenuItem>
+                          ))}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  moveDestinations.map((d) => (
+                    <ContextMenuItem
+                      key={d.path}
+                      disabled={d.path === currentParent}
+                      onSelect={() => void handleMoveTo(d.path)}
+                    >
+                      {d.label}
+                      {d.path === currentParent && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          (current)
+                        </span>
+                      )}
+                    </ContextMenuItem>
+                  ))
+                )}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          ) : (
+            <ContextMenuItem disabled>Move to…</ContextMenuItem>
+          )}
           <ContextMenuItem
             variant="destructive"
             onSelect={() => setConfirmOpen(true)}

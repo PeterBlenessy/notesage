@@ -879,25 +879,34 @@ function ProjectRow({
          *  the aggregate git "●" glyph when any file inside the project
          *  has changes, and the pending-external-change dot. */}
       <SidebarRowIndicators path={project.path} kind="project" />
-      {fileCount !== null && (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {fileCount}
-        </span>
-      )}
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label={`New note in ${name}`}
-        tabIndex={-1}
-        onClick={(event) => {
-          event.stopPropagation();
-          onAddNote();
-        }}
-        className="opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 shrink-0"
+      {/* #136 — stable right-hand slot for the file count + the
+         *  on-hover "+" button. The button absolutely overlays the
+         *  count so the row's right edge stays pinned (no layout
+         *  shift between hover/idle states). Per mockup-d intent. */}
+      <span
+        className="relative inline-flex h-5 min-w-[1.5rem] items-center justify-end shrink-0"
+        aria-hidden={fileCount === null ? undefined : "false"}
       >
-        <Plus strokeWidth={1.5} />
-      </Button>
+        {fileCount !== null && (
+          <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 group-focus-within/row:opacity-0 transition-opacity duration-150">
+            {fileCount}
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`New note in ${name}`}
+          tabIndex={-1}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAddNote();
+          }}
+          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+        >
+          <Plus strokeWidth={1.5} />
+        </Button>
+      </span>
     </div>
   );
 }

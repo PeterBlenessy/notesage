@@ -183,6 +183,12 @@ export function AppearanceSettings() {
   const setTintChroma = useSettingsStore((s) => s.setTintChroma);
   const quietChromePreset = useSettingsStore((s) => s.quietChromePreset);
   const quietChromeOverrides = useSettingsStore((s) => s.quietChromeOverrides);
+  const quietChromeTransparent = useSettingsStore(
+    (s) => s.quietChromeTransparent,
+  );
+  const setQuietChromeTransparent = useSettingsStore(
+    (s) => s.setQuietChromeTransparent,
+  );
   const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
   const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
   const sidebarRecentCap = useSettingsStore((s) => s.sidebarRecentCap);
@@ -449,6 +455,24 @@ export function AppearanceSettings() {
               );
             })
           : null}
+
+        {/* #132 — translucent chrome + editor flow-under. Default off
+           *  so existing users see no change. When on, the title bar
+           *  and status bar render with semi-transparent backgrounds +
+           *  backdrop-blur and the document area scrolls beneath them
+           *  (Bear / Craft chrome aesthetic). */}
+        <SettingsRow
+          label="Translucent chrome"
+          description="Title bar and status bar use a frosted-glass background; the document scrolls beneath them. Off by default."
+          htmlFor="appearance-quiet-chrome-transparent"
+          control={
+            <Switch
+              id="appearance-quiet-chrome-transparent"
+              checked={quietChromeTransparent}
+              onCheckedChange={setQuietChromeTransparent}
+            />
+          }
+        />
       </SettingsGroup>
 
       {/* ── Sidebar composition ──────────────────────────────────── */}

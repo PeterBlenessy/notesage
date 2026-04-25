@@ -562,6 +562,25 @@ body {
 }
 
 /* =========================================================================
+ * Translucent chrome (#132)
+ *
+ * When the QuietLayout root carries `data-quiet-chrome-transparent="true"`,
+ * the StatusBar gains a semi-transparent background + backdrop-blur to
+ * match the TitleBar's frosted-glass effect. The TitleBar applies its
+ * own classes inline (because it's also re-positioned absolute by
+ * QuietLayout in the same setting); the StatusBar can stay component-
+ * neutral by leaning on the CSS-driven override below.
+ *
+ * The `[data-quiet-status]` selector targets the StatusBar specifically
+ * (it's the only element pre-stamped with that attribute).
+ * ========================================================================= */
+.app[data-quiet-chrome-transparent="true"] [data-quiet-status] {
+  background-color: color-mix(in oklch, var(--color-background) 70%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* =========================================================================
  * Focus mode (#56)
  *
  * `useFocusMode` toggles the `.focus-mode` class on the QuietLayout root

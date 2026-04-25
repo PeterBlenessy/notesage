@@ -5,11 +5,15 @@ import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore, selectMessages, selectProjectPaths } from "@/stores/chat-store";
 import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
+import { ContextPill } from "@/components/chat/ContextPill";
+import { useChatContext } from "@/hooks/useChatContext";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { FILE_DRAG_MIME } from "@/components/sidebar/quiet/file-drag";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { toast } from "sonner";
-import { ArrowUp, ImagePlus, Square, X } from "lucide-react";
+import { ArrowUp, ImagePlus, Mic, MicOff, Plus, Square, X } from "lucide-react";
 import type { ChatMessage as ChatMessageType, ImageAttachment } from "@/lib/ai/types";
 import { compressImage } from "@/lib/image-compress";
 import {
@@ -154,6 +158,44 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     },
     [setActiveConversation],
   );
+
+  // #134 — context chips + explicit-attach offer. Mirrors the legacy
+  // ChatInput's render: auto-attached files appear as ContextPill rows
+  // above the input; when the active tab sits outside the selected
+  // project scope, an "Add this file to chat" affordance lets the user
+  // opt in. The hook is shared with ChatInput; reading it here keeps
+  // the UX consistent across shells.
+  const {
+    contextItems,
+    dismissItem,
+    explicitAttachOffer,
+    attachExplicit,
+  } = useChatContext();
+
+  // #133 — dictation. The hook tries Web Speech first and falls back
+  // to whisper-rs in WKWebView. `finalText` accumulates as transcription
+  // completes; `interimText` is the live "still hearing you" preview
+  // shown as a placeholder while dictating. Mirrors the legacy
+  // `ChatInput` wiring exactly.
+  const {
+    startDictation,
+    stopDictation,
+    isDictating,
+    interimText,
+    finalText,
+  } = useSpeechRecognition();
+  const handleMicToggle = useCallback(async () => {
+    if (isDictating) await stopDictation();
+    else await startDictation();
+  }, [isDictating, startDictation, stopDictation]);
+
+  // Append `finalText` to the composer input as the dictation engine
+  // finalises each chunk. Same append shape ChatInput uses (a single
+  // space separator so the user can keep typing in between).
+  useEffect(() => {
+    if (!finalText) return;
+    setInputValue((prev) => (prev ? `${prev} ${finalText}` : finalText));
+  }, [finalText]);
 
   // #127 parity — connection + routing state for the cross-provider
   // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
@@ -1071,6 +1113,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           chatView={chatView}
           onSelectConversation={handleSelectConversation}
           selectedProjectPaths={selectedProjectPaths}
+          contextItems={contextItems}
+          onDismissContext={dismissItem}
+          explicitAttachOffer={explicitAttachOffer}
+          onAttachExplicit={attachExplicit}
+          isDictating={isDictating}
+          interimText={interimText}
+          onMicToggle={handleMicToggle}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -1330,6 +1379,20 @@ interface ExpandedContentProps {
   onSelectConversation: (id: string) => void;
   /** #118 — selected projects filter for ChatHistoryView. */
   selectedProjectPaths: string[];
+  /** #134 — auto-attached context items (active tab, etc.). */
+  contextItems: import("@/hooks/useChatContext").ContextItem[];
+  /** #134 — dismiss a context item by id. */
+  onDismissContext: (id: string) => void;
+  /** #134 — offer to attach the active tab when it's out of scope. */
+  explicitAttachOffer: import("@/hooks/useChatContext").ExplicitAttachOffer | null;
+  /** #134 — accept the explicit-attach offer. */
+  onAttachExplicit: (path: string, label: string) => void;
+  /** #133 — dictation active state (drives Mic vs MicOff icon). */
+  isDictating: boolean;
+  /** #133 — live transcription preview shown as the input placeholder. */
+  interimText: string;
+  /** #133 — toggle dictation. */
+  onMicToggle: () => void;
 }
 
 function ExpandedContent({
@@ -1366,6 +1429,13 @@ function ExpandedContent({
   chatView,
   onSelectConversation,
   selectedProjectPaths,
+  contextItems,
+  onDismissContext,
+  explicitAttachOffer,
+  onAttachExplicit,
+  isDictating,
+  interimText,
+  onMicToggle,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -1397,6 +1467,44 @@ function ExpandedContent({
           onResend={onStreamResend}
           onEdit={onStreamEdit}
         />
+      )}
+
+      {/* #134 — context chips + explicit-attach offer. Auto-attached
+       *  files (active tab when in scope) render as `ContextPill`s.
+       *  When the active tab sits outside the selected project scope,
+       *  the explicit-attach offer becomes a dashed "+ Add … to chat"
+       *  button so the user can opt in manually. Renders nothing when
+       *  both are empty so the input row stays compact.
+       */}
+      {(contextItems.length > 0 || explicitAttachOffer) && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
+          {contextItems.map((item) => (
+            <ContextPill
+              key={item.id}
+              item={item}
+              onDismiss={onDismissContext}
+            />
+          ))}
+          {explicitAttachOffer && (
+            <button
+              type="button"
+              onClick={() =>
+                onAttachExplicit(
+                  explicitAttachOffer.path,
+                  explicitAttachOffer.label,
+                )
+              }
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
+              aria-label={`Add ${explicitAttachOffer.label} to chat`}
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="truncate">
+                Add {explicitAttachOffer.label} to chat
+              </span>
+            </button>
+          )}
+        </div>
       )}
 
       {/* #127 parity — edit-mode banner. Appears above the input when the
@@ -1470,29 +1578,72 @@ function ExpandedContent({
           }
         }}
         onDragOver={(event) => {
-          // Signal the drop target — prevent default so the drop event fires.
-          if (event.dataTransfer?.types?.includes("Files")) {
+          // Signal the drop target for OS file drags AND for sidebar
+          // file-row drags (#135). Without `preventDefault` the drop
+          // event never fires.
+          const types = event.dataTransfer?.types;
+          if (
+            types?.includes("Files") ||
+            types?.includes(FILE_DRAG_MIME)
+          ) {
             event.preventDefault();
           }
         }}
         onDrop={async (event) => {
-          // #126 parity — accept image file drops. Non-image drops fall
-          // through to the existing reference-chip handler in the prefix
-          // system (files dropped from the sidebar already route through
-          // `beginFileDrag` + reference-mode).
+          // OS file drag (Finder etc.) — accept image files.
           const files = event.dataTransfer?.files;
-          if (!files || files.length === 0) return;
-          const images = Array.from(files).filter((f) =>
-            f.type.startsWith("image/"),
-          );
-          if (images.length === 0) return;
-          event.preventDefault();
-          for (const file of images) {
+          if (files && files.length > 0) {
+            const images = Array.from(files).filter((f) =>
+              f.type.startsWith("image/"),
+            );
+            if (images.length > 0) {
+              event.preventDefault();
+              for (const file of images) {
+                try {
+                  const attachment = await compressImage(file, {
+                    name: file.name,
+                  });
+                  onAddAttachment(attachment);
+                } catch (err) {
+                  toast.error(`Failed to attach ${file.name}: ${err}`);
+                }
+              }
+              return;
+            }
+          }
+
+          // #135 — sidebar drag-to-chat. Sidebar file rows stamp drags
+          // with `FILE_DRAG_MIME` carrying the absolute file path. If
+          // the path points at an image, read its bytes via tauriApi,
+          // compress, and push to the attachment strip — same shape as
+          // SidebarContextMenu's "Add to chat" action.
+          const sidebarPath = event.dataTransfer?.getData(FILE_DRAG_MIME);
+          if (sidebarPath) {
+            event.preventDefault();
+            const lower = sidebarPath.toLowerCase();
+            const isImage = /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(lower);
+            if (!isImage) return;
             try {
-              const attachment = await compressImage(file, { name: file.name });
+              const { tauriApi } = await import("@/lib/tauri");
+              const bytes = await tauriApi.readBinaryFile(sidebarPath);
+              const name = sidebarPath.split("/").pop() ?? "image";
+              const ext = name.split(".").pop()?.toLowerCase() ?? "";
+              const mimeMap: Record<string, string> = {
+                jpg: "image/jpeg",
+                jpeg: "image/jpeg",
+                png: "image/png",
+                gif: "image/gif",
+                webp: "image/webp",
+                bmp: "image/bmp",
+                svg: "image/svg+xml",
+              };
+              const blob = new Blob([new Uint8Array(bytes)], {
+                type: mimeMap[ext] ?? "image/png",
+              });
+              const attachment = await compressImage(blob, { name });
               onAddAttachment(attachment);
             } catch (err) {
-              toast.error(`Failed to attach ${file.name}: ${err}`);
+              toast.error(`Failed to attach dropped file: ${err}`);
             }
           }
         }}
@@ -1510,6 +1661,31 @@ function ExpandedContent({
           )}
         >
           <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </button>
+        {/* #133 — dictation toggle. Mirrors the legacy ChatInput's mic
+           *  button: red + animate-pulse while dictating, idle muted
+           *  otherwise. The interim text is shown as the input
+           *  placeholder (below) so the user can see what the engine
+           *  thinks they said before the final chunk lands. */}
+        <button
+          type="button"
+          onClick={onMicToggle}
+          aria-label={isDictating ? "Stop dictation" : "Start dictation"}
+          title={isDictating ? "Stop dictation" : "Start dictation"}
+          className={cn(
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+            "transition-colors",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            isDictating
+              ? "text-destructive animate-pulse"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted",
+          )}
+        >
+          {isDictating ? (
+            <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
+          ) : (
+            <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
+          )}
         </button>
         <input
           ref={inputRef}
@@ -1530,7 +1706,11 @@ function ExpandedContent({
           onKeyUp={onSelectionChange}
           onClick={onSelectionChange}
           onKeyDown={onKeyDown}
-          placeholder="Ask, search, or type / for skills…"
+          placeholder={
+            isDictating && interimText
+              ? interimText
+              : "Ask, search, or type / for skills…"
+          }
           className={cn(
             "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
             "outline-none",
