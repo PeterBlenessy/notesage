@@ -117,7 +117,7 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
         only opened from the v2 About panel (`AboutSettings`) so
         no legacy callers depend on the old chrome.
       */}
-      <DialogContent className="max-w-[1040px] max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+      <DialogContent className="w-[864px] sm:max-w-[864px] h-[min(720px,calc(100vh-48px))] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Changelog
@@ -127,23 +127,32 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-7 py-5 space-y-3">
-            {loading && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Loading changelog…
-              </p>
-            )}
-            {!loading && (!changelog || changelog.releases.length === 0) && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No changelog available.
-              </p>
-            )}
-            {changelog?.releases.map((release) => (
-              <ReleaseCard key={release.version} release={release} />
-            ))}
-          </div>
-        </ScrollArea>
+        {/* Live-test 2026-04-25 — wrap ScrollArea in a `flex-1 min-h-0`
+            div so it inherits a constrained height (mirrors the
+            SettingsShell pattern where ScrollArea uses `h-full`
+            inside a flex-col + min-h-0 parent). The previous
+            `flex-1 min-h-0` directly on ScrollArea didn't propagate
+            into Radix's internal viewport, so the dialog grew with
+            content instead of scrolling. */}
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="px-7 py-5 space-y-3">
+              {loading && (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  Loading changelog…
+                </p>
+              )}
+              {!loading && (!changelog || changelog.releases.length === 0) && (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No changelog available.
+                </p>
+              )}
+              {changelog?.releases.map((release) => (
+                <ReleaseCard key={release.version} release={release} />
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

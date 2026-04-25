@@ -276,7 +276,12 @@ export function ConnectionConfigDialog({
         padding so content lines up with the new header.
       */}
       <DialogContent
-        className="max-w-[1040px] p-0 gap-0"
+        // Live-test 2026-04-25 — `w-[750px]` sets the target width
+        // (≈ 150 % of the legacy 500 px). `sm:max-w-[750px]` overrides
+        // shadcn's base `sm:max-w-lg` (512 px), which was pinning the
+        // dialog to ~512 px on every screen ≥640 px regardless of any
+        // `max-w-*` we added without the `sm:` prefix.
+        className="w-[750px] sm:max-w-[750px] p-0 gap-0"
         aria-describedby={undefined}
       >
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
