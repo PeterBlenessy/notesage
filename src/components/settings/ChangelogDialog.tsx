@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChangelog, type Release } from '@/hooks/useChangelog';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -108,27 +109,41 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b shrink-0">
-          <DialogTitle className="text-base">Changelog</DialogTitle>
-          <DialogDescription className="sr-only">Version history and release notes</DialogDescription>
+      {/*
+        Live-test 2026-04-25 #146 — chrome upgraded to match the
+        v2 dialog aesthetic (KeyboardShortcutsDialogV2,
+        SettingsDialogV2): wider 640 px modal, generous 28 px header
+        padding, 20 px semibold title, ScrollArea body. The dialog is
+        only opened from the v2 About panel (`AboutSettings`) so
+        no legacy callers depend on the old chrome.
+      */}
+      <DialogContent className="max-w-[640px] max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
+          <DialogTitle className="text-[20px] font-semibold tracking-tight">
+            Changelog
+          </DialogTitle>
+          <DialogDescription className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
+            Version history and release notes for Notesage.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-          {loading && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Loading changelog...
-            </p>
-          )}
-          {!loading && (!changelog || changelog.releases.length === 0) && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No changelog available.
-            </p>
-          )}
-          {changelog?.releases.map((release) => (
-            <ReleaseCard key={release.version} release={release} />
-          ))}
-        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-7 py-5 space-y-3">
+            {loading && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Loading changelog…
+              </p>
+            )}
+            {!loading && (!changelog || changelog.releases.length === 0) && (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No changelog available.
+              </p>
+            )}
+            {changelog?.releases.map((release) => (
+              <ReleaseCard key={release.version} release={release} />
+            ))}
+          </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
