@@ -122,14 +122,19 @@ export function TitleBar(props: TitleBarProps) {
     <div
       className={cn(
         "h-9 flex items-center shrink-0 select-none",
-        // #132 — when QuietLayout passes the translucent-chrome
-        // classes (`absolute inset-x-0 top-0 z-30`), also paint a
-        // semi-transparent backdrop-blur so editor content scrolling
-        // behind reads as frosted glass. Without `backdrop-blur` the
-        // bar would just look thin; with it, headings/images/code
-        // blocks underneath get a subtle blur as they pass.
+        // #142 — when QuietLayout passes the translucent-chrome
+        // classes (`absolute inset-x-0 top-0 z-30`), paint a
+        // strongly-translucent backdrop-blur so editor content
+        // scrolling behind reads as frosted glass. The earlier
+        // `bg-background/70` ratio was too opaque — the bar still
+        // read as solid because 70 % background blends with the
+        // identical layout-root colour and the blur is barely
+        // noticeable. `bg-background/40` (40 % opacity) drops the
+        // chrome enough that scrolling content visibly smears
+        // through, plus a slightly stronger blur (`xl`) keeps text
+        // readable behind the bar.
         props.className?.includes("absolute") &&
-          "bg-background/70 backdrop-blur-md",
+          "bg-background/40 backdrop-blur-xl",
         props.className,
       )}
       data-tauri-drag-region

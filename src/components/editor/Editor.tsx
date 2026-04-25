@@ -627,7 +627,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             mode toggle for the quiet shell.
           */}
           {isQuietComposer && toolbarVisible && !focusMode && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+            <div
+              data-editor-pill-toolbar
+              className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto"
+            >
               <Toolbar
                 editor={editor}
                 onImageInsert={() => setImageDialogOpen(true)}
@@ -657,7 +660,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             />
           )}
           <div ref={scrollAreaRef} className="h-full overflow-y-auto">
+          {/*
+            #142 — `data-editor-scroll-content` lets the
+            `.app[data-quiet-chrome-transparent="true"]` rule in globals.css
+            push the inner content top padding down so initial markdown
+            sits BELOW the absolute frosted title bar at scroll-top, while
+            still allowing it to slide UP behind the bar as the user scrolls.
+            Without an attribute hook the editor doesn't know it's mounted
+            inside QuietLayout's transparent shell.
+           */}
           <div
+            data-editor-scroll-content
             className={`min-h-full flex justify-center ${
               contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
             }`}

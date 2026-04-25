@@ -179,22 +179,17 @@ export function QuietLayout(props: QuietLayoutProps) {
       if (!mod || !event.shiftKey || event.altKey) return;
       if (event.key.toLowerCase() !== "e") return;
 
-      // Live-test 2026-04-25: previously this skipped when the target
-      // was contenteditable (the editor) so the chord fell through to
-      // the legacy `useKeyboardShortcuts` handler — which opens the
-      // Export-as-PDF dialog. ⌘⇧E under Quiet Composer is supposed to
-      // toggle the TreeOverlay regardless of focus. Capture + preempt
-      // unconditionally; the only carve-out is the overlay's own
-      // search box (so the user can type "e" inside it without
-      // re-toggling).
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.closest("[data-tree-overlay]") !== null
-      ) {
-        return;
-      }
-
+      // Live-test 2026-04-25 (#139 follow-up): the previous carve-out
+      // skipped this handler when the event target was inside the
+      // overlay (so the user could "type 'e' in the search box"). That
+      // was misguided — the chord requires the `mod` modifier, so it
+      // can NEVER be confused with raw `e` typing in the search input.
+      // Worse, the carve-out caused the second `⌘⇧E` press (focus
+      // landed in the overlay's search input on open) to fall through
+      // to the legacy `useKeyboardShortcuts` handler, which opens the
+      // Export-as-PDF dialog. Removing the carve-out makes the chord
+      // always toggle the overlay and always preempt the legacy
+      // export-dialog binding while QuietLayout is mounted.
       event.preventDefault();
       event.stopImmediatePropagation();
       // #104 fix — chord toggles; second press dismisses.
@@ -335,12 +330,16 @@ export function QuietLayout(props: QuietLayoutProps) {
         data-sidebar-pinned={sidebarPinned ? "true" : "false"}
         className={cn(
           "flex-1 grid min-h-0 gap-2 p-2",
-          // #132 — when chrome is transparent the title bar is absolute,
-          // so the grid takes the full vertical space starting at y=0.
-          // Padding-top reserves space behind the title bar (h-9 = 36 px
-          // + the existing p-2 = 8 px → 44 px total) so initial content
-          // sits below the chrome edge.
-          quietChromeTransparent && "pt-11",
+          // #142 — when chrome is transparent the title bar overlays the
+          // doc area instead of pushing it down. The grid extends up to
+          // y=0 so content can scroll BEHIND the frosted title bar; the
+          // editor's scroll content (and the floating pill toolbar) own
+          // their own top clearance via the
+          // `[data-quiet-chrome-transparent="true"]` CSS rules in
+          // globals.css. Earlier (#132) this branch added `pt-11` to clear
+          // the bar — that defeated the frosted-glass effect because no
+          // content ever passed behind it; the bar's translucent bg
+          // blended with the matching layout-root bg and read as opaque.
         )}
         style={{
           // #111 audit fix — mockup-d-synthesis specifies 252px for the

@@ -502,7 +502,7 @@ export const useEditorStore = create<EditorStore>()(
     }),
     {
       name: "notesage-editor",
-      version: 1,
+      version: 2,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -516,6 +516,26 @@ export const useEditorStore = create<EditorStore>()(
           if (Array.isArray((state as { tabs?: unknown }).tabs)) {
             state.openDocuments = (state as { tabs: unknown[] }).tabs;
             delete (state as { tabs?: unknown }).tabs;
+          }
+        }
+        if (version < 2) {
+          // #141 — Recent rows added a `lastAccessedAt` field after the
+          // initial release; pre-existing recents persisted before that
+          // bump have no timestamp and were falling back to the parent-
+          // folder hint (which read like a project name, not a relative
+          // time). Backfill in MRU order: the most-recent entry gets a
+          // timestamp 1 minute ago, the next 2 minutes ago, etc. This
+          // preserves the relative ordering as visible "1m", "2m", …
+          // hints until the user reopens each file (which then stamps
+          // the real timestamp via `openTab`).
+          const recents = (state as { recentFiles?: unknown }).recentFiles;
+          if (Array.isArray(recents)) {
+            const now = Date.now();
+            state.recentFiles = recents.map((entry, index) => {
+              const rec = entry as Record<string, unknown>;
+              if (typeof rec.lastAccessedAt === "number") return rec;
+              return { ...rec, lastAccessedAt: now - (index + 1) * 60_000 };
+            });
           }
         }
         return state;

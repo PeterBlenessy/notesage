@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -18,6 +19,11 @@ import { log, PERF } from "@/lib/logger";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
+import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  isAnyContextMenuOpen,
+  subscribeToOpenContextMenus,
+} from "@/lib/sidebar-context-menu-state";
 
 /**
  * Hover-triggered popover that previews one level of a project's contents.
@@ -152,11 +158,24 @@ export function FolderPeek({
     return { top: rect.top, left: rect.right + 8 };
   }, []);
 
+  // Live-test 2026-04-25 — track live cursor position so the global
+  // open-context-menu subscriber can re-evaluate close logic when a
+  // context menu dismisses, without forcing the user to wiggle the
+  // mouse to retrigger mouseleave.
+  const cursorInsideRef = useRef(false);
+
   const handleMouseEnter = useCallback(() => {
+    cursorInsideRef.current = true;
     clearCloseTimer();
     if (isOpen) return;
+    // Don't open while a sidebar context menu is up — React's portal-
+    // traversing synthetic `mouseenter` would otherwise fire on this
+    // trigger when the cursor enters the menu portal.
+    if (isAnyContextMenuOpen()) return;
     clearOpenTimer();
     openTimerRef.current = setTimeout(() => {
+      // Re-check at fire time — a menu may have opened during the delay.
+      if (isAnyContextMenuOpen()) return;
       const next = computePosition();
       if (next) setPosition(next);
       setIsOpen(true);
@@ -165,8 +184,13 @@ export function FolderPeek({
   }, [clearCloseTimer, clearOpenTimer, computePosition, isOpen, projectPath]);
 
   const handleMouseLeave = useCallback(() => {
+    cursorInsideRef.current = false;
     clearOpenTimer();
     if (!isOpen) return;
+    // Don't close while a context menu is open inside (or adjacent to)
+    // the peek — closing the peek would unmount the Radix Root that
+    // hosts the menu and dismiss the menu itself.
+    if (isAnyContextMenuOpen()) return;
     clearCloseTimer();
     closeTimerRef.current = setTimeout(() => {
       setIsOpen(false);
@@ -174,17 +198,46 @@ export function FolderPeek({
     }, CLOSE_GRACE_MS);
   }, [clearCloseTimer, clearOpenTimer, isOpen, projectPath]);
 
-  // #128 iter-2 — right-click dismisses the peek immediately (no grace
-  // period) so the `SidebarContextMenu` doesn't render on top of it.
-  // Without this, the peek popover and the context menu would both be
-  // visible at once, and moving the cursor to click a menu item tends
-  // to trip the peek's hover/leave logic. Cancelling the open timer
-  // also covers the case where the user right-clicks before the peek
-  // has opened.
+  // When all context menus close, re-evaluate: if the cursor is no
+  // longer inside the trigger or popover, close the peek now.
+  useEffect(() => {
+    return subscribeToOpenContextMenus(() => {
+      if (isAnyContextMenuOpen()) return;
+      if (!isOpen) return;
+      if (cursorInsideRef.current) return;
+      clearCloseTimer();
+      closeTimerRef.current = setTimeout(() => {
+        setIsOpen(false);
+        log.debug(PERF.peek, "close", { projectPath });
+      }, CLOSE_GRACE_MS);
+    });
+  }, [clearCloseTimer, isOpen, projectPath]);
+
+  // Live-test 2026-04-25 (#140 — final). Three earlier approaches all
+  // lost:
+  //   1. Synchronous `setIsOpen(false)` — both popovers vanished. The
+  //      shared React commit raced the peek-portal unmount with the
+  //      Radix ContextMenu mount (likely a focus / DismissableLayer
+  //      interaction).
+  //   2. `requestAnimationFrame(() => setIsOpen(false))` — menu opened
+  //      but peek visibly covered it for one paint frame.
+  //   3. `flushSync(() => setIsOpen(false))` — flushSync flushes ALL
+  //      pending updates including Radix's queued setOpen(true), so
+  //      the race remained.
+  //
+  // Final approach: do NOT close the peek from this handler. Just
+  // cancel pending hover-open timers (so a delayed open doesn't fire
+  // while the menu is up). The peek closes naturally via its
+  // mouseleave grace timer when the user moves the cursor toward the
+  // just-opened menu items. The z-index of the SidebarContextMenu is
+  // bumped above the peek's `z-50` (see globals.css) so even when both
+  // are momentarily visible, the menu sits on top instead of being
+  // obscured. This trades a clean close for a robust open — the user
+  // sees the menu immediately and the peek fades out as their cursor
+  // exits the row, no React state updates fighting Radix.
   const handleContextMenu = useCallback(() => {
     clearOpenTimer();
     clearCloseTimer();
-    setIsOpen(false);
   }, [clearOpenTimer, clearCloseTimer]);
 
   const openFile = useCallback(
@@ -281,36 +334,46 @@ export function FolderPeek({
                   {folders.length > 0 && (
                     <div className="flex flex-col">
                       {folders.map((entry) => (
-                        <button
+                        // #160 — wrap each peek row so right-click opens
+                        // our SidebarContextMenu instead of the OS native
+                        // menu. The button is a real DOM element so Radix's
+                        // `asChild` Slot can attach `onContextMenu` directly.
+                        <SidebarContextMenu
                           key={entry.path}
-                          type="button"
-                          tabIndex={0}
-                          onClick={handleFolderClick}
-                          onKeyDown={(e) =>
-                            handleItemKeyDown(e, handleFolderClick)
-                          }
-                          className={cn(
-                            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
-                            "text-foreground/90 text-left truncate",
-                            "hover:bg-muted/50 transition-colors duration-150",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                          )}
+                          filePath={entry.path}
+                          kind="folder"
+                          onOpen={handleFolderClick}
                         >
-                          <Folder
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                            strokeWidth={1.5}
-                            aria-hidden="true"
-                          />
-                          <span className="truncate min-w-0 flex-1">
-                            {entry.name}
-                          </span>
-                          {/* #129 — aggregate git "●" indicator + external-
-                             *  change dot for folder rows inside the peek. */}
-                          <SidebarRowIndicators
-                            path={entry.path}
-                            kind="folder"
-                          />
-                        </button>
+                          <button
+                            type="button"
+                            tabIndex={0}
+                            onClick={handleFolderClick}
+                            onKeyDown={(e) =>
+                              handleItemKeyDown(e, handleFolderClick)
+                            }
+                            className={cn(
+                              "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm w-full",
+                              "text-foreground/90 text-left truncate",
+                              "hover:bg-muted/50 transition-colors duration-150",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                            )}
+                          >
+                            <Folder
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <span className="truncate min-w-0 flex-1">
+                              {entry.name}
+                            </span>
+                            {/* #129 — aggregate git "●" indicator + external-
+                               *  change dot for folder rows inside the peek. */}
+                            <SidebarRowIndicators
+                              path={entry.path}
+                              kind="folder"
+                            />
+                          </button>
+                        </SidebarContextMenu>
                       ))}
                       {folderOverflow > 0 && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">
@@ -328,36 +391,42 @@ export function FolderPeek({
                         />
                       )}
                       {files.map((entry) => (
-                        <button
+                        <SidebarContextMenu
                           key={entry.path}
-                          type="button"
-                          tabIndex={0}
-                          onClick={() => handleFileClick(entry)}
-                          onKeyDown={(e) =>
-                            handleItemKeyDown(e, () => handleFileClick(entry))
-                          }
-                          className={cn(
-                            "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
-                            "text-foreground/90 text-left truncate",
-                            "hover:bg-muted/50 transition-colors duration-150",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                          )}
+                          filePath={entry.path}
+                          kind="file"
+                          onOpen={() => handleFileClick(entry)}
                         >
-                          <FileText
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                            strokeWidth={1.5}
-                            aria-hidden="true"
-                          />
-                          <span className="truncate min-w-0 flex-1">
-                            {entry.name}
-                          </span>
-                          {/* #129 — git status + external-change dot for
-                             *  file rows inside the peek. */}
-                          <SidebarRowIndicators
-                            path={entry.path}
-                            kind="file"
-                          />
-                        </button>
+                          <button
+                            type="button"
+                            tabIndex={0}
+                            onClick={() => handleFileClick(entry)}
+                            onKeyDown={(e) =>
+                              handleItemKeyDown(e, () => handleFileClick(entry))
+                            }
+                            className={cn(
+                              "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm w-full",
+                              "text-foreground/90 text-left truncate",
+                              "hover:bg-muted/50 transition-colors duration-150",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                            )}
+                          >
+                            <FileText
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <span className="truncate min-w-0 flex-1">
+                              {entry.name}
+                            </span>
+                            {/* #129 — git status + external-change dot for
+                               *  file rows inside the peek. */}
+                            <SidebarRowIndicators
+                              path={entry.path}
+                              kind="file"
+                            />
+                          </button>
+                        </SidebarContextMenu>
                       ))}
                       {fileOverflow > 0 && (
                         <div className="px-2 py-1 text-xs text-muted-foreground">

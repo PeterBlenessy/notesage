@@ -1252,6 +1252,57 @@ describe('ProjectsSection — ARIA + keyboard primitives (#80)', () => {
     expect(captured).not.toBeNull();
   });
 
+  // -------------------------------------------------------------------------
+  // #140 regression — `<SidebarContextMenu>` wraps each row so right-click
+  // opens our custom menu instead of the OS native browser menu. The previous
+  // attempt put the function-component row directly under
+  // `<ContextMenuTrigger asChild>`, which silently dropped Radix's injected
+  // `onContextMenu` handler (Slot's `cloneElement` adds the handler to the
+  // function-component element's props, but the row destructures only its
+  // explicit props and ignores the rest). The fix wraps each row in a
+  // passthrough <div> so the trigger's prop injection lands on a real DOM
+  // element. These tests assert the bubbling onContextMenu reaches a Radix
+  // handler that calls preventDefault — the canonical signal that the OS
+  // menu has been suppressed.
+  // -------------------------------------------------------------------------
+
+  it('right-click on a project row preventDefaults the contextmenu event (no OS native menu) (#140)', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+
+    // Fire a real right-click. If our `<SidebarContextMenu>` wrapper is
+    // wired correctly, Radix attaches an `onContextMenu` handler to the
+    // wrapping <div> ancestor (via Slot's cloneElement onto a raw DOM
+    // element). The handler calls preventDefault, suppressing the OS menu.
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    projectRow.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('right-click on a child file row preventDefaults the contextmenu event (#140)', () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const noteRow = screen.getByRole('treeitem', {
+      name: /open file note\.md/i,
+    }) as HTMLElement;
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    noteRow.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('ArrowRight on a project row reveals one level of children inline (keyboard parity with hover-peek)', () => {
     // Mix folders + files + hidden so the inline expansion mirrors what
     // the FolderPeek hover popover would show via `derivePeekChildren`.

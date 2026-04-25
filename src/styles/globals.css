@@ -575,9 +575,98 @@ body {
  * (it's the only element pre-stamped with that attribute).
  * ========================================================================= */
 .app[data-quiet-chrome-transparent="true"] [data-quiet-status] {
-  background-color: color-mix(in oklch, var(--color-background) 70%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* #142 iter-2 — match the title bar exactly so the two frosted-glass
+     layers read as a single translucent treatment. Title bar uses
+     Tailwind `bg-background/40 backdrop-blur-xl` (40 % opacity + 24 px
+     blur); this rule mirrors those exact values via color-mix + a
+     fixed pixel blur. AND it positions the bar absolutely at the
+     bottom of the editor column so content can actually scroll behind
+     it — without this, the status bar sat in normal flow and nothing
+     ever passed beneath, so the frosted bg blended with the matching
+     layout-root colour and read as opaque (same root cause as the
+     title bar fix). The bar is anchored to the `[data-doc-area]`
+     wrapper (sibling rule below makes it `position: relative`) so the
+     bar spans the editor column only — not the pinned cmd-bar gutter
+     or the sidebar. */
+  background-color: color-mix(in oklch, var(--color-background) 40%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+}
+
+/* StatusBar anchor — making `[data-doc-area]` the positioned ancestor
+   so the absolute StatusBar above hugs the editor column. Without this
+   the bar would crawl up the DOM to the layout root and span the
+   sidebar + pinned cmd-bar widths. */
+.app[data-quiet-chrome-transparent="true"] [data-doc-area] {
+  position: relative;
+}
+
+/* Drop the doc area's bottom padding when transparent — without this the
+   8 px `p-2` gutter sat BELOW the absolute StatusBar and appeared as an
+   opaque stripe of the layout-root background between the frosted bar
+   and the bottom of the viewport. The top padding stays so the grid
+   doesn't crawl under the title bar's drag region. */
+.app[data-quiet-chrome-transparent="true"] [data-quiet-layout-document-area] {
+  padding-bottom: 0;
+}
+
+/* =========================================================================
+ * Sidebar context menu — z-stacking above hover-preview popovers (#140 final)
+ *
+ * `FolderPeek` (custom portal) and `FilePreview` (Radix Popover) both render
+ * at `z-50`. When a user right-clicks a sidebar row that has a hover preview
+ * already open, the preview and the SidebarContextMenu briefly co-exist
+ * while the cursor moves toward the menu items. To make sure the menu always
+ * sits on top during this overlap (and to avoid trying to React-state-close
+ * the preview synchronously, which races with Radix's mount and dismisses
+ * the menu — see FolderPeek.tsx for the full history), we bump the
+ * SidebarContextMenu's `<ContextMenuContent>` to `z-[60]`. The preview
+ * closes via its existing mouseleave grace timer once the cursor exits the
+ * row.
+ * ========================================================================= */
+[data-slot="context-menu-content"],
+[data-slot="context-menu-sub-content"] {
+  z-index: 60;
+}
+
+/* When the StatusBar is absolute-positioned (above), the editor's scroll
+   region needs clearance at the bottom so initial content isn't trapped
+   beneath the frosted bar. h-8 (32 px) bar + 8 px breathing room. */
+.app[data-quiet-chrome-transparent="true"] [data-editor-scroll-content] {
+  padding-bottom: calc(2rem + 0.5rem);
+}
+
+/*
+ * #142 — Translucent title bar requires content to actually pass behind it.
+ * QuietLayout drops the legacy `pt-11` compensation on the doc area when
+ * transparent chrome is on, so the editor's scroll area now extends up to
+ * y=0 (the title bar's z=30 absolute layer overlays it). Two surfaces inside
+ * the editor need extra top clearance so they don't sit visually trapped
+ * behind the bar at scroll-top:
+ *
+ *   - `[data-editor-scroll-content]` — the inner padding wrapper around
+ *     the editable area. We add `padding-top: 44px` (title bar h-9 = 36 px
+ *     + 8 px breathing room) on top of the existing py-4 / py-10 so initial
+ *     markdown sits below the bar at rest. Padding scrolls with content,
+ *     so as the user scrolls down the first content rises behind the
+ *     frosted bar — the visible cue that translucent chrome is working.
+ *
+ *   - `[data-editor-pill-toolbar]` — the floating pill toolbar lives at
+ *     `top-3` (12 px) inside its `relative` parent, which now starts at
+ *     y=0 instead of y=44. Bump it to `top: 48px` so it clears the bar
+ *     and floats just below the chrome edge, matching the mockup.
+ */
+.app[data-quiet-chrome-transparent="true"] [data-editor-scroll-content] {
+  padding-top: calc(2.5rem + 0.5rem); /* 44px = title bar 36 + 8 gap */
+}
+
+.app[data-quiet-chrome-transparent="true"] [data-editor-pill-toolbar] {
+  top: 3rem; /* 48px — clears the 36px title bar with a 12px gap */
 }
 
 /* =========================================================================
@@ -609,6 +698,16 @@ body {
   pointer-events: none;
   transition: opacity 220ms ease-out;
 }
+/*
+ * #150 — mockup-f calls for the title bar to be HIDDEN entirely in focus
+ * mode (not just dimmed): the document occupies the full height and the
+ * `<FocusPill>` is the only top affordance. Use `display: none` so the
+ * bar is removed from layout — `opacity: 0` would still reserve its 36 px
+ * row and the document would still need to clear it.
+ */
+.app.focus-mode [data-titlebar-mode="quiet"] {
+  display: none;
+}
 /* AgentOrb doesn't carry a dedicated `data-agent-orb` attribute; it uses
  * `data-testid="agent-orb"` as its stable hook (see AgentOrb.tsx). We key
  * the dim-to-30% behaviour off that so the orb remains interactive. */
@@ -618,11 +717,14 @@ body {
 }
 .app.focus-mode [data-doc-area-placeholder],
 .app.focus-mode [data-doc-area] {
-  /* #111 audit fix — mockup-f-focus-mode specifies 140px top padding
-     in focus mode (110px traffic-light safe zone + 30px extra
-     breathing room). Previous 110px only covered the safe zone and
-     left the document text feeling cramped against the title bar. */
-  padding-top: 140px;
+  /* #150 — title bar is hidden in focus mode (display: none), so the
+     document only needs to clear the macOS traffic-light safe zone
+     (~64 px) plus a small visual breathing band for the FocusPill at
+     `top-4` (16 px + ~24 px pill height = 40 px). 80 px gives a
+     comfortable gap below the pill before content starts. The earlier
+     140 px assumed the title bar was still visible and added the bar
+     height + padding on top of the safe zone — no longer needed. */
+  padding-top: 80px;
   transition: padding-top 220ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {

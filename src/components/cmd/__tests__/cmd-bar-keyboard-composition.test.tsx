@@ -67,9 +67,32 @@ vi.mock('@/components/cmd/CommandBarContext', () => ({
   default: () => <div data-testid="context-stub" />,
 }));
 
+// CommandBarStream stub exposes the `onEdit` callback as a button so tests
+// can simulate clicking Edit on a chat message without rendering the real
+// ChatMessageList. Pressing the button invokes onEdit with a synthetic
+// message — that drives FloatingCommandBar's `handleStreamEdit` which sets
+// `editContext` (the state under test for #149).
 vi.mock('@/components/cmd/CommandBarStream', () => ({
   __esModule: true,
-  default: () => <div data-testid="stream-stub" />,
+  default: ({ onEdit }: { onEdit?: (msg: { id: string; role: string; content: string; parentId?: string | null; connectionId?: string }) => void }) => (
+    <div data-testid="stream-stub">
+      <button
+        data-testid="stream-stub-edit"
+        type="button"
+        onClick={() =>
+          onEdit?.({
+            id: 'fake-msg-1',
+            role: 'user',
+            content: 'original text',
+            parentId: null,
+            connectionId: 'conn-x',
+          })
+        }
+      >
+        Edit
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/cmd/modes/SkillMode', () => ({
@@ -368,6 +391,98 @@ describe('#114 composition — keyboard → bus → FloatingCommandBar', () => {
     expect(getBar()?.getAttribute('data-prefix-mode')).toBe('');
 
     // Second Esc: no prefix active → collapse the bar.
+    dispatchKey({ key: 'Escape' });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('false');
+  });
+
+  // -------------------------------------------------------------------------
+  // #138 regression — typing `/de` then Esc dismisses the skill picker. Two
+  // subsequent Backspaces (which leave the input as `/d` then `/`) must
+  // NOT re-open the picker — `dismissedPrefixRef` suppresses re-detection
+  // of the same prefix character at the same index until the user breaks
+  // the pattern (deletes the prefix entirely or moves it).
+  // -------------------------------------------------------------------------
+
+  it('typing /de + Esc + Backspace twice keeps the skill picker dismissed', () => {
+    renderWithProviders(<Harness />);
+
+    // Open the bar and type `/de` (skill prefix).
+    dispatchKey({ key: 'k', metaKey: true });
+    const input = document.querySelector(
+      '[data-cmd-bar] input',
+    ) as HTMLInputElement | null;
+    if (!input) throw new Error('input missing');
+
+    fireEvent.change(input, { target: { value: '/de' } });
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('skill');
+
+    // Esc dismisses the picker (typed source → first Esc clears prefix,
+    // bar stays expanded). dismissedPrefixRef now remembers `/` at index 0.
+    dispatchKey({ key: 'Escape' });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('');
+
+    // Backspace 1 → input becomes `/d`. The picker MUST stay dismissed
+    // (the `/` at index 0 still matches the dismissed token).
+    fireEvent.change(input, { target: { value: '/d' } });
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('');
+
+    // Backspace 2 → input becomes `/`. Still suppressed.
+    fireEvent.change(input, { target: { value: '/' } });
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('');
+
+    // Once the user actually deletes the `/` (or types a new one), the
+    // suppression releases. Verify by deleting then re-typing:
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.change(input, { target: { value: '/' } });
+    expect(getBar()?.getAttribute('data-prefix-mode')).toBe('skill');
+  });
+
+  // -------------------------------------------------------------------------
+  // #149 regression — Esc in edit mode cancels the edit; the bar stays
+  // expanded so the user can keep composing. The bus dismiss handler walks
+  // a three-stage chain (typed prefix → edit mode → collapse); this test
+  // pins the edit-mode branch.
+  // -------------------------------------------------------------------------
+
+  it('Esc while in edit mode cancels the edit (input clears, bar stays expanded) without collapsing (#149)', () => {
+    renderWithProviders(<Harness />);
+
+    // Open the bar via ⌘K.
+    dispatchKey({ key: 'k', metaKey: true });
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+
+    // Click the stream-stub's Edit button to trigger the FloatingCommandBar's
+    // `handleStreamEdit` callback. This sets editContext + prefills the
+    // input with the message content + ensures expanded=true. The
+    // `useEffect` that mirrors editContext to editContextRef runs in the
+    // commit that follows.
+    const editButton = document.querySelector(
+      '[data-testid="stream-stub-edit"]',
+    ) as HTMLButtonElement;
+    expect(editButton).not.toBeNull();
+    act(() => {
+      editButton.click();
+    });
+
+    // The composer input should now hold the prefilled content.
+    const input = document.querySelector(
+      '[data-cmd-bar] input',
+    ) as HTMLInputElement;
+    expect(input.value).toBe('original text');
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+
+    // Press Esc. The bus dismiss handler must check editContextRef and
+    // cancel the edit (clear input, clear chips, leave bar expanded)
+    // BEFORE falling through to collapse.
+    dispatchKey({ key: 'Escape' });
+
+    // Bar stays expanded — user keeps composing.
+    expect(getBar()?.getAttribute('data-expanded')).toBe('true');
+    // Input cleared (the prefilled content is gone).
+    expect(input.value).toBe('');
+
+    // A subsequent Esc with no edit context and no prefix collapses the bar.
     dispatchKey({ key: 'Escape' });
     expect(getBar()?.getAttribute('data-expanded')).toBe('false');
   });

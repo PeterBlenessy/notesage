@@ -579,7 +579,78 @@ describe('Persist migration', () => {
       { filePath: '/legacy.md', fileName: 'legacy.md' },
     ]);
     expect(parsed.state.persistedActiveFilePath).toBe('/legacy.md');
-    expect(parsed.version).toBe(1);
+    // v2 backfilled `lastAccessedAt` on the legacy recent entry so the
+    // Quiet sidebar's relative-time hint has a value to render — see
+    // the dedicated v1→v2 migration test below.
+    expect(parsed.version).toBe(2);
+    expect(typeof parsed.state.recentFiles[0].lastAccessedAt).toBe('number');
+  });
+
+  it('v1 → v2 backfills lastAccessedAt on existing recents in MRU order (#141)', async () => {
+    // Pre-#141, the persisted RecentFile shape lacked `lastAccessedAt`.
+    // Without a backfill, the Quiet sidebar's row hint fell back to the
+    // parent-folder name (which read like a project name, not a relative
+    // time) until the user reopened each file. The migration stamps a
+    // descending series of timestamps based on MRU index so the existing
+    // ordering surfaces as "1m", "2m", "3m" hints.
+    const v1Snapshot = {
+      state: {
+        openDocuments: [],
+        recentFiles: [
+          { path: '/a.md', name: 'a.md' },
+          { path: '/b.md', name: 'b.md' },
+          { path: '/c.md', name: 'c.md' },
+        ],
+        scrollPositions: {},
+        persistedTabs: [],
+        persistedActiveFilePath: null,
+      },
+      version: 1,
+    };
+    useEditorStore.setState(DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem('notesage-editor', JSON.stringify(v1Snapshot));
+    await useEditorStore.persist.rehydrate();
+    await waitForPersist();
+
+    const recents = useEditorStore.getState().recentFiles;
+    expect(recents).toHaveLength(3);
+    // Each entry now carries a number timestamp.
+    expect(typeof recents[0].lastAccessedAt).toBe('number');
+    expect(typeof recents[1].lastAccessedAt).toBe('number');
+    expect(typeof recents[2].lastAccessedAt).toBe('number');
+    // MRU order preserved: the first entry must be the most recent
+    // (largest timestamp), the last entry the oldest (smallest).
+    expect(recents[0].lastAccessedAt!).toBeGreaterThan(recents[1].lastAccessedAt!);
+    expect(recents[1].lastAccessedAt!).toBeGreaterThan(recents[2].lastAccessedAt!);
+  });
+
+  it('v1 → v2 leaves entries with an existing lastAccessedAt untouched', async () => {
+    const fixedStamp = 1700000000000;
+    const v1Snapshot = {
+      state: {
+        openDocuments: [],
+        recentFiles: [
+          { path: '/already.md', name: 'already.md', lastAccessedAt: fixedStamp },
+          { path: '/missing.md', name: 'missing.md' },
+        ],
+        scrollPositions: {},
+        persistedTabs: [],
+        persistedActiveFilePath: null,
+      },
+      version: 1,
+    };
+    useEditorStore.setState(DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem('notesage-editor', JSON.stringify(v1Snapshot));
+    await useEditorStore.persist.rehydrate();
+    await waitForPersist();
+
+    const recents = useEditorStore.getState().recentFiles;
+    // Existing timestamp preserved.
+    expect(recents[0].lastAccessedAt).toBe(fixedStamp);
+    // Missing entry got a backfill.
+    expect(typeof recents[1].lastAccessedAt).toBe('number');
   });
 });
 

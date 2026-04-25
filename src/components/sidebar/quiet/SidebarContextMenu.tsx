@@ -1,5 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import {
+  decrementOpenContextMenus,
+  incrementOpenContextMenus,
+} from "@/lib/sidebar-context-menu-state";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -419,9 +423,46 @@ export function SidebarContextMenu({
     );
   };
 
+  // Live-test 2026-04-25 — track this menu's open state via a module-
+  // level counter so `FilePreview` / `FolderPeek` can pause their hover
+  // open / close logic while a context menu is up. Two issues this
+  // resolves:
+  //   - Right-clicking a button INSIDE the FolderPeek preview opens the
+  //     menu, then the cursor leaving the preview triggers the preview's
+  //     close timer, which unmounts the Radix Root that lives inside the
+  //     preview portal — taking the menu down with it.
+  //   - React's synthetic `onMouseEnter` bubbles through the React tree
+  //     (including portals). Cursor entering the menu portal fires
+  //     `mouseenter` on FilePreview's trigger ancestor in React's view,
+  //     and after 220 ms the preview pops up over the menu.
+  // The shared flag breaks both chains by freezing preview state while
+  // any sidebar context menu is open.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    // Cleanup on unmount — if this menu was open when its parent unmounts
+    // (e.g. a row being deleted while the menu is up), decrement the
+    // count so FilePreview/FolderPeek don't get stuck in the "menu open"
+    // state forever.
+    return () => {
+      if (wasOpenRef.current) {
+        decrementOpenContextMenus();
+        wasOpenRef.current = false;
+      }
+    };
+  }, []);
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen && !wasOpenRef.current) {
+      incrementOpenContextMenus();
+      wasOpenRef.current = true;
+    } else if (!nextOpen && wasOpenRef.current) {
+      decrementOpenContextMenus();
+      wasOpenRef.current = false;
+    }
+  }, []);
+
   return (
     <>
-      <ContextMenu>
+      <ContextMenu onOpenChange={handleOpenChange}>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent className="min-w-[14rem]">
           <ContextMenuItem onSelect={() => void handleOpen()}>

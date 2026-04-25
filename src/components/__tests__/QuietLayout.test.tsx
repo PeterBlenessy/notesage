@@ -85,11 +85,13 @@ vi.mock('@/components/editor/Editor', () => ({
 
 let mockCmdBarPinned = false;
 let mockSidebarPinned = true;
+let mockQuietChromeTransparent = false;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     get sidebarPinned() { return mockSidebarPinned; },
+    get quietChromeTransparent() { return mockQuietChromeTransparent; },
     // Quiet-chrome (#51) — the real store seeds these defaults on startup.
     // QuietLayout mounts `useQuietChrome()` which reads both slices, so the
     // mock has to supply them or the hook crashes with "undefined.toolbar".
@@ -167,6 +169,7 @@ describe('QuietLayout (placeholder)', () => {
     registerDefaultHandlers();
     mockCmdBarPinned = false;
     mockSidebarPinned = true;
+    mockQuietChromeTransparent = false;
   });
 
   it('renders without crashing', () => {
@@ -246,6 +249,21 @@ describe('QuietLayout (placeholder)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Focus mode title bar visibility (#150)
+  // -------------------------------------------------------------------------
+
+  it('renders TitleBar with data-titlebar-mode="quiet" so .app.focus-mode CSS can hide it (#150)', () => {
+    // mockup-f calls for the title bar to be HIDDEN entirely in focus mode
+    // (display: none, not just dimmed). The hide rule lives in globals.css
+    // and targets `[data-titlebar-mode="quiet"]` under `.app.focus-mode`;
+    // this test locks the attribute in so the rule doesn't silently stop
+    // matching after a TitleBar refactor.
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const titlebar = container.querySelector('[data-testid="titlebar"]') as HTMLElement;
+    expect(titlebar.getAttribute('data-titlebar-mode')).toBe('quiet');
+  });
+
+  // -------------------------------------------------------------------------
   // Pinned-panel padding (#28)
   // -------------------------------------------------------------------------
 
@@ -279,6 +297,44 @@ describe('QuietLayout (placeholder)', () => {
         '[data-quiet-layout-placeholder]',
       ) as HTMLElement;
       expect(wrapper.getAttribute('data-cmd-bar-pinned')).toBe('true');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Translucent chrome (#142)
+  // -------------------------------------------------------------------------
+
+  describe('translucent chrome (#142)', () => {
+    it('does NOT add pt-11 to the doc area when transparent (so editor scrolls behind frosted title bar)', () => {
+      mockQuietChromeTransparent = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const docArea = container.querySelector(
+        '[data-quiet-layout-document-area]',
+      ) as HTMLElement;
+      // The earlier #132 implementation added `pt-11` to clear the title
+      // bar — that defeated the frosted-glass effect because no content
+      // ever passed behind it. The clearance now lives inside the editor's
+      // scroll content (and the floating pill toolbar) via globals.css
+      // selectors keyed on `data-quiet-chrome-transparent="true"`.
+      expect(docArea.className).not.toMatch(/\bpt-11\b/);
+    });
+
+    it('marks the layout root with data-quiet-chrome-transparent so editor CSS rules can attach', () => {
+      mockQuietChromeTransparent = true;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const root = container.querySelector(
+        '[data-quiet-layout-root]',
+      ) as HTMLElement;
+      expect(root.getAttribute('data-quiet-chrome-transparent')).toBe('true');
+    });
+
+    it('marks the layout root with data-quiet-chrome-transparent="false" when off', () => {
+      mockQuietChromeTransparent = false;
+      const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const root = container.querySelector(
+        '[data-quiet-layout-root]',
+      ) as HTMLElement;
+      expect(root.getAttribute('data-quiet-chrome-transparent')).toBe('false');
     });
   });
 
@@ -722,5 +778,54 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
     );
 
     expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
+  });
+});
+
+// =============================================================================
+// QuietLayout — Cmd+Shift+E TreeOverlay handler (#139)
+// =============================================================================
+
+describe('QuietLayout — Cmd+Shift+E TreeOverlay handler (#139)', () => {
+  it('preempts the legacy Export-as-PDF chord even when focus is inside the overlay search input', () => {
+    // Stub the legacy listener that would open the export-as-PDF dialog
+    // on bubble-phase ⌘⇧E. If our capture-phase handler doesn't
+    // stopImmediatePropagation, this fires — that's the #139 regression.
+    const legacyHandler = vi.fn((e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
+        // Mimic legacy useKeyboardShortcuts opening the export dialog.
+      }
+    });
+    window.addEventListener('keydown', legacyHandler);
+
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+
+    // Simulate focus inside the overlay's search input (the previous
+    // carve-out skipped this case and let the legacy handler fire).
+    const fakeOverlay = document.createElement('div');
+    fakeOverlay.setAttribute('data-tree-overlay', '');
+    const fakeInput = document.createElement('input');
+    fakeOverlay.appendChild(fakeInput);
+    document.body.appendChild(fakeOverlay);
+    fakeInput.focus();
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'e',
+      metaKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fakeInput.dispatchEvent(event);
+
+    // QuietLayout's capture-phase handler must have called
+    // stopImmediatePropagation, preventing the legacy bubble-phase
+    // listener from receiving the event.
+    expect(event.defaultPrevented).toBe(true);
+    expect(legacyHandler).not.toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'e', metaKey: true, shiftKey: true }),
+    );
+
+    document.body.removeChild(fakeOverlay);
+    window.removeEventListener('keydown', legacyHandler);
   });
 });

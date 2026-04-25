@@ -2,6 +2,7 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act } from 'react';
 import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
 import type { SkillEntry } from '@/stores/skill-store';
 
@@ -123,15 +124,18 @@ describe('SkillMode', () => {
 
   it('selects second item with ArrowDown then fires onPick on Enter', () => {
     const onPick = vi.fn();
-    const { container } = renderWithProviders(
-      <SkillMode filter="" onPick={onPick} />,
-    );
+    renderWithProviders(<SkillMode filter="" onPick={onPick} />);
 
-    const list = container.querySelector<HTMLElement>('[role="listbox"]');
-    expect(list).toBeTruthy();
-
-    fireEvent.keyDown(list!, { key: 'ArrowDown' });
-    fireEvent.keyDown(list!, { key: 'Enter' });
+    // #138 — keyboard nav listens at window so the host bar's input keeps
+    // focus. We dispatch on `window` to mirror the production wiring. Each
+    // dispatch is wrapped in `act` so React commits the activeIndex bump
+    // and the keydown handler closes over the new value before Enter fires.
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    });
 
     expect(onPick).toHaveBeenCalledTimes(1);
     expect(onPick).toHaveBeenCalledWith('save-research');
@@ -194,7 +198,7 @@ describe('SkillMode', () => {
 
   it('reports active option upward via onActiveOptionChange on mount + ↓', () => {
     const onActiveOptionChange = vi.fn();
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <SkillMode
         filter=""
         onPick={vi.fn()}
@@ -214,8 +218,9 @@ describe('SkillMode', () => {
 
     // ↓ moves the highlight to index 1 → next callback fires.
     onActiveOptionChange.mockClear();
-    const list = container.querySelector('[role="listbox"]') as HTMLElement;
-    fireEvent.keyDown(list, { key: 'ArrowDown' });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    });
 
     const afterDown = onActiveOptionChange.mock.calls[onActiveOptionChange.mock.calls.length - 1][0];
     expect(afterDown.activeOptionId).toBe('lb-opt-1');
@@ -239,5 +244,27 @@ describe('SkillMode', () => {
       activeOptionId: null,
       count: 0,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // #138 regression — SkillMode must NOT steal DOM focus from its host. The
+  // FloatingCommandBar input is a `role="combobox"` that mirrors the picker's
+  // active option via `aria-activedescendant`; if SkillMode focuses its
+  // listbox on mount the user can't keep typing into the input.
+  // -------------------------------------------------------------------------
+
+  it('does NOT steal DOM focus from the previously focused element on mount', () => {
+    // Set up a focused input that simulates the FloatingCommandBar combobox.
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    renderWithProviders(<SkillMode filter="" onPick={vi.fn()} />);
+
+    // The input must STILL hold focus after the picker mounts.
+    expect(document.activeElement).toBe(input);
+
+    document.body.removeChild(input);
   });
 });

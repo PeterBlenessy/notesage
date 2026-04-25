@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
@@ -98,18 +98,12 @@ function SkillMode({
   );
   const results = useMemo(() => filterSkills(allSkills, filter), [allSkills, filter]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const listRef = useRef<HTMLDivElement | null>(null);
 
   // Reset highlight to the top whenever the filter or result count shifts so
   // the first row is always the candidate Enter would pick.
   useEffect(() => {
     setActiveIndex(0);
   }, [filter, results.length]);
-
-  // Take focus on mount so keyboard nav works without a click.
-  useEffect(() => {
-    listRef.current?.focus();
-  }, []);
 
   // Report active option state upward so the parent can mirror it on its
   // combobox input via aria-activedescendant.
@@ -124,40 +118,46 @@ function SkillMode({
     });
   }, [onActiveOptionChange, listboxId, activeIndex, results.length]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (results.length === 0) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
+  // #138 fix — keyboard nav is bound to the document, NOT the listbox. The
+  // host bar's combobox input keeps DOM focus; an earlier version focused
+  // `listRef` on mount and bound the handler locally, which stole focus from
+  // the input (the user couldn't keep typing after the picker opened) AND
+  // detached focus when the picker unmounted on Esc (later keystrokes landed
+  // nowhere). Mirrors the TagMode/ReferenceMode/ResearchMode pattern.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (results.length === 0) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onDismiss?.();
+        }
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveIndex((i) => (i + 1) % results.length);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveIndex((i) => (i - 1 + results.length) % results.length);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        const picked = results[activeIndex];
+        if (picked) onPick(picked.name);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
         onDismiss?.();
       }
-      return;
-    }
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex((i) => (i + 1) % results.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex((i) => (i - 1 + results.length) % results.length);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const picked = results[activeIndex];
-      if (picked) onPick(picked.name);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      onDismiss?.();
-    }
-  };
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [results, activeIndex, onPick, onDismiss]);
 
   if (results.length === 0) {
     return (
       <div
-        ref={listRef}
         id={listboxId}
         role="listbox"
         aria-label="Skill picker"
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
         className="rounded-md border border-border bg-popover p-3 text-sm text-muted-foreground shadow-md outline-none"
       >
         No skills match
@@ -167,12 +167,9 @@ function SkillMode({
 
   return (
     <div
-      ref={listRef}
       id={listboxId}
       role="listbox"
       aria-label="Skill picker"
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
       className="overflow-hidden rounded-md border border-border bg-popover shadow-md outline-none"
     >
       {results.map((skill, i) => {

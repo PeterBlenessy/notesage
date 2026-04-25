@@ -707,20 +707,35 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                     kind="project"
                     onOpen={() => void openProject(project)}
                   >
-                    <ProjectRow
-                      project={project}
-                      isActive={isActive}
-                      isExpanded={isExpanded}
-                      isFocused={focusedRowId === project.path}
-                      hasFocusWithin={focusedRowId !== null}
-                      onOpen={() => void openProject(project)}
-                      onKeyDown={(e) => handleProjectKeyDown(e, project)}
-                      onFocus={() => setFocusedRowId(project.path)}
-                      onAddNote={() => handleAddToProject(project.path)}
-                      registerRef={(el) =>
-                        rowRefs.current.set(project.path, el)
-                      }
-                    />
+                    {/* Live-test 2026-04-25 (#140): the previous wrapping
+                        attempt put `<ProjectRow />` directly under
+                        `<ContextMenuTrigger asChild>`. Radix's Slot uses
+                        cloneElement to inject `onContextMenu` and a ref
+                        onto the child element — but `ProjectRow` is a
+                        function component that destructures only its
+                        explicit props, so the injected handler / ref were
+                        silently dropped and the OS native context menu
+                        kept appearing. Wrapping with a passthrough <div>
+                        makes the immediate Slot target a raw DOM element
+                        so the prop injection lands. The wrapper has no
+                        styling — `<li>` is `m-0 p-0` and the row's own
+                        height/padding is unchanged. */}
+                    <div>
+                      <ProjectRow
+                        project={project}
+                        isActive={isActive}
+                        isExpanded={isExpanded}
+                        isFocused={focusedRowId === project.path}
+                        hasFocusWithin={focusedRowId !== null}
+                        onOpen={() => void openProject(project)}
+                        onKeyDown={(e) => handleProjectKeyDown(e, project)}
+                        onFocus={() => setFocusedRowId(project.path)}
+                        onAddNote={() => handleAddToProject(project.path)}
+                        registerRef={(el) =>
+                          rowRefs.current.set(project.path, el)
+                        }
+                      />
+                    </div>
                   </SidebarContextMenu>
                 </FolderPeek>
                 {(children || isPendingCreateHere) && (
@@ -789,10 +804,16 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                             }
                           />
                         );
-                        // Live-test 2026-04-25: child rows fell back to
-                        // the OS browser context menu on right-click —
-                        // wrap each in `SidebarContextMenu` so our
-                        // file/folder action set fires.
+                        // Live-test 2026-04-25 (#140): wrapping the
+                        // ChildRow function component directly under
+                        // `<SidebarContextMenu>` (which uses
+                        // `<ContextMenuTrigger asChild>`) silently dropped
+                        // Radix's injected `onContextMenu` / ref because
+                        // the row only destructures its own props. The OS
+                        // native menu appeared on right-click. The
+                        // passthrough <div> wrapper exposes a raw DOM
+                        // element to Radix's Slot so the prop injection
+                        // lands; the row's own layout is unchanged.
                         if (!row.entry) return childRow;
                         return (
                           <SidebarContextMenu
@@ -800,7 +821,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                             filePath={row.entry.path}
                             kind={row.entry.is_directory ? "folder" : "file"}
                           >
-                            {childRow}
+                            <div>{childRow}</div>
                           </SidebarContextMenu>
                         );
                       })}
@@ -915,17 +936,19 @@ function ProjectRow({
          *  the aggregate git "●" glyph when any file inside the project
          *  has changes, and the pending-external-change dot. */}
       <SidebarRowIndicators path={project.path} kind="project" />
-      {/* #136 — stable right-hand slot for the file count + the
-         *  on-hover "+" button. The button absolutely overlays the
-         *  count so the row's right edge stays pinned (no layout
-         *  shift between hover/idle states). Per mockup-d intent. */}
-      {/* #136 — the count and the `+` button share the SAME right-aligned
-         *  slot so the row's right edge stays pinned and the glyph
-         *  position doesn't jump on hover. The button absolutely
-         *  overlays the count's box, both right-aligned via the
-         *  flex `justify-end` parent. */}
+      {/* Live-test 2026-04-25 — alignment, take 2. The number stays
+       *  RIGHT-ALIGNED at the row's right padding edge (matching the
+       *  Pinned/Recent time hints, which use `ml-auto` to anchor to
+       *  the same edge). The hover `+` button overlays the slot at
+       *  the same right edge — the button is 24×24 so its centre sits
+       *  12 px in from the right edge, exactly matching the section-
+       *  header `+` centre. Slot height bumped to h-6 (24 px) so the
+       *  button's hover highlight is no longer clipped by an h-5 slot
+       *  bound. `min-w-6` keeps the slot at least button-wide while
+       *  letting wider numbers (3+ digits) push the slot out without
+       *  pushing the button glyph off-centre. */}
       <span
-        className="relative inline-flex h-5 min-w-[1.5rem] items-center justify-end shrink-0"
+        className="relative inline-flex h-6 min-w-6 items-center justify-end shrink-0"
         aria-hidden={fileCount === null ? undefined : "false"}
       >
         {fileCount !== null && (
@@ -943,10 +966,12 @@ function ProjectRow({
             event.stopPropagation();
             onAddNote();
           }}
-          // Right-align the button inside the slot so the `+` sits
-          // exactly where the count's right edge was — no horizontal
-          // jump on hover.
-          className="absolute inset-y-0 right-0 flex items-center justify-end opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+          // Anchor the button to the slot's top-right. The button is
+          // 24×24 (size-icon-xs) and the slot is h-6 (24 px), so it
+          // fills the vertical space exactly — no clipping. Right edge
+          // = slot right = row right - px-2 (8 px), so its centre lines
+          // up with the section-header `+` centre (row right - 20 px).
+          className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
         >
           <Plus strokeWidth={1.5} />
         </Button>

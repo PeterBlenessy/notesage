@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  isAnyContextMenuOpen,
+  subscribeToOpenContextMenus,
+} from "@/lib/sidebar-context-menu-state";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -241,7 +245,14 @@ export function FilePreview({
     [lineCount],
   );
 
+  // Track whether the cursor is currently inside the trigger row OR the
+  // open popover content. Read by the open-context-menu subscriber so it
+  // can re-evaluate close logic the moment a context menu dismisses —
+  // without forcing the user to wiggle the mouse to retrigger mouseleave.
+  const cursorInsideRef = useRef(false);
+
   const handleMouseEnter = useCallback(() => {
+    cursorInsideRef.current = true;
     // Cancel any pending close.
     if (closeTimerRef.current !== null) {
       window.clearTimeout(closeTimerRef.current);
@@ -250,12 +261,21 @@ export function FilePreview({
 
     if (open) return;
 
+    // Live-test 2026-04-25 — don't open the preview while a sidebar
+    // context menu is up. React's portal-traversing synthetic events
+    // bubble `mouseenter` from the menu portal back through this
+    // trigger's React ancestors, which would otherwise schedule a
+    // spontaneous open that pops over the menu.
+    if (isAnyContextMenuOpen()) return;
+
     // Schedule open after the hover delay.
     if (openTimerRef.current !== null) {
       window.clearTimeout(openTimerRef.current);
     }
     openTimerRef.current = window.setTimeout(() => {
       openTimerRef.current = null;
+      // Re-check at fire time — a menu may have opened during the delay.
+      if (isAnyContextMenuOpen()) return;
       activePathRef.current = filePath;
       setOpen(true);
       void loadPreview(filePath);
@@ -263,6 +283,7 @@ export function FilePreview({
   }, [delayMs, filePath, loadPreview, open]);
 
   const handleMouseLeave = useCallback(() => {
+    cursorInsideRef.current = false;
     // Cancel a pending open — the user didn't hover long enough.
     if (openTimerRef.current !== null) {
       window.clearTimeout(openTimerRef.current);
@@ -270,6 +291,12 @@ export function FilePreview({
     }
 
     if (!open) return;
+
+    // Live-test 2026-04-25 — while a context menu is open inside (or
+    // adjacent to) the preview, don't schedule the close. Otherwise
+    // closing the preview would unmount the Radix Root that lives
+    // inside the preview's portal, which would dismiss the menu too.
+    if (isAnyContextMenuOpen()) return;
 
     // Grace period before closing to smooth out tiny gaps between the row
     // and the popover content.
@@ -284,10 +311,41 @@ export function FilePreview({
     }, CLOSE_GRACE_MS);
   }, [open]);
 
-  // #128 iter-2 — right-click dismisses the preview immediately (no
-  // grace period) so the `SidebarContextMenu` never renders on top of
-  // it. Also cancels a pending open timer, which matters when the user
-  // right-clicks a row before the preview has unfurled.
+  // When all context menus close, re-evaluate: if the cursor has since
+  // moved out of the trigger / popover, schedule the deferred close.
+  // The cursorInsideRef tracks live hover state so this check matches
+  // what mouseleave would have done if the menu hadn't blocked it.
+  useEffect(() => {
+    return subscribeToOpenContextMenus(() => {
+      if (isAnyContextMenuOpen()) return;
+      // Menu just closed.
+      if (!open) return;
+      if (cursorInsideRef.current) return;
+      // Cursor is outside — replicate the mouseLeave close path.
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+      closeTimerRef.current = window.setTimeout(() => {
+        closeTimerRef.current = null;
+        activePathRef.current = null;
+        setOpen(false);
+        setState({ status: "idle" });
+      }, CLOSE_GRACE_MS);
+    });
+  }, [open]);
+
+  // Live-test 2026-04-25 (#128 — final). See FolderPeek.tsx for the
+  // full design history. Short version: every attempt to React-state-
+  // close this preview during a right-click event raced with Radix's
+  // ContextMenu mount and either dismissed the menu or visibly
+  // overlapped it. Final design: don't close the preview from
+  // contextmenu at all — just cancel pending hover-open timers so a
+  // delayed open doesn't fire while the menu is up. The preview
+  // closes naturally via the existing mouseleave grace timer when
+  // the user moves the cursor toward the menu items. Z-stacking is
+  // handled by `[data-slot="context-menu-content"] { z-index: 60; }`
+  // in globals.css so the menu always sits on top during the brief
+  // overlap.
   const handleContextMenu = useCallback(() => {
     if (openTimerRef.current !== null) {
       window.clearTimeout(openTimerRef.current);
@@ -297,10 +355,7 @@ export function FilePreview({
       window.clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
-    activePathRef.current = null;
-    setOpen(false);
-    setState({ status: "idle" });
-  }, [open]);
+  }, []);
 
   const name = basename(filePath);
   const typeLabel = formatTypeLabel(filePath);

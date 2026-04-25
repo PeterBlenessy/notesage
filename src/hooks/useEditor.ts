@@ -28,6 +28,7 @@ import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
 import { Callout } from "@/components/editor/extensions/callout";
+import { PasteHandler } from "@/components/editor/extensions/paste-handler";
 import Focus from "@tiptap/extension-focus";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
@@ -171,6 +172,14 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         },
         nested: true,
       }),
+      // Live-test 2026-04-25 — PasteHandler MUST be listed before
+      // `Markdown` so its `handlePaste` plugin runs first in ProseMirror's
+      // plugin pipeline. The Markdown extension transforms every pasted
+      // `text/plain` payload through markdown-it, which we want to bypass
+      // for file paths (`com~apple~CloudDocs` → `<sub>apple</sub>`),
+      // box-drawn terminal tables (loses column alignment), etc. See
+      // `src/lib/editor/paste-rules.ts` for rule definitions.
+      PasteHandler,
       Markdown.configure({
         html: true,
         transformPastedText: true,

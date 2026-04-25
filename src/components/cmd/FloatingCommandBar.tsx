@@ -118,11 +118,15 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // Mirror `activePrefix` onto a ref so the bus-subscription effect (which
   // mounts once) can read the latest value without being in its deps.
   // `activePrefix.source` drives Esc behaviour (typed → two-stage, chord →
-  // one-stage collapse).
+  // one-stage collapse). The write happens DURING RENDER (not in useEffect)
+  // so the ref is always in sync with the latest committed state by the
+  // time React's commit phase finishes — eliminating any possibility of
+  // a window-level keydown firing before the post-commit useEffect mirrors
+  // the ref. (Mirror-via-useEffect was the previous pattern; #149 review
+  // surfaced the timing race as a likely culprit for "Esc collapses bar
+  // mid-edit" reports.)
   const activePrefixRef = useRef<ActivePrefix | null>(null);
-  useEffect(() => {
-    activePrefixRef.current = activePrefix;
-  }, [activePrefix]);
+  activePrefixRef.current = activePrefix;
   // #126 fix — when a typed prefix is dismissed via Esc, suppress
   // re-detection of the SAME prefix character at the SAME index until
   // the user actually deletes or replaces it. Without this the picker
@@ -228,11 +232,12 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // Mirror on a ref so the bus-subscription effect can read the latest
   // edit-mode state without being in its deps. Drives the Esc stage
   // chain: typed-prefix → clear prefix; edit mode → cancel edit; neither
-  // → collapse.
+  // → collapse. Same render-phase write as `activePrefixRef` above —
+  // post-commit useEffect mirroring left an open window where a fast
+  // Esc keydown could fire with a stale ref and fall through to
+  // collapse() instead of cancelling the edit (#149).
   const editContextRef = useRef<typeof editContext>(null);
-  useEffect(() => {
-    editContextRef.current = editContext;
-  }, [editContext]);
+  editContextRef.current = editContext;
 
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
