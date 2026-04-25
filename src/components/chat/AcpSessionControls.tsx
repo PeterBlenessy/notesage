@@ -202,7 +202,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
                 key={cm.commonKey}
                 className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors duration-150 ${
                   isActive
-                    ? 'bg-muted font-medium text-foreground'
+                    ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
                 onClick={() => { if (!isActive) handleSetMode(cm.agentModeId, cm.name); }}
@@ -379,7 +379,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
               key={optValue}
               className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors duration-150 ${
                 isActive
-                  ? 'bg-muted font-medium text-foreground'
+                  ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
               onClick={() => { if (!isActive) handleSetValue(optValue); }}

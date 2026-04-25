@@ -311,7 +311,7 @@ function CompletionsGroup() {
                 "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 active
-                  ? "bg-background text-foreground shadow-sm"
+                  ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
                 disabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
               )}

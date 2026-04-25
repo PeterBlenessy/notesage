@@ -25,34 +25,39 @@ export function useAccent(): UseAccentResult {
   const accent = useSettingsStore((s) => s.accent);
   const setAccentName = useSettingsStore((s) => s.setAccent);
 
+  // Live-test 2026-04-25 — fetch the macOS system accent eagerly on mount
+  // (regardless of which accent the user has currently picked) so the
+  // "System" swatch in the AppearanceSettings picker shows the actual
+  // system colour from the start. Previously the fetch only ran when
+  // `accent === 'system'`, so the picker dot rendered the orange
+  // fallback (`var(--accent-system-value, oklch(68% 0.21 37))`) until
+  // the user picked System — confusing if their actual system accent
+  // was blue.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const value = await invoke<string | null>('get_system_accent_color');
+        if (cancelled) return;
+        setSystemAccentValue(value ?? null);
+      } catch (err) {
+        if (!cancelled) {
+          setSystemAccentValue(null);
+          log.debug('useAccent', 'get_system_accent_color unavailable, using default', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Apply the chosen accent class to <html>. This is its own effect so
+  // the system-value fetch above doesn't re-run on every accent change.
   useEffect(() => {
     setAccent(accent);
-
-    if (accent === 'system') {
-      let cancelled = false;
-      void (async () => {
-        try {
-          const value = await invoke<string | null>('get_system_accent_color');
-          if (cancelled) return;
-          setSystemAccentValue(value ?? null);
-        } catch (err) {
-          // Command may not exist yet (task #4 lands separately) or fail on
-          // non-macOS — fall back to the default oklch baked into globals.css.
-          if (!cancelled) {
-            setSystemAccentValue(null);
-            log.debug('useAccent', 'get_system_accent_color unavailable, using default', {
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    } else {
-      // Clear any stale system value when the user picks a different accent.
-      setSystemAccentValue(null);
-    }
   }, [accent]);
 
   return { accent, setAccentName };

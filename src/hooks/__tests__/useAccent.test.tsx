@@ -92,4 +92,29 @@ describe('useAccent', () => {
       document.documentElement.style.getPropertyValue('--accent-system-value'),
     ).toBe('');
   });
+
+  /**
+   * Live-test 2026-04-25 — the System swatch in the AppearanceSettings
+   * picker showed the orange fallback even when the user's actual
+   * macOS accent was blue, because the fetch only ran when the user
+   * had ALREADY picked System. The hook now fetches on mount
+   * unconditionally so `--accent-system-value` is always populated.
+   */
+  it('fetches the system accent on mount regardless of the currently-picked accent', async () => {
+    setMockInvokeHandler('get_system_accent_color', () => 'oklch(56% 0.16 253)');
+    // Default accent (no override) — the fetch should still run.
+    useSettingsStore.setState({ accent: 'default' });
+
+    renderHook(() => useAccent());
+
+    await waitFor(() => {
+      expect(
+        document.documentElement.style.getPropertyValue('--accent-system-value'),
+      ).toBe('oklch(56% 0.16 253)');
+    });
+    // The user hasn't picked System, so no `.accent-system` class.
+    expect(
+      document.documentElement.classList.contains('accent-system'),
+    ).toBe(false);
+  });
 });
