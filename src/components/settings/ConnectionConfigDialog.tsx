@@ -264,14 +264,28 @@ export function ConnectionConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle className="text-base">
+      {/*
+        Live-test 2026-04-25 #145 — chrome upgraded to v2 aesthetic.
+        Was: 500 px max-width with `text-base` title and minimal
+        header padding — looked clearly older than the v2 settings
+        shell that opens it. Now: 640 px wide, 20 px semibold title
+        with tracking-tight, generous 28 px header padding (matches
+        KeyboardShortcutsDialogV2 / SettingsDialogV2 / ChangelogDialog).
+        Body keeps its existing `space-y-5` rhythm but moves into a
+        ScrollArea-style container with consistent 28 px horizontal
+        padding so content lines up with the new header.
+      */}
+      <DialogContent
+        className="max-w-[640px] p-0 gap-0"
+        aria-describedby={undefined}
+      >
+        <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
+          <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Configure {connection.label}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5 py-2 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="space-y-5 px-7 py-5 max-h-[70vh] overflow-y-auto">
 
           {/* ── Model Section ── */}
           <ModelSelectionForm
@@ -409,7 +423,7 @@ export function ConnectionConfigDialog({
           />
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-7 py-4 border-t border-border">
           {hasCustomValues && (
             <button
               type="button"
