@@ -214,10 +214,15 @@ export function SettingsShell({
             </ScrollArea>
           </aside>
 
-          {/* Right: content column */}
-          <div className="relative flex min-h-0 flex-col">
-            <ScrollArea className="flex-1">
-              <div className="mx-auto w-full max-w-[640px] px-6 py-8">
+          {/* Right: content column. `min-h-0` releases the default
+              `min-height: auto` on flex children so the ScrollArea
+              inside actually clips and scrolls instead of growing past
+              the dialog. The previous setup had the right column
+              sometimes sized to its content (no scroll) — multi-panel
+              user feedback 2026-04-25. */}
+          <div className="relative flex min-h-0 flex-col overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="mx-auto w-full max-w-[640px] px-6 py-6">
                 {children}
               </div>
             </ScrollArea>

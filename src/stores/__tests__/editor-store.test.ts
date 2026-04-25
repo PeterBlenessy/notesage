@@ -591,9 +591,12 @@ describe('Recent files', () => {
   it('openTab adds to recent files', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
 
-    expect(useEditorStore.getState().recentFiles).toEqual([
-      { path: '/a.md', name: 'a.md' },
-    ]);
+    const recent = useEditorStore.getState().recentFiles;
+    expect(recent).toHaveLength(1);
+    expect(recent[0]).toMatchObject({ path: '/a.md', name: 'a.md' });
+    // 2026-04-25 — sidebar relative-time hint stamps `lastAccessedAt`
+    // on each entry so the Quiet sidebar can show "2h" / "1d" hints.
+    expect(typeof recent[0].lastAccessedAt).toBe('number');
   });
 
   it('most recently opened file is first', () => {

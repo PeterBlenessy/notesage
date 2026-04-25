@@ -49,6 +49,12 @@ export interface Tab {
 export interface RecentFile {
   path: string;
   name: string;
+  /**
+   * Epoch millis of the most recent open / activation. Drives the
+   * Quiet sidebar's relative-time hint ("2h", "1d", "3d") per
+   * mockup-d. Optional for back-compat with pre-#107 persisted state.
+   */
+  lastAccessedAt?: number;
 }
 
 /** Lightweight record of an open file, persisted to localStorage. */
@@ -138,9 +144,13 @@ export const useEditorStore = create<EditorStore>()(
 
       openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => {
         set((state) => {
-          // Track in recent files (deduplicate, cap)
+          // Track in recent files (deduplicate, cap). `lastAccessedAt`
+          // drives the sidebar's relative-time hint per mockup-d.
           const filteredRecent = state.recentFiles.filter((r) => r.path !== filePath);
-          const newRecent = [{ path: filePath, name: fileName }, ...filteredRecent].slice(0, MAX_RECENT_FILES);
+          const newRecent = [
+            { path: filePath, name: fileName, lastAccessedAt: Date.now() },
+            ...filteredRecent,
+          ].slice(0, MAX_RECENT_FILES);
 
           // Check if tab already exists
           const existingTab = state.openDocuments.find((tab) => tab.filePath === filePath);

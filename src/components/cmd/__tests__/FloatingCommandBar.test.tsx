@@ -2,6 +2,7 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act } from 'react';
 import {
   renderWithProviders,
   screen,
@@ -9,6 +10,7 @@ import {
   waitFor,
 } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
+import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 
 // ---------------------------------------------------------------------------
 // Mock useReducedMotion — flipped per-test via mockReturnValue
@@ -246,11 +248,17 @@ describe('FloatingCommandBar', () => {
   });
 
   it('collapses back to compact when Escape is pressed in the expanded input', () => {
+    // Live-test 2026-04-25: Esc handling moved off the input keydown
+    // onto the cmd-bar-events bus (single source of truth so the
+    // window-level shortcut hook + the input don't double-fire and
+    // skip the prefix-clear stage). Drive the bus directly here —
+    // `useCommandBarShortcuts` (which normally bridges keyDown → bus)
+    // isn't mounted in this isolated component test.
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    const input = screen.getByRole('combobox');
-    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.getByRole('combobox')).toBeTruthy();
+    act(() => emitCmdBarEvent({ type: 'dismiss' }));
 
     // Compact placeholder is back, input is gone.
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
@@ -330,6 +338,9 @@ describe('FloatingCommandBar', () => {
   });
 
   it('first Esc clears the active prefix; second Esc collapses the bar', () => {
+    // Live-test 2026-04-25: Esc handling moved off the input onto the
+    // cmd-bar-events bus. Drive via `emitCmdBarEvent({ type: 'dismiss' })`
+    // — `useCommandBarShortcuts` isn't mounted here.
     renderWithProviders(<FloatingCommandBar />);
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
@@ -341,16 +352,15 @@ describe('FloatingCommandBar', () => {
       document.body.querySelector('[data-cmd-bar-prefix-badge]'),
     ).toBeTruthy();
 
-    // First Esc → badge gone, bar still expanded, input intact.
-    fireEvent.keyDown(input, { key: 'Escape' });
+    // First dismiss → badge gone, bar still expanded, input intact.
+    act(() => emitCmdBarEvent({ type: 'dismiss' }));
     expect(
       document.body.querySelector('[data-cmd-bar-prefix-badge]'),
     ).toBeNull();
     expect(screen.queryByRole('combobox')).toBeTruthy();
 
-    // Second Esc → bar collapses.
-    const stillThere = screen.getByRole('combobox') as HTMLInputElement;
-    fireEvent.keyDown(stillThere, { key: 'Escape' });
+    // Second dismiss → bar collapses.
+    act(() => emitCmdBarEvent({ type: 'dismiss' }));
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
   });
@@ -480,10 +490,10 @@ describe('FloatingCommandBar', () => {
       mockCmdBarPinned = true;
       renderWithProviders(<FloatingCommandBar />);
 
-      const input = screen.getByRole('combobox');
-      fireEvent.keyDown(input, { key: 'Escape' });
+      // Dismiss via the bus (the bar's collapse code is gated on
+      // !isPinned anyway). Input remains.
+      act(() => emitCmdBarEvent({ type: 'dismiss' }));
 
-      // Input is still there — no collapse.
       expect(screen.queryByRole('combobox')).toBeTruthy();
     });
 
@@ -498,7 +508,7 @@ describe('FloatingCommandBar', () => {
         document.body.querySelector('[data-cmd-bar-prefix-badge]'),
       ).toBeTruthy();
 
-      fireEvent.keyDown(input, { key: 'Escape' });
+      act(() => emitCmdBarEvent({ type: 'dismiss' }));
 
       // Badge cleared, input still rendered.
       expect(
@@ -702,8 +712,8 @@ describe('FloatingCommandBar', () => {
       fireEvent.change(input, { target: { value: '/' } });
       expect(input.getAttribute('aria-expanded')).toBe('true');
 
-      // Esc clears the prefix → collapsed again.
-      fireEvent.keyDown(input, { key: 'Escape' });
+      // Dismiss via the bus (Esc handling lives there now) → collapsed.
+      act(() => emitCmdBarEvent({ type: 'dismiss' }));
       expect(input.getAttribute('aria-expanded')).toBe('false');
     });
 
@@ -755,7 +765,7 @@ describe('FloatingCommandBar', () => {
       fireEvent.change(input, { target: { value: '/' } });
       expect(input.getAttribute('aria-controls')).toBe('cmd-skill-listbox');
 
-      fireEvent.keyDown(input, { key: 'Escape' });
+      act(() => emitCmdBarEvent({ type: 'dismiss' }));
 
       expect(input.hasAttribute('aria-controls')).toBe(false);
       expect(input.hasAttribute('aria-activedescendant')).toBe(false);

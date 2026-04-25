@@ -23,7 +23,10 @@ import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
 import { beginFileDrag } from "./file-drag";
-import { SIDEBAR_ENTER_RENAME_MODE_EVENT } from "@/components/sidebar/quiet/SidebarContextMenu";
+import {
+  SIDEBAR_ENTER_RENAME_MODE_EVENT,
+  SidebarContextMenu,
+} from "@/components/sidebar/quiet/SidebarContextMenu";
 import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
 import { SidebarRowIndicators } from "@/components/sidebar/quiet/SidebarRowIndicators";
 import {
@@ -692,18 +695,33 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                     openTreeOverlayForProject(project.path)
                   }
                 >
-                  <ProjectRow
-                    project={project}
-                    isActive={isActive}
-                    isExpanded={isExpanded}
-                    isFocused={focusedRowId === project.path}
-                    hasFocusWithin={focusedRowId !== null}
+                  {/* Live-test 2026-04-25: project rows were dropping
+                      to the OS browser context menu on right-click —
+                      they hadn't been wrapped in `SidebarContextMenu`
+                      (the comment at #80 about being "wired forward-
+                      compatibly" never got fulfilled). Wrap the row so
+                      right-click opens our menu with the full project-
+                      kind action set. */}
+                  <SidebarContextMenu
+                    filePath={project.path}
+                    kind="project"
                     onOpen={() => void openProject(project)}
-                    onKeyDown={(e) => handleProjectKeyDown(e, project)}
-                    onFocus={() => setFocusedRowId(project.path)}
-                    onAddNote={() => handleAddToProject(project.path)}
-                    registerRef={(el) => rowRefs.current.set(project.path, el)}
-                  />
+                  >
+                    <ProjectRow
+                      project={project}
+                      isActive={isActive}
+                      isExpanded={isExpanded}
+                      isFocused={focusedRowId === project.path}
+                      hasFocusWithin={focusedRowId !== null}
+                      onOpen={() => void openProject(project)}
+                      onKeyDown={(e) => handleProjectKeyDown(e, project)}
+                      onFocus={() => setFocusedRowId(project.path)}
+                      onAddNote={() => handleAddToProject(project.path)}
+                      registerRef={(el) =>
+                        rowRefs.current.set(project.path, el)
+                      }
+                    />
+                  </SidebarContextMenu>
                 </FolderPeek>
                 {(children || isPendingCreateHere) && (
                   <ul
@@ -743,31 +761,49 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         (r) =>
                           r.kind === "child" && r.project.path === project.path,
                       )
-                      .map((row) => (
-                        <ChildRow
-                          key={row.id}
-                          row={row}
-                          isFocused={focusedRowId === row.id}
-                          hasFocusWithin={focusedRowId !== null}
-                          isRenaming={
-                            !!row.entry && renamingPath === row.entry.path
-                          }
-                          onActivate={() => {
-                            if (!row.entry) return;
-                            if (row.entry.is_directory) {
-                              openTreeOverlayForProject(project.path);
-                            } else {
-                              void openFileEntry(row.entry);
+                      .map((row) => {
+                        const childRow = (
+                          <ChildRow
+                            key={row.id}
+                            row={row}
+                            isFocused={focusedRowId === row.id}
+                            hasFocusWithin={focusedRowId !== null}
+                            isRenaming={
+                              !!row.entry && renamingPath === row.entry.path
                             }
-                          }}
-                          onKeyDown={(e) => handleChildKeyDown(e, row)}
-                          onFocus={() => setFocusedRowId(row.id)}
-                          onStartRename={startRename}
-                          onCommitRename={commitRename}
-                          onCancelRename={cancelRename}
-                          registerRef={(el) => rowRefs.current.set(row.id, el)}
-                        />
-                      ))}
+                            onActivate={() => {
+                              if (!row.entry) return;
+                              if (row.entry.is_directory) {
+                                openTreeOverlayForProject(project.path);
+                              } else {
+                                void openFileEntry(row.entry);
+                              }
+                            }}
+                            onKeyDown={(e) => handleChildKeyDown(e, row)}
+                            onFocus={() => setFocusedRowId(row.id)}
+                            onStartRename={startRename}
+                            onCommitRename={commitRename}
+                            onCancelRename={cancelRename}
+                            registerRef={(el) =>
+                              rowRefs.current.set(row.id, el)
+                            }
+                          />
+                        );
+                        // Live-test 2026-04-25: child rows fell back to
+                        // the OS browser context menu on right-click —
+                        // wrap each in `SidebarContextMenu` so our
+                        // file/folder action set fires.
+                        if (!row.entry) return childRow;
+                        return (
+                          <SidebarContextMenu
+                            key={row.id}
+                            filePath={row.entry.path}
+                            kind={row.entry.is_directory ? "folder" : "file"}
+                          >
+                            {childRow}
+                          </SidebarContextMenu>
+                        );
+                      })}
                   </ul>
                 )}
               </li>
@@ -883,6 +919,11 @@ function ProjectRow({
          *  on-hover "+" button. The button absolutely overlays the
          *  count so the row's right edge stays pinned (no layout
          *  shift between hover/idle states). Per mockup-d intent. */}
+      {/* #136 — the count and the `+` button share the SAME right-aligned
+         *  slot so the row's right edge stays pinned and the glyph
+         *  position doesn't jump on hover. The button absolutely
+         *  overlays the count's box, both right-aligned via the
+         *  flex `justify-end` parent. */}
       <span
         className="relative inline-flex h-5 min-w-[1.5rem] items-center justify-end shrink-0"
         aria-hidden={fileCount === null ? undefined : "false"}
@@ -902,7 +943,10 @@ function ProjectRow({
             event.stopPropagation();
             onAddNote();
           }}
-          className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+          // Right-align the button inside the slot so the `+` sits
+          // exactly where the count's right edge was — no horizontal
+          // jump on hover.
+          className="absolute inset-y-0 right-0 flex items-center justify-end opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
         >
           <Plus strokeWidth={1.5} />
         </Button>

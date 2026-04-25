@@ -35,6 +35,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
+import { formatSavedShort } from "@/lib/saved-ago";
 import {
   FILE_DRAG_MIME,
   beginFileDrag,
@@ -136,6 +137,15 @@ function PinnedRow({
   registerRef,
 }: PinnedRowProps) {
   const name = basename(path);
+  // mockup-d — Pinned rows show a short relative-time hint to the
+  // right of the name (e.g. "2h"). Pinned files don't carry their own
+  // timestamp; we look up the matching `RecentFile` record (which now
+  // tracks `lastAccessedAt`) so a pinned + recently-opened file shows
+  // a fresh hint. Pinned-but-not-recent files render no hint.
+  const lastAccessedAt = useEditorStore((s) => {
+    const rec = s.recentFiles.find((r) => r.path === path);
+    return rec?.lastAccessedAt;
+  });
   const rowRef = useRef<HTMLDivElement | null>(null);
   const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
     filePath: path,
@@ -275,10 +285,22 @@ function PinnedRow({
             />
           ) : (
             <>
-              <span className="truncate min-w-0">{name}</span>
+              <span className="truncate min-w-0 flex-1">{name}</span>
               {/* #129 — git status + external-change dot. Pinned rows are
                  *  always files, so `kind="file"` is hard-coded. */}
               <SidebarRowIndicators path={path} kind="file" />
+              {/* mockup-d — short relative-time hint when the file has
+                 *  been opened in this session. Falls back silently
+                 *  when there's no recent record for this path. */}
+              {lastAccessedAt ? (
+                <span
+                  aria-hidden="true"
+                  className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto"
+                  title={`Opened ${new Date(lastAccessedAt).toLocaleString()}`}
+                >
+                  {formatSavedShort(Date.now() - lastAccessedAt)}
+                </span>
+              ) : null}
             </>
           )}
         </div>

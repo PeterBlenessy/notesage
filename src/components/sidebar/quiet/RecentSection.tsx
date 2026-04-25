@@ -33,6 +33,7 @@ import { parseFileError } from "@/lib/file-errors";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
+import { formatSavedShort } from "@/lib/saved-ago";
 import { beginFileDrag } from "./file-drag";
 
 /**
@@ -238,20 +239,31 @@ function RecentRow({
           ) : (
             <>
               <span className="truncate min-w-0 flex-1">{entry.name}</span>
-              {parentHint && (
+              {/* #129 — git status + external-change dot. Recent rows are
+                 *  always files, so `kind="file"` is hard-coded. */}
+              <SidebarRowIndicators path={entry.path} kind="file" />
+              {/* mockup-d — short relative-time hint ("2h", "1d") in
+                 *  the right-hand slot. Drives off `lastAccessedAt` on
+                 *  the persisted RecentFile record (added with this
+                 *  feedback batch). Falls back to the parent-folder
+                 *  hint when the timestamp is missing (pre-migration
+                 *  records). */}
+              {entry.lastAccessedAt ? (
+                <span
+                  aria-hidden="true"
+                  className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto"
+                  title={`Opened ${new Date(entry.lastAccessedAt).toLocaleString()}`}
+                >
+                  {formatSavedShort(Date.now() - entry.lastAccessedAt)}
+                </span>
+              ) : parentHint ? (
                 <span
                   aria-hidden="true"
                   className="text-xs text-muted-foreground/70 truncate ml-auto max-w-[10ch]"
                 >
                   {parentHint}
                 </span>
-              )}
-              {/* #129 — git status + external-change dot. Recent rows are
-                 *  always files, so `kind="file"` is hard-coded. When the
-                 *  parent-hint is present the indicators push to its right
-                 *  via the flex-row; `ml-auto` inside the indicators only
-                 *  fires when the hint is absent. */}
-              <SidebarRowIndicators path={entry.path} kind="file" />
+              ) : null}
             </>
           )}
         </div>

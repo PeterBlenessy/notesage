@@ -72,7 +72,7 @@ export function RevertInvitation() {
       role="region"
       aria-label="Revert to classic UI invitation"
       data-revert-invitation
-      className={`pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 ${animationClasses}`}
+      className={`pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4 ${animationClasses}`}
     >
       <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-lg border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <RotateCcw

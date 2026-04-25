@@ -123,6 +123,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   useEffect(() => {
     activePrefixRef.current = activePrefix;
   }, [activePrefix]);
+  // #126 fix — when a typed prefix is dismissed via Esc, suppress
+  // re-detection of the SAME prefix character at the SAME index until
+  // the user actually deletes or replaces it. Without this the picker
+  // reopens on every subsequent keystroke (e.g. "/de" + Esc + Backspace
+  // → "/d" → picker re-fires).
+  const dismissedPrefixRef = useRef<{ index: number; char: string } | null>(
+    null,
+  );
   // Tracks the currently-highlighted option in the active mode picker so the
   // composer input can mirror it via `aria-activedescendant`. The picker
   // reports updates upward via its `onActiveOptionChange` callback (#78);
@@ -372,6 +380,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     setExpanded(false);
     setInputValue("");
     setActivePrefix(null);
+    // Reset the typed-prefix dismissal suppression so the next time the
+    // bar expands, the picker is willing to open again on the next `/`.
+    dismissedPrefixRef.current = null;
     // Blur is a courtesy — the input itself unmounts when expanded === false,
     // but if we ever animate the input out we still want the focus released.
     inputRef.current?.blur();
@@ -443,6 +454,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // doesn't need them in its deps.
         const currentPrefix = activePrefixRef.current;
         if (currentPrefix?.source === 'typed') {
+          // #126 fix — remember which prefix was dismissed so the next
+          // keystroke doesn't immediately re-open the picker. Cleared
+          // when the user deletes or replaces the prefix character.
+          dismissedPrefixRef.current = {
+            index: currentPrefix.prefixIndex,
+            char: currentPrefix.mode.prefix,
+          };
           setActivePrefix(null);
           // #126 focus-regression fix — the skill / tag / reference
           // picker takes keyboard focus while open; clearing the
@@ -498,6 +516,23 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const recomputePrefix = useCallback(
     (value: string, cursor: number) => {
       const next = detectActivePrefix(value, cursor);
+
+      // #126 fix — suppress re-detection of an Esc-dismissed prefix
+      // until the user breaks the pattern (deletes or replaces the
+      // prefix char). Without this, typing then Esc then any keystroke
+      // would re-open the picker because the prefix is still in the
+      // value.
+      const dismissed = dismissedPrefixRef.current;
+      if (dismissed) {
+        if (next && next.prefixIndex === dismissed.index && value[dismissed.index] === dismissed.char) {
+          // Still suppressed.
+          setActivePrefix(null);
+          return;
+        }
+        // Pattern broken — clear suppression so future prefixes work.
+        dismissedPrefixRef.current = null;
+      }
+
       setActivePrefix(next);
     },
     [],
@@ -852,22 +887,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Escape") {
-        event.preventDefault();
-        // Three-stage Esc fall-through: same chain the bus-subscriber
-        // honours (typed prefix → edit mode → collapse). Keeps the
-        // in-input path in sync with Esc pressed from outside the bar.
-        if (activePrefix) {
-          setActivePrefix(null);
-          return;
-        }
-        if (editContext) {
-          // #127 iter-2 — cancel edit mode before collapsing.
-          setEditContext(null);
-          setInputValue('');
-          setChips([]);
-          return;
-        }
-        collapse();
+        // #127/#126 fix — do NOT handle Esc locally. The window-level
+        // `useCommandBarShortcuts` hook also fires Esc → emits a
+        // `dismiss` event on the bus. Handling Esc in both places
+        // raced: the local handler cleared the prefix, then the bus
+        // saw no prefix and collapsed the bar. The bus subscriber is
+        // now the single source of truth for the three-stage chain
+        // (typed prefix → edit mode → collapse). We let the event
+        // bubble untouched so the keyboard hook picks it up.
         return;
       }
       if (event.key === "Enter") {

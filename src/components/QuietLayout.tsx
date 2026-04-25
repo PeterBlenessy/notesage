@@ -179,18 +179,20 @@ export function QuietLayout(props: QuietLayoutProps) {
       if (!mod || !event.shiftKey || event.altKey) return;
       if (event.key.toLowerCase() !== "e") return;
 
-      // Skip when the user is typing in an input/textarea/contenteditable
-      // (outside the tree overlay itself) so we don't hijack editing
-      // shortcuts in settings dialogs, inline renames, or the editor.
+      // Live-test 2026-04-25: previously this skipped when the target
+      // was contenteditable (the editor) so the chord fell through to
+      // the legacy `useKeyboardShortcuts` handler — which opens the
+      // Export-as-PDF dialog. ⌘⇧E under Quiet Composer is supposed to
+      // toggle the TreeOverlay regardless of focus. Capture + preempt
+      // unconditionally; the only carve-out is the overlay's own
+      // search box (so the user can type "e" inside it without
+      // re-toggling).
       const target = event.target;
-      if (target instanceof HTMLElement) {
-        const isTextInput =
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable;
-        if (isTextInput && target.closest("[data-tree-overlay]") === null) {
-          return;
-        }
+      if (
+        target instanceof HTMLElement &&
+        target.closest("[data-tree-overlay]") !== null
+      ) {
+        return;
       }
 
       event.preventDefault();

@@ -36,10 +36,10 @@ function resetStores() {
     openDocuments: [],
     activeTabId: null,
     externalChanges: {},
-  } as Parameters<typeof useEditorStore.setState>[0]);
-  useExternalChangeStore.setState({ changes: {} } as Parameters<typeof useExternalChangeStore.setState>[0]);
-  useSettingsStore.setState({ gitEnabled: true } as Parameters<typeof useSettingsStore.setState>[0]);
-  useProjectMetadataStore.setState({ metadataMap: {} } as Parameters<typeof useProjectMetadataStore.setState>[0]);
+  } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+  useExternalChangeStore.setState({ changes: {} } as unknown as Parameters<typeof useExternalChangeStore.setState>[0]);
+  useSettingsStore.setState({ gitEnabled: true } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+  useProjectMetadataStore.setState({ metadataMap: {} } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
 }
 
 describe("SidebarRowIndicators (#129)", () => {
@@ -112,7 +112,9 @@ describe("SidebarRowIndicators (#129)", () => {
 
   it("renders the external-change dot when the file has a pending external change", () => {
     const entry: ExternalChangeEntry = {
-      path: "/p/a/file.md",
+      filePath: "/p/a/file.md",
+      fileName: "file.md",
+      oldContent: "original",
       newContent: "updated",
       hunks: [],
       timestamp: Date.now(),
@@ -120,7 +122,7 @@ describe("SidebarRowIndicators (#129)", () => {
     };
     useExternalChangeStore.setState({
       changes: { "/p/a/file.md": entry },
-    } as Parameters<typeof useExternalChangeStore.setState>[0]);
+    } as unknown as Parameters<typeof useExternalChangeStore.setState>[0]);
 
     renderWithProviders(
       <SidebarRowIndicators path="/p/a/file.md" kind="file" />,
@@ -143,7 +145,7 @@ describe("SidebarRowIndicators (#129)", () => {
     } as ProjectMetadata;
     useProjectMetadataStore.setState({
       metadataMap: { "/p": lockedMeta },
-    } as Parameters<typeof useProjectMetadataStore.setState>[0]);
+    } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
 
     renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
 
@@ -164,7 +166,7 @@ describe("SidebarRowIndicators (#129)", () => {
     } as ProjectMetadata;
     useProjectMetadataStore.setState({
       metadataMap: { "/p/a/file.md": lockedMeta },
-    } as Parameters<typeof useProjectMetadataStore.setState>[0]);
+    } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
 
     renderWithProviders(
       <SidebarRowIndicators path="/p/a/file.md" kind="file" />,
