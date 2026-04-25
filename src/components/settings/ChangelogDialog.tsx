@@ -117,7 +117,7 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
         only opened from the v2 About panel (`AboutSettings`) so
         no legacy callers depend on the old chrome.
       */}
-      <DialogContent className="max-w-[820px] max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[1040px] max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Changelog

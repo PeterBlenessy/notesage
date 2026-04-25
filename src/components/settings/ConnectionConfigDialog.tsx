@@ -276,7 +276,7 @@ export function ConnectionConfigDialog({
         padding so content lines up with the new header.
       */}
       <DialogContent
-        className="max-w-[820px] p-0 gap-0"
+        className="max-w-[1040px] p-0 gap-0"
         aria-describedby={undefined}
       >
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
