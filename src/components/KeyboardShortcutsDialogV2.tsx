@@ -121,7 +121,18 @@ export function KeyboardShortcutsDialogV2({
 }: KeyboardShortcutsDialogV2Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px] p-0 gap-0">
+      {/*
+        Live-test 2026-04-25 #159 — bumped from 560 px → 880 px wide
+        and switched the body to a 2-column grid (`md:grid-cols-2`).
+        Six categories now fit on a single viewport on a typical
+        laptop screen instead of forcing the user to scroll. Columns
+        collapse to 1 below 720 px so the dialog still works on
+        narrower windows. Categories preserve their original order
+        going down each column (CSS column-count would reflow into
+        balanced halves, but ordering by category is more predictable
+        for the user — top-to-bottom in column 1, then column 2).
+      */}
+      <DialogContent className="max-w-[880px] p-0 gap-0">
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Keyboard Shortcuts
@@ -132,7 +143,7 @@ export function KeyboardShortcutsDialogV2({
           </p>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh]">
-          <div className="px-7 py-5 space-y-6">
+          <div className="px-7 py-5 grid gap-x-6 gap-y-6 md:grid-cols-2">
             {categories.map((category) => (
               <section
                 key={category.label}
