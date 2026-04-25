@@ -33,9 +33,20 @@ export function useAccent(): UseAccentResult {
   // fallback (`var(--accent-system-value, oklch(68% 0.21 37))`) until
   // the user picked System — confusing if their actual system accent
   // was blue.
+  //
+  // Real-time changes: macOS doesn't push accent changes into a
+  // running window's foreground process unless we register an
+  // `NSDistributedNotificationCenter` observer for
+  // `AppleAccentColorPreferencesNotification`. That's a Rust-side
+  // change. Until then, we re-fetch on window focus — when the user
+  // changes the accent in System Settings they almost always switch
+  // back to Notesage, and the focus event catches the change without
+  // any native plumbing. Visibility-change is also wired so iPad-
+  // style background-foreground transitions work too.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+
+    const fetchAndApply = async () => {
       try {
         const value = await invoke<string | null>('get_system_accent_color');
         if (cancelled) return;
@@ -48,9 +59,22 @@ export function useAccent(): UseAccentResult {
           });
         }
       }
-    })();
+    };
+
+    void fetchAndApply();
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'hidden') return;
+      void fetchAndApply();
+    };
+
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
     };
   }, []);
 

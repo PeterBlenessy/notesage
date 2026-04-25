@@ -117,4 +117,43 @@ describe('useAccent', () => {
       document.documentElement.classList.contains('accent-system'),
     ).toBe(false);
   });
+
+  /**
+   * Live-test 2026-04-25 — when the user changes the accent in macOS
+   * System Settings while the app is running, they almost always
+   * switch back to Notesage. The window-focus event triggers a
+   * re-fetch so the System swatch reflects the new colour without
+   * a manual app refresh. Until a native
+   * `NSDistributedNotificationCenter` observer lands, this is the
+   * pragmatic catch-it-on-foreground approach.
+   */
+  it('re-fetches the system accent when the window regains focus', async () => {
+    let currentValue: string | null = 'oklch(68% 0.21 37)'; // start orange
+    setMockInvokeHandler('get_system_accent_color', () => currentValue);
+    useSettingsStore.setState({ accent: 'system' });
+
+    renderHook(() => useAccent());
+
+    await waitFor(() => {
+      expect(
+        document.documentElement.style.getPropertyValue('--accent-system-value'),
+      ).toBe('oklch(68% 0.21 37)');
+    });
+
+    // User changes the system accent to blue while the app is in the
+    // background. macOS doesn't push that into the foreground process,
+    // so the value the hook holds is stale.
+    currentValue = 'oklch(56% 0.16 253)';
+
+    // User switches back to the app → window focus event fires.
+    act(() => {
+      window.dispatchEvent(new FocusEvent('focus'));
+    });
+
+    await waitFor(() => {
+      expect(
+        document.documentElement.style.getPropertyValue('--accent-system-value'),
+      ).toBe('oklch(56% 0.16 253)');
+    });
+  });
 });
