@@ -143,7 +143,14 @@ export function KeyboardShortcutsDialogV2({
           </p>
         </DialogHeader>
         <ScrollArea className="max-h-[70vh]">
-          <div className="px-7 py-5 grid gap-x-6 gap-y-6 md:grid-cols-2">
+          {/* Live-test 2026-04-25 — `sm:grid-cols-2` (640 px) instead
+              of `md:grid-cols-2` (768 px). The dialog itself is
+              max-w-[880px] so the 2-column layout activates whenever
+              the WINDOW is ≥ 640 px; on smaller windows the dialog
+              auto-shrinks and we collapse to a single column. The
+              previous 768 breakpoint left the 2-column layout off on
+              typical laptop windows. */}
+          <div className="px-7 py-5 grid gap-x-6 gap-y-6 sm:grid-cols-2">
             {categories.map((category) => (
               <section
                 key={category.label}

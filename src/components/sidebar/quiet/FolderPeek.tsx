@@ -13,7 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { getFileType } from "@/lib/file-utils";
+import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { log, PERF } from "@/lib/logger";
 import type { FileEntry } from "@/lib/tauri";
@@ -244,8 +244,16 @@ export function FolderPeek({
   const openFile = useCallback(
     async (entry: FileEntry) => {
       try {
-        const raw = await invoke<string>("read_file", { path: entry.path });
+        // Live-test 2026-04-25 — guard against binary types (PDF,
+        // EPUB, DOCX, images). The previous implementation always
+        // called the UTF-8 `read_file`, which fails with "stream did
+        // not contain valid UTF-8" on binary content.
         const fileType = getFileType(entry.name);
+        if (fileType === "image" || isBinaryFileType(fileType)) {
+          openTab(entry.path, entry.name, "", null, fileType);
+          return;
+        }
+        const raw = await invoke<string>("read_file", { path: entry.path });
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
           openTab(entry.path, entry.name, content, frontmatter, fileType);

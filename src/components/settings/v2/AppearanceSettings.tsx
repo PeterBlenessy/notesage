@@ -224,6 +224,13 @@ export function AppearanceSettings() {
   );
 
   const previewFontCSS = fontFamilyCSS(fontFamily);
+  // Live-test 2026-04-25 — the preview byline ("Preview · 17 px Source
+  // Serif 4 · 1.72 line-height") needs the readable font label, not
+  // the CSS family stack. Look up the active preset; fall back to the
+  // raw `fontFamily` key (e.g. when the user has picked a system font
+  // outside the preset list).
+  const currentFontLabel =
+    FONT_PRESETS.find((p) => p.value === fontFamily)?.label ?? fontFamily;
 
   // Show advanced quiet-chrome switches whenever the preset is "custom".
   const showQuietChromeAdvanced = quietChromePreset === 'custom';
@@ -634,35 +641,27 @@ export function AppearanceSettings() {
               lineHeight,
             }}
           >
+            {/* Live-test 2026-04-25 — preview content matches
+                mockup-e-settings.html: an "On Attention" essay snippet
+                with a muted byline ("Preview · {size} px {font} ·
+                {lh} line-height"). The previous "Sample heading +
+                primary action button" was placeholder copy that
+                didn't read as a writing surface. */}
             <h4
               className="font-semibold mb-1"
               style={{ fontFamily: previewFontCSS }}
             >
-              Sample heading
+              On Attention
             </h4>
-            <p className="m-0 mb-3">
-              This paragraph uses your current font, size, and line height.
-              The surrounding chrome reflects the active theme, accent, and
-              contrast.
+            <p className="m-0 mb-2">
+              The hardest part of thinking is not the thinking itself
+              but holding still long enough for a thought to arrive.
+              Distraction is rarely loud — it is almost always polite,
+              small, well-intended.
             </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className={cn(
-                  'inline-flex items-center justify-center rounded-md',
-                  'px-3 py-1.5 text-[12px] font-medium',
-                  'text-[oklch(100%_0_0)] transition-opacity duration-150',
-                  'hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                )}
-                style={{
-                  backgroundColor: 'var(--accent, var(--color-foreground))',
-                }}
-              >
-                Primary action
-              </button>
-              <span className="text-[11px] text-muted-foreground">
-                {fontSize} px · {lineHeight.toFixed(2)} line-height
-              </span>
+            <div className="text-[11px] text-muted-foreground">
+              Preview · {fontSize} px {currentFontLabel} ·{' '}
+              {lineHeight.toFixed(2)} line-height
             </div>
           </div>
         </div>

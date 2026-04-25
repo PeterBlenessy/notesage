@@ -262,11 +262,13 @@ describe('AppearanceSettings', () => {
     // font-family picks up the preset CSS stack.
     expect(style.toLowerCase()).toContain('inter');
 
-    // Subscript line beneath the preview card shows the raw values too.
-    // Scope the query to the preview container so the slider sublabel
-    // doesn't collide with the preview's own muted stat line.
+    // Subscript line beneath the preview card shows the raw values
+    // too. The mockup-e-aligned preview (live-test 2026-04-25) renders
+    // it as a `<div class="text-[11px] text-muted-foreground">`
+    // alongside the "On Attention" essay snippet — query the wrapper
+    // by its class.
     const withinPreview = preview as HTMLElement;
-    const stat = withinPreview.querySelector('span.text-\\[11px\\]');
+    const stat = withinPreview.querySelector('div.text-\\[11px\\]');
     expect(stat?.textContent ?? '').toMatch(/19\s*px/);
     expect(stat?.textContent ?? '').toMatch(/1\.85/);
   });

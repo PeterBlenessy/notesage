@@ -222,13 +222,13 @@ export function SettingsShell({
               user feedback 2026-04-25. */}
           <div className="relative flex min-h-0 flex-col overflow-hidden">
             <ScrollArea className="h-full">
-              {/* Live-test 2026-04-25 #143 — tightened from `px-6 py-6` to
-                  `px-5 py-4` to match mockup-e. The 640 px column with
-                  24 px gutters felt over-padded against the dialog
-                  chrome; 20 px / 16 px brings the rows closer together
-                  while still respecting the dialog's own 14 px corner
-                  radius. */}
-              <div className="mx-auto w-full max-w-[640px] px-5 py-4">
+              {/* Live-test 2026-04-25 — tightened to `px-4 py-3` per
+                  the second pass of the user's mockup-e comparison
+                  (was `px-5 py-4` after #143). The dialog's own 14 px
+                  corner radius + the new accent-driven nav give
+                  enough visual weight that the body padding can drop
+                  to ~16 / 12 px without feeling cramped. */}
+              <div className="mx-auto w-full max-w-[640px] px-4 py-3">
                 {children}
               </div>
             </ScrollArea>

@@ -465,9 +465,16 @@ export function SidebarContextMenu({
       <ContextMenu onOpenChange={handleOpenChange}>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent className="min-w-[14rem]">
-          <ContextMenuItem onSelect={() => void handleOpen()}>
-            Open
-          </ContextMenuItem>
+          {/* Live-test 2026-04-25 — `Open` only renders for files /
+              folders. Projects already open by clicking the row;
+              `Open` in the context menu was confusing because it
+              implies something different from the row click and
+              wasn't actually doing anything project-specific. */}
+          {!isProject && (
+            <ContextMenuItem onSelect={() => void handleOpen()}>
+              Open
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onSelect={handleRename}>
             Rename
             <ContextMenuShortcut>F2</ContextMenuShortcut>
@@ -501,16 +508,24 @@ export function SidebarContextMenu({
 
           <ContextMenuSeparator />
 
-          <ContextMenuItem
-            onSelect={() => void handleDuplicate()}
-            disabled={!isFile}
-          >
-            Duplicate
-            <ContextMenuShortcut>⌘D</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={handleTogglePin} disabled={!isFile}>
-            {isPinned ? "Unpin" : "Pin"}
-          </ContextMenuItem>
+          {/* Live-test 2026-04-25 — Duplicate and Pin only render for
+              files. Projects can't be duplicated through this UI, and
+              pinning a project doesn't fit the "pinned files" model.
+              Previously these rendered as DISABLED items; the user
+              found the disabled-but-visible state confusing — they
+              read as "should work but is broken". Hiding entirely
+              for projects per Apple's HIG. */}
+          {isFile && (
+            <>
+              <ContextMenuItem onSelect={() => void handleDuplicate()}>
+                Duplicate
+                <ContextMenuShortcut>⌘D</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={handleTogglePin}>
+                {isPinned ? "Unpin" : "Pin"}
+              </ContextMenuItem>
+            </>
+          )}
 
           {/* #128 — Add to chat. Image files only; hands off to the vision
              *  event bus so the chat panel attaches the image. */}
@@ -578,8 +593,11 @@ export function SidebarContextMenu({
              *  destinations. Categorised when more than one category
              *  is present (Quick Notes / Projects / Folders). The
              *  current parent + the entry itself (if a folder) are
-             *  filtered out to prevent no-op / illegal moves. */}
-          {hasMoveDestinations ? (
+             *  filtered out to prevent no-op / illegal moves.
+             *
+             *  Live-test 2026-04-25 — projects cannot be moved through
+             *  this menu; hide the submenu for `kind === "project"`. */}
+          {!isProject && hasMoveDestinations ? (
             <ContextMenuSub>
               <ContextMenuSubTrigger>Move to…</ContextMenuSubTrigger>
               <ContextMenuSubContent>

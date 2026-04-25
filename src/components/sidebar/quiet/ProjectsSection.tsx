@@ -18,7 +18,7 @@ import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { getFileType } from "@/lib/file-utils";
+import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
@@ -171,11 +171,31 @@ interface RowDescriptor {
  * Opens a file via `read_file`, routing through the parse-frontmatter /
  * openTab pipeline shared by the rest of the quiet sidebar. Shows a toast
  * on failure.
+ *
+ * Live-test 2026-04-25 — guard against binary file types (PDF, EPUB,
+ * DOCX, images, etc.). The previous implementation always called the
+ * UTF-8 `read_file` command, which crashes with "stream did not contain
+ * valid UTF-8" on binary content. We now check `isBinaryFileType`
+ * first and use `readBinaryFile` for those — matching the path
+ * `useFileOperations.openFile` takes for the same case.
  */
 async function openFileEntry(entry: FileEntry): Promise<void> {
   try {
-    const raw = await invoke<string>("read_file", { path: entry.path });
     const fileType = getFileType(entry.name);
+    if (fileType === "image" || isBinaryFileType(fileType)) {
+      // Image / PDF / DOCX / EPUB — read as bytes. The viewer
+      // components fetch the content via `convertFileSrc` or
+      // `readBinaryFile` themselves, so we just open an empty-content
+      // tab with the file type set so the right viewer mounts.
+      if (isBinaryFileType(fileType)) {
+        await tauriApi.readBinaryFile(entry.path);
+      }
+      useEditorStore
+        .getState()
+        .openTab(entry.path, entry.name, "", null, fileType);
+      return;
+    }
+    const raw = await invoke<string>("read_file", { path: entry.path });
     if (fileType === "markdown") {
       const { frontmatter, content } = parseFrontmatter(raw);
       useEditorStore

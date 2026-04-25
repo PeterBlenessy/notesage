@@ -229,7 +229,7 @@ describe('QuietLayout (placeholder)', () => {
     expect(docArea?.contains(sidebar)).toBe(false);
     // The layout root publishes `--quiet-sidebar-width` so the
     // FloatingCommandBar can centre on the doc-area's centre.
-    expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
+    expect(document.documentElement.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
   });
 
   it('mounts the FloatingCommandBar', () => {
@@ -363,11 +363,10 @@ describe('QuietLayout (placeholder)', () => {
       expect(
         screen.getByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeTruthy();
-      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
+      expect(document.documentElement.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('true');
     });
 
@@ -377,17 +376,16 @@ describe('QuietLayout (placeholder)', () => {
       expect(
         screen.queryByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeNull();
-      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
+      expect(document.documentElement.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');
     });
 
     it('flips visibility between renders when sidebarPinned changes', () => {
       mockSidebarPinned = true;
-      const { container, rerender } = renderWithProviders(
+      const { rerender } = renderWithProviders(
         <QuietLayout {...defaultProps()} />,
       );
       expect(
@@ -400,19 +398,17 @@ describe('QuietLayout (placeholder)', () => {
       expect(
         screen.queryByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeNull();
-      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
-      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
+      expect(document.documentElement.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
     });
 
     it('regression: sidebar hidden + cmd bar pinned coexist (var=0px, doc-area padding preserved)', () => {
       mockSidebarPinned = false;
       mockCmdBarPinned = true;
       const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
-      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
+      expect(document.documentElement.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
       // Pinned cmd bar still reserves right padding via the CSS variable.
       expect(docArea.style.paddingRight).toContain('--cmd-bar-pinned-width');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');

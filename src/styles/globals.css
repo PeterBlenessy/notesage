@@ -723,18 +723,12 @@ body {
   opacity: 0.3;
   transition: opacity 220ms ease-out;
 }
-.app.focus-mode [data-doc-area-placeholder],
-.app.focus-mode [data-doc-area] {
-  /* #150 — title bar is hidden in focus mode (display: none), so the
-     document only needs to clear the macOS traffic-light safe zone
-     (~64 px) plus a small visual breathing band for the FocusPill at
-     `top-4` (16 px + ~24 px pill height = 40 px). 80 px gives a
-     comfortable gap below the pill before content starts. The earlier
-     140 px assumed the title bar was still visible and added the bar
-     height + padding on top of the safe zone — no longer needed. */
-  padding-top: 80px;
-  transition: padding-top 220ms ease-out;
-}
+/* Live-test 2026-04-25 — focus mode does NOT shift the doc down. The
+   doc-area's regular `pt-11` (44 px = title-bar height 36 + 8 px gap)
+   already provides traffic-light clearance, and the FocusPill is a
+   `position: fixed` overlay that doesn't take layout space. Per
+   mockup-f, content stays exactly where it was when the user entered
+   focus mode — only the chrome around it fades / hides. */
 @media (prefers-reduced-motion: reduce) {
   .app.focus-mode nav[aria-label="Workspace sidebar"],
   .app.focus-mode [data-quiet-toolbar],

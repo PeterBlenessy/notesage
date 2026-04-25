@@ -283,7 +283,12 @@ describe("SidebarContextMenu", () => {
     expect(mockDeletePath).toHaveBeenCalledWith("/a/b.md");
   });
 
-  it("disables Duplicate and Pin/Unpin for folders", () => {
+  it("hides Duplicate and Pin/Unpin for folders (live-test 2026-04-25)", () => {
+    // Was: disabled-but-visible per #128. Live-test 2026-04-25 changed
+    // the policy — disabled menu items felt broken; folders / projects
+    // simply shouldn't expose those actions. The wider "kind === file"
+    // gate also hides them for projects (covered by a sibling test
+    // now that there's a `kind="project"` variant).
     renderWithProviders(
       <SidebarContextMenu filePath="/a/sub" kind="folder">
         {trigger()}
@@ -291,10 +296,9 @@ describe("SidebarContextMenu", () => {
     );
     openMenu();
 
-    const dup = screen.getByText("Duplicate").closest("[role='menuitem']");
-    const pin = screen.getByText("Pin").closest("[role='menuitem']");
-    expect(dup?.getAttribute("data-disabled")).not.toBeNull();
-    expect(pin?.getAttribute("data-disabled")).not.toBeNull();
+    expect(screen.queryByText("Duplicate")).toBeNull();
+    expect(screen.queryByText("Pin")).toBeNull();
+    expect(screen.queryByText("Unpin")).toBeNull();
   });
 
   it("always disables Move to…", () => {

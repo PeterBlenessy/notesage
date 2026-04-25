@@ -20,7 +20,9 @@ import {
   registerSendImageHandler,
   unregisterSendImageHandler,
 } from "@/lib/ai/vision";
-import { AttachmentStrip } from "@/components/chat/AttachmentStrip";
+// AttachmentStrip is no longer used here — chips render inline next
+// to the textarea (live-test 2026-04-25). The shared `AttachmentStrip`
+// stays in the legacy ChatInput.
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
@@ -1719,18 +1721,15 @@ function ExpandedContent({
           }
         }}
       >
-        {/* #126 parity — image attachment thumbnails. Live-test
-           2026-04-25 #151 — moved INSIDE the input container so it
-           reads as part of the input area instead of a sibling of the
-           bar's chrome. Renders nothing while `pendingAttachments` is
-           empty; the strip's own `flex-wrap` row adds its own padding. */}
-        {pendingAttachments.length > 0 && (
-          <AttachmentStrip
-            attachments={pendingAttachments}
-            onRemove={onRemoveAttachment}
-          />
-        )}
-        <div className="px-3 py-2 flex items-end gap-2">
+        {/* Live-test 2026-04-25 — attachment chips render INLINE with
+            the textarea (not as a separate strip above) so they feel
+            like content INSIDE the input box, not a sibling row. The
+            outer flex wraps so chips push the textarea to the next
+            line when there are too many to fit beside it. The
+            chip size is reduced from 48 px (legacy `AttachmentStrip`
+            12×12 thumbnails) to 32 px so the chip-row matches the
+            textarea's leading-relaxed height. */}
+        <div className="px-3 py-2 flex flex-wrap items-end gap-2">
         <button
           type="button"
           onClick={onPickImage}
@@ -1770,6 +1769,36 @@ function ExpandedContent({
             <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
           )}
         </button>
+        {/* Inline attachment chips — render BEFORE the textarea so
+            they live inside the same flex row. Each chip is a
+            32 × 32 thumbnail with a small × overlay on hover, same
+            affordance as the legacy `AttachmentStrip` but compressed
+            to fit beside the input rather than above it. */}
+        {pendingAttachments.map((att) => (
+          <span
+            key={att.id}
+            className="relative group shrink-0 h-8 w-8 rounded-md overflow-hidden border border-border bg-muted"
+            title={att.name}
+          >
+            <img
+              src={`data:${att.mimeType};base64,${att.data}`}
+              alt={att.name}
+              className="w-full h-full object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => onRemoveAttachment(att.id)}
+              aria-label={`Remove ${att.name}`}
+              className={cn(
+                "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
+                "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+                "hover:bg-background p-px",
+              )}
+            >
+              <X className="h-2.5 w-2.5 text-foreground" strokeWidth={1.5} />
+            </button>
+          </span>
+        ))}
         {/* Live-test 2026-04-25 #151 — `<input>` → `<textarea>` so the
            input grows vertically with multi-line content. Auto-resize
            is wired in `handleInputChange` (calls `autoResize` after

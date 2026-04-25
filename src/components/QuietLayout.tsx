@@ -174,15 +174,22 @@ export function QuietLayout(props: QuietLayoutProps) {
   // edge to its bottom edge — the divider runs unbroken behind the
   // traffic lights, matching Linear / Bear / Craft.
   //
-  // `--quiet-sidebar-width` is published on the layout root so the
-  // FloatingCommandBar can centre its compact pill on the doc-area's
-  // horizontal centre (rather than the window's). The pill's
-  // `left: calc(50% + var(--quiet-sidebar-width) / 2)` shifts it
-  // right by half the sidebar width when the sidebar is pinned, so
-  // the bar visually belongs to the document.
-  const layoutRootStyle: React.CSSProperties = {
-    "--quiet-sidebar-width": sidebarPinned ? "252px" : "0px",
-  } as React.CSSProperties;
+  // `--quiet-sidebar-width` is published on the document root
+  // (`<html>`) — NOT on the layout-root div — because the
+  // `FloatingCommandBar` portals to `document.body`, which sits
+  // OUTSIDE the layout-root. CSS variables cascade DOWN the tree,
+  // not up; setting the var on `<html>` lets descendants of body
+  // (including the portaled bar) read it for `left: calc(50% +
+  // var(--quiet-sidebar-width) / 2)`.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--quiet-sidebar-width",
+      sidebarPinned ? "252px" : "0px",
+    );
+    return () => {
+      document.documentElement.style.removeProperty("--quiet-sidebar-width");
+    };
+  }, [sidebarPinned]);
 
   // `⌘⇧E` (or `Ctrl+Shift+E`) opens the TreeOverlay. Intentionally scoped to
   // QuietLayout so the legacy shell's `useKeyboardShortcuts` (which binds the
@@ -322,7 +329,6 @@ export function QuietLayout(props: QuietLayoutProps) {
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
       data-quiet-chrome-transparent={quietChromeTransparent ? "true" : "false"}
       className="app relative flex h-screen w-full bg-background overflow-hidden"
-      style={layoutRootStyle}
     >
       {/*
         Sidebar (full-height, app top edge → bottom). Lives at the
