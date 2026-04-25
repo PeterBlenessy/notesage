@@ -234,7 +234,7 @@ export function SettingsShell({
                   mockup-e (no inner max-width on the content
                   column). Top padding stays at `pt-8` for breathing
                   room from the dialog's top edge. */}
-              <div className="w-full px-6 pt-8 pb-6">
+              <div className="w-full px-12 pt-8 pb-6">
                 {children}
               </div>
             </ScrollArea>
