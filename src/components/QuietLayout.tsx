@@ -166,6 +166,24 @@ export function QuietLayout(props: QuietLayoutProps) {
     ? { paddingRight: "var(--cmd-bar-pinned-width, 400px)" }
     : {};
 
+  // Live-test 2026-04-25 — sidebar full-height restructure.
+  //
+  // Layout root is now `flex` (row) instead of `flex-col`. The sidebar
+  // is a SIBLING of the title-bar + doc-area column (no longer a child
+  // of the doc-area grid), which lets it extend from the app's top
+  // edge to its bottom edge — the divider runs unbroken behind the
+  // traffic lights, matching Linear / Bear / Craft.
+  //
+  // `--quiet-sidebar-width` is published on the layout root so the
+  // FloatingCommandBar can centre its compact pill on the doc-area's
+  // horizontal centre (rather than the window's). The pill's
+  // `left: calc(50% + var(--quiet-sidebar-width) / 2)` shifts it
+  // right by half the sidebar width when the sidebar is pinned, so
+  // the bar visually belongs to the document.
+  const layoutRootStyle: React.CSSProperties = {
+    "--quiet-sidebar-width": sidebarPinned ? "252px" : "0px",
+  } as React.CSSProperties;
+
   // `⌘⇧E` (or `Ctrl+Shift+E`) opens the TreeOverlay. Intentionally scoped to
   // QuietLayout so the legacy shell's `useKeyboardShortcuts` (which binds the
   // same chord to "Export as PDF") continues to own that chord outside the
@@ -303,88 +321,97 @@ export function QuietLayout(props: QuietLayoutProps) {
       data-quiet-layout-root
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
       data-quiet-chrome-transparent={quietChromeTransparent ? "true" : "false"}
-      className="app relative flex flex-col h-screen w-full bg-background overflow-hidden"
+      className="app relative flex h-screen w-full bg-background overflow-hidden"
+      style={layoutRootStyle}
     >
       {/*
-        TitleBar in Quiet Composer mode (tasks #103 + #124). Suppresses the
-        chat-toggle and activity-strip-toggle buttons — their classic-mode
-        targets (ChatPanel, ActivityStrip) aren't mounted here; the
-        FloatingCommandBar and AgentOrb own those affordances instead.
-
-        #132 — when `quietChromeTransparent` is on, the title bar
-        overlays the document area instead of pushing it down. We set
-        `absolute top-0 inset-x-0 z-30` so it sits above the grid; the
-        grid below uses `pt-9` to clear the title bar visually.
+        Sidebar (full-height, app top edge → bottom). Lives at the
+        layout-root level — NOT inside the doc-area — so its right
+        border runs unbroken from y=0 to y=full-height, behind the
+        traffic lights. Internal `pt-10` keeps content clear of the
+        macOS traffic-light safe zone.
        */}
-      <TitleBar
-        mode="quiet"
-        className={
-          quietChromeTransparent
-            ? "absolute inset-x-0 top-0 z-30"
-            : undefined
-        }
-      />
+      {sidebarPinned ? <QuietSidebar /> : null}
 
-      <div
-        data-quiet-layout-document-area
-        data-sidebar-pinned={sidebarPinned ? "true" : "false"}
-        className={cn(
-          "flex-1 grid min-h-0 gap-2 p-2",
-          // #142 — when chrome is transparent the title bar overlays the
-          // doc area instead of pushing it down. The grid extends up to
-          // y=0 so content can scroll BEHIND the frosted title bar; the
-          // editor's scroll content (and the floating pill toolbar) own
-          // their own top clearance via the
-          // `[data-quiet-chrome-transparent="true"]` CSS rules in
-          // globals.css. Earlier (#132) this branch added `pt-11` to clear
-          // the bar — that defeated the frosted-glass effect because no
-          // content ever passed behind it; the bar's translucent bg
-          // blended with the matching layout-root bg and read as opaque.
-        )}
-        style={{
-          // #111 audit fix — mockup-d-synthesis specifies 252px for the
-          // sidebar grid track. Previous 240px was a 12 px shave that
-          // pinched the project rows and made the right-edge ⋯ button
-          // crowd the file-count number on hover (see also #136).
-          gridTemplateColumns: sidebarPinned ? "252px 1fr" : "1fr",
-          ...documentAreaStyle,
-        }}
-      >
-        {sidebarPinned ? <QuietSidebar /> : null}
-        <div className="flex flex-col min-h-0 min-w-0">
-          {/*
-            Editor mount (#101). Same `<Editor />` instance the legacy
-            `EditorArea` mounts in `Layout.tsx` — `editor-store` is shared
-            across both shells, so document switches, dirty tracking, and
-            the per-tab EditorState cache work identically. The editor
-            itself owns its inner chrome (Toolbar, FindBar, BubbleMenu,
-            StatusBar, ExportDialog, CommentPopover, TranscriptionOverlay,
-            DocumentOutline). `focusMode` is driven by QuietLayout's local
-            `useFocusMode` hook (see `editorFocusMode` above) so the
-            editor hides its toolbar / status while focus mode is active.
-            `data-doc-area` is the focus-mode CSS hook (see globals.css
-            `.app.focus-mode [data-doc-area]`).
-          */}
-          <div data-doc-area className="flex-1 min-h-0">
-            <ErrorBoundary name="Editor">
-              <Editor
-                onNewNote={onNewNote}
-                onNewProject={onNewProject}
-                onOpenFolder={onOpenFolder}
-                onOpenProject={onOpenProject}
-                onOpenFile={onOpenFile}
-                exportOpen={exportOpen}
-                onExportOpenChange={onExportOpenChange}
-                focusMode={editorFocusMode}
-                outlineOpen={outlineOpen}
-                onOutlineOpenChange={onOutlineOpenChange}
-                updateAvailable={updateAvailable}
-                updateVersion={updateVersion}
-                onUpdateClick={onUpdateClick}
-                onShortcutsOpen={onShortcutsOpen}
-                onOpenActions={onOpenActions}
-              />
-            </ErrorBoundary>
+      {/* Right column: title bar above doc-area. The title bar centres
+          its label inside this column, which means the title shares a
+          vertical centerline with the editor (the toolbar pill is
+          centred inside its own editor parent). Sidebar pin/unpin no
+          longer shifts the document chrome's centerline. */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/*
+          TitleBar in Quiet Composer mode (tasks #103 + #124). Suppresses
+          the chat-toggle and activity-strip-toggle buttons — their
+          classic-mode targets (ChatPanel, ActivityStrip) aren't mounted
+          here; the FloatingCommandBar and AgentOrb own those
+          affordances instead.
+
+          #132 — when `quietChromeTransparent` is on the title bar
+          overlays the doc area instead of pushing it down. The
+          `absolute top-0 inset-x-0 z-30` keeps it spanning only this
+          right column (sidebar's column is unaffected — the strong
+          right border continues uninterrupted underneath).
+        */}
+        <TitleBar
+          mode="quiet"
+          className={
+            quietChromeTransparent
+              ? "absolute inset-x-0 top-0 z-30"
+              : undefined
+          }
+        />
+
+        <div
+          data-quiet-layout-document-area
+          data-sidebar-pinned={sidebarPinned ? "true" : "false"}
+          className={cn(
+            "flex-1 flex min-h-0 p-2",
+            // #142 — when chrome is transparent the title bar overlays the
+            // doc area instead of pushing it down. Content can scroll
+            // BEHIND the frosted title bar; the editor's scroll content
+            // (and the floating pill toolbar) own their own top
+            // clearance via the
+            // `[data-quiet-chrome-transparent="true"]` CSS rules in
+            // globals.css.
+          )}
+          style={documentAreaStyle}
+        >
+          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+            {/*
+              Editor mount (#101). Same `<Editor />` instance the legacy
+              `EditorArea` mounts in `Layout.tsx` — `editor-store` is shared
+              across both shells, so document switches, dirty tracking,
+              and the per-tab EditorState cache work identically. The
+              editor itself owns its inner chrome (Toolbar, FindBar,
+              BubbleMenu, StatusBar, ExportDialog, CommentPopover,
+              TranscriptionOverlay, DocumentOutline). `focusMode` is
+              driven by QuietLayout's local `useFocusMode` hook (see
+              `editorFocusMode` above) so the editor hides its toolbar /
+              status while focus mode is active. `data-doc-area` is the
+              focus-mode CSS hook (see globals.css
+              `.app.focus-mode [data-doc-area]`).
+            */}
+            <div data-doc-area className="flex-1 min-h-0">
+              <ErrorBoundary name="Editor">
+                <Editor
+                  onNewNote={onNewNote}
+                  onNewProject={onNewProject}
+                  onOpenFolder={onOpenFolder}
+                  onOpenProject={onOpenProject}
+                  onOpenFile={onOpenFile}
+                  exportOpen={exportOpen}
+                  onExportOpenChange={onExportOpenChange}
+                  focusMode={editorFocusMode}
+                  outlineOpen={outlineOpen}
+                  onOutlineOpenChange={onOutlineOpenChange}
+                  updateAvailable={updateAvailable}
+                  updateVersion={updateVersion}
+                  onUpdateClick={onUpdateClick}
+                  onShortcutsOpen={onShortcutsOpen}
+                  onOpenActions={onOpenActions}
+                />
+              </ErrorBoundary>
+            </div>
           </div>
         </div>
       </div>

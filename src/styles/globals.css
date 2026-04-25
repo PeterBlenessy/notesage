@@ -686,7 +686,10 @@ body {
  * Reduced motion: the `@media` block below zeros the transitions so
  * vestibular-sensitive users get an instant transition, not a shorter one.
  * ========================================================================= */
-.app.focus-mode [data-quiet-layout-document-area] > nav[aria-label="Workspace sidebar"] {
+/* Sidebar lives at the layout-root level (sibling of the title-bar +
+   doc-area column) since live-test 2026-04-25 — the selector no
+   longer descends through `[data-quiet-layout-document-area]`. */
+.app.focus-mode nav[aria-label="Workspace sidebar"] {
   opacity: 0;
   transform: translateX(-12px);
   pointer-events: none;
@@ -728,7 +731,7 @@ body {
   transition: padding-top 220ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
-  .app.focus-mode [data-quiet-layout-document-area] > nav[aria-label="Workspace sidebar"],
+  .app.focus-mode nav[aria-label="Workspace sidebar"],
   .app.focus-mode [data-quiet-toolbar],
   .app.focus-mode [data-quiet-status],
   .app.focus-mode [data-testid="agent-orb"],

@@ -1028,9 +1028,17 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // In pinned mode the panel is always "expanded" — there's no compact pill
   // and no height collapse. We still funnel through `effectiveExpanded` so
   // a single conditional below picks the right content slot.
+  // Live-test 2026-04-25 — floating-mode horizontal centre is now the
+  // doc-area's centre, NOT the window's. The QuietLayout root publishes
+  // `--quiet-sidebar-width` (252 px when pinned, 0 px otherwise); we
+  // shift the centre right by half that width so the bar visually
+  // belongs to the document. Using a CSS variable keeps the layout
+  // logic in one place — toggling the sidebar reflows the bar without
+  // any JS. `left: calc(50% + var(--quiet-sidebar-width, 0px) / 2)`
+  // lands the bar's translation anchor on the doc-area's centerline.
   const positionClasses = isPinned
     ? "fixed top-0 right-0 h-screen"
-    : "fixed bottom-10 left-1/2 -translate-x-1/2";
+    : "fixed bottom-10 left-[calc(50%+var(--quiet-sidebar-width,0px)/2)] -translate-x-1/2";
 
   const widthClasses = isPinned
     ? // Width is driven by the CSS variable. We set a Tailwind w-* fallback
@@ -1100,7 +1108,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // editor and friends.
         isPinned ? "z-30" : "z-40",
         "flex flex-col overflow-hidden",
-        "border border-border bg-popover/95 backdrop-blur-md shadow-lg",
+        // Live-test 2026-04-25 #155 — was `bg-popover/95` which let the
+        // layout-root bleed through and read as a faint grey. Going to
+        // full-opacity `bg-popover` (pure white in default light mode)
+        // makes the bar visibly cleaner against the doc area. The
+        // shadcn Popover (StatusTray, etc.) already uses full
+        // opacity — the bar now matches.
+        "border border-border bg-popover backdrop-blur-md shadow-lg",
       )}
     >
       {/*

@@ -214,14 +214,22 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.queryByText(/Reserved \(placeholder\)/i)).toBeNull();
   });
 
-  it('uses a two-column grid (sidebar + editor) in QuietLayout (#102)', () => {
+  it('renders sidebar at the layout-root level and a single-column doc area (#102, post live-test 2026-04-25 restructure)', () => {
     const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
-    const docArea = container.querySelector(
-      '[data-quiet-layout-document-area]',
-    ) as HTMLElement;
+    // Sidebar is now a SIBLING of the doc-area column (not inside the
+    // doc-area grid). Layout root is `flex` (row) with the sidebar
+    // first and a flex-col content column second.
+    const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
+    expect(root).toBeTruthy();
+    const sidebar = root.querySelector('nav[aria-label="Workspace sidebar"]');
+    const docArea = root.querySelector('[data-quiet-layout-document-area]') as HTMLElement;
+    expect(sidebar).toBeTruthy();
     expect(docArea).toBeTruthy();
-    // Two tracks: 240px sidebar + 1fr centre. No third 240px column.
-    expect(docArea.style.gridTemplateColumns).toBe('252px 1fr');
+    // The sidebar is NOT a descendant of the doc-area in the new layout.
+    expect(docArea?.contains(sidebar)).toBe(false);
+    // The layout root publishes `--quiet-sidebar-width` so the
+    // FloatingCommandBar can centre on the doc-area's centre.
+    expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
   });
 
   it('mounts the FloatingCommandBar', () => {
@@ -348,32 +356,32 @@ describe('QuietLayout (placeholder)', () => {
   // a single `1fr` column. These tests cover the observer side only — the
   // chord wiring has its own test in `useKeyboardShortcuts.test.tsx`.
 
-  describe('sidebar visibility (#123)', () => {
-    it('renders the QuietSidebar and 252px 1fr grid when sidebarPinned is true', () => {
+  describe('sidebar visibility (#123, post live-test 2026-04-25 restructure)', () => {
+    it('renders QuietSidebar and publishes --quiet-sidebar-width=252px when pinned', () => {
       mockSidebarPinned = true;
       const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
-      // Nav landmark from QuietSidebar is present.
       expect(
         screen.getByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeTruthy();
+      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(docArea.style.gridTemplateColumns).toBe('252px 1fr');
+      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('252px');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('true');
     });
 
-    it('omits the QuietSidebar and collapses grid to 1fr when sidebarPinned is false', () => {
+    it('omits QuietSidebar and publishes --quiet-sidebar-width=0px when unpinned', () => {
       mockSidebarPinned = false;
       const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
-      // Nav landmark is gone — the whole QuietSidebar subtree is unmounted.
       expect(
         screen.queryByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeNull();
+      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');
     });
 
@@ -386,30 +394,25 @@ describe('QuietLayout (placeholder)', () => {
         screen.queryByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeTruthy();
 
-      // Flip the setting and re-render. The mock's getter returns the new
-      // value, so the selector produces the new `sidebarPinned=false` state
-      // on the next render — QuietSidebar unmounts, grid collapses.
       mockSidebarPinned = false;
       rerender(<QuietLayout {...defaultProps()} />);
 
       expect(
         screen.queryByRole('navigation', { name: /workspace sidebar/i }),
       ).toBeNull();
-      const docArea = container.querySelector(
-        '[data-quiet-layout-document-area]',
-      ) as HTMLElement;
-      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
+      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
     });
 
-    it('regression: sidebar hidden + cmd bar pinned coexist (grid 1fr, padding preserved)', () => {
+    it('regression: sidebar hidden + cmd bar pinned coexist (var=0px, doc-area padding preserved)', () => {
       mockSidebarPinned = false;
       mockCmdBarPinned = true;
       const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+      const root = container.querySelector('[data-quiet-layout-root]') as HTMLElement;
       const docArea = container.querySelector(
         '[data-quiet-layout-document-area]',
       ) as HTMLElement;
-      // Grid collapses because sidebar is hidden.
-      expect(docArea.style.gridTemplateColumns).toBe('1fr');
+      expect(root.style.getPropertyValue('--quiet-sidebar-width')).toBe('0px');
       // Pinned cmd bar still reserves right padding via the CSS variable.
       expect(docArea.style.paddingRight).toContain('--cmd-bar-pinned-width');
       expect(docArea.getAttribute('data-sidebar-pinned')).toBe('false');

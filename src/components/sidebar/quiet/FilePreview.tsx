@@ -378,6 +378,13 @@ export function FilePreview({
         aria-label={`File preview — ${name}`}
         side={side}
         align="start"
+        // Live-test 2026-04-25 — `sideOffset={8}` so the popover's left
+        // edge sits at the MIDDLE of the sidebar's 16 px right gutter
+        // (`px-4` on the nav). With the new strong right border, the
+        // sidebar's border line passes THROUGH the popover at
+        // `popover-left + 8 px`, making the preview feel like it
+        // hangs off the sidebar's edge — same affordance the
+        // mockup-l interactions show.
         sideOffset={8}
         // Let a pointer that enters the preview count as "still hovering" so
         // users can inspect the content without it immediately closing.

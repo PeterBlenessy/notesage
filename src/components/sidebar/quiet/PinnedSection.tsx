@@ -291,11 +291,20 @@ function PinnedRow({
               <SidebarRowIndicators path={path} kind="file" />
               {/* mockup-d — short relative-time hint when the file has
                  *  been opened in this session. Falls back silently
-                 *  when there's no recent record for this path. */}
+                 *  when there's no recent record for this path.
+                 *
+                 *  Live-test 2026-04-25 #156 — fixed-width slot
+                 *  (`w-[36px]`, right-aligned) so long filenames can't
+                 *  overrun the hint. With the previous `ml-auto`-only
+                 *  layout, very long names sometimes consumed the
+                 *  flex-grow space before the time hint claimed its
+                 *  reserved width, making the hint disappear behind
+                 *  the truncation ellipsis. The fixed slot also keeps
+                 *  the time column visually consistent across rows. */}
               {lastAccessedAt ? (
                 <span
                   aria-hidden="true"
-                  className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto"
+                  className="text-[11px] text-muted-foreground tabular-nums shrink-0 w-[36px] text-right"
                   title={`Opened ${new Date(lastAccessedAt).toLocaleString()}`}
                 >
                   {formatSavedShort(Date.now() - lastAccessedAt)}

@@ -95,8 +95,27 @@ export function QuietSidebar() {
   return (
     <nav
       aria-label="Workspace sidebar"
+      data-tauri-drag-region
       onKeyDown={handleKeyDown}
-      className="flex flex-col gap-4 overflow-y-auto p-2 h-full min-h-0"
+      // Live-test 2026-04-25 #154 — `border-r border-border-strong` so
+      // the sidebar / doc-area boundary actually reads. The default
+      // `border-border` was nearly invisible against `--color-background`
+      // because both surfaces share the same colour. The strong border
+      // token clears the WCAG 3:1 non-text-contrast threshold.
+      //
+      // Horizontal padding bumped to `px-4` (16 px) to match the
+      // mockup-l-sidebar-interactions spec (`padding: 20px 16px` on
+      // the .sidebar block). Gives items more breathing room against
+      // the right border.
+      //
+      // `w-[252px]` + `pt-10` — sidebar now lives at the layout-root
+      // level (sibling of the title bar + doc-area column), so it
+      // owns its own width and clears the macOS traffic-light safe
+      // zone with 40 px of internal top padding. The `nav` itself is
+      // a `data-tauri-drag-region` so the empty top zone above the
+      // first row stays a draggable surface (matches Linear/Bear
+      // ergonomics — drag the sidebar's empty top to move the window).
+      className="flex flex-col gap-4 overflow-y-auto px-4 pt-10 pb-2 h-full w-[252px] shrink-0 min-h-0 border-r border-border-strong"
     >
       {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
       <PinnedSection filter={filter} />
