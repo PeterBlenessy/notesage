@@ -308,7 +308,7 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         <TooltipProvider delayDuration={200}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0 items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground bg-accent">
+              <span className="inline-flex shrink-0 items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground bg-[var(--color-accent-primary)]/12">
                 <Target className="h-2.5 w-2.5" />
                 {goalFiles.length}{" "}
                 {goalFiles.length === 1 ? "goal" : "goals"}
@@ -413,7 +413,7 @@ function ProviderPill({ connection, connections, onPick }: ProviderPillProps) {
               aria-current={isActive ? "true" : undefined}
               className={cn(
                 "flex items-center gap-2 cursor-pointer",
-                isActive && "bg-accent/50",
+                isActive && "bg-[var(--color-accent-primary)]/12",
               )}
             >
               <ProviderLogo provider={c.provider} className="w-4 h-4" bare />

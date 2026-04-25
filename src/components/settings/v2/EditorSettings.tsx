@@ -159,7 +159,7 @@ export function EditorSettings() {
                   className={cn(
                     'px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 hover:bg-accent',
                     measurementUnit === unit
-                      ? 'bg-accent text-foreground'
+                      ? 'bg-[var(--color-accent-primary)]/12 text-foreground'
                       : 'text-muted-foreground',
                   )}
                 >

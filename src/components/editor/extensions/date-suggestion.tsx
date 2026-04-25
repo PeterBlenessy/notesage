@@ -184,7 +184,7 @@ const DateList = forwardRef<DateListRef, DateListProps>(
               }}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left",
-                isSelected && "bg-accent"
+                isSelected && "bg-[var(--color-accent-primary)]/12"
               )}
               onMouseEnter={() => setSelectedIndex(index)}
             >

@@ -24,7 +24,7 @@ export function TableGridPicker({ editor }: { editor: Editor }) {
               size="icon-xs"
               className={cn(
                 "text-muted-foreground",
-                (open || editor.isActive("table")) && "bg-accent text-foreground"
+                (open || editor.isActive("table")) && "bg-[var(--color-accent-primary)]/12 text-foreground"
               )}
             >
               <Table className="size-4" strokeWidth={1.5} />

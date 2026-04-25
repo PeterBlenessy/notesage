@@ -185,7 +185,7 @@ export function SettingsShell({
                               'transition-colors duration-150 ease-in-out',
                               'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
                               active
-                                ? 'bg-accent text-accent-foreground font-medium'
+                                ? 'bg-[var(--color-accent-primary)]/12 text-foreground font-medium'
                                 : 'text-foreground hover:bg-muted',
                             )}
                           >

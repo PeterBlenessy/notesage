@@ -221,7 +221,7 @@ function ResearchMode({
             className={cn(
               "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
               "transition-colors",
-              isActive ? "bg-muted" : "hover:bg-muted/60",
+              isActive ? "bg-[var(--color-accent-primary)]/12" : "hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >

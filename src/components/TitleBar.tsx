@@ -92,7 +92,7 @@ export function TitleBar(props: TitleBarProps) {
           onClick={props.onToggleChat}
           className={cn(
             "text-muted-foreground hover:text-foreground transition-colors duration-150",
-            chatPanelOpen && "text-foreground bg-accent"
+            chatPanelOpen && "text-foreground bg-[var(--color-accent-primary)]/12"
           )}
           title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧C)`}
           aria-label={chatPanelOpen ? "Hide AI Chat" : "Show AI Chat"}
@@ -105,7 +105,7 @@ export function TitleBar(props: TitleBarProps) {
           onClick={props.onToggleActivityStrip}
           className={cn(
             "relative text-muted-foreground hover:text-foreground transition-colors duration-150",
-            panelExpanded && "text-foreground bg-accent"
+            panelExpanded && "text-foreground bg-[var(--color-accent-primary)]/12"
           )}
           title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
           aria-label={panelExpanded ? "Hide Agent Panel" : "Show Agent Panel"}

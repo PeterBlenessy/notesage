@@ -20,7 +20,7 @@ export function TableToolsPopover({ editor }: { editor: Editor }) {
               size="icon-xs"
               className={cn(
                 "text-muted-foreground",
-                open && "bg-accent text-foreground"
+                open && "bg-[var(--color-accent-primary)]/12 text-foreground"
               )}
             >
               <Settings2 className="size-3.5" strokeWidth={1.5} />

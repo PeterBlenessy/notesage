@@ -140,7 +140,7 @@ export function HeadingPicker({ editor }: { editor: Editor }) {
             className={cn(
               "cursor-pointer",
               HEADING_STYLES[level],
-              current === level && "bg-accent"
+              current === level && "bg-[var(--color-accent-primary)]/12"
             )}
             onClick={() => {
               if (level === 0) {

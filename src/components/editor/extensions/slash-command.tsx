@@ -285,7 +285,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
                 onClick={() => command(item)}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 hover:bg-accent",
-                  isSelected && "bg-accent"
+                  isSelected && "bg-[var(--color-accent-primary)]/12"
                 )}
                 onMouseEnter={() => setSelectedIndex(index)}
               >

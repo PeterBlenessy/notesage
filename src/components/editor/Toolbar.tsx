@@ -97,7 +97,7 @@ function ToolbarButton({
           className={cn(
             "disabled:opacity-50 active:scale-90",
             active
-              ? "bg-accent text-foreground"
+              ? "bg-[var(--color-accent-primary)]/12 text-foreground"
               : "text-muted-foreground"
           )}
         >
@@ -229,7 +229,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   <DropdownMenuItem
                     className={cn(
                       "cursor-pointer gap-2 text-xs",
-                      editor.isActive("strike") && "bg-accent",
+                      editor.isActive("strike") && "bg-[var(--color-accent-primary)]/12",
                     )}
                     onClick={() => editor.chain().focus().toggleStrike().run()}
                   >
@@ -239,7 +239,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   <DropdownMenuItem
                     className={cn(
                       "cursor-pointer gap-2 text-xs",
-                      editor.isActive("code") && "bg-accent",
+                      editor.isActive("code") && "bg-[var(--color-accent-primary)]/12",
                     )}
                     onClick={() => editor.chain().focus().toggleCode().run()}
                   >
@@ -285,7 +285,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   <DropdownMenuItem
                     className={cn(
                       "cursor-pointer gap-2 text-xs",
-                      editor.isActive("codeBlock") && "bg-accent",
+                      editor.isActive("codeBlock") && "bg-[var(--color-accent-primary)]/12",
                     )}
                     onClick={() => editor.chain().focus().toggleCodeBlock().run()}
                   >
@@ -561,7 +561,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               onClick={onToggleWordWrap}
               className={cn(
                 sourceWordWrap
-                  ? "bg-accent text-foreground"
+                  ? "bg-[var(--color-accent-primary)]/12 text-foreground"
                   : "text-muted-foreground"
               )}
             >
@@ -587,7 +587,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               onClick={onToggleViewMode}
               className={cn(
                 "text-muted-foreground hover:text-foreground",
-                isSource && "bg-accent text-foreground"
+                isSource && "bg-[var(--color-accent-primary)]/12 text-foreground"
               )}
             >
               {isSource ? (

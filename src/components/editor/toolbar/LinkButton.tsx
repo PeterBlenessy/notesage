@@ -142,7 +142,7 @@ export function LinkButton({ editor }: { editor: Editor }) {
               size="sm"
               className={cn(
                 "h-6 w-6 p-0 text-muted-foreground transition-colors duration-150",
-                isLink && "bg-accent text-accent-foreground"
+                isLink && "bg-[var(--color-accent-primary)]/12 text-foreground"
               )}
               onClick={(e) => {
                 if (isLink) {
@@ -193,7 +193,7 @@ export function LinkButton({ editor }: { editor: Editor }) {
                   key={result.absolutePath}
                   className={cn(
                     "flex items-center gap-2 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-100",
-                    i === selectedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                    i === selectedIndex ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "hover:bg-accent/50"
                   )}
                   onMouseEnter={() => setSelectedIndex(i)}
                   onClick={() => selectResult(i)}

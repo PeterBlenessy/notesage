@@ -49,7 +49,7 @@ export function CalloutPicker({ editor }: { editor: Editor }) {
               className={cn(
                 "gap-0",
                 isActive
-                  ? "bg-accent text-foreground"
+                  ? "bg-[var(--color-accent-primary)]/12 text-foreground"
                   : "text-muted-foreground"
               )}
             >
@@ -68,7 +68,7 @@ export function CalloutPicker({ editor }: { editor: Editor }) {
             key={type}
             className={cn(
               "cursor-pointer gap-2 text-xs",
-              currentType === type && "bg-accent"
+              currentType === type && "bg-[var(--color-accent-primary)]/12"
             )}
             onClick={() => handleSelect(type)}
           >

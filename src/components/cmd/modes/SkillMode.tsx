@@ -187,7 +187,7 @@ function SkillMode({
             className={cn(
               'flex w-full items-start gap-2 px-3 py-2 text-left transition-colors duration-150',
               active
-                ? 'bg-accent text-accent-foreground'
+                ? 'bg-[var(--color-accent-primary)]/12 text-foreground'
                 : 'text-foreground hover:bg-muted',
             )}
           >

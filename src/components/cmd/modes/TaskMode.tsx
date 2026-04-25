@@ -283,7 +283,7 @@ function TaskMode({
                 "flex w-full items-start gap-2 px-3 py-1.5 text-left",
                 "text-sm transition-colors",
                 "hover:bg-muted/60",
-                active && "bg-muted",
+                active && "bg-[var(--color-accent-primary)]/12",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
             >

@@ -1018,7 +1018,7 @@ function PillIconButton({
       aria-pressed={active ? true : undefined}
       className={cn(
         "disabled:opacity-50 active:scale-90",
-        active ? "bg-accent text-foreground" : "text-muted-foreground",
+        active ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground",
       )}
     >
       {children}

@@ -359,7 +359,7 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
           className={cn(
             PILL_BTN,
             fitMode === "width"
-              ? "bg-accent text-foreground"
+              ? "bg-[var(--color-accent-primary)]/12 text-foreground"
               : "text-muted-foreground",
           )}
           title="Fit to width"
@@ -374,7 +374,7 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
           className={cn(
             PILL_BTN,
             fitMode === "page"
-              ? "bg-accent text-foreground"
+              ? "bg-[var(--color-accent-primary)]/12 text-foreground"
               : "text-muted-foreground",
           )}
           title="Fit to page"
@@ -398,7 +398,7 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
           className={cn(
             PILL_BTN,
             findBarOpen
-              ? "bg-accent text-foreground"
+              ? "bg-[var(--color-accent-primary)]/12 text-foreground"
               : "text-muted-foreground",
           )}
           title="Find (Cmd+F)"

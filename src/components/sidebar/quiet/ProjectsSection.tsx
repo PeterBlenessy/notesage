@@ -923,7 +923,7 @@ function ProjectRow({
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-        isActive && "bg-muted",
+        isActive && "bg-[var(--color-accent-primary)]/12",
       )}
     >
       <Folder
