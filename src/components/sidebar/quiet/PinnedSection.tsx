@@ -259,7 +259,7 @@ function PinnedRow({
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
             // Active row tinted with the user's accent at 12% (Apple-
             // style brand colour). Hover stays neutral grey (above).
-            isActive && "bg-[var(--color-accent-primary)]/12",
+            isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
             isDragging && "opacity-50",
           )}
         >

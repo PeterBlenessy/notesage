@@ -92,7 +92,7 @@ export function TitleBar(props: TitleBarProps) {
           onClick={props.onToggleChat}
           className={cn(
             "text-muted-foreground hover:text-foreground transition-colors duration-150",
-            chatPanelOpen && "text-foreground bg-[var(--color-accent-primary)]/12"
+            chatPanelOpen && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
           )}
           title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧C)`}
           aria-label={chatPanelOpen ? "Hide AI Chat" : "Show AI Chat"}
@@ -105,7 +105,7 @@ export function TitleBar(props: TitleBarProps) {
           onClick={props.onToggleActivityStrip}
           className={cn(
             "relative text-muted-foreground hover:text-foreground transition-colors duration-150",
-            panelExpanded && "text-foreground bg-[var(--color-accent-primary)]/12"
+            panelExpanded && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
           )}
           title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
           aria-label={panelExpanded ? "Hide Agent Panel" : "Show Agent Panel"}
@@ -122,19 +122,17 @@ export function TitleBar(props: TitleBarProps) {
     <div
       className={cn(
         "h-9 flex items-center shrink-0 select-none",
-        // #142 — when QuietLayout passes the translucent-chrome
-        // classes (`absolute inset-x-0 top-0 z-30`), paint a
-        // strongly-translucent backdrop-blur so editor content
-        // scrolling behind reads as frosted glass. The earlier
-        // `bg-background/70` ratio was too opaque — the bar still
-        // read as solid because 70 % background blends with the
-        // identical layout-root colour and the blur is barely
-        // noticeable. `bg-background/40` (40 % opacity) drops the
-        // chrome enough that scrolling content visibly smears
-        // through, plus a slightly stronger blur (`xl`) keeps text
-        // readable behind the bar.
-        props.className?.includes("absolute") &&
-          "bg-background/40 backdrop-blur-xl",
+        // Live-test 2026-04-25 — the title bar is now ALWAYS
+        // absolute-positioned by QuietLayout (so the sidebar's right
+        // border can run unbroken to y=0). The frosted bg + blur are
+        // gated on the user's `quietChromeTransparent` preference via
+        // the layout-root data attribute — when on, the bar is
+        // translucent and editor content scrolls behind it; when off,
+        // the bar is solid with no blur. Sibling selectors in
+        // globals.css carry the doc-area's own pt-clearance toggle.
+        "bg-background",
+        "[[data-quiet-chrome-transparent='true']_&]:bg-background/40",
+        "[[data-quiet-chrome-transparent='true']_&]:backdrop-blur-xl",
         props.className,
       )}
       data-tauri-drag-region

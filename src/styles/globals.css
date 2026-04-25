@@ -609,9 +609,14 @@ body {
 /* Drop the doc area's bottom padding when transparent — without this the
    8 px `p-2` gutter sat BELOW the absolute StatusBar and appeared as an
    opaque stripe of the layout-root background between the frosted bar
-   and the bottom of the viewport. The top padding stays so the grid
-   doesn't crawl under the title bar's drag region. */
+   and the bottom of the viewport. Also drop the top padding so editor
+   content can scroll up to y=0 BEHIND the always-absolute title bar
+   (live-test 2026-04-25). The editor's own scroll content has
+   internal pt-clearance below; without dropping doc-area's `pt-11`,
+   content would still start at y=44 and there'd be nothing for the
+   frosted glass to sit on top of. */
 .app[data-quiet-chrome-transparent="true"] [data-quiet-layout-document-area] {
+  padding-top: 0;
   padding-bottom: 0;
 }
 

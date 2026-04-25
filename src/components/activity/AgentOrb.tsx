@@ -154,15 +154,13 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               'absolute inset-0',
               'flex items-center justify-center',
               'rounded-full',
-              // Surface — Apple-style brand colour treatment.
-              // While running (`isActive`), the orb fills with the
-              // user's accent at full saturation so the affordance
-              // reads as a live, brand-aware pulse. Idle keeps the
-              // dark neutral so the orb stays unobtrusive when there's
-              // nothing happening. White glyph on either surface.
-              isActive
-                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
-                : 'bg-foreground/85 text-background',
+              // Surface — Apple-style brand colour. The orb ALWAYS
+              // wears the user's accent (idle + running). When tasks
+              // are running it pulses; idle is the same colour but
+              // static. Without an accent picked, the token falls
+              // back to `--color-primary` (neutral grey) per the
+              // design-system fallback chain.
+              'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]',
               'shadow-md ring-1 ring-border/50',
               // CSS-driven pulse while activity is in flight.
               shouldPulse && 'orb-pulsing',

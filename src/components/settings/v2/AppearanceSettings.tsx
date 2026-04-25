@@ -156,7 +156,7 @@ function Segmented<T extends string>({
               'text-[12px] font-medium transition-colors duration-150',
               'outline-none focus-visible:ring-2 focus-visible:ring-ring',
               active
-                ? 'border-foreground bg-[var(--color-accent-primary)]/12 text-foreground'
+                ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                 : 'border-border text-muted-foreground hover:bg-muted',
               opt.disabled && 'opacity-50 cursor-not-allowed hover:bg-transparent',
             )}
@@ -341,7 +341,7 @@ export function AppearanceSettings() {
                       'text-[12px] font-medium border transition-colors duration-150',
                       'outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       isActive
-                        ? 'border-foreground bg-[var(--color-accent-primary)]/12 text-foreground'
+                        ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                         : 'border-border text-muted-foreground hover:bg-muted',
                     )}
                   >

@@ -292,7 +292,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
           variant="ghost"
           size="icon-xs"
           onClick={() => setNotesOpen(!notesOpen)}
-          className={notesOpen ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground"}
+          className={notesOpen ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
           title="Speaker notes"
           aria-pressed={notesOpen}
         >
@@ -303,7 +303,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
             variant="ghost"
             size="icon-xs"
             onClick={() => setCommentsVisible(!commentsVisible)}
-            className={commentsVisible ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground"}
+            className={commentsVisible ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
             title="Comments"
             aria-pressed={commentsVisible}
           >
@@ -314,7 +314,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
           variant="ghost"
           size="icon-xs"
           onClick={openFindBar}
-          className={search.findBarOpen ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground"}
+          className={search.findBarOpen ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
           title="Find in slides"
           aria-pressed={search.findBarOpen}
         >

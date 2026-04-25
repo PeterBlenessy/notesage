@@ -164,7 +164,7 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                 onClick={() => onPickConversation(conv.id)}
                 onMouseEnter={() => setHighlight(index)}
                 className={`group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
-                  isHighlighted ? 'bg-[var(--color-accent-primary)]/12' : 'hover:bg-accent/50'
+                  isHighlighted ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]' : 'hover:bg-accent/50'
                 }`}
               >
                 <MessageSquare

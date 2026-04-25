@@ -174,7 +174,7 @@ export function PptxZoomControls({ zoom }: PptxZoomControlsProps) {
         variant="ghost"
         size="icon-xs"
         onClick={zoom.toggleFitWidth}
-        className={zoom.fitMode === "width" ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground"}
+        className={zoom.fitMode === "width" ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
         title="Fit to width"
       >
         <SquareDashedBottom className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -183,7 +183,7 @@ export function PptxZoomControls({ zoom }: PptxZoomControlsProps) {
         variant="ghost"
         size="icon-xs"
         onClick={zoom.toggleFitPage}
-        className={zoom.fitMode === "page" ? "bg-[var(--color-accent-primary)]/12 text-foreground" : "text-muted-foreground"}
+        className={zoom.fitMode === "page" ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "text-muted-foreground"}
         title="Fit to page"
       >
         <RectangleVertical className="h-3.5 w-3.5" strokeWidth={1.5} />

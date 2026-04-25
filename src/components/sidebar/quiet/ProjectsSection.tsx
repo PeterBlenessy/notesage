@@ -923,7 +923,7 @@ function ProjectRow({
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-        isActive && "bg-[var(--color-accent-primary)]/12",
+        isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
       )}
     >
       <Folder

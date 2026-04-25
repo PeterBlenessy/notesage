@@ -75,6 +75,28 @@ export function shouldRenderLegacyNewDialogs(uiPreview: UiPreview): boolean {
   return uiPreview !== "quiet-composer";
 }
 
+/**
+ * Close every open Radix popover / context menu / dropdown by dispatching
+ * a synthetic Escape on the document. Use BEFORE opening a dialog so the
+ * dialog mounts above an already-cleared overlay stack — without this,
+ * the Radix sidebar context menu (`z-[60]`) would render above the
+ * settings dialog (`z-50`) and the user would have to dismiss it
+ * manually first. Live-test 2026-04-25 reported the case explicitly.
+ */
+function closeOpenMenus(): void {
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
+}
+
+function openSettingsAndCloseMenus(setOpen: (open: boolean) => void): void {
+  closeOpenMenus();
+  // Defer the dialog mount one tick so any context menu's close
+  // animation (Radix uses CSS data-state transitions) has dropped its
+  // portal before the dialog's portal mounts.
+  requestAnimationFrame(() => setOpen(true));
+}
+
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteInitialMode, setCommandPaletteInitialMode] = useState<PaletteMode>("default");
@@ -560,7 +582,7 @@ function App() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ tab?: SettingsTab }>).detail;
       if (detail?.tab) setSettingsInitialTab(detail.tab);
-      setSettingsOpen(true);
+      openSettingsAndCloseMenus(setSettingsOpen);
     };
     window.addEventListener("notesage:open-settings", handler);
     return () => window.removeEventListener("notesage:open-settings", handler);
@@ -593,7 +615,7 @@ function App() {
     onToggleFocusMode: () => setFocusMode((prev) => !prev),
     onExitFocusMode: () => setFocusMode(false),
     onOutlineOpen: () => setOutlineOpen(true),
-    onSettingsOpen: () => setSettingsOpen(true),
+    onSettingsOpen: () => openSettingsAndCloseMenus(setSettingsOpen),
     onExportOpen: () => setExportOpen(true),
     onNewProject: handleNewProject,
     onNewNote: handleNewNote,
@@ -630,7 +652,7 @@ function App() {
           onUpdateClick={() => setUpdateDialogOpen(true)}
           onShortcutsOpen={() => setShortcutsOpen(true)}
           onOpenActions={() => setActionsDialogOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
           onBrowseForProject={handleBrowseForProject}
           onOpenProjectSettings={handleOpenProjectSettings}
           onMakeProject={handleMakeProject}
@@ -725,7 +747,7 @@ function App() {
             onNewNote={() => handleNewNote()}
             onNewProject={handleNewProject}
             onOpenFolder={handleOpenFolder}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
             onExportPdf={() => setExportOpen(true)}
             onToggleFocusMode={() => setFocusMode((prev) => !prev)}
             onOpenActions={() => setActionsDialogOpen(true)}

@@ -352,20 +352,38 @@ export function QuietLayout(props: QuietLayoutProps) {
           right column (sidebar's column is unaffected — the strong
           right border continues uninterrupted underneath).
         */}
+        {/* Live-test 2026-04-25 — title bar ALWAYS absolute-overlays
+            the right column (regardless of `quietChromeTransparent`)
+            so the sidebar's right border can run unbroken from
+            y=0 to y=full-height. The title bar starts at the
+            sidebar's right edge (`left: var(--quiet-sidebar-width)`)
+            so the title stays centred inside the right column, NOT
+            the full window — same vertical centerline as the
+            editor's pill toolbar. In non-transparent mode the bar
+            has a solid bg; in transparent mode it gets the frosted-
+            glass treatment via the
+            `[data-quiet-chrome-transparent="true"]` selector in
+            globals.css. The right column compensates with `pt-9`
+            so editor content starts below the bar. */}
         <TitleBar
           mode="quiet"
-          className={
-            quietChromeTransparent
-              ? "absolute inset-x-0 top-0 z-30"
-              : undefined
-          }
+          className="absolute right-0 top-0 z-30 left-[var(--quiet-sidebar-width,0px)]"
         />
 
         <div
           data-quiet-layout-document-area
           data-sidebar-pinned={sidebarPinned ? "true" : "false"}
           className={cn(
-            "flex-1 flex min-h-0 p-2",
+            // Live-test 2026-04-25 — title bar is now always absolute-
+            // overlay (so the sidebar can extend to y=0). Doc-area
+            // gets `pt-11` (36 px title bar + 8 px breathing room)
+            // ONLY when transparent chrome is OFF — when on, the
+            // editor's scroll content scrolls BEHIND the frosted
+            // title bar and supplies its own pt via the
+            // `[data-quiet-chrome-transparent="true"]` selectors in
+            // globals.css.
+            "flex-1 flex min-h-0 px-2 pb-2",
+            !quietChromeTransparent && "pt-11",
             // #142 — when chrome is transparent the title bar overlays the
             // doc area instead of pushing it down. Content can scroll
             // BEHIND the frosted title bar; the editor's scroll content

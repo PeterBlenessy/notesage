@@ -91,7 +91,7 @@ const TagList = forwardRef<TagListRef, TagListProps>(
               onClick={() => command(item)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left",
-                isSelected && "bg-[var(--color-accent-primary)]/12"
+                isSelected && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
               )}
               onMouseEnter={() => setSelectedIndex(index)}
             >

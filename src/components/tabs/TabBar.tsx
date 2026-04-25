@@ -181,7 +181,7 @@ export function TabBar() {
             className={cn(
               "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px] focus-visible:outline-none",
               isActive
-                ? "bg-[var(--color-accent-primary)]/12 text-foreground"
+                ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
                 : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:text-foreground focus-visible:bg-muted",
               isDragging && "opacity-50"
             )}

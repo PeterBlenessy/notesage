@@ -191,7 +191,7 @@ function TagMode({
               "flex items-center gap-2 px-3 py-1.5 cursor-pointer",
               "text-sm text-foreground",
               "transition-colors",
-              selected ? "bg-[var(--color-accent-primary)]/12" : "hover:bg-accent/50",
+              selected ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "hover:bg-accent/50",
             )}
           >
             <Hash
