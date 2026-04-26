@@ -95,6 +95,18 @@ const PINNED_WIDTH_DEFAULT = 400;
 const PINNED_WIDTH_KEYBOARD_STEP = 20;
 
 /**
+ * Floating-mode (expanded) width clamping constants — mirror of the pinned
+ * constants above for the centred-overlay shape. The bar stays horizontally
+ * centred so the resize handle delta is doubled when applying — dragging
+ * the right edge by 50 px grows the bar by 100 px (both edges move).
+ * Live-test 2026-04-26.
+ */
+const EXPANDED_WIDTH_MIN = 480;
+const EXPANDED_WIDTH_MAX = 1400;
+const EXPANDED_WIDTH_DEFAULT = 640;
+const EXPANDED_WIDTH_KEYBOARD_STEP = 20;
+
+/**
  * FloatingCommandBar — the unified composer shell for the Quiet Composer
  * UI refresh (PRD `2026-04-21-ui-refresh`, Phase 1, task #9).
  *
@@ -146,6 +158,16 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // store wins so the pin-icon toggle in `CommandBarContext` works.
   const cmdBarPinnedSetting = useSettingsStore((s) => s.cmdBarPinned);
   const isPinned = isPinnedProp ?? cmdBarPinnedSetting;
+
+  // Live-test 2026-04-26 — when transparent chrome is on, the collapsed
+  // pill matches the title bar / status bar by going translucent over
+  // the doc area. The bar portals to `document.body` and is NOT a
+  // descendant of the QuietLayout root that carries the
+  // `data-quiet-chrome-transparent` attribute, so we read the setting
+  // directly here instead of relying on a descendant CSS selector.
+  const quietChromeTransparent = useSettingsStore(
+    (s) => s.quietChromeTransparent,
+  );
 
   const [expanded, setExpanded] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -558,6 +580,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // mode has somewhere to render.
         setExpanded(true);
         setChatView((prev) => (prev === 'history' ? 'chat' : 'history'));
+      }
+
+      if (event.type === 'close') {
+        // X button in the context row — forced collapse that bypasses
+        // both the pin guard in `collapse()` and the multi-stage prefix
+        // semantics in `dismiss`. The trigger is responsible for
+        // unpinning before firing; this just tears the bar down.
+        setExpanded(false);
+        setInputValue("");
+        setActivePrefix(null);
+        dismissedPrefixRef.current = null;
+        inputRef.current?.blur();
       }
     });
   }, [collapse]);
@@ -1118,7 +1152,11 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       // narrow windows.
       "max-w-[90vw]"
     : effectiveExpanded
-      ? "w-[640px] max-w-[90vw]"
+      ? // Width is driven by the `--cmd-bar-expanded-width` CSS variable for
+        // the same reason as pinned mode — drag-to-resize without React
+        // re-renders. The variable falls back to EXPANDED_WIDTH_DEFAULT so
+        // first paint is unchanged. Live-test 2026-04-26.
+        "max-w-[90vw]"
       : "w-[480px] max-w-[90vw]";
 
   const heightClasses = isPinned
@@ -1149,11 +1187,15 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     ? ""
     : "transition-all duration-200 ease-out";
 
-  // Inline style for pinned mode — the CSS variable cascades from <html>
-  // (set by the resize-handle drag logic) so resizes don't re-render React.
+  // Inline style — pinned and floating-expanded modes both drive their width
+  // via a CSS variable cascaded from <html> (the resize handles write to it
+  // on every pointermove without re-rendering React). Collapsed floating
+  // mode keeps a Tailwind w-* class instead.
   const inlineStyle: React.CSSProperties = isPinned
     ? { width: `var(--cmd-bar-pinned-width, ${PINNED_WIDTH_DEFAULT}px)` }
-    : {};
+    : effectiveExpanded
+      ? { width: `var(--cmd-bar-expanded-width, ${EXPANDED_WIDTH_DEFAULT}px)` }
+      : {};
 
   const bar = (
     <div
@@ -1185,15 +1227,31 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // makes the bar visibly cleaner against the doc area. The
         // shadcn Popover (StatusTray, etc.) already uses full
         // opacity — the bar now matches.
-        "border border-border bg-popover backdrop-blur-md shadow-lg",
+        "border border-border shadow-lg",
+        // Live-test 2026-04-26 — match the title bar / status bar feel by
+        // letting the collapsed pill go translucent when the user has
+        // turned on `quietChromeTransparent` (Settings > Appearance).
+        // Expanded and pinned modes stay opaque (full `bg-popover`) so
+        // chat stream content reads cleanly on top. Tokens mirror
+        // `TitleBar.tsx`: `bg-background/40` + `backdrop-blur-xl`.
+        !effectiveExpanded && !isPinned && quietChromeTransparent
+          ? "bg-background/40 backdrop-blur-xl"
+          : "bg-popover backdrop-blur-md",
       )}
     >
       {/*
         Pinned-mode resize handle. A thin (6px) draggable strip on the LEFT
-        edge of the panel. Hidden in floating mode — there's nothing to
-        resize there.
+        edge of the panel. Floating expanded mode gets its own pair of
+        edge handles (`ExpandedResizeHandle`) since the bar is centred and
+        the user expects whichever edge they grab to follow the cursor.
        */}
       {isPinned ? <PinnedResizeHandle /> : null}
+      {!isPinned && effectiveExpanded ? (
+        <>
+          <ExpandedResizeHandle side="right" />
+          <ExpandedResizeHandle side="left" />
+        </>
+      ) : null}
 
       {effectiveExpanded ? (
         <ExpandedContent
@@ -1305,11 +1363,15 @@ function PinnedResizeHandle() {
   }, [persistedWidth]);
 
   // Pointer drag — write to the CSS variable on every move, persist on up.
+  // `data-cmd-bar-resizing="true"` on <html> disables the bar's
+  // `transition-all duration-200` so the width tracks the cursor with
+  // zero lag (live-test 2026-04-26 — see `globals.css`).
   const onPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       const target = event.currentTarget;
       target.setPointerCapture(event.pointerId);
+      document.documentElement.setAttribute("data-cmd-bar-resizing", "true");
 
       const onMove = (moveEvent: PointerEvent) => {
         // The panel docks to the right edge, so the new width is the
@@ -1335,6 +1397,7 @@ function PinnedResizeHandle() {
         );
         setCmdBarPinnedWidth(finalWidth);
         target.releasePointerCapture(event.pointerId);
+        document.documentElement.removeAttribute("data-cmd-bar-resizing");
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
       };
@@ -1386,13 +1449,149 @@ function PinnedResizeHandle() {
       onKeyDown={onKeyDown}
       data-cmd-bar-resize-handle
       className={cn(
-        // Absolute-positioned strip on the left edge of the pinned panel.
-        "absolute left-0 top-0 h-full w-1.5 cursor-col-resize",
-        // Subtle accent on hover/focus so it's discoverable without being
-        // visually noisy at rest.
-        "bg-transparent hover:bg-border/60 transition-colors",
-        "focus-visible:outline-none focus-visible:bg-border",
+        // Hair-thin 1px strip on the left edge — matches the legacy
+        // `ResizableHandle` rhythm (`w-px`, hover highlight, generous
+        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
+        // is the look the user requested (live-test 2026-04-26).
+        "absolute left-0 top-0 h-full w-px cursor-col-resize",
+        // Invisible at rest (the bar's own border carries the edge);
+        // distinctly visible on hover/focus.
+        "bg-transparent hover:bg-muted-foreground transition-colors",
+        "focus-visible:outline-none focus-visible:bg-muted-foreground",
+        // 16px-wide invisible hit target centred on the visible 1px line so
+        // the comfortable click area doesn't fight the hairline aesthetic.
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
         // Sit above the panel content so pointer events land on the handle.
+        "z-10",
+      )}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ExpandedResizeHandle — vertical drag handle on either edge of the
+// floating expanded bar. The bar is horizontally centred, so width changes
+// twice as fast as the cursor delta — one cursor pixel of drag moves both
+// edges by one pixel, growing the width by two. This makes whichever edge
+// the user grabs follow the cursor exactly.
+//
+// Width state lives in the `--cmd-bar-expanded-width` CSS variable on
+// <html>; the React store is only written on pointerup / keyup, same as
+// the pinned handle pattern.
+// ---------------------------------------------------------------------------
+
+function ExpandedResizeHandle({ side }: { side: "left" | "right" }) {
+  const persistedWidth = useSettingsStore((s) => s.cmdBarExpandedWidth);
+  const setCmdBarExpandedWidth = useSettingsStore((s) => s.setCmdBarExpandedWidth);
+
+  // Sync the persisted width to the CSS variable on mount and whenever the
+  // store value changes (e.g., on rehydration after restart). Both handles
+  // share the same variable so this effect runs in either instance — that's
+  // fine; setProperty is idempotent.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty(
+      "--cmd-bar-expanded-width",
+      `${persistedWidth}px`,
+    );
+  }, [persistedWidth]);
+
+  // `data-cmd-bar-resizing="true"` on <html> disables the bar's
+  // `transition-all duration-200` so width tracks the cursor without lag.
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      document.documentElement.setAttribute("data-cmd-bar-resizing", "true");
+
+      const startX = event.clientX;
+      const startWidth = persistedWidth;
+      // Right-edge drag: rightward cursor → wider; deltaWidth = +2 * deltaX
+      // Left-edge drag:  leftward cursor → wider;  deltaWidth = -2 * deltaX
+      const sign = side === "right" ? 1 : -1;
+
+      const compute = (clientX: number) => {
+        const deltaX = clientX - startX;
+        return Math.round(
+          Math.max(
+            EXPANDED_WIDTH_MIN,
+            Math.min(EXPANDED_WIDTH_MAX, startWidth + 2 * sign * deltaX),
+          ),
+        );
+      };
+
+      const onMove = (moveEvent: PointerEvent) => {
+        document.documentElement.style.setProperty(
+          "--cmd-bar-expanded-width",
+          `${compute(moveEvent.clientX)}px`,
+        );
+      };
+
+      const onUp = (upEvent: PointerEvent) => {
+        setCmdBarExpandedWidth(compute(upEvent.clientX));
+        target.releasePointerCapture(event.pointerId);
+        document.documentElement.removeAttribute("data-cmd-bar-resizing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [persistedWidth, side, setCmdBarExpandedWidth],
+  );
+
+  // Keyboard adjustment — ←/→ adjust width by ±20 px while focused. Direction
+  // is consistent regardless of which side handle is focused: ArrowRight
+  // grows the bar, ArrowLeft shrinks it. (The pinned handle inverts because
+  // its panel grows away from the right edge; the floating bar grows
+  // symmetrically, so the convention is "right widens".)
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const delta =
+        event.key === "ArrowRight"
+          ? EXPANDED_WIDTH_KEYBOARD_STEP
+          : -EXPANDED_WIDTH_KEYBOARD_STEP;
+      const next = Math.max(
+        EXPANDED_WIDTH_MIN,
+        Math.min(EXPANDED_WIDTH_MAX, persistedWidth + delta),
+      );
+      document.documentElement.style.setProperty(
+        "--cmd-bar-expanded-width",
+        `${next}px`,
+      );
+      setCmdBarExpandedWidth(next);
+    },
+    [persistedWidth, setCmdBarExpandedWidth],
+  );
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label="Resize command bar"
+      aria-orientation="vertical"
+      aria-valuemin={EXPANDED_WIDTH_MIN}
+      aria-valuemax={EXPANDED_WIDTH_MAX}
+      aria-valuenow={persistedWidth}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      data-cmd-bar-resize-handle
+      data-cmd-bar-resize-side={side}
+      className={cn(
+        // Hair-thin 1px strip on the chosen edge — matches the legacy
+        // `ResizableHandle` rhythm (`w-px`, hover highlight, 16px
+        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
+        // (live-test 2026-04-26).
+        "absolute top-0 h-full w-px cursor-col-resize",
+        side === "right" ? "right-0" : "left-0",
+        "bg-transparent hover:bg-muted-foreground transition-colors",
+        "focus-visible:outline-none focus-visible:bg-muted-foreground",
+        // 16px-wide invisible hit target centred on the visible line.
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
         "z-10",
       )}
     />

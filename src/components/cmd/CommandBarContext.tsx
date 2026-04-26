@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Target, Check, ChevronUp, FolderOpen, Settings2, Loader2 } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Target, Check, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -383,6 +383,20 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         icon={cmdBarPinned ? PinOff : Pin}
         onClick={() => {
           setCmdBarPinned(!cmdBarPinned);
+        }}
+      />
+      {/* Close button (live-test 2026-04-26) — explicit mouse path
+          for collapsing the bar back to the compact pill. Esc has
+          always done this from the keyboard, but click-to-close was
+          missing. Unpin first so the bar has a non-pinned state to
+          collapse to, then fire the bus `close` event for a forced
+          collapse that bypasses the prefix / pin guards in `dismiss`. */}
+      <IconButton
+        ariaLabel="Close command bar"
+        icon={X}
+        onClick={() => {
+          if (cmdBarPinned) setCmdBarPinned(false);
+          emitCmdBarEvent({ type: "close" });
         }}
       />
     </div>

@@ -143,6 +143,18 @@ export function SettingsDialogV2({
   const [query, setQuery] = React.useState('');
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
+  // Sync `active` with `initialActiveItem` on every open transition so
+  // deep-linking from outside the dialog (e.g. the ExplainLockDialog
+  // "Project Settings > AI Provider Lock" link) lands on the correct
+  // panel even when the dialog has been opened before. Without this,
+  // `useState(initialActiveItem)` captured the prop only on first mount
+  // and ignored subsequent prop changes — the dead-end the user hit.
+  const prevOpenRef = React.useRef(open);
+  React.useEffect(() => {
+    if (open && !prevOpenRef.current) setActive(initialActiveItem);
+    prevOpenRef.current = open;
+  }, [open, initialActiveItem]);
+
   useSettingsSearchShortcut(searchInputRef, open);
 
   // Hide the Projects panel from the nav when there are no projects in

@@ -26,7 +26,15 @@ export type CmdBarEvent =
   // subscriber flips its local `chatView` state. Selecting a conversation
   // from the history list returns to chat via the `onSelectConversation`
   // callback, same as the legacy `ChatPanel` does (#118).
-  | { type: 'toggle-history' };
+  | { type: 'toggle-history' }
+  // `close` — fired by the X button in `CommandBarContext` (live-test
+  // 2026-04-26). Unlike `dismiss`, this is an explicit user "close the
+  // bar" intent and bypasses the multi-stage Esc semantics (prefix
+  // clearing, edit-mode cancel, pin guard). The subscriber forces the
+  // bar back to its compact pill state regardless of typed prefix or
+  // pinned mode. Pinned mode is unpinned by the trigger before the
+  // event fires so the bar has somewhere to collapse to.
+  | { type: 'close' };
 
 type Handler = (event: CmdBarEvent) => void;
 

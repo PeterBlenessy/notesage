@@ -121,6 +121,13 @@ interface SettingsStore {
    */
   cmdBarPinnedWidth: number;
   /**
+   * Width (in pixels) of the floating command bar in the expanded state.
+   * Persisted across restarts so users on large displays can scale the bar
+   * up once and not redo it on every launch. Clamped to 480–1400. Default
+   * 640. Live-test 2026-04-26.
+   */
+  cmdBarExpandedWidth: number;
+  /**
    * Quiet-chrome preset controlling which chrome targets fade under the
    * `.app.typing` pulse (ui-refresh #51). One of the named presets, or
    * "custom" when any per-element override has been toggled. Default
@@ -247,6 +254,7 @@ interface SettingsStore {
   setUiPreview: (preview: UiPreview) => void;
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
+  setCmdBarExpandedWidth: (width: number) => void;
   setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
   /** #132 — toggle the translucent chrome + editor flow-under effect. */
   setQuietChromeTransparent: (enabled: boolean) => void;
@@ -304,6 +312,7 @@ export const useSettingsStore = create<SettingsStore>()(
       uiPreview: "legacy",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
+      cmdBarExpandedWidth: 640,
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       quietChromeTransparent: false,
@@ -571,6 +580,16 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ cmdBarPinnedWidth: Math.round(Math.max(280, Math.min(800, width))) });
       },
 
+      setCmdBarExpandedWidth: (width: number) => {
+        // Clamp to the same min/max enforced by the floating-mode resize
+        // handle in `FloatingCommandBar`. 480 keeps the prefix-mode pickers
+        // legible at minimum width; 1400 covers ultrawide displays without
+        // letting the bar dominate the viewport.
+        set({
+          cmdBarExpandedWidth: Math.round(Math.max(480, Math.min(1400, width))),
+        });
+      },
+
       setQuietChromePreset: (preset: QuietChromePreset | "custom") => {
         // Picking a named preset resets the overrides to that preset's
         // mapping so the Advanced switches mirror the effective state if
@@ -647,7 +666,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 9,
+      version: 10,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -738,6 +757,14 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (typeof state.previewInvitationDismissedAt !== 'number') {
             state.previewInvitationDismissedAt = null;
+          }
+        }
+        if (version < 10) {
+          // Live-test 2026-04-26 — floating cmd-bar resize. Default to the
+          // historical fixed width (640 px) so existing users see zero
+          // visual change after upgrade.
+          if (typeof state.cmdBarExpandedWidth !== 'number') {
+            state.cmdBarExpandedWidth = 640;
           }
         }
         return state;

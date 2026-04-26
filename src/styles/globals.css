@@ -768,3 +768,21 @@ body {
     transition: none !important;
   }
 }
+
+/* =============================================================================
+ * Cmd bar live-resize transition suppression (live-test 2026-04-26)
+ *
+ * The pinned and floating-expanded bars apply `transition-all duration-200` to
+ * animate state-shape changes (collapsed ↔ expanded, pinned ↔ floating). That
+ * transition includes `width` — which means every CSS-variable update during
+ * a drag kicks off a 200 ms width animation, and rapid pointer moves stack
+ * into a visible lag.
+ *
+ * The `Pinned`/`ExpandedResizeHandle` components set `data-cmd-bar-resizing="true"`
+ * on `<html>` while the pointer is down and clear it on pointerup. While the
+ * attribute is present we strip the bar's transitions so width tracks the
+ * cursor frame-perfectly, matching the legacy chat panel's resize feel.
+ * ========================================================================= */
+html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
+  transition: none !important;
+}

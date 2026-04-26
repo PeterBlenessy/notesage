@@ -1112,7 +1112,7 @@ describe('uiPreview flag', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1254,7 +1254,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1400,7 +1400,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1677,7 +1677,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     expect(parsed.state.sidebarTagsHidden).toBe(false);
@@ -1928,7 +1928,7 @@ describe('v8 → v9 migration (preview invitation timestamps)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
     expect(parsed.state.previewInvitationShownAt).toBeNull();
     expect(parsed.state.previewInvitationDismissedAt).toBeNull();
   });
@@ -1979,5 +1979,67 @@ describe('v8 → v9 migration (preview invitation timestamps)', () => {
     const s = useSettingsStore.getState();
     expect(s.previewInvitationShownAt).toBe(shown);
     expect(s.previewInvitationDismissedAt).toBe(dismissed);
+  });
+});
+
+describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
+  it('adds cmdBarExpandedWidth: 640 to a v9 state lacking it', async () => {
+    const v9State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+        sidebarRecentCap: 5,
+        sidebarTagsCap: 5,
+        sidebarTagsHidden: false,
+        previewInvitationShownAt: null,
+        previewInvitationDismissedAt: null,
+      },
+      version: 9,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v9State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.cmdBarExpandedWidth).toBe(640);
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(10);
+    expect(parsed.state.cmdBarExpandedWidth).toBe(640);
+  });
+
+  it('clamps the setter to the 480–1400 range', () => {
+    useSettingsStore.getState().setCmdBarExpandedWidth(100);
+    expect(useSettingsStore.getState().cmdBarExpandedWidth).toBe(480);
+    useSettingsStore.getState().setCmdBarExpandedWidth(2000);
+    expect(useSettingsStore.getState().cmdBarExpandedWidth).toBe(1400);
+    useSettingsStore.getState().setCmdBarExpandedWidth(800);
+    expect(useSettingsStore.getState().cmdBarExpandedWidth).toBe(800);
   });
 });

@@ -89,7 +89,22 @@ export function ExplainLockDialog({ open, onOpenChange, lockedProjectPaths }: Ex
           ))}
 
           <p className="text-xs text-muted-foreground">
-            Unlock from <span className="font-medium text-foreground">Project Settings &gt; AI Provider Lock</span>.
+            Unlock from{' '}
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent('notesage:open-settings', {
+                    detail: { tab: 'projects' },
+                  }),
+                );
+                onOpenChange(false);
+              }}
+              className="font-medium text-[var(--color-accent-primary)] underline-offset-2 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              Project Settings &gt; AI Provider Lock
+            </button>
+            .
           </p>
         </div>
 
