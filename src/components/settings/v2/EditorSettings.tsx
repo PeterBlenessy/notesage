@@ -1,17 +1,32 @@
+import * as React from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
+import {
+  FONT_PRESETS,
+  fontFamilyCSS,
+  useEditorStylesStore,
+} from '@/stores/editor-styles-store';
 import { cn } from '@/lib/utils';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
+
+const FONT_SIZE_MIN = 12;
+const FONT_SIZE_MAX = 22;
+const LINE_HEIGHT_MIN = 1.2;
+const LINE_HEIGHT_MAX = 2.2;
+const LINE_HEIGHT_STEP = 0.05;
 
 // Page dimensions in cm
 const PAGE_DIMENSIONS: Record<string, { width: number; height: number }> = {
@@ -42,10 +57,15 @@ function formatDimension(cm: number, unit: MeasurementUnit): string {
 }
 
 /**
- * Editor settings panel (v2) — editor options and page layout.
+ * Writing settings panel (v2) — typography, editor options, and page
+ * layout. The panel id stays "editor" for back-compat with stored
+ * `initialActiveItem` values; the human-facing label is "Writing".
  *
- * Typography (font, size, line height, paragraph spacing) lives in the
- * AppearanceSettings panel (task #65), not here.
+ * Live-test 2026-04-26 — typography (font, size, line-height) and the
+ * Preview block moved here from Appearance. The preview is *driven* by
+ * the typography sliders, so they belong together; Appearance now owns
+ * only chrome-shaping settings (theme, accent, contrast, tint, quiet
+ * chrome, sidebar composition).
  */
 export function EditorSettings() {
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
@@ -55,6 +75,13 @@ export function EditorSettings() {
   const externalChangeDiffReview = useSettingsStore((s) => s.externalChangeDiffReview);
   const setExternalChangeDiffReview = useSettingsStore(
     (s) => s.setExternalChangeDiffReview,
+  );
+  // Moved from Advanced > Scope (consolidation 2026-04-26): completions
+  // out-of-scope is an editor-side AI affordance — sits naturally next
+  // to the other editor toggles.
+  const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
+  const setCompletionsOnOutOfScope = useSettingsStore(
+    (s) => s.setCompletionsOnOutOfScope,
   );
   const contentWidth = useSettingsStore((s) => s.contentWidth);
   const setContentWidth = useSettingsStore((s) => s.setContentWidth);
@@ -70,6 +97,21 @@ export function EditorSettings() {
   const setMarginRight = useSettingsStore((s) => s.setMarginRight);
   const printLayout = useSettingsStore((s) => s.printLayout);
   const setPrintLayout = useSettingsStore((s) => s.setPrintLayout);
+
+  // Editor typography (live-test 2026-04-26 — moved from Appearance).
+  const fontFamily = useEditorStylesStore((s) => s.fontFamily);
+  const fontSize = useEditorStylesStore((s) => s.fontSize);
+  const lineHeight = useEditorStylesStore((s) => s.lineHeight);
+  const setFontFamily = useEditorStylesStore((s) => s.setFontFamily);
+  const setFontSize = useEditorStylesStore((s) => s.setFontSize);
+  const setLineHeight = useEditorStylesStore((s) => s.setLineHeight);
+
+  const previewFontCSS = fontFamilyCSS(fontFamily);
+  const currentFontLabel = React.useMemo(
+    () =>
+      FONT_PRESETS.find((p) => p.value === fontFamily)?.label ?? fontFamily,
+    [fontFamily],
+  );
 
   const unitLabel = measurementUnit === 'cm' ? 'cm' : 'in';
 
@@ -90,6 +132,119 @@ export function EditorSettings() {
 
   return (
     <>
+      <SettingsGroup
+        label="Typography"
+        description="Default font, size, and line-height for the paragraph block. Per-heading overrides live in the editor typography popover."
+      >
+        <SettingsRow
+          label="Font family"
+          description="Preset reading fonts bundled with Notesage."
+          control={
+            <Select value={fontFamily} onValueChange={setFontFamily}>
+              <SelectTrigger className="w-[200px]" aria-label="Font family">
+                <SelectValue placeholder="Pick a font" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Sans-serif</SelectLabel>
+                  {FONT_PRESETS.filter((p) => p.category === 'sans').map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      <span style={{ fontFamily: p.css }}>{p.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Serif</SelectLabel>
+                  {FONT_PRESETS.filter((p) => p.category === 'serif').map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      <span style={{ fontFamily: p.css }}>{p.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Monospace</SelectLabel>
+                  {FONT_PRESETS.filter((p) => p.category === 'mono').map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      <span style={{ fontFamily: p.css }}>{p.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          }
+        />
+
+        <SettingsRow
+          label="Font size"
+          description="Base paragraph font size, in pixels."
+          control={
+            <div className="w-[180px]">
+              <Slider
+                value={[fontSize]}
+                onValueChange={([v]) => setFontSize(v)}
+                min={FONT_SIZE_MIN}
+                max={FONT_SIZE_MAX}
+                step={1}
+                aria-label="Font size"
+              />
+            </div>
+          }
+          controlSublabel={`${fontSize} px`}
+        />
+
+        <SettingsRow
+          label="Line height"
+          description="How much vertical room each line gets."
+          control={
+            <div className="w-[180px]">
+              <Slider
+                value={[lineHeight]}
+                onValueChange={([v]) => setLineHeight(v)}
+                min={LINE_HEIGHT_MIN}
+                max={LINE_HEIGHT_MAX}
+                step={LINE_HEIGHT_STEP}
+                aria-label="Line height"
+              />
+            </div>
+          }
+          controlSublabel={lineHeight.toFixed(2)}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup label="Preview">
+        <div
+          data-testid="appearance-preview"
+          aria-hidden="true"
+          className="py-3"
+        >
+          <div
+            className="rounded-md border border-border bg-background p-4 min-h-[180px]"
+            style={{
+              fontFamily: previewFontCSS,
+              fontSize: `${fontSize}px`,
+              lineHeight,
+            }}
+          >
+            <h4
+              className="font-semibold mb-1"
+              style={{ fontFamily: previewFontCSS }}
+            >
+              On Attention
+            </h4>
+            <p className="m-0 mb-2">
+              The hardest part of thinking is not the thinking itself
+              but holding still long enough for a thought to arrive.
+              Distraction is rarely loud — it is almost always polite,
+              small, well-intended.
+            </p>
+            <div className="text-[11px] text-muted-foreground">
+              Preview · {fontSize} px {currentFontLabel} ·{' '}
+              {lineHeight.toFixed(2)} line-height
+            </div>
+          </div>
+        </div>
+      </SettingsGroup>
+
       <SettingsGroup
         label="Editor Options"
         description="Configure your editing experience."
@@ -137,6 +292,27 @@ export function EditorSettings() {
               id="external-diff-review"
               checked={externalChangeDiffReview}
               onCheckedChange={setExternalChangeDiffReview}
+            />
+          }
+        />
+        {/* Inverted UI (live-test 2026-04-26 audit) — the persisted
+            field is `completionsOnOutOfScope` (default false = safe),
+            but the previous label "Completions outside project scope"
+            read like a feature switch and users would enable it
+            expecting completions to "work better", silently disabling
+            the scope safety. The toggle now mirrors the inverted
+            sense: ON = restricted (default), OFF = allow everywhere. */}
+        <SettingsRow
+          label="Restrict completions to project scope"
+          description="When on (default), inline completions are suppressed for files outside the project selected in the chat footer — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
+          htmlFor="restrict-completions-scope"
+          control={
+            <Switch
+              id="restrict-completions-scope"
+              checked={!completionsOnOutOfScope}
+              onCheckedChange={(checked) =>
+                setCompletionsOnOutOfScope(!checked)
+              }
             />
           }
         />
@@ -204,7 +380,7 @@ export function EditorSettings() {
           />
         )}
 
-        <div className="px-4 py-3">
+        <div className="py-3">
           <div className="mb-3">
             <Label className="text-[13px] font-medium text-foreground">
               Page Margins

@@ -562,14 +562,14 @@ function AddProjectButton({ addableProjects, onPick }: AddProjectButtonProps) {
  */
 function CrossProjectScopePill() {
   const title =
-    "Cross-project mode exposes all workspace folders to the agent. Click to open Settings > Advanced.";
+    "Cross-project mode exposes all workspace folders to the agent. Click to open Settings > AI & Agents.";
   return (
     <button
       type="button"
       onClick={() => {
         window.dispatchEvent(
           new CustomEvent("notesage:open-settings", {
-            detail: { tab: "developer" },
+            detail: { tab: "ai" },
           }),
         );
       }}

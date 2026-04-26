@@ -1056,7 +1056,7 @@ describe('CommandBarContext', () => {
       ).toBeTruthy();
     });
 
-    it('clicking the pill dispatches notesage:open-settings with { tab: "developer" }', () => {
+    it('clicking the pill dispatches notesage:open-settings with { tab: "ai" }', () => {
       mockCrossProjectMode = true;
       const received: Array<{ tab?: string }> = [];
       const handler = (e: Event) => {
@@ -1072,7 +1072,7 @@ describe('CommandBarContext', () => {
         );
 
         expect(received).toHaveLength(1);
-        expect(received[0].tab).toBe('developer');
+        expect(received[0].tab).toBe('ai');
       } finally {
         window.removeEventListener('notesage:open-settings', handler);
       }

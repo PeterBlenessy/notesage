@@ -1,20 +1,42 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Info } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { tauriApi } from '@/lib/tauri';
+import { ProjectCard } from '../ProjectCard';
 import { SyncSettings as LegacySyncSettings } from '../SyncSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 
+function basename(path: string): string {
+  return path.split('/').filter(Boolean).pop() || path;
+}
+
 /**
- * Projects settings panel (v2) — version control (git) and workspace sync.
+ * Projects settings panel (v2).
  *
- * AI provider lock and per-project overrides live in the per-project
- * Settings dialog (ProjectSettingsDialog), not the global settings, so this
- * panel focuses on the workspace-wide integrations.
+ * Live-test 2026-04-26 — replaced the picker + inline `<ProjectSettings>`
+ * block with a scannable card list (one card per project) modeled on
+ * `ConnectionCard`. Each card shows the project name + description +
+ * status pills (iCloud / Git / AI override / Lock) and expands inline
+ * to reveal the full `<ProjectSettings>` form. The whole card row is
+ * the accordion trigger — no separate gear icon.
+ *
+ * Global Version Control + iCloud Sync groups stay below for now (their
+ * global on/off toggles affect cross-machine workflows; revisit
+ * removing them in a follow-up batch).
  */
 export function ProjectsSettings() {
+  const projects = useWorkspaceStore((s) => s.projects);
+  const sortedProjects = useMemo(
+    () =>
+      [...projects].sort((a, b) =>
+        basename(a.path).localeCompare(basename(b.path)),
+      ),
+    [projects],
+  );
+
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const setGitEnabled = useSettingsStore((s) => s.setGitEnabled);
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
@@ -44,6 +66,16 @@ export function ProjectsSettings() {
 
   return (
     <>
+      {sortedProjects.length > 0 ? (
+        <SettingsGroup label="Projects" bare>
+          <div className="py-2 space-y-2">
+            {sortedProjects.map((p) => (
+              <ProjectCard key={p.path} projectPath={p.path} />
+            ))}
+          </div>
+        </SettingsGroup>
+      ) : null}
+
       <SettingsGroup
         label="Version Control"
         description="Git integration for the workspace."
@@ -83,8 +115,11 @@ export function ProjectsSettings() {
         )}
       </SettingsGroup>
 
-      <SettingsGroup label="iCloud Sync">
-        <div className="px-4 py-4">
+      <SettingsGroup label="iCloud Sync" bare>
+        {/* `bare` — the legacy SyncSettings component owns its own
+            internal layout (project rows, sync toggles, info blocks);
+            the tinted island would double up. */}
+        <div className="py-2">
           <LegacySyncSettings />
         </div>
       </SettingsGroup>

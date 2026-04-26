@@ -58,7 +58,7 @@ describe('TabBar', () => {
     const activeButton = screen.getByText('active.md').closest('button')!;
     const inactiveButton = screen.getByText('inactive.md').closest('button')!;
 
-    expect(activeButton.className).toContain('bg-muted');
+    expect(activeButton.className).toContain('bg-[var(--color-accent-primary)]');
     expect(inactiveButton.className).toContain('bg-accent');
   });
 

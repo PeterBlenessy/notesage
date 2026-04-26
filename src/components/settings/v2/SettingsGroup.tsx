@@ -16,6 +16,13 @@ export interface SettingsGroupProps {
   label?: string;
   /** Optional description line below the group label. */
   description?: React.ReactNode;
+  /**
+   * When true, the rows render naked (no tinted island, no horizontal
+   * inset) — useful when the group wraps a legacy component that already
+   * owns its own chrome (table, bordered cards) and would otherwise
+   * double-up with the island styling.
+   */
+  bare?: boolean;
   children: React.ReactNode;
   className?: string;
 }
@@ -60,6 +67,7 @@ export function groupHasVisibleRows(
 export function SettingsGroup({
   label,
   description,
+  bare = false,
   children,
   className,
 }: SettingsGroupProps) {
@@ -67,15 +75,17 @@ export function SettingsGroup({
   if (!groupHasVisibleRows(children, query)) return null;
 
   return (
-    // Live-test 2026-04-25 — mockup-e parity. Dropped the bordered
-    // card (`rounded-md border border-border bg-background`) around
-    // group children — mockup-e has rows sitting naked under the
-    // group label with only divide-y hairlines between them. Inter-
-    // group margin tightened from `mb-10` (40 px) to `mb-5` (20 px)
-    // and label `mb-3` (12 px) to `mb-1` (4 px) per the same comp.
-    <section className={cn('mb-5 last:mb-0', className)}>
+    // Live-test 2026-04-26 — tinted-island grouping. Rows now sit on a
+    // soft `bg-muted/40` surface with `rounded-xl` corners (no border)
+    // so the eye reads each group as a discrete island under its
+    // label. Inter-group gap dropped from `mb-8` (32 px) to `mb-6`
+    // (24 px) since the tint is now doing the heavy lifting for
+    // visual separation. The `bare` opt-out renders rows flat for
+    // groups whose inner component already owns its own chrome
+    // (legacy tables, bordered card lists).
+    <section className={cn('mb-6 last:mb-0', className)}>
       {label ? (
-        <h3 className="text-[10.5px] font-medium tracking-wider uppercase text-muted-foreground mb-1">
+        <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
           {label}
         </h3>
       ) : null}
@@ -84,7 +94,12 @@ export function SettingsGroup({
           {description}
         </p>
       ) : null}
-      <div className="divide-y divide-border/60">
+      <div
+        className={cn(
+          'divide-y divide-border/60',
+          !bare && 'rounded-xl bg-muted/40 px-4',
+        )}
+      >
         {children}
       </div>
     </section>

@@ -1,14 +1,11 @@
 import * as React from 'react';
 import {
   Sun,
-  Settings as SettingsIcon,
-  Sliders,
+  Pencil,
   Sparkles,
   Blocks,
   FolderOpen,
-  ShieldCheck,
-  Code,
-  Info,
+  Cog,
 } from 'lucide-react';
 import { SettingsShell, type SettingsShellNavGroup } from './SettingsShell';
 import {
@@ -18,14 +15,12 @@ import {
   useSettingsSearchShortcut,
 } from './SettingsSearch';
 import { AppearanceSettings } from './AppearanceSettings';
-import { GeneralSettings } from './GeneralSettings';
 import { EditorSettings } from './EditorSettings';
 import { AISettings } from './AISettings';
 import { SkillsSettings } from './SkillsSettings';
 import { ProjectsSettings } from './ProjectsSettings';
-import { PrivacySettings } from './PrivacySettings';
-import { AdvancedSettings } from './AdvancedSettings';
-import { AboutSettings } from './AboutSettings';
+import { SystemSettings } from './SystemSettings';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
 export interface SettingsDialogV2Props {
@@ -40,9 +35,10 @@ export interface SettingsDialogV2Props {
 }
 
 /**
- * Nav taxonomy per Mockup E. Each downstream task (#65 Appearance, #66 the
- * other non-AI panels, #67 AI & Agents) will replace the placeholder body
- * below with its migrated panel component.
+ * Nav taxonomy after the 2026-04-26 consolidation: 6 panels in a single
+ * group. Privacy / Advanced / About panels were folded into the survivors
+ * (Approvals → AI; Diagnostics + Show Hidden Files → System; version /
+ * Changelog / Updates → System).
  */
 const NAV: SettingsShellNavGroup[] = [
   {
@@ -50,25 +46,12 @@ const NAV: SettingsShellNavGroup[] = [
     label: 'Notesage',
     items: [
       { id: 'appearance', label: 'Appearance', icon: Sun },
-      { id: 'general', label: 'General', icon: SettingsIcon },
-      { id: 'editor', label: 'Editor', icon: Sliders },
+      { id: 'editor', label: 'Writing', icon: Pencil },
       { id: 'ai', label: 'AI & Agents', icon: Sparkles },
-    ],
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    items: [
       { id: 'skills', label: 'Skills', icon: Blocks },
       { id: 'projects', label: 'Projects', icon: FolderOpen },
-      { id: 'privacy', label: 'Privacy', icon: ShieldCheck },
-      { id: 'advanced', label: 'Advanced', icon: Code },
+      { id: 'system', label: 'System', icon: Cog },
     ],
-  },
-  {
-    id: 'about',
-    label: 'About',
-    items: [{ id: 'about', label: 'About', icon: Info }],
   },
 ];
 
@@ -107,18 +90,15 @@ type PanelEntry = {
 
 const PANELS: PanelEntry[] = [
   { id: 'appearance', label: 'Appearance', render: () => <AppearanceSettings /> },
-  { id: 'general', label: 'General', render: () => <GeneralSettings /> },
-  { id: 'editor', label: 'Editor', render: () => <EditorSettings /> },
+  { id: 'editor', label: 'Writing', render: () => <EditorSettings /> },
   { id: 'ai', label: 'AI & Agents', render: () => <AISettings /> },
   { id: 'skills', label: 'Skills', render: () => <SkillsSettings /> },
   { id: 'projects', label: 'Projects', render: () => <ProjectsSettings /> },
-  { id: 'privacy', label: 'Privacy', render: () => <PrivacySettings /> },
-  { id: 'advanced', label: 'Advanced', render: () => <AdvancedSettings /> },
   {
-    id: 'about',
-    label: 'About',
+    id: 'system',
+    label: 'System',
     render: ({ updateState, onCheckForUpdate, onOpenUpdateDialog, onDismissSettings }) => (
-      <AboutSettings
+      <SystemSettings
         updateState={updateState}
         onCheckForUpdate={onCheckForUpdate}
         onOpenUpdateDialog={onOpenUpdateDialog}
@@ -161,10 +141,27 @@ export function SettingsDialogV2({
 
   useSettingsSearchShortcut(searchInputRef, open);
 
-  const filteredNav = React.useMemo(() => filterNav(NAV, query), [query]);
+  // Hide the Projects panel from the nav when there are no projects in
+  // the workspace — there's nothing to configure (live-test 2026-04-26).
+  const hasProjects = useWorkspaceStore((s) => s.projects.length > 0);
+  const visibleNav = React.useMemo(
+    () =>
+      hasProjects
+        ? NAV
+        : NAV.map((g) => ({
+            ...g,
+            items: g.items.filter((i) => i.id !== 'projects'),
+          })).filter((g) => g.items.length > 0),
+    [hasProjects],
+  );
+
+  const filteredNav = React.useMemo(
+    () => filterNav(visibleNav, query),
+    [visibleNav, query],
+  );
   const totalItems = React.useMemo(
-    () => NAV.reduce((acc, g) => acc + g.items.length, 0),
-    [],
+    () => visibleNav.reduce((acc, g) => acc + g.items.length, 0),
+    [visibleNav],
   );
   const matchCount = React.useMemo(
     () => filteredNav.reduce((acc, g) => acc + g.items.length, 0),
@@ -198,8 +195,9 @@ export function SettingsDialogV2({
         // When searching, don't filter the nav by panel-label match —
         // the global results below cover that need, and dimming
         // unmatched panels in the nav while results show in the body
-        // would feel inconsistent.
-        nav={isSearching ? NAV : filteredNav}
+        // would feel inconsistent. Still respects the no-projects hide
+        // (`visibleNav`) so an empty workspace doesn't show Projects.
+        nav={isSearching ? visibleNav : filteredNav}
         activeItem={active}
         onActiveItemChange={(id) => {
           setActive(id);

@@ -1,28 +1,15 @@
 /**
- * AppearanceSettings (v2) — M1.4 Batch G10, task #65.
+ * AppearanceSettings (v2) — chrome-shaping settings.
  *
- * New Appearance panel composed of `SettingsShell` primitives (#63). Collects
- * the appearance-related controls that previously lived in several legacy
- * Settings tabs (General / Editor / Advanced) into one coherent column:
+ *   1. Layout          — Quiet Composer toggle
+ *   2. Theme           — color mode, accent, contrast
+ *   3. Color tint      — preset pills + hue / intensity sliders
+ *   4. Quiet chrome    — preset + per-element fade switches (from #51)
+ *   5. Sidebar         — recent/tags caps + hide toggle (from #35)
  *
- *   1. Theme           — color mode, accent, contrast
- *   2. Color tint      — preset pills + hue / intensity sliders
- *   3. Quiet chrome    — preset + per-element fade switches (from #51)
- *   4. Sidebar         — recent/tags caps + hide toggle (from #35)
- *   5. Editor typography — font family, size, line height
- *   6. Preview         — live sample reacting to the font + theme/accent
- *
- * Rows that would require NEW settings fields are explicitly dropped rather
- * than added in this task:
- *
- *   - Reduce motion — `useReducedMotion` is a read-only reflection of the OS
- *     preference. No in-app override field exists in settings-store, and this
- *     task is a migration, not a feature-adding task.
- *   - Density — no `density` field exists in settings-store. Out of scope for
- *     a panel migration.
- *
- * Both drops are documented in the task report. When/if those settings land,
- * add the corresponding `SettingsRow` here and wire them up.
+ * Live-test 2026-04-26 — typography (font, size, line-height) and the
+ * Preview block moved to the Writing panel since the preview is driven
+ * by the typography sliders.
  */
 
 import * as React from 'react';
@@ -31,21 +18,7 @@ import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useSettingsStore } from '@/stores/settings-store';
-import {
-  FONT_PRESETS,
-  fontFamilyCSS,
-  useEditorStylesStore,
-} from '@/stores/editor-styles-store';
 import type { AccentName } from '@/lib/accent';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
@@ -94,22 +67,19 @@ const QUIET_CHROME_PRESET_OPTIONS = [
   { value: 'aggressive' as const, label: 'Aggressive' },
 ];
 
+// `docHead` is intentionally absent — the DocHead element was removed in
+// task #131 of the UI refresh, so an override switch for it would fade
+// nothing. The key still exists in `QuietChromeTargets` for
+// settings-migration safety, but the row no longer renders.
 const QUIET_CHROME_OVERRIDE_ROWS: ReadonlyArray<{
   key: keyof QuietChromeTargets;
   label: string;
 }> = [
   { key: 'toolbar', label: 'Toolbar' },
   { key: 'status', label: 'Status bar' },
-  { key: 'docHead', label: 'Document header' },
   { key: 'sidebar', label: 'Sidebar' },
   { key: 'orb', label: 'Agent orb' },
 ];
-
-const FONT_SIZE_MIN = 12;
-const FONT_SIZE_MAX = 22;
-const LINE_HEIGHT_MIN = 1.2;
-const LINE_HEIGHT_MAX = 2.2;
-const LINE_HEIGHT_STEP = 0.05;
 
 // ---------------------------------------------------------------------------
 // Small internal segmented-control helper (matches legacy look)
@@ -202,14 +172,6 @@ export function AppearanceSettings() {
   const sidebarTagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
   const setSidebarTagsHidden = useSettingsStore((s) => s.setSidebarTagsHidden);
 
-  // ── Editor typography store ───────────────────────────────────────────
-  const fontFamily = useEditorStylesStore((s) => s.fontFamily);
-  const fontSize = useEditorStylesStore((s) => s.fontSize);
-  const lineHeight = useEditorStylesStore((s) => s.lineHeight);
-  const setFontFamily = useEditorStylesStore((s) => s.setFontFamily);
-  const setFontSize = useEditorStylesStore((s) => s.setFontSize);
-  const setLineHeight = useEditorStylesStore((s) => s.setLineHeight);
-
   // ── Derived values ────────────────────────────────────────────────────
 
   const contrastSublabel = React.useMemo(() => {
@@ -223,17 +185,12 @@ export function AppearanceSettings() {
     [tintChroma],
   );
 
-  const previewFontCSS = fontFamilyCSS(fontFamily);
-  // Live-test 2026-04-25 — the preview byline ("Preview · 17 px Source
-  // Serif 4 · 1.72 line-height") needs the readable font label, not
-  // the CSS family stack. Look up the active preset; fall back to the
-  // raw `fontFamily` key (e.g. when the user has picked a system font
-  // outside the preset list).
-  const currentFontLabel =
-    FONT_PRESETS.find((p) => p.value === fontFamily)?.label ?? fontFamily;
-
   // Show advanced quiet-chrome switches whenever the preset is "custom".
   const showQuietChromeAdvanced = quietChromePreset === 'custom';
+
+  // ── Layout (formerly in Advanced > Experimental) ─────────────────────
+  const uiPreview = useSettingsStore((s) => s.uiPreview);
+  const setUiPreview = useSettingsStore((s) => s.setUiPreview);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -244,6 +201,24 @@ export function AppearanceSettings() {
           shows which panel is active. The tagline lives there as a
           column-header tooltip if we ever need it. Removing the hero
           tightens the panel meaningfully and matches the comp. */}
+
+      {/* ── Layout ────────────────────────────────────────────────── */}
+      <SettingsGroup label="Layout">
+        <SettingsRow
+          label="Quiet Composer"
+          description="The new layout. Floating command bar, ambient agent orb, full-height sidebar. Toggle off to return to the classic layout."
+          htmlFor="appearance-ui-preview"
+          control={
+            <Switch
+              id="appearance-ui-preview"
+              checked={uiPreview === 'quiet-composer'}
+              onCheckedChange={(checked) =>
+                setUiPreview(checked ? 'quiet-composer' : 'legacy')
+              }
+            />
+          }
+        />
+      </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">
@@ -544,126 +519,6 @@ export function AppearanceSettings() {
         />
       </SettingsGroup>
 
-      {/* ── Editor typography ────────────────────────────────────── */}
-      <SettingsGroup
-        label="Editor typography"
-        description="Default font, size, and line-height for the paragraph block. Per-heading overrides live in the editor typography popover."
-      >
-        <SettingsRow
-          label="Font family"
-          description="Preset reading fonts bundled with Notesage."
-          control={
-            <Select value={fontFamily} onValueChange={setFontFamily}>
-              <SelectTrigger className="w-[200px]" aria-label="Font family">
-                <SelectValue placeholder="Pick a font" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Sans-serif</SelectLabel>
-                  {FONT_PRESETS.filter((p) => p.category === 'sans').map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      <span style={{ fontFamily: p.css }}>{p.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel>Serif</SelectLabel>
-                  {FONT_PRESETS.filter((p) => p.category === 'serif').map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      <span style={{ fontFamily: p.css }}>{p.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel>Monospace</SelectLabel>
-                  {FONT_PRESETS.filter((p) => p.category === 'mono').map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      <span style={{ fontFamily: p.css }}>{p.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          label="Font size"
-          description="Base paragraph font size, in pixels."
-          control={
-            <div className="w-[180px]">
-              <Slider
-                value={[fontSize]}
-                onValueChange={([v]) => setFontSize(v)}
-                min={FONT_SIZE_MIN}
-                max={FONT_SIZE_MAX}
-                step={1}
-                aria-label="Font size"
-              />
-            </div>
-          }
-          controlSublabel={`${fontSize} px`}
-        />
-
-        <SettingsRow
-          label="Line height"
-          description="How much vertical room each line gets."
-          control={
-            <div className="w-[180px]">
-              <Slider
-                value={[lineHeight]}
-                onValueChange={([v]) => setLineHeight(v)}
-                min={LINE_HEIGHT_MIN}
-                max={LINE_HEIGHT_MAX}
-                step={LINE_HEIGHT_STEP}
-                aria-label="Line height"
-              />
-            </div>
-          }
-          controlSublabel={lineHeight.toFixed(2)}
-        />
-      </SettingsGroup>
-
-      {/* ── Preview ──────────────────────────────────────────────── */}
-      <SettingsGroup label="Preview">
-        <div
-          data-testid="appearance-preview"
-          aria-hidden="true"
-          className="px-4 py-4"
-        >
-          <div
-            className="rounded-md border border-border bg-background p-4 min-h-[180px]"
-            style={{
-              fontFamily: previewFontCSS,
-              fontSize: `${fontSize}px`,
-              lineHeight,
-            }}
-          >
-            {/* Live-test 2026-04-25 — preview content matches
-                mockup-e-settings.html: an "On Attention" essay snippet
-                with a muted byline ("Preview · {size} px {font} ·
-                {lh} line-height"). The previous "Sample heading +
-                primary action button" was placeholder copy that
-                didn't read as a writing surface. */}
-            <h4
-              className="font-semibold mb-1"
-              style={{ fontFamily: previewFontCSS }}
-            >
-              On Attention
-            </h4>
-            <p className="m-0 mb-2">
-              The hardest part of thinking is not the thinking itself
-              but holding still long enough for a thought to arrive.
-              Distraction is rarely loud — it is almost always polite,
-              small, well-intended.
-            </p>
-            <div className="text-[11px] text-muted-foreground">
-              Preview · {fontSize} px {currentFontLabel} ·{' '}
-              {lineHeight.toFixed(2)} line-height
-            </div>
-          </div>
-        </div>
-      </SettingsGroup>
     </>
   );
 }

@@ -63,8 +63,13 @@ describe('Reduced-motion sweep (#86) — global CSS guards', () => {
   });
 
   it('globals.css zeros focus-mode chrome transitions under reduce', () => {
+    // The focus-mode shift on the document area was removed when the
+    // `padding-top: 80px` shift came out (live-test 2026-04-25). The
+    // remaining focus-mode chrome that animates is the sidebar /
+    // toolbar / status / orb fade — those are the rules a reduced-motion
+    // user must see zeroed.
     const block = globals.match(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.app\.focus-mode \[data-quiet-layout-document-area\][\s\S]*?transition:\s*none/,
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.app\.focus-mode nav\[aria-label="Workspace sidebar"\][\s\S]*?\.app\.focus-mode \[data-quiet-toolbar\][\s\S]*?\.app\.focus-mode \[data-quiet-status\][\s\S]*?\.app\.focus-mode \[data-testid="agent-orb"\][\s\S]*?transition:\s*none/,
     );
     expect(block).toBeTruthy();
   });

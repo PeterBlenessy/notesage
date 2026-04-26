@@ -248,15 +248,10 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
 
   return (
     <div className="space-y-6">
-      {/* Header + Add button */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Label className="text-sm font-semibold">Connections</Label>
-          <p className="text-xs text-muted-foreground mt-1">
-            Manage your AI provider connections
-          </p>
-        </div>
-
+      {/* Add button — the panel header ("Connections" + description)
+          is owned by the v2 AISettings wrapper, so we render the
+          add-connection trigger on its own row, right-aligned. */}
+      <div className="flex items-start justify-end gap-4">
         {/* Popover anchors to the button; DropdownMenu opens from it too */}
         <Popover
           open={popoverOpen}

@@ -61,11 +61,11 @@ describe('SettingsDialogV2 — global leaf-search', () => {
     act(() => {
       fireEvent.change(input, { target: { value: 'theme' } });
     });
-    // The nine panel-section headers (uppercase wrappers, not the
+    // The six panel-section headers (uppercase wrappers, not the
     // panels' OWN H2 like "Appearance") should all be in the DOM —
     // panels that have zero matches collapse via `:has(*)`, but with a
     // generic query like "theme" that touches multiple panels we
-    // expect at least Appearance + General to surface.
+    // expect at least Appearance + System to surface.
     //
     // The `data-search-panel` attribute is the regression hook; we
     // assert that more than one panel's wrapper made it into the DOM
@@ -85,13 +85,13 @@ describe('SettingsDialogV2 — global leaf-search', () => {
     });
     expect(input.value).toBe('theme');
 
-    // Click the General nav item — should clear search + activate that panel.
-    const generalNavItem = document.querySelector(
-      '[data-nav-item-id="general"]',
+    // Click the System nav item — should clear search + activate that panel.
+    const systemNavItem = document.querySelector(
+      '[data-nav-item-id="system"]',
     ) as HTMLButtonElement;
-    expect(generalNavItem).toBeTruthy();
+    expect(systemNavItem).toBeTruthy();
     act(() => {
-      fireEvent.click(generalNavItem);
+      fireEvent.click(systemNavItem);
     });
 
     expect(input.value).toBe('');

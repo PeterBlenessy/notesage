@@ -14,13 +14,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderWithProviders, screen, fireEvent, act } from '@/test/component-harness';
 import { AppearanceSettings } from '@/components/settings/v2/AppearanceSettings';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useEditorStylesStore } from '@/stores/editor-styles-store';
 import { QUIET_CHROME_PRESETS } from '@/lib/quiet-chrome-presets';
 
 /**
- * Reset the two stores the panel reads from. We snapshot initial values
- * then restore them with the exact shape the store expects, so any field we
- * don't care about in a given test falls back to a known baseline.
+ * Reset the settings store to a known baseline. Typography state moved
+ * to Writing panel — see panels.test.tsx for those assertions.
  */
 function resetStores() {
   useSettingsStore.setState({
@@ -35,12 +33,6 @@ function resetStores() {
     sidebarTagsCap: 5,
     sidebarTagsHidden: false,
   });
-  useEditorStylesStore.setState({
-    fontFamily: 'system',
-    fontSize: 16,
-    lineHeight: 1.7,
-    paragraphSpacing: 0.75,
-  });
 }
 
 describe('AppearanceSettings', () => {
@@ -54,8 +46,8 @@ describe('AppearanceSettings', () => {
     expect(screen.getByText('Color tint')).toBeTruthy();
     expect(screen.getByText('Quiet chrome')).toBeTruthy();
     expect(screen.getByText('Sidebar composition')).toBeTruthy();
-    expect(screen.getByText('Editor typography')).toBeTruthy();
-    expect(screen.getByText('Preview')).toBeTruthy();
+    // Typography + Preview moved to the Writing panel (live-test
+    // 2026-04-26) — they are tested in panels.test.tsx instead.
   });
 
   it('reflects current theme in the color-mode segmented control', () => {
@@ -240,36 +232,4 @@ describe('AppearanceSettings', () => {
     expect(useSettingsStore.getState().sidebarTagsHidden).toBe(true);
   });
 
-  it('Preview card renders with the current editor font settings applied', () => {
-    useEditorStylesStore.setState({
-      fontFamily: 'inter',
-      fontSize: 19,
-      lineHeight: 1.85,
-      paragraphSpacing: 0.75,
-    });
-
-    renderWithProviders(<AppearanceSettings />);
-
-    const preview = screen.getByTestId('appearance-preview');
-    // The inner styled sample card sits inside the preview container.
-    const sample = preview.querySelector('div[style]') as HTMLElement | null;
-    expect(sample).not.toBeNull();
-    const style = sample!.getAttribute('style') ?? '';
-    // font-size rendered in px (inline style serialized by React).
-    expect(style).toMatch(/font-size:\s*19px/);
-    // line-height rendered as number.
-    expect(style).toMatch(/line-height:\s*1\.85/);
-    // font-family picks up the preset CSS stack.
-    expect(style.toLowerCase()).toContain('inter');
-
-    // Subscript line beneath the preview card shows the raw values
-    // too. The mockup-e-aligned preview (live-test 2026-04-25) renders
-    // it as a `<div class="text-[11px] text-muted-foreground">`
-    // alongside the "On Attention" essay snippet — query the wrapper
-    // by its class.
-    const withinPreview = preview as HTMLElement;
-    const stat = withinPreview.querySelector('div.text-\\[11px\\]');
-    expect(stat?.textContent ?? '').toMatch(/19\s*px/);
-    expect(stat?.textContent ?? '').toMatch(/1\.85/);
-  });
 });

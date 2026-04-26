@@ -1,8 +1,7 @@
-import * as React from 'react';
 import { ConnectionsSettings } from '@/components/settings/ConnectionsSettings';
 import { UseCaseRoutingSettings } from '@/components/settings/UseCaseRoutingSettings';
+import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/settings/ApprovalsSettings';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
@@ -10,17 +9,11 @@ import { SettingsRow } from './SettingsRow';
 /**
  * AI & Agents settings panel (v2).
  *
- * Chrome migration for Batch G10 / task #67 of the UI refresh. Behaviour is
- * identical to the legacy "AI Providers" tab in `SettingsDialog.tsx` — this
- * component only swaps the outer layout for the new v2 primitives
- * (`SettingsGroup` / `SettingsRow`). The underlying `ConnectionsSettings`
- * and `UseCaseRoutingSettings` components are mounted as sealed blocks so
- * their rich internal layouts (connection cards, add-connection popover,
- * per-use-case routing dropdowns) render unchanged.
- *
- * Persisted approvals live in the Privacy panel (#66); the group below
- * is navigational only, dispatching a `notesage:open-settings-panel`
- * CustomEvent that the legacy shell / future v2 dialog will listen for.
+ * Consolidation 2026-04-26: this panel absorbs the standalone Privacy
+ * panel (approvals are inlined at the bottom) and the AI-relevant scope
+ * toggles previously in Advanced (Cross-Project Mode, Show Agent Mode
+ * Picker). The Privacy panel is removed from the nav. Tool Calling and
+ * Web Search live here only — duplicates were dropped from Advanced.
  */
 export function AISettings() {
   const toolCallingEnabled = useSettingsStore((s) => s.toolCallingEnabled);
@@ -31,48 +24,49 @@ export function AISettings() {
   const setRequireAllToolConfirmations = useSettingsStore(
     (s) => s.setRequireAllToolConfirmations,
   );
-  const searchProvider = useSettingsStore((s) => s.searchProvider);
-
-  const openPrivacyPanel = React.useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent('notesage:open-settings-panel', {
-        detail: { panel: 'privacy' },
-      }),
-    );
-  }, []);
+  const crossProjectMode = useSettingsStore((s) => s.crossProjectMode);
+  const setCrossProjectMode = useSettingsStore((s) => s.setCrossProjectMode);
+  const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
+  const setShowAgentModePicker = useSettingsStore((s) => s.setShowAgentModePicker);
 
   return (
     <div data-slot="ai-settings">
       {/* Connections — rich content is owned by ConnectionsSettings; mount
-          directly (no SettingsGroup wrapper) so we don't double-border the
-          connection cards. */}
-      <section className="mb-10" aria-labelledby="ai-connections-label">
+          directly (no SettingsGroup wrapper, no tinted island) so the
+          bordered connection cards inside don't double up with another
+          surface treatment. */}
+      <section className="mb-6" aria-labelledby="ai-connections-label">
         <h3
           id="ai-connections-label"
-          className="text-[10.5px] font-medium tracking-wider uppercase text-muted-foreground mb-3"
+          className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1"
         >
           Connections
         </h3>
-        <p className="text-[12px] text-muted-foreground mb-3 max-w-[460px] leading-relaxed">
+        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
           Where Notesage talks to. Keys, agents, local models.
         </p>
         <ConnectionsSettings />
       </section>
 
-      {/* Routing — same rationale as Connections: UseCaseRoutingSettings
-          draws its own collapsible / per-slot layout. */}
-      <section className="mb-10" aria-labelledby="ai-routing-label">
+      {/* Use case mapping — flat divide-y rows wrapped in the same
+          tinted-island surface SettingsGroup uses, so this section
+          visually matches Tool calling / Project scope / Network
+          sandbox below. */}
+      <section className="mb-6" aria-labelledby="ai-routing-label">
         <h3
           id="ai-routing-label"
-          className="text-[10.5px] font-medium tracking-wider uppercase text-muted-foreground mb-3"
+          className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1"
         >
-          Routing
+          Use case mapping
         </h3>
-        <p className="text-[12px] text-muted-foreground mb-3 max-w-[460px] leading-relaxed">
+        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
           Pick which provider handles each use case — interactive chat, agent
-          tasks, inline completions.
+          tasks, inline completions. New connections are auto-assigned to any
+          slot they're compatible with.
         </p>
-        <UseCaseRoutingSettings />
+        <div className="rounded-xl bg-muted/40 px-4">
+          <UseCaseRoutingSettings />
+        </div>
       </section>
 
       <SettingsGroup
@@ -81,7 +75,7 @@ export function AISettings() {
       >
         <SettingsRow
           label="Enable tool calling"
-          description="Allow models to autonomously call built-in tools (read/write files, web search, execute skill scripts)."
+          description="Allow models to autonomously call built-in tools — read/write files, execute skill scripts, and web search. Web search uses each provider's native backend where available (Anthropic, OpenAI); for local AI and Ollama, queries are sent to DuckDuckGo."
           htmlFor="ai-tool-calling-enabled"
           control={
             <Switch
@@ -105,16 +99,45 @@ export function AISettings() {
             />
           }
         />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Project scope"
+        description="How AI features see your projects."
+      >
         <SettingsRow
-          label="Web search provider"
-          description="Backend used by the built-in web_search tool."
+          label="Cross-Project Mode"
+          description={
+            <>
+              Exposes{' '}
+              <span className="font-medium text-foreground">
+                all workspace folders
+              </span>{' '}
+              to the AI agent — disables project isolation. Only enable for
+              power-user workflows that explicitly need multi-project
+              visibility. A persistent banner appears in the chat panel while
+              this is on.
+            </>
+          }
+          htmlFor="cross-project-mode"
           control={
-            <span
-              className="text-[13px] text-muted-foreground capitalize"
-              data-testid="ai-search-provider"
-            >
-              {searchProvider === 'duckduckgo' ? 'DuckDuckGo' : searchProvider}
-            </span>
+            <Switch
+              id="cross-project-mode"
+              checked={crossProjectMode}
+              onCheckedChange={setCrossProjectMode}
+            />
+          }
+        />
+        <SettingsRow
+          label="Show agent mode picker"
+          description="Show a mode picker in the chat footer for agents that support permission modes — Read Only, Agent, Full Access, Plan. When off, the agent's default mode is used."
+          htmlFor="show-agent-mode-picker"
+          control={
+            <Switch
+              id="show-agent-mode-picker"
+              checked={showAgentModePicker}
+              onCheckedChange={setShowAgentModePicker}
+            />
           }
         />
       </SettingsGroup>
@@ -131,23 +154,14 @@ export function AISettings() {
 
       <SettingsGroup
         label="Persisted approvals"
-        description="Tool-call and domain approvals you've remembered via 'Allow always'. Managed from the Privacy panel."
+        description="Tool-call and domain approvals you've remembered via 'Allow always'. Revoke individually or in bulk."
+        bare
       >
-        <SettingsRow
-          label="Manage persisted approvals"
-          description="Review and revoke remembered approvals for tool calls and domains."
-          control={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={openPrivacyPanel}
-              aria-label="Open Privacy settings"
-            >
-              Open Privacy settings
-            </Button>
-          }
-        />
+        {/* `bare` opts out of the tinted-island styling so the legacy
+            approvals table doesn't double up with another surface. */}
+        <div className="py-2">
+          <LegacyApprovalsSettings />
+        </div>
       </SettingsGroup>
     </div>
   );

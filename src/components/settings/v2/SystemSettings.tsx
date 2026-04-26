@@ -1,0 +1,541 @@
+import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  ArrowUpCircle,
+  Download,
+  FolderOpen,
+  Loader2,
+  ScrollText,
+  Trash2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+import { tauriApi } from '@/lib/tauri';
+import { setLogLevel as setLoggerLevel } from '@/lib/logger';
+import type { LogLevel } from '@/lib/logger';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import { useRoutingStore } from '@/stores/routing-store';
+import { useEditorStore } from '@/stores/editor-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
+import type { UpdateState } from '@/hooks/useAutoUpdate';
+import { ChangelogDialog } from '../ChangelogDialog';
+import { SettingsGroup } from './SettingsGroup';
+import { SettingsRow } from './SettingsRow';
+
+export interface SystemSettingsProps {
+  updateState?: UpdateState;
+  onCheckForUpdate?: () => Promise<void>;
+  onOpenUpdateDialog?: () => void;
+  /**
+   * Optional callback fired after the user picks "View Update" — used by the
+   * v2 shell to close the settings dialog when the standalone update dialog
+   * opens, matching the legacy behavior.
+   */
+  onDismissSettings?: () => void;
+}
+
+function friendlyUpdateError(error: string | null): string {
+  if (!error) return 'Could not check for updates';
+  const lower = error.toLowerCase();
+  if (
+    lower.includes('network') ||
+    lower.includes('fetch') ||
+    lower.includes('connect') ||
+    lower.includes('dns')
+  )
+    return 'Could not connect to update server';
+  if (lower.includes('404') || lower.includes('not found'))
+    return 'No published release found';
+  if (lower.includes('timeout')) return 'Update check timed out';
+  if (lower.includes('signature') || lower.includes('verify'))
+    return 'Update signature verification failed';
+  if (
+    lower.includes('json') ||
+    lower.includes('parse') ||
+    lower.includes('deserialize')
+  )
+    return 'Invalid update manifest';
+  return error.length > 80 ? 'Could not check for updates' : error;
+}
+
+function formatRelativeTime(isoString: string | null): string {
+  if (!isoString) return 'Never';
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * System settings panel (v2).
+ *
+ * Consolidation 2026-04-26: this is the former General panel, now folded
+ * together with Advanced (Diagnostics, Show Hidden Files) and About
+ * (version, Changelog, Updates). The standalone Advanced and About panels
+ * are removed from the nav.
+ */
+export function SystemSettings({
+  updateState,
+  onCheckForUpdate,
+  onOpenUpdateDialog,
+  onDismissSettings,
+}: SystemSettingsProps = {}) {
+  // Tray
+  const showInTray = useSettingsStore((s) => s.showInTray);
+  const setShowInTray = useSettingsStore((s) => s.setShowInTray);
+  const closeToTray = useSettingsStore((s) => s.closeToTray);
+  const setCloseToTray = useSettingsStore((s) => s.setCloseToTray);
+  const startAtLogin = useSettingsStore((s) => s.startAtLogin);
+  const setStartAtLogin = useSettingsStore((s) => s.setStartAtLogin);
+
+  // Notifications
+  const notifyAgentCompletion = useSettingsStore((s) => s.notifyAgentCompletion);
+  const setNotifyAgentCompletion = useSettingsStore(
+    (s) => s.setNotifyAgentCompletion,
+  );
+  const notifyExternalChanges = useSettingsStore((s) => s.notifyExternalChanges);
+  const setNotifyExternalChanges = useSettingsStore(
+    (s) => s.setNotifyExternalChanges,
+  );
+
+  // Files
+  const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
+  const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
+
+  // Diagnostics
+  const logLevel = useSettingsStore((s) => s.logLevel);
+  const setLogLevel = useSettingsStore((s) => s.setLogLevel);
+
+  // Updates
+  const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
+  const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates);
+  const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
+
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const [logSize, setLogSize] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [path, size] = await Promise.all([
+          tauriApi.getLogPath(),
+          tauriApi.getLogSize(),
+        ]);
+        if (!cancelled) {
+          setLogPath(path);
+          setLogSize(size);
+        }
+      } catch {
+        // Commands may not exist yet — silently ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const appVersion =
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
+
+  return (
+    <>
+      <SettingsGroup label="Notesage" description={`Version ${appVersion}`}>
+        <SettingsRow
+          label="Changelog"
+          description="What changed in recent releases."
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setChangelogOpen(true)}
+            >
+              <ScrollText className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              View Changelog
+            </Button>
+          }
+        />
+        <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
+      </SettingsGroup>
+
+      <SettingsGroup label="Updates" description="Keep Notesage up to date.">
+        <SettingsRow
+          label="Check for updates"
+          description={
+            updateState?.updateInfo
+              ? `Update available: v${updateState.updateInfo.version}`
+              : updateState?.status === 'checking'
+              ? 'Checking for updates…'
+              : updateState?.status === 'error'
+              ? friendlyUpdateError(updateState.error)
+              : `Last checked: ${formatRelativeTime(lastUpdateCheck)}`
+          }
+          control={
+            updateState?.updateInfo && onOpenUpdateDialog ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onOpenUpdateDialog();
+                  onDismissSettings?.();
+                }}
+              >
+                <ArrowUpCircle
+                  className="h-3.5 w-3.5 mr-1.5"
+                  strokeWidth={1.5}
+                />
+                View Update
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCheckForUpdate}
+                disabled={updateState?.status === 'checking'}
+              >
+                {updateState?.status === 'checking' ? (
+                  <Loader2
+                    className="h-3.5 w-3.5 mr-1.5 animate-spin"
+                    strokeWidth={1.5}
+                  />
+                ) : (
+                  <Download
+                    className="h-3.5 w-3.5 mr-1.5"
+                    strokeWidth={1.5}
+                  />
+                )}
+                {updateState?.status === 'checking'
+                  ? 'Checking...'
+                  : 'Check for Updates'}
+              </Button>
+            )
+          }
+        />
+        <SettingsRow
+          label="Automatically Check for Updates"
+          description="Check for new versions when the app starts."
+          htmlFor="auto-check-updates"
+          control={
+            <Switch
+              id="auto-check-updates"
+              checked={autoCheckUpdates}
+              onCheckedChange={setAutoCheckUpdates}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="System Tray"
+        description="Menu bar icon and background behavior."
+      >
+        <SettingsRow
+          label="Show in menu bar"
+          description="Keep Notesage accessible from the menu bar."
+          htmlFor="show-in-tray"
+          control={
+            <Switch
+              id="show-in-tray"
+              checked={showInTray}
+              onCheckedChange={(checked) => {
+                setShowInTray(checked);
+                invoke('set_tray_visible', { visible: checked }).catch(() => {});
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          label="Close window to tray"
+          description="Closing the window hides it instead of quitting the app."
+          htmlFor="close-to-tray"
+          control={
+            <Switch
+              id="close-to-tray"
+              checked={closeToTray}
+              onCheckedChange={(checked) => {
+                setCloseToTray(checked);
+                invoke('set_close_to_tray', { enabled: checked }).catch(() => {});
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          label="Start at login"
+          description="Launch Notesage automatically when you log in."
+          htmlFor="start-at-login"
+          control={
+            <Switch
+              id="start-at-login"
+              checked={startAtLogin}
+              onCheckedChange={async (checked) => {
+                try {
+                  if (checked) {
+                    await import('@tauri-apps/plugin-autostart').then((m) =>
+                      m.enable(),
+                    );
+                  } else {
+                    await import('@tauri-apps/plugin-autostart').then((m) =>
+                      m.disable(),
+                    );
+                  }
+                  setStartAtLogin(checked);
+                } catch (e) {
+                  console.error('Failed to toggle autostart:', e);
+                }
+              }}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Notifications"
+        description="Choose which desktop notifications to receive."
+      >
+        <SettingsRow
+          label="Agent task completion"
+          description="Notify when an agent finishes or encounters an error."
+          htmlFor="notify-agent"
+          control={
+            <Switch
+              id="notify-agent"
+              checked={notifyAgentCompletion}
+              onCheckedChange={setNotifyAgentCompletion}
+            />
+          }
+        />
+        <SettingsRow
+          label="External file changes"
+          description="Notify when files are modified externally."
+          htmlFor="notify-external"
+          control={
+            <Switch
+              id="notify-external"
+              checked={notifyExternalChanges}
+              onCheckedChange={setNotifyExternalChanges}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup label="Files" description="File visibility in the sidebar.">
+        <SettingsRow
+          label="Show Hidden Files"
+          description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
+          htmlFor="show-hidden-files"
+          control={
+            <Switch
+              id="show-hidden-files"
+              checked={showHiddenFiles}
+              onCheckedChange={setShowHiddenFiles}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Diagnostics"
+        description="Logging and diagnostics export."
+      >
+        <SettingsRow
+          label="Log Level"
+          description="Controls which messages are written to log files. Default is Warn."
+          control={
+            <Select
+              value={logLevel}
+              onValueChange={(value: string) => {
+                const level = value as LogLevel;
+                setLogLevel(level);
+                setLoggerLevel(level);
+                tauriApi.setLogLevel(level);
+              }}
+            >
+              <SelectTrigger className="w-[130px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="error">Error</SelectItem>
+                <SelectItem value="warn">Warn</SelectItem>
+                <SelectItem value="info">Info</SelectItem>
+                <SelectItem value="debug">Debug</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+        />
+
+        {logPath && (
+          <div className="py-3 flex items-center gap-1">
+            <p className="text-[10px] leading-tight text-muted-foreground font-mono break-all select-all flex-1 min-w-0">
+              {logPath}
+              {logSize !== null && (
+                <span className="font-sans ml-1.5">
+                  (
+                  {logSize < 1024
+                    ? `${logSize} B`
+                    : logSize < 1024 * 1024
+                    ? `${(logSize / 1024).toFixed(1)} KB`
+                    : `${(logSize / (1024 * 1024)).toFixed(1)} MB`}
+                  )
+                </span>
+              )}
+            </p>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={() => tauriApi.revealInFinder(logPath)}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Reveal in Finder</TooltipContent>
+              </Tooltip>
+
+              <AlertDialog>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        disabled={logSize === 0}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </Button>
+                    </AlertDialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear logs</TooltipContent>
+                </Tooltip>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Clear log files?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete all diagnostic log data.
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={async () => {
+                        try {
+                          await tauriApi.clearLogs();
+                          const size = await tauriApi.getLogSize();
+                          setLogSize(size);
+                        } catch {
+                          // silently ignore
+                        }
+                      }}
+                    >
+                      Clear Logs
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </TooltipProvider>
+          </div>
+        )}
+
+        <SettingsRow
+          label="Export Diagnostics"
+          description="Save backend and frontend state to a JSON file for bug reports. No API keys are included."
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={async () => {
+                try {
+                  const backend = await tauriApi.collectDiagnostics();
+                  const { connections } = useConnectionsStore.getState();
+                  const redactedConnections = connections.map(
+                    ({ id, provider, authMethod, capabilities, status }) => ({
+                      id,
+                      provider,
+                      authMethod,
+                      capabilities,
+                      status,
+                    }),
+                  );
+                  const { routing } = useRoutingStore.getState();
+                  const localAIState = useLocalAIStore.getState();
+                  const dump = {
+                    timestamp: new Date().toISOString(),
+                    version: (await import('@tauri-apps/api/app')).getVersion(),
+                    backend,
+                    frontend: {
+                      connections: redactedConnections,
+                      routing,
+                      logLevel,
+                      tabCount: useEditorStore.getState().openDocuments.length,
+                      localAI: {
+                        activeModelId: localAIState.activeModelId,
+                        binaryStatus: localAIState.binaryStatus,
+                        serverStatus: localAIState.serverStatus,
+                        serverError: localAIState.serverError,
+                        contextLength: localAIState.contextLength,
+                        gpuLayers: localAIState.gpuLayers,
+                      },
+                    },
+                  };
+                  const json = JSON.stringify(dump, null, 2);
+                  const date = new Date().toISOString().split('T')[0];
+                  const { save } = await import('@tauri-apps/plugin-dialog');
+                  const path = await save({
+                    defaultPath: `notesage-diagnostics-${date}.json`,
+                    filters: [{ name: 'JSON', extensions: ['json'] }],
+                  });
+                  if (path) {
+                    await tauriApi.writeFile(path, json);
+                    toast.success('Diagnostics exported');
+                    tauriApi.revealInFinder(path);
+                  }
+                } catch (err) {
+                  toast.error(`Export failed: ${err}`);
+                }
+              }}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Export
+            </Button>
+          }
+        />
+      </SettingsGroup>
+    </>
+  );
+}
