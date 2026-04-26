@@ -144,6 +144,12 @@ vi.mock("@/stores/chat-store", () => ({
   ),
   selectMessages: vi.fn(() => []),
   selectProjectPaths: vi.fn(() => []),
+  selectPendingProjectSwitch: vi.fn(() => null),
+  selectPendingAgentSwitch: vi.fn(() => null),
+}));
+
+vi.mock("@/hooks/useChatSwitchPrompts", () => ({
+  useChatSwitchPrompts: () => undefined,
 }));
 
 vi.mock("@/components/chat/ChatHistoryView", () => ({

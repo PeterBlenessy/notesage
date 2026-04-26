@@ -113,10 +113,16 @@ vi.mock('@/stores/chat-store', () => ({
   ),
   selectMessages: vi.fn(() => []),
   selectProjectPaths: vi.fn(() => []),
+  selectPendingProjectSwitch: vi.fn(() => null),
+  selectPendingAgentSwitch: vi.fn(() => null),
 }));
 
 vi.mock('@/components/chat/ChatHistoryView', () => ({
   ChatHistoryView: () => <div data-testid="chat-history-stub" />,
+}));
+
+vi.mock('@/hooks/useChatSwitchPrompts', () => ({
+  useChatSwitchPrompts: () => undefined,
 }));
 
 // Harness: render the bar AND mount the double-tap hook in one tree so the

@@ -212,7 +212,13 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
                   {showLock && <Lock className="h-3 w-3 opacity-40" />}
                 </div>
                 {cm.tooltip && (
-                  <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                  <div
+                    className={`text-[10px] mt-0.5 leading-tight ${
+                      isActive
+                        ? 'text-[oklch(100%_0_0)]/85'
+                        : 'text-muted-foreground'
+                    }`}
+                  >
                     {cm.tooltip}
                   </div>
                 )}

@@ -2,8 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useChatSwitchPrompts } from "@/hooks/useChatSwitchPrompts";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useChatStore, selectMessages, selectProjectPaths } from "@/stores/chat-store";
+import {
+  useChatStore,
+  selectMessages,
+  selectProjectPaths,
+  selectPendingProjectSwitch,
+  selectPendingAgentSwitch,
+} from "@/stores/chat-store";
 import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
 import { ContextPill } from "@/components/chat/ContextPill";
 import { useChatContext } from "@/hooks/useChatContext";
@@ -13,7 +20,35 @@ import { useAIOperations } from "@/hooks/useAIOperations";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { toast } from "sonner";
-import { ArrowUp, ImagePlus, Mic, MicOff, Plus, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  BookOpen,
+  CheckSquare,
+  FileText,
+  Hash,
+  ImagePlus,
+  MessageSquare,
+  Mic,
+  MicOff,
+  Plus,
+  Square,
+  User,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+
+// Inline chip icon map (live-test 2026-04-26 round 6) — replaces the
+// `<AttachmentChips>` component for the cmd-bar input strip so chips
+// render as direct flex siblings of image thumbnails (guaranteed
+// left-to-right ordering by DOM position).
+const CHIP_ICONS: Record<AttachmentChip["kind"], LucideIcon> = {
+  file: FileText,
+  person: User,
+  comment: MessageSquare,
+  tag: Hash,
+  task: CheckSquare,
+  research: BookOpen,
+};
 import type { ChatMessage as ChatMessageType, ImageAttachment } from "@/lib/ai/types";
 import { compressImage } from "@/lib/image-compress";
 import {
@@ -35,9 +70,7 @@ import {
 import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
-import AttachmentChips, {
-  type AttachmentChip,
-} from "@/components/cmd/AttachmentChips";
+import { type AttachmentChip } from "@/components/cmd/AttachmentChips";
 import CommandBarStream from "@/components/cmd/CommandBarStream";
 import {
   detectActivePrefix,
@@ -156,6 +189,23 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
   const isLoading = useChatStore((s) => s.isLoading);
+
+  // Parity with legacy ChatFooter (live-test 2026-04-26 audit gap #10) —
+  // input + send must be disabled while either an AgentSwitchCard or a
+  // pending-project-switch prompt is awaiting the user's choice. Without
+  // this, users can keep typing/sending mid-prompt, which races the
+  // resolver and may cause messages to land on the wrong segment.
+  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
+  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
+  const switchPending =
+    Boolean(pendingProjectSwitch) || Boolean(pendingAgentSwitch);
+
+  // Live-test 2026-04-26 audit gap #1 — mount the shared switch-prompt
+  // hook so changing provider or project selection mid-conversation
+  // raises the AgentSwitchCard / pending-project-switch prompt the
+  // same way the legacy `ChatPanel` does. Without this, Quiet Composer
+  // silently sent messages to the new provider with full prior history.
+  useChatSwitchPrompts();
 
   // #118 — chatView toggles the expanded bar between its usual chat
   // stream and a past-conversation list. The clock icon in
@@ -1175,6 +1225,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onAddAttachment={addImageAttachment}
           onPickImage={handleImagePick}
           isLoading={isLoading}
+          switchPending={switchPending}
+          pendingProjectSwitch={Boolean(pendingProjectSwitch)}
+          pendingAgentSwitch={Boolean(pendingAgentSwitch)}
           onStop={cancelChat}
           onSend={handleSend}
           chatView={chatView}
@@ -1442,6 +1495,12 @@ interface ExpandedContentProps {
   onPickImage: () => void;
   /** #126 — whether a send is currently streaming (drives the Stop button). */
   isLoading: boolean;
+  /** True while either an AgentSwitchCard or pending-project-switch
+   *  prompt is awaiting the user's choice. Disables the textarea +
+   *  send button (parity with legacy ChatFooter). */
+  switchPending: boolean;
+  pendingProjectSwitch: boolean;
+  pendingAgentSwitch: boolean;
   /** #126 — cancel the in-flight send. */
   onStop: () => void;
   /** #126 — fire the send pipeline (click-to-send button). */
@@ -1497,6 +1556,9 @@ function ExpandedContent({
   onAddAttachment,
   onPickImage,
   isLoading,
+  switchPending,
+  pendingProjectSwitch,
+  pendingAgentSwitch,
   onStop,
   onSend,
   chatView,
@@ -1542,43 +1604,12 @@ function ExpandedContent({
         />
       )}
 
-      {/* #134 — context chips + explicit-attach offer. Auto-attached
-       *  files (active tab when in scope) render as `ContextPill`s.
-       *  When the active tab sits outside the selected project scope,
-       *  the explicit-attach offer becomes a dashed "+ Add … to chat"
-       *  button so the user can opt in manually. Renders nothing when
-       *  both are empty so the input row stays compact.
-       */}
-      {(contextItems.length > 0 || explicitAttachOffer) && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
-          {contextItems.map((item) => (
-            <ContextPill
-              key={item.id}
-              item={item}
-              onDismiss={onDismissContext}
-            />
-          ))}
-          {explicitAttachOffer && (
-            <button
-              type="button"
-              onClick={() =>
-                onAttachExplicit(
-                  explicitAttachOffer.path,
-                  explicitAttachOffer.label,
-                )
-              }
-              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
-              aria-label={`Add ${explicitAttachOffer.label} to chat`}
-            >
-              <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-              <span className="truncate">
-                Add {explicitAttachOffer.label} to chat
-              </span>
-            </button>
-          )}
-        </div>
-      )}
+      {/* Live-test 2026-04-26 — `contextItems` + `explicitAttachOffer`
+          used to render in their own strip ABOVE the input area's
+          border-t, which made auto-attached files (e.g. test.md)
+          appear OUTSIDE the input box. They're now rendered inside
+          the unified attachments strip below (same div as chips +
+          image thumbnails) so everything attached lives together. */}
 
       {/* #127 parity — edit-mode banner. Appears above the input when the
        *  user clicked Edit on a previous user message. Clicking the × or
@@ -1718,170 +1749,224 @@ function ExpandedContent({
           }
         }}
       >
-        {/* Document / file chips strip — moved INSIDE the input
-            container (live-test 2026-04-26 #151) so document
-            attachments group with the input like image attachments
-            do. Renders nothing when `chips` is empty. */}
-        <AttachmentChips chips={chips} onRemove={onRemoveChip} />
+        {/* Unified attachments strip (live-test 2026-04-26 round 7
+            #151) — context items + chips + image thumbnails +
+            explicit-attach offer all RENDERED INLINE in the same
+            flex row so they're direct siblings inside the input
+            box. NO line below — attachments and the icon row read
+            as one input surface. */}
+        {(contextItems.length > 0 ||
+          chips.length > 0 ||
+          pendingAttachments.length > 0 ||
+          explicitAttachOffer) && (
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
+            {/* Context pills — auto-attached files (active tab when
+                in scope). Render first so they sit on the left,
+                then user-chosen chips, then image thumbnails,
+                then the explicit-attach offer (if any). */}
+            {contextItems.map((item) => (
+              <ContextPill
+                key={item.id}
+                item={item}
+                onDismiss={onDismissContext}
+              />
+            ))}
+            {chips.map((chip) => {
+              const Icon = CHIP_ICONS[chip.kind];
+              return (
+                <div
+                  key={chip.id}
+                  data-chip-kind={chip.kind}
+                  className={cn(
+                    "group inline-flex items-center gap-1.5 max-w-[200px]",
+                    "rounded-md border border-border bg-muted/40",
+                    "pl-1.5 pr-1 py-0.5 text-xs text-foreground",
+                    "transition-colors hover:bg-muted",
+                  )}
+                >
+                  <Icon
+                    className="h-3 w-3 shrink-0 text-muted-foreground"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{chip.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveChip(chip.id)}
+                    aria-label={`Remove ${chip.name}`}
+                    className={cn(
+                      "shrink-0 rounded-sm p-0.5",
+                      "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                      "transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    )}
+                  >
+                    <X
+                      className="h-3 w-3"
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+              );
+            })}
+            {pendingAttachments.map((att) => (
+              <span
+                key={att.id}
+                className="relative group shrink-0 h-8 w-8 rounded-md overflow-hidden border border-border bg-muted"
+                title={att.name}
+              >
+                <img
+                  src={`data:${att.mimeType};base64,${att.data}`}
+                  alt={att.name}
+                  className="w-full h-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => onRemoveAttachment(att.id)}
+                  aria-label={`Remove ${att.name}`}
+                  className={cn(
+                    "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
+                    "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+                    "hover:bg-background p-px",
+                  )}
+                >
+                  <X className="h-2.5 w-2.5 text-foreground" strokeWidth={1.5} />
+                </button>
+              </span>
+            ))}
+            {/* Explicit-attach offer — dashed `+ Add <file> to chat`
+                button when the active tab sits outside the selected
+                project scope. Sits at the END of the strip so the
+                primary attachments take the leading slots. */}
+            {explicitAttachOffer ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onAttachExplicit(
+                    explicitAttachOffer.path,
+                    explicitAttachOffer.label,
+                  )
+                }
+                className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
+                aria-label={`Add ${explicitAttachOffer.label} to chat`}
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                <span className="truncate">
+                  Add {explicitAttachOffer.label} to chat
+                </span>
+              </button>
+            ) : null}
+          </div>
+        )}
 
-        {/* Live-test 2026-04-25 — attachment chips render INLINE with
-            the textarea (not as a separate strip above) so they feel
-            like content INSIDE the input box, not a sibling row. The
-            outer flex wraps so chips push the textarea to the next
-            line when there are too many to fit beside it. The
-            chip size is reduced from 48 px (legacy `AttachmentStrip`
-            12×12 thumbnails) to 32 px so the chip-row matches the
-            textarea's leading-relaxed height. */}
-        <div className="px-3 py-2 flex flex-wrap items-end gap-2">
-        <button
-          type="button"
-          onClick={onPickImage}
-          aria-label="Attach image"
-          title="Attach image"
-          className={cn(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-            "text-muted-foreground hover:text-foreground hover:bg-muted",
-            "transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-          )}
-        >
-          <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
-        {/* #133 — dictation toggle. Mirrors the legacy ChatInput's mic
-           *  button: red + animate-pulse while dictating, idle muted
-           *  otherwise. The interim text is shown as the input
-           *  placeholder (below) so the user can see what the engine
-           *  thinks they said before the final chunk lands. */}
-        <button
-          type="button"
-          onClick={onMicToggle}
-          aria-label={isDictating ? "Stop dictation" : "Start dictation"}
-          title={isDictating ? "Stop dictation" : "Start dictation"}
-          className={cn(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-            "transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            isDictating
-              ? "text-destructive animate-pulse"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted",
-          )}
-        >
-          {isDictating ? (
-            <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
-          ) : (
-            <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
-          )}
-        </button>
-        {/* Inline attachment chips — render BEFORE the textarea so
-            they live inside the same flex row. Each chip is a
-            32 × 32 thumbnail with a small × overlay on hover, same
-            affordance as the legacy `AttachmentStrip` but compressed
-            to fit beside the input rather than above it. */}
-        {pendingAttachments.map((att) => (
-          <span
-            key={att.id}
-            className="relative group shrink-0 h-8 w-8 rounded-md overflow-hidden border border-border bg-muted"
-            title={att.name}
-          >
-            <img
-              src={`data:${att.mimeType};base64,${att.data}`}
-              alt={att.name}
-              className="w-full h-full object-cover"
-            />
-            <button
-              type="button"
-              onClick={() => onRemoveAttachment(att.id)}
-              aria-label={`Remove ${att.name}`}
-              className={cn(
-                "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
-                "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
-                "hover:bg-background p-px",
-              )}
-            >
-              <X className="h-2.5 w-2.5 text-foreground" strokeWidth={1.5} />
-            </button>
-          </span>
-        ))}
-        {/* Live-test 2026-04-25 #151 — `<input>` → `<textarea>` so the
-           input grows vertically with multi-line content. Auto-resize
-           is wired in `handleInputChange` (calls `autoResize` after
-           every keystroke); the cap is 160 px (~6 lines) so the bar
-           can't push past the doc area. Beyond that, the textarea
-           scrolls internally. `rows={1}` keeps the initial height the
-           same as the old single-line input. Enter sends, Shift+Enter
-           inserts a newline (handled in `onKeyDown` at the top of the
-           file). */}
-        <textarea
-          ref={inputRef}
-          rows={1}
-          // The input doubles as a combobox when a prefix-mode picker is open
-          // (#78): the picker's listbox stays focus-free, and the input
-          // mirrors the highlighted option via `aria-activedescendant`. When
-          // no picker is open, the combobox is collapsed (`aria-expanded` is
-          // false) and `aria-controls`/`aria-activedescendant` are unset.
-          role="combobox"
-          aria-haspopup="listbox"
-          aria-expanded={Boolean(activePrefix)}
-          aria-autocomplete="list"
-          aria-controls={activeOption?.listboxId}
-          aria-activedescendant={activeOption?.activeOptionId ?? undefined}
-          value={inputValue}
-          onChange={onInputChange}
-          onKeyUp={onSelectionChange}
-          onClick={onSelectionChange}
-          onKeyDown={onKeyDown}
-          placeholder={
-            isDictating && interimText
-              ? interimText
-              : "Ask, search, or type / for skills…"
-          }
-          className={cn(
-            "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
-            "outline-none resize-none leading-relaxed py-0.5",
-            "max-h-[160px] overflow-y-auto",
-          )}
-        />
-        {/* #126 parity — Stop (while streaming) / Send affordance. The
-           *  legacy ChatInput uses the same icon-flip pattern. Keyboard
-           *  Enter still sends via the input's onKeyDown handler; this
-           *  button is for mouse users + accessibility parity. */}
-        {isLoading ? (
+        {/* Icon + textarea row — image-attach, mic, textarea, send
+            ALL on one row. No internal separator above this row. */}
+        <div className="px-3 py-2 flex items-end gap-2">
           <button
             type="button"
-            onClick={onStop}
-            aria-label="Stop generation"
-            title="Stop generation"
+            onClick={onPickImage}
+            aria-label="Attach image"
+            title="Attach image"
             className={cn(
               "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-              "bg-destructive/10 text-destructive hover:bg-destructive/20",
+              "text-muted-foreground hover:text-foreground hover:bg-muted",
               "transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
-            )}
-          >
-            <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onSend}
-            aria-label="Send message"
-            title="Send"
-            disabled={
-              inputValue.trim().length === 0 &&
-              chips.length === 0 &&
-              pendingAttachments.length === 0
-            }
-            className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-              "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
-              "transition-opacity",
-              "disabled:opacity-40 disabled:cursor-not-allowed",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
-            <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+            <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
-        )}
+          <button
+            type="button"
+            onClick={onMicToggle}
+            aria-label={isDictating ? "Stop dictation" : "Start dictation"}
+            title={isDictating ? "Stop dictation" : "Start dictation"}
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+              "transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              isDictating
+                ? "text-destructive animate-pulse"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted",
+            )}
+          >
+            {isDictating ? (
+              <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
+            ) : (
+              <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
+            )}
+          </button>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            role="combobox"
+            aria-haspopup="listbox"
+            aria-expanded={Boolean(activePrefix)}
+            aria-autocomplete="list"
+            aria-controls={activeOption?.listboxId}
+            aria-activedescendant={activeOption?.activeOptionId ?? undefined}
+            value={inputValue}
+            onChange={onInputChange}
+            onKeyUp={onSelectionChange}
+            onClick={onSelectionChange}
+            onKeyDown={onKeyDown}
+            disabled={switchPending}
+            placeholder={
+              pendingProjectSwitch
+                ? "Resolve project context change first…"
+                : pendingAgentSwitch
+                  ? "Resolve provider change first…"
+                  : isDictating && interimText
+                    ? interimText
+                    : "Ask, search, or type / for skills…"
+            }
+            className={cn(
+              "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
+              "outline-none resize-none leading-relaxed py-0.5",
+              "max-h-[160px] overflow-y-auto",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          />
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop generation"
+              title="Stop generation"
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                "bg-destructive/10 text-destructive hover:bg-destructive/20",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+              )}
+            >
+              <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSend}
+              aria-label="Send message"
+              title="Send"
+              disabled={
+                switchPending ||
+                (inputValue.trim().length === 0 &&
+                  chips.length === 0 &&
+                  pendingAttachments.length === 0)
+              }
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
+                "transition-opacity",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              )}
+            >
+              <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
     </div>

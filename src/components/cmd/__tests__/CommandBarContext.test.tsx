@@ -421,34 +421,37 @@ describe('CommandBarContext', () => {
     ).toBeTruthy();
   });
 
-  it('renders one project chip per path in the active conversation', () => {
+  it('renders the projects picker label when one project is selected', () => {
+    // Live-test 2026-04-26 — picker shows the project name on its
+    // trigger when only one project is selected. (Was: chip per
+    // project rendered in-row; now multiselect picker.)
     mockActiveConversation = makeConversation({
-      projectPaths: ['/Users/p/Projects/alpha', '/Users/p/Projects/beta'],
+      projectPaths: ['/Users/p/Projects/alpha'],
     });
+    mockWorkspaceProjects = [{ path: '/Users/p/Projects/alpha', fileTree: [] }];
     renderWithProviders(<CommandBarContext />);
     expect(screen.getByText('alpha')).toBeTruthy();
-    expect(screen.getByText('beta')).toBeTruthy();
   });
 
-  it('shows the lock icon for projects with aiLock metadata', () => {
+  it('shows the lock icon on the picker trigger when any selected project has aiLock', () => {
     mockActiveConversation = makeConversation({
       projectPaths: ['/Users/p/Projects/locked-one'],
     });
+    mockWorkspaceProjects = [
+      { path: '/Users/p/Projects/locked-one', fileTree: [] },
+    ];
     mockMetadataMap = {
       '/Users/p/Projects/locked-one': makeMetadata({
+        name: 'locked-one',
         aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
       }),
     };
     renderWithProviders(<CommandBarContext />);
-    // The lock icon button has an explicit aria-label per project.
+    // Radix Popover renders content in JSDOM regardless of open state,
+    // so the per-project lock affordance is reachable directly.
     expect(
       screen.getByLabelText(/locked-one is locked to a provider/i),
     ).toBeTruthy();
-  });
-
-  it('renders the dashed "+ project" button', () => {
-    renderWithProviders(<CommandBarContext />);
-    expect(screen.getByLabelText(/add project/i)).toBeTruthy();
   });
 
   // Mode pill (#26) — see the dedicated `describe('mode pill (#26)', …)`
@@ -653,21 +656,37 @@ describe('CommandBarContext', () => {
   // Project chips (#25) — wires chat-store add/remove + workspace + locks
   // -------------------------------------------------------------------------
 
-  describe('project chips (#25)', () => {
-    it("clicking a chip's × calls toggleProjectPath with that path", () => {
+  describe('projects picker (#25 — multiselect, live-test 2026-04-26)', () => {
+    /** Helper: render and open the multiselect popover. Returns the
+     *  picker trigger so caller can re-click to close if needed. */
+    function openPicker() {
+      const picker =
+        screen.queryByLabelText(/projects? selected|pick projects/i) ??
+        screen.getByLabelText(/projects? selected/i);
+      fireEvent.click(picker);
+      return picker;
+    }
+
+    it("clicking a checked project in the popover calls toggleProjectPath (deselects)", () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/alpha', '/Users/p/Projects/beta'],
       });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/alpha', fileTree: [] },
+        { path: '/Users/p/Projects/beta', fileTree: [] },
+      ];
       renderWithProviders(<CommandBarContext />);
 
-      const removeBtn = screen.getByLabelText(/remove alpha/i);
-      fireEvent.click(removeBtn);
+      openPicker();
+      // Clicking a CHECKED project deselects it via toggleProjectPath.
+      const item = screen.getByRole('button', { name: /deselect alpha/i });
+      fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
       expect(toggleProjectPathMock).toHaveBeenCalledTimes(1);
     });
 
-    it('+ project popover lists workspace projects NOT already in scope', () => {
+    it('popover lists ALL workspace projects with checkmarks for selected ones', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/alpha'],
       });
@@ -678,46 +697,50 @@ describe('CommandBarContext', () => {
       ];
       renderWithProviders(<CommandBarContext />);
 
-      // beta and gamma should appear inside the popover (not yet in scope).
-      // alpha is already in scope so it must NOT show as an "Add" option.
-      expect(screen.getByRole('button', { name: /add project beta/i })).toBeTruthy();
-      expect(screen.getByRole('button', { name: /add project gamma/i })).toBeTruthy();
+      // All three projects render; selected one uses "Deselect" label,
+      // unselected ones use "Select" label.
       expect(
-        screen.queryByRole('button', { name: /add project alpha/i }),
-      ).toBeNull();
+        screen.getByRole('button', { name: /deselect alpha/i }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: /select beta/i }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: /select gamma/i }),
+      ).toBeTruthy();
     });
 
-    it('clicking a project in the popover calls toggleProjectPath with its path', () => {
+    it('clicking an unchecked project in the popover calls toggleProjectPath (selects)', () => {
       mockActiveConversation = makeConversation({ projectPaths: [] });
       mockWorkspaceProjects = [
         { path: '/Users/p/Projects/alpha', fileTree: [] },
       ];
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /add project alpha/i });
+      const item = screen.getByRole('button', { name: /select alpha/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
     });
 
-    it('shows an empty-state message when every workspace project is already in scope', () => {
-      mockActiveConversation = makeConversation({
-        projectPaths: ['/Users/p/Projects/alpha'],
-      });
-      mockWorkspaceProjects = [
-        { path: '/Users/p/Projects/alpha', fileTree: [] },
-      ];
+    it('shows an empty-state message when no workspace projects are open', () => {
+      mockActiveConversation = makeConversation({ projectPaths: [] });
+      mockWorkspaceProjects = [];
       renderWithProviders(<CommandBarContext />);
 
-      expect(screen.getByText(/no other projects/i)).toBeTruthy();
+      expect(screen.getByText(/no projects open/i)).toBeTruthy();
     });
 
-    it('clicking the lock icon on a locked chip opens the explain-lock dialog with the locked path', () => {
+    it('clicking the lock icon on a locked project in the popover opens the explain-lock dialog', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/locked-one'],
       });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/locked-one', fileTree: [] },
+      ];
       mockMetadataMap = {
         '/Users/p/Projects/locked-one': makeMetadata({
+          name: 'locked-one',
           aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
         }),
       };
@@ -731,7 +754,7 @@ describe('CommandBarContext', () => {
       expect(dialog.textContent).toContain('/Users/p/Projects/locked-one');
     });
 
-    it('adding a project with a conflicting aiLock is prevented and shows an error toast', () => {
+    it('selecting a project with a conflicting aiLock is prevented and shows an error toast', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/locked-a'],
       });
@@ -741,15 +764,17 @@ describe('CommandBarContext', () => {
       ];
       mockMetadataMap = {
         '/Users/p/Projects/locked-a': makeMetadata({
+          name: 'locked-a',
           aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
         }),
         '/Users/p/Projects/locked-b': makeMetadata({
+          name: 'locked-b',
           aiLock: { connectionId: 'conn-y', lockedAt: Date.now() },
         }),
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /add project locked-b/i });
+      const item = screen.getByRole('button', { name: /select locked-b/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).not.toHaveBeenCalled();
@@ -757,7 +782,7 @@ describe('CommandBarContext', () => {
       expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/locked|provider/i);
     });
 
-    it('adding an unlocked project to a locked-only selection is prevented and shows an error toast', () => {
+    it('selecting an unlocked project on top of a locked-only selection is prevented and shows an error toast', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/locked-a'],
       });
@@ -772,14 +797,14 @@ describe('CommandBarContext', () => {
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /add project free/i });
+      const item = screen.getByRole('button', { name: /select free/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).not.toHaveBeenCalled();
       expect(toast.error).toHaveBeenCalled();
     });
 
-    it('adding a same-locked project to an existing locked selection is allowed', () => {
+    it('selecting a same-locked project is allowed', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/locked-a'],
       });
@@ -789,15 +814,17 @@ describe('CommandBarContext', () => {
       ];
       mockMetadataMap = {
         '/Users/p/Projects/locked-a': makeMetadata({
+          name: 'locked-a',
           aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
         }),
         '/Users/p/Projects/locked-c': makeMetadata({
+          name: 'locked-c',
           aiLock: { connectionId: 'conn-x', lockedAt: Date.now() },
         }),
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /add project locked-c/i });
+      const item = screen.getByRole('button', { name: /select locked-c/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/locked-c');
@@ -1085,28 +1112,7 @@ describe('CommandBarContext', () => {
   // the chat footer carried more than 2 project chips).
   // -------------------------------------------------------------------------
 
-  describe('project chip overflow (regression lock)', () => {
-    it('wraps project chips in a shrinkable group container', () => {
-      mockActiveConversation = makeConversation({
-        projectPaths: [
-          '/Users/p/Projects/alpha',
-          '/Users/p/Projects/beta',
-          '/Users/p/Projects/gamma',
-        ],
-      });
-      const { container } = renderWithProviders(<CommandBarContext />);
-
-      const group = container.querySelector('[data-cmd-chip-group]');
-      expect(group).toBeTruthy();
-
-      const klass = group!.className;
-      // The group MUST own the shrink budget so trailing pickers stay pinned
-      // to the right edge. Any regression here causes the 5-project bug.
-      expect(klass).toMatch(/\bmin-w-0\b/);
-      expect(klass).toMatch(/\bshrink\b/);
-      expect(klass).toMatch(/\boverflow-hidden\b/);
-    });
-
+  describe('overflow (regression lock — live-test 2026-04-26)', () => {
     it('clips overflow at the context-row root so trailing pickers stay in view', () => {
       mockActiveConversation = makeConversation({
         projectPaths: ['/Users/p/Projects/alpha'],
@@ -1115,38 +1121,14 @@ describe('CommandBarContext', () => {
 
       const root = container.querySelector('[data-cmd-context]');
       expect(root).toBeTruthy();
-      // Root must NOT scroll horizontally — if chips push the row wider
-      // than the container, they get clipped via the inner chip group
-      // instead of pushing the mode picker/pin icon off-screen.
+      // Root must NOT scroll horizontally — the projects picker now
+      // owns the shrink budget so the row can never push the trailing
+      // pickers off-screen.
       expect(root!.className).toMatch(/\boverflow-hidden\b/);
       expect(root!.className).not.toMatch(/\boverflow-x-auto\b/);
     });
 
-    it('project chips carry min-w-0 + shrink so their labels can truncate', () => {
-      mockActiveConversation = makeConversation({
-        projectPaths: [
-          '/Users/p/Projects/very-long-project-name-alpha',
-          '/Users/p/Projects/very-long-project-name-beta',
-        ],
-      });
-      renderWithProviders(<CommandBarContext />);
-
-      // Each chip wraps the label in a span with `truncate` so the content
-      // ellipsizes rather than forcing the row wider.
-      const alphaLabel = screen.getByText('very-long-project-name-alpha');
-      expect(alphaLabel.className).toMatch(/\btruncate\b/);
-      expect(alphaLabel.className).toMatch(/\bmin-w-0\b/);
-
-      // The chip itself must be shrinkable (NOT shrink-0) so the group can
-      // collapse it when space is tight.
-      const chip = alphaLabel.closest('[title="/Users/p/Projects/very-long-project-name-alpha"]');
-      expect(chip).toBeTruthy();
-      expect(chip!.className).toMatch(/\bmin-w-0\b/);
-      expect(chip!.className).toMatch(/\bshrink\b/);
-      expect(chip!.className).not.toMatch(/\bshrink-0\b/);
-    });
-
-    it('the agent mode picker slot is marked shrink-0 so it never collapses when many chips are selected', () => {
+    it('many selected projects still leave the agent mode picker + trailing icons in view', () => {
       // #125 — mode picker is now gated on showAgentModePicker; flip on so
       // this regression-lock test can still assert the slot exists.
       mockShowAgentModePicker = true;
@@ -1160,6 +1142,13 @@ describe('CommandBarContext', () => {
           '/Users/p/Projects/epsilon',
         ],
       });
+      mockWorkspaceProjects = [
+        { path: '/Users/p/Projects/alpha', fileTree: [] },
+        { path: '/Users/p/Projects/beta', fileTree: [] },
+        { path: '/Users/p/Projects/gamma', fileTree: [] },
+        { path: '/Users/p/Projects/delta', fileTree: [] },
+        { path: '/Users/p/Projects/epsilon', fileTree: [] },
+      ];
       const acp = makeConnection({
         id: 'conn-acp',
         provider: 'openai',
@@ -1179,33 +1168,25 @@ describe('CommandBarContext', () => {
 
       const { container } = renderWithProviders(<CommandBarContext />);
 
-      // All five chips render.
-      expect(screen.getByText('alpha')).toBeTruthy();
-      expect(screen.getByText('beta')).toBeTruthy();
-      expect(screen.getByText('gamma')).toBeTruthy();
-      expect(screen.getByText('delta')).toBeTruthy();
-      expect(screen.getByText('epsilon')).toBeTruthy();
+      // The picker collapses N projects into a single trigger that
+      // shows "<first> +N" — 5 projects no longer overflow the row.
+      expect(
+        screen.getByLabelText(/5 projects selected/i),
+      ).toBeTruthy();
 
       // The mode picker is still in the DOM — its wrapper slot carries
       // shrink-0 so the flex layout can't compress it to zero width.
-      // We locate the wrapper by walking up from one of the common-mode
-      // labels inside the rendered picker popover/trigger.
       const readOnlyNodes = screen.getAllByText('Read Only');
       expect(readOnlyNodes.length).toBeGreaterThanOrEqual(1);
 
-      // Structural check: the context row has a shrink-0 wrapper sibling
-      // before the spacer (flex-1). This wrapper exists only when an
-      // interactive connection is active, which it is in this test.
+      // Structural check: the context row has shrink-0 children for
+      // pickers that must never collapse.
       const root = container.querySelector('[data-cmd-context]');
       expect(root).toBeTruthy();
       const shrinkZeroChildren = root!.querySelectorAll(':scope > .shrink-0');
-      // At minimum: mode-picker wrapper + history icon + pin icon all have
-      // shrink-0 either directly or via their own `shrink-0` class.
       expect(shrinkZeroChildren.length).toBeGreaterThanOrEqual(1);
 
-      // And the trailing pin icon is still reachable (would be clipped out
-      // of view under the original bug — here we assert it's still in DOM
-      // and carries shrink-0 so the browser can't hide it).
+      // Trailing pin icon stays reachable.
       const pinButton = screen.getByLabelText(/pin chat to side panel/i);
       expect(pinButton).toBeTruthy();
       expect(pinButton.className).toMatch(/\bshrink-0\b/);

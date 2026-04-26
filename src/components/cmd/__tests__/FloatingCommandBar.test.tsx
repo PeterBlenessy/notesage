@@ -197,8 +197,21 @@ vi.mock('@/stores/chat-store', () => {
     // `conv.projectPaths`. Stubbed to an empty list; the ChatHistoryView
     // render is mocked separately.
     selectProjectPaths: () => [],
+    // Live-test 2026-04-26 audit gap #10 — pending-switch selectors
+    // for the disabled-input wiring. Both nullish in the test surface
+    // since we don't exercise the AgentSwitchCard flow here.
+    selectPendingProjectSwitch: () => null,
+    selectPendingAgentSwitch: () => null,
   };
 });
+
+// useChatSwitchPrompts pulls from chat-store / connections-store / routing-store /
+// project-metadata-store and runs effects that write back to chat-store. None
+// of those side-effects matter for FloatingCommandBar's own behaviour, so
+// stub the hook to a no-op in this test surface.
+vi.mock('@/hooks/useChatSwitchPrompts', () => ({
+  useChatSwitchPrompts: () => undefined,
+}));
 
 // #118 — ChatHistoryView pulls in the full chat stack (providers, routing).
 // Stub to a visible marker so tests can assert the history view renders
@@ -294,16 +307,24 @@ describe('FloatingCommandBar', () => {
     expect(screen.getByTestId('ctx-stub')).toBeTruthy();
   });
 
-  it('mounts AttachmentChips exactly once when expanded', () => {
+  it('renders chips inline in the unified attachments strip when chips are added', () => {
     renderWithProviders(<FloatingCommandBar />);
-    // Compact state — chips strip not yet mounted (only the expanded contents
-    // include it).
-    expect(screen.queryAllByTestId('chips-stub')).toHaveLength(0);
+    // Compact state — neither the chips strip nor any chip is mounted.
+    expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
 
     fireEvent.click(screen.getByText(/press ⌘k to ask/i));
 
-    // After expansion, the AttachmentChips component is rendered exactly once.
-    expect(screen.getAllByTestId('chips-stub')).toHaveLength(1);
+    // Live-test 2026-04-26 round 6 — chips render INLINE in the
+    // unified strip (no AttachmentChips wrapper), so chip nodes
+    // appear directly as flex siblings of image thumbnails. The
+    // strip only mounts when at least one attachment exists.
+    expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '@' } });
+    fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
+
+    expect(document.querySelectorAll('[data-chip-kind]').length).toBe(1);
   });
 
   it('skips the lift transition when prefers-reduced-motion is reduce', () => {
@@ -601,9 +622,10 @@ describe('FloatingCommandBar', () => {
       fireEvent.change(input, { target: { value: '@' } });
       fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
 
-      // Chip is now in state — the AttachmentChips stub reflects the count.
-      const chipsStripBefore = screen.getByTestId('chips-stub');
-      expect(chipsStripBefore.getAttribute('data-chip-count')).toBe('1');
+      // Chip is now rendered inline (live-test 2026-04-26 round 6 —
+      // chips are direct flex siblings, identified via
+      // `[data-chip-kind]`).
+      expect(document.querySelectorAll('[data-chip-kind]').length).toBe(1);
 
       // Type a message and send.
       const inputAfter = screen.getByRole('combobox') as HTMLInputElement;
@@ -614,8 +636,8 @@ describe('FloatingCommandBar', () => {
       await waitFor(() =>
         expect(sendChatMessageMock).toHaveBeenCalledTimes(1),
       );
-      const chipsStripAfter = screen.getByTestId('chips-stub');
-      expect(chipsStripAfter.getAttribute('data-chip-count')).toBe('0');
+      // Strip unmounts when nothing is attached.
+      expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
     });
 
     it('Enter while a prefix is active does NOT send — picker reserves Enter', () => {
