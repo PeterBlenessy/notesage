@@ -258,27 +258,24 @@ export function SyncSettings() {
 
   return (
     <div className="space-y-6">
-      {/* iCloud Sync Toggle */}
+      {/* iCloud Sync Toggle — the panel-level "iCloud Sync" header
+          comes from the SettingsGroup wrapper in v2 ProjectsSettings,
+          so the inner Label/description that used to live here was
+          duplicating the panel chrome (live-test 2026-04-26). */}
       <div className="space-y-4">
-        <div>
-          <Label className="text-sm font-semibold">iCloud Sync</Label>
-          <p className="text-xs text-muted-foreground mt-1">
-            Sync projects and notes across your Apple devices
-          </p>
-        </div>
-
         <div className="space-y-2">
-          <div
-            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-          >
-            <div>
+          {/* Flat row — drops the inner bordered card so the Enable
+              iCloud Sync toggle matches the Version Control row in
+              ProjectsSettings (live-test 2026-04-26). */}
+          <div className="flex flex-wrap items-center justify-between gap-3 py-1">
+            <div className="min-w-0 flex-1">
               <Label
                 htmlFor="icloud-sync"
-                className="text-sm font-medium cursor-pointer"
+                className="text-[13px] font-medium cursor-pointer text-foreground"
               >
                 Enable iCloud Sync
               </Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
                 Selectively sync projects to iCloud Drive
               </p>
             </div>
@@ -287,7 +284,7 @@ export function SyncSettings() {
               checked={displayICloudEnabled}
               onCheckedChange={handleICloudToggle}
               disabled={!icloudAvailable || applying}
-              className="ml-auto"
+              className="shrink-0"
             />
           </div>
 

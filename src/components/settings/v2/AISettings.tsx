@@ -4,6 +4,7 @@ import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/setti
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SettingsGroup } from './SettingsGroup';
+import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
 
 /**
@@ -31,46 +32,31 @@ export function AISettings() {
 
   return (
     <div data-slot="ai-settings">
-      {/* Connections — rich content is owned by ConnectionsSettings; mount
-          directly (no SettingsGroup wrapper, no tinted island) so the
-          bordered connection cards inside don't double up with another
-          surface treatment. */}
-      <section className="mb-6" aria-labelledby="ai-connections-label">
-        <h3
-          id="ai-connections-label"
-          className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1"
-        >
-          Connections
-        </h3>
-        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
-          Where Notesage talks to. Keys, agents, local models.
-        </p>
-        <ConnectionsSettings />
-      </section>
-
-      {/* Use case mapping — flat divide-y rows wrapped in the same
-          tinted-island surface SettingsGroup uses, so this section
-          visually matches Tool calling / Project scope / Network
-          sandbox below. */}
-      <section className="mb-6" aria-labelledby="ai-routing-label">
-        <h3
-          id="ai-routing-label"
-          className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1"
-        >
-          Use case mapping
-        </h3>
-        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
-          Pick which provider handles each use case — interactive chat, agent
-          tasks, inline completions. New connections are auto-assigned to any
-          slot they're compatible with.
-        </p>
-        <div className="rounded-xl bg-muted/40 px-4">
-          <UseCaseRoutingSettings />
+      {/* Connections — `bare` so the bordered connection cards inside
+          ConnectionsSettings don't double up with the tinted-island
+          surface that non-bare groups paint. */}
+      <SettingsGroup
+        label="Connections"
+        description="Connect to AI providers Notesage can talk to. Add subscription-based agents (Claude Code, Codex, Copilot, Gemini), API-key providers (Anthropic, OpenAI, OpenAI-compatible), or an Ollama server, and check for managed-agent updates from here."
+        bare
+      >
+        <div className="py-2">
+          <ConnectionsSettings />
         </div>
-      </section>
+      </SettingsGroup>
+
+      {/* Use Case Mapping — non-bare so the flat divide-y rows from
+          UseCaseRoutingSettings sit on the standard tinted island,
+          matching Tool Calling / Project Scope below. */}
+      <SettingsGroup
+        label="Use Case Mapping"
+        description="Pick which provider handles each use case — interactive chat, agent tasks, inline completions. New connections are auto-assigned to any slot they're compatible with."
+      >
+        <UseCaseRoutingSettings />
+      </SettingsGroup>
 
       <SettingsGroup
-        label="Tool calling"
+        label="Tool Calling"
         description="How Notesage invokes tools on your behalf during AI chat."
       >
         <SettingsRow
@@ -102,11 +88,11 @@ export function AISettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Project scope"
+        label="Project Scope"
         description="How AI features see your projects."
       >
         <SettingsRow
-          label="Cross-Project Mode"
+          label="Cross-project mode"
           description={
             <>
               Exposes{' '}
@@ -142,18 +128,18 @@ export function AISettings() {
         />
       </SettingsGroup>
 
-      <SettingsGroup
-        label="Network sandbox"
-        description="Per-connection settings live in each connection's config dialog. These are the app-level defaults."
-      >
-        <SettingsRow
-          label="Sandbox is configured per connection"
-          description="Open a connection above to set its filesystem sandbox, network restriction, kernel enforcement, and domain allowlist. New agent connections start with kernel enforcement on."
-        />
+      <SettingsGroup label="Network Sandbox" bare>
+        <SettingsHint title="Sandbox is configured per connection">
+          <p>
+            Open a connection above to set its filesystem sandbox, network
+            restriction, kernel enforcement, and domain allowlist. New agent
+            connections start with kernel enforcement on.
+          </p>
+        </SettingsHint>
       </SettingsGroup>
 
       <SettingsGroup
-        label="Persisted approvals"
+        label="Persisted Approvals"
         description="Tool-call and domain approvals you've remembered via 'Allow always'. Revoke individually or in bulk."
         bare
       >

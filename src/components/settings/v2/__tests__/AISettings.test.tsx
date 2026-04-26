@@ -45,11 +45,11 @@ describe('AISettings (v2)', () => {
     // Group headings — Connections / Use case mapping are section-level,
     // the rest are SettingsGroup labels.
     expect(screen.getByText('Connections')).toBeTruthy();
-    expect(screen.getByText('Use case mapping')).toBeTruthy();
-    expect(screen.getByText('Tool calling')).toBeTruthy();
-    expect(screen.getByText('Project scope')).toBeTruthy();
-    expect(screen.getByText('Network sandbox')).toBeTruthy();
-    expect(screen.getByText('Persisted approvals')).toBeTruthy();
+    expect(screen.getByText('Use Case Mapping')).toBeTruthy();
+    expect(screen.getByText('Tool Calling')).toBeTruthy();
+    expect(screen.getByText('Project Scope')).toBeTruthy();
+    expect(screen.getByText('Network Sandbox')).toBeTruthy();
+    expect(screen.getByText('Persisted Approvals')).toBeTruthy();
 
     // Sub-panels mounted inline (not via cross-panel navigation).
     expect(screen.getByTestId('connections-settings')).toBeTruthy();

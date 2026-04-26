@@ -90,7 +90,7 @@ export function SettingsGroup({
         </h3>
       ) : null}
       {description ? (
-        <p className="text-[12px] text-muted-foreground mb-2 max-w-[460px] leading-relaxed">
+        <p className="text-[12px] text-muted-foreground mb-2 leading-relaxed">
           {description}
         </p>
       ) : null}

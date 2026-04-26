@@ -288,60 +288,65 @@ export function AppearanceSettings() {
           }
           controlSublabel={contrastSublabel}
         />
-      </SettingsGroup>
 
-      {/* ── Color tint ────────────────────────────────────────────── */}
-      <SettingsGroup
-        label="Color tint"
-        description="Add a subtle color wash to the interface. Neutral keeps the palette strictly greyscale."
-      >
-        <SettingsRow
-          label="Preset"
-          description="Named tint presets. Picking Neutral clears any tint."
-          control={
-            <div className="flex flex-wrap gap-1.5 max-w-[360px] justify-end">
-              {TINT_PRESETS.map((preset) => {
-                const isActive =
-                  preset.chroma === 0
-                    ? tintChroma === 0
-                    : tintChroma > 0 &&
-                      tintHue === preset.hue &&
-                      tintChroma === preset.chroma;
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() => {
-                      setTintHue(preset.hue);
-                      setTintChroma(preset.chroma);
+        {/* Color tint — folded into the Theme group (live-test
+            2026-04-26). The 7 named chips are too wide to right-align
+            next to a label, so this is a custom block: "Color tint"
+            label on top, chips flow left-aligned below at full
+            width. Intensity / Hue rows appear when a non-Neutral
+            tint is active. */}
+        <div className="px-0 py-3 space-y-2">
+          <div>
+            <span className="text-[13px] font-medium text-foreground">
+              Color tint
+            </span>
+            <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+              Add a subtle color wash to the interface. Neutral keeps the
+              palette strictly greyscale.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {TINT_PRESETS.map((preset) => {
+              const isActive =
+                preset.chroma === 0
+                  ? tintChroma === 0
+                  : tintChroma > 0 &&
+                    tintHue === preset.hue &&
+                    tintChroma === preset.chroma;
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => {
+                    setTintHue(preset.hue);
+                    setTintChroma(preset.chroma);
+                  }}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md',
+                    'text-[12px] font-medium border transition-colors duration-150',
+                    'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    isActive
+                      ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
+                      : 'border-border text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 rounded-full shrink-0 border border-border"
+                    style={{
+                      backgroundColor:
+                        preset.chroma === 0
+                          ? 'oklch(70% 0 0)'
+                          : `oklch(70% 0.08 ${preset.hue})`,
                     }}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md',
-                      'text-[12px] font-medium border transition-colors duration-150',
-                      'outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      isActive
-                        ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
-                        : 'border-border text-muted-foreground hover:bg-muted',
-                    )}
-                  >
-                    <span
-                      aria-hidden
-                      className="h-2.5 w-2.5 rounded-full shrink-0 border border-border"
-                      style={{
-                        backgroundColor:
-                          preset.chroma === 0
-                            ? 'oklch(70% 0 0)'
-                            : `oklch(70% 0.08 ${preset.hue})`,
-                      }}
-                    />
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
-          }
-        />
+                  />
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {tintChroma > 0 ? (
           <>
@@ -376,7 +381,7 @@ export function AppearanceSettings() {
 
             <SettingsRow
               label="Hue"
-              description="Rotates the tint around the oklch color wheel."
+              description="Shifts the tint hue."
               control={
                 <div className="w-[180px]">
                   <Slider
@@ -397,7 +402,7 @@ export function AppearanceSettings() {
 
       {/* ── Quiet chrome ─────────────────────────────────────────── */}
       <SettingsGroup
-        label="Quiet chrome"
+        label="Quiet Chrome"
         description="Fade chrome elements (toolbar, status bar, document header, sidebar, agent orb) while you type. The composer is never faded."
       >
         <SettingsRow
@@ -461,7 +466,7 @@ export function AppearanceSettings() {
 
       {/* ── Sidebar composition ──────────────────────────────────── */}
       <SettingsGroup
-        label="Sidebar composition"
+        label="Sidebar Composition"
         description="How many items each sidebar section shows, and which sections are visible."
       >
         <SettingsRow

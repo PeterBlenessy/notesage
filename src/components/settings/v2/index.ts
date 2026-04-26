@@ -16,6 +16,9 @@ export type { SettingsGroupProps } from './SettingsGroup';
 export { SettingsRow } from './SettingsRow';
 export type { SettingsRowProps } from './SettingsRow';
 
+export { SettingsHint } from './SettingsHint';
+export type { SettingsHintProps, SettingsHintTone } from './SettingsHint';
+
 export { SettingsDialogV2 } from './SettingsDialogV2';
 export type { SettingsDialogV2Props } from './SettingsDialogV2';
 
@@ -26,3 +29,5 @@ export { SkillsSettings } from './SkillsSettings';
 export { ProjectsSettings } from './ProjectsSettings';
 export { SystemSettings } from './SystemSettings';
 export type { SystemSettingsProps } from './SystemSettings';
+
+export { VoiceSettings } from './VoiceSettings';

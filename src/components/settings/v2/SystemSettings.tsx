@@ -5,6 +5,7 @@ import {
   Download,
   FolderOpen,
   Loader2,
+  RefreshCw,
   ScrollText,
   Trash2,
 } from 'lucide-react';
@@ -171,10 +172,18 @@ export function SystemSettings({
 
   return (
     <>
-      <SettingsGroup label="Notesage" description={`Version ${appVersion}`}>
+      <SettingsGroup label="About">
+        <SettingsRow
+          label="Notesage version"
+          control={
+            <span className="text-[13px] text-muted-foreground tabular-nums">
+              {appVersion}
+            </span>
+          }
+        />
         <SettingsRow
           label="Changelog"
-          description="What changed in recent releases."
+          description="Release notes for recent versions."
           control={
             <Button
               variant="outline"
@@ -187,9 +196,6 @@ export function SystemSettings({
           }
         />
         <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
-      </SettingsGroup>
-
-      <SettingsGroup label="Updates" description="Keep Notesage up to date.">
         <SettingsRow
           label="Check for updates"
           description={
@@ -204,47 +210,38 @@ export function SystemSettings({
           control={
             updateState?.updateInfo && onOpenUpdateDialog ? (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => {
                   onOpenUpdateDialog();
                   onDismissSettings?.();
                 }}
+                title={`View update v${updateState.updateInfo.version}`}
+                aria-label="View update"
               >
-                <ArrowUpCircle
-                  className="h-3.5 w-3.5 mr-1.5"
-                  strokeWidth={1.5}
-                />
-                View Update
+                <ArrowUpCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
               </Button>
             ) : (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={onCheckForUpdate}
                 disabled={updateState?.status === 'checking'}
+                title="Check for updates"
+                aria-label="Check for updates"
               >
                 {updateState?.status === 'checking' ? (
-                  <Loader2
-                    className="h-3.5 w-3.5 mr-1.5 animate-spin"
-                    strokeWidth={1.5}
-                  />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
                 ) : (
-                  <Download
-                    className="h-3.5 w-3.5 mr-1.5"
-                    strokeWidth={1.5}
-                  />
+                  <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
                 )}
-                {updateState?.status === 'checking'
-                  ? 'Checking...'
-                  : 'Check for Updates'}
               </Button>
             )
           }
         />
         <SettingsRow
-          label="Automatically Check for Updates"
-          description="Check for new versions when the app starts."
+          label="Automatically check for updates"
+          description="Look for new versions when the app starts."
           htmlFor="auto-check-updates"
           control={
             <Switch
@@ -351,7 +348,7 @@ export function SystemSettings({
 
       <SettingsGroup label="Files" description="File visibility in the sidebar.">
         <SettingsRow
-          label="Show Hidden Files"
+          label="Show hidden files"
           description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
           htmlFor="show-hidden-files"
           control={
@@ -369,7 +366,7 @@ export function SystemSettings({
         description="Logging and diagnostics export."
       >
         <SettingsRow
-          label="Log Level"
+          label="Log level"
           description="Controls which messages are written to log files. Default is Warn."
           control={
             <Select
@@ -472,7 +469,7 @@ export function SystemSettings({
         )}
 
         <SettingsRow
-          label="Export Diagnostics"
+          label="Export diagnostics"
           description="Save backend and frontend state to a JSON file for bug reports. No API keys are included."
           control={
             <Button

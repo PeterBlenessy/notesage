@@ -121,36 +121,41 @@ export function SettingsRow({
     );
   }
 
+  const hasControl = controlNode !== undefined;
+  const hasSublabel = controlSublabel !== undefined;
+
   return (
-    // Live-test 2026-04-25 — `px-0 py-3` (was `px-4 py-3 min-h-[52px]`)
-    // per mockup-e. The card wrapper around the group is gone (see
-    // SettingsGroup), so rows no longer need their own horizontal
-    // padding to inset from a card border. Vertical kept at py-3 for
-    // a comfortable click target; min-height removed because the
-    // description line varies and forcing 52 px sometimes left rows
-    // looking under-padded when there's no description.
-    <div
-      className={cn(
-        'flex items-center justify-between gap-4 px-0 py-3',
-        className,
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        {labelNode}
-        {description ? (
-          <p
-            id={descriptionId}
-            className="text-[12px] text-muted-foreground mt-0.5 max-w-[460px] leading-relaxed"
-          >
-            {description}
-          </p>
-        ) : null}
+    // Live-test 2026-04-26 — stacked layout (macOS System Settings
+    // pattern). Title + control sit on row 1; description flows
+    // full-width on row 2. The previous side-by-side layout squeezed
+    // the label/description into whatever width the control left
+    // free, so wide controls (4-button segmented pickers, 208 px
+    // selects, etc.) caused the description to wrap one word per
+    // line. With the control hoisted out, the description always
+    // gets the full row width.
+    //
+    // `controlSublabel` (e.g. "49%" under a slider) sits on row 2
+    // right-aligned, opposite the description, so it stays paired
+    // with its control visually without taking row 1 height.
+    <div className={cn('px-0 py-3', className)}>
+      <div className="flex items-center gap-4 min-h-[28px]">
+        <div className="min-w-0 flex-1">{labelNode}</div>
+        {hasControl ? <div className="shrink-0">{controlNode}</div> : null}
       </div>
-      {controlNode !== undefined || controlSublabel !== undefined ? (
-        <div className="shrink-0 flex flex-col items-end gap-1">
-          {controlNode}
-          {controlSublabel ? (
-            <span className="text-[11px] text-muted-foreground">
+      {description || hasSublabel ? (
+        <div className="flex items-baseline gap-4 mt-1">
+          {description ? (
+            <p
+              id={descriptionId}
+              className="flex-1 min-w-0 text-[12px] text-muted-foreground leading-relaxed"
+            >
+              {description}
+            </p>
+          ) : (
+            <div className="flex-1" />
+          )}
+          {hasSublabel ? (
+            <span className="shrink-0 text-[11px] text-muted-foreground">
               {controlSublabel}
             </span>
           ) : null}

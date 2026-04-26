@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Info } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -7,6 +6,7 @@ import { tauriApi } from '@/lib/tauri';
 import { ProjectCard } from '../ProjectCard';
 import { SyncSettings as LegacySyncSettings } from '../SyncSettings';
 import { SettingsGroup } from './SettingsGroup';
+import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
 
 function basename(path: string): string {
@@ -76,12 +76,9 @@ export function ProjectsSettings() {
         </SettingsGroup>
       ) : null}
 
-      <SettingsGroup
-        label="Version Control"
-        description="Git integration for the workspace."
-      >
+      <SettingsGroup label="Version Control">
         <SettingsRow
-          label="Enable Git"
+          label="Enable git"
           description="Track file changes, view status indicators, switch branches, and commit from within the app."
           htmlFor="git-integration"
           control={
@@ -93,33 +90,26 @@ export function ProjectsSettings() {
           }
         />
         {gitNotAvailable && (
-          <div className="flex gap-2.5 px-4 py-3 bg-muted/50">
-            <Info
-              className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5"
-              strokeWidth={1.5}
-            />
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">
-                Git is not installed on this system
-              </p>
-              <p>
-                Install it from{' '}
-                <span className="font-medium text-foreground">git-scm.com</span>{' '}
-                or via Homebrew:
-              </p>
-              <pre className="rounded bg-muted px-2 py-1.5 font-mono text-xs select-all">
-                brew install git
-              </pre>
-            </div>
-          </div>
+          <SettingsHint tone="warning" title="Git is not installed on this system">
+            <p>
+              Install it from{' '}
+              <span className="font-medium text-foreground">git-scm.com</span>{' '}
+              or via Homebrew:
+            </p>
+            <pre className="rounded bg-muted px-2 py-1.5 font-mono text-[11px] select-all mt-1">
+              brew install git
+            </pre>
+          </SettingsHint>
         )}
       </SettingsGroup>
 
-      <SettingsGroup label="iCloud Sync" bare>
-        {/* `bare` — the legacy SyncSettings component owns its own
-            internal layout (project rows, sync toggles, info blocks);
-            the tinted island would double up. */}
-        <div className="py-2">
+      <SettingsGroup label="iCloud Sync">
+        {/* Non-bare — the inner SyncSettings component now renders a
+            flat Enable toggle row that lives on the tinted island
+            (matches the Version Control group above). The legacy
+            duplicate "iCloud Sync" header inside SyncSettings was
+            dropped (live-test 2026-04-26). */}
+        <div className="py-1">
           <LegacySyncSettings />
         </div>
       </SettingsGroup>

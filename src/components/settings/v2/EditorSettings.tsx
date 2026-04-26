@@ -218,7 +218,7 @@ export function EditorSettings() {
           className="py-3"
         >
           <div
-            className="rounded-md border border-border bg-background p-4 min-h-[180px]"
+            className="rounded-md border border-border bg-background p-4"
             style={{
               fontFamily: previewFontCSS,
               fontSize: `${fontSize}px`,
@@ -250,7 +250,7 @@ export function EditorSettings() {
         description="Configure your editing experience."
       >
         <SettingsRow
-          label="Top Toolbar"
+          label="Top toolbar"
           description="Show the formatting toolbar above the editor."
           htmlFor="toolbar-visible"
           control={
@@ -262,7 +262,7 @@ export function EditorSettings() {
           }
         />
         <SettingsRow
-          label="Floating Toolbar"
+          label="Floating toolbar"
           description="Show AI actions and comment button when text is selected."
           htmlFor="floating-toolbar"
           control={
@@ -324,16 +324,16 @@ export function EditorSettings() {
       >
         <SettingsRow
           label="Units"
-          description="Measurement unit for dimensions."
+          description="Used for page size and margins below."
           control={
-            <div className="flex rounded-md overflow-hidden border border-border">
+            <div className="inline-flex h-7 rounded-md overflow-hidden border border-border">
               {(['cm', 'inch'] as const).map((unit) => (
                 <button
                   key={unit}
                   type="button"
                   onClick={() => setMeasurementUnit(unit)}
                   className={cn(
-                    'px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 hover:bg-accent',
+                    'inline-flex items-center justify-center px-3 text-[11px] font-medium transition-colors duration-150 hover:bg-accent',
                     measurementUnit === unit
                       ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                       : 'text-muted-foreground',
@@ -347,11 +347,11 @@ export function EditorSettings() {
         />
 
         <SettingsRow
-          label="Page Size"
-          description="Page format and dimensions."
+          label="Page size"
+          description="Standard formats or full-width content."
           control={
             <Select value={contentWidth} onValueChange={setContentWidth}>
-              <SelectTrigger className="w-64 text-left">
+              <SelectTrigger className="w-48 text-left">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -369,7 +369,7 @@ export function EditorSettings() {
           contentWidth === 'a5' ||
           contentWidth === 'letter') && (
           <SettingsRow
-            label="Print Layout"
+            label="Print layout"
             description="Show page boundaries with headers and footers."
             control={
               <Switch
@@ -383,7 +383,7 @@ export function EditorSettings() {
         <div className="py-3">
           <div className="mb-3">
             <Label className="text-[13px] font-medium text-foreground">
-              Page Margins
+              Page margins
             </Label>
             <p className="text-[12px] text-muted-foreground mt-0.5">
               Set margins for each side independently ({unitLabel}).

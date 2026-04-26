@@ -43,9 +43,11 @@ describe('AppearanceSettings', () => {
   it('renders all group labels', () => {
     renderWithProviders(<AppearanceSettings />);
     expect(screen.getByText('Theme')).toBeTruthy();
+    // "Color tint" is now an inline block within the Theme group
+    // (merged 2026-04-26), not a standalone group label.
     expect(screen.getByText('Color tint')).toBeTruthy();
-    expect(screen.getByText('Quiet chrome')).toBeTruthy();
-    expect(screen.getByText('Sidebar composition')).toBeTruthy();
+    expect(screen.getByText('Quiet Chrome')).toBeTruthy();
+    expect(screen.getByText('Sidebar Composition')).toBeTruthy();
     // Typography + Preview moved to the Writing panel (live-test
     // 2026-04-26) — they are tested in panels.test.tsx instead.
   });

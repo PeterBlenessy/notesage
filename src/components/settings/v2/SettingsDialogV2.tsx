@@ -6,6 +6,7 @@ import {
   Blocks,
   FolderOpen,
   Cog,
+  Mic,
 } from 'lucide-react';
 import { SettingsShell, type SettingsShellNavGroup } from './SettingsShell';
 import {
@@ -20,6 +21,7 @@ import { AISettings } from './AISettings';
 import { SkillsSettings } from './SkillsSettings';
 import { ProjectsSettings } from './ProjectsSettings';
 import { SystemSettings } from './SystemSettings';
+import { VoiceSettings } from './VoiceSettings';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
@@ -47,8 +49,9 @@ const NAV: SettingsShellNavGroup[] = [
     items: [
       { id: 'appearance', label: 'Appearance', icon: Sun },
       { id: 'editor', label: 'Writing', icon: Pencil },
-      { id: 'ai', label: 'AI & Agents', icon: Sparkles },
-      { id: 'skills', label: 'Skills', icon: Blocks },
+      { id: 'ai', label: 'AI Providers', icon: Sparkles },
+      { id: 'skills', label: 'Skills & Agents', icon: Blocks },
+      { id: 'voice', label: 'Voice', icon: Mic },
       { id: 'projects', label: 'Projects', icon: FolderOpen },
       { id: 'system', label: 'System', icon: Cog },
     ],
@@ -91,8 +94,9 @@ type PanelEntry = {
 const PANELS: PanelEntry[] = [
   { id: 'appearance', label: 'Appearance', render: () => <AppearanceSettings /> },
   { id: 'editor', label: 'Writing', render: () => <EditorSettings /> },
-  { id: 'ai', label: 'AI & Agents', render: () => <AISettings /> },
-  { id: 'skills', label: 'Skills', render: () => <SkillsSettings /> },
+  { id: 'ai', label: 'AI Providers', render: () => <AISettings /> },
+  { id: 'skills', label: 'Skills & Agents', render: () => <SkillsSettings /> },
+  { id: 'voice', label: 'Voice', render: () => <VoiceSettings /> },
   { id: 'projects', label: 'Projects', render: () => <ProjectsSettings /> },
   {
     id: 'system',

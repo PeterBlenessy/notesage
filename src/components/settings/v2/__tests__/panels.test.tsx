@@ -50,17 +50,19 @@ beforeEach(() => {
 describe('v2 settings panels', () => {
   it('SystemSettings mounts and renders the consolidated groups', () => {
     renderWithProviders(<SystemSettings />);
-    // "Notesage" is the version-info group header.
-    expect(screen.getAllByText('Notesage').length).toBeGreaterThan(0);
-    expect(screen.getByText('Updates')).toBeTruthy();
+    // The merged About group (Notesage version + Changelog + Updates).
+    expect(screen.getByText('About')).toBeTruthy();
+    expect(screen.getByText('Notesage version')).toBeTruthy();
+    expect(screen.getByText('Changelog')).toBeTruthy();
+    expect(screen.getByText('Check for updates')).toBeTruthy();
+    expect(screen.getByText('Automatically check for updates')).toBeTruthy();
     expect(screen.getByText('System Tray')).toBeTruthy();
     expect(screen.getByText('Notifications')).toBeTruthy();
     expect(screen.getByText('Diagnostics')).toBeTruthy();
-    expect(screen.getByText('Show Hidden Files')).toBeTruthy();
-    expect(screen.getByText('Automatically Check for Updates')).toBeTruthy();
+    expect(screen.getByText('Show hidden files')).toBeTruthy();
   });
 
-  it('SystemSettings renders "View Update" button when an update is available', () => {
+  it('SystemSettings renders "View update" affordance when an update is available', () => {
     renderWithProviders(
       <SystemSettings
         updateState={{
@@ -78,7 +80,15 @@ describe('v2 settings panels', () => {
         onOpenUpdateDialog={() => {}}
       />,
     );
-    expect(screen.getByText(/View Update/)).toBeTruthy();
+    // The check-for-updates button is icon-only now; the action is
+    // identified by its aria-label, which switches to "View update" when
+    // an update is available.
+    expect(
+      screen.getByRole('button', { name: /View update/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Update available: v0\.99\.0/i),
+    ).toBeTruthy();
   });
 
   it('EditorSettings (Writing) mounts and renders typography, preview, editor + page layout groups', () => {
@@ -87,8 +97,8 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Preview')).toBeTruthy();
     expect(screen.getByText('Editor Options')).toBeTruthy();
     expect(screen.getByText('Page Layout')).toBeTruthy();
-    expect(screen.getByText('Top Toolbar')).toBeTruthy();
-    expect(screen.getByText('Page Margins')).toBeTruthy();
+    expect(screen.getByText('Top toolbar')).toBeTruthy();
+    expect(screen.getByText('Page margins')).toBeTruthy();
   });
 
   it('EditorSettings preview card reflects current editor font settings', async () => {
@@ -112,19 +122,22 @@ describe('v2 settings panels', () => {
     expect(stat?.textContent ?? '').toMatch(/1\.85/);
   });
 
-  it('SkillsSettings mounts and renders prompts + management + skills groups', () => {
+  it('SkillsSettings mounts and renders management + skills + prompts groups', () => {
     renderWithProviders(<SkillsSettings />);
-    // Each label appears once in the v2 group header and again inside the
-    // legacy inner component — assert on presence, not uniqueness.
+    // The legacy `<SkillsSettings>` component renders its own internal
+    // "Skills" + "Agents" sub-headers, so the outer wrapper for that
+    // legacy mount is unlabeled (the panel itself is named "Skills &
+    // Agents"). We assert the management toggle and the prompts/skills
+    // sub-sections render.
+    expect(screen.getByText('Skill & agent management')).toBeTruthy();
     expect(screen.getAllByText('Custom Prompts').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Skills & Agents').length).toBeGreaterThan(0);
-    expect(screen.getByText('Skill & Agent Management')).toBeTruthy();
+    expect(screen.getAllByText('Skills').length).toBeGreaterThan(0);
   });
 
   it('ProjectsSettings mounts and renders version control + iCloud groups', () => {
     renderWithProviders(<ProjectsSettings />);
     expect(screen.getByText('Version Control')).toBeTruthy();
-    expect(screen.getByText('Enable Git')).toBeTruthy();
+    expect(screen.getByText('Enable git')).toBeTruthy();
     expect(screen.getAllByText('iCloud Sync').length).toBeGreaterThan(0);
   });
 });

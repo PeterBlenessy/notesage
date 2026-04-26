@@ -200,58 +200,61 @@ export function UseCaseRoutingSettings() {
           : null;
 
         return (
-          <div
-            key={useCase}
-            className="flex items-center justify-between gap-4 px-0 py-3"
-          >
-            <div className="min-w-0 flex-1">
-              <span className="text-[13px] font-medium text-foreground">
-                {meta.label}
-              </span>
-              <p className="text-[12px] text-muted-foreground mt-0.5 max-w-[460px] leading-relaxed">
-                {meta.description}
-              </p>
-            </div>
-
-            <div className="shrink-0 flex items-center gap-1">
-              <Select
-                value={currentId ?? NONE}
-                onValueChange={(val) =>
-                  setRouting(useCase, val === NONE ? null : val)
-                }
-              >
-                <SelectTrigger className="w-52 text-left">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>
-                    <span className="text-muted-foreground">
-                      Not configured
-                    </span>
-                  </SelectItem>
-                  {compatible.map((conn) => (
-                    <SelectItem key={conn.id} value={conn.id}>
-                      <span className="flex items-center gap-1.5">
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                            conn.status === 'connected'
-                              ? 'bg-green-500'
-                              : conn.status === 'error'
-                                ? 'bg-destructive'
-                                : 'bg-muted-foreground'
-                          }`}
-                        />
-                        {conn.label}
+          // Stacked layout (live-test 2026-04-26) — matches the
+          // refactored `SettingsRow` so the description doesn't get
+          // squeezed by the 208 px Select on the right.
+          <div key={useCase} className="px-0 py-3">
+            <div className="flex items-center gap-4 min-h-[28px]">
+              <div className="min-w-0 flex-1">
+                <span className="text-[13px] font-medium text-foreground">
+                  {meta.label}
+                </span>
+              </div>
+              <div className="shrink-0 flex items-center gap-1">
+                <Select
+                  value={currentId ?? NONE}
+                  onValueChange={(val) =>
+                    setRouting(useCase, val === NONE ? null : val)
+                  }
+                >
+                  <SelectTrigger className="w-52 text-left">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>
+                      <span className="text-muted-foreground">
+                        Not configured
                       </span>
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {currentConnection && (
-                <ModelPopover useCase={useCase} connection={currentConnection} />
-              )}
+                    {compatible.map((conn) => (
+                      <SelectItem key={conn.id} value={conn.id}>
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                              conn.status === 'connected'
+                                ? 'bg-green-500'
+                                : conn.status === 'error'
+                                  ? 'bg-destructive'
+                                  : 'bg-muted-foreground'
+                            }`}
+                          />
+                          {conn.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {currentConnection && (
+                  <ModelPopover
+                    useCase={useCase}
+                    connection={currentConnection}
+                  />
+                )}
+              </div>
             </div>
+            <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
+              {meta.description}
+            </p>
           </div>
         );
       })}

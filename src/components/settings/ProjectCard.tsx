@@ -324,12 +324,12 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
   return (
     <div
       data-slot="project-card"
-      className="rounded-lg border border-border bg-background px-4 py-3 transition-colors duration-150"
+      className="rounded-lg border border-border bg-background px-3 py-2 transition-colors duration-150"
     >
       <div className="flex items-start gap-3">
         <Folder
           className={cn(
-            'h-5 w-5 mt-1 shrink-0',
+            'h-5 w-5 mt-0.5 shrink-0',
             isLocked
               ? 'text-[var(--color-accent-primary)]'
               : 'text-muted-foreground',
@@ -337,7 +337,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
           strokeWidth={1.5}
         />
 
-        <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex-1 min-w-0 space-y-1">
           {/* ── Name ────────────────────────────────────────────────
               View mode: text + pen icon on hover. Double-click text or
               click pen → edit mode (input + save / cancel icons).
@@ -401,7 +401,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
             ) : (
               <>
                 <span
-                  className="text-[14px] font-medium text-foreground truncate cursor-text leading-7"
+                  className="text-[14px] font-medium text-foreground truncate cursor-text leading-tight"
                   onDoubleClick={() => setNameEditing(true)}
                   title="Double-click to rename"
                 >
@@ -488,7 +488,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
               <>
                 <span
                   className={cn(
-                    'text-[12px] flex-1 cursor-text whitespace-pre-wrap leading-7',
+                    'text-[12px] flex-1 cursor-text whitespace-pre-wrap leading-tight',
                     metadata.description
                       ? 'text-muted-foreground'
                       : 'text-muted-foreground/60 italic',
@@ -517,7 +517,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
 
           {/* Action row — three minimalistic pills matching the chat
               footer style (h-7, transparent border, subtle hover). */}
-          <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <ActionPill
               icon={Cloud}
               label={isSynced ? 'iCloud · on' : 'iCloud · off'}

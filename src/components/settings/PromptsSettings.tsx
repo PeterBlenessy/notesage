@@ -120,18 +120,15 @@ export function PromptsSettings() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Label className="text-sm font-medium">Your Prompts</Label>
+            <Label className="text-sm font-semibold">Your Prompts</Label>
             <p className="text-xs text-muted-foreground mt-1">
               Reusable templates that appear in the AI actions menu
             </p>
           </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button
-                size="sm"
-                className="ml-auto transition-colors"
-              >
-                <Plus className="h-4 w-4 mr-1" />
+              <Button variant="ghost" size="sm" className="ml-auto">
+                <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
                 Add
               </Button>
             </DialogTrigger>

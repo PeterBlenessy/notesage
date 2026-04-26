@@ -6,7 +6,8 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound, BrainCog } from 'lucide-react';
+import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
@@ -63,6 +64,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [updating, setUpdating] = useState(false);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState('');
+  const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
@@ -244,7 +246,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
 
         {/* Center: name + badges */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {editingLabel ? (
               <input
                 ref={labelInputRef}
@@ -260,9 +262,9 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               />
             ) : (
               <span
-                className={`text-sm font-medium ${isRenamable ? 'cursor-pointer hover:underline decoration-muted-foreground/40' : ''}`}
+                className={`text-sm font-medium truncate min-w-0 ${isRenamable ? 'cursor-pointer hover:underline decoration-muted-foreground/40' : ''}`}
                 onDoubleClick={isRenamable ? startRename : undefined}
-                title={isRenamable ? 'Double-click to rename' : undefined}
+                title={isRenamable ? 'Double-click to rename' : connection.label}
               >
                 {connection.label}
               </span>
@@ -271,7 +273,10 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 mt-1">
+          {/* Badge row wraps to multiple lines so capability + sandbox
+              + network + update pills don't overflow the card on
+              narrower dialog widths (live-test 2026-04-26). */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
             {connection.config?.model && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 max-w-[140px] truncate" title={connection.config.model}>
                 {prettyModelName(connection.config.model)}
@@ -350,6 +355,18 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </Button>
             );
           })()}
+          {connection.authMethod === 'local_bundled' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setModelsDialogOpen(true)}
+              title="Manage models"
+              aria-label="Manage Local AI models"
+            >
+              <BrainCog className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </Button>
+          )}
           {onConfigure && (
             <Button
               variant="ghost"
@@ -383,6 +400,12 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         <p className="text-xs text-destructive px-4 py-1.5 break-words">
           {healthError}
         </p>
+      )}
+      {connection.authMethod === 'local_bundled' && (
+        <LocalAIModelsDialog
+          open={modelsDialogOpen}
+          onOpenChange={setModelsDialogOpen}
+        />
       )}
     </div>
   );

@@ -136,11 +136,13 @@ export function SettingsShell({
             // #86 reduced-motion sweep — see overlay above.
             'motion-reduce:!animate-none motion-reduce:!duration-0',
             'fixed top-[50%] left-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',
-            // Live-test 2026-04-26 — narrowed from 1040 → 780 (-25%).
-            // The right content column was too wide and accumulated
-            // empty space on the right edge of forms / pickers. The
-            // 236 px nav stays unchanged.
-            'w-[calc(100vw-48px)] max-w-[780px]',
+            // Live-test 2026-04-26 — width history: 1040 → 780 (too
+            // narrow, AI connection cards + accent picker squeezed) →
+            // 920 (current). With the stacked SettingsRow layout the
+            // description doesn't compete with controls horizontally,
+            // so 920 is enough breathing room without re-introducing
+            // the original right-edge dead space.
+            'w-[calc(100vw-48px)] max-w-[920px]',
             'h-[min(720px,calc(100vh-48px))]',
             'overflow-hidden rounded-[14px] border border-border bg-background',
             'shadow-[0_28px_60px_-20px_hsl(0_0%_0%/0.35)]',
@@ -243,17 +245,20 @@ export function SettingsShell({
               </div>
             </ScrollArea>
 
-            {/* Close button floats in the top-right of the content pane */}
+            {/* Close button — borderless to match the shadcn dialog
+                default (live-test 2026-04-26). Same opacity-on-hover
+                treatment so SettingsShell, LocalAIModelsDialog,
+                ChangelogDialog, etc. all share one X aesthetic. */}
             <DialogPrimitive.Close
               className={cn(
-                'absolute top-3 right-3 inline-flex h-8 w-8 items-center justify-center',
-                'rounded-full border border-border bg-background text-muted-foreground',
-                'transition-colors duration-150 hover:text-foreground hover:bg-muted',
-                'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'absolute top-4 right-4 inline-flex items-center justify-center',
+                'rounded-xs text-muted-foreground opacity-70',
+                'transition-opacity duration-150 hover:opacity-100',
+                'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               )}
               aria-label="Close settings"
             >
-              <XIcon className="h-3.5 w-3.5" strokeWidth={1.6} />
+              <XIcon className="h-4 w-4" strokeWidth={1.5} />
             </DialogPrimitive.Close>
           </div>
         </DialogPrimitive.Content>

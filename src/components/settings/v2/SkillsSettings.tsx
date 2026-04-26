@@ -25,15 +25,9 @@ export function SkillsSettings() {
 
   return (
     <>
-      <SettingsGroup label="Custom Prompts" bare>
-        <div className="py-2">
-          <LegacyPromptsSettings />
-        </div>
-      </SettingsGroup>
-
       <SettingsGroup label="Management">
         <SettingsRow
-          label="Skill & Agent Management"
+          label="Skill & agent management"
           description="Enable delete and move actions for custom skills and agents in the list below."
           htmlFor="skill-management"
           control={
@@ -46,9 +40,19 @@ export function SkillsSettings() {
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Skills & Agents" bare>
+      {/* Library — the legacy `<SkillsSettings>` component renders its
+          own "Skills" + "Agents" sub-headers, so the outer group label
+          would just duplicate the panel title. Group is `bare` and
+          unlabeled, acting purely as a sealed mount point. */}
+      <SettingsGroup bare>
         <div className="py-2">
           <LegacySkillsSettings />
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup label="Custom Prompts" bare>
+        <div className="py-2">
+          <LegacyPromptsSettings />
         </div>
       </SettingsGroup>
     </>

@@ -23,7 +23,8 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import { ConnectCopilotLsp } from './ConnectCopilotLsp';
@@ -247,11 +248,12 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   );
 
   return (
-    <div className="space-y-6">
-      {/* Add button — the panel header ("Connections" + description)
-          is owned by the v2 AISettings wrapper, so we render the
-          add-connection trigger on its own row, right-aligned. */}
-      <div className="flex items-start justify-end gap-4">
+    <div className="space-y-2">
+      {/* "+ Add" then refresh icon — order matches the Skills section
+          pattern. Refresh triggers the existing managed-agent update
+          check. The panel header ("Connections" + description) is
+          owned by the v2 AISettings wrapper. */}
+      <div className="flex items-center justify-end gap-1.5">
         {/* Popover anchors to the button; DropdownMenu opens from it too */}
         <Popover
           open={popoverOpen}
@@ -266,9 +268,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
           <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <PopoverAnchor asChild>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="shrink-0">
-                  <Plus className="h-4 w-4 mr-1.5" strokeWidth={1.5} />
-                  Add Connection
+                <Button variant="ghost" size="sm" className="shrink-0">
+                  <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+                  Add
                 </Button>
               </DropdownMenuTrigger>
             </PopoverAnchor>
@@ -396,26 +398,31 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
             )}
           </PopoverContent>
         </Popover>
+        {/* Refresh icon — sibling of Add, matches the Skills section
+            pattern. Triggers the existing managed-agent update
+            check (replaces the standalone "Check for updates" link
+            that used to live below the connection list). */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => checkForUpdates(true)}
+          disabled={checkingUpdates}
+          title="Check for agent updates"
+          aria-label="Check for agent updates"
+        >
+          <RefreshCw
+            className={cn(
+              'h-3.5 w-3.5',
+              checkingUpdates && 'animate-spin',
+            )}
+            strokeWidth={1.5}
+          />
+        </Button>
       </div>
 
       {/* Connection list */}
       {connections.length > 0 ? (
         <div className="space-y-2">
-          {connections.some((c) => c.authMethod === 'agent_managed') && (
-            <div className="flex items-center justify-end">
-              <button
-                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-                onClick={() => checkForUpdates(true)}
-                disabled={checkingUpdates}
-              >
-                {checkingUpdates
-                  ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-                  : <RefreshCw className="h-3 w-3" strokeWidth={1.5} />
-                }
-                Check for updates
-              </button>
-            </div>
-          )}
           {connections.map((conn) => (
             <ConnectionCard
               key={conn.id}
