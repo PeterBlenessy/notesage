@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { BotMessageSquare, Loader2, SendHorizontal, Square } from 'lucide-react';
+import { Bot, Loader2, SendHorizontal, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -111,7 +111,7 @@ export function DelegationPanel({
                       disabled={!replyText.trim()}
                       className="text-muted-foreground hover:text-foreground shrink-0"
                     >
-                      <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-xs">Delegate reply (background)</TooltipContent>

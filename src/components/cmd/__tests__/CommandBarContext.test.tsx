@@ -32,6 +32,7 @@ const setRoutingMock = vi.fn<(useCase: string, connectionId: string | null) => v
 const toggleProjectPathMock = vi.fn<(path: string) => void>();
 const setSelectedProjectPathsMock = vi.fn<(paths: string[]) => void>();
 const updateConnectionMock = vi.fn<(id: string, patch: Partial<Connection>) => void>();
+const createConversationMock = vi.fn<() => string>(() => 'conv-new');
 
 // ---------------------------------------------------------------------------
 // ACP agent / session mocks (driving `AcpModePicker` via #26)
@@ -140,6 +141,7 @@ vi.mock('@/stores/chat-store', () => {
     },
     toggleProjectPath: (path: string) => toggleProjectPathMock(path),
     setSelectedProjectPaths: (paths: string[]) => setSelectedProjectPathsMock(paths),
+    createConversation: () => createConversationMock(),
   };
   return {
     useChatStore: Object.assign(
@@ -323,6 +325,7 @@ vi.mock('@/components/ui/popover', () => {
 import React from 'react';
 import { toast } from 'sonner';
 import CommandBarContext from '@/components/cmd/CommandBarContext';
+import { subscribeToCmdBarEvents } from '@/lib/cmd-bar-events';
 
 // ---------------------------------------------------------------------------
 // Test factories
@@ -403,6 +406,8 @@ describe('CommandBarContext', () => {
     toggleProjectPathMock.mockReset();
     setSelectedProjectPathsMock.mockReset();
     updateConnectionMock.mockReset();
+    createConversationMock.mockReset();
+    createConversationMock.mockReturnValue('conv-new');
     updateCurrentModeMock.mockReset();
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.info).mockReset();
@@ -460,10 +465,117 @@ describe('CommandBarContext', () => {
   // exposes ≥2 mapped permission levels — the default empty-state of this
   // test file therefore renders nothing. Behavioural coverage lives in #26.
 
-  it('renders the clock and pin icon buttons with explicit aria-labels', () => {
+  it('renders the new-chat, clock, and pin icon buttons with explicit aria-labels', () => {
     renderWithProviders(<CommandBarContext />);
+    expect(screen.getByLabelText(/start a new chat/i)).toBeTruthy();
     expect(screen.getByLabelText(/open history/i)).toBeTruthy();
     expect(screen.getByLabelText(/pin chat to side panel/i)).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // New-chat button (live-test 2026-04-26) — sits LEFT of the history toggle
+  // and dispatches `createConversation()` on the chat store. Mirrors the
+  // legacy `ChatPanel`'s "+" affordance so the new chat is consistent across
+  // both shells.
+  // -------------------------------------------------------------------------
+
+  describe('new-chat button (live-test 2026-04-26)', () => {
+    it('clicking the + button calls createConversation when no conversation exists', () => {
+      mockActiveConversation = null;
+      renderWithProviders(<CommandBarContext />);
+
+      const newChatBtn = screen.getByLabelText(/start a new chat/i);
+      fireEvent.click(newChatBtn);
+
+      expect(createConversationMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('clicking the + button calls createConversation when active conversation has messages', () => {
+      mockActiveConversation = makeConversation({
+        messages: [
+          makeMessage({ role: 'user', content: 'hi', timestamp: 1 }),
+          makeMessage({ role: 'assistant', content: 'hello', timestamp: 2 }),
+        ],
+      });
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByLabelText(/start a new chat/i));
+
+      expect(createConversationMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('clicking the + button is a NO-OP when active conversation has zero messages', () => {
+      // Already on a blank slate — don't churn through empty conversations.
+      mockActiveConversation = makeConversation({ messages: [] });
+      renderWithProviders(<CommandBarContext />);
+
+      fireEvent.click(screen.getByLabelText(/start a new chat/i));
+
+      expect(createConversationMock).not.toHaveBeenCalled();
+    });
+
+    it('the + button sits BEFORE the history toggle in DOM order (left of clock)', () => {
+      const { container } = renderWithProviders(<CommandBarContext />);
+
+      const newChatBtn = screen.getByLabelText(/start a new chat/i);
+      const historyBtn = screen.getByLabelText(/open history/i);
+
+      // Both buttons live inside the same context-row root and the new-chat
+      // button must precede the history toggle in document order so it
+      // visually renders to its left.
+      const root = container.querySelector('[data-cmd-context]');
+      expect(root).toBeTruthy();
+      const buttons = Array.from(
+        root!.querySelectorAll('button[aria-label]'),
+      ) as HTMLElement[];
+      const newChatIdx = buttons.indexOf(newChatBtn);
+      const historyIdx = buttons.indexOf(historyBtn);
+      expect(newChatIdx).toBeGreaterThanOrEqual(0);
+      expect(historyIdx).toBeGreaterThanOrEqual(0);
+      expect(newChatIdx).toBeLessThan(historyIdx);
+    });
+
+    it('emits toggle-history when clicked while in history view (so user lands in chat)', () => {
+      const events: string[] = [];
+      const unsub = subscribeToCmdBarEvents((e) => {
+        events.push(e.type);
+      });
+
+      try {
+        mockActiveConversation = makeConversation({
+          messages: [makeMessage({ timestamp: 1 })],
+        });
+        renderWithProviders(<CommandBarContext chatView="history" />);
+
+        fireEvent.click(screen.getByLabelText(/start a new chat/i));
+
+        expect(createConversationMock).toHaveBeenCalledTimes(1);
+        expect(events).toContain('toggle-history');
+      } finally {
+        unsub();
+      }
+    });
+
+    it('does NOT emit toggle-history when clicked while already in chat view', () => {
+      const events: string[] = [];
+      const unsub = subscribeToCmdBarEvents((e) => {
+        events.push(e.type);
+      });
+
+      try {
+        mockActiveConversation = makeConversation({
+          messages: [makeMessage({ timestamp: 1 })],
+        });
+        renderWithProviders(<CommandBarContext chatView="chat" />);
+
+        fireEvent.click(screen.getByLabelText(/start a new chat/i));
+
+        expect(createConversationMock).toHaveBeenCalledTimes(1);
+        expect(events).not.toContain('toggle-history');
+      } finally {
+        unsub();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------

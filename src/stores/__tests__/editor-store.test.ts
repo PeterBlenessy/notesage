@@ -63,6 +63,7 @@ vi.mock('@/lib/tauri-storage', () => {
 
 import { useEditorStore } from '../editor-store';
 import type { Tab } from '../editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -938,6 +939,154 @@ describe('lastSavedAt tracking', () => {
     expect(stamped).toBeDefined();
     expect(stamped!).toBeGreaterThanOrEqual(before);
     expect(stamped!).toBeLessThanOrEqual(after);
+  });
+});
+
+// ===========================================================================
+// Quiet Composer single-document semantics
+// ===========================================================================
+
+describe('Quiet Composer single-document semantics', () => {
+  beforeEach(() => {
+    // Flip the UI preview for this block. Tests in other blocks assume
+    // legacy semantics, which is the default — so we restore in afterEach.
+    useSettingsStore.setState({ uiPreview: 'quiet-composer' });
+  });
+
+  afterEach(() => {
+    useSettingsStore.setState({ uiPreview: 'legacy' });
+  });
+
+  it('openTab evicts the previous active tab — end state is exactly 1 tab', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments).toHaveLength(1);
+    expect(state.openDocuments[0].filePath).toBe('/b.md');
+    expect(state.activeTabId).toBe(state.openDocuments[0].id);
+  });
+
+  it('openTab eviction keeps recentFiles intact (MRU history is the recent list)', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
+
+    const recent = useEditorStore.getState().recentFiles.map((r) => r.path);
+    // Even though only the latest tab is open, recentFiles tracks all three.
+    expect(recent).toEqual(['/c.md', '/b.md', '/a.md']);
+  });
+
+  it('openTab evicts persistedTabs to a single entry', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+
+    expect(useEditorStore.getState().persistedTabs).toEqual([
+      { filePath: '/b.md', fileName: 'b.md' },
+    ]);
+  });
+
+  it('openTab on the same path re-activates without spawning a duplicate', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    const firstId = useEditorStore.getState().openDocuments[0].id;
+
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments).toHaveLength(1);
+    expect(state.openDocuments[0].id).toBe(firstId);
+  });
+
+  it('closeTab on the active doc lands on null, not a sibling', () => {
+    // Simulate a stale sibling (e.g., a setting-flip survived a tab from
+    // the legacy shell). Closing the active tab under Quiet should still
+    // land on the empty landing state — single-document by design.
+    useEditorStore.setState({
+      openDocuments: [
+        {
+          id: 'a',
+          filePath: '/a.md',
+          fileName: 'a.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+        {
+          id: 'b',
+          filePath: '/b.md',
+          fileName: 'b.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 'b',
+      persistedTabs: [
+        { filePath: '/a.md', fileName: 'a.md' },
+        { filePath: '/b.md', fileName: 'b.md' },
+      ],
+      persistedActiveFilePath: '/b.md',
+    });
+
+    useEditorStore.getState().closeTab('b');
+
+    const state = useEditorStore.getState();
+    expect(state.activeTabId).toBeNull();
+    expect(state.persistedActiveFilePath).toBeNull();
+    // The other tab is removed from persistedTabs only because it was the
+    // closed one's match — the stale sibling stays in `openDocuments`,
+    // unattended; that's fine because nothing in the Quiet UI surfaces
+    // it (no tab strip), and the next openTab call will evict it anyway.
+    expect(state.openDocuments).toHaveLength(1);
+    expect(state.openDocuments[0].id).toBe('a');
+  });
+
+  it('closeTab on the only doc still lands on null (matches legacy behaviour)', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    const tabId = useEditorStore.getState().openDocuments[0].id;
+
+    useEditorStore.getState().closeTab(tabId);
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments).toHaveLength(0);
+    expect(state.activeTabId).toBeNull();
+  });
+
+  it('closeTab on a non-active tab does not change activeTabId', () => {
+    // Set up the same stale-sibling scenario as the landing-test above.
+    useEditorStore.setState({
+      openDocuments: [
+        {
+          id: 'a',
+          filePath: '/a.md',
+          fileName: 'a.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+        {
+          id: 'b',
+          filePath: '/b.md',
+          fileName: 'b.md',
+          isDirty: false,
+          content: '',
+          frontmatter: null,
+          fileType: 'markdown',
+          contentLoaded: true,
+        },
+      ],
+      activeTabId: 'b',
+    });
+
+    useEditorStore.getState().closeTab('a');
+
+    expect(useEditorStore.getState().activeTabId).toBe('b');
   });
 });
 

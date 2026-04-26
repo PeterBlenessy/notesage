@@ -185,7 +185,9 @@ function TreeNodeRow({
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40",
-        isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+        // Active row uses a neutral muted background (live-test
+        // 2026-04-26). Accent stays on the file/folder icon below.
+        isActive && "bg-muted text-foreground font-medium",
         isFocused && "bg-muted/70",
       )}
     >
@@ -212,11 +214,17 @@ function TreeNodeRow({
       )}
       {node.isDirectory ? (
         <span
-          className="inline-block h-3.5 w-3.5 shrink-0 rounded-[2px] bg-muted-foreground/15"
+          className={cn(
+            "inline-block h-3.5 w-3.5 shrink-0 rounded-[2px]",
+            isActive ? "bg-[var(--color-accent-primary)]" : "bg-muted-foreground/15",
+          )}
           aria-hidden="true"
         />
       ) : (
-        <FileIcon fileName={node.name} />
+        <FileIcon
+          fileName={node.name}
+          className={cn(isActive && "text-[var(--color-accent-primary)]")}
+        />
       )}
       <span className="truncate min-w-0 flex-1">{node.name}</span>
       {/* #129 — git status + external-change dot. The overlay renders

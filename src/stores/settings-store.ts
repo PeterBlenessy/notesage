@@ -154,14 +154,16 @@ interface SettingsStore {
   sidebarRecentCap: number;
   /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
-   * the quiet-composer sidebar Tags section. Clamped to [3, 15]. Default 5.
+   * the quiet-composer sidebar Tags section. Clamped to [0, 15]. Default 5.
+   * `0` hides the section entirely — the slider is the visibility control.
    */
   sidebarTagsCap: number;
   /**
-   * Sidebar composition (ui-refresh #35). When true, the Tags section is
-   * hidden entirely from the quiet-composer sidebar. Default false.
+   * Sidebar composition. Maximum number of rows shown in the quiet-composer
+   * sidebar Mentions section. Clamped to [0, 15]. Default 5 — same shape as
+   * `sidebarTagsCap`. `0` hides the section entirely.
    */
-  sidebarTagsHidden: boolean;
+  sidebarMentionsCap: number;
   /**
    * Timestamp (ms since epoch) when the preview-invitation banner was last
    * shown to the user, or null if it has never been shown. Used by
@@ -265,7 +267,7 @@ interface SettingsStore {
   setQuietChromeOverride: (key: keyof QuietChromeTargets, value: boolean) => void;
   setSidebarRecentCap: (n: number) => void;
   setSidebarTagsCap: (n: number) => void;
-  setSidebarTagsHidden: (hidden: boolean) => void;
+  setSidebarMentionsCap: (n: number) => void;
   /** Mark the preview-invitation banner as shown right now. ui-refresh #97. */
   markPreviewInvitationShown: () => void;
   /** Mark the preview-invitation banner as dismissed right now. ui-refresh #97. */
@@ -318,7 +320,7 @@ export const useSettingsStore = create<SettingsStore>()(
       quietChromeTransparent: false,
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
-      sidebarTagsHidden: false,
+      sidebarMentionsCap: 5,
       previewInvitationShownAt: null,
       previewInvitationDismissedAt: null,
       revertInvitationShownAt: null,
@@ -621,11 +623,15 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setSidebarTagsCap: (n: number) => {
-        set({ sidebarTagsCap: Math.round(Math.max(3, Math.min(15, n))) });
+        // Clamp to [0, 15] — 0 hides the section, the slider is the
+        // visibility control.
+        set({ sidebarTagsCap: Math.round(Math.max(0, Math.min(15, n))) });
       },
 
-      setSidebarTagsHidden: (hidden: boolean) => {
-        set({ sidebarTagsHidden: hidden });
+      setSidebarMentionsCap: (n: number) => {
+        // Clamp to [0, 15] — 0 hides the section, the slider is the
+        // visibility control.
+        set({ sidebarMentionsCap: Math.round(Math.max(0, Math.min(15, n))) });
       },
 
       markPreviewInvitationShown: () => {
@@ -666,7 +672,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 10,
+      version: 12,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -766,6 +772,33 @@ export const useSettingsStore = create<SettingsStore>()(
           if (typeof state.cmdBarExpandedWidth !== 'number') {
             state.cmdBarExpandedWidth = 640;
           }
+        }
+        if (version < 11) {
+          // Sidebar composition — Mentions section. Mirrors the v7→v8
+          // migration shape: defaults match the Tags equivalents (cap 5,
+          // visible by default) so existing users see zero visual change.
+          if (typeof state.sidebarMentionsCap !== 'number') {
+            state.sidebarMentionsCap = 5;
+          }
+          if (typeof state.sidebarMentionsHidden !== 'boolean') {
+            state.sidebarMentionsHidden = false;
+          }
+        }
+        if (version < 12) {
+          // Drop the boolean Hidden toggles for the Tags / Mentions sidebar
+          // sections. The slider is now the visibility control: cap === 0
+          // hides the section. Preserve "I had this hidden" intent by
+          // collapsing a true Hidden flag down into cap = 0 before deleting
+          // the flag itself. Idempotent — a v11 state with Hidden = false
+          // keeps the cap untouched.
+          if (state.sidebarTagsHidden === true) {
+            state.sidebarTagsCap = 0;
+          }
+          if (state.sidebarMentionsHidden === true) {
+            state.sidebarMentionsCap = 0;
+          }
+          delete state.sidebarTagsHidden;
+          delete state.sidebarMentionsHidden;
         }
         return state;
       },

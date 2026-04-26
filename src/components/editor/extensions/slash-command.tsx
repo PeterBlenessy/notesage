@@ -6,7 +6,15 @@ import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import tippy, { type Instance } from "tippy.js";
-import { ComponentType, forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import {
+  ComponentType,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
 import { DateHighlightPluginKey } from "./date-highlight";
 import {
@@ -32,7 +40,7 @@ import {
   List as ListIcon,
 } from "lucide-react";
 
-interface CommandItem {
+export interface CommandItem {
   title: string;
   description: string;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
@@ -233,22 +241,41 @@ const commands: CommandItem[] = [
   },
 ];
 
-interface CommandListRef {
+export interface CommandListRef {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean;
 }
 
-interface CommandListProps {
+export interface CommandListProps {
   items: CommandItem[];
   command: (item: CommandItem) => void;
 }
 
-const CommandList = forwardRef<CommandListRef, CommandListProps>(
+export const CommandList = forwardRef<CommandListRef, CommandListProps>(
   ({ items, command }, ref) => {
     const [selectedIndex, setSelectedIndex] = useState(0);
+    // Stable per-instance prefix so each row has a unique, lookupable id we
+    // can resolve via `document.getElementById` from the scroll-into-view
+    // effect below — mirrors the FloatingCommandBar pickers (#78 live-test).
+    const listId = useId();
+    const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
     useEffect(() => {
       setSelectedIndex(0);
     }, [items]);
+
+    // Live-test 2026-04-26 — keep the highlighted slash-menu row in view when
+    // arrow-key navigation walks past the visible window. The container has
+    // `max-h-[min(360px,50vh)] overflow-y-auto` so there IS something to
+    // scroll; without this effect the highlight walked off-screen because no
+    // code was scrolling the active row into view. Same pattern as the
+    // FloatingCommandBar mode pickers (`useEffect` on the active id →
+    // `scrollIntoView({ block: "nearest" })`).
+    useEffect(() => {
+      const el = itemRefs.current[selectedIndex];
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }, [selectedIndex]);
 
     useImperativeHandle(ref, () => ({
       onKeyDown: ({ event }) => {
@@ -282,6 +309,10 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
             return (
               <button
                 key={item.title}
+                id={`${listId}-slash-option-${index}`}
+                ref={(el) => {
+                  itemRefs.current[index] = el;
+                }}
                 onClick={() => command(item)}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 hover:bg-accent",

@@ -190,20 +190,48 @@ describe('ReferenceMode', () => {
     expect(chip.id).toBeTruthy();
   });
 
-  it("calls onPick with kind 'person' when a person row is clicked", async () => {
+  it('drills into person occurrences (not onPick) when a person row is clicked', async () => {
+    // Live-test 2026-04-26 (slice 2) — `@person` rows now drill down to
+    // an occurrence list at level 2 instead of attaching as a chip.
+    // `onPick` only fires for file/comment kinds at level 1; persons go
+    // through `onPickOccurrence` at level 2.
     setMockInvokeHandler('index_mentions', () => [
       { mention: 'bob', file_count: 2 },
     ]);
+    setMockInvokeHandler('index_mention_occurrences', () => [
+      {
+        path: '/p/notes.md',
+        file_name: 'notes.md',
+        context_before: 'asked ',
+        context_after: ' yesterday',
+      },
+    ]);
     const onPick = vi.fn();
-    renderWithProviders(<ReferenceMode filter="bob" onPick={onPick} />);
+    const onPickOccurrence = vi.fn();
+    renderWithProviders(
+      <ReferenceMode
+        filter="bob"
+        onPick={onPick}
+        onPickOccurrence={onPickOccurrence}
+      />,
+    );
 
     const row = await screen.findByText('bob');
     fireEvent.click(row.closest('[data-result-kind]')!);
 
-    expect(onPick).toHaveBeenCalledTimes(1);
-    const chip = onPick.mock.calls[0][0] as AttachmentChip;
-    expect(chip.kind).toBe('person');
-    expect(chip.name).toBe('bob');
+    // Drilldown opens — onPick must NOT have fired.
+    expect(onPick).not.toHaveBeenCalled();
+    await screen.findByText('notes.md');
+
+    // Click the occurrence — onPickOccurrence fires with the navigate payload.
+    fireEvent.click(screen.getByText('notes.md').closest('li')!);
+    expect(onPickOccurrence).toHaveBeenCalledTimes(1);
+    expect(onPickOccurrence).toHaveBeenCalledWith({
+      filePath: '/p/notes.md',
+      fileName: 'notes.md',
+      symbol: '@bob',
+      occurrenceInFile: 0,
+    });
   });
 
   it("calls onPick with kind 'comment' when a comment row is clicked", async () => {

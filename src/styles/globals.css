@@ -453,21 +453,25 @@ body {
 /* ============================================================================
  * AgentOrb Pulse (#29)
  * ============================================================================
- * Why: a subtle scale + opacity pulse signals background agent activity in
- * the QuietLayout's bottom-right orb. Pure CSS keyframe — zero JS in the
+ * Why: a subtle scale + accent-ring pulse signals background agent activity
+ * in the QuietLayout's bottom-right orb. Pure CSS keyframe — zero JS in the
  * animation loop. The component omits the `.orb-pulsing` class entirely
  * when `useReducedMotion()` is true, so the @media guard below is
  * defence-in-depth for users who flip the OS preference after mount or
  * when the animation lands on an element via other means.
+ *
+ * The accent colour lives ONLY in the ring (box-shadow chain). The orb body
+ * itself is neutral (bg-popover + border-border) — see AgentOrb.tsx for the
+ * rationale. Static / idle state shows no ring at all.
  * ========================================================================= */
 @keyframes orb-pulse {
   0%, 100% {
     transform: scale(1);
-    opacity: 1;
+    box-shadow: 0 0 0 0 var(--color-accent-primary);
   }
   50% {
     transform: scale(1.05);
-    opacity: 0.85;
+    box-shadow: 0 0 0 6px transparent;
   }
 }
 
@@ -478,6 +482,46 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .orb-pulsing {
     animation: none;
+  }
+}
+
+/* ============================================================================
+ * Window unfocused state — macOS-style desaturation
+ * ============================================================================
+ * When the Notesage window loses focus we mirror native macOS behaviour:
+ * accent affordances drop back to neutral grey, and the QuietLayout chrome
+ * (sidebar, title bar, status bar, orb) fades slightly. The toggle is set
+ * by an effect in `App.tsx` that listens on `window` for `focus` / `blur`
+ * and writes `data-app-focused="true|false"` on the `<html>` element.
+ *
+ * Default: assume focused until the first blur event fires (matches the
+ * macOS lifecycle — apps start focused after launch).
+ *
+ * The accent override here re-points `--accent` (the upstream token) to
+ * `--color-primary` so every consumer of `--color-accent-primary` (which
+ * resolves through the `var(--accent, var(--color-primary))` fallback
+ * chain) automatically falls back to neutral. No per-consumer changes
+ * needed.
+ *
+ * Reduced-motion: the toggle is instant either way; no animated cross-fade
+ * is required. We do honour `prefers-reduced-motion` by zeroing the chrome
+ * opacity transition so the dim happens without a fade.
+ * ========================================================================= */
+html[data-app-focused="false"] {
+  /* Re-point the accent token to neutral grey while unfocused. Every
+     `--color-accent-primary` consumer picks this up automatically via the
+     fallback chain in `:root { --color-accent-primary: var(--accent, ...) }`. */
+  --accent: var(--color-primary);
+}
+
+html[data-app-focused="false"] [data-quiet-layout-root] {
+  opacity: 0.85;
+  transition: opacity 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-focused="false"] [data-quiet-layout-root] {
+    transition: none;
   }
 }
 

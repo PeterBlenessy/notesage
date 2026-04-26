@@ -7,7 +7,7 @@
  *   - `uiPreview: "legacy"` runs the legacy palette path (⌘K, ⌘1–4, ⌘⇧P).
  *   - `uiPreview: "quiet-composer"` skips legacy palette handlers for those
  *     chords (the cmd bar hook owns them) and instead emits cmd-bar events.
- *   - uiPreview-agnostic chords fire in both modes (⌘⇧H, ⌘⇧O, ⌘⇧K, ⌘7, ⌘⇧R).
+ *   - uiPreview-agnostic chords fire in both modes (⌘⇧H, ⌘⇧O, ⌘⇧K, ⌘⇧R).
  *   - Scaffold bindings for ⌘⇧[/⌘⇧] (MRU cycling, task #77) dispatch a
  *     custom event and preventDefault.
  *   - Sidebar event chords (⌘⌥C, ⌘⌥R) dispatch named DOM events.
@@ -355,18 +355,9 @@ describe("useKeyboardShortcuts (uiPreview-agnostic chords)", () => {
     },
   );
 
-  it.each<UiPreview>(["legacy", "quiet-composer"])(
-    "⌘7 opens the Keyboard Shortcuts dialog under uiPreview=%s",
-    (preview) => {
-      mockSettings.uiPreview = preview;
-      const callbacks = makeCallbacks();
-      renderHook(() => useKeyboardShortcuts(callbacks));
-
-      dispatchKey("7", { metaKey: true });
-
-      expect(callbacks.onShortcutsOpen).toHaveBeenCalledTimes(1);
-    },
-  );
+  // ⌘7 was removed live-test 2026-04-26 — ⌘⇧K is the canonical
+  // Keyboard Shortcuts dialog binding now (see useKeyboardShortcuts.ts).
+  // The ⌘⇧K coverage above is the only remaining assertion.
 
   it("⌘⇧C toggles the chat panel", () => {
     const callbacks = makeCallbacks();
@@ -502,7 +493,10 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     const listener = vi.fn();
     window.addEventListener(COPY_PATH_EVENT, listener);
     try {
-      dispatchKey("c", { metaKey: true, altKey: true });
+      // macOS gotcha: Option+C produces `ç` not `c`, so the handler keys
+      // off `e.code === "KeyC"` (physical key) instead of `e.key`. The
+      // test mirrors what an actual macOS keystroke would produce.
+      dispatchKey("ç", { code: "KeyC", metaKey: true, altKey: true });
       expect(listener).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(COPY_PATH_EVENT, listener);
@@ -516,7 +510,8 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     const listener = vi.fn();
     window.addEventListener(REVEAL_IN_FINDER_EVENT, listener);
     try {
-      dispatchKey("r", { metaKey: true, altKey: true });
+      // Same `e.code` rationale as ⌘⌥C — Option+R produces `®` not `r`.
+      dispatchKey("®", { code: "KeyR", metaKey: true, altKey: true });
       expect(listener).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(REVEAL_IN_FINDER_EVENT, listener);

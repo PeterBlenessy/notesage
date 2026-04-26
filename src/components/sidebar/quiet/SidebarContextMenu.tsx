@@ -53,6 +53,16 @@ import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
  * actual row-level shortcuts will be wired in row components (not this menu).
  */
 
+/**
+ * Density override (live-test 2026-04-26): the shadcn primitive defaults
+ * `ContextMenuItem` / `ContextMenuSubTrigger` / `ContextMenuLabel` to
+ * `text-sm` (14px). The cmd-bar pickers (`src/components/cmd/modes/*`)
+ * landed on `text-[13px]` for the same row class, and the sidebar
+ * context menu felt loose against them. Override the text size only
+ * inside this menu — don't touch the shared primitive.
+ */
+const ITEM_DENSITY = "text-[13px]";
+
 /** Event name dispatched when the user clicks the Rename menu item. */
 export const SIDEBAR_ENTER_RENAME_MODE_EVENT = "sidebar:enter-rename-mode";
 
@@ -471,11 +481,11 @@ export function SidebarContextMenu({
               implies something different from the row click and
               wasn't actually doing anything project-specific. */}
           {!isProject && (
-            <ContextMenuItem onSelect={() => void handleOpen()}>
+            <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleOpen()}>
               Open
             </ContextMenuItem>
           )}
-          <ContextMenuItem onSelect={handleRename}>
+          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleRename}>
             Rename
             <ContextMenuShortcut>F2</ContextMenuShortcut>
           </ContextMenuItem>
@@ -484,11 +494,11 @@ export function SidebarContextMenu({
              *  New-File-in-parent-dir convenience too so the menu reaches
              *  parity with the legacy FileTreeItem. */}
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={handleNewFile}>
+          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleNewFile}>
             New File
           </ContextMenuItem>
           {isContainer && (
-            <ContextMenuItem onSelect={() => void handleNewFolder()}>
+            <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleNewFolder()}>
               New Folder
             </ContextMenuItem>
           )}
@@ -500,7 +510,7 @@ export function SidebarContextMenu({
           {isFolder && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={handleMakeProject}>
+              <ContextMenuItem className={ITEM_DENSITY} onSelect={handleMakeProject}>
                 Make Project
               </ContextMenuItem>
             </>
@@ -517,11 +527,11 @@ export function SidebarContextMenu({
               for projects per Apple's HIG. */}
           {isFile && (
             <>
-              <ContextMenuItem onSelect={() => void handleDuplicate()}>
+              <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleDuplicate()}>
                 Duplicate
                 <ContextMenuShortcut>⌘D</ContextMenuShortcut>
               </ContextMenuItem>
-              <ContextMenuItem onSelect={handleTogglePin}>
+              <ContextMenuItem className={ITEM_DENSITY} onSelect={handleTogglePin}>
                 {isPinned ? "Unpin" : "Pin"}
               </ContextMenuItem>
             </>
@@ -530,22 +540,33 @@ export function SidebarContextMenu({
           {/* #128 — Add to chat. Image files only; hands off to the vision
              *  event bus so the chat panel attaches the image. */}
           {isImage && (
-            <ContextMenuItem onSelect={() => void handleAddToChat()}>
+            <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleAddToChat()}>
               Add to chat
             </ContextMenuItem>
           )}
 
-          <ContextMenuSeparator />
+          {/* Live-test 2026-04-26 — gate this separator on `isFile`. The
+              previous group (Duplicate / Pin / Add to chat) only renders
+              for files; on project / folder rows it's empty and the
+              earlier separator (after New Folder / Make Project) already
+              divides things. Without this guard, projects render two
+              `ContextMenuSeparator`s back-to-back. */}
+          {isFile && <ContextMenuSeparator />}
 
-          <ContextMenuItem onSelect={() => void handleRevealInFinder()}>
+          <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleRevealInFinder()}>
             Reveal in Finder
-            <ContextMenuShortcut>⌘⌥R</ContextMenuShortcut>
+            {/* Shortcut hint only on file rows. The global `⌘⌥R` chord
+                (registered in `useKeyboardShortcuts`) acts on the active
+                document — file rows get the hint as a confirmation that
+                the same chord works from the editor. Project / folder
+                rows hide it because the chord ignores them. */}
+            {isFile && <ContextMenuShortcut>⌘⌥R</ContextMenuShortcut>}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={handleCopyPath}>
+          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyPath}>
             Copy path
-            <ContextMenuShortcut>⌘⌥C</ContextMenuShortcut>
+            {isFile && <ContextMenuShortcut>⌘⌥C</ContextMenuShortcut>}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={handleCopyFilename}>
+          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyFilename}>
             Copy filename
           </ContextMenuItem>
 
@@ -555,18 +576,18 @@ export function SidebarContextMenu({
             <>
               <ContextMenuSeparator />
               <ContextMenuSub>
-                <ContextMenuSubTrigger>Export as…</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger className={ITEM_DENSITY}>Export as…</ContextMenuSubTrigger>
                 <ContextMenuSubContent>
-                  <ContextMenuItem onSelect={() => handleExport("pdf")}>
+                  <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("pdf")}>
                     PDF
                   </ContextMenuItem>
-                  <ContextMenuItem onSelect={() => handleExport("docx")}>
+                  <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("docx")}>
                     Word (.docx)
                   </ContextMenuItem>
-                  <ContextMenuItem onSelect={() => handleExport("pptx")}>
+                  <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("pptx")}>
                     PowerPoint
                   </ContextMenuItem>
-                  <ContextMenuItem onSelect={() => handleExport("html")}>
+                  <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("html")}>
                     HTML
                   </ContextMenuItem>
                 </ContextMenuSubContent>
@@ -580,7 +601,7 @@ export function SidebarContextMenu({
           {isTrackedUnderGit && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={handleCommitFile}>
+              <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCommitFile}>
                 Commit…
               </ContextMenuItem>
             </>
@@ -599,7 +620,7 @@ export function SidebarContextMenu({
              *  this menu; hide the submenu for `kind === "project"`. */}
           {!isProject && hasMoveDestinations ? (
             <ContextMenuSub>
-              <ContextMenuSubTrigger>Move to…</ContextMenuSubTrigger>
+              <ContextMenuSubTrigger className={ITEM_DENSITY}>Move to…</ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 {hasMixedCategories ? (
                   <>
@@ -613,6 +634,7 @@ export function SidebarContextMenu({
                           .map((d) => (
                             <ContextMenuItem
                               key={d.path}
+                              className={ITEM_DENSITY}
                               disabled={d.path === currentParent}
                               onSelect={() => void handleMoveTo(d.path)}
                             >
@@ -636,6 +658,7 @@ export function SidebarContextMenu({
                           .map((d) => (
                             <ContextMenuItem
                               key={d.path}
+                              className={ITEM_DENSITY}
                               disabled={d.path === currentParent}
                               onSelect={() => void handleMoveTo(d.path)}
                             >
@@ -659,6 +682,7 @@ export function SidebarContextMenu({
                           .map((d) => (
                             <ContextMenuItem
                               key={d.path}
+                              className={ITEM_DENSITY}
                               disabled={d.path === currentParent}
                               onSelect={() => void handleMoveTo(d.path)}
                             >
@@ -677,6 +701,7 @@ export function SidebarContextMenu({
                   moveDestinations.map((d) => (
                     <ContextMenuItem
                       key={d.path}
+                      className={ITEM_DENSITY}
                       disabled={d.path === currentParent}
                       onSelect={() => void handleMoveTo(d.path)}
                     >
@@ -692,9 +717,10 @@ export function SidebarContextMenu({
               </ContextMenuSubContent>
             </ContextMenuSub>
           ) : (
-            <ContextMenuItem disabled>Move to…</ContextMenuItem>
+            <ContextMenuItem className={ITEM_DENSITY} disabled>Move to…</ContextMenuItem>
           )}
           <ContextMenuItem
+            className={ITEM_DENSITY}
             variant="destructive"
             onSelect={() => setConfirmOpen(true)}
           >

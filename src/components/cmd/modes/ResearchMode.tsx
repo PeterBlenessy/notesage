@@ -48,7 +48,9 @@ export interface ResearchModeProps {
 }
 
 /** Hard cap on results — keep the dropdown short and snappy. */
-const RESULT_LIMIT = 10;
+// Live-test 2026-04-26 — bumped 10 → 50 to match the legacy palette's
+// research limit. The picker scrolls now (cmd bar tray is overflow-y-auto).
+const RESULT_LIMIT = 50;
 
 /** Debounce window for backend queries — mirrors CommandPalette's 300ms. */
 const QUERY_DEBOUNCE_MS = 300;
@@ -219,29 +221,51 @@ function ResearchMode({
             onMouseEnter={() => setHighlightedIndex(index)}
             onClick={() => selectIndex(index)}
             className={cn(
+              // Density (live-test 2026-04-26).
               "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
-              "transition-colors",
-              isActive ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]" : "hover:bg-muted/60",
+              "transition-colors text-[13px]",
+              isActive
+                ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
+                : "text-foreground hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <div className="flex w-full items-center gap-2">
               <BookOpen
-                className="h-4 w-4 shrink-0 text-muted-foreground"
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  isActive
+                    ? "text-[oklch(100%_0_0)]/85"
+                    : "text-muted-foreground",
+                )}
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
-              <span className="flex-1 truncate text-sm font-medium text-foreground">
+              <span className="flex-1 truncate font-medium">
                 {result.title}
               </span>
               {result.date_saved && (
-                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                <span
+                  className={cn(
+                    "shrink-0 text-xs tabular-nums",
+                    isActive
+                      ? "text-[oklch(100%_0_0)]/75"
+                      : "text-muted-foreground",
+                  )}
+                >
                   {result.date_saved}
                 </span>
               )}
             </div>
             {(displaySource || result.tags.length > 0) && (
-              <div className="flex w-full items-center gap-2 pl-6 text-xs text-muted-foreground">
+              <div
+                className={cn(
+                  "flex w-full items-center gap-2 pl-5 text-xs",
+                  isActive
+                    ? "text-[oklch(100%_0_0)]/75"
+                    : "text-muted-foreground",
+                )}
+              >
                 {displaySource && (
                   <span className="truncate">{displaySource}</span>
                 )}

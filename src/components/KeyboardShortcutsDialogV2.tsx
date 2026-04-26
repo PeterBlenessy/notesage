@@ -122,18 +122,23 @@ export function KeyboardShortcutsDialogV2({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/*
-        Live-test 2026-04-25 #159 — bumped from 560 px → 880 px wide
-        and switched the body to a 2-column grid (`md:grid-cols-2`).
-        Six categories now fit on a single viewport on a typical
-        laptop screen instead of forcing the user to scroll. Columns
-        collapse to 1 below 720 px so the dialog still works on
-        narrower windows. Categories preserve their original order
-        going down each column (CSS column-count would reflow into
-        balanced halves, but ordering by category is more predictable
-        for the user — top-to-bottom in column 1, then column 2).
+        Live-test 2026-04-26 — fixed the dialog content visibly
+        leaking outside the dialog frame. Previous version used
+        `max-w-[1040px]` (no responsive viewport cap) plus CSS
+        multi-column (`sm:columns-2`) which can grow content past
+        the dialog's measured width. Switched to the
+        `LocalAIModelsDialog` / `ChangelogDialog` pattern:
+          - Hard width cap with viewport fallback
+            (`w-[calc(100vw-48px)] sm:max-w-[920px]`).
+          - Hard height cap (`h-[min(720px,calc(100vh-48px))]`).
+          - `overflow-hidden flex flex-col` on the outer dialog so
+            the inner ScrollArea owns vertical scrolling.
+          - Body switched from CSS multi-column to a responsive
+            2-column grid (`md:grid-cols-2`) — keeps each section
+            inside its column and avoids overflow.
       */}
-      <DialogContent className="max-w-[1040px] p-0 gap-0">
-        <DialogHeader className="px-8 pt-7 pb-3 border-b border-border">
+      <DialogContent className="w-[calc(100vw-48px)] sm:max-w-[920px] h-[min(720px,calc(100vh-48px))] p-0 gap-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-8 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
             Keyboard Shortcuts
           </DialogTitle>
@@ -142,56 +147,49 @@ export function KeyboardShortcutsDialogV2({
             reference.
           </p>
         </DialogHeader>
-        <ScrollArea className="max-h-[70vh]">
-          {/* Live-test 2026-04-25 — switched from CSS Grid columns to
-              CSS multi-column (`sm:columns-2`). Grid pairs categories
-              by source order which left big whitespace gaps when
-              category lengths mismatched (Find << Navigation, AI&Voice
-              vs Settings's 2 items). Multi-column flows the
-              `<section>` blocks top-to-bottom and balances height
-              across both columns automatically; `break-inside-avoid`
-              keeps each category intact. Dialog widened to 1040 px
-              for breathing room across both columns. */}
-          <div className="px-8 py-6 sm:columns-2 gap-x-8 [&>section]:break-inside-avoid [&>section]:mb-6 [&>section:last-child]:mb-0">
-            {categories.map((category) => (
-              <section
-                key={category.label}
-                aria-labelledby={`shortcut-group-${category.label}`}
-              >
-                <h3
-                  id={`shortcut-group-${category.label}`}
-                  className="uppercase text-[11px] tracking-wider font-medium text-muted-foreground mb-2"
+        <div className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
+            <div className="px-8 py-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+              {categories.map((category) => (
+                <section
+                  key={category.label}
+                  aria-labelledby={`shortcut-group-${category.label}`}
                 >
-                  {category.label}
-                </h3>
-                <div className="rounded-lg border border-border divide-y divide-border/60 bg-card">
-                  {category.shortcuts.map((shortcut) => (
-                    <div
-                      key={shortcut.action}
-                      className="flex items-center justify-between gap-4 px-3 py-2"
-                    >
-                      <span className="text-[13px] text-foreground min-w-0 truncate">
-                        {shortcut.action}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {shortcut.keys.map((combo, i) => (
-                          <span
-                            key={i}
-                            className="inline-flex items-center gap-0.5"
-                          >
-                            {combo.map((key, j) => (
-                              <Kbd key={j}>{key}</Kbd>
-                            ))}
-                          </span>
-                        ))}
+                  <h3
+                    id={`shortcut-group-${category.label}`}
+                    className="uppercase text-[11px] tracking-wider font-medium text-muted-foreground mb-2"
+                  >
+                    {category.label}
+                  </h3>
+                  <div className="rounded-lg border border-border divide-y divide-border/60 bg-card">
+                    {category.shortcuts.map((shortcut) => (
+                      <div
+                        key={shortcut.action}
+                        className="flex items-center justify-between gap-4 px-3 py-2"
+                      >
+                        <span className="text-[13px] text-foreground min-w-0 truncate">
+                          {shortcut.action}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {shortcut.keys.map((combo, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-0.5"
+                            >
+                              {combo.map((key, j) => (
+                                <Kbd key={j}>{key}</Kbd>
+                              ))}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </ScrollArea>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );

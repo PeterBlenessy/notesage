@@ -1,9 +1,8 @@
-import { MessageSquare, Bot } from "lucide-react";
+import { MessageSquare, Bot, X } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { Button } from "@/components/ui/button";
-import { SavedLabel } from "@/components/SavedLabel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -57,13 +56,37 @@ export function TitleBar(props: TitleBarProps) {
 
   const title = activeTab?.fileName ?? "Notesage";
   const isDirty = Boolean(activeTab?.isDirty);
-  const lastSavedAt = activeTab?.lastSavedAt;
 
-  // Quiet Composer has no DocHead breadcrumb (#131) — the dirty dot and
-  // "saved Xs ago" readout moved here so users still see both pieces of
-  // info. Rendered in the right zone only when a document is active and
-  // the mode is `quiet`. The classic shell keeps its existing TabBar
-  // where per-tab dirty dots already live.
+  // Quiet Composer has no DocHead breadcrumb (#131) — the dirty dot is
+  // the only doc-state signal that lives in the title bar right zone.
+  // The "saved Xs ago" readout moved to the StatusBar next to the word
+  // count (live-test 2026-04-26) so document state info is consolidated
+  // in one place. We also no longer render an em-dash placeholder when
+  // `lastSavedAt` is missing — the right zone is simply empty for clean
+  // tabs, matching the user's "less visual noise" preference. The
+  // classic shell keeps its existing TabBar where per-tab dirty dots
+  // already live.
+  //
+  // Live-test 2026-04-26 — added a small × close-document button next
+  // to the dirty dot. Quiet Composer has no TabBar (intentional), so
+  // before this there was no clickable affordance to close the active
+  // document and return to the landing state. ⌘W still works globally
+  // via `useKeyboardShortcuts`; this gives the same action a visible
+  // home. The button reuses the same `closeTab` /
+  // `setPendingCloseTabId` flow that ⌘W and the legacy TabBar X drive,
+  // so warn-if-dirty behaviour is consistent across surfaces.
+  const handleCloseActiveTab = () => {
+    const editorState = useEditorStore.getState();
+    const id = editorState.activeTabId;
+    if (!id) return;
+    const tab = editorState.openDocuments.find((t) => t.id === id);
+    if (tab?.isDirty) {
+      editorState.setPendingCloseTabId(id);
+      return;
+    }
+    editorState.closeTab(id);
+  };
+
   const quietDocChrome =
     props.mode === "quiet" && activeTab ? (
       <div className="flex items-center gap-2 pr-3 shrink-0">
@@ -75,7 +98,25 @@ export function TitleBar(props: TitleBarProps) {
             style={{ background: "var(--accent, var(--primary))" }}
           />
         ) : null}
-        <SavedLabel lastSavedAt={lastSavedAt} isDirty={isDirty} />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={handleCloseActiveTab}
+          className={cn(
+            "text-xs text-muted-foreground hover:text-foreground",
+            // Live-test 2026-04-26 — the X is hover-revealed: invisible
+            // at rest, fades in when the user hovers ANY part of the
+            // title bar (the `group/titlebar` lives on the outer wrapper).
+            // `focus-visible:opacity-100` keeps keyboard users from
+            // losing the affordance.
+            "opacity-0 group-hover/titlebar:opacity-100 focus-visible:opacity-100",
+            "transition-[color,opacity] duration-150",
+          )}
+          title="Close document (⌘W)"
+          aria-label="Close document"
+        >
+          <X className="size-3.5" strokeWidth={1.5} />
+        </Button>
       </div>
     ) : null;
 
@@ -121,7 +162,9 @@ export function TitleBar(props: TitleBarProps) {
   return (
     <div
       className={cn(
-        "h-9 flex items-center shrink-0 select-none",
+        // `group/titlebar` so the close-document X (and any future
+        // hover-revealed chrome) can fade in only when the bar is hovered.
+        "group/titlebar h-9 flex items-center shrink-0 select-none",
         // Live-test 2026-04-25 — the title bar is now ALWAYS
         // absolute-positioned by QuietLayout (so the sidebar's right
         // border can run unbroken to y=0). The frosted bg + blur are
@@ -155,10 +198,11 @@ export function TitleBar(props: TitleBarProps) {
       </div>
 
       {/*
-        Right: chat toggle + activity strip toggle (classic) OR dirty dot
-        + "saved Xs ago" (quiet). Both variants never render together —
+        Right: chat toggle + activity strip toggle (classic) OR dirty
+        dot only (quiet). The "saved Xs ago" readout moved to StatusBar
+        (live-test 2026-04-26). Both variants never render together —
         `classicControls` is null in quiet mode and `quietDocChrome` is
-        null in classic mode.
+        null in classic mode (or when the active tab is clean).
        */}
       {classicControls}
       {quietDocChrome}

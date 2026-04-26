@@ -151,19 +151,32 @@ export function useCopilotCompletion(editor: Editor | null) {
   const uriAllowed = (uri: string): boolean =>
     completionsOnOutOfScope || isUriInScope(uri, scope);
 
-  // Per-tab toast suppression — task #16 requires "once per tab" notice
-  // when completions are disabled for an out-of-scope file. A Set of tab
-  // paths we've already toasted for is sufficient because sonner dedupes
-  // by toast id anyway, and we only surface the notice on tab activation.
-  const toastedTabs = useRef<Set<string>>(new Set());
+  // Once-per-session toast suppression. Live-test 2026-04-26 — the previous
+  // per-tab Set was too chatty: every restored tab on cold start, every
+  // tab-switch back to an out-of-scope file, and every reload re-fired the
+  // toast. The user's complaint is the WITHIN-SESSION repeat, so we collapse
+  // the dedup to a single boolean and re-arm only when the relevant inputs
+  // change (scope or the `completionsOnOutOfScope` setting). A stable sonner
+  // id is preserved as belt-and-suspenders so any race that bypasses the
+  // dedup still collapses visually.
+  const hasShownOutOfScopeToast = useRef(false);
 
-  const notifyOutOfScope = useCallback((filePath: string) => {
-    if (toastedTabs.current.has(filePath)) return;
-    toastedTabs.current.add(filePath);
+  const notifyOutOfScope = useCallback(() => {
+    if (hasShownOutOfScopeToast.current) return;
+    hasShownOutOfScopeToast.current = true;
     toast.info('Completions disabled for this file — outside selected project scope', {
-      id: `copilot-scope-${filePath}`,
+      id: 'copilot-scope-out-of-scope',
     });
   }, []);
+
+  // Re-arm the once-per-session toast when the inputs that determine scope
+  // change. A user who flips `completionsOnOutOfScope` or changes the
+  // selected project paths in the chat footer should see the toast again
+  // the next time they activate an out-of-scope tab — the new scope is a
+  // fresh decision worth surfacing once.
+  useEffect(() => {
+    hasShownOutOfScopeToast.current = false;
+  }, [completionsOnOutOfScope, selectedProjectPaths, resolvedNotesRoot]);
 
   const isSourceMode = activeTab?.viewMode === 'source';
 
@@ -194,7 +207,7 @@ export function useCopilotCompletion(editor: Editor | null) {
     // Task #17 — the `completionsOnOutOfScope` setting bypasses this gate
     // (legacy behaviour). Gate short-circuits via `uriAllowed`.
     if (!uriAllowed(uri)) {
-      notifyOutOfScope(uri);
+      notifyOutOfScope();
       // Also clear any stale ghost text — a leftover decoration from a
       // previous in-scope tab must not linger on the blocked one.
       if (editor && hasActiveGhostText(editor)) {

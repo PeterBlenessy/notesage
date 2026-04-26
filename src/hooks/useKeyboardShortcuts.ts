@@ -38,7 +38,6 @@
  *   | ⌘⇧C         | Toggle chat panel                  | unpin cmd bar (if expanded+pinned) else focus  | this hook                |
  *   | ⌘⇧R         | Toggle recording                   | Toggle recording                               | this hook                |
  *   | ⌘⇧K         | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
- *   | ⌘7          | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
  *   | ⌘,          | Open Settings                      | Open Settings                                  | this hook                |
  *   | ⌘T          | Toggle theme                       | Toggle theme                                   | this hook                |
  *   | ⌘N          | Open New Note dialog               | —                                              | QuietLayout (capture)    |
@@ -46,8 +45,8 @@
  *   | ⌘O          | Open folder picker                 | Open folder picker                             | this hook                |
  *   | ⌘⇧[         | Previous Recent doc (TODO #77)     | Previous Recent doc (TODO #77)                 | this hook (scaffold)     |
  *   | ⌘⇧]         | Next Recent doc (TODO #77)         | Next Recent doc (TODO #77)                     | this hook (scaffold)     |
- *   | ⌘⌥C         | Copy absolute path of selection    | Copy absolute path of selection                | this hook (event emit)   |
- *   | ⌘⌥R         | Reveal selection in Finder         | Reveal selection in Finder                     | this hook (event emit)   |
+ *   | ⌘⌥C         | Copy active document's path        | Copy active document's path                    | this hook                |
+ *   | ⌘⌥R         | Reveal active document in Finder   | Reveal active document in Finder               | this hook                |
  *   | Esc         | Exit focus mode (when active)      | —                                              | useFocusMode (capture)   |
  *   | ⌘⌥I         | Open Tauri devtools                | Open Tauri devtools                            | this hook                |
  *
@@ -72,12 +71,15 @@
  */
 
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
+import { tauriApi } from "@/lib/tauri";
+import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import type { PaletteMode } from "@/lib/command-palette";
 
 /**
@@ -349,12 +351,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘7 — legacy alias for keyboard shortcuts reference
-      if (isMod && !e.shiftKey && key === "7") {
-        e.preventDefault();
-        callbacks.onShortcutsOpen();
-        return;
-      }
+      // ⌘7 — removed live-test 2026-04-26. ⌘⇧K is the canonical shortcut.
 
       // ⌘⇧R — toggle recording
       if (isMod && e.shiftKey && keyLower === "r" && !e.altKey) {
@@ -418,27 +415,67 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       }
 
       // ------------------------------------------------------------------
-      // ⌘⌥C — copy absolute path (sidebar selection).
-      // ⌘⌥R — reveal in Finder (sidebar selection).
+      // ⌘⌥C — copy the active document's absolute path to the clipboard.
+      // ⌘⌥R — reveal the active document in Finder.
       //
-      // We emit DOM events so the sidebar (which owns the current selection)
-      // can respond if it's the focus owner. Listeners that aren't the
-      // current focus owner silently ignore the event.
+      // Live-test 2026-04-26: previously these chords were sidebar-scoped
+      // (advertised in the quiet-sidebar context menu's `ContextMenuShortcut`
+      // hints) and dispatched DOM events that no listener consumed. The kbd
+      // hints made no sense in the menu context (the menu is open by then —
+      // the user is clicking, not chording) and the chords didn't actually
+      // do anything globally. Repurposing them: act on the editor's active
+      // document. We still dispatch the legacy `notesage:copy-path` /
+      // `notesage:reveal-in-finder` events so any future listener can hook
+      // in, but the hook now owns the canonical behaviour.
+      //
+      // Modifier-key chords (⌘⌥C / ⌘⌥R) don't need a typing-target guard —
+      // browsers don't insert these as text. Same approach as ⌘⌥I (devtools)
+      // below.
       // ------------------------------------------------------------------
-      if (isMod && e.altKey && !e.shiftKey && keyLower === "c") {
+      // macOS gotcha: Option+letter produces a special character (Option+R
+      // = `®`, Option+C = `ç`, Option+I = `ˆ`), so `e.key.toLowerCase()`
+      // never matches `"r"` / `"c"` / `"i"` for Option-modified chords.
+      // Use `e.code` (physical key — `KeyR`, `KeyC`, `KeyI`) which ignores
+      // dead-key composition. Live-test 2026-04-26.
+      if (isMod && e.altKey && !e.shiftKey && e.code === "KeyC") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent(COPY_PATH_EVENT));
+        const { activeTabId, openDocuments } = useEditorStore.getState();
+        const active = activeTabId
+          ? openDocuments.find((t) => t.id === activeTabId)
+          : null;
+        if (active?.filePath) {
+          void copyToClipboard(active.filePath, "Copied path to clipboard");
+        } else {
+          toast.error("No active document");
+        }
         return;
       }
 
-      if (isMod && e.altKey && !e.shiftKey && keyLower === "r") {
+      if (isMod && e.altKey && !e.shiftKey && e.code === "KeyR") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent(REVEAL_IN_FINDER_EVENT));
+        const { activeTabId, openDocuments } = useEditorStore.getState();
+        const active = activeTabId
+          ? openDocuments.find((t) => t.id === activeTabId)
+          : null;
+        if (active?.filePath) {
+          void (async () => {
+            try {
+              await tauriApi.revealInFinder(active.filePath);
+            } catch (error) {
+              toast.error(`Failed to reveal: ${error}`);
+            }
+          })();
+        } else {
+          toast.error("No active document");
+        }
         return;
       }
 
-      // ⌘⌥I — devtools
-      if (isMod && e.altKey && keyLower === "i") {
+      // ⌘⌥I — devtools (same `e.code` rationale as ⌘⌥C / ⌘⌥R above —
+      // Option+I produces `ˆ`, not `i`).
+      if (isMod && e.altKey && e.code === "KeyI") {
         e.preventDefault();
         import("@tauri-apps/api/core").then(({ invoke }) => {
           invoke("open_devtools").catch(console.error);

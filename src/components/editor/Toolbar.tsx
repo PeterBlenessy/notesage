@@ -29,6 +29,16 @@ import {
   Superscript,
   MoreHorizontal,
   Link as LinkIcon,
+  BetweenHorizontalStart,
+  BetweenHorizontalEnd,
+  BetweenVerticalStart,
+  BetweenVerticalEnd,
+  TableProperties,
+  TableCellsMerge,
+  TableCellsSplit,
+  TableRowsSplit,
+  TableColumnsSplit,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -37,6 +47,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -225,7 +236,46 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                     More
                   </TooltipContent>
                 </Tooltip>
-                <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuContent align="end" className="w-48 max-h-[70vh] overflow-y-auto">
+                  {/*
+                    Inline marks. Bold / Italic / Underline / Sub / Super
+                    were missing from the pill entirely (visible AND
+                    overflow) before the 2026-04-26 parity restoration —
+                    every canonical formatting action listed in
+                    `docs/keyboard-shortcuts.md` "Toolbar Controls (Mouse)"
+                    is now reachable from the pill, either as a first-class
+                    button or through this menu.
+                  */}
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("bold") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleBold().run()}
+                  >
+                    <Bold className="size-4 shrink-0" strokeWidth={1.5} />
+                    Bold
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("italic") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleItalic().run()}
+                  >
+                    <Italic className="size-4 shrink-0" strokeWidth={1.5} />
+                    Italic
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("underline") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleUnderline().run()}
+                  >
+                    <Underline className="size-4 shrink-0" strokeWidth={1.5} />
+                    Underline
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className={cn(
                       "cursor-pointer gap-2 text-xs",
@@ -245,6 +295,26 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   >
                     <Code className="size-4 shrink-0" strokeWidth={1.5} />
                     Inline code
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("subscript") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleSubscript().run()}
+                  >
+                    <Subscript className="size-4 shrink-0" strokeWidth={1.5} />
+                    Subscript
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("superscript") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleSuperscript().run()}
+                  >
+                    <Superscript className="size-4 shrink-0" strokeWidth={1.5} />
+                    Superscript
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="cursor-pointer gap-2 text-xs"
@@ -268,6 +338,94 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                     <LinkIcon className="size-4 shrink-0" strokeWidth={1.5} />
                     Link
                   </DropdownMenuItem>
+
+                  {/* Lists + indent / outdent — also missing entirely
+                      before parity restoration. */}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("bulletList") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleBulletList().run()}
+                  >
+                    <List className="size-4 shrink-0" strokeWidth={1.5} />
+                    Bullet list
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive("orderedList") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                  >
+                    <ListOrdered className="size-4 shrink-0" strokeWidth={1.5} />
+                    Numbered list
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!isInList}
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => {
+                      if (editor.isActive("taskList")) {
+                        editor.chain().focus().sinkListItem("taskItem").run();
+                      } else {
+                        editor.chain().focus().sinkListItem("listItem").run();
+                      }
+                    }}
+                  >
+                    <IndentIncrease className="size-4 shrink-0" strokeWidth={1.5} />
+                    Indent
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!isInList}
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => {
+                      if (editor.isActive("taskList")) {
+                        editor.chain().focus().liftListItem("taskItem").run();
+                      } else {
+                        editor.chain().focus().liftListItem("listItem").run();
+                      }
+                    }}
+                  >
+                    <IndentDecrease className="size-4 shrink-0" strokeWidth={1.5} />
+                    Outdent
+                  </DropdownMenuItem>
+
+                  {/* Alignment */}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive({ textAlign: "left" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().setTextAlign("left").run()}
+                  >
+                    <AlignLeft className="size-4 shrink-0" strokeWidth={1.5} />
+                    Align left
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive({ textAlign: "center" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().setTextAlign("center").run()}
+                  >
+                    <AlignCenter className="size-4 shrink-0" strokeWidth={1.5} />
+                    Align center
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      "cursor-pointer gap-2 text-xs",
+                      editor.isActive({ textAlign: "right" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+                    )}
+                    onClick={() => editor.chain().focus().setTextAlign("right").run()}
+                  >
+                    <AlignRight className="size-4 shrink-0" strokeWidth={1.5} />
+                    Align right
+                  </DropdownMenuItem>
+
+                  {/* Inserts */}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="cursor-pointer gap-2 text-xs"
                     onClick={() => onImageInsert?.()}
@@ -281,6 +439,13 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   >
                     <Pencil className="size-4 shrink-0" strokeWidth={1.5} />
                     Drawing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    onClick={() => editor.chain().focus().insertChart().run()}
+                  >
+                    <BarChart3 className="size-4 shrink-0" strokeWidth={1.5} />
+                    Chart
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className={cn(
@@ -298,6 +463,89 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                   >
                     <Minus className="size-4 shrink-0" strokeWidth={1.5} />
                     Horizontal rule
+                  </DropdownMenuItem>
+
+                  {/* Table editing — only enabled when cursor is inside a table */}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().addRowBefore().run()}
+                  >
+                    <BetweenHorizontalStart className="size-4 shrink-0" strokeWidth={1.5} />
+                    Add row above
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().addRowAfter().run()}
+                  >
+                    <BetweenHorizontalEnd className="size-4 shrink-0" strokeWidth={1.5} />
+                    Add row below
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().addColumnBefore().run()}
+                  >
+                    <BetweenVerticalStart className="size-4 shrink-0" strokeWidth={1.5} />
+                    Add column left
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().addColumnAfter().run()}
+                  >
+                    <BetweenVerticalEnd className="size-4 shrink-0" strokeWidth={1.5} />
+                    Add column right
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+                  >
+                    <TableProperties className="size-4 shrink-0" strokeWidth={1.5} />
+                    Toggle header row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table") || !editor.can().mergeCells()}
+                    onClick={() => editor.chain().focus().mergeCells().run()}
+                  >
+                    <TableCellsMerge className="size-4 shrink-0" strokeWidth={1.5} />
+                    Merge cells
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs"
+                    disabled={!editor.isActive("table") || !editor.can().splitCell()}
+                    onClick={() => editor.chain().focus().splitCell().run()}
+                  >
+                    <TableCellsSplit className="size-4 shrink-0" strokeWidth={1.5} />
+                    Split cell
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs text-destructive"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().deleteRow().run()}
+                  >
+                    <TableRowsSplit className="size-4 shrink-0" strokeWidth={1.5} />
+                    Delete row
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs text-destructive"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().deleteColumn().run()}
+                  >
+                    <TableColumnsSplit className="size-4 shrink-0" strokeWidth={1.5} />
+                    Delete column
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer gap-2 text-xs text-destructive"
+                    disabled={!editor.isActive("table")}
+                    onClick={() => editor.chain().focus().deleteTable().run()}
+                  >
+                    <Trash2 className="size-4 shrink-0" strokeWidth={1.5} />
+                    Delete table
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

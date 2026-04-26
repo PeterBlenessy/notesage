@@ -2,21 +2,22 @@ import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
 import { RecentSection } from "./RecentSection";
 import { TagsSection } from "./TagsSection";
+import { MentionsSection } from "./MentionsSection";
 
 /**
  * QuietSidebar — flat-list sidebar shell for the quiet-composer UI refresh
  * (PRD `2026-04-21-ui-refresh`, task #30).
  *
- * Renders four stacked sections in fixed order: Pinned, Projects, Recent,
- * Tags. Sections are empty stubs — G2 tasks #31–#34 wire them to the
- * workspace-store, editor-store, and SQLite index respectively.
+ * Renders five stacked sections in fixed order: Pinned, Projects, Recent,
+ * Tags, Mentions. Sections are wired to the workspace-store, editor-store,
+ * and SQLite index. Tags and Mentions self-hide when their cap is 0 (the
+ * slider IS the visibility control — see settings-store v11→v12 migration).
  *
  * Only mounted when `settings.uiPreview === "quiet-composer"`. That gate
  * lives on `QuietLayout`, so this component does not need its own flag check.
@@ -118,11 +119,6 @@ export function QuietSidebar() {
   const setPendingCreateProject = useQuietSidebarStore(
     (s) => s.setPendingCreateProject,
   );
-  // Task #35 — the Tags section can be hidden entirely via sidebar
-  // composition settings. Read as a fine-grained selector so flipping the
-  // toggle re-renders only QuietSidebar (not every section).
-  const tagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
-
   // Projects section header `+` button opens the top-of-list inline
   // project-create row via the quiet-sidebar-store flag (task #42).
   const handleAddProject = useCallback(() => {
@@ -201,7 +197,11 @@ export function QuietSidebar() {
       <PinnedSection filter={filter} />
       <ProjectsSection filter={filter} onAdd={handleAddProject} />
       <RecentSection filter={filter} />
-      {!tagsHidden && <TagsSection filter={filter} />}
+      {/* TagsSection / MentionsSection self-hide when their cap is 0
+          (the slider IS the visibility control — see settings-store
+          v11→v12 migration). */}
+      <TagsSection filter={filter} />
+      <MentionsSection filter={filter} />
     </nav>
   );
 }

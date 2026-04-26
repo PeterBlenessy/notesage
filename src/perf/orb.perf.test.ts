@@ -249,10 +249,12 @@ describe("AgentOrb pulse render cost", () => {
       "orb pulse render cost",
       () => {
         const utils = render(React.createElement(AgentOrb));
-        const orb = utils.getByTestId("agent-orb") as HTMLButtonElement;
-        // Confirm the pulse class is present — if it isn't, the test isn't
-        // measuring what it claims to measure.
-        if (!orb.className.split(/\s+/).includes("orb-pulsing")) {
+        // Live-test 2026-04-26 — the orb body went neutral; the pulse
+        // class moved from the outer button (`data-testid="agent-orb"`)
+        // to the inner pulse element (`data-testid="agent-orb-pulse"`)
+        // so only the ring carries the accent. Query the inner element.
+        const pulse = utils.getByTestId("agent-orb-pulse") as HTMLDivElement;
+        if (!pulse.className.split(/\s+/).includes("orb-pulsing")) {
           throw new Error("orb-pulsing class missing — pulse not active");
         }
         utils.unmount();

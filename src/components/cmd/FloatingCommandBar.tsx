@@ -78,7 +78,7 @@ import {
 } from "@/components/cmd/prefix-modes";
 import SkillMode from "@/components/cmd/modes/SkillMode";
 import ReferenceMode from "@/components/cmd/modes/ReferenceMode";
-import TagMode from "@/components/cmd/modes/TagMode";
+import TagMode, { type TagPickAction } from "@/components/cmd/modes/TagMode";
 import TaskMode, { type TaskAction } from "@/components/cmd/modes/TaskMode";
 import ResearchMode from "@/components/cmd/modes/ResearchMode";
 import PaletteMode from "@/components/cmd/modes/PaletteMode";
@@ -201,6 +201,30 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     activeOptionId: string | null;
     count: number;
   } | null>(null);
+
+  // Drilldown seed forwarded from the bus `focus` event so sidebar
+  // TagsSection / MentionsSection clicks can jump straight to level-2 of
+  // the relevant picker (live-test 2026-04-26). Cleared whenever the
+  // active prefix changes back to null.
+  const [pendingTagDrilldown, setPendingTagDrilldown] = useState<string | null>(
+    null,
+  );
+  const [pendingMentionDrilldown, setPendingMentionDrilldown] = useState<
+    string | null
+  >(null);
+  // Live-test 2026-04-26 — keep the highlighted picker row in view when
+  // arrow-key navigation runs past the visible window. Pickers report
+  // their active option via `onActiveOptionChange`; we scroll that option
+  // into view from one place rather than duplicating scrollIntoView logic
+  // in every mode.
+  useEffect(() => {
+    const id = activeOption?.activeOptionId;
+    if (!id) return;
+    const el = document.getElementById(id);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [activeOption?.activeOptionId]);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const reducedMotion = useReducedMotion();
 
@@ -418,9 +442,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const removeChip = useCallback((id: string) => {
     setChips((prev) => prev.filter((c) => c.id !== id));
   }, []);
-  const addChip = useCallback((chip: AttachmentChip) => {
-    setChips((prev) => (prev.some((c) => c.id === chip.id) ? prev : [...prev, chip]));
-  }, []);
 
   // Whether the user is "composing" — used by TaskMode to choose between
   // navigate and attach. We treat any non-empty input or any pending chip as
@@ -442,9 +463,14 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // Drop the cached active-option info whenever the picker closes — there's
   // no listbox to point at, so `aria-activedescendant` and `aria-controls`
-  // must be cleared together.
+  // must be cleared together. Also clear pending drilldown seeds so the
+  // next picker mount doesn't inherit a stale level-2 jump.
   useEffect(() => {
-    if (!activePrefix) setActiveOption(null);
+    if (!activePrefix) {
+      setActiveOption(null);
+      setPendingTagDrilldown(null);
+      setPendingMentionDrilldown(null);
+    }
   }, [activePrefix]);
 
   const expand = useCallback(() => {
@@ -486,6 +512,20 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     return subscribeToCmdBarEvents((event) => {
       if (event.type === 'focus') {
         setExpanded(true);
+        // Apply drilldown seed BEFORE setActivePrefix so the picker mounts
+        // already pointed at level 2 (no level-1 flash).
+        if (event.drilldown) {
+          if (event.drilldown.kind === 'tag') {
+            setPendingTagDrilldown(event.drilldown.name);
+            setPendingMentionDrilldown(null);
+          } else if (event.drilldown.kind === 'mention') {
+            setPendingMentionDrilldown(event.drilldown.name);
+            setPendingTagDrilldown(null);
+          }
+        } else {
+          setPendingTagDrilldown(null);
+          setPendingMentionDrilldown(null);
+        }
         if (event.prefix) {
           const mode = Object.values(MODES).find(
             (m) => m.prefix === event.prefix,
@@ -513,7 +553,17 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         }
         // Defer focus to the next tick so the input has rendered when the
         // bar transitioned from collapsed → expanded in the same pass.
-        requestAnimationFrame(() => inputRef.current?.focus());
+        // Place the cursor AFTER the prefilled prefix so the user can type
+        // the filter immediately. Without `setSelectionRange`, browsers
+        // place the cursor at offset 0 on focus and the next keystroke
+        // lands BEFORE the `#` / `@` (live-test 2026-04-26).
+        requestAnimationFrame(() => {
+          const el = inputRef.current;
+          if (!el) return;
+          el.focus();
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        });
         return;
       }
 
@@ -1068,50 +1118,121 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   );
 
   const handlePickTag = useCallback(
-    (tagName: string) => {
-      replaceActiveToken(`#${tagName} `);
+    (action: TagPickAction) => {
+      // Live-test 2026-04-26 (slice 2) — TagMode owns the two-level
+      // drilldown (tag list → occurrence list) internally. By the time
+      // `onPick` fires, the user has selected a SPECIFIC occurrence;
+      // we just dispatch the open-file-at-tag event with the precomputed
+      // file/symbol/index. Bar + picker stay open per user direction.
+      window.dispatchEvent(
+        new CustomEvent("notesage:open-file-at-tag", {
+          detail: {
+            filePath: action.filePath,
+            fileName: action.fileName,
+            symbol: action.symbol,
+            occurrenceInFile: action.occurrenceInFile,
+          },
+        }),
+      );
     },
-    [replaceActiveToken],
+    [],
   );
 
   const handlePickReference = useCallback(
     (chip: AttachmentChip) => {
-      addChip(chip);
-      replaceActiveToken("");
+      // Live-test 2026-04-26 (slice 2) — handles file + comment direct
+      // picks. `person` kind drills down internally in `ReferenceMode`
+      // and reaches us via `handlePickReferenceOccurrence` below.
+      if (chip.kind === "file") {
+        const filePath = chip.id.startsWith("file:")
+          ? chip.id.slice("file:".length)
+          : chip.id;
+        const fileName = filePath.split("/").pop() || filePath;
+        window.dispatchEvent(
+          new CustomEvent("notesage:open-file", {
+            detail: { filePath, fileName },
+          }),
+        );
+        return;
+      }
+      // comment kind — no navigation wired yet (the comment store maps
+      // document UUIDs to file paths; resolving requires a separate pass
+      // that's out of scope for slice 2).
     },
-    [addChip, replaceActiveToken],
+    [],
+  );
+
+  const handlePickReferenceOccurrence = useCallback(
+    (action: {
+      filePath: string;
+      fileName: string;
+      symbol: string;
+      occurrenceInFile: number;
+    }) => {
+      // Slice 2 — `@person` drilldown delivered an occurrence pick.
+      window.dispatchEvent(
+        new CustomEvent("notesage:open-file-at-tag", {
+          detail: {
+            filePath: action.filePath,
+            fileName: action.fileName,
+            symbol: action.symbol,
+            occurrenceInFile: action.occurrenceInFile,
+          },
+        }),
+      );
+    },
+    [],
   );
 
   const handlePickResearch = useCallback(
     (chip: AttachmentChip) => {
-      addChip(chip);
-      replaceActiveToken("");
+      // Live-test 2026-04-26 — open the research file in a tab. Bar +
+      // picker STAY OPEN per user direction: a wrong selection is one
+      // arrow-key + Enter away. Esc dismisses when the user is done.
+      const filePath = chip.id;
+      const fileName = filePath.split("/").pop() || filePath;
+      window.dispatchEvent(
+        new CustomEvent("notesage:open-file", {
+          detail: { filePath, fileName },
+        }),
+      );
     },
-    [addChip, replaceActiveToken],
+    [],
   );
 
   const handlePickTask = useCallback(
     (action: TaskAction) => {
-      if (action.kind === "attach") {
-        addChip(action.chip);
-        replaceActiveToken("");
-        return;
+      // Live-test 2026-04-26 — open the file at the task's text. Bar +
+      // picker STAY OPEN so a wrong pick is one arrow + Enter away.
+      // Esc dismisses.
+      if (action.kind === "navigate") {
+        const fileName =
+          action.filePath.split("/").pop() || action.filePath;
+        window.dispatchEvent(
+          new CustomEvent("notesage:open-file", {
+            detail: {
+              filePath: action.filePath,
+              fileName,
+              scrollToText: action.text,
+            },
+          }),
+        );
       }
-      // Navigate path is forward-declared — wired with global shortcuts in #20+.
-      log.info("perf:cmdbar", "task-navigate stub", action);
-      replaceActiveToken("");
     },
-    [addChip, replaceActiveToken],
+    [],
   );
 
   const handlePickPalette = useCallback(
     (commandId: string) => {
-      // Real command execution wires up alongside the global shortcut hook in
-      // #20+. For now, log and clear so the picker UX is testable end-to-end.
-      log.info("perf:cmdbar", "palette-execute stub", { commandId });
-      replaceActiveToken("");
+      // Live-test 2026-04-26 — fire the command via App.tsx's existing
+      // listener (same callbacks as `useKeyboardShortcuts`). Bar + picker
+      // STAY OPEN per user direction. Esc dismisses.
+      window.dispatchEvent(
+        new CustomEvent("notesage:palette-command", { detail: { commandId } }),
+      );
+      log.info("perf:cmdbar", "palette-execute", { commandId });
     },
-    [replaceActiveToken],
+    [],
   );
 
   // ---------------------------------------------------------------------
@@ -1268,7 +1389,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           isComposing={isComposing}
           onPickSkill={handlePickSkill}
           onPickReference={handlePickReference}
+          onPickReferenceOccurrence={handlePickReferenceOccurrence}
           onPickTag={handlePickTag}
+          initialTagDrilldown={pendingTagDrilldown}
+          initialPersonDrilldown={pendingMentionDrilldown}
           onPickTask={handlePickTask}
           onPickResearch={handlePickResearch}
           onPickPalette={handlePickPalette}
@@ -1656,7 +1780,16 @@ interface ExpandedContentProps {
   isComposing: boolean;
   onPickSkill: (name: string) => void;
   onPickReference: (chip: AttachmentChip) => void;
-  onPickTag: (name: string) => void;
+  onPickReferenceOccurrence: (action: {
+    filePath: string;
+    fileName: string;
+    symbol: string;
+    occurrenceInFile: number;
+  }) => void;
+  onPickTag: (action: TagPickAction) => void;
+  /** Drilldown seed forwarded to TagMode / ReferenceMode (sidebar click → level 2). */
+  initialTagDrilldown?: string | null;
+  initialPersonDrilldown?: string | null;
   onPickTask: (action: TaskAction) => void;
   onPickResearch: (chip: AttachmentChip) => void;
   onPickPalette: (commandId: string) => void;
@@ -1740,7 +1873,10 @@ function ExpandedContent({
   isComposing,
   onPickSkill,
   onPickReference,
+  onPickReferenceOccurrence,
   onPickTag,
+  initialTagDrilldown,
+  initialPersonDrilldown,
   onPickTask,
   onPickResearch,
   onPickPalette,
@@ -1780,9 +1916,15 @@ function ExpandedContent({
           - Attachment chips (#11) — above the input
           - Mode pickers (#14–#19) — rendered when `activePrefix` is non-null
        */}
-      <CommandBarContext chatView={chatView} />
+      {/* Live-test 2026-04-26 — when a prefix mode is active, the picker
+          COVERS the entire area above the input box, including the
+          context row (provider pill, projects, mode picker, history,
+          pin, close). The user wanted a clean full-width tray while
+          picking a tag/task/etc; bringing the context chrome back when
+          they finish (Esc → no activePrefix). */}
+      {activePrefix ? null : <CommandBarContext chatView={chatView} />}
 
-      {chatView === "history" ? (
+      {activePrefix ? null : chatView === "history" ? (
         // #118 — Past-conversation list. Reuses the legacy
         // `ChatHistoryView` so selection behaviour + per-conversation
         // metadata (date, title, message count, branch count) matches
@@ -1832,17 +1974,28 @@ function ExpandedContent({
       {activePrefix ? <PrefixModeBadge prefix={activePrefix} /> : null}
 
       {activePrefix ? (
-        <ModePickerDispatch
-          activePrefix={activePrefix}
-          isComposing={isComposing}
-          onActiveOptionChange={onActiveOptionChange}
-          onPickSkill={onPickSkill}
-          onPickReference={onPickReference}
-          onPickTag={onPickTag}
-          onPickTask={onPickTask}
-          onPickResearch={onPickResearch}
-          onPickPalette={onPickPalette}
-        />
+        // Picker tray — `flex-1 min-h-0 overflow-y-auto` lets the list
+        // own all the vertical space above the input box AND scroll
+        // when filtered results exceed the visible height. Without
+        // `overflow-y-auto` the keyboard highlight could walk past the
+        // bar's bottom edge with no way to see the rest of the list
+        // (live-test 2026-04-26).
+        <div className="flex-1 min-h-0 overflow-y-auto" data-cmd-picker-tray>
+          <ModePickerDispatch
+            activePrefix={activePrefix}
+            isComposing={isComposing}
+            onActiveOptionChange={onActiveOptionChange}
+            onPickSkill={onPickSkill}
+            onPickReference={onPickReference}
+            onPickReferenceOccurrence={onPickReferenceOccurrence}
+            onPickTag={onPickTag}
+            initialTagDrilldown={initialTagDrilldown}
+            initialPersonDrilldown={initialPersonDrilldown}
+            onPickTask={onPickTask}
+            onPickResearch={onPickResearch}
+            onPickPalette={onPickPalette}
+          />
+        </div>
       ) : null}
 
       {/* Live-test 2026-04-25 #151 — input row container. The
@@ -2209,7 +2362,16 @@ interface ModePickerDispatchProps {
   onActiveOptionChange: (info: ActiveOptionInfo) => void;
   onPickSkill: (name: string) => void;
   onPickReference: (chip: AttachmentChip) => void;
-  onPickTag: (name: string) => void;
+  onPickReferenceOccurrence: (action: {
+    filePath: string;
+    fileName: string;
+    symbol: string;
+    occurrenceInFile: number;
+  }) => void;
+  onPickTag: (action: TagPickAction) => void;
+  /** Drilldown seed forwarded to TagMode / ReferenceMode (sidebar click → level 2). */
+  initialTagDrilldown?: string | null;
+  initialPersonDrilldown?: string | null;
   onPickTask: (action: TaskAction) => void;
   onPickResearch: (chip: AttachmentChip) => void;
   onPickPalette: (commandId: string) => void;
@@ -2243,7 +2405,10 @@ function ModePickerDispatch({
   onActiveOptionChange,
   onPickSkill,
   onPickReference,
+  onPickReferenceOccurrence,
   onPickTag,
+  initialTagDrilldown,
+  initialPersonDrilldown,
   onPickTask,
   onPickResearch,
   onPickPalette,
@@ -2265,8 +2430,10 @@ function ModePickerDispatch({
         <ReferenceMode
           filter={filter}
           onPick={onPickReference}
+          onPickOccurrence={onPickReferenceOccurrence}
           listboxId={listboxId}
           onActiveOptionChange={onActiveOptionChange}
+          initialPersonDrilldown={initialPersonDrilldown ?? null}
         />
       );
     case "tag":
@@ -2276,6 +2443,7 @@ function ModePickerDispatch({
           onPick={onPickTag}
           listboxId={listboxId}
           onActiveOptionChange={onActiveOptionChange}
+          initialDrilldown={initialTagDrilldown ?? null}
         />
       );
     case "task":

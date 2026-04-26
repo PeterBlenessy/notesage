@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import type { SettingsTab } from "@/components/settings/SettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
@@ -126,6 +127,32 @@ function App() {
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
   const { addProject, addExplorerFolder } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
+
+  // --- Window focus/blur — desaturate accent + fade chrome when app loses focus ---
+  // Mirrors native macOS behaviour: when the window blurs, accent affordances
+  // drop back to neutral grey and the QuietLayout chrome fades slightly. The
+  // CSS hook lives in `globals.css` under `html[data-app-focused="false"]`,
+  // which re-points `--accent` to `--color-primary` (every `--color-accent-primary`
+  // consumer falls back automatically via the var fallback chain).
+  //
+  // Initial state: focused (true). macOS apps start focused after launch and
+  // the first `blur` event fires only when the user clicks away.
+  useEffect(() => {
+    const root = document.documentElement;
+    const setFocused = (focused: boolean) => {
+      root.setAttribute("data-app-focused", focused ? "true" : "false");
+    };
+    setFocused(document.hasFocus());
+
+    const onFocus = () => setFocused(true);
+    const onBlur = () => setFocused(false);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   // --- Show main window after first themed paint (window starts hidden to prevent white flash) ---
   useEffect(() => {
@@ -587,6 +614,124 @@ function App() {
     window.addEventListener("notesage:open-settings", handler);
     return () => window.removeEventListener("notesage:open-settings", handler);
   }, []);
+
+  // Listen for `>` palette command-bar dispatch (live-test 2026-04-26).
+  // FloatingCommandBar emits `notesage:palette-command` with a stable
+  // `commandId` from `PALETTE_COMMANDS`; we map ids to the same callbacks
+  // already plumbed through `useKeyboardShortcuts` so legacy chord and
+  // palette pick run identical code paths.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ commandId?: string }>).detail;
+      const id = detail?.commandId;
+      if (!id) return;
+      switch (id) {
+        case "new-note":
+          handleNewNote();
+          break;
+        case "new-project":
+          handleNewProject();
+          break;
+        case "export-pdf":
+          setExportOpen(true);
+          break;
+        case "toggle-theme": {
+          const s = useSettingsStore.getState();
+          s.setTheme(s.theme === "dark" ? "light" : "dark");
+          break;
+        }
+        case "toggle-sidebar": {
+          const s = useSettingsStore.getState();
+          s.setSidebarPinned(!s.sidebarPinned);
+          break;
+        }
+        case "open-settings":
+          openSettingsAndCloseMenus(setSettingsOpen);
+          break;
+        case "toggle-focus-mode":
+          setFocusMode((prev) => !prev);
+          break;
+        case "toggle-chat-panel":
+          // Quiet Composer: the cmd bar IS the chat. We just closed it
+          // after the pick — re-open via the bus `focus` event so the
+          // user lands in the composer (matches "toggle on" intent).
+          emitCmdBarEvent({ type: "focus" });
+          break;
+        case "toggle-agent-panel":
+          // Quiet Composer's AgentOrb popover has no programmatic open
+          // path yet. No-op for now — the chord (⌘⇧A) still works.
+          break;
+        case "document-outline":
+          setOutlineOpen(true);
+          break;
+        case "quick-capture":
+          setNewNoteOpen(true);
+          break;
+        case "open-keyboard-shortcuts":
+          setShortcutsOpen(true);
+          break;
+        default:
+          // Unknown command — no-op. Logged so future palette additions
+          // surface during dev if their App.tsx wire-up is missing.
+          console.warn("[palette-command] no handler for", id);
+      }
+    };
+    window.addEventListener("notesage:palette-command", handler);
+    return () => window.removeEventListener("notesage:palette-command", handler);
+  }, [handleNewNote, handleNewProject]);
+
+  // Listen for `notesage:open-file` events dispatched by FloatingCommandBar
+  // pickers (`?` research, `!` task, and the upcoming `#`/`@` drilldowns).
+  // App-level listener routes to `openFile` from `useFileOperations` —
+  // matches the legacy palette's `handleOpenResearchFile` / `handleOpenFile`
+  // call sites without plumbing the hook through QuietLayout.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          filePath?: string;
+          fileName?: string;
+          scrollToText?: string;
+        }>
+      ).detail;
+      if (!detail?.filePath || !detail.fileName) return;
+      void openFile(
+        detail.filePath,
+        detail.fileName,
+        undefined,
+        detail.scrollToText,
+      );
+    };
+    window.addEventListener("notesage:open-file", handler);
+    return () => window.removeEventListener("notesage:open-file", handler);
+  }, [openFile]);
+
+  // Listen for `notesage:open-file-at-tag` events dispatched by the
+  // FloatingCommandBar's `#` tag and `@` mention pickers. Routes to
+  // `openFileAtTag` (same code path the legacy CommandPalette uses for
+  // its tag/mention drilldown selection).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{
+          filePath?: string;
+          fileName?: string;
+          symbol?: string;
+          occurrenceInFile?: number;
+        }>
+      ).detail;
+      if (!detail?.filePath || !detail.fileName || !detail.symbol) return;
+      void openFileAtTag(
+        detail.filePath,
+        detail.fileName,
+        detail.symbol,
+        detail.occurrenceInFile ?? 0,
+      );
+    };
+    window.addEventListener("notesage:open-file-at-tag", handler);
+    return () =>
+      window.removeEventListener("notesage:open-file-at-tag", handler);
+  }, [openFileAtTag]);
 
   // Show and auto-fade focus mode hint
   useEffect(() => {

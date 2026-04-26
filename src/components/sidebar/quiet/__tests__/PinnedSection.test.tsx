@@ -87,17 +87,9 @@ describe('PinnedSection', () => {
     expect(heading.className).toMatch(/uppercase/);
   });
 
-  it('renders an accessible add-button', () => {
-    renderWithProviders(<PinnedSection onAdd={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /add pinned/i });
-    expect(btn).toBeTruthy();
-  });
-
-  it('calls onAdd when the add-button is clicked', () => {
-    const onAdd = vi.fn();
-    renderWithProviders(<PinnedSection onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole('button', { name: /add pinned/i }));
-    expect(onAdd).toHaveBeenCalledTimes(1);
+  it('does not render an add-button (pinning happens via context menu)', () => {
+    renderWithProviders(<PinnedSection />);
+    expect(screen.queryByRole('button', { name: /add pinned/i })).toBeNull();
   });
 
   it('renders header only (no list) when pinnedFiles is empty', () => {

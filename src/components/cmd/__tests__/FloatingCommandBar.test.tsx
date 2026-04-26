@@ -140,7 +140,7 @@ vi.mock('@/components/cmd/modes/ReferenceMode', () => ({
       <button
         type="button"
         data-testid="reference-mode-add-chip"
-        onClick={() => onPick({ id: 'chip-test', kind: 'file', name: 'notes.md' })}
+        onClick={() => onPick({ id: 'file:/abs/notes.md', kind: 'file', name: 'notes.md' })}
       >
         add chip
       </button>
@@ -307,24 +307,34 @@ describe('FloatingCommandBar', () => {
     expect(screen.getByTestId('ctx-stub')).toBeTruthy();
   });
 
-  it('renders chips inline in the unified attachments strip when chips are added', () => {
+  it('selecting a file reference dispatches an open-file event and does NOT add a chip', () => {
+    // Live-test 2026-04-26 — the chip-attach UX from earlier rounds was
+    // dropped. Picking a file reference now navigates: it dispatches
+    // `notesage:open-file` so App.tsx routes to `openFile`, and the
+    // chips state is left untouched. Esc dismisses; the bar + picker
+    // stay open so a wrong pick is one Enter away.
     renderWithProviders(<FloatingCommandBar />);
-    // Compact state — neither the chips strip nor any chip is mounted.
     expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
 
-    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+    const events: Array<{ filePath?: string; fileName?: string }> = [];
+    const handler = (e: Event) => {
+      events.push((e as CustomEvent).detail ?? {});
+    };
+    window.addEventListener('notesage:open-file', handler);
 
-    // Live-test 2026-04-26 round 6 — chips render INLINE in the
-    // unified strip (no AttachmentChips wrapper), so chip nodes
-    // appear directly as flex siblings of image thumbnails. The
-    // strip only mounts when at least one attachment exists.
-    expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
+    try {
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '@' } });
+      fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
 
-    const input = screen.getByRole('combobox') as HTMLInputElement;
-    fireEvent.change(input, { target: { value: '@' } });
-    fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
-
-    expect(document.querySelectorAll('[data-chip-kind]').length).toBe(1);
+      expect(events).toHaveLength(1);
+      expect(events[0].fileName).toBe('notes.md');
+      // No chip was added — the picker is a navigation intent now.
+      expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
+    } finally {
+      window.removeEventListener('notesage:open-file', handler);
+    }
   });
 
   it('skips the lift transition when prefers-reduced-motion is reduce', () => {
@@ -615,30 +625,11 @@ describe('FloatingCommandBar', () => {
       expect(document.activeElement).toBe(input);
     });
 
-    it('clears chips after send (chip count drops to 0)', async () => {
-      const input = expand();
-
-      // Drive a chip into state via the @ ReferenceMode picker stub.
-      fireEvent.change(input, { target: { value: '@' } });
-      fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
-
-      // Chip is now rendered inline (live-test 2026-04-26 round 6 —
-      // chips are direct flex siblings, identified via
-      // `[data-chip-kind]`).
-      expect(document.querySelectorAll('[data-chip-kind]').length).toBe(1);
-
-      // Type a message and send.
-      const inputAfter = screen.getByRole('combobox') as HTMLInputElement;
-      fireEvent.change(inputAfter, { target: { value: 'check this' } });
-      fireEvent.keyDown(inputAfter, { key: 'Enter' });
-
-      // #126 — async handleSend.
-      await waitFor(() =>
-        expect(sendChatMessageMock).toHaveBeenCalledTimes(1),
-      );
-      // Strip unmounts when nothing is attached.
-      expect(document.querySelectorAll('[data-chip-kind]').length).toBe(0);
-    });
+    // Live-test 2026-04-26 — "clears chips after send" was exercising the
+    // chip-attach path from the @ picker. That path was deliberately
+    // dropped (selection is now a navigation intent), so the precondition
+    // is unreachable from the picker. Image-attachment paste/drop still
+    // populates chips at the integration tier.
 
     it('Enter while a prefix is active does NOT send — picker reserves Enter', () => {
       const input = expand();
@@ -650,23 +641,10 @@ describe('FloatingCommandBar', () => {
       expect(sendChatMessageMock).not.toHaveBeenCalled();
     });
 
-    it('Enter with empty input but non-empty chips still sends (chips are content)', async () => {
-      const input = expand();
-
-      // Add one chip via the @ picker stub.
-      fireEvent.change(input, { target: { value: '@' } });
-      fireEvent.click(screen.getByTestId('reference-mode-add-chip'));
-
-      // Clear the input again so it's empty when we press Enter — the chip
-      // alone should still be enough to send.
-      const inputAfter = screen.getByRole('combobox') as HTMLInputElement;
-      fireEvent.change(inputAfter, { target: { value: '' } });
-
-      fireEvent.keyDown(inputAfter, { key: 'Enter' });
-
-      // #126 — async handleSend.
-      await waitFor(() => expect(sendChatMessageMock).toHaveBeenCalledTimes(1));
-    });
+    // Live-test 2026-04-26 — "Enter with chips still sends" — same reason
+    // as the test above: chip-attach via picker is gone. The "send empty
+    // input + only chips" flow still works for image attachments (paste
+    // / drop), but those are exercised at the integration tier.
 
     // ---------------------------------------------------------------------
     // #126 — ChatInput parity: image attach button + Send / Stop affordance.

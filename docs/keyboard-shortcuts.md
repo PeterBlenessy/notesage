@@ -111,9 +111,9 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Commands palette | `⌘⇧P` | Legacy: command palette in `>` (commands) mode. Quiet Composer: focus command bar with `>` prefix |
 | TreeOverlay | `⌘⇧E` | Quiet Composer only — open the slide-in workspace tree overlay (capture-phase preempts the legacy Export-as-PDF binding) |
 | Document outline | `⌘⇧O` | Open document outline (requires active file) |
-| Keyboard shortcuts | `⌘⇧K` | Show keyboard shortcuts reference (`⌘7` is the legacy alias and still works) |
-| Copy path | `⌘⌥C` | Quiet sidebar: copy absolute path of focused row to clipboard. Globally fires the `notesage:copy-path` event |
-| Reveal in Finder | `⌘⌥R` | Quiet sidebar: reveal focused row in Finder. Globally fires the `notesage:reveal-in-finder` event |
+| Keyboard shortcuts | `⌘⇧K` | Show keyboard shortcuts reference |
+| Copy path | `⌘⌥C` | Copy the active document's absolute path to the clipboard. Also fires the `notesage:copy-path` event |
+| Reveal in Finder | `⌘⌥R` | Reveal the active document in Finder. Also fires the `notesage:reveal-in-finder` event |
 | Open Tauri devtools | `⌘⌥I` | Open the Tauri WebView devtools |
 | Exit focus mode | `Esc` | Exit focus mode (when active) |
 

@@ -37,6 +37,42 @@ export interface SettingsDialogV2Props {
 }
 
 /**
+ * Live-test 2026-04-26 — remember the last-viewed panel across opens.
+ *
+ * The user's mental model is "I configure something, close, come back
+ * later, want to land in the same place." We persist the active panel
+ * id in `localStorage` (survives reloads) and consult it on open
+ * UNLESS the caller passed a non-default `initialActiveItem` (the
+ * deep-link case, e.g. `ExplainLockDialog` opening the `projects`
+ * panel directly — the explicit prop wins). Default callers omit the
+ * prop or pass `'appearance'`; for them we restore the stash.
+ *
+ * Stored value is a free-form string so adding new panels later
+ * doesn't require a migration. Reads are wrapped in try/catch because
+ * Safari private mode + locked-down iframes can throw on
+ * `localStorage` access.
+ */
+const LAST_PANEL_STORAGE_KEY = 'notesage:settings-v2:last-panel';
+const DEFAULT_PANEL_ID = 'appearance';
+
+function readLastPanel(): string | null {
+  try {
+    const v = localStorage.getItem(LAST_PANEL_STORAGE_KEY);
+    return v && typeof v === 'string' && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastPanel(id: string): void {
+  try {
+    localStorage.setItem(LAST_PANEL_STORAGE_KEY, id);
+  } catch {
+    /* noop — storage may be locked down (Safari private mode, etc.) */
+  }
+}
+
+/**
  * Nav taxonomy after the 2026-04-26 consolidation: 6 panels in a single
  * group. Privacy / Advanced / About panels were folded into the survivors
  * (Approvals → AI; Diagnostics + Show Hidden Files → System; version /
@@ -134,26 +170,41 @@ const PANELS: PanelEntry[] = [
 export function SettingsDialogV2({
   open,
   onOpenChange,
-  initialActiveItem = 'appearance',
+  initialActiveItem = DEFAULT_PANEL_ID,
   updateState,
   onCheckForUpdate,
   onOpenUpdateDialog,
 }: SettingsDialogV2Props) {
-  const [active, setActive] = React.useState(initialActiveItem);
+  // Resolve the panel to land on: callers that explicitly request a
+  // non-default panel (deep-link case) win; otherwise we restore the
+  // last-viewed panel from `localStorage`, falling back to the default
+  // when nothing is stashed yet.
+  const resolveInitialPanel = React.useCallback(() => {
+    if (initialActiveItem !== DEFAULT_PANEL_ID) return initialActiveItem;
+    return readLastPanel() ?? DEFAULT_PANEL_ID;
+  }, [initialActiveItem]);
+
+  const [active, setActive] = React.useState(resolveInitialPanel);
   const [query, setQuery] = React.useState('');
   const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // Sync `active` with `initialActiveItem` on every open transition so
-  // deep-linking from outside the dialog (e.g. the ExplainLockDialog
-  // "Project Settings > AI Provider Lock" link) lands on the correct
-  // panel even when the dialog has been opened before. Without this,
-  // `useState(initialActiveItem)` captured the prop only on first mount
-  // and ignored subsequent prop changes — the dead-end the user hit.
+  // Sync `active` with `initialActiveItem` (or the remembered panel)
+  // on every open transition so deep-linking from outside the dialog
+  // (e.g. the ExplainLockDialog "Project Settings > AI Provider Lock"
+  // link) lands on the correct panel even when the dialog has been
+  // opened before. Without this, `useState(...)` captured the prop
+  // only on first mount and ignored subsequent prop changes — the
+  // dead-end the user hit pre-2026-04-26.
+  //
+  // Live-test 2026-04-26 follow-up: when no caller deep-link is
+  // active, we now ALSO consult `readLastPanel()` so the dialog
+  // re-opens on the user's last panel — this makes ⌘, feel like
+  // "open Settings where I left it." Explicit deep-links still win.
   const prevOpenRef = React.useRef(open);
   React.useEffect(() => {
-    if (open && !prevOpenRef.current) setActive(initialActiveItem);
+    if (open && !prevOpenRef.current) setActive(resolveInitialPanel());
     prevOpenRef.current = open;
-  }, [open, initialActiveItem]);
+  }, [open, resolveInitialPanel]);
 
   useSettingsSearchShortcut(searchInputRef, open);
 
@@ -217,6 +268,10 @@ export function SettingsDialogV2({
         activeItem={active}
         onActiveItemChange={(id) => {
           setActive(id);
+          // Live-test 2026-04-26 — stash the picked panel so the next
+          // open lands on it (unless the caller deep-links to a
+          // specific panel, which wins via `resolveInitialPanel`).
+          writeLastPanel(id);
           // Picking a panel from the nav clears the search so the
           // user sees that panel's full content.
           if (isSearching) setQuery('');

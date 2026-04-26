@@ -185,21 +185,34 @@ function SkillMode({
             onClick={() => onPick(skill.name)}
             onMouseEnter={() => setActiveIndex(i)}
             className={cn(
-              'flex w-full items-start gap-2 px-3 py-2 text-left transition-colors duration-150',
+              // Density (live-test 2026-04-26).
+              'flex w-full items-start gap-2 px-3 py-1.5 text-left text-[13px] transition-colors duration-150',
               active
                 ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
-                : 'text-foreground hover:bg-muted',
+                : 'text-foreground hover:bg-muted/60',
             )}
           >
             <Sparkles
-              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              className={cn(
+                'mt-[3px] size-3 shrink-0',
+                active
+                  ? 'text-[oklch(100%_0_0)]/85'
+                  : 'text-muted-foreground',
+              )}
               strokeWidth={1.5}
               aria-hidden
             />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">{skill.name}</span>
+              <span className="truncate font-medium">{skill.name}</span>
               {skill.description ? (
-                <span className="truncate text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    'truncate text-xs',
+                    active
+                      ? 'text-[oklch(100%_0_0)]/75'
+                      : 'text-muted-foreground',
+                  )}
+                >
                   {skill.description}
                 </span>
               ) : null}

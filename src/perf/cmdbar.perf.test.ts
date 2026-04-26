@@ -138,9 +138,17 @@ vi.mock("@/stores/chat-store", () => {
   function useChatStore<T>(selector: (state: typeof __chatStoreState) => T): T {
     return selector(__chatStoreState);
   }
+  // Live-test 2026-04-26 — `CommandBarContext` and the slice-2 cmd-bar
+  // pickers added selector imports (`selectProjectPaths`,
+  // `selectPendingProjectSwitch`, `selectPendingAgentSwitch`) that this
+  // perf mock didn't export. Re-export them as bare no-op selectors —
+  // the perf benchmarks don't exercise the switch-prompt flows.
   return {
     useChatStore,
     selectMessages: () => [],
+    selectProjectPaths: () => [] as string[],
+    selectPendingProjectSwitch: () => null,
+    selectPendingAgentSwitch: () => null,
   };
 });
 
@@ -156,13 +164,14 @@ vi.mock("@/components/cmd/CommandBarContext", () => ({
 // ---------------------------------------------------------------------------
 
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Click the compact pill and return the expanded input element. */
-function expandBar(): HTMLInputElement {
+function expandBar(): HTMLTextAreaElement {
   const compact = document.body.querySelector(
     '[data-cmd-bar] button',
   ) as HTMLButtonElement | null;
@@ -171,8 +180,8 @@ function expandBar(): HTMLInputElement {
     fireEvent.click(compact);
   });
   const input = document.body.querySelector(
-    'input[role="combobox"]',
-  ) as HTMLInputElement | null;
+    '[role="combobox"]',
+  ) as HTMLTextAreaElement | null;
   if (!input) throw new Error("expanded input not found");
   return input;
 }
@@ -216,7 +225,7 @@ describe("cmdbar focus (compact→expanded)", () => {
         });
 
         // Sanity: input must be present so the budget reflects real work.
-        const input = document.body.querySelector('input[role="combobox"]');
+        const input = document.body.querySelector('[role="combobox"]');
         if (!input) throw new Error("expand failed — input not in DOM");
       },
       100,
@@ -240,15 +249,25 @@ describe("cmdbar dismiss", () => {
         act(() => {
           render(React.createElement(FloatingCommandBar));
         });
-        const input = expandBar();
+        // expandBar() returns the textarea so we know expansion succeeded.
+        expandBar();
 
-        // Measured work: Esc → React state flip → compact DOM remount.
+        // Measured work: dismiss bus event → React state flip → compact
+        // DOM remount.
+        //
+        // Live-test 2026-04-26 — the bar's local Esc handler was
+        // intentionally removed; `useCommandBarShortcuts` (mounted by
+        // App.tsx in production) is the single source of truth for the
+        // three-stage Esc chain. The perf test renders the bar in
+        // isolation without that hook, so we emit the bus event directly
+        // — which is what the hook would do anyway. This still measures
+        // the React side of dismiss (state flip + compact remount).
         act(() => {
-          fireEvent.keyDown(input, { key: "Escape" });
+          emitCmdBarEvent({ type: "dismiss" });
         });
 
         // Sanity: combobox is gone, compact pill is back.
-        if (document.body.querySelector('input[role="combobox"]')) {
+        if (document.body.querySelector('[role="combobox"]')) {
           throw new Error("dismiss failed — input still in DOM");
         }
       },
@@ -296,45 +315,14 @@ describe("cmdbar prefix morph", () => {
 // (4) cmdbar attachment-chip add ≤ 30 ms
 // ---------------------------------------------------------------------------
 
-describe("cmdbar attachment-chip add", () => {
-  it("adds a chip within budget", async () => {
-    const result = await benchmark(
-      "cmdbar attachment-chip add",
-      () => {
-        // Pre-arrange: expanded bar with the @ reference picker open.
-        resetDOM();
-        act(() => {
-          render(React.createElement(FloatingCommandBar));
-        });
-        const input = expandBar();
-        act(() => {
-          fireEvent.change(input, { target: { value: "@" } });
-        });
-        const addBtn = document.body.querySelector(
-          '[data-testid="reference-mode-add-chip"]',
-        ) as HTMLButtonElement | null;
-        if (!addBtn) throw new Error("reference picker stub not mounted");
-
-        // Measured work: click → chip state appended → AttachmentChips re-renders.
-        act(() => {
-          fireEvent.click(addBtn);
-        });
-
-        // Sanity: chips strip reflects 1 chip (active prefix is also cleared).
-        const chips = document.body.querySelector(
-          '[data-testid="chips-stub"]',
-        ) as HTMLElement | null;
-        if (!chips || chips.getAttribute("data-chip-count") !== "1") {
-          throw new Error(
-            `chip add failed — chip count = ${chips?.getAttribute("data-chip-count")}`,
-          );
-        }
-      },
-      30,
-    );
-
-    expect(result.passed).toBe(true);
-  });
+// Live-test 2026-04-26 — the "attachment-chip add via @ picker" benchmark
+// has been removed. Picker selection no longer adds attachment chips
+// (slice 1 redesign — selection is a navigation intent now: file →
+// `notesage:open-file`, person → drilldown to occurrences). Image
+// attachments still populate chips via paste/drag-drop but those flows
+// are exercised at the integration tier, not micro-bench.
+describe.skip("cmdbar attachment-chip add (removed)", () => {
+  it.skip("adds a chip within budget", () => {});
 });
 
 // ---------------------------------------------------------------------------
@@ -349,8 +337,14 @@ describe("cmdbar attachment-chip add", () => {
 // ---------------------------------------------------------------------------
 
 vi.mock("@/components/chat/AcpSessionControls", () => ({
+  // Live-test 2026-04-26 — the mock previously exported only `AcpModePicker`,
+  // but CommandBarContext imports the wrapper `AcpSessionControls` (which
+  // bundles the mode picker + config options + usage indicator). Both
+  // exports are stubbed so the perf test mounts cleanly.
   AcpModePicker: () =>
     React.createElement("div", { "data-testid": "acp-mode-picker-stub" }),
+  AcpSessionControls: () =>
+    React.createElement("div", { "data-testid": "acp-session-controls-stub" }),
 }));
 
 vi.mock("@/components/chat/ExplainLockDialog", () => ({
@@ -488,21 +482,24 @@ describe("cmdbar context row initial render with 3 projects", () => {
           render(React.createElement(Ctx));
         });
 
-        // Sanity: the row's outer wrapper mounted AND three chips are
-        // present (so the benchmark really exercised the 3-project path).
+        // Sanity: the row's outer wrapper mounted AND the projects
+        // picker reflects 3 selected projects.
+        //
+        // Live-test 2026-04-26: the per-project chip row was replaced by
+        // a single collapsed `ProjectsPicker` pill that shows the first
+        // project's name plus a `+N` overflow ("alpha +2"). The
+        // benchmark still exercises the 3-project mount path — only the
+        // visible label format changed.
         const root = document.body.querySelector("[data-cmd-context]");
         if (!root) {
           throw new Error("context row not mounted");
         }
         const text = root.textContent ?? "";
-        // Each chip renders the project basename (alpha / bravo / charlie).
-        if (
-          !text.includes("alpha") ||
-          !text.includes("bravo") ||
-          !text.includes("charlie")
-        ) {
+        // First project (alphabetised → "alpha") plus the +2 overflow
+        // hint is the canonical 3-projects display.
+        if (!text.includes("alpha") || !text.includes("+2")) {
           throw new Error(
-            `expected 3 project chips, got text=${text.slice(0, 200)}`,
+            `expected 3-project picker pill, got text=${text.slice(0, 200)}`,
           );
         }
       },

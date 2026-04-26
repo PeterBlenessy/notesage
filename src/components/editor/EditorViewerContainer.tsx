@@ -30,9 +30,17 @@ interface EditorViewerContainerProps {
   updateTabContent?: (tabId: string, content: string, isDirty: boolean) => void;
   /** Save file to disk (for code file editing) */
   saveFile?: (filePath: string, content: string, tabId: string) => Promise<boolean>;
+  /**
+   * Which StatusBar variant to mount below the viewer. Defaults to
+   * `"full"` (legacy) so callers outside QuietLayout get the
+   * unchanged behaviour. QuietLayout passes `"quiet"` so viewers
+   * (PDF, EPUB, DOCX, code, plain-text) render the same minimal
+   * status strip as the markdown editor.
+   */
+  statusBarVariant?: "full" | "quiet";
 }
 
-export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile }: EditorViewerContainerProps) {
+export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile, statusBarVariant = "full" }: EditorViewerContainerProps) {
   let viewer: React.ReactNode = null;
   switch (activeTab.fileType) {
     case "image":
@@ -106,6 +114,7 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
       {!focusMode && (
         <StatusBar
           editor={null}
+          variant={statusBarVariant}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
         />

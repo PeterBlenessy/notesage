@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Target, Check, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, Check, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -147,6 +147,14 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   // `toggleProjectPath` ChatFooter dispatches so the surrounding
   // `selectPendingProjectSwitch` flow continues to fire.
   const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
+
+  // "New chat" action — same store action the legacy `ChatPanel`'s "+"
+  // button calls. `createConversation()` creates a fresh conversation
+  // and atomically promotes it to the active conversation, so the bar's
+  // existing selectors (active conversation, segments, etc.) refresh
+  // without any extra wiring. Live-test 2026-04-26 — the cmd bar had
+  // no UI affordance to start a new chat from its chrome.
+  const createConversation = useChatStore((s) => s.createConversation);
 
   // Pinned-mode toggle state (#28). Wired to `settings-store.cmdBarPinned`.
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
@@ -357,6 +365,35 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
       {crossProjectMode ? <CrossProjectScopePill /> : null}
 
       {/* Trailing icons ---------------------------------------------------- */}
+      {/* New chat button — sits LEFT of the history toggle. Mirrors the
+          legacy `ChatPanel`'s "+" affordance (lines 466-477) so the new
+          chat is consistent across both shells. `createConversation()`
+          atomically creates and activates a fresh conversation; if the
+          current conversation already has zero messages, clicking is a
+          no-op so we don't churn through empty conversations. When the
+          bar is in history view, also flip back to chat view via the
+          existing `toggle-history` bus event so the user lands in the
+          fresh conversation's empty stream (not the history list). */}
+      <IconButton
+        ariaLabel="Start a new chat"
+        icon={Plus}
+        onClick={() => {
+          const isAlreadyEmpty =
+            activeConversation && activeConversation.messages.length === 0;
+          if (isAlreadyEmpty) {
+            // Already on a blank slate — flip to chat view if needed and
+            // bail; no point spawning another empty conversation.
+            if (chatView === "history") {
+              emitCmdBarEvent({ type: "toggle-history" });
+            }
+            return;
+          }
+          createConversation();
+          if (chatView === "history") {
+            emitCmdBarEvent({ type: "toggle-history" });
+          }
+        }}
+      />
       <IconButton
         ariaLabel={chatView === "history" ? "Back to chat" : "Open history"}
         // Live-test 2026-04-25 #158 — Clock when the user can switch

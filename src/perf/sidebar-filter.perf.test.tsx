@@ -117,7 +117,7 @@ function fullReset(): void {
   useSettingsStore.setState({
     sidebarRecentCap: 5,
     sidebarTagsCap: 5,
-    sidebarTagsHidden: false,
+    sidebarMentionsCap: 5,
   });
 }
 

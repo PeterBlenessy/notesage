@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, MessageSquare, User, type LucideIcon } from "lucide-react";
+import {
+  ChevronLeft,
+  FileText,
+  MessageSquare,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { tauriApi, type FileEntry, type IndexedMention } from "@/lib/tauri";
+import {
+  tauriApi,
+  type FileEntry,
+  type IndexedMention,
+  type IndexTagOccurrence,
+} from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useCommentStore } from "@/stores/comment-store";
 import { selectProjectPaths, useChatStore } from "@/stores/chat-store";
@@ -36,11 +47,39 @@ import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
 const MAX_RESULTS = 8;
 const PER_SOURCE_QUOTA = 3;
 
+/**
+ * Live-test 2026-04-26 (slice 2) — `@person` drilldown.
+ *
+ * When the user picks a person at level 1, ReferenceMode drills into the
+ * file occurrences of that mention (legacy palette parity). The level-2
+ * pick fires a separate callback (`onPickOccurrence`) that carries the
+ * full navigate payload. File / comment picks still fire the original
+ * `onPick(chip)` — file → open file directly, comment → no-op for now.
+ */
+export type ReferenceOccurrenceAction = {
+  filePath: string;
+  fileName: string;
+  /** The full `@mention` symbol — matches `useFileOperations.openFileAtTag`. */
+  symbol: string;
+  occurrenceInFile: number;
+};
+
 interface ReferenceModeProps {
   /** Text typed after the `@` prefix (e.g. "alic" for `@alic`). */
   filter: string;
-  /** Called when the user picks a reference. */
+  /** Called when the user picks a file or comment reference. */
   onPick: (chip: AttachmentChip) => void;
+  /**
+   * Called when the user picks an occurrence inside a person's drilldown.
+   * Optional so existing callers (tests, legacy code paths) keep working.
+   */
+  onPickOccurrence?: (action: ReferenceOccurrenceAction) => void;
+  /**
+   * When set, mounts the picker directly at the level-2 (person
+   * occurrences) view for the given mention name. Used by sidebar
+   * MentionsSection so a single click jumps from row to occurrences.
+   */
+  initialPersonDrilldown?: string | null;
   onDismiss?: () => void;
   /**
    * DOM id used as the listbox's `id` attribute and as the prefix for option
@@ -228,6 +267,8 @@ function mixResults(
 function ReferenceMode({
   filter,
   onPick,
+  onPickOccurrence,
+  initialPersonDrilldown,
   listboxId = 'cmd-reference-listbox',
   onActiveOptionChange,
 }: ReferenceModeProps) {
@@ -317,8 +358,57 @@ function ReferenceMode({
     });
   }, [onActiveOptionChange, listboxId, highlightIndex, results.length]);
 
+  // Live-test 2026-04-26 (slice 2) — `@person` drilldown state. Picking
+  // a person at level 1 does NOT fire `onPick` immediately; instead we
+  // drill into the mention's file occurrences and fire
+  // `onPickOccurrence` once the user picks a specific row at level 2.
+  // Files / comments still fire `onPick(chip)` directly (no drilldown
+  // needed — files ARE files; comments are out of scope for v1).
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(
+    initialPersonDrilldown ?? null,
+  );
+
+  // Re-sync when the drilldown seed changes (sidebar click on a different
+  // mention while the bar is already open).
+  useEffect(() => {
+    if (initialPersonDrilldown != null) {
+      setSelectedPerson(initialPersonDrilldown);
+    }
+  }, [initialPersonDrilldown]);
+  const [occurrences, setOccurrences] = useState<IndexTagOccurrence[]>([]);
+  const [occHighlighted, setOccHighlighted] = useState(0);
+  const occReqIdRef = useRef(0);
+
+  useEffect(() => {
+    if (selectedPerson === null) {
+      setOccurrences([]);
+      return;
+    }
+    const reqId = ++occReqIdRef.current;
+    tauriApi
+      .indexMentionOccurrences(selectedPerson, projectPaths)
+      .then((rows) => {
+        if (reqId !== occReqIdRef.current) return;
+        setOccurrences(rows);
+        setOccHighlighted(0);
+      })
+      .catch(() => {
+        if (reqId !== occReqIdRef.current) return;
+        setOccurrences([]);
+      });
+  }, [selectedPerson, projectPaths]);
+
   const handlePick = useCallback(
     (result: ReferenceResult) => {
+      if (result.kind === "person") {
+        // Drill into level 2 — the picker stays mounted; fetch effect
+        // above triggers and the level-2 render branch takes over.
+        const personName = result.id.startsWith("person:")
+          ? result.id.slice("person:".length)
+          : result.name;
+        setSelectedPerson(personName);
+        return;
+      }
       onPick(result.chip);
     },
     [onPick],
@@ -326,8 +416,43 @@ function ReferenceMode({
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
+  // Live-test 2026-04-26 — listen on `window` so arrow / Enter fire even
+  // while the parent FloatingCommandBar's textarea owns focus. Capture
+  // phase so Esc at level 2 (drilldown back) beats the bar's window
+  // dismiss handler.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      // Level 2 — person occurrences
+      if (selectedPerson !== null) {
+        if (event.key === "ArrowDown") {
+          if (occurrences.length === 0) return;
+          event.preventDefault();
+          setOccHighlighted((h) => Math.min(h + 1, occurrences.length - 1));
+        } else if (event.key === "ArrowUp") {
+          if (occurrences.length === 0) return;
+          event.preventDefault();
+          setOccHighlighted((h) => Math.max(h - 1, 0));
+        } else if (event.key === "Enter") {
+          if (occurrences.length === 0) return;
+          event.preventDefault();
+          const occ = occurrences[occHighlighted];
+          if (!occ || !onPickOccurrence) return;
+          onPickOccurrence({
+            filePath: occ.path,
+            fileName: occ.file_name,
+            symbol: `@${selectedPerson}`,
+            occurrenceInFile: occHighlighted,
+          });
+        } else if (event.key === "Escape") {
+          // Esc at level 2 → back to level 1 (don't dismiss the bar).
+          event.preventDefault();
+          event.stopPropagation();
+          setSelectedPerson(null);
+        }
+        return;
+      }
+
+      // Level 1 — mixed references
       if (results.length === 0) return;
       switch (event.key) {
         case "ArrowDown": {
@@ -347,13 +472,135 @@ function ReferenceMode({
           event.preventDefault();
           handlePick(results[highlightRef.current]);
           return;
-        default:
-          return;
       }
-    },
-    [results, handlePick, setHighlight],
-  );
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [
+    results,
+    handlePick,
+    setHighlight,
+    selectedPerson,
+    occurrences,
+    occHighlighted,
+    onPickOccurrence,
+  ]);
 
+  // ---------------------------------------------------------------------
+  // Level 2 — person drilldown (occurrences across files)
+  // ---------------------------------------------------------------------
+  if (selectedPerson !== null) {
+    return (
+      <div
+        data-reference-list
+        data-cmd-mode-level="occurrences"
+        id={`${listboxId}-occ`}
+        role="listbox"
+        aria-label={`Occurrences of @${selectedPerson}`}
+      >
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
+          <button
+            type="button"
+            onClick={() => setSelectedPerson(null)}
+            aria-label="Back to references"
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
+              "text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60",
+              "transition-colors",
+            )}
+          >
+            <ChevronLeft className="h-3 w-3" strokeWidth={1.5} />
+            <span>Back</span>
+          </button>
+          <span className="text-[13px] font-medium">@{selectedPerson}</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {occurrences.length === 1
+              ? "1 file"
+              : `${occurrences.length} files`}
+          </span>
+        </div>
+        {occurrences.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-muted-foreground">
+            No occurrences found
+          </div>
+        ) : (
+          <ul className="py-1">
+            {occurrences.map((occ, idx) => {
+              const selected = idx === occHighlighted;
+              return (
+                <li
+                  key={`${occ.path}-${idx}`}
+                  id={`${listboxId}-occ-${idx}`}
+                  role="option"
+                  aria-selected={selected ? "true" : "false"}
+                  onMouseEnter={() => setOccHighlighted(idx)}
+                  onClick={() =>
+                    onPickOccurrence?.({
+                      filePath: occ.path,
+                      fileName: occ.file_name,
+                      symbol: `@${selectedPerson}`,
+                      occurrenceInFile: idx,
+                    })
+                  }
+                  className={cn(
+                    "flex items-start gap-2 px-3 py-1.5 cursor-pointer",
+                    "text-[13px] transition-colors",
+                    selected
+                      ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
+                      : "text-foreground hover:bg-muted/60",
+                  )}
+                >
+                  <FileText
+                    size={12}
+                    strokeWidth={1.5}
+                    className={cn(
+                      "mt-[3px] shrink-0",
+                      selected
+                        ? "text-[oklch(100%_0_0)]/85"
+                        : "text-muted-foreground",
+                    )}
+                    aria-hidden
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium">
+                      {occ.file_name}
+                    </span>
+                    {(occ.context_before || occ.context_after) && (
+                      <span
+                        className={cn(
+                          "truncate text-xs",
+                          selected
+                            ? "text-[oklch(100%_0_0)]/75"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        …{occ.context_before}
+                        <span
+                          className={cn(
+                            "font-medium",
+                            selected
+                              ? "text-[oklch(100%_0_0)]"
+                              : "text-foreground",
+                          )}
+                        >
+                          @{selectedPerson}
+                        </span>
+                        {occ.context_after}…
+                      </span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Level 1 — mixed references (files + people + comments)
+  // ---------------------------------------------------------------------
   return (
     <div
       ref={listRef}
@@ -361,11 +608,8 @@ function ReferenceMode({
       data-reference-list
       role="listbox"
       aria-label="References"
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
+      tabIndex={-1}
       className={cn(
-        "border-t border-border",
-        "max-h-[280px] overflow-y-auto",
         "py-1",
         "focus:outline-none",
       )}
@@ -417,27 +661,44 @@ function ResultRow({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       className={cn(
-        "flex items-center gap-2 px-3 py-1.5 cursor-pointer",
+        // Density (live-test 2026-04-26).
+        "flex items-center gap-2 px-3 py-1.5 cursor-pointer text-[13px]",
         "transition-colors",
-        highlighted ? "bg-muted" : "hover:bg-muted/60",
+        highlighted
+          ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
+          : "text-foreground hover:bg-muted/60",
       )}
     >
       <Icon
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        className={cn(
+          "h-3 w-3 shrink-0",
+          highlighted
+            ? "text-[oklch(100%_0_0)]/85"
+            : "text-muted-foreground",
+        )}
         strokeWidth={1.5}
         aria-hidden="true"
       />
       <span
         className={cn(
-          "shrink-0 rounded border border-border bg-muted/40",
-          "px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground",
+          "shrink-0 rounded px-1 py-px text-[10px] uppercase tracking-wide",
+          highlighted
+            ? "bg-[oklch(100%_0_0)]/15 text-[oklch(100%_0_0)]/85"
+            : "border border-border bg-muted/40 text-muted-foreground",
         )}
       >
         {meta.label}
       </span>
-      <span className="truncate text-sm text-foreground">{result.name}</span>
+      <span className="truncate">{result.name}</span>
       {result.detail ? (
-        <span className="ml-auto truncate text-xs text-muted-foreground">
+        <span
+          className={cn(
+            "ml-auto truncate text-xs",
+            highlighted
+              ? "text-[oklch(100%_0_0)]/75"
+              : "text-muted-foreground",
+          )}
+        >
           {result.detail}
         </span>
       ) : null}

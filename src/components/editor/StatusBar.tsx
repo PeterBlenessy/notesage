@@ -8,9 +8,7 @@ import {
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-// `formatSavedLabel` / `pickTimerInterval` import removed —
-// `QuietSavedLabel` was deleted (live-test 2026-04-25). The helpers
-// still live in `@/lib/saved-ago` for the shared `SavedLabel`.
+import { SavedLabel } from "@/components/SavedLabel";
 import { useActionStore } from "@/stores/action-store";
 
 /** Inline completion icon — italic T with horizontal sparkle trail ✦··· representing text being completed. */
@@ -924,9 +922,16 @@ function QuietStatusBar({
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }) {
-  // `tab` / `activeTabId` were only used to feed `QuietSavedLabel`,
-  // which was removed live-test 2026-04-25. `editor` already supplies
-  // everything the strip still renders.
+  // Read the active tab so we can render the "saved Xs ago" readout
+  // next to the word count (live-test 2026-04-26 — relocated from the
+  // TitleBar). The shared `<SavedLabel />` handles its own polling and
+  // visibility (suppressed mid-edit, em-dash for never-saved tabs).
+  const activeTab = useEditorStore((s) => {
+    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
+    return tab ?? null;
+  });
+  const isDirty = Boolean(activeTab?.isDirty);
+  const lastSavedAt = activeTab?.lastSavedAt;
 
   // Re-read word count when the editor transacts so it tracks typing.
   const [, setTick] = useState(0);
@@ -1072,14 +1077,37 @@ function QuietStatusBar({
           )}
         </div>
 
-        <span className="tabular-nums">
-          {fmtNum(words)} {words === 1 ? "word" : "words"}
-        </span>
+        {/* Word count is only meaningful when a document is open — when
+            the editor is null (landing state, no tab) we render the
+            bare chrome (dots + focus hint) without a stale "0 words"
+            label. Live-test 2026-04-26 bug #3. */}
+        {editor ? (
+          <span className="tabular-nums">
+            {fmtNum(words)} {words === 1 ? "word" : "words"}
+          </span>
+        ) : null}
 
-        {/* Live-test 2026-04-25 — saved-ago and `⌘K ask` removed.
-            Saved-ago is in the quiet TitleBar (right side) + sidebar
-            already. The ⌘K hint duplicates the FloatingCommandBar
-            compact pill. Strip now reads `<words> · ⌘. focus`. */}
+        {/* Live-test 2026-04-26 — saved-ago moved here from the
+            TitleBar so document-state info (word count + last-save
+            recency) lives in one place. The slot is intentionally
+            empty (no separator, no label) whenever `<SavedLabel />`
+            itself would render nothing: no active tab, the tab is
+            dirty (saved-ago would lie mid-edit), or the tab is clean
+            but has never been saved this session (no "-" stale
+            placeholder). Mounting the bullet behind the SAME gate
+            that SavedLabel uses internally guarantees no orphan
+            separator in any state. */}
+        {activeTab && !isDirty && lastSavedAt !== undefined ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <SavedLabel
+              lastSavedAt={lastSavedAt}
+              isDirty={isDirty}
+              className="text-xs text-muted-foreground tabular-nums"
+            />
+          </>
+        ) : null}
+
         <span className="ml-auto flex items-center gap-3">
           <span>
             <kbd className="font-sans">{"\u2318"}.</kbd> focus
@@ -1090,7 +1118,6 @@ function QuietStatusBar({
         open={trayOpen}
         onOpenChange={handleOpenChange}
         anchor={virtualAnchorRef}
-        wordCount={editor ? words : undefined}
         comments={comments}
         onSelectComment={onSelectComment}
         onDelegateComment={onDelegateComment}
@@ -1106,8 +1133,10 @@ function QuietStatusBar({
   );
 }
 
-// `QuietSavedLabel` was removed in live-test 2026-04-25 \u2014 saved-ago is
-// shown by `SavedLabel` (the shared component used in TitleBar quiet
-// mode + sidebar) and repeating it here was overwhelming. The shared
-// `formatSavedLabel` / `pickTimerInterval` helpers stay in
-// `@/lib/saved-ago` for `SavedLabel.tsx`.
+// `QuietSavedLabel` was removed in live-test 2026-04-25. Live-test
+// 2026-04-26 \u2014 the shared `SavedLabel` is now mounted directly in the
+// QuietStatusBar (next to the word count) so document-state info
+// lives in one place. The TitleBar no longer renders it; only the
+// dirty dot stays there. The shared `formatSavedLabel` /
+// `pickTimerInterval` helpers stay in `@/lib/saved-ago` for
+// `SavedLabel.tsx`.

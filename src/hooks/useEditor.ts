@@ -128,7 +128,16 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
           class: "rounded-lg max-w-full",
         },
       }),
-      CodeBlockLowlight.configure({
+      // Live-test 2026-04-26 — drop the default `Mod-Alt-c` chord so it
+      // doesn't conflict with the global "Copy path" (`⌘⌥C`) handler in
+      // `useKeyboardShortcuts`. Users still reach code blocks via the
+      // toolbar button, the `/code` slash command, and the triple-backtick
+      // input rule.
+      CodeBlockLowlight.extend({
+        addKeyboardShortcuts() {
+          return {};
+        },
+      }).configure({
         lowlight,
         HTMLAttributes: {
           class: "bg-muted rounded-lg p-4 font-mono text-sm",

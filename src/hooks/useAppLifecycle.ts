@@ -177,7 +177,19 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
   }, []);
 
   // --- Reload file trees on startup ---
+  // Guard against `React.StrictMode`'s dev-only double-invocation of
+  // empty-deps effects. Without this, `reloadTrees()` (and its per-project
+  // `index init` Promise.all) runs TWICE on every dev cold-start, doubling
+  // the perceived startup time. Production is unaffected — StrictMode
+  // double-invoke is dev-only — but the dev cost is real, and the
+  // workload here is genuinely once-per-process (DB init, tree validation,
+  // tab restoration), not a candidate for "tolerate the double-fire and
+  // make it idempotent." Live-test 2026-04-26.
+  const startupRanRef = useRef(false);
   useEffect(() => {
+    if (startupRanRef.current) return;
+    startupRanRef.current = true;
+
     const STARTUP_TIMEOUT_MS = 30_000;
     let timedOut = false;
 

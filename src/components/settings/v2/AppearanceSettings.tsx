@@ -169,8 +169,8 @@ export function AppearanceSettings() {
   const setSidebarRecentCap = useSettingsStore((s) => s.setSidebarRecentCap);
   const sidebarTagsCap = useSettingsStore((s) => s.sidebarTagsCap);
   const setSidebarTagsCap = useSettingsStore((s) => s.setSidebarTagsCap);
-  const sidebarTagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
-  const setSidebarTagsHidden = useSettingsStore((s) => s.setSidebarTagsHidden);
+  const sidebarMentionsCap = useSettingsStore((s) => s.sidebarMentionsCap);
+  const setSidebarMentionsCap = useSettingsStore((s) => s.setSidebarMentionsCap);
 
   // ── Derived values ────────────────────────────────────────────────────
 
@@ -490,36 +490,46 @@ export function AppearanceSettings() {
         <SettingsRow
           label="Top tags"
           description={
-            sidebarTagsHidden
-              ? 'Hidden — enable the toggle below to show tags.'
-              : 'Maximum tags shown, sorted by usage.'
+            sidebarTagsCap === 0
+              ? 'Hidden — drag the slider above 0 to show the Tags section.'
+              : 'Maximum tags shown, sorted by usage. Set to 0 to hide.'
           }
           control={
             <div className="w-[180px]">
               <Slider
                 value={[sidebarTagsCap]}
                 onValueChange={([v]) => setSidebarTagsCap(v)}
-                min={3}
+                min={0}
                 max={15}
                 step={1}
-                disabled={sidebarTagsHidden}
                 aria-label="Top tags cap"
               />
             </div>
           }
-          controlSublabel={String(sidebarTagsCap)}
+          controlSublabel={sidebarTagsCap === 0 ? 'Hidden' : String(sidebarTagsCap)}
         />
 
         <SettingsRow
-          label="Hide Tags section"
-          description="Remove the tags list from the sidebar entirely."
-          htmlFor="appearance-sidebar-tags-hidden"
+          label="Top mentions"
+          description={
+            sidebarMentionsCap === 0
+              ? 'Hidden — drag the slider above 0 to show the Mentions section.'
+              : 'Maximum mentions shown, sorted by usage. Set to 0 to hide.'
+          }
           control={
-            <Switch
-              id="appearance-sidebar-tags-hidden"
-              checked={sidebarTagsHidden}
-              onCheckedChange={setSidebarTagsHidden}
-            />
+            <div className="w-[180px]">
+              <Slider
+                value={[sidebarMentionsCap]}
+                onValueChange={([v]) => setSidebarMentionsCap(v)}
+                min={0}
+                max={15}
+                step={1}
+                aria-label="Top mentions cap"
+              />
+            </div>
+          }
+          controlSublabel={
+            sidebarMentionsCap === 0 ? 'Hidden' : String(sidebarMentionsCap)
           }
         />
       </SettingsGroup>

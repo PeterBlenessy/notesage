@@ -190,15 +190,18 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
   const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
   const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
   const [quietChromeAdvancedOpen, setQuietChromeAdvancedOpen] = useState(false);
-  // Sidebar composition (#35) — Recent / Tags caps + Tags hidden toggle.
-  // Same rationale as the quiet-chrome block: narrow selectors keep the
+  // Sidebar composition (#35) — Recent / Tags / Mentions caps. The slider
+  // IS the visibility control (cap === 0 hides the section); separate
+  // boolean toggles were removed in v11→v12. Narrow selectors keep the
   // unit-test stub small and avoid re-renders when unrelated settings change.
   const sidebarRecentCap = useSettingsStore((s) => s.sidebarRecentCap);
   const sidebarTagsCap = useSettingsStore((s) => s.sidebarTagsCap);
-  const sidebarTagsHidden = useSettingsStore((s) => s.sidebarTagsHidden);
+  const sidebarMentionsCap = useSettingsStore((s) => s.sidebarMentionsCap);
   const setSidebarRecentCap = useSettingsStore((s) => s.setSidebarRecentCap);
   const setSidebarTagsCap = useSettingsStore((s) => s.setSidebarTagsCap);
-  const setSidebarTagsHidden = useSettingsStore((s) => s.setSidebarTagsHidden);
+  const setSidebarMentionsCap = useSettingsStore(
+    (s) => s.setSidebarMentionsCap,
+  );
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
@@ -683,47 +686,55 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       />
                     </div>
 
-                    {/* Tags cap — disabled when tags hidden */}
+                    {/* Tags cap — slider is the visibility control; 0 hides */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <span className={cn("text-sm", sidebarTagsHidden && "text-muted-foreground")}>
+                          <span className={cn("text-sm", sidebarTagsCap === 0 && "text-muted-foreground")}>
                             Top tags
                           </span>
                           <p className="text-xs text-muted-foreground">
-                            {sidebarTagsHidden
-                              ? "Hidden — enable the toggle below to show tags"
-                              : "Maximum tags shown, sorted by usage"}
+                            {sidebarTagsCap === 0
+                              ? "Hidden — drag above 0 to show the Tags section"
+                              : "Maximum tags shown, sorted by usage. Set to 0 to hide."}
                           </p>
                         </div>
-                        <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
-                          {sidebarTagsCap}
+                        <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
+                          {sidebarTagsCap === 0 ? "Hidden" : sidebarTagsCap}
                         </span>
                       </div>
                       <Slider
-                        min={3}
+                        min={0}
                         max={15}
                         step={1}
-                        disabled={sidebarTagsHidden}
                         value={[sidebarTagsCap]}
                         onValueChange={([v]) => setSidebarTagsCap(v)}
                       />
                     </div>
 
-                    {/* Tags hidden switch */}
-                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-border">
-                      <div>
-                        <Label htmlFor="sidebar-tags-hidden" className="text-sm font-medium cursor-pointer">
-                          Hide Tags section
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Remove the tags list from the sidebar entirely
-                        </p>
+                    {/* Mentions cap — slider is the visibility control; 0 hides */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className={cn("text-sm", sidebarMentionsCap === 0 && "text-muted-foreground")}>
+                            Top mentions
+                          </span>
+                          <p className="text-xs text-muted-foreground">
+                            {sidebarMentionsCap === 0
+                              ? "Hidden — drag above 0 to show the Mentions section"
+                              : "Maximum mentions shown, sorted by usage. Set to 0 to hide."}
+                          </p>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums w-12 text-right">
+                          {sidebarMentionsCap === 0 ? "Hidden" : sidebarMentionsCap}
+                        </span>
                       </div>
-                      <Switch
-                        id="sidebar-tags-hidden"
-                        checked={sidebarTagsHidden}
-                        onCheckedChange={setSidebarTagsHidden}
+                      <Slider
+                        min={0}
+                        max={15}
+                        step={1}
+                        value={[sidebarMentionsCap]}
+                        onValueChange={([v]) => setSidebarMentionsCap(v)}
                       />
                     </div>
                   </div>

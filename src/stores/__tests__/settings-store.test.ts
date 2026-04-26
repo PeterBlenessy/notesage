@@ -168,7 +168,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   },
   sidebarRecentCap: 5,
   sidebarTagsCap: 5,
-  sidebarTagsHidden: false,
+  sidebarMentionsCap: 5,
   previewInvitationShownAt: null,
   previewInvitationDismissedAt: null,
 };
@@ -1112,7 +1112,7 @@ describe('uiPreview flag', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1254,7 +1254,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1400,7 +1400,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1525,8 +1525,8 @@ describe('sidebar composition — defaults', () => {
     expect(useSettingsStore.getState().sidebarTagsCap).toBe(5);
   });
 
-  it('sidebarTagsHidden defaults to false', () => {
-    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
+  it('sidebarMentionsCap defaults to 5', () => {
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(5);
   });
 });
 
@@ -1575,14 +1575,19 @@ describe('setSidebarTagsCap clamping', () => {
     useSettingsStore.setState(SETTINGS_DEFAULTS);
   });
 
-  it('sets value within [3, 15]', () => {
+  it('sets value within [0, 15]', () => {
     useSettingsStore.getState().setSidebarTagsCap(10);
     expect(useSettingsStore.getState().sidebarTagsCap).toBe(10);
   });
 
-  it('clamps values below 3 to 3', () => {
+  it('accepts 0 (slider IS the visibility control — 0 hides the section)', () => {
     useSettingsStore.getState().setSidebarTagsCap(0);
-    expect(useSettingsStore.getState().sidebarTagsCap).toBe(3);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(0);
+  });
+
+  it('clamps negative values to 0', () => {
+    useSettingsStore.getState().setSidebarTagsCap(-5);
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(0);
   });
 
   it('clamps values above 15 to 15', () => {
@@ -1596,25 +1601,41 @@ describe('setSidebarTagsCap clamping', () => {
   });
 });
 
-describe('setSidebarTagsHidden', () => {
+describe('setSidebarMentionsCap clamping', () => {
   beforeEach(() => {
     useSettingsStore.setState(SETTINGS_DEFAULTS);
   });
 
-  it('toggles from false to true and back', () => {
-    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
-    useSettingsStore.getState().setSidebarTagsHidden(true);
-    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(true);
-    useSettingsStore.getState().setSidebarTagsHidden(false);
-    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(false);
+  it('sets value within [0, 15]', () => {
+    useSettingsStore.getState().setSidebarMentionsCap(9);
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(9);
+  });
+
+  it('accepts 0 (slider IS the visibility control — 0 hides the section)', () => {
+    useSettingsStore.getState().setSidebarMentionsCap(0);
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(0);
+  });
+
+  it('clamps negative values to 0', () => {
+    useSettingsStore.getState().setSidebarMentionsCap(-3);
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(0);
+  });
+
+  it('clamps values above 15 to 15', () => {
+    useSettingsStore.getState().setSidebarMentionsCap(50);
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(15);
+  });
+
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setSidebarMentionsCap(7.7);
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(8);
   });
 });
 
 describe('sidebar composition — persistence round-trip', () => {
-  it('persists sidebarRecentCap, sidebarTagsCap, and sidebarTagsHidden across restart', async () => {
+  it('persists sidebarRecentCap and sidebarTagsCap across restart', async () => {
     useSettingsStore.getState().setSidebarRecentCap(12);
     useSettingsStore.getState().setSidebarTagsCap(8);
-    useSettingsStore.getState().setSidebarTagsHidden(true);
     await waitForPersist();
 
     await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
@@ -1622,7 +1643,26 @@ describe('sidebar composition — persistence round-trip', () => {
     const s = useSettingsStore.getState();
     expect(s.sidebarRecentCap).toBe(12);
     expect(s.sidebarTagsCap).toBe(8);
-    expect(s.sidebarTagsHidden).toBe(true);
+  });
+
+  it('persists sidebarMentionsCap across restart', async () => {
+    useSettingsStore.getState().setSidebarMentionsCap(11);
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarMentionsCap).toBe(11);
+  });
+
+  it('persists sidebarTagsCap = 0 (hidden state) across restart', async () => {
+    useSettingsStore.getState().setSidebarTagsCap(0);
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarTagsCap).toBe(0);
   });
 });
 
@@ -1631,7 +1671,7 @@ describe('sidebar composition — persistence round-trip', () => {
 // ===========================================================================
 
 describe('v7 → v8 migration (sidebar composition)', () => {
-  it('adds sidebarRecentCap: 5, sidebarTagsCap: 5, sidebarTagsHidden: false to a v7 state lacking them', async () => {
+  it('adds sidebarRecentCap: 5 and sidebarTagsCap: 5 to a v7 state lacking them', async () => {
     const v7State = {
       state: {
         theme: 'dark',
@@ -1670,20 +1710,26 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const s = useSettingsStore.getState();
     expect(s.sidebarRecentCap).toBe(5);
     expect(s.sidebarTagsCap).toBe(5);
-    expect(s.sidebarTagsHidden).toBe(false);
+    // The Hidden flag was added in v8, then dropped in v12. After rehydrating
+    // a v7 state through to v12 the Hidden field should not exist on state.
+    expect((s as unknown as Record<string, unknown>).sidebarTagsHidden).toBeUndefined();
 
     // Persisted JSON should reflect the bumped version + new fields so the
     // migration doesn't re-run on the next launch.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
-    expect(parsed.state.sidebarTagsHidden).toBe(false);
+    // Hidden field stripped by v11 → v12 migration.
+    expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
 
-  it('preserves existing sidebar composition values when present (idempotent)', async () => {
+  it('preserves existing sidebar composition cap values when present (idempotent)', async () => {
+    // v8 state with Hidden = false should preserve the cap untouched as the
+    // chain runs forward to v12. Hidden = true is covered by the dedicated
+    // v11 → v12 migration test below.
     const v8State = {
       state: {
         theme: 'dark',
@@ -1713,7 +1759,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
         },
         sidebarRecentCap: 10,
         sidebarTagsCap: 7,
-        sidebarTagsHidden: true,
+        sidebarTagsHidden: false,
       },
       version: 8,
     };
@@ -1725,7 +1771,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const s = useSettingsStore.getState();
     expect(s.sidebarRecentCap).toBe(10);
     expect(s.sidebarTagsCap).toBe(7);
-    expect(s.sidebarTagsHidden).toBe(true);
+    expect((s as unknown as Record<string, unknown>).sidebarTagsHidden).toBeUndefined();
   });
 });
 
@@ -1928,7 +1974,7 @@ describe('v8 → v9 migration (preview invitation timestamps)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.previewInvitationShownAt).toBeNull();
     expect(parsed.state.previewInvitationDismissedAt).toBeNull();
   });
@@ -2030,7 +2076,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(10);
+    expect(parsed.version).toBe(12);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -2041,5 +2087,257 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     expect(useSettingsStore.getState().cmdBarExpandedWidth).toBe(1400);
     useSettingsStore.getState().setCmdBarExpandedWidth(800);
     expect(useSettingsStore.getState().cmdBarExpandedWidth).toBe(800);
+  });
+});
+
+// ===========================================================================
+// v10 → v11 migration (sidebar Mentions composition)
+// ===========================================================================
+
+describe('v10 → v11 migration (sidebar Mentions composition)', () => {
+  it('adds sidebarMentionsCap: 5 to a v10 state lacking it (v11 added Hidden, v12 dropped it)', async () => {
+    const v10State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        cmdBarExpandedWidth: 640,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+        sidebarRecentCap: 5,
+        sidebarTagsCap: 5,
+        sidebarTagsHidden: false,
+        previewInvitationShownAt: null,
+        previewInvitationDismissedAt: null,
+      },
+      version: 10,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v10State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarMentionsCap).toBe(5);
+    // Hidden field stripped by v11 → v12 migration.
+    expect((s as unknown as Record<string, unknown>).sidebarMentionsHidden).toBeUndefined();
+
+    // Persisted JSON should reflect the bumped version + new fields so the
+    // migration doesn't re-run on the next launch.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(12);
+    expect(parsed.state.sidebarMentionsCap).toBe(5);
+    expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
+  });
+
+  it('v11 state with sidebarMentionsHidden: true migrates to sidebarMentionsCap: 0 in v12', async () => {
+    const v11State = {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        cmdBarExpandedWidth: 640,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+        sidebarRecentCap: 5,
+        sidebarTagsCap: 5,
+        sidebarTagsHidden: false,
+        sidebarMentionsCap: 9,
+        sidebarMentionsHidden: true,
+        previewInvitationShownAt: null,
+        previewInvitationDismissedAt: null,
+      },
+      version: 11,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v11State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    // v11→v12 collapsed Hidden: true → cap 0 to preserve user intent.
+    expect(s.sidebarMentionsCap).toBe(0);
+    expect((s as unknown as Record<string, unknown>).sidebarMentionsHidden).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// v11 → v12 migration (drop Tags / Mentions Hidden booleans, collapse to
+// cap = 0 when the flag was true so the user's "I had this hidden" intent
+// survives the migration)
+// ===========================================================================
+
+describe('v11 → v12 migration (drop Hidden booleans)', () => {
+  function buildV11State(overrides: Record<string, unknown>) {
+    return {
+      state: {
+        theme: 'dark',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        contrastLevel: 0,
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+        cmdBarPinned: false,
+        cmdBarPinnedWidth: 400,
+        cmdBarExpandedWidth: 640,
+        quietChromePreset: 'default',
+        quietChromeOverrides: {
+          toolbar: true,
+          status: true,
+          docHead: true,
+          sidebar: false,
+          orb: false,
+        },
+        sidebarRecentCap: 5,
+        sidebarTagsCap: 5,
+        sidebarTagsHidden: false,
+        sidebarMentionsCap: 5,
+        sidebarMentionsHidden: false,
+        previewInvitationShownAt: null,
+        previewInvitationDismissedAt: null,
+        ...overrides,
+      },
+      version: 11,
+    };
+  }
+
+  it('collapses sidebarTagsHidden: true into sidebarTagsCap: 0 and deletes the flag', async () => {
+    const v11State = buildV11State({
+      sidebarTagsCap: 5,
+      sidebarTagsHidden: true,
+    });
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v11State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarTagsCap).toBe(0);
+    expect((s as unknown as Record<string, unknown>).sidebarTagsHidden).toBeUndefined();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(12);
+    expect(parsed.state.sidebarTagsCap).toBe(0);
+    expect(parsed.state.sidebarTagsHidden).toBeUndefined();
+  });
+
+  it('collapses sidebarMentionsHidden: true into sidebarMentionsCap: 0 and deletes the flag', async () => {
+    const v11State = buildV11State({
+      sidebarMentionsCap: 9,
+      sidebarMentionsHidden: true,
+    });
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v11State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarMentionsCap).toBe(0);
+    expect((s as unknown as Record<string, unknown>).sidebarMentionsHidden).toBeUndefined();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(12);
+    expect(parsed.state.sidebarMentionsCap).toBe(0);
+    expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
+  });
+
+  it('preserves cap and drops the flag when Hidden is false (no collapse)', async () => {
+    const v11State = buildV11State({
+      sidebarTagsCap: 7,
+      sidebarTagsHidden: false,
+      sidebarMentionsCap: 4,
+      sidebarMentionsHidden: false,
+    });
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v11State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarTagsCap).toBe(7);
+    expect(s.sidebarMentionsCap).toBe(4);
+    expect((s as unknown as Record<string, unknown>).sidebarTagsHidden).toBeUndefined();
+    expect((s as unknown as Record<string, unknown>).sidebarMentionsHidden).toBeUndefined();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(12);
+    expect(parsed.state.sidebarTagsHidden).toBeUndefined();
+    expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
+  });
+
+  it('handles both flags true at once (collapses both caps to 0)', async () => {
+    const v11State = buildV11State({
+      sidebarTagsCap: 8,
+      sidebarTagsHidden: true,
+      sidebarMentionsCap: 12,
+      sidebarMentionsHidden: true,
+    });
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v11State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.sidebarTagsCap).toBe(0);
+    expect(s.sidebarMentionsCap).toBe(0);
+    expect((s as unknown as Record<string, unknown>).sidebarTagsHidden).toBeUndefined();
+    expect((s as unknown as Record<string, unknown>).sidebarMentionsHidden).toBeUndefined();
   });
 });

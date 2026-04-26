@@ -151,7 +151,6 @@ describe("status-tray popover open", () => {
         const view = renderWithProviders(
           makeControlledHost(
             {
-              wordCount: 450,
               comments: [],
             },
             setterRef,
@@ -181,8 +180,9 @@ describe("status-tray popover open", () => {
 
 // ---------------------------------------------------------------------------
 // (b) Comments list expand — clicking "View open comments" inside the tray.
-//     The tray fires a notesage:open-comment-list CustomEvent and closes
-//     itself. We measure the click → state update cycle.
+//     The tray fires a notesage:open-comment-list CustomEvent (legacy) AND
+//     opens an inline nested Popover with the comment list. We measure the
+//     click → state update cycle.
 // ---------------------------------------------------------------------------
 
 describe("status-tray comments list expand", () => {
@@ -233,7 +233,17 @@ describe("status-tray comments list expand", () => {
           await Promise.resolve();
         });
 
-        // The click closes the tray; re-open for the next iteration.
+        // The click no longer closes the tray (inline popover replaces
+        // the legacy event-based dismiss). Toggle the inner popover
+        // back closed so the next iteration's click reopens it — keeps
+        // the work measured per-iteration consistent.
+        await act(async () => {
+          fireEvent.click(btn);
+          await Promise.resolve();
+        });
+
+        // Re-open the tray defensively in case Radix' outside-click
+        // closed it. No-op when already open.
         await act(async () => {
           setterRef.current?.(true);
           await Promise.resolve();

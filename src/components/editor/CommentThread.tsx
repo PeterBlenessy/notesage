@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { BotMessageSquare, Check, ChevronDown, Loader2, Info, AlertCircle, Square, FileOutput, User } from 'lucide-react';
+import { Bot, Check, ChevronDown, Loader2, Info, AlertCircle, Square, FileOutput, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import type { Comment, DelegationActivity } from '@/stores/comment-store';
@@ -149,7 +149,7 @@ export function CommentThread({
               {isUserReply ? (
                 <User className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
               ) : (
-                <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                <Bot className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
               )}
               <span className="text-xs font-medium text-foreground">{reply.author}</span>
               <span className="text-xs text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
@@ -182,7 +182,7 @@ export function CommentThread({
         <div className="border-t border-border pt-2 mt-2">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-1.5">
-              <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+              <Bot className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-xs font-medium text-foreground">AI Agent</span>
               <span className="text-xs text-muted-foreground">streaming...</span>
             </div>

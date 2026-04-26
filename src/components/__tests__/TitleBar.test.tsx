@@ -33,6 +33,8 @@ const editorState = {
     lastSavedAt?: number;
   }>,
   activeTabId: null as string | null,
+  closeTab: vi.fn(),
+  setPendingCloseTabId: vi.fn(),
 };
 
 function setActiveTab(tab: { id: string; fileName: string; isDirty: boolean; lastSavedAt?: number }) {
@@ -43,6 +45,8 @@ function setActiveTab(tab: { id: string; fileName: string; isDirty: boolean; las
 function clearActiveTab() {
   editorState.openDocuments = [];
   editorState.activeTabId = null;
+  editorState.closeTab.mockReset();
+  editorState.setPendingCloseTabId.mockReset();
 }
 
 vi.mock('@/stores/editor-store', () => {
@@ -159,13 +163,15 @@ describe('TitleBar', () => {
       expect(screen.queryByRole('button', { name: /hide agent panel/i })).toBeNull();
     });
 
-    it('renders no buttons at all in quiet mode (the two toggles are the only buttons)', () => {
+    it('renders no buttons at all on the landing page in quiet mode', () => {
+      // beforeEach() clears the active tab. With no active tab the right
+      // zone is entirely empty — neither the dirty dot nor the close-
+      // document × button render. This guards against accidentally
+      // leaving stray classic-mode buttons or wrappers with role=button.
+      // (When a tab IS active, the close-document × button does render —
+      // see the dedicated tests further down.)
       renderWithProviders(<TitleBar mode="quiet" />);
 
-      // The title bar's only interactive controls are the two toggles. In
-      // quiet mode the right-zone is entirely suppressed — this asserts we
-      // aren't accidentally leaving a stray button or a dangling wrapper
-      // with role=button.
       expect(screen.queryAllByRole('button')).toHaveLength(0);
     });
 
@@ -224,30 +230,94 @@ describe('TitleBar', () => {
       expect(container.querySelector('[aria-label="Unsaved changes"]')).toBeNull();
     });
 
-    it('renders a "saved Xs ago" label for a clean tab with lastSavedAt (#131)', () => {
+    // Live-test 2026-04-26 — the "saved Xs ago" label moved out of
+    // the TitleBar and into the StatusBar (next to the word count),
+    // and the em-dash placeholder for never-saved clean tabs was
+    // dropped entirely so the right zone is empty for clean docs.
+    // The TitleBar now only renders the dirty dot when dirty.
+
+    it('does NOT render a "saved Xs ago" label for a clean tab (moved to StatusBar 2026-04-26)', () => {
       const tenSecondsAgo = Date.now() - 10_000;
       setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false, lastSavedAt: tenSecondsAgo });
       renderWithProviders(<TitleBar mode="quiet" />);
 
-      // Should render "saved Ns ago" for N = 10 (±1 second tolerance).
-      expect(screen.getByText(/saved \d+s ago/i)).toBeTruthy();
+      expect(screen.queryByText(/saved \d+s ago/i)).toBeNull();
     });
 
-    it('renders an em-dash placeholder for a clean tab without lastSavedAt (#131)', () => {
+    it('does NOT render an em-dash placeholder for a clean tab without lastSavedAt (live-test 2026-04-26)', () => {
       setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
       renderWithProviders(<TitleBar mode="quiet" />);
 
-      // SavedLabel renders "—" for tabs that have never been saved this session.
-      expect(screen.getByLabelText('Not yet saved this session')).toBeTruthy();
+      // The right zone is now empty for clean tabs — no SavedLabel,
+      // no em-dash, no aria-labelled placeholder.
+      expect(screen.queryByLabelText('Not yet saved this session')).toBeNull();
     });
 
-    it('suppresses the "saved Xs ago" label while the tab is dirty (#131)', () => {
+    it('suppresses any saved-ago readout while the tab is dirty (live-test 2026-04-26)', () => {
       setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true, lastSavedAt: Date.now() - 5_000 });
       renderWithProviders(<TitleBar mode="quiet" />);
 
-      // The saved label should NOT render while the doc is dirty — showing
-      // "saved 5s ago" mid-edit would be misleading.
+      // Even pre-2026-04-26 the saved label was suppressed mid-edit;
+      // post-relocation it's not in the TitleBar at all.
       expect(screen.queryByText(/saved \d+s ago/i)).toBeNull();
+    });
+
+    // ---------------------------------------------------------------------
+    // Live-test 2026-04-26 — close-document × button. Quiet Composer has no
+    // TabBar (intentional); the TitleBar carries the only visible "close
+    // active document" affordance. Wires through the same closeTab /
+    // setPendingCloseTabId flow ⌘W uses, so warn-if-dirty stays consistent.
+    // ---------------------------------------------------------------------
+
+    it('renders the close-document × button when a tab is active', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      expect(screen.getByRole('button', { name: /close document/i })).toBeTruthy();
+    });
+
+    it('does NOT render the close-document × button on the landing page (no active tab)', () => {
+      // beforeEach() already calls clearActiveTab().
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      expect(screen.queryByRole('button', { name: /close document/i })).toBeNull();
+    });
+
+    it('clicking × on a clean active tab calls closeTab(activeTabId)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      (screen.getByRole('button', { name: /close document/i }) as HTMLButtonElement).click();
+
+      expect(editorState.closeTab).toHaveBeenCalledWith('t1');
+      expect(editorState.setPendingCloseTabId).not.toHaveBeenCalled();
+    });
+
+    it('clicking × on a dirty active tab routes through setPendingCloseTabId (warn flow)', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true });
+      renderWithProviders(<TitleBar mode="quiet" />);
+
+      (screen.getByRole('button', { name: /close document/i }) as HTMLButtonElement).click();
+
+      // Dirty tab must NOT close immediately — same contract as ⌘W and the
+      // legacy TabBar X. The user-facing AlertDialog is mounted by TabBar
+      // in the classic shell; in quiet mode this still flips
+      // `pendingCloseTabId` so any future quiet-mode dialog can pick it up.
+      expect(editorState.setPendingCloseTabId).toHaveBeenCalledWith('t1');
+      expect(editorState.closeTab).not.toHaveBeenCalled();
+    });
+
+    it('does NOT render the close-document × button in classic mode', () => {
+      setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+      renderWithProviders(
+        <TitleBar
+          onToggleChat={vi.fn()}
+          onToggleActivityStrip={vi.fn()}
+        />,
+      );
+
+      // Classic shell uses the TabBar X; the TitleBar must not duplicate it.
+      expect(screen.queryByRole('button', { name: /close document/i })).toBeNull();
     });
 
     it('renders NO dirty-dot / saved-ago chrome in classic mode (#131)', () => {

@@ -242,26 +242,13 @@ describe('StatusTray — task #53', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('hides the word-count breakdown when wordCount is undefined', () => {
+  it('does not render the legacy "N words · M min read" footer', () => {
+    // Live-test 2026-04-26 — the word-count + reading-time footer was
+    // dropped from the popover (the word count is already shown in the
+    // status-bar row itself; duplicating it here was visual noise).
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
     expect(document.body.textContent ?? '').not.toContain('min read');
-  });
-
-  it('shows "N words · M min read" when wordCount is provided', () => {
-    renderWithProviders(
-      <TrayHost open={true} onOpenChange={() => {}} wordCount={450} />,
-    );
-    const text = document.body.textContent ?? '';
-    expect(text).toContain('450 words');
-    expect(text).toMatch(/min read/);
-  });
-
-  it('uses singular "word" for wordCount=1', () => {
-    renderWithProviders(
-      <TrayHost open={true} onOpenChange={() => {}} wordCount={1} />,
-    );
-    const text = document.body.textContent ?? '';
-    expect(text).toMatch(/1 word\b/);
+    expect(document.body.textContent ?? '').not.toMatch(/\d+ words?\b/);
   });
 
   it('Comments group shows open count when there are open comments', () => {
@@ -295,7 +282,42 @@ describe('StatusTray — task #53', () => {
     expect(text).toContain('View open comments');
   });
 
-  it('"View open comments" closes the tray and fires a custom event', () => {
+  it('Comments group counts comments without a status field as open', () => {
+    // Regression: `addComment` does not set `status` on freshly created
+    // comments — they live with `status === undefined`. The CommentsGroup
+    // used to strict-match `=== "open"` and miss every freshly authored
+    // comment, surfacing "0 / none open" for documents that obviously
+    // had comments. Now the count matches CommentListPopover semantics
+    // (anything not resolved/done is "open").
+    const comments: Comment[] = [
+      {
+        id: 'c1',
+        documentId: 'd',
+        authorId: 'u',
+        body: 'fresh, no status field',
+        anchor: { from: 0, to: 0, anchorText: '' },
+        createdAt: 0,
+        updatedAt: 0,
+      } as unknown as Comment,
+      {
+        id: 'c2',
+        documentId: 'd',
+        authorId: 'u',
+        body: 'also fresh',
+        anchor: { from: 0, to: 0, anchorText: '' },
+        createdAt: 0,
+        updatedAt: 0,
+      } as unknown as Comment,
+    ];
+    renderWithProviders(
+      <TrayHost open={true} onOpenChange={() => {}} comments={comments} />,
+    );
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('2 open');
+    expect(text).toContain('View open comments');
+  });
+
+  it('Comments group hides resolved comments from the count', () => {
     const comments: Comment[] = [
       {
         id: 'c1',
@@ -307,8 +329,48 @@ describe('StatusTray — task #53', () => {
         createdAt: 0,
         updatedAt: 0,
       } as unknown as Comment,
+      {
+        id: 'c2',
+        documentId: 'd',
+        authorId: 'u',
+        body: 'gone',
+        status: 'resolved',
+        anchor: { from: 0, to: 0, anchorText: '' },
+        createdAt: 0,
+        updatedAt: 0,
+      } as unknown as Comment,
+    ];
+    renderWithProviders(
+      <TrayHost open={true} onOpenChange={() => {}} comments={comments} />,
+    );
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('1 open');
+  });
+
+  it('"View open comments" opens an inline comment list and fires the legacy event', () => {
+    // Live-test 2026-04-26 — clicking "View open comments" used to fire
+    // a CustomEvent and close the tray, expecting an external host to
+    // mount the legacy `CommentListPopover`. No host listened, so the
+    // click was a no-op. Behaviour now: the row is itself a
+    // PopoverTrigger and the comment list mounts inside a nested
+    // popover. The legacy CustomEvent is still dispatched on open so
+    // existing listeners and the perf regression test keep working.
+    const comments: Comment[] = [
+      {
+        id: 'c1',
+        documentId: 'd',
+        authorId: 'u',
+        body: 'first comment body',
+        status: 'open',
+        from: 0,
+        to: 0,
+        anchorText: 'anchor snippet',
+        createdAt: 0,
+        updatedAt: 0,
+      } as unknown as Comment,
     ];
     const onOpenChange = vi.fn();
+    const onSelectComment = vi.fn();
     const listener = vi.fn();
     window.addEventListener('notesage:open-comment-list', listener);
 
@@ -317,6 +379,7 @@ describe('StatusTray — task #53', () => {
         open={true}
         onOpenChange={onOpenChange}
         comments={comments}
+        onSelectComment={onSelectComment}
       />,
     );
 
@@ -327,8 +390,23 @@ describe('StatusTray — task #53', () => {
       fireEvent.click(btn);
     });
 
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    // Legacy event fires once on open (regression-locked by perf test).
     expect(listener).toHaveBeenCalledTimes(1);
+    // The inner comment list renders the comment header + body.
+    expect(document.body.textContent ?? '').toContain('Comments (1)');
+    expect(document.body.textContent ?? '').toContain('first comment body');
+    // Clicking a row dismisses the tray (so the editor regains focus on
+    // the jumped-to anchor) and forwards to onSelectComment.
+    const rowBtns = Array.from(document.querySelectorAll('button')).filter((b) =>
+      b.textContent?.includes('first comment body'),
+    );
+    expect(rowBtns.length).toBeGreaterThan(0);
+    act(() => {
+      fireEvent.click(rowBtns[rowBtns.length - 1] as HTMLButtonElement);
+    });
+    expect(onSelectComment).toHaveBeenCalledTimes(1);
+    expect(onSelectComment.mock.calls[0][0].id).toBe('c1');
+    expect(onOpenChange).toHaveBeenCalledWith(false);
 
     window.removeEventListener('notesage:open-comment-list', listener);
   });

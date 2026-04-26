@@ -62,6 +62,8 @@ export function TagsSection({
   // Task #35 — read cap from settings. Explicit `cap` prop still wins for
   // tests/edge cases. Falls back to DEFAULT_TAG_CAP if the setting is missing
   // (shouldn't happen in production — the migration backfills it).
+  // A cap of 0 hides the section entirely (the slider IS the visibility
+  // control — see settings-store v11→v12 migration).
   const settingCap = useSettingsStore((s) => s.sidebarTagsCap);
   const effectiveCap = cap ?? settingCap ?? DEFAULT_TAG_CAP;
 
@@ -134,12 +136,16 @@ export function TagsSection({
    * tag's filter prefilled" — the tag mode IS open, pre-filling requires a
    * bus change).
    */
-  const handleTagClick = (_tagName: string) => {
-    // The underscore is intentional — we pass the tag name through for the
-    // accessible event shape, but the current bus doesn't carry it. Keeping
-    // the argument name meaningful lets future wiring land without a rename.
-    void _tagName;
-    emitCmdBarEvent({ type: "focus", prefix: "#" });
+  const handleTagClick = (tagName: string) => {
+    // Live-test 2026-04-26 (slice 2) — emit a `drilldown` payload so the
+    // cmd bar mounts directly at TagMode's level-2 view (occurrences for
+    // this tag) instead of the level-1 list. Saves one click and matches
+    // the legacy palette UX.
+    emitCmdBarEvent({
+      type: "focus",
+      prefix: "#",
+      drilldown: { kind: "tag", name: tagName },
+    });
   };
 
   const handleRowKeyDown = (
@@ -156,6 +162,10 @@ export function TagsSection({
   };
 
   const toggleExpanded = () => setExpanded((v) => !v);
+
+  // Cap of 0 hides the section entirely — the slider is the visibility
+  // control. Render nothing so QuietSidebar's region count drops by one.
+  if (effectiveCap === 0) return null;
 
   return (
     <section
@@ -181,7 +191,7 @@ export function TagsSection({
                 onKeyDown={(e) => handleRowKeyDown(e, tag.name)}
                 className={cn(
                   "h-7 px-2 flex items-center gap-2 rounded-sm",
-                  "text-sm text-foreground cursor-pointer",
+                  "text-[13px] text-foreground cursor-pointer",
                   "hover:bg-muted/50 transition-colors",
                   "focus-visible:outline-none focus-visible:bg-muted/50",
                   "focus-visible:ring-2 focus-visible:ring-ring/40",

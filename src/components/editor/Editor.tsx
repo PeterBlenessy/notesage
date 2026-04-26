@@ -526,6 +526,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
+  // Quiet Composer mode flag — used by every StatusBar mount in this
+  // component (error state, loading state, viewer fallback, main path)
+  // so all branches render the matching variant. Live-test 2026-04-26
+  // bug #3: error/loading branches were rendering the legacy `"full"`
+  // strip even while QuietLayout was mounted, so the user briefly saw
+  // the legacy chrome flash during file-open.
+  const isQuietVariant = uiPreview === "quiet-composer";
+  const statusBarVariant: "full" | "quiet" = isQuietVariant ? "quiet" : "full";
+
   // Show error state for tabs whose files could not be loaded from disk
   if (activeTab && activeTab.loadError) {
     return (
@@ -535,7 +544,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           <span className="text-xs max-w-md text-center truncate opacity-60">{activeTab.filePath}</span>
         </div>
         {!focusMode && (
-          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <StatusBar editor={null} variant={statusBarVariant} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -549,7 +558,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           Loading...
         </div>
         {!focusMode && (
-          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <StatusBar editor={null} variant={statusBarVariant} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -566,6 +575,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onOpenActions={onOpenActions}
         updateTabContent={updateTabContent}
         saveFile={saveFile}
+        statusBarVariant={statusBarVariant}
       />
     );
   }
@@ -578,7 +588,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
-  const isQuietComposer = uiPreview === "quiet-composer";
+  const isQuietComposer = isQuietVariant;
   const toolbarVariant = isQuietComposer ? "pill" : "inline";
 
   return (

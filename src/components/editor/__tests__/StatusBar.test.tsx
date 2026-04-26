@@ -209,10 +209,13 @@ describe('StatusBar — variants', () => {
       expect(slot?.children.length).toBe(0);
     });
 
-    it('renders word count + \u2318. focus hint (no \u2318K, no saved-ago)', () => {
-      // Live-test 2026-04-25 \u2014 \u2318K hint and saved-ago were removed
-      // from the QuietStatusBar (duplicated in cmd bar / TitleBar).
-      // Only the focus hint remains as a right-aligned chord.
+    it('renders word count + \u2318. focus hint (no \u2318K)', () => {
+      // Live-test 2026-04-25 \u2014 \u2318K hint was removed.
+      // Live-test 2026-04-26 \u2014 saved-ago was relocated FROM the
+      // TitleBar back INTO the QuietStatusBar (next to the word count)
+      // so document-state info lives in one place. The label only
+      // renders when an active tab exists; in this test no tab is
+      // open, so the label is absent.
       const editor = createMockEditor({ text: 'one two three four five' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} variant="quiet" />,
@@ -225,7 +228,6 @@ describe('StatusBar — variants', () => {
       // Trimmed in #157 follow-up:
       expect(text).not.toContain('\u2318K');
       expect(text).not.toContain('ask');
-      expect(text).not.toMatch(/saved/);
     });
 
     it('uses the singular "word" label for a single word', () => {
@@ -238,7 +240,11 @@ describe('StatusBar — variants', () => {
       expect(container.textContent ?? '').not.toContain('1 words');
     });
 
-    it('does NOT render the saved-ago label any more (delegated to TitleBar + sidebar)', () => {
+    it('renders the "saved Xs ago" label next to the word count when a tab is active (live-test 2026-04-26)', () => {
+      // Saved-ago was moved BACK into QuietStatusBar from the TitleBar
+      // so word count and last-save recency are colocated. The shared
+      // SavedLabel is still suppressed mid-edit; clean tabs with a
+      // known lastSavedAt show "saved Ns ago".
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       openTab('/p/file.md', 'file.md', Date.now() - 3_000);
 
@@ -246,8 +252,21 @@ describe('StatusBar — variants', () => {
         <StatusBar editor={editor} variant="quiet" />,
       );
 
-      expect(container.textContent ?? '').not.toMatch(/saved \ds ago/);
-      expect(container.textContent ?? '').not.toContain('\u2014');
+      expect(container.textContent ?? '').toMatch(/saved \d+s ago/);
+    });
+
+    it('omits the saved-ago label entirely when no tab is active', () => {
+      // No tab open \u2014 the SavedLabel slot is empty so we don't show a
+      // stale dash for "no document".
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(
+        <StatusBar editor={editor} variant="quiet" />,
+      );
+
+      expect(container.textContent ?? '').not.toMatch(/saved \d+s ago/);
+      // The em-dash placeholder is also suppressed \u2014 `<SavedLabel />`
+      // is only mounted when an active tab exists.
+      expect(container.querySelector('[aria-label="Not yet saved this session"]')).toBeNull();
     });
 
     it('calls onOpenTray when the strip is clicked', () => {

@@ -7,9 +7,7 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Plus } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/sidebar/FileIcon";
 import {
   SIDEBAR_ENTER_RENAME_MODE_EVENT,
@@ -60,13 +58,6 @@ import {
  */
 
 export interface PinnedSectionProps {
-  /**
-   * Click handler for the `+` add button. When omitted, the button pins the
-   * currently active tab (if any); otherwise the caller decides what "add"
-   * means. The button is always rendered so its hover/focus affordances are
-   * exercised by visual regression tests.
-   */
-  onAdd?: () => void;
   /**
    * Case-insensitive substring filter applied to pinned file basenames. When
    * non-empty, rows whose basename doesn't contain `filter` are hidden from
@@ -254,12 +245,14 @@ function PinnedRow({
           onDragLeave={(e) => onDragLeaveRow(e, index)}
           onDrop={(e) => onDropRow(e, index)}
           className={cn(
-            "relative h-7 px-2 flex items-center gap-2 rounded-sm text-sm transition-colors duration-150",
+            "relative h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150",
             !isRenaming && "hover:bg-muted/50 cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-            // Active row tinted with the user's accent at 12% (Apple-
-            // style brand colour). Hover stays neutral grey (above).
-            isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+            // Active row uses a neutral muted background (live-test
+            // 2026-04-26 — the previous accent-fill was too distracting).
+            // The accent is preserved on the icon so the active state
+            // still has a brand-coloured signal.
+            isActive && "bg-muted text-foreground font-medium",
             isDragging && "opacity-50",
           )}
         >
@@ -275,7 +268,10 @@ function PinnedRow({
               className="absolute left-1 right-1 -bottom-px h-0.5 bg-[var(--accent,var(--primary))] rounded-full pointer-events-none"
             />
           )}
-          <FileIcon fileName={name} />
+          <FileIcon
+            fileName={name}
+            className={cn(isActive && "text-[var(--color-accent-primary)]")}
+          />
           {isRenaming ? (
             <SidebarInlineEdit
               mode="rename"
@@ -320,7 +316,7 @@ function PinnedRow({
   );
 }
 
-export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
+export function PinnedSection({ filter }: PinnedSectionProps) {
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const reorderPinnedFiles = useWorkspaceStore((s) => s.reorderPinnedFiles);
@@ -360,14 +356,6 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
   // definition (the store dedupes them on pinFile).
   const rowIds = useMemo(() => visibleFiles.slice(), [visibleFiles]);
   const roving = useRovingTabindex({ rowIds });
-
-  const handleDefaultAdd = () => {
-    if (!activeFilePath) {
-      toast.info("Open a file to pin it");
-      return;
-    }
-    pinFile(activeFilePath);
-  };
 
   const handleOpen = async (path: string) => {
     try {
@@ -580,20 +568,10 @@ export function PinnedSection({ onAdd, filter }: PinnedSectionProps) {
       aria-label="Pinned"
       className="group/section flex flex-col gap-1"
     >
-      <header className="flex items-center justify-between gap-2 px-2 h-6">
+      <header className="flex items-center gap-2 px-2 h-6">
         <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
           Pinned
         </h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Add pinned"
-          onClick={onAdd ?? handleDefaultAdd}
-          className="opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
-        >
-          <Plus strokeWidth={1.5} />
-        </Button>
       </header>
       <ul
         data-testid="pinned-drop-zone"

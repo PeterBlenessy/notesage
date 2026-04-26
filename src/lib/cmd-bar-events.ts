@@ -12,7 +12,19 @@
  */
 
 export type CmdBarEvent =
-  | { type: 'focus'; prefix?: string }
+  | {
+      type: 'focus';
+      prefix?: string;
+      /**
+       * Optional drilldown seed — when set, the bar should open with the
+       * given prefix mode AND immediately drill into the named symbol.
+       * Used by the sidebar TagsSection / MentionsSection to jump straight
+       * from a row click to the level-2 occurrences view (live-test
+       * 2026-04-26). Picker components consume `drilldown` via a prop
+       * (TagMode `initialDrilldown`, ReferenceMode `initialPersonDrilldown`).
+       */
+      drilldown?: { kind: 'tag' | 'mention'; name: string };
+    }
   | { type: 'dismiss' }
   // `toggle-pin` — fired by ⌘⇧C under Quiet Composer when the bar is already
   // expanded AND pinned. The bar's subscriber calls `setCmdBarPinned(false)`

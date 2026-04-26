@@ -131,7 +131,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
             // inner pulse wrapper's `absolute inset-0` — NO explicit
             // `relative` utility (it would win the cascade over `fixed`
             // and drop the orb into document flow; 2026-04-24 regression).
-            'fixed bottom-10 right-6 z-40',
+            'group fixed bottom-10 right-6 z-40',
             'h-[46px] w-[46px] rounded-full',
             // #106 hover/focus polish — gentle scale + soft shadow glow
             // so the orb reads as interactive without being loud. The
@@ -158,15 +158,17 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               'absolute inset-0',
               'flex items-center justify-center',
               'rounded-full',
-              // Surface — Apple-style brand colour. The orb ALWAYS
-              // wears the user's accent (idle + running). When tasks
-              // are running it pulses; idle is the same colour but
-              // static. Without an accent picked, the token falls
-              // back to `--color-primary` (neutral grey) per the
-              // design-system fallback chain.
-              'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]',
-              'shadow-md ring-1 ring-border/50',
-              // CSS-driven pulse while activity is in flight.
+              // Surface — neutral ambient chrome. The orb body matches other
+              // popover surfaces (bg-popover + border-border) so it doesn't
+              // shout for attention while idle. The accent now lives ONLY in
+              // the pulsing ring (box-shadow keyframe driven by `.orb-pulsing`)
+              // so the "I'm running" signal still pops without painting the
+              // whole orb body.
+              'bg-popover text-popover-foreground',
+              'shadow-md border border-border',
+              // CSS-driven pulse while activity is in flight — paints the
+              // accent ring around the orb. See `@keyframes orb-pulse` in
+              // globals.css for the box-shadow chain.
               shouldPulse && 'orb-pulsing',
             )}
           >
@@ -180,8 +182,12 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
             ) : (
               // Idle: subtle Bot glyph — keeps the orb feeling intentional rather
               // than a stray dot. Muted opacity so it reads as ambient.
+              // Live-test 2026-04-26 — bumped to h-5 w-5 (~25% larger) so the
+              // glyph reads more clearly inside the 46 px orb without crowding,
+              // and flips to white on hover (paired with `group` on the outer
+              // button) so the affordance has a stronger interactive lift.
               <Bot
-                className="h-4 w-4 opacity-60"
+                className="h-5 w-5 opacity-60 transition-colors duration-[220ms] ease-out group-hover:text-[oklch(100%_0_0)] group-hover:opacity-100"
                 strokeWidth={1.5}
                 aria-hidden="true"
               />

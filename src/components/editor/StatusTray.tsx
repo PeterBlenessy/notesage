@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -26,6 +31,7 @@ import { useLocalAIStore } from "@/stores/local-ai-store";
 import type { Comment } from "@/stores/comment-store";
 import type { ViewMode } from "@/lib/file-utils";
 import { MicButton } from "./toolbar/MicButton";
+import { CommentList } from "./CommentListPopover";
 
 /**
  * Inline completion icon — italic T with sparkle trail. Mirrors the
@@ -62,23 +68,6 @@ const COMPLETION_OPTIONS: CompletionOptionMeta[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Reading-time helper — kept in sync with StatusBar.tsx (200 wpm).
-// ---------------------------------------------------------------------------
-
-const fmt = new Intl.NumberFormat(
-  typeof navigator !== "undefined" ? (navigator.languages as string[]) : undefined,
-  { useGrouping: true },
-);
-
-function fmtNum(n: number): string {
-  return fmt.format(n);
-}
-
-function readingTimeMinutes(words: number): number {
-  return Math.max(1, Math.ceil(words / 200));
-}
-
-// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -108,9 +97,6 @@ export interface StatusTrayProps {
   anchor: React.RefObject<
     HTMLElement | { getBoundingClientRect(): DOMRect } | null
   >;
-
-  /** Word count for the Help > Word count breakdown row. Undefined hides it. */
-  wordCount?: number;
 
   /** Comments on the active document. Count + list affordance live in Comments group. */
   comments?: Comment[];
@@ -331,13 +317,67 @@ function CompletionsGroup() {
 
 function CommentsGroup({
   comments,
-  onOpenCommentList,
+  onSelectComment,
+  onDelegateComment,
+  onDelegateAll,
+  canDelegate,
+  onCloseTray,
 }: {
   comments: Comment[];
-  onOpenCommentList: () => void;
+  onSelectComment?: (c: Comment) => void;
+  onDelegateComment?: (c: Comment) => void;
+  onDelegateAll?: () => void;
+  canDelegate: boolean;
+  /**
+   * Closes the parent StatusTray popover. Called after the user picks a
+   * comment so the user lands back on the editor with focus on the
+   * jumped-to anchor — same UX as the legacy `CommentListPopover` (which
+   * dismisses itself on row click).
+   */
+  onCloseTray: () => void;
 }) {
-  const openCount = comments.filter((c) => c.status === "open").length;
+  // Match `CommentListPopover`'s "visible" semantics: a comment is open
+  // unless it has been explicitly resolved. Newly created comments have
+  // `status === undefined` (the `addComment` action never assigns one),
+  // so a strict `=== "open"` check would miss every freshly authored
+  // comment and surface "0 / none open" for documents that obviously
+  // have comments.
+  const openCount = comments.filter((c) => c.status !== "resolved" && c.status !== "done").length;
   const hasOpen = openCount > 0;
+  const totalVisible = comments.filter((c) => c.status !== "resolved").length;
+
+  // Local open state for the inner Comments popover. Anchored to the
+  // "View open comments" button via PopoverTrigger asChild — Radix
+  // handles outside-click and Escape automatically. We dispatch the
+  // legacy `notesage:open-comment-list` CustomEvent on open so existing
+  // listeners (and the perf/regression tests that watch for it) keep
+  // firing exactly once per click.
+  const [listOpen, setListOpen] = React.useState(false);
+
+  const handleOpenChange = React.useCallback(
+    (next: boolean) => {
+      setListOpen(next);
+      if (next) {
+        const detail = {
+          comments,
+          onSelectComment,
+          onDelegateComment,
+          onDelegateAll,
+          canDelegate,
+        };
+        window.dispatchEvent(
+          new CustomEvent("notesage:open-comment-list", { detail }),
+        );
+      }
+    },
+    [
+      comments,
+      onSelectComment,
+      onDelegateComment,
+      onDelegateAll,
+      canDelegate,
+    ],
+  );
 
   return (
     <section className="space-y-2" aria-label="Comments">
@@ -347,26 +387,54 @@ function CommentsGroup({
         <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
           {hasOpen
             ? `${openCount} open`
-            : comments.length > 0
+            : totalVisible > 0
             ? "none open"
             : "none"}
         </span>
       </div>
       {hasOpen ? (
-        <button
-          type="button"
-          onClick={onOpenCommentList}
-          className={cn(
-            "w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors",
-            "rounded-sm px-2 py-1 hover:bg-muted/50",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-        >
-          View open comments
-        </button>
+        <Popover open={listOpen} onOpenChange={handleOpenChange}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "w-full text-left text-xs text-muted-foreground hover:text-foreground transition-colors",
+                "rounded-sm px-2 py-1 hover:bg-muted/50",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+            >
+              View open comments
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="left"
+            align="start"
+            sideOffset={8}
+            // Sit ABOVE the parent StatusTray popover (z-50) so we don't
+            // get clipped by it. Same width + max-height as the legacy
+            // `CommentListPopover`'s content for visual parity.
+            className="w-72 p-0 max-h-80 overflow-y-auto z-[60]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CommentList
+              comments={comments}
+              onSelectComment={(c) => {
+                onSelectComment?.(c);
+                // Close the inner list AND the outer tray so the user
+                // lands back on the editor focused on the anchor.
+                setListOpen(false);
+                onCloseTray();
+              }}
+              onDelegateComment={onDelegateComment}
+              onDelegateAll={onDelegateAll}
+              canDelegate={canDelegate}
+              onDismiss={() => setListOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
       ) : (
         <p className="text-[10px] text-muted-foreground/60 leading-tight px-2">
-          {comments.length > 0
+          {totalVisible > 0
             ? "All comments handled."
             : "No comments on this document yet."}
         </p>
@@ -511,10 +579,8 @@ function SessionGroup() {
 // ---------------------------------------------------------------------------
 
 function HelpGroup({
-  wordCount,
   onShortcutsOpen,
 }: {
-  wordCount?: number;
   onShortcutsOpen?: () => void;
 }) {
   return (
@@ -540,13 +606,6 @@ function HelpGroup({
           </span>
         </button>
       )}
-      {typeof wordCount === "number" && (
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70 px-2 tabular-nums">
-          <span>{fmtNum(wordCount)} {wordCount === 1 ? "word" : "words"}</span>
-          <span aria-hidden="true">·</span>
-          <span>{fmtNum(readingTimeMinutes(wordCount))} min read</span>
-        </div>
-      )}
     </section>
   );
 }
@@ -567,7 +626,6 @@ export function StatusTray({
   open,
   onOpenChange,
   anchor,
-  wordCount,
   comments = [],
   onSelectComment,
   onDelegateComment,
@@ -579,32 +637,6 @@ export function StatusTray({
   viewMode,
   onToggleViewMode,
 }: StatusTrayProps) {
-  // Pass-through handlers for the Comments "View open comments" row. We fire
-  // a DOM CustomEvent so the host (StatusBar / Layout) can mount the existing
-  // `CommentListPopover` without the tray needing to know about its internal
-  // open state. If no host listens, the event is a no-op — the tray still
-  // closes so the click feels responsive.
-  const openCommentList = React.useCallback(() => {
-    onOpenChange(false);
-    const detail = {
-      comments,
-      onSelectComment,
-      onDelegateComment,
-      onDelegateAll,
-      canDelegate,
-    };
-    window.dispatchEvent(
-      new CustomEvent("notesage:open-comment-list", { detail }),
-    );
-  }, [
-    onOpenChange,
-    comments,
-    onSelectComment,
-    onDelegateComment,
-    onDelegateAll,
-    canDelegate,
-  ]);
-
   const handleShortcuts = React.useCallback(() => {
     onOpenChange(false);
     onShortcutsOpen?.();
@@ -678,7 +710,13 @@ export function StatusTray({
           feedback_code_review_mandatory_gate in auto-memory).
         */}
         <TooltipProvider delayDuration={300}>
-          <div className="divide-y divide-border">
+          {/*
+           * Live-test 2026-04-26 — inset inter-section separators (12px
+           * from each edge) instead of edge-to-edge `divide-y`. The first
+           * section keeps a flush top edge — the popover's own border
+           * carries that boundary already.
+           */}
+          <div className="[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:left-3 [&>*+*]:before:right-3 [&>*+*]:before:top-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border">
             {(editor || onToggleViewMode) && (
               <div className="p-3">
                 <EditorToolsGroup
@@ -694,14 +732,18 @@ export function StatusTray({
             <div ref={commentsRef} tabIndex={-1} className="p-3 focus:outline-none">
               <CommentsGroup
                 comments={comments}
-                onOpenCommentList={openCommentList}
+                onSelectComment={onSelectComment}
+                onDelegateComment={onDelegateComment}
+                onDelegateAll={onDelegateAll}
+                canDelegate={canDelegate}
+                onCloseTray={() => onOpenChange(false)}
               />
             </div>
             <div ref={sessionRef} tabIndex={-1} className="p-3 focus:outline-none">
               <SessionGroup />
             </div>
             <div ref={helpRef} tabIndex={-1} className="p-3 focus:outline-none">
-              <HelpGroup wordCount={wordCount} onShortcutsOpen={handleShortcuts} />
+              <HelpGroup onShortcutsOpen={handleShortcuts} />
             </div>
           </div>
         </TooltipProvider>

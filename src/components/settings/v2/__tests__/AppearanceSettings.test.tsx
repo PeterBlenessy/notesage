@@ -31,7 +31,7 @@ function resetStores() {
     quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
     sidebarRecentCap: 5,
     sidebarTagsCap: 5,
-    sidebarTagsHidden: false,
+    sidebarMentionsCap: 5,
   });
 }
 
@@ -221,17 +221,48 @@ describe('AppearanceSettings', () => {
     expect(useSettingsStore.getState().sidebarRecentCap).toBe(7);
   });
 
-  it('Hide Tags switch toggles sidebarTagsHidden', () => {
+  it('does NOT render Hide Tags / Hide Mentions toggles (slider is the visibility control)', () => {
     renderWithProviders(<AppearanceSettings />);
 
-    const sw = screen.getByRole('switch', { name: /hide tags section/i });
-    expect(sw.getAttribute('data-state')).toBe('unchecked');
+    expect(screen.queryByRole('switch', { name: /hide tags section/i })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /hide mentions section/i })).toBeNull();
+  });
+
+  it('Top tags slider accepts 0 (the slider IS the visibility control)', () => {
+    renderWithProviders(<AppearanceSettings />);
 
     act(() => {
-      fireEvent.click(sw);
+      useSettingsStore.getState().setSidebarTagsCap(0);
     });
+    expect(useSettingsStore.getState().sidebarTagsCap).toBe(0);
+  });
 
-    expect(useSettingsStore.getState().sidebarTagsHidden).toBe(true);
+  it('Top mentions slider accepts 0 (the slider IS the visibility control)', () => {
+    renderWithProviders(<AppearanceSettings />);
+
+    act(() => {
+      useSettingsStore.getState().setSidebarMentionsCap(0);
+    });
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(0);
+  });
+
+  it('Top mentions slider setter clamps and persists to store', () => {
+    renderWithProviders(<AppearanceSettings />);
+
+    act(() => {
+      useSettingsStore.getState().setSidebarMentionsCap(99);
+    });
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(15);
+
+    act(() => {
+      useSettingsStore.getState().setSidebarMentionsCap(-2);
+    });
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(0);
+
+    act(() => {
+      useSettingsStore.getState().setSidebarMentionsCap(8);
+    });
+    expect(useSettingsStore.getState().sidebarMentionsCap).toBe(8);
   });
 
 });

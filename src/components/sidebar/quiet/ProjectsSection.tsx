@@ -993,15 +993,20 @@ function ProjectRow({
       onKeyDown={onKeyDown}
       onFocus={onFocus}
       className={cn(
-        "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-sm",
+        "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-        isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
+        // Active row uses a neutral muted background (live-test
+        // 2026-04-26). Accent is preserved on the folder icon below.
+        isActive && "bg-muted text-foreground font-medium",
       )}
     >
       <Folder
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
+        )}
         strokeWidth={1.5}
         aria-hidden="true"
       />
@@ -1194,7 +1199,7 @@ function ChildRow({
           : undefined
       }
       className={cn(
-        "h-7 px-2 flex items-center gap-2 rounded-sm text-sm",
+        "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         !isRenaming && "hover:bg-muted/50 cursor-pointer",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",

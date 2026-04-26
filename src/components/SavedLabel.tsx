@@ -3,11 +3,12 @@ import { formatSavedLabel, pickTimerInterval } from "@/lib/saved-ago";
 
 /**
  * "saved Xs ago" label — shared component used by the Quiet Composer
- * TitleBar (task #131) and originally the DocHead breadcrumb (deleted
- * with #131). The label is suppressed while the document is dirty
- * (because "saved Xs ago" would be misleading mid-edit) and also when
- * `lastSavedAt` is not yet known (a session-fresh tab that has never
- * been saved renders an em-dash).
+ * status bar (live-test 2026-04-26, relocated from the TitleBar). The
+ * label is suppressed while the document is dirty (because "saved Xs
+ * ago" would be misleading mid-edit) and also returns null when
+ * `lastSavedAt` is not yet known (live-test 2026-04-26 polish — the
+ * em-dash placeholder was confusing as a stale "-" so the slot stays
+ * empty until there's something meaningful to say).
  *
  * Polling cadence is adaptive via `pickTimerInterval` so the visible
  * label never lies: seconds refresh every 5 s, minutes every 30 s,
@@ -37,19 +38,12 @@ export function SavedLabel({ lastSavedAt, isDirty, className }: SavedLabelProps)
 
   if (isDirty) return null;
 
-  const baseClass = className ?? "text-xs text-muted-foreground tabular-nums";
+  // Live-test 2026-04-26 polish — the em-dash placeholder was confusing
+  // as a stale "-" in the status bar. Render nothing until we have
+  // something meaningful to say (i.e. an actual `lastSavedAt`).
+  if (lastSavedAt === undefined) return null;
 
-  if (lastSavedAt === undefined) {
-    return (
-      <span
-        className={baseClass}
-        aria-live="polite"
-        aria-label="Not yet saved this session"
-      >
-        &mdash;
-      </span>
-    );
-  }
+  const baseClass = className ?? "text-xs text-muted-foreground tabular-nums";
 
   const label = formatSavedLabel(now - lastSavedAt);
   return (

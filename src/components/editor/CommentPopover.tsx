@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, MessageSquare, MoreHorizontal, MessageSquareShare } from 'lucide-react';
+import { MessageSquarePlus, Pencil, Trash2, X, Check, Bot, CheckCircle2, MessageSquare, MoreHorizontal, MessageSquareShare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -280,7 +280,7 @@ export function CommentPopover({
                             }}
                             disabled={!body.trim()}
                           >
-                            <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
                             Delegate
                           </Button>
                         </TooltipTrigger>
@@ -341,7 +341,7 @@ export function CommentPopover({
                               onClick={() => onDelegateExisting()}
                               className="text-muted-foreground hover:text-foreground"
                             >
-                              <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="text-xs">Delegate to AI agent</TooltipContent>

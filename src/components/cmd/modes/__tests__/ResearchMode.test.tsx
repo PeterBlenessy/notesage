@@ -102,8 +102,10 @@ describe('ResearchMode', () => {
     await screen.findByText('Climate paper');
     const firstCallArgs = indexSearchResearchMock.mock.calls[0];
     expect(firstCallArgs[1]).toBe('climate');
-    // limit hard-coded to 10 by the picker.
-    expect(firstCallArgs[3]).toBe(10);
+    // Live-test 2026-04-26 — limit bumped 10 → 50 to match the legacy
+    // palette. The bar's picker tray is `overflow-y-auto` so a long
+    // result list scrolls instead of overflowing.
+    expect(firstCallArgs[3]).toBe(50);
   });
 
   it('clicking a row fires onPick with { kind: "research", id, name }', async () => {

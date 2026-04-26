@@ -212,10 +212,9 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
   },
 ];
 
-// Cap visible rows so the picker stays scannable. The seeded registry has
-// 12 entries — the cap matches the registry size today, and keeps the picker
-// short if/when filter results expand it later.
-const MAX_RESULTS = 12;
+// Live-test 2026-04-26 — uncapped to match the legacy palette which shows
+// every matching action. The bar's picker tray is `overflow-y-auto` so a
+// long list scrolls instead of overflowing.
 
 function PaletteMode({
   filter,
@@ -226,14 +225,14 @@ function PaletteMode({
 }: PaletteModeProps) {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return PALETTE_COMMANDS.slice(0, MAX_RESULTS);
+    if (!q) return PALETTE_COMMANDS;
     return PALETTE_COMMANDS.filter((cmd) => {
       if (cmd.label.toLowerCase().includes(q)) return true;
       if (cmd.description && cmd.description.toLowerCase().includes(q)) {
         return true;
       }
       return false;
-    }).slice(0, MAX_RESULTS);
+    });
   }, [filter]);
 
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -257,10 +256,33 @@ function PaletteMode({
     });
   }, [onActiveOptionChange, listboxId, highlightedIndex, filtered.length]);
 
-  // Focus the list root so keyboard handlers receive events immediately.
-  // The parent FloatingCommandBar owns the input; we listen on the list
-  // itself for ↑/↓/Enter/Escape via React's synthetic event system.
   const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Live-test 2026-04-26 — listen on `window` so the picker handles
+  // ArrowUp/Down/Enter while the parent FloatingCommandBar's textarea
+  // owns focus. The previous `onKeyDown` on the picker root never fired
+  // (input was never blurred). Mirrors `TagMode`/`TaskMode`/`SkillMode`.
+  useEffect(() => {
+    if (filtered.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const cmd = filtered[highlightedIndex];
+        if (cmd) onPick(cmd.id);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onDismiss?.();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [filtered, highlightedIndex, onPick, onDismiss]);
 
   if (filtered.length === 0) {
     return (
@@ -273,35 +295,16 @@ function PaletteMode({
     );
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const cmd = filtered[highlightedIndex];
-      if (cmd) onPick(cmd.id);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      onDismiss?.();
-    }
-  };
-
   return (
     <div
       ref={listRef}
       id={listboxId}
       role="listbox"
-      tabIndex={0}
+      tabIndex={-1}
       aria-label="Command palette results"
-      onKeyDown={handleKeyDown}
       data-palette-list="true"
       className={cn(
         'flex flex-col py-1',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
       )}
     >
       {filtered.map((cmd, index) => {
@@ -319,16 +322,24 @@ function PaletteMode({
             onMouseEnter={() => setHighlightedIndex(index)}
             onClick={() => onPick(cmd.id)}
             className={cn(
-              'flex items-center gap-2 px-3 py-1.5 text-left text-sm',
+              // Density (live-test 2026-04-26): smaller text + tighter
+              // vertical padding match the legacy command palette and
+              // the tightened sibling pickers.
+              'flex items-center gap-2 px-3 py-1.5 text-left text-[13px]',
               'transition-colors',
               isHighlighted
-                ? 'bg-muted text-foreground'
+                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                 : 'text-foreground hover:bg-muted/60',
               'focus-visible:outline-none',
             )}
           >
             <Icon
-              className="h-4 w-4 shrink-0 text-muted-foreground"
+              className={cn(
+                'h-3.5 w-3.5 shrink-0',
+                isHighlighted
+                  ? 'text-[oklch(100%_0_0)]/85'
+                  : 'text-muted-foreground',
+              )}
               strokeWidth={1.5}
               aria-hidden="true"
             />

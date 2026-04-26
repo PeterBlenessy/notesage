@@ -213,7 +213,7 @@ function RecentRow({
           // feedback 2026-04-24). The preview already carries the full
           // path + rendered body.
           className={cn(
-            "h-7 px-2 flex items-center gap-2 rounded-sm text-sm",
+            "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
             "transition-colors duration-150",
             !isRenaming && "cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",

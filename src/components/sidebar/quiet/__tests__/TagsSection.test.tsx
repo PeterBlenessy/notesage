@@ -51,7 +51,7 @@ describe('TagsSection', () => {
     indexTagsMock.mockReset();
     emitCmdBarEventMock.mockReset();
     // Reset the cap to the default so each test starts from a known baseline.
-    useSettingsStore.setState({ sidebarTagsCap: 5, sidebarTagsHidden: false });
+    useSettingsStore.setState({ sidebarTagsCap: 5 });
   });
 
   it('renders the uppercase "Tags" heading', async () => {
@@ -180,7 +180,11 @@ describe('TagsSection', () => {
     await user.click(screen.getByText('finance'));
 
     expect(emitCmdBarEventMock).toHaveBeenCalledTimes(1);
-    expect(emitCmdBarEventMock).toHaveBeenCalledWith({ type: 'focus', prefix: '#' });
+    expect(emitCmdBarEventMock).toHaveBeenCalledWith({
+      type: 'focus',
+      prefix: '#',
+      drilldown: { kind: 'tag', name: 'finance' },
+    });
   });
 
   it('pressing Enter on a focused row fires the tag-search event', async () => {
@@ -200,7 +204,11 @@ describe('TagsSection', () => {
     await user.keyboard('{Enter}');
 
     expect(emitCmdBarEventMock).toHaveBeenCalledTimes(1);
-    expect(emitCmdBarEventMock).toHaveBeenCalledWith({ type: 'focus', prefix: '#' });
+    expect(emitCmdBarEventMock).toHaveBeenCalledWith({
+      type: 'focus',
+      prefix: '#',
+      drilldown: { kind: 'tag', name: 'finance' },
+    });
   });
 
   it('renders only the header when the tag list is empty', async () => {

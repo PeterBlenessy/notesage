@@ -43,7 +43,8 @@ vi.mock('@/hooks/useFileOperations', () => ({
   }),
 }));
 
-// Stub `indexTags` so TagsSection's async effect doesn't explode in jsdom.
+// Stub `indexTags` and `indexMentions` so the data-loading sections' async
+// effects don't explode in jsdom.
 vi.mock('@/lib/tauri', async () => {
   const actual = await vi.importActual<typeof import('@/lib/tauri')>('@/lib/tauri');
   return {
@@ -51,6 +52,7 @@ vi.mock('@/lib/tauri', async () => {
     tauriApi: {
       ...actual.tauriApi,
       indexTags: vi.fn().mockResolvedValue([]),
+      indexMentions: vi.fn().mockResolvedValue([]),
     },
   };
 });
@@ -69,11 +71,12 @@ function resetStores() {
     recentFiles: [],
   });
   // Reset sidebar composition settings so tests don't bleed hidden state
-  // across each other.
+  // across each other. cap === 0 hides the section (slider is the
+  // visibility control as of v11→v12).
   useSettingsStore.setState({
     sidebarRecentCap: 5,
     sidebarTagsCap: 5,
-    sidebarTagsHidden: false,
+    sidebarMentionsCap: 5,
   });
 }
 
@@ -88,16 +91,17 @@ describe('QuietSidebar — shell', () => {
     expect(nav).toBeTruthy();
   });
 
-  it('renders all four sections in fixed order: Pinned, Projects, Recent, Tags', () => {
+  it('renders all five sections in fixed order: Pinned, Projects, Recent, Tags, Mentions', () => {
     renderWithProviders(<QuietSidebar />);
     const sections = screen.getAllByRole('region');
     // Each <section aria-label="..."> shows up as a region.
-    expect(sections).toHaveLength(4);
+    expect(sections).toHaveLength(5);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Pinned',
       'Projects',
       'Recent',
       'Tags',
+      'Mentions',
     ]);
   });
 
@@ -109,6 +113,7 @@ describe('QuietSidebar — shell', () => {
       'Projects',
       'Recent',
       'Tags',
+      'Mentions',
     ]);
   });
 
@@ -315,20 +320,93 @@ describe('QuietSidebar — type-to-filter (#43)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Task #35 — sidebar composition (hide Tags section)
+// Sidebar composition — slider is the visibility control (v11→v12)
 // ---------------------------------------------------------------------------
 
-describe('QuietSidebar — sidebar composition (#35)', () => {
+describe('QuietSidebar — sidebar composition (slider visibility control)', () => {
   it('renders the Tags section by default', () => {
     renderWithProviders(<QuietSidebar />);
     const sections = screen.getAllByRole('region');
     expect(sections.map((s) => s.getAttribute('aria-label'))).toContain('Tags');
   });
 
-  it('does NOT render the Tags section when sidebarTagsHidden is true', () => {
-    useSettingsStore.setState({ sidebarTagsHidden: true });
+  it('does NOT render the Tags section when sidebarTagsCap is 0', () => {
+    useSettingsStore.setState({ sidebarTagsCap: 0 });
     renderWithProviders(<QuietSidebar />);
 
+    const sections = screen.getAllByRole('region');
+    // Pinned + Projects + Recent + Mentions (Tags hidden via cap=0).
+    expect(sections).toHaveLength(4);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Pinned',
+      'Projects',
+      'Recent',
+      'Mentions',
+    ]);
+    const headings = screen.getAllByRole('heading', { level: 2 });
+    expect(headings.map((h) => h.textContent)).not.toContain('Tags');
+  });
+
+  it('re-renders Tags when sidebarTagsCap goes back above 0', () => {
+    useSettingsStore.setState({ sidebarTagsCap: 0 });
+    const { rerender } = renderWithProviders(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(4);
+
+    useSettingsStore.setState({ sidebarTagsCap: 5 });
+    rerender(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(5);
+    expect(
+      screen
+        .getAllByRole('region')
+        .map((s) => s.getAttribute('aria-label')),
+    ).toContain('Tags');
+  });
+
+  it('renders the Mentions section by default', () => {
+    renderWithProviders(<QuietSidebar />);
+    const sections = screen.getAllByRole('region');
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toContain(
+      'Mentions',
+    );
+  });
+
+  it('does NOT render the Mentions section when sidebarMentionsCap is 0', () => {
+    useSettingsStore.setState({ sidebarMentionsCap: 0 });
+    renderWithProviders(<QuietSidebar />);
+
+    const sections = screen.getAllByRole('region');
+    expect(sections).toHaveLength(4);
+    expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Pinned',
+      'Projects',
+      'Recent',
+      'Tags',
+    ]);
+    const headings = screen.getAllByRole('heading', { level: 2 });
+    expect(headings.map((h) => h.textContent)).not.toContain('Mentions');
+  });
+
+  it('re-renders Mentions when sidebarMentionsCap goes back above 0', () => {
+    useSettingsStore.setState({ sidebarMentionsCap: 0 });
+    const { rerender } = renderWithProviders(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(4);
+
+    useSettingsStore.setState({ sidebarMentionsCap: 5 });
+    rerender(<QuietSidebar />);
+    expect(screen.getAllByRole('region')).toHaveLength(5);
+    expect(
+      screen
+        .getAllByRole('region')
+        .map((s) => s.getAttribute('aria-label')),
+    ).toContain('Mentions');
+  });
+
+  it('cap=0 on both Tags and Mentions leaves only Pinned, Projects, Recent', () => {
+    useSettingsStore.setState({
+      sidebarTagsCap: 0,
+      sidebarMentionsCap: 0,
+    });
+    renderWithProviders(<QuietSidebar />);
     const sections = screen.getAllByRole('region');
     expect(sections).toHaveLength(3);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
@@ -336,23 +414,5 @@ describe('QuietSidebar — sidebar composition (#35)', () => {
       'Projects',
       'Recent',
     ]);
-    // Tags heading is gone.
-    const headings = screen.getAllByRole('heading', { level: 2 });
-    expect(headings.map((h) => h.textContent)).not.toContain('Tags');
-  });
-
-  it('re-renders Tags when sidebarTagsHidden flips back to false', () => {
-    useSettingsStore.setState({ sidebarTagsHidden: true });
-    const { rerender } = renderWithProviders(<QuietSidebar />);
-    expect(screen.getAllByRole('region')).toHaveLength(3);
-
-    useSettingsStore.setState({ sidebarTagsHidden: false });
-    rerender(<QuietSidebar />);
-    expect(screen.getAllByRole('region')).toHaveLength(4);
-    expect(
-      screen
-        .getAllByRole('region')
-        .map((s) => s.getAttribute('aria-label')),
-    ).toContain('Tags');
   });
 });

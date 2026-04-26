@@ -201,13 +201,13 @@ Implementation: `src/components/activity/AgentOrb.tsx`, `src/components/activity
 
 ### Quiet Sidebar
 
-Flat-list sidebar in fixed section order: **Pinned → Projects → Recent → Tags**. No file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, MRU documents, tag entries), not for browsing arbitrary subtrees.
+Flat-list sidebar in fixed section order: **Pinned → Projects → Recent → Tags → Mentions**. No file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
 
 Type-to-filter: when the sidebar has focus, printable keys append to a local filter string passed down to every section. A small badge at the top shows the current filter; Backspace deletes a character, `Esc` clears. Text-entry surfaces inside the sidebar (rename rows, the TreeOverlay search box) own their own keystrokes via an `isTypingTarget` guard.
 
-The Tags section can be hidden entirely via `settings.sidebarTagsHidden` (Settings > General > Quiet sidebar composition).
+The Tags and Mentions sections can each be hidden entirely by dragging their cap slider to `0` — the slider IS the visibility control (no separate boolean toggle). Caps are clamped to `[0, 15]` (Settings > Appearance > Sidebar Composition). Tags click into the cmd bar with the `#` prefix; Mentions click in with the `@` prefix.
 
-Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`.
+Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
 
 ### Tree Overlay (`⌘⇧E`)
 
