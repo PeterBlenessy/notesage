@@ -351,7 +351,7 @@ export function EditorSettings() {
           description="Standard formats or full-width content."
           control={
             <Select value={contentWidth} onValueChange={setContentWidth}>
-              <SelectTrigger className="w-48 text-left">
+              <SelectTrigger className="w-[200px] text-left">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -380,16 +380,18 @@ export function EditorSettings() {
           />
         )}
 
-        <div className="py-3">
-          <div className="mb-3">
-            <Label className="text-[13px] font-medium text-foreground">
-              Page margins
-            </Label>
-            <p className="text-[12px] text-muted-foreground mt-0.5">
-              Set margins for each side independently ({unitLabel}).
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        {/* Page margins — adopts the SettingsRow rhythm (title +
+            description in the top stripe, control area below) but
+            keeps a 2×2 grid for the four inputs since each side
+            label needs to sit beside its input. */}
+        <div className="px-0 py-3">
+          <span className="text-[13px] font-medium text-foreground">
+            Page margins
+          </span>
+          <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+            Set margins for each side independently ({unitLabel}).
+          </p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
             {(
               [
                 { label: 'Top', value: marginTop, setter: setMarginTop },
@@ -399,7 +401,7 @@ export function EditorSettings() {
               ] as const
             ).map(({ label, value, setter }) => (
               <div key={label} className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground w-12 shrink-0">
+                <Label className="text-[12px] text-muted-foreground w-12 shrink-0">
                   {label}
                 </Label>
                 <div className="flex items-center gap-1.5 flex-1">
@@ -409,9 +411,9 @@ export function EditorSettings() {
                     min="0"
                     value={toDisplay(value, measurementUnit)}
                     onChange={(e) => handleMarginInput(e.target.value, setter)}
-                    className="h-8 text-xs"
+                    className="h-8 text-[12px]"
                   />
-                  <span className="text-xs text-muted-foreground shrink-0">
+                  <span className="text-[11px] text-muted-foreground shrink-0">
                     {unitLabel}
                   </span>
                 </div>

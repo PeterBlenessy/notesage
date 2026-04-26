@@ -63,19 +63,20 @@ Skip #2 unless the user confirms they don't paste raw markdown often. #3 is a fu
 | --- | --- | --- |
 | ~~#143~~ | ~~Settings panel padding too generous vs mockup-e~~ | ✅ Done — `px-5 py-4` + tighter AppearanceSettings header. |
 | ~~#144~~ | ~~Accent colors don't apply when selected~~ | ✅ Done — `useAccent` mounted in `App.tsx`. Audit follow-up split into `docs/tasks/qa/2026-04-25-accent-audit.md`. |
-| #145 | AI connection config opens legacy dialog | From the v2 AI panel, "Add Connection" / edit opens the OLD `AddConnectionDialog`. Either rebuild to v2 chrome or accept the inconsistency in writing. |
-| #146 | About → View changelog opens legacy dialog | Same pattern as #145. |
+| ~~#145~~ | ~~AI connection config opens legacy dialog~~ | ✅ Stale (verified 2026-04-26) — `ConnectionConfigDialog.tsx` uses v2 chrome (750 px wide, 28 px header padding, 20 px semibold title). |
+| ~~#146~~ | ~~About → View changelog opens legacy dialog~~ | ✅ Stale (verified 2026-04-26) — `ChangelogDialog.tsx` uses v2 chrome (864 px wide, 28 px header padding, 20 px semibold title, ScrollArea body). |
 | ~~#147~~ | ~~Settings ⌘F filter only matches nav titles, not row content~~ | ✅ Done — `SettingsRow` + `SettingsGroup` self-filter. |
-| #148 | Floating toolbar centered relative to editor, not app | The pill toolbar (`Editor.tsx` ~line 630, `absolute top-3 left-1/2 -translate-x-1/2`) is centered inside its `relative` editor parent, not the app. Decide canonical centering and align. |
-| #151 | Cmd bar text input doesn't grow vertically; attachments above input | Legacy ChatInput uses a `<textarea>` with auto-resize; attachments render INSIDE the input area. Quiet Composer uses a single-line `<input>` with attachments ABOVE. Port the textarea + auto-resize + inline attachment placement. |
-| #152 | FolderPeek doesn't match mockup-d | Tighter list with file-type icons and different padding. Compare `FolderPeek.tsx` styling to the mockup HTML and align. |
-| #153 | FilePreview should match FolderPeek bg/style | Currently FilePreview has `bg-popover` (default shadcn surface); FolderPeek has its own treatment. Align so the two hover popovers feel like siblings. |
-| #154 | Sidebar right border too subtle | Increase border opacity or use slightly thicker treatment per mockup-d. |
-| #155 | Cmd bar / popover bg should be whiter | Verify `--color-popover` value or override locally. |
-| #156 | Pinned long file names cover the time hint | Either truncate filename harder (e.g. `max-w-[14ch]`) or move the time hint to a fixed-width slot. |
+| #148 | Floating toolbar centered relative to editor, not app | ⏸ Deferred (verified 2026-04-26) — needs design call. Current `Editor.tsx:629–644` positions the pill toolbar `absolute top-3 left-1/2 -translate-x-1/2` inside the `flex-1 overflow-hidden relative` editor pane. The document content (line 672) is `flex justify-center` inside the same pane, so toolbar + document share one center axis — they DO align with each other. The user's note "relative to editor, not app" suggests they want the toolbar centered to the overall app window regardless of pinned cmd bar / pane offsets. That's an unusual choice (industry standard is pane-centered: Bear, Craft, Notion all do it that way) and would require viewport-relative `fixed` positioning + width-tracking. Punted until the user weighs in on which axis they want. |
+| ~~#151~~ | ~~Cmd bar text input doesn't grow vertically; attachments above input~~ | ✅ Stale (verified 2026-04-26) — `FloatingCommandBar.tsx` uses a `<textarea>` with `autoResize()` capped at 160 px; attachments render via `AttachmentChips` component above the input. |
+| ~~#152~~ | ~~FolderPeek info missing meta column~~ | ✅ Fixed (live-test 2026-04-26 round 2) — added the meta column from mockup-d: folder rows show recursive file count ("3 files"), file rows show time-ago since last open from `editor-store.recentFiles.lastAccessedAt` (e.g., "2h", "1d"). New `countFilesInFolder` helper exported alongside `derivePeekChildren`. Re-renders every minute while open so labels stay fresh. (Original styling/alignment was already correct — the missing piece was the meta strings.) |
+| ~~#153~~ | ~~FilePreview should match FolderPeek bg/style~~ | ✅ Stale (verified 2026-04-26) — both `FilePreview.tsx` and `FolderPeek.tsx` use `rounded-[10px] shadow-lg`; they read as siblings. |
+| ~~#154~~ | ~~Sidebar right border too subtle~~ | ✅ Stale (verified 2026-04-26) — `QuietSidebar.tsx` uses `border-r border-border-strong`. (Original report predates the affordance-border-token introduction.) |
+| ~~#155~~ | ~~Cmd bar / popover bg should be whiter~~ | ✅ Stale (verified 2026-04-26) — popovers inherit `bg-popover` which resolves to `oklch(100% 0 0)` in light mode (white). No local override needed. |
+| ~~#156~~ | ~~Pinned long file names cover the time hint~~ | ✅ Stale (verified 2026-04-26) — `PinnedSection.tsx` reserves a fixed 36 px right-aligned slot for the time hint (`w-[36px] text-right`). |
 | ~~#157~~ | ~~Status bar orange dot~~ | ✅ Done — orange "completions active" dot removed from QuietStatusBar. |
-| #158 | Conversation-history toggle: change clock icon when active | When the bar is in history mode, swap the clock to a chat-bubble or back-arrow icon to make the toggle direction clear. |
-| #159 | Keyboard shortcuts dialog: too long, consider 2-column | Current single-column scroll is long. Trim the catalogue or adopt a wider 2-column layout. |
+| ~~#158~~ | ~~Conversation-history toggle: change clock icon when active~~ | ✅ Stale (verified 2026-04-26) — `CommandBarContext.tsx` swaps `Clock` ↔ `MessageSquare` based on history-mode state. |
+| ~~#160~~ | ~~Project click opens first file alphabetically~~ | ✅ Fixed (live-test 2026-04-26) — `findEntryToOpen` in `ProjectsSection.tsx` now prefers the most-recently-accessed file from `editor-store.recentFiles` whose path is under the project root (uses the persisted MRU instead of needing a Tauri mtime call). Falls back to README → first markdown. |
+| ~~#159~~ | ~~Keyboard shortcuts dialog: too long, consider 2-column~~ | ✅ Stale (verified 2026-04-26) — `KeyboardShortcutsDialogV2.tsx` uses `sm:columns-2` CSS multi-column layout at 1040 px wide. |
 
 ---
 

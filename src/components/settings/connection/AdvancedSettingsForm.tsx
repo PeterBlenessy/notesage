@@ -135,17 +135,18 @@ export function AdvancedSettingsForm({
               Routes all agent network traffic through a local proxy that filters by domain. Only approved domains can be reached. Requests to unknown domains require your explicit approval before they go through.
             </p>
             {networkSandbox && (
-              <div className="flex items-center justify-between pt-1">
-                <div>
+              <div className="pt-1 space-y-1">
+                <div className="flex items-center justify-between gap-3">
                   <Label className="text-xs font-medium">Kernel enforcement</Label>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Blocks direct network at the OS level. Disable if agents fail to start.
-                  </p>
+                  <Switch
+                    checked={kernelNetworkDeny}
+                    onCheckedChange={onKernelNetworkDenyChange}
+                  />
                 </div>
-                <Switch
-                  checked={kernelNetworkDeny}
-                  onCheckedChange={onKernelNetworkDenyChange}
-                />
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Blocks direct network at the OS level. Disable if agents
+                  fail to start.
+                </p>
               </div>
             )}
             {networkSandbox && (() => {
@@ -183,15 +184,21 @@ export function AdvancedSettingsForm({
 
               return (
                 <div className="space-y-2.5 pt-1">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-medium text-foreground">Allow telemetry</p>
-                      <p className="text-[10px] text-muted-foreground">Allow known telemetry endpoints. Providers may use additional domains — unknown domains will prompt for approval.</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-medium text-foreground">
+                        Allow telemetry
+                      </p>
+                      <Switch
+                        checked={telemetryEnabled}
+                        onCheckedChange={toggleTelemetry}
+                      />
                     </div>
-                    <Switch
-                      checked={telemetryEnabled}
-                      onCheckedChange={toggleTelemetry}
-                    />
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Allow known telemetry endpoints. Providers may use
+                      additional domains — unknown domains will prompt
+                      for approval.
+                    </p>
                   </div>
                   <Separator />
                   <p className="text-[11px] font-medium text-muted-foreground">Allowed domains</p>

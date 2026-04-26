@@ -10,6 +10,8 @@ import {
 import { createPortal } from "react-dom";
 import { Folder } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { tauriApi } from "@/lib/tauri";
+import { setBinaryData } from "@/lib/binary-cache";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -21,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { FileIcon } from "@/components/sidebar/FileIcon";
+import { formatSavedShort } from "@/lib/saved-ago";
 import {
   isAnyContextMenuOpen,
   subscribeToOpenContextMenus,
@@ -115,6 +118,29 @@ export function derivePeekChildren(tree: FileEntry[]): PeekChildren {
   };
 }
 
+/**
+ * Count direct + nested non-hidden file entries under a folder. Used
+ * for the meta column on folder rows ("3 files", "12 files"). Walks
+ * the FileEntry tree without any filesystem call — it relies on what
+ * `list_directory` already loaded.
+ */
+export function countFilesInFolder(folder: FileEntry): number {
+  if (!folder.is_directory || !folder.children) return 0;
+  let count = 0;
+  const walk = (entries: FileEntry[]) => {
+    for (const entry of entries) {
+      if (entry.hidden || entry.name === ".DS_Store") continue;
+      if (entry.is_directory) {
+        if (entry.children) walk(entry.children);
+      } else {
+        count += 1;
+      }
+    }
+  };
+  walk(folder.children);
+  return count;
+}
+
 export function FolderPeek({
   projectPath,
   fileTree,
@@ -136,6 +162,30 @@ export function FolderPeek({
     () => derivePeekChildren(fileTree),
     [fileTree],
   );
+
+  // `path → lastAccessedAt` lookup for the file-row meta column. We
+  // pull from `recentFiles` (persisted MRU) so the time-ago survives
+  // app restarts. Files that have never been opened simply have no
+  // entry here — the row renders an em-dash placeholder.
+  const recentFiles = useEditorStore((s) => s.recentFiles);
+  const lastAccessByPath = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const recent of recentFiles) {
+      if (recent.lastAccessedAt !== undefined) {
+        map.set(recent.path, recent.lastAccessedAt);
+      }
+    }
+    return map;
+  }, [recentFiles]);
+
+  // Re-render the popover every minute so "2m" / "1h" labels stay
+  // fresh while the popover is visible. Cheap — only fires when open.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(() => setNowTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [isOpen]);
 
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
@@ -244,12 +294,18 @@ export function FolderPeek({
   const openFile = useCallback(
     async (entry: FileEntry) => {
       try {
-        // Live-test 2026-04-25 — guard against binary types (PDF,
-        // EPUB, DOCX, images). The previous implementation always
-        // called the UTF-8 `read_file`, which fails with "stream did
-        // not contain valid UTF-8" on binary content.
+        // Binary file handling (live-test 2026-04-26) — read the
+        // bytes via `readBinaryFile` and cache via `setBinaryData` so
+        // PdfViewer / EpubViewer / DocxViewer can find them. Without
+        // the cache write, viewers showed "no PDF data available".
+        // Images use convertFileSrc and don't need caching, but the
+        // call is cheap.
         const fileType = getFileType(entry.name);
         if (fileType === "image" || isBinaryFileType(fileType)) {
+          if (isBinaryFileType(fileType)) {
+            const bytes = await tauriApi.readBinaryFile(entry.path);
+            setBinaryData(entry.path, new Uint8Array(bytes));
+          }
           openTab(entry.path, entry.name, "", null, fileType);
           return;
         }
@@ -391,6 +447,19 @@ export function FolderPeek({
                             <span className="truncate min-w-0 flex-1">
                               {entry.name}
                             </span>
+                            {/* Meta column (live-test 2026-04-26 #152)
+                                — folders show the recursive file count
+                                so users can scan project structure at
+                                a glance, matching mockup-d's `.peek
+                                .meta`. */}
+                            {(() => {
+                              const count = countFilesInFolder(entry);
+                              return count > 0 ? (
+                                <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+                                  {count} file{count === 1 ? "" : "s"}
+                                </span>
+                              ) : null;
+                            })()}
                             {/* #129 — aggregate git "●" indicator + external-
                                *  change dot for folder rows inside the peek. */}
                             <SidebarRowIndicators
@@ -455,6 +524,22 @@ export function FolderPeek({
                             <span className="truncate min-w-0 flex-1">
                               {entry.name}
                             </span>
+                            {/* Meta column (live-test 2026-04-26 #152)
+                                — files show "time since last opened"
+                                from the persisted MRU. Files never
+                                opened render no meta (cleaner than an
+                                em-dash placeholder). */}
+                            {(() => {
+                              const lastAt = lastAccessByPath.get(entry.path);
+                              return lastAt ? (
+                                <span
+                                  className="text-[11px] text-muted-foreground shrink-0 tabular-nums"
+                                  title={new Date(lastAt).toLocaleString()}
+                                >
+                                  {formatSavedShort(Date.now() - lastAt)}
+                                </span>
+                              ) : null;
+                            })()}
                             {/* #129 — git status + external-change dot for
                                *  file rows inside the peek. */}
                             <SidebarRowIndicators

@@ -152,7 +152,7 @@ describe('SettingsRow', () => {
       ).toBe(true);
     });
 
-    it('does NOT match a JSX description (only strings are searched)', () => {
+    it('matches text inside a JSX description (live-test 2026-04-26 — JSX descriptions ARE searched now via React-tree text extraction)', () => {
       expect(
         rowMatchesQuery(
           {
@@ -163,7 +163,27 @@ describe('SettingsRow', () => {
           },
           'searchable',
         ),
-      ).toBe(false);
+      ).toBe(true);
+    });
+
+    it('matches text deeper inside a JSX fragment with mixed children', () => {
+      expect(
+        rowMatchesQuery(
+          {
+            label: 'Cross-project mode',
+            description: (
+              <>
+                Exposes{' '}
+                <span className="font-medium text-foreground">
+                  all workspace folders
+                </span>{' '}
+                to the AI agent.
+              </>
+            ),
+          },
+          'workspace folders',
+        ),
+      ).toBe(true);
     });
 
     it('matches a string controlSublabel', () => {

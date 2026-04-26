@@ -139,8 +139,12 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
             // the pulse ring on the inner wrapper is unaffected. Scale
             // stays subtle (1.05) — the tooltip + shadow carry the
             // hover signal now, so the scale alone doesn't have to.
-            'transition-[transform,box-shadow] duration-150 ease-in-out',
-            'hover:scale-105 hover:shadow-lg',
+            // Live-test 2026-04-26 — slower, more pronounced hover so
+            // the orb reads as a real "I'm interactive" affordance:
+            // 150 ms → 220 ms, scale 1.05 → 1.10, plus a slight
+            // brightness lift via shadow.
+            'transition-[transform,box-shadow] duration-[220ms] ease-out',
+            'hover:scale-[1.10] hover:shadow-xl',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
         >

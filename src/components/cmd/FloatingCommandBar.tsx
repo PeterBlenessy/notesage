@@ -1599,9 +1599,6 @@ function ExpandedContent({
         </div>
       ) : null}
 
-      {/* #11 — Attachment chips strip. Renders nothing while `chips` is empty. */}
-      <AttachmentChips chips={chips} onRemove={onRemoveChip} />
-
       {activePrefix ? <PrefixModeBadge prefix={activePrefix} /> : null}
 
       {activePrefix ? (
@@ -1721,6 +1718,12 @@ function ExpandedContent({
           }
         }}
       >
+        {/* Document / file chips strip — moved INSIDE the input
+            container (live-test 2026-04-26 #151) so document
+            attachments group with the input like image attachments
+            do. Renders nothing when `chips` is empty. */}
+        <AttachmentChips chips={chips} onRemove={onRemoveChip} />
+
         {/* Live-test 2026-04-25 — attachment chips render INLINE with
             the textarea (not as a separate strip above) so they feel
             like content INSIDE the input box, not a sibling row. The

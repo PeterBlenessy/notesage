@@ -378,7 +378,7 @@ export function SystemSettings({
                 tauriApi.setLogLevel(level);
               }}
             >
-              <SelectTrigger className="w-[130px] h-8 text-xs">
+              <SelectTrigger className="w-[140px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

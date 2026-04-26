@@ -217,7 +217,7 @@ export function UseCaseRoutingSettings() {
                     setRouting(useCase, val === NONE ? null : val)
                   }
                 >
-                  <SelectTrigger className="w-52 text-left">
+                  <SelectTrigger className="w-[200px] text-left">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

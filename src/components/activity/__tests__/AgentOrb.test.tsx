@@ -246,7 +246,7 @@ describe('AgentOrb (#29)', () => {
   // hovered and overrides the keyframe's `scale(1.05)` frame — the pulse would
   // silently stop animating visually. This asserts the invariant directly so
   // the regression surfaces at test time, not in manual QA.
-  it('keeps the pulse and the hover:scale-105 utility on different elements (#119)', () => {
+  it('keeps the pulse and the hover-scale utility on different elements (#119)', () => {
     mockTasks = [makeTask('t1', 'running')];
     renderWithProviders(<AgentOrb />);
     const orb = screen.getByTestId('agent-orb');
@@ -265,11 +265,13 @@ describe('AgentOrb (#29)', () => {
     ).toBe(false);
     expect(pulseTokens).not.toContain('transition-transform');
 
-    // Button keeps the hover-scale affordance — we do NOT want to lose the
-    // user-interaction polish when fixing the pulse. The transition now
-    // covers `box-shadow` as well (#106 hover polish adds a soft glow),
-    // so the exact utility is `transition-[transform,box-shadow]`.
-    expect(orbTokens).toContain('hover:scale-105');
+    // Button keeps a hover-scale affordance. Live-test 2026-04-26 bumped
+    // the scale from 1.05 → 1.10 (arbitrary value) so the orb reads as
+    // more clearly interactive. Either is fine for the regression-lock —
+    // we just need *some* `hover:scale-*` utility on the button.
+    expect(
+      orbTokens.some((t) => t.startsWith('hover:scale-')),
+    ).toBe(true);
     expect(
       orbTokens.some(
         (t) =>

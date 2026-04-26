@@ -19,6 +19,7 @@ import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
+import { setBinaryData } from "@/lib/binary-cache";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
@@ -91,16 +92,61 @@ export function countMarkdownFiles(tree: FileEntry[]): number {
 }
 
 /**
- * Finds the project's README (case-insensitive `readme.md` at the top level)
- * or, failing that, the first `.md` file discovered anywhere in the tree
- * (depth-first). Returns `null` if the tree contains no markdown file.
+ * Pick which file to open when the user clicks a project row.
+ *
+ * Live-test 2026-04-26 — preference chain matches what VS Code, Bear,
+ * and Obsidian do: "give me where I left off."
+ *
+ *   1. Most recently opened file under this project path (from
+ *      `editor-store.recentFiles`). Survives across app restarts because
+ *      the recents list is persisted.
+ *   2. README (case-insensitive `readme.md` at top level) — useful for
+ *      fresh projects you've never opened a file in.
+ *   3. First `.md` anywhere in the tree (depth-first) — last-ditch
+ *      fallback so something always opens.
+ *
+ * Returns `null` only when the project has no markdown file at all.
  */
-function findEntryToOpen(tree: FileEntry[]): FileEntry | null {
+function findEntryToOpen(
+  projectPath: string,
+  tree: FileEntry[],
+  recentFiles: ReadonlyArray<{ path: string; lastAccessedAt?: number }>,
+): FileEntry | null {
+  // 1) Most-recently-accessed file under this project. The list is
+  // already sorted by `lastAccessedAt` desc when populated, so the
+  // first match wins. We still walk the tree to confirm the file is
+  // physically present (avoids opening a stale MRU pointing at a
+  // deleted file).
+  const projectPrefix = projectPath.endsWith("/")
+    ? projectPath
+    : projectPath + "/";
+  const findInTree = (
+    entries: FileEntry[],
+    target: string,
+  ): FileEntry | null => {
+    for (const entry of entries) {
+      if (!entry.is_directory && entry.path === target) return entry;
+      if (entry.is_directory && entry.children && target.startsWith(entry.path)) {
+        const found = findInTree(entry.children, target);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  for (const recent of recentFiles) {
+    if (!recent.path.startsWith(projectPrefix)) continue;
+    const match = findInTree(tree, recent.path);
+    if (match) return match;
+  }
+
+  // 2) README at top level.
   for (const entry of tree) {
     if (!entry.is_directory && entry.name.toLowerCase() === "readme.md") {
       return entry;
     }
   }
+
+  // 3) First markdown anywhere.
   const firstMarkdown = (entries: FileEntry[]): FileEntry | null => {
     for (const entry of entries) {
       if (!entry.is_directory) {
@@ -183,12 +229,16 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
   try {
     const fileType = getFileType(entry.name);
     if (fileType === "image" || isBinaryFileType(fileType)) {
-      // Image / PDF / DOCX / EPUB — read as bytes. The viewer
-      // components fetch the content via `convertFileSrc` or
-      // `readBinaryFile` themselves, so we just open an empty-content
-      // tab with the file type set so the right viewer mounts.
+      // Image / PDF / DOCX / EPUB — read as bytes and cache via
+      // `setBinaryData` (live-test 2026-04-26). The viewer components
+      // (PdfViewer, EpubViewer, DocxViewer, PptxViewer) read from the
+      // binary cache by path; without the cache write, they render
+      // "no PDF data available" because the bytes never made it into
+      // the lookup table. Image viewers use `convertFileSrc` and
+      // don't need the cache, but the call is cheap.
       if (isBinaryFileType(fileType)) {
-        await tauriApi.readBinaryFile(entry.path);
+        const bytes = await tauriApi.readBinaryFile(entry.path);
+        setBinaryData(entry.path, new Uint8Array(bytes));
       }
       useEditorStore
         .getState()
@@ -513,7 +563,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const openProject = useCallback(async (project: WorkspaceProject) => {
     if (project.fileTree.length === 0) return;
-    const entry = findEntryToOpen(project.fileTree);
+    // Pull recents fresh on click so MRU is current — avoids a stale
+    // closure if the user opened a file via another path right before
+    // clicking the project.
+    const recentFiles = useEditorStore.getState().recentFiles;
+    const entry = findEntryToOpen(project.path, project.fileTree, recentFiles);
     if (!entry) return;
     try {
       const raw = await invoke<string>("read_file", { path: entry.path });

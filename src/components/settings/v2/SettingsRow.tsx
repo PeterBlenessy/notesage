@@ -43,13 +43,42 @@ export interface SettingsRowProps {
  *   control as a non-element node (string, fragment, etc.) to opt out.
  */
 /**
+ * Recursively extract plain text from any React node so we can match against
+ * descriptions that wrap their copy in fragments / spans / inline icons.
+ * Walks `children` of valid elements, joins string + number leaves, and
+ * skips functions / booleans / null.
+ *
+ * Live-test 2026-04-26 — earlier the filter only matched string
+ * descriptions. Real settings descriptions are often `<>...</>` fragments
+ * with embedded `<span>` for formatting (e.g., AISettings "Cross-project
+ * mode"); those rows never showed up in ⌘F results. This recursion fixes
+ * that without touching the visible JSX.
+ */
+function reactNodeToText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return '';
+  }
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(reactNodeToText).join(' ');
+  }
+  if (React.isValidElement(node)) {
+    const children = (node.props as { children?: React.ReactNode })?.children;
+    return reactNodeToText(children);
+  }
+  return '';
+}
+
+/**
  * True when this row's label, description, or controlSublabel contains the
  * query. Used by `SettingsRow` itself to self-filter, and by `SettingsGroup`
  * to decide whether the wrapping group has any visible rows left.
  *
- * `description` and `controlSublabel` are matched only when their value is a
- * plain string — JSX descriptions are common for inline links / icons and
- * we don't try to walk arbitrary React trees. The label is always a string.
+ * Description and controlSublabel may be JSX — we walk the tree to extract
+ * text so users searching for terms inside `<span>` / `<code>` etc. still
+ * land matching rows.
  */
 export function rowMatchesQuery(
   props: Pick<SettingsRowProps, 'label' | 'description' | 'controlSublabel'>,
@@ -58,14 +87,14 @@ export function rowMatchesQuery(
   if (!query) return true;
   if (matchesSettingsQuery(props.label, query)) return true;
   if (
-    typeof props.description === 'string' &&
-    matchesSettingsQuery(props.description, query)
+    props.description !== undefined &&
+    matchesSettingsQuery(reactNodeToText(props.description), query)
   ) {
     return true;
   }
   if (
-    typeof props.controlSublabel === 'string' &&
-    matchesSettingsQuery(props.controlSublabel, query)
+    props.controlSublabel !== undefined &&
+    matchesSettingsQuery(reactNodeToText(props.controlSublabel), query)
   ) {
     return true;
   }
