@@ -10,8 +10,10 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useConnectionsStore } from "@/stores/connections-store";
 import type { ProjectMetadata } from "@/stores/project-metadata-store";
 import type { ExternalChangeEntry } from "@/stores/external-change-store";
+import type { Connection } from "@/lib/ai/connections";
 
 /**
  * #129 composition tests for `SidebarRowIndicators`. Each test seeds the
@@ -40,6 +42,18 @@ function resetStores() {
   useExternalChangeStore.setState({ changes: {} } as unknown as Parameters<typeof useExternalChangeStore.setState>[0]);
   useSettingsStore.setState({ gitEnabled: true } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
   useProjectMetadataStore.setState({ metadataMap: {} } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
+  useConnectionsStore.setState({ connections: [] } as unknown as Parameters<typeof useConnectionsStore.setState>[0]);
+}
+
+function makeConnection(overrides: Partial<Connection>): Connection {
+  return {
+    id: "conn-test",
+    label: "Test Connection",
+    provider: "anthropic",
+    auth: "api_key",
+    capabilities: ["interactive"],
+    ...overrides,
+  } as Connection;
 }
 
 describe("SidebarRowIndicators (#129)", () => {
@@ -146,12 +160,13 @@ describe("SidebarRowIndicators (#129)", () => {
     useProjectMetadataStore.setState({
       metadataMap: { "/p": lockedMeta },
     } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
+    useConnectionsStore.setState({
+      connections: [makeConnection({ id: "conn-anthropic", label: "Claude — Personal" })],
+    } as unknown as Parameters<typeof useConnectionsStore.setState>[0]);
 
     renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
 
-    expect(
-      screen.getByLabelText("Project locked to an AI provider"),
-    ).toBeTruthy();
+    expect(screen.getByLabelText("Locked to Claude — Personal")).toBeTruthy();
   });
 
   it("suppresses the AI-lock padlock on file + folder rows even when metadata is set", () => {
@@ -175,7 +190,70 @@ describe("SidebarRowIndicators (#129)", () => {
     // File kind ignores aiLock entirely — no padlock regardless of
     // metadata on the path (which is unrealistic for files anyway).
     expect(
-      screen.queryByLabelText("Project locked to an AI provider"),
+      screen.queryByLabelText(/^Locked to/),
     ).toBeNull();
+  });
+
+  // Regression lock for the 2026-04-27 audit finding #18 — the padlock
+  // tooltip used to render `aiLock.connectionId` directly, leaking the
+  // raw store id (e.g. `conn-1774086797085-ak920t`) to the user. The
+  // fix routes through `describeLockTarget` + a `connections-store`
+  // lookup so the user-set label is shown instead.
+  describe("aiLock tooltip — connection label not raw id (audit #18)", () => {
+    it("renders the connection label when the connection exists", () => {
+      const lockedMeta: ProjectMetadata = {
+        name: "Locked Project",
+        description: "",
+        ai: {},
+        aiLock: {
+          connectionId: "conn-1774086797085-ak920t",
+          lockedAt: Date.now(),
+        },
+      } as ProjectMetadata;
+      useProjectMetadataStore.setState({
+        metadataMap: { "/p": lockedMeta },
+      } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
+      useConnectionsStore.setState({
+        connections: [makeConnection({ id: "conn-1774086797085-ak920t", label: "Claude — Personal" })],
+      } as unknown as Parameters<typeof useConnectionsStore.setState>[0]);
+
+      renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
+
+      // Label IS the descriptive text — appears in the aria-label AND
+      // the tooltip content (Radix portals the latter, harder to query
+      // in jsdom; the aria-label is the assertion-friendly mirror).
+      expect(screen.getByLabelText("Locked to Claude — Personal")).toBeTruthy();
+      expect(
+        screen.queryByLabelText(/conn-1774086797085-ak920t/),
+      ).toBeNull();
+    });
+
+    it("falls back to the connection id with an (unavailable) suffix when the connection has been removed", () => {
+      const lockedMeta: ProjectMetadata = {
+        name: "Locked Project",
+        description: "",
+        ai: {},
+        aiLock: {
+          connectionId: "conn-removed-123",
+          lockedAt: Date.now(),
+        },
+      } as ProjectMetadata;
+      useProjectMetadataStore.setState({
+        metadataMap: { "/p": lockedMeta },
+      } as unknown as Parameters<typeof useProjectMetadataStore.setState>[0]);
+      // connections-store intentionally empty — the lock outlived the
+      // connection. We surface the raw id so the user can still
+      // identify which connection used to be locked, and the
+      // "(unavailable)" suffix tells them the lock no longer resolves.
+      useConnectionsStore.setState({
+        connections: [],
+      } as unknown as Parameters<typeof useConnectionsStore.setState>[0]);
+
+      renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
+
+      expect(
+        screen.getByLabelText("Locked to conn-removed-123 (unavailable)"),
+      ).toBeTruthy();
+    });
   });
 });

@@ -401,7 +401,14 @@ describe('useCommentDelegation', () => {
 
       expect(mockToastFn.success).toHaveBeenCalledWith(
         'Agent finished working on your comment. Click it to review.',
-        expect.objectContaining({ id: 'delegation-done-comment-1' }),
+        expect.objectContaining({
+          id: 'delegation-done-comment-1',
+          // Regression lock for audit 2026-04-27 finding #16 — without an
+          // explicit close button the toast covered the AgentOrb (same
+          // bottom-right corner) and blocked the user from clicking through
+          // to the result for the toast's full duration.
+          closeButton: true,
+        }),
       );
     });
 

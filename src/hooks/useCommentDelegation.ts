@@ -102,9 +102,15 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               s.clearDelegationMode(commentId);
               s.saveComments(documentId, projectRoot);
               if (mode === 'delegate') {
+                // `closeButton: true` adds an explicit X so the user can dismiss
+                // the toast immediately. The Toaster sits in `bottom-right` —
+                // same corner as the AgentOrb (`fixed bottom-6 right-6`) — so
+                // the default 5s auto-dismiss otherwise blocks the orb's hit
+                // target until it expires (audit 2026-04-27 finding #16).
                 toast.success('Agent finished working on your comment. Click it to review.', {
                   id: `delegation-done-${commentId}`,
                   duration: 5000,
+                  closeButton: true,
                 });
               }
             },
@@ -285,9 +291,15 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               s.clearDelegationMode(commentId);
               s.saveComments(documentId, projectRoot);
               if (mode === 'delegate') {
+                // `closeButton: true` adds an explicit X so the user can dismiss
+                // the toast immediately. The Toaster sits in `bottom-right` —
+                // same corner as the AgentOrb (`fixed bottom-6 right-6`) — so
+                // the default 5s auto-dismiss otherwise blocks the orb's hit
+                // target until it expires (audit 2026-04-27 finding #16).
                 toast.success('Agent finished working on your comment. Click it to review.', {
                   id: `delegation-done-${commentId}`,
                   duration: 5000,
+                  closeButton: true,
                 });
               }
             },

@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { useFileTreeItemState } from "@/hooks/useFileTreeItemState";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useConnectionsStore } from "@/stores/connections-store";
+import { describeLockTarget } from "@/lib/ai/project-lock";
 import {
   Tooltip,
   TooltipContent,
@@ -75,6 +77,20 @@ export function SidebarRowIndicators({
     return s.metadataMap[path]?.aiLock ?? undefined;
   });
 
+  // Resolve the locked connection's user-set label so the tooltip reads
+  // "Locked to Claude — Personal" instead of leaking the raw id
+  // (`conn-1774086797085-ak920t`). Falls through to the id with an
+  // "(unavailable)" suffix when the connection has been removed but the
+  // lock metadata still references it.
+  const lockedConnection = useConnectionsStore((s) =>
+    aiLock ? s.getConnection(aiLock.connectionId) : undefined,
+  );
+  const lockTooltip = aiLock
+    ? lockedConnection
+      ? `Locked to ${describeLockTarget(aiLock.connectionId, lockedConnection.label)}`
+      : `Locked to ${aiLock.connectionId} (unavailable)`
+    : null;
+
   const hasAnyIndicator =
     Boolean(gitInfo) || hasExternalChange || Boolean(aiLock);
 
@@ -121,20 +137,18 @@ export function SidebarRowIndicators({
           </Tooltip>
         ) : null}
 
-        {aiLock ? (
+        {aiLock && lockTooltip ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span
                 role="status"
-                aria-label="Project locked to an AI provider"
+                aria-label={lockTooltip}
                 className="inline-flex items-center text-muted-foreground"
               >
                 <Lock className="h-3 w-3" strokeWidth={1.5} />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top">
-              Locked to {aiLock.connectionId}
-            </TooltipContent>
+            <TooltipContent side="top">{lockTooltip}</TooltipContent>
           </Tooltip>
         ) : null}
       </TooltipProvider>

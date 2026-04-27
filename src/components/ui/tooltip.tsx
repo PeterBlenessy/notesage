@@ -40,7 +40,15 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "bg-foreground text-background animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md px-3 py-1.5 text-xs text-balance",
+          // Vertical sizing: text-xs (12px) ships a 16px line-box that
+          // crops descenders ('p', 'g', 'y', 'q', 'j') against the
+          // bottom radius — visible in the project-lock tooltip and
+          // anywhere else descenders meet the rounded edge. Bumping
+          // line-height to 20px (leading-5) and bottom padding to 8px
+          // (pb-2) clears the descender across all tooltips. Top
+          // padding stays at 6px (pt-1.5) so the visual centre of
+          // ascender-only text doesn't drift up.
+          "bg-foreground text-background animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md px-3 pt-1.5 pb-2 text-xs leading-5 text-balance",
           className
         )}
         {...props}
