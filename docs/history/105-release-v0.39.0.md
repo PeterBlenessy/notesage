@@ -11,7 +11,7 @@ Phase 1 of the UI refresh introduces the Quiet Composer Preview — a new, calme
 
 ### Features
 
-- **Quiet Composer Preview (opt-in).** A new UI shell with a floating command bar, a single agent orb, a flat-list sidebar, a doc-head breadcrumb, and a simplified status tray. Try it from **Settings → Appearance → "UI" → "Quiet Composer"**, or click "Try it" on the one-time invitation banner that appears after upgrading
+- **Quiet Composer Preview (opt-in).** A new UI shell with a floating command bar, a single agent orb, a flat-list sidebar, and a simplified status tray. Try it from **Settings → Appearance → "UI" → "Quiet Composer"**, or click "Try it" on the one-time invitation banner that appears after upgrading
 - **Workspace tree overlay (`⌘⇧E`).** Slide-in panel with the full project + folder tree, focus-trapped and keyboard-navigable
 - **Folder peek.** Hover a project row (or press `→` from the keyboard) for a one-level preview popover with shortcuts to open files
 - **Pinned files** in the sidebar — drag to reorder, drop from anywhere to pin
@@ -24,10 +24,10 @@ Phase 1 of the UI refresh introduces the Quiet Composer Preview — a new, calme
 
 - **Floating command bar** is the new chat surface in Quiet Composer mode. Same providers, agents, branching, segments, scoped approvals — fewer pixels of chrome. Pinnable to the right edge if you prefer the panel layout
 - **Agent activity** moves from the rail to a single 46px ambient orb. Pulses while tasks are running; click for the full task list in a Popover-anchored panel
-- **Tab bar replaced** by a compact breadcrumb above the document (Notesage / project / folder / file.md), with a dirty dot and a "saved 40s ago" hint
+- **Tab bar replaced** by the document filename in the title bar, with a dirty dot when there are unsaved changes
 - **Toolbars float** as backdrop-blurred pills above the document and viewers (PDF, EPUB, DOCX, PPTX, code editor) and fade while you type
 - **Focus mode** (`⌘.`) shows a small "Focus · ⌘. to exit" pill, restores focus to the previously-focused element on exit, and announces enter / exit to screen readers
-- **Status bar** simplified into a tray that opens on click — completions provider, comments, recording state, word count, shortcut help all in one place
+- **Status bar** simplified into a tray that opens on click — completions provider, comments, recording state, and shortcut help all in one place
 - **External-change handling** is now silent auto-reload by default, with a 3-second info toast (`<name> reloaded from disk`). The previous accept/reject UI is still available — toggle **Settings → Editor → "Review external diff"**
 - **Cross-project mode** indicator is now a compact "Cross-project scope" pill in the command bar's context row instead of a persistent banner above the chat input
 
