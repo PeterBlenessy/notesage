@@ -247,7 +247,7 @@ function PinnedRow({
           className={cn(
             "relative h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150",
             !isRenaming && "hover:bg-muted/50 cursor-pointer",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
             // Active row uses a neutral muted background (live-test
             // 2026-04-26 — the previous accent-fill was too distracting).
             // The accent is preserved on the icon so the active state

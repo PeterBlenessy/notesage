@@ -190,11 +190,11 @@ export function TagsSection({
                 onFocus={() => roving.handleFocus(tag.name)}
                 onKeyDown={(e) => handleRowKeyDown(e, tag.name)}
                 className={cn(
-                  "h-7 px-2 flex items-center gap-2 rounded-sm",
+                  "relative h-7 px-2 flex items-center gap-2 rounded-sm",
                   "text-[13px] text-foreground cursor-pointer",
                   "hover:bg-muted/50 transition-colors",
                   "focus-visible:outline-none focus-visible:bg-muted/50",
-                  "focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
                 )}
               >
                 <span className="truncate min-w-0">
@@ -210,8 +210,15 @@ export function TagsSection({
         </ul>
       ) : null}
       {hasOverflow ? (
+        // `tabIndex={-1}` keeps the temporary "Show more" affordance out
+        // of the natural Tab order so Tab from a tag row jumps straight
+        // to the next section's first row (audit 2026-04-27 finding #11
+        // follow-up — same philosophy as the section-header `+` and the
+        // per-row `+`). Users who want a permanent larger view bump the
+        // cap in Settings > Appearance > Sidebar Composition.
         <button
           type="button"
+          tabIndex={-1}
           onClick={toggleExpanded}
           aria-expanded={expanded}
           className={cn(
@@ -219,7 +226,6 @@ export function TagsSection({
             "text-xs text-muted-foreground hover:text-foreground",
             "underline-offset-2 hover:underline",
             "transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
           )}
         >
           {expanded ? "Show fewer" : "Show more"}

@@ -191,11 +191,11 @@ export function MentionsSection({
                 onFocus={() => roving.handleFocus(mention.name)}
                 onKeyDown={(e) => handleRowKeyDown(e, mention.name)}
                 className={cn(
-                  "h-7 px-2 flex items-center gap-2 rounded-sm",
+                  "relative h-7 px-2 flex items-center gap-2 rounded-sm",
                   "text-[13px] text-foreground cursor-pointer",
                   "hover:bg-muted/50 transition-colors",
                   "focus-visible:outline-none focus-visible:bg-muted/50",
-                  "focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
                 )}
               >
                 <span className="truncate min-w-0">
@@ -211,8 +211,14 @@ export function MentionsSection({
         </ul>
       ) : null}
       {hasOverflow ? (
+        // `tabIndex={-1}` per the audit 2026-04-27 finding #11 follow-up
+        // — keeps the temporary "Show more" affordance out of the
+        // natural Tab order. Mouse users still see and click it; users
+        // who want a permanent larger view bump the cap in
+        // Settings > Appearance > Sidebar Composition.
         <button
           type="button"
+          tabIndex={-1}
           onClick={toggleExpanded}
           aria-expanded={expanded}
           className={cn(
@@ -220,7 +226,6 @@ export function MentionsSection({
             "text-xs text-muted-foreground hover:text-foreground",
             "underline-offset-2 hover:underline",
             "transition-colors",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
           )}
         >
           {expanded ? "Show fewer" : "Show more"}

@@ -213,10 +213,10 @@ function RecentRow({
           // feedback 2026-04-24). The preview already carries the full
           // path + rendered body.
           className={cn(
-            "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
+            "relative h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
             "transition-colors duration-150",
             !isRenaming && "cursor-pointer",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
             isActive
               ? "bg-muted text-foreground font-medium"
               : cn(
@@ -398,8 +398,16 @@ export function RecentSection({
             ))}
           </div>
           {hasOverflow && (
+            // `tabIndex={-1}` per the audit 2026-04-27 finding #11
+            // follow-up — keeps the temporary "Show more" affordance
+            // out of the natural Tab order so Tab from a recent row
+            // jumps straight to the next section. Mouse users still
+            // see and click it; users who want a permanent larger
+            // view bump the cap in Settings > Appearance > Sidebar
+            // Composition.
             <button
               type="button"
+              tabIndex={-1}
               aria-expanded={effectiveExpanded}
               aria-label={
                 effectiveExpanded ? "Show fewer recent files" : "Show more recent files"
@@ -408,7 +416,6 @@ export function RecentSection({
               className={cn(
                 "self-start px-2 py-0.5 text-xs text-muted-foreground",
                 "hover:text-foreground underline-offset-2 hover:underline",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm",
                 "transition-colors duration-150",
               )}
             >

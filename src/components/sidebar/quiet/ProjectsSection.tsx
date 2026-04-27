@@ -714,13 +714,25 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
           Projects
         </h2>
+        {/*
+          `tabIndex={-1}` excludes the `+` from the natural Tab order
+          (audit 2026-04-27 finding #11). The button is `opacity-0` by
+          default and only appears on hover/focus-within, so leaving it
+          Tab-focusable causes a "phantom + appears" effect — Tab from a
+          project row jumps to the (previously invisible) `+` of the
+          Projects section header, and the user can't tell whether
+          focus is on a folder or on the `+`. Keyboard users reach the
+          create flow via ⌘⇧N (documented in the shortcuts dialog);
+          mouse users keep the hover-reveal `+`.
+        */}
         <Button
           type="button"
           variant="ghost"
           size="icon-xs"
           aria-label="Add project"
+          tabIndex={-1}
           onClick={onAdd}
-          className="opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+          className="opacity-0 group-hover/section:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
         >
           <Plus strokeWidth={1.5} />
         </Button>
@@ -996,7 +1008,7 @@ function ProjectRow({
         "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
         // Active row uses a neutral muted background (live-test
         // 2026-04-26). Accent is preserved on the folder icon below.
         isActive && "bg-muted text-foreground font-medium",
@@ -1050,7 +1062,16 @@ function ProjectRow({
           // fills the vertical space exactly — no clipping. Right edge
           // = slot right = row right - px-2 (8 px), so its centre lines
           // up with the section-header `+` centre (row right - 20 px).
-          className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+          //
+          // Visibility = mouse-hover ONLY. We dropped
+          // `group-focus-within/row:opacity-100` and
+          // `focus-visible:opacity-100` (audit 2026-04-27 finding #11
+          // follow-up): the `+` is a discoverability affordance for
+          // mouse users, and showing it inside the keyboard focus ring
+          // cluttered the focused row. Keyboard users reach "new note
+          // in <project>" via the right-click context menu or `⌘N`
+          // while a project row is focused.
+          className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150"
         >
           <Plus strokeWidth={1.5} />
         </Button>
@@ -1133,7 +1154,7 @@ function ChildRow({
         onFocus={onFocus}
         className={cn(
           "h-6 px-2 flex items-center text-xs text-muted-foreground",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+          "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
         )}
       >
         +{row.overflow.count} more…
@@ -1202,7 +1223,7 @@ function ChildRow({
         "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         !isRenaming && "hover:bg-muted/50 cursor-pointer",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
       )}
     >
       <Icon
