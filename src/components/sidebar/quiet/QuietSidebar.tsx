@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
+import { FoldersSection } from "./FoldersSection";
 import { RecentSection } from "./RecentSection";
 import { TagsSection } from "./TagsSection";
 import { MentionsSection } from "./MentionsSection";
@@ -196,6 +197,11 @@ export function QuietSidebar() {
       {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
       <PinnedSection filter={filter} />
       <ProjectsSection filter={filter} onAdd={handleAddProject} />
+      {/* Sidebar-simplification task #10 — Folders section sits
+         between Projects and Recent. Self-hides when the user has no
+         explorer folders open (locked-in 2026-04-27 — no cap, no
+         slider; the user IS the limiter). */}
+      <FoldersSection filter={filter} />
       <RecentSection filter={filter} />
       {/* TagsSection / MentionsSection self-hide when their cap is 0
           (the slider IS the visibility control — see settings-store

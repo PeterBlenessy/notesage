@@ -132,7 +132,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | none |
 | Files | `src/stores/workspace-store.ts`, `src/App.tsx` (handleOpenFolder) |
 
-### #9 — Add `FoldersSection.tsx` component
+### #9 — Add `FoldersSection.tsx` component ✅
 
 | Field | Value |
 | --- | --- |
@@ -142,7 +142,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #1, #5, #8 |
 | Files | `src/components/sidebar/quiet/FoldersSection.tsx` (new) |
 
-### #10 — Mount FoldersSection in QuietSidebar
+### #10 — Mount FoldersSection in QuietSidebar ✅
 
 | Field | Value |
 | --- | --- |
@@ -152,7 +152,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #9 |
 | Files | `src/components/sidebar/quiet/QuietSidebar.tsx` |
 
-### #11 — Tests for FoldersSection + dedup
+### #11 — Tests for FoldersSection + dedup ✅
 
 | Field | Value |
 | --- | --- |
