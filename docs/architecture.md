@@ -71,8 +71,9 @@ note-sage/
 │   │   │   │   ├── hf_search.rs   # HuggingFace model search & details API
 │   │   │   │   └── binary_resolution.rs # llama-server binary resolution & diagnostics
 │   │   │   ├── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
-│   │   │   └── fonts.rs    # System font enumeration (font-kit crate)
-│   │   ├── tray.rs         # System tray icon, menu, quick capture, close-to-tray
+│   │   │   ├── fonts.rs    # System font enumeration (font-kit crate)
+│   │   │   └── theme.rs    # `get_system_accent_color` (macOS NSColor → oklch for accent picker)
+│   │   ├── tray.rs         # System tray icon, menu (no global Quick Capture shortcut yet), close-to-tray
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
@@ -83,10 +84,15 @@ note-sage/
 │   │   └── export/         # Document export engines (PDF, DOCX, PPTX, HTML)
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
-│   │       ├── markdown_to_typst.rs # Markdown → Typst markup converter
+│   │       ├── markdown_to_typst.rs # Markdown → Typst markup converter (PDF)
 │   │       ├── markdown_to_docx.rs  # Markdown → DOCX converter (docx-rs)
+│   │       ├── markdown_to_pptx.rs  # Markdown → PPTX converter (ppt-rs)
+│   │       ├── markdown_to_html.rs  # Markdown → standalone HTML / clipboard fragment (comrak + syntect)
+│   │       ├── html_styles.rs       # Embedded CSS templates for HTML export (light + dark)
+│   │       ├── page_settings.rs     # Page-size + margin parsing (A4, Letter, A5)
+│   │       ├── typography.rs        # Shared typography helpers (font lookup, fallbacks)
 │   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
-│   │       └── templates.rs        # Template loading and parameterization
+│   │       └── templates.rs        # PDF + PPTX template loading and parameterization
 │   ├── binaries/           # Bundled sidecar binaries (llama-server + dylibs)
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
 │   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)
@@ -117,7 +123,7 @@ note-sage/
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
-│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
+│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
 │   │   ├── settings/       # Legacy SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   │   └── v2/         # Quiet Composer settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
@@ -218,11 +224,11 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 | Store | Purpose | Persistence |
 | --- | --- | --- |
-| `editor-store` | Open tabs, active tab, per-tab flags | Full |
+| `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
 | `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), home directory | Full (except `startupReady`) |
-| `ai-store` | AI provider config (legacy, fallback) | Full |
+| `ai-store` | AI provider config — predates `routing-store` / `connections-store`; kept for one-time migration of v1 settings and as a fallback when no routing entry exists. Not deprecated for usage, deprecated for new features | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |

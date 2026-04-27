@@ -7,11 +7,11 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Action | Shortcut | Description |
 | --- | --- | --- |
 | Save | `⌘S` | Save current file to disk |
-| Open file | `⌘O` | Open file picker dialog |
-| Close tab | `⌘W` | Close active tab (warns if unsaved) |
-| New note | `⌘N` | Open new note dialog (Quiet Composer: opens inline-create row in sidebar) |
-| New project | `⌘⇧N` | Open new project dialog (Quiet Composer: opens inline-create row in Projects section) |
-| Export as PDF | `⌘⇧E` | Open PDF export dialog (Layout) — also see App Navigation: in Quiet Composer this chord opens the TreeOverlay instead |
+| Open folder | `⌘O` | Open native folder-picker dialog (loads selected folder as Explorer / project) |
+| Close active document | `⌘W` | Close the active document (warns if unsaved). Internally still called "tab" — see Implementation Notes |
+| New note | `⌘N` | Classic Layout: opens new-note dialog. Quiet Composer: opens inline-create row in the active project (no dialog) |
+| New project | `⌘⇧N` | Classic Layout: opens new-project dialog. Quiet Composer: opens inline-create row in the Projects section (no dialog) |
+| Export as PDF | `⌘⇧E` | Classic Layout only — opens the Export dialog (PDF/DOCX/PPTX/HTML). In Quiet Composer this chord is **rebound** to the TreeOverlay (capture-phase preempts the export binding) — export from the `>` palette or the right-click sidebar context menu instead |
 
 ## Editor Formatting
 
@@ -59,21 +59,22 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Toggle chat panel | `⌘⇧C` | Legacy: show/hide AI chat sidebar. Quiet Composer: expand the command bar (the command bar IS the chat); press again while pinned to unpin back to the floating overlay |
-| Toggle agent panel | `⌘⇧A` | Legacy: show/hide agent activity panel. Quiet Composer: toggle the AgentOrb popover (the orb IS the agent panel) |
-| Add comment | `⌘⇧M` | Create inline comment on selected text |
+| Toggle chat panel | `⌘⇧C` | Classic: show/hide AI chat sidebar. Quiet Composer: focuses the FloatingCommandBar when collapsed (third summon path alongside `⌘K` and double-tap `⌘`); when the bar is already expanded+pinned, unpins it back to floating; otherwise no-op (use `Esc` to collapse) |
+| Toggle agent panel | `⌘⇧A` | Classic: show/hide agent activity panel. Quiet Composer: toggle the `AgentOrb` popover (the orb IS the agent panel) |
+| Add comment | `⌘⇧M` | Create inline comment on selected text. **Wired through Tiptap, not through `useKeyboardShortcuts`** — see Implementation Notes |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
 | Toggle recording | `⌘⇧R` | Start/stop meeting recording |
-| Quick capture | `⌘⇧Space` | Open quick capture window (global shortcut — works even when app is hidden) |
 
-## Tab Navigation
+> **Quick capture (`⌘⇧Space`) is NOT shipped.** The previous entry claimed a global shortcut and a floating quick-capture window. Neither exists today: `tauri-plugin-global-shortcut` isn't in the build, no separate window is registered, and the in-app `quick-capture` palette entry just opens the regular New Note dialog. Tracked under the System Tray phase as a follow-up.
+
+## Document Navigation
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Previous Recent doc | `⌘⇧[` | Cycle backward through MRU document history |
+| Previous Recent doc | `⌘⇧[` | Cycle backward through MRU document history (works in both shells; live since task #77) |
 | Next Recent doc | `⌘⇧]` | Cycle forward through MRU document history |
-| Middle-click tab | Mouse middle button | Close tab |
+| Middle-click tab | Mouse middle button | Close document — Classic Layout only (Quiet Composer has no tab strip) |
 
 ## Slash Commands
 
@@ -97,25 +98,28 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 ## App Navigation
 
-| Action | Shortcut | Description |
-| --- | --- | --- |
-| Command palette / Command bar | `⌘K` | Legacy: open CommandPalette. Quiet Composer: focus the FloatingCommandBar |
-| Double-tap `⌘` | Within 300 ms | Quiet Composer only — alternate path to summon the command bar (no chord) |
-| Search files | `⌘⇧F` | Legacy: command palette in file-search mode. Quiet Composer: focus command bar (no prefix — type to file-search) |
-| Toggle sidebar | `⌘⇧L` | Show/hide file sidebar |
-| Focus mode | `⌘.` | Toggle distraction-free focus mode |
-| Open actions | `⌘1` / `⌘⇧1` | Legacy: open actions dashboard. Quiet Composer: focus command bar with `!` prefix |
-| Mention search | `⌘2` / `⌘⇧2` | Legacy: command palette in mentions mode. Quiet Composer: focus command bar with `@` prefix |
-| Tag search | `⌘3` / `⌘⇧3` | Legacy: command palette in tags mode. Quiet Composer: focus command bar with `#` prefix |
-| Research search | `⌘4` / `⌘⇧4` | Legacy: command palette in research mode. Quiet Composer: focus command bar with `?` prefix |
-| Commands palette | `⌘⇧P` | Legacy: command palette in `>` (commands) mode. Quiet Composer: focus command bar with `>` prefix |
-| TreeOverlay | `⌘⇧E` | Quiet Composer only — open the slide-in workspace tree overlay (capture-phase preempts the legacy Export-as-PDF binding) |
-| Document outline | `⌘⇧O` | Open document outline (requires active file) |
-| Keyboard shortcuts | `⌘⇧K` | Show keyboard shortcuts reference |
-| Copy path | `⌘⌥C` | Copy the active document's absolute path to the clipboard. Also fires the `notesage:copy-path` event |
-| Reveal in Finder | `⌘⌥R` | Reveal the active document in Finder. Also fires the `notesage:reveal-in-finder` event |
-| Open Tauri devtools | `⌘⌥I` | Open the Tauri WebView devtools |
-| Exit focus mode | `Esc` | Exit focus mode (when active) |
+Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K`, double-tap `⌘`, and `⌘⇧C` (when collapsed).
+
+| Action | Press (chord) | Glyph form (display) | Description |
+| --- | --- | --- | --- |
+| Command palette / Command bar | `⌘K` | `⌘K` | Classic: open `CommandPalette`. Quiet Composer: focus the `FloatingCommandBar` |
+| Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
+| Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Classic: toggle ChatPanel. Quiet Composer: focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
+| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. **Quiet Composer (current behaviour): focuses the command bar with no prefix — typing goes to chat input, NOT file search.** There is no dedicated "files" prefix in the Quiet Composer cmd bar today. To find a file: open the bar with `⌘K`, then type the filename in chat-mode (no result list yet) — or use the TreeOverlay (`⌘⇧E`) for browsing |
+| Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
+| Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
+| Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Classic: opens Actions dashboard. Quiet Composer: focuses the command bar with `!` prefix → TaskMode |
+| References (was Mentions) | `⌘2` / `⌘⇧2` | `⌘@` | Classic: command palette in mentions mode. Quiet Composer: focuses the command bar with `@` prefix → ReferenceMode (files / people / comments) |
+| Tags | `⌘3` / `⌘⇧3` | `⌘#` | Classic: command palette in tags mode. Quiet Composer: focuses the command bar with `#` prefix → TagMode |
+| Research | `⌘4` / `⌘⇧4` | `⌘?` | Classic: command palette in research mode. Quiet Composer: focuses the command bar with `?` prefix → ResearchMode |
+| Commands palette | `⌘⇧P` | `⌘⇧P` | Classic: command palette in `>` (commands) mode. Quiet Composer: focuses the command bar with `>` prefix → PaletteMode |
+| Tree overlay (workspace tree) | `⌘⇧E` | `⌘⇧E` | Quiet Composer only — open the slide-in workspace tree overlay. Capture-phase listener preempts the legacy Export binding while QuietLayout is mounted |
+| Document outline | `⌘⇧O` | `⌘⇧O` | Open document outline (requires active file). Currently uses a legacy modal `Dialog` — has not been migrated to a Quiet Composer popover |
+| Keyboard shortcuts | `⌘⇧K` | `⌘⇧K` | Show keyboard shortcuts reference |
+| Copy path | `⌘⌥C` | `⌘⌥C` | Copy the active document's absolute path to the clipboard |
+| Reveal in Finder | `⌘⌥R` | `⌘⌥R` | Reveal the active document in Finder |
+| Open Tauri devtools | `⌘⌥I` | `⌘⌥I` | Open the Tauri WebView devtools |
+| Exit focus mode | `Esc` | `Esc` | Exit focus mode (when active). Falls through if a popover, command bar, or inline edit is open first |
 
 ### Command Palette Prefix Modes
 
@@ -132,19 +136,20 @@ Type a prefix character as the first character in the command palette / command 
 
 Backspacing past a prefix character returns to the default (files + actions) mode.
 
-## Future Shortcuts (Planned)
+## Future Shortcuts (Planned but unshipped)
 
-No shortcuts are currently planned but not yet implemented.
+- **`⌘⇧Space` Quick capture** — was scoped under the System Tray phase as a global shortcut + floating quick-capture window. Neither shipped (no `tauri-plugin-global-shortcut` registered, no separate window). The in-app `quick-capture` palette entry currently routes to the regular New Note dialog. See `docs/product-description.md` System Tray section for the deferral note.
+- **File-search mode in the Quiet Composer command bar** — `⌘⇧F` currently focuses the bar with no prefix and typing routes to chat input. The PRD intent was a real file-search mode (typing narrows a file-result list). Not yet built; `?` for research, `@` for references, `#` for tags, `!` for tasks all exist, but a dedicated `:file` (or similar) prefix does not.
 
 ## Removed Shortcuts
 
-- `⌘⇧P` (Preview HTML) — the inline HTML Preview viewer was removed in the M1.5 round of the UI Refresh PRD (`docs/prds/2026-04-21-ui-refresh.md`, "Preview as HTML"). Native HTML rendering with JavaScript is deferred to a separate PRD. The chord `⌘⇧P` is now bound to the commands-palette `>` prefix (see App Navigation).
+- **Preview HTML** — the inline HTML Preview viewer (formerly `⌘⇧P`) was removed in the M1.5 round of the UI Refresh PRD (`docs/prds/2026-04-21-ui-refresh.md`, "Preview as HTML"). Native HTML rendering with JavaScript is deferred to a separate PRD. The chord `⌘⇧P` was reassigned to the commands-palette (`>`) — see App Navigation.
 
 ## Implementation Notes
 
 ### Owner table (Quiet Composer vs Legacy)
 
-The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Legacy Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the FloatingCommandBar (`useCommandBarShortcuts`), while ⌘⇧E / ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners.
+The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Classic Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar` (`useCommandBarShortcuts`), while ⌘⇧E / ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners. `⌘.` (focus mode) is owned by `useFocusMode` at capture phase and the double-tap `⌘` summon path lives in `useDoubleTapCmd`. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
 
 ### Shortcut Priority
 

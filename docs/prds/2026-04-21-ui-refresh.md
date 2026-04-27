@@ -8,7 +8,7 @@
 | **Impact** | Every user-facing surface. Defines the visual and interaction identity of Notesage 1.0. |
 | **Mockups** | [ui-exploration/](../design/ui-exploration/) — A (Quiet Writing), B (Ambient Command), C (Focused Workshop), **D (Synthesis)**, E (Settings), F (Focus mode), G (Heavy compose), H (Permission card), I (Pinned panel), J (First run), K (AI settings), L (Sidebar interactions) |
 | **Research** | Linear redesign, iA Writer, Bear, Ulysses, Raycast, Cursor, Things 3, Granola, 7 UX Patterns for Ambient AI Agents |
-| **Tasks** | [ui-refresh-phase1-tasks](../tasks/2026-04-21-ui-refresh-phase1-tasks.md) (100 tasks, Phase 1 preview), [ui-refresh-rollout-tasks](../tasks/2026-04-21-ui-refresh-rollout-tasks.md) (16 tasks, Phase 2 + 3 rollout) |
+| **Tasks** | [ui-refresh-phase1-tasks](../tasks/2026-04-21-ui-refresh-phase1-tasks.md) (100 tasks, Phase 1 preview), [ui-refresh-rollout-tasks](../tasks/2026-04-21-ui-refresh-rollout-tasks.md) (16 tasks, Phase 2 + 3 rollout), [sidebar-simplification-tasks](../tasks/2026-04-27-sidebar-simplification-tasks.md) (24 tasks, post-Phase-1 sidebar program — TreeOverlay removal + Folders section + persistent search), [quiet-composer-bugs-tasks](../tasks/2026-04-27-quiet-composer-bugs-tasks.md) (14 tasks, post-Phase-1 standalone bugs from 2026-04-27 audit — Actions in StatusTray, TaskMode grouping, agent-orb toast, macOS unfocused window, project-lock tooltip) |
 
 ## Problem
 

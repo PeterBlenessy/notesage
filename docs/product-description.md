@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.36.0
+**Current version:** 0.39.1
 
 ## Features
 
@@ -83,10 +83,20 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Click tray icon to toggle window visibility
 - Close-to-tray: optional hide-on-close instead of quit
 - Desktop notifications for agent task completion/errors (via `tauri-plugin-notification`)
-- Quick Capture window (`Cmd+Shift+Space`) — floating 480x320 textarea with destination picker
+- ~~Quick Capture window (`Cmd+Shift+Space`) — floating 480x320 textarea with destination picker~~ — **NOT shipped.** No global shortcut is registered (`tauri-plugin-global-shortcut` is not in the build), no separate quick-capture window exists, and the in-app `quick-capture` palette entry just opens the regular New Note dialog. Tracked as a follow-up; the System Tray phase shipped the tray + notifications + autostart pieces but not this one.
 - Start at login via `tauri-plugin-autostart` (macOS LaunchAgent)
 - Settings: System Tray section (show in tray, close to tray, start at login) + Notification toggles
 - PRD: `docs/prds/2026-03-11-system-tray.md`
+
+### UI Refresh — The Quiet Composer (Phase 1 shipped, Phase 2 + 3 gated)
+
+**Goal:** Move from "feature-rich IDE" to "premium native writing tool" — single floating composer for chat/commands/search, ambient agent orb instead of activity rail, flat curated sidebar with summonable tree overlay, fade-on-type chrome.
+
+- Phase 1 (preview, opt-in via Settings > Appearance > UI version) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
+- Phase 1 ship gate has two manual-QA tasks outstanding: `#108` VoiceOver walkthrough, `#109` keyboard-only walkthrough
+- Phase 2 (default-on for new installs) — gated on Phase 1 shipping cleanly, ≥4 weeks live, no P0/P1 reports outstanding. Tasks: `docs/tasks/2026-04-21-ui-refresh-rollout-tasks.md` (#1–#6)
+- Phase 3 (legacy deletion — `Layout.tsx`, `TabBar`, `ChatPanel`, `ActivityStrip`, `CommandPalette`, `ChatFooter`, `NewNoteDialog`, `NewProjectDialog`) — gated on Phase 2 shipping ≥12 weeks. Tasks: rollout tasks #7–#16
+- PRD: `docs/prds/2026-04-21-ui-refresh.md`
 
 ### Beyond — Ideas
 

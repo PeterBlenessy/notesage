@@ -43,8 +43,8 @@
  *   | ⌘N          | Open New Note dialog               | —                                              | QuietLayout (capture)    |
  *   | ⌘⇧N         | Open New Project dialog            | —                                              | QuietLayout (capture)    |
  *   | ⌘O          | Open folder picker                 | Open folder picker                             | this hook                |
- *   | ⌘⇧[         | Previous Recent doc (TODO #77)     | Previous Recent doc (TODO #77)                 | this hook (scaffold)     |
- *   | ⌘⇧]         | Next Recent doc (TODO #77)         | Next Recent doc (TODO #77)                     | this hook (scaffold)     |
+ *   | ⌘⇧[         | Previous Recent doc (MRU)          | Previous Recent doc (MRU)                      | this hook → useRecentDocumentCycle |
+ *   | ⌘⇧]         | Next Recent doc (MRU)              | Next Recent doc (MRU)                          | this hook → useRecentDocumentCycle |
  *   | ⌘⌥C         | Copy active document's path        | Copy active document's path                    | this hook                |
  *   | ⌘⌥R         | Reveal active document in Finder   | Reveal active document in Finder               | this hook                |
  *   | Esc         | Exit focus mode (when active)      | —                                              | useFocusMode (capture)   |
