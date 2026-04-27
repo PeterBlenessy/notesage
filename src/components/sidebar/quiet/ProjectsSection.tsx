@@ -830,9 +830,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                 <FolderPeek
                   projectPath={project.path}
                   fileTree={project.fileTree}
-                  onOpenTreeOverlay={() =>
-                    openTreeOverlayForProject(project.path)
-                  }
                 >
                   {/* Live-test 2026-04-25: project rows were dropping
                       to the OS browser context menu on right-click —

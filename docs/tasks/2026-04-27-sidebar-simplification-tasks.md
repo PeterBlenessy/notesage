@@ -98,7 +98,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #3 |
 | Files | `src/lib/sidebar-events.ts` (new), `src/components/sidebar/quiet/ProjectsSection.tsx` (listener) |
 
-### #6 — Re-wire FolderPeek folder-clicks to dispatch `notesage:sidebar-expand-path`
+### #6 — Re-wire FolderPeek folder-clicks to dispatch `notesage:sidebar-expand-path` ✅
 
 | Field | Value |
 | --- | --- |
@@ -108,7 +108,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #5 |
 | Files | `src/components/sidebar/quiet/FolderPeek.tsx`, every caller that passes `onOpenTreeOverlay` (find via `grep`) |
 
-### #7 — Tests for FolderPeek rewire
+### #7 — Tests for FolderPeek rewire ✅
 
 | Field | Value |
 | --- | --- |

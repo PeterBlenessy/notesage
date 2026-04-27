@@ -12,7 +12,8 @@
  *  - empty state
  *  - hidden / .DS_Store filtering
  *  - file-click opens a tab via `read_file`
- *  - footer button disabled without onOpenTreeOverlay, enabled with it
+ *  - folder-row click dispatches `expand-path` with the folder's path
+ *  - footer "Expand in sidebar" button dispatches with project root
  *  - reduced motion: animation classes omitted
  */
 
@@ -183,9 +184,10 @@ describe("FolderPeek (#36)", () => {
       (el) => el.textContent?.trim()
     );
     // Folders first: alpha-dir, Beta. Files second: alpha.md, zeta.md.
-    // Footer "See full tree" is last.
+    // Footer "Expand in sidebar" is last (renamed from "See full tree"
+    // by sidebar-simplification task #6).
     const folderAndFileItems = items.filter(
-      (t) => t && !t.startsWith("See full tree")
+      (t) => t && !t.startsWith("Expand in sidebar")
     );
     expect(folderAndFileItems).toEqual([
       "alpha-dir",
@@ -308,11 +310,25 @@ describe("FolderPeek (#36)", () => {
     });
   });
 
-  it("disables the footer button when onOpenTreeOverlay is missing", () => {
+  // Sidebar-simplification task #6 — FolderPeek no longer takes
+  // `onOpenTreeOverlay`. Folder-clicks and the footer "Expand in
+  // sidebar" button dispatch `notesage:sidebar-expand-path` on the
+  // shared `sidebar-events` bus instead.
+  it("folder-row click dispatches expand-path with the folder's path as target", async () => {
+    const { subscribeToSidebarEvents } = await import("@/lib/sidebar-events");
+    const events: Array<{
+      type: string;
+      projectPath: string;
+      targetPath: string;
+    }> = [];
+    const unsub = subscribeToSidebarEvents((ev) => events.push(ev));
+
     renderWithProviders(
       <FolderPeek
         projectPath="/p/alpha"
-        fileTree={[makeFile("a.md", "/p/alpha/a.md")]}
+        fileTree={[
+          makeDir("docs", "/p/alpha/docs", [makeFile("a.md", "/p/alpha/docs/a.md")]),
+        ]}
       >
         <Trigger />
       </FolderPeek>
@@ -322,17 +338,33 @@ describe("FolderPeek (#36)", () => {
       vi.advanceTimersByTime(HOVER_DELAY + 1);
     });
 
-    const footerBtn = screen.getByRole("button", { name: /see full tree/i });
-    expect(footerBtn.hasAttribute("disabled")).toBe(true);
+    const folderBtn = screen.getByRole("button", { name: /docs/i });
+    fireEvent.click(folderBtn);
+
+    expect(events).toEqual([
+      {
+        type: "expand-path",
+        projectPath: "/p/alpha",
+        targetPath: "/p/alpha/docs",
+      },
+    ]);
+
+    unsub();
   });
 
-  it("enables the footer button and invokes onOpenTreeOverlay when provided", () => {
-    const onOpen = vi.fn();
+  it("'Expand in sidebar' footer button dispatches expand-path with project root as target", async () => {
+    const { subscribeToSidebarEvents } = await import("@/lib/sidebar-events");
+    const events: Array<{
+      type: string;
+      projectPath: string;
+      targetPath: string;
+    }> = [];
+    const unsub = subscribeToSidebarEvents((ev) => events.push(ev));
+
     renderWithProviders(
       <FolderPeek
         projectPath="/p/alpha"
         fileTree={[makeFile("a.md", "/p/alpha/a.md")]}
-        onOpenTreeOverlay={onOpen}
       >
         <Trigger />
       </FolderPeek>
@@ -342,10 +374,19 @@ describe("FolderPeek (#36)", () => {
       vi.advanceTimersByTime(HOVER_DELAY + 1);
     });
 
-    const footerBtn = screen.getByRole("button", { name: /see full tree/i });
-    expect(footerBtn.hasAttribute("disabled")).toBe(false);
+    const footerBtn = screen.getByRole("button", { name: /expand in sidebar/i });
+    expect(footerBtn.hasAttribute("disabled")).toBe(false); // never disabled now
     fireEvent.click(footerBtn);
-    expect(onOpen).toHaveBeenCalledTimes(1);
+
+    expect(events).toEqual([
+      {
+        type: "expand-path",
+        projectPath: "/p/alpha",
+        targetPath: "/p/alpha", // project root, no specific child
+      },
+    ]);
+
+    unsub();
   });
 
   it("omits animation classes when reduced motion is preferred", () => {

@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { Folder } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { tauriApi } from "@/lib/tauri";
+import { emitSidebarEvent } from "@/lib/sidebar-events";
 import { setBinaryData } from "@/lib/binary-cache";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
@@ -55,12 +56,10 @@ export interface FolderPeekProps {
   fileTree: FileEntry[];
   /** The trigger element — typically the project row. */
   children: ReactNode;
-  /**
-   * Optional callback for the footer "See full tree" link and for
-   * folder-row clicks. Phase 1 keeps the signature zero-arg; task #38
-   * (TreeOverlay) may extend it with a target path.
-   */
-  onOpenTreeOverlay?: () => void;
+  // Sidebar-simplification task #6 — `onOpenTreeOverlay` was removed.
+  // Folder-clicks and the footer "Expand in sidebar" link now dispatch
+  // `notesage:sidebar-expand-path` on the shared `sidebar-events` bus
+  // (handled by ProjectsSection). TreeOverlay deletion lands in #20.
 }
 
 const HOVER_DELAY_MS = 220;
@@ -145,7 +144,6 @@ export function FolderPeek({
   projectPath,
   fileTree,
   children,
-  onOpenTreeOverlay,
 }: FolderPeekProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(
@@ -331,15 +329,33 @@ export function FolderPeek({
     [openFile],
   );
 
-  const handleFolderClick = useCallback(() => {
-    setIsOpen(false);
-    onOpenTreeOverlay?.();
-  }, [onOpenTreeOverlay]);
+  // Sidebar-simplification task #6 — folder-row clicks now dispatch
+  // `notesage:sidebar-expand-path` so the parent ProjectsSection (or
+  // future FoldersSection) inline-expands to the clicked subfolder
+  // instead of opening TreeOverlay. Multi-level walk lands with #20.
+  const handleFolderClick = useCallback(
+    (entry: FileEntry) => {
+      setIsOpen(false);
+      emitSidebarEvent({
+        type: "expand-path",
+        projectPath,
+        targetPath: entry.path,
+      });
+    },
+    [projectPath],
+  );
 
-  const handleTreeOverlay = useCallback(() => {
+  // The footer "Expand in sidebar" button targets the project root —
+  // useful when the user wants to surface every direct child without
+  // committing to a specific subfolder yet.
+  const handleExpandInSidebar = useCallback(() => {
     setIsOpen(false);
-    onOpenTreeOverlay?.();
-  }, [onOpenTreeOverlay]);
+    emitSidebarEvent({
+      type: "expand-path",
+      projectPath,
+      targetPath: projectPath,
+    });
+  }, [projectPath]);
 
   const handleItemKeyDown = useCallback(
     (event: KeyboardEvent<HTMLButtonElement>, action: () => void) => {
@@ -419,14 +435,14 @@ export function FolderPeek({
                           key={entry.path}
                           filePath={entry.path}
                           kind="folder"
-                          onOpen={handleFolderClick}
+                          onOpen={() => handleFolderClick(entry)}
                         >
                           <button
                             type="button"
                             tabIndex={0}
-                            onClick={handleFolderClick}
+                            onClick={() => handleFolderClick(entry)}
                             onKeyDown={(e) =>
-                              handleItemKeyDown(e, handleFolderClick)
+                              handleItemKeyDown(e, () => handleFolderClick(entry))
                             }
                             // Live-test 2026-04-25 #152 — tighter row
                             // per mockup-d: 24 px height (`h-6`), 12 px
@@ -559,32 +575,27 @@ export function FolderPeek({
                 </>
               )}
               <div className="my-1 h-px bg-border/60" aria-hidden="true" />
+              {/*
+                Sidebar-simplification task #6 — was "See full tree"
+                that opened TreeOverlay. Now dispatches an
+                `expand-path` event for the project root so the parent
+                ProjectsSection inline-expands the project. The chord
+                hint (⌘⇧E) was dropped because it'll rebind to Open
+                Export in #22 (TreeOverlay deletion + ⌘⇧E reclaim).
+              */}
               <button
                 type="button"
                 tabIndex={0}
-                disabled={!onOpenTreeOverlay}
-                onClick={handleTreeOverlay}
-                onKeyDown={(e) => handleItemKeyDown(e, handleTreeOverlay)}
-                title={
-                  onOpenTreeOverlay
-                    ? undefined
-                    : "Tree overlay not yet available"
-                }
+                onClick={handleExpandInSidebar}
+                onKeyDown={(e) => handleItemKeyDown(e, handleExpandInSidebar)}
                 className={cn(
                   "h-7 px-2 flex items-center justify-between gap-2 rounded-sm text-xs w-full",
                   "text-muted-foreground text-left",
                   "hover:bg-muted/50 hover:text-foreground transition-colors duration-150",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
-                  "disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
                 )}
               >
-                <span className="truncate">See full tree</span>
-                <kbd
-                  className="text-[10px] font-mono tabular-nums opacity-70"
-                  aria-hidden="true"
-                >
-                  ⌘⇧E
-                </kbd>
+                <span className="truncate">Expand in sidebar</span>
               </button>
             </div>,
             document.body,
