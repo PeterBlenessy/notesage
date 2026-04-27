@@ -405,6 +405,53 @@ describe('Dirty tracking', () => {
     expect(getTab('/other/c.md')!.deleted).toBeUndefined();
   });
 
+  // Sidebar-simplification task #18 — `removeRecent` is the editor-
+  // store half of the cleanup-on-delete flow. The workspace-store half
+  // (unpinFile prefix-walk) is in `useFileOperations.deletePath`.
+  describe('removeRecent (sidebar #18)', () => {
+    it('drops the exact-path entry from recentFiles', () => {
+      useEditorStore.setState({
+        recentFiles: [
+          { path: '/a.md', name: 'a.md', lastAccessedAt: 1 },
+          { path: '/b.md', name: 'b.md', lastAccessedAt: 2 },
+        ],
+      } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+
+      useEditorStore.getState().removeRecent('/a.md');
+
+      const recent = useEditorStore.getState().recentFiles;
+      expect(recent.map((r) => r.path)).toEqual(['/b.md']);
+    });
+
+    it('drops every recent under a deleted folder prefix', () => {
+      useEditorStore.setState({
+        recentFiles: [
+          { path: '/project/a.md', name: 'a.md', lastAccessedAt: 1 },
+          { path: '/project/sub/b.md', name: 'b.md', lastAccessedAt: 2 },
+          { path: '/other/c.md', name: 'c.md', lastAccessedAt: 3 },
+        ],
+      } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+
+      useEditorStore.getState().removeRecent('/project');
+
+      const recent = useEditorStore.getState().recentFiles;
+      expect(recent.map((r) => r.path)).toEqual(['/other/c.md']);
+    });
+
+    it('is a no-op when the path was never in Recent', () => {
+      useEditorStore.setState({
+        recentFiles: [
+          { path: '/a.md', name: 'a.md', lastAccessedAt: 1 },
+        ],
+      } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+
+      useEditorStore.getState().removeRecent('/never-tracked.md');
+
+      const recent = useEditorStore.getState().recentFiles;
+      expect(recent.map((r) => r.path)).toEqual(['/a.md']);
+    });
+  });
+
   it('setFrontmatter sets frontmatter and marks dirty', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
     const tabId = getTab('/a.md')!.id;

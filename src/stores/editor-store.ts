@@ -122,6 +122,14 @@ interface EditorStore {
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
   markTabClean: (tabId: string, savedContent?: string) => void;
   markTabDeleted: (filePath: string) => void;
+  /**
+   * Drop a file from the Recent list. Sidebar-simplification task #18 —
+   * called by `useFileOperations.deletePath` (alongside
+   * `workspace-store.unpinFile`) so a deleted file disappears from
+   * both Pinned AND Recent in one render cycle. Path-prefix delete
+   * (folder removal) cleans up every recent entry under that prefix.
+   */
+  removeRecent: (path: string) => void;
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
   setScrollPosition: (filePath: string, ratio: number) => void;
@@ -373,6 +381,17 @@ export const useEditorStore = create<EditorStore>()(
             tab.filePath === filePath || tab.filePath.startsWith(filePath + '/')
               ? { ...tab, deleted: true, isDirty: false }
               : tab
+          ),
+        }));
+      },
+
+      removeRecent: (path: string) => {
+        set((state) => ({
+          // Drop exact-path match AND any recent entry under a deleted
+          // folder (`/path/to/folder/...`). Mirrors `markTabDeleted`'s
+          // prefix-aware behaviour so folder deletes clean recursively.
+          recentFiles: state.recentFiles.filter(
+            (rf) => rf.path !== path && !rf.path.startsWith(path + "/"),
           ),
         }));
       },

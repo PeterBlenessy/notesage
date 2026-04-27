@@ -373,6 +373,19 @@ export function useFileOperations() {
         throw error;
       }
       useEditorStore.getState().markTabDeleted(path);
+      // Sidebar-simplification task #18 — drop the deleted file/folder
+      // from BOTH the Pinned (workspace-store) and Recent
+      // (editor-store) lists in the same render cycle. Without this,
+      // delete leaves stale rows in the sidebar that 404 on click.
+      // Each store's action is path-prefix-aware so a folder delete
+      // cleans every entry under it.
+      const ws = useWorkspaceStore.getState();
+      for (const pinned of [...ws.pinnedFiles]) {
+        if (pinned === path || pinned.startsWith(path + "/")) {
+          ws.unpinFile(pinned);
+        }
+      }
+      useEditorStore.getState().removeRecent(path);
       await refreshFileTree(path);
       refreshGitForPath(path);
       return true;

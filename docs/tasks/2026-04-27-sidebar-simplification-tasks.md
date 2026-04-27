@@ -234,7 +234,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M7. F1 cleanup on delete (extends to Recent)
 
-### #18 — `forgetFile(path)` workspace-store action — cleanup pinned + recent on delete
+### #18 — `forgetFile(path)` workspace-store action — cleanup pinned + recent on delete ✅
 
 | Field | Value |
 | --- | --- |
