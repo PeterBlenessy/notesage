@@ -23,6 +23,7 @@ import { setBinaryData } from "@/lib/binary-cache";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
+import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
 import { beginFileDrag } from "./file-drag";
 import {
   SIDEBAR_ENTER_RENAME_MODE_EVENT,
@@ -521,6 +522,49 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       el.focus();
     }
   }, []);
+
+  // Sidebar-simplification task #5 — listen for `expand-path` events on
+  // the shared `sidebar-events` bus. Foundation for task #6 (FolderPeek
+  // folder-clicks dispatch this instead of opening TreeOverlay) and the
+  // future Folders section. When the event names a project we own, we
+  // expand it AND focus the first-level row matching `targetPath`. If
+  // `targetPath` doesn't resolve to a direct child today (e.g. the user
+  // clicked a deeply-nested grandchild), we expand the project and let
+  // the user navigate the rest from the keyboard — the multi-level
+  // walk lands with TreeOverlay deletion (#20).
+  useEffect(() => {
+    const ourProjects = new Set(projects.map((p) => p.path));
+    const unsubscribe = subscribeToSidebarEvents((event) => {
+      if (event.type !== "expand-path") return;
+      if (!ourProjects.has(event.projectPath)) return;
+      // Expand the project root.
+      setExpandedPaths((prev) => {
+        if (prev.has(event.projectPath)) return prev;
+        const updated = new Set(prev);
+        updated.add(event.projectPath);
+        return updated;
+      });
+      // Defer focus until the next paint so the newly-rendered child
+      // row exists in the DOM and `rowRefs.current` has its element.
+      requestAnimationFrame(() => {
+        // First try the exact target path (direct child). Falls back to
+        // the project root — the user is at least near where they
+        // wanted to be and can arrow-down into the children.
+        const el = rowRefs.current.get(event.targetPath);
+        if (el) {
+          setFocusedRowId(event.targetPath);
+          el.focus();
+        } else {
+          const projectEl = rowRefs.current.get(event.projectPath);
+          if (projectEl) {
+            setFocusedRowId(event.projectPath);
+            projectEl.focus();
+          }
+        }
+      });
+    });
+    return unsubscribe;
+  }, [projects]);
 
   // Collect every currently-visible child FILE path so the event listener
   // can decide whether it owns this rename request. Projects + folders +

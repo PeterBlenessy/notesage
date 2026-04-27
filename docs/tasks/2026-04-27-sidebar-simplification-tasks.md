@@ -88,7 +88,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M3. FolderPeek rewire (drop TreeOverlay coupling)
 
-### #5 — Add `notesage:sidebar-expand-path` event + listener pattern
+### #5 — Add `notesage:sidebar-expand-path` event + listener pattern ✅
 
 | Field | Value |
 | --- | --- |
