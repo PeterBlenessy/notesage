@@ -407,6 +407,62 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     expect(screen.getByRole('treeitem', { name: /open file note\.md/i })).toBeTruthy();
   });
 
+  // Sidebar-simplification task #3 polish — collapsed projects render
+  // a closed-folder glyph; expanded projects swap to the open-folder
+  // glyph. This is the visual mirror of `aria-expanded` for sighted
+  // keyboard users (screen readers already announce the state). Lucide
+  // ships both icons with stable `lucide-folder` / `lucide-folder-open`
+  // classes on the rendered SVG.
+  it('swaps Folder ↔ FolderOpen icon on expand/collapse', () => {
+    setProjects([projectWithChildren]);
+    const { container } = renderWithProviders(<ProjectsSection />);
+
+    const row = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+
+    // Collapsed: closed-folder glyph rendered, open-folder absent.
+    expect(row.querySelector('.lucide-folder')).toBeTruthy();
+    expect(row.querySelector('.lucide-folder-open')).toBeNull();
+
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+
+    // Re-query the row — React re-rendered.
+    const expandedRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    expect(expandedRow.querySelector('.lucide-folder-open')).toBeTruthy();
+    expect(expandedRow.querySelector('.lucide-folder:not(.lucide-folder-open)')).toBeNull();
+
+    // Touch `container` to silence the unused-variable lint — the
+    // `screen.getByRole` queries above are the actual assertions.
+    expect(container).toBeTruthy();
+  });
+
+  // Sidebar-simplification task #3 polish — `ArrowRight` on a project
+  // with NO children must NOT enter the expanded state. Without this
+  // guard the project would render `aria-expanded="true"` and the
+  // open-folder glyph but show no body, which is a confusing dead-end
+  // for keyboard users.
+  it('ArrowRight on a project with no children is a no-op (no phantom expand state)', () => {
+    const emptyProject: WorkspaceProject = {
+      path: '/Users/me/Notesage/empty',
+      fileTree: [],
+    };
+    setProjects([emptyProject]);
+    renderWithProviders(<ProjectsSection />);
+
+    const row = screen.getByRole('treeitem', {
+      name: /open project empty/i,
+    }) as HTMLElement;
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+
+    // aria-expanded stays false — no phantom expand state was written.
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('ArrowRight on an expanded project moves focus to the first child', () => {
     setProjects([projectWithChildren]);
     renderWithProviders(<ProjectsSection />);

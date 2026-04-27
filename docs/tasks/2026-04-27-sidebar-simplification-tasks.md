@@ -64,7 +64,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M2. In-sidebar inline-expand polish for Projects
 
-### #3 — Polish `→` / `←` inline-expand UX for Projects
+### #3 — Polish `→` / `←` inline-expand UX for Projects ✅
 
 | Field | Value |
 | --- | --- |
@@ -74,7 +74,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #1 |
 | Files | `src/components/sidebar/quiet/ProjectsSection.tsx`, `src/components/sidebar/quiet/useSidebarItemShortcuts.ts` |
 
-### #4 — Tests for inline-expand keyboard flow
+### #4 — Tests for inline-expand keyboard flow ✅
 
 | Field | Value |
 | --- | --- |

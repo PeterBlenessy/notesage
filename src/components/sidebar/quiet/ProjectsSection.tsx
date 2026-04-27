@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Folder, FileText, Plus } from "lucide-react";
+import { Folder, FolderOpen, FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -619,12 +619,21 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       const isExpanded = expandedPaths.has(project.path);
       if (event.key === "ArrowRight") {
         event.preventDefault();
+        // Skip the expand toggle entirely for empty projects — there
+        // would be no children to render or focus. Without this guard
+        // the project appears expanded (`aria-expanded="true"` and
+        // open-folder glyph) but has no visible body, which is a
+        // confusing dead-end for keyboard users (sidebar
+        // simplification task #3 polish). `derivePeekChildren` returns
+        // a `PeekChildren` object (folders + files + isEmpty), NOT a
+        // flat array — use the `isEmpty` flag.
+        const children = derivePeekChildren(project.fileTree);
+        if (children.isEmpty) return;
         if (!isExpanded) {
           toggleExpanded(project.path, true);
           return;
         }
         // Already expanded → focus the first child.
-        const children = derivePeekChildren(project.fileTree);
         const firstChild = firstChildRowId(project.path, children);
         if (firstChild) focusRow(firstChild);
         return;
@@ -1014,14 +1023,34 @@ function ProjectRow({
         isActive && "bg-muted text-foreground font-medium",
       )}
     >
-      <Folder
-        className={cn(
-          "h-3.5 w-3.5 shrink-0",
-          isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
-        )}
-        strokeWidth={1.5}
-        aria-hidden="true"
-      />
+      {/*
+        Folder ↔ FolderOpen swap is the discoverability cue for the
+        inline-expand affordance (sidebar-simplification task #3). A
+        sighted keyboard user has no way to know `→` will expand the
+        project without it; the open-folder glyph also confirms the
+        expand state matches the user's mental model after they hit
+        `→` or click the row. `aria-expanded` already tells screen
+        readers; this is the visual mirror.
+      */}
+      {isExpanded ? (
+        <FolderOpen
+          className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
+          )}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      ) : (
+        <Folder
+          className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
+          )}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      )}
       <span className="truncate min-w-0 flex-1">{name}</span>
       {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
          *  the aggregate git "●" glyph when any file inside the project
