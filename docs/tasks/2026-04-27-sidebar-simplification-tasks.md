@@ -248,7 +248,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M8. Quick Notes auto-surface in Recent
 
-### #19 — Verify Quick Notes via tray menu auto-add to Recent
+### #19 — Verify Quick Notes via tray menu auto-add to Recent ✅
 
 | Field | Value |
 | --- | --- |

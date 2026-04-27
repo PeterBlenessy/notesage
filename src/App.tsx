@@ -50,6 +50,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
 import { useSyncStore } from "@/stores/sync-store";
+import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { tauriApi } from "@/lib/tauri";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { log } from "@/lib/logger";
@@ -477,13 +478,7 @@ function App() {
   }, []);
 
   const handleNewNote = useCallback((parentPath?: string) => {
-    // Preview gate (#69). QuietLayout's capture-phase ⌘N listener already
-    // owns this chord and routes to the inline-create row, so this handler
-    // shouldn't be reached — early-return belt-and-suspenders to avoid any
-    // state flapping on a dialog that won't render.
-    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
-      return;
-    }
+    // Resolve target parent directory. Used by both branches.
     let target = parentPath;
     if (!target) {
       const activeProject = activeProjectPath;
@@ -504,10 +499,24 @@ function App() {
         }
       }
     }
-    if (target) {
-      setNewNoteParentPath(target);
-      setNewNoteOpen(true);
+    if (!target) return;
+
+    // Sidebar-simplification task #19 — under Quiet Composer, the
+    // legacy NewNoteDialog isn't mounted (preview gate #69) but the
+    // tray menu's "New Note" still routes here. Route it to the
+    // inline-create row in QuietSidebar so the tray flow actually
+    // produces a file. The chord ⌘N is preempted by QuietLayout's
+    // capture-phase listener that does the same thing — this handler
+    // covers the tray-driven path that doesn't go through the keymap.
+    // Once the inline-create row commits, the file lands in Recent
+    // automatically via openTab → recentFiles update.
+    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
+      useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
+      return;
     }
+
+    setNewNoteParentPath(target);
+    setNewNoteOpen(true);
   }, [activeProjectPath]);
 
   const handleNewProject = useCallback(() => {
