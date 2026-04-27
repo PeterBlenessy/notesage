@@ -39,7 +39,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M1. Keyboard-nav consistency (prerequisite for everything else)
 
-### #1 — Fix sidebar keyboard-nav consistency bug
+### #1 — Fix sidebar keyboard-nav consistency bug ✅
 
 | Field | Value |
 | --- | --- |
@@ -50,7 +50,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | none |
 | Files | `src/components/sidebar/quiet/useRovingTabindex.ts`, `src/components/sidebar/quiet/useSidebarItemShortcuts.ts`, sections that render action buttons (`ProjectsSection.tsx`, `PinnedSection.tsx`) |
 
-### #2 — Regression tests for keyboard-nav fix
+### #2 — Regression tests for keyboard-nav fix ✅
 
 | Field | Value |
 | --- | --- |

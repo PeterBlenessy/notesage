@@ -156,6 +156,21 @@ describe('ProjectsSection (quiet variant)', () => {
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
+  // Regression lock for sidebar audit 2026-04-27 finding #11.
+  // The `+` add-button in the section header is `opacity-0` by default
+  // and only appears on hover/focus-within. Leaving it Tab-focusable
+  // caused a "phantom + appears" effect — Tab from a project row
+  // jumped to the (previously invisible) `+`, and the user couldn't
+  // tell whether focus was on a folder or on the add-button. The fix
+  // sets `tabIndex={-1}` so the `+` is excluded from the natural Tab
+  // order. Mouse users keep the hover-reveal `+`; keyboard users
+  // create new projects via ⌘⇧N.
+  it('excludes the add-button from the Tab order (tabIndex=-1)', () => {
+    renderWithProviders(<ProjectsSection onAdd={vi.fn()} />);
+    const btn = screen.getByRole('button', { name: /add project/i });
+    expect(btn.getAttribute('tabindex')).toBe('-1');
+  });
+
   it('renders no rows when the projects list is empty (header only)', () => {
     renderWithProviders(<ProjectsSection />);
     // Only the "Add project" button — no project treeitems.
