@@ -119,6 +119,16 @@
    ============================================ */
 :root {
   --color-accent-primary: var(--accent, var(--color-primary));
+
+  /* Audit #17 (2026-04-27 quiet-composer-migration) — macOS unfocused-window
+     de-emphasis. Neutral grey value the accent token swaps to when the
+     window loses focus. Light-mode value (oklch(60% 0 0)) clears WCAG UI
+     3:1 (3.95:1) against `--color-background`. Defined OUTSIDE `@theme`
+     for the same reason as `--color-accent-primary` above — keep the
+     accent-token family colocated and avoid auto-registering an unwanted
+     Tailwind utility. Dark-mode override lives in the dark-mode block
+     below. Audited by `scripts/contrast-audit.ts`. */
+  --color-accent-primary-inactive: oklch(60% 0 0);
 }
 
 /* Soft mode — easy on the eyes (light) */
@@ -225,6 +235,11 @@
   --ns-code-type: oklch(72% 0.1 195);
   --ns-code-operator: oklch(62% 0.04 250);
   --ns-code-tag: oklch(72% 0.12 20);
+
+  /* Audit #17 — dark-mode inactive accent. oklch(70% 0 0) clears WCAG UI
+     3:1 with 7.04:1 against the dark base background. Light-mode value
+     defined under `:root` above. */
+  --color-accent-primary-inactive: oklch(70% 0 0);
 }
 
 /* ============================================
@@ -486,41 +501,62 @@ body {
 }
 
 /* ============================================================================
- * Window unfocused state — macOS-style desaturation
+ * Window unfocused state — macOS-style desaturation (audit #17, 2026-04-27)
  * ============================================================================
  * When the Notesage window loses focus we mirror native macOS behaviour:
  * accent affordances drop back to neutral grey, and the QuietLayout chrome
- * (sidebar, title bar, status bar, orb) fades slightly. The toggle is set
- * by an effect in `App.tsx` that listens on `window` for `focus` / `blur`
- * and writes `data-app-focused="true|false"` on the `<html>` element.
+ * (sidebar, title bar, status bar, orb) fades slightly.
  *
- * Default: assume focused until the first blur event fires (matches the
- * macOS lifecycle — apps start focused after launch).
+ * The toggle is set by `useWindowFocus()` (mounted from `QuietLayout.tsx`)
+ * which listens on `window` for `focus` / `blur` and writes
+ * `data-window-inactive="true|false"` onto the QuietLayout root
+ * (`[data-quiet-layout-root]`). Quiet Composer only — Classic Layout is
+ * Phase 3 deletion track, so the rules are scoped to the Quiet root.
+ *
+ * Initial state: read from `document.hasFocus()` so a window mounted
+ * while in the background renders desaturated immediately.
  *
  * The accent override here re-points `--accent` (the upstream token) to
- * `--color-primary` so every consumer of `--color-accent-primary` (which
- * resolves through the `var(--accent, var(--color-primary))` fallback
- * chain) automatically falls back to neutral. No per-consumer changes
- * needed.
+ * `--color-accent-primary-inactive` (a neutral grey audited at WCAG UI
+ * 3:1 — see `scripts/contrast-audit.ts`). Every consumer of
+ * `--color-accent-primary` (primary buttons, switch ON, focus rings,
+ * editor link, dirty dot, AgentOrb pulse ring) picks this up
+ * automatically via the fallback chain
+ * `:root { --color-accent-primary: var(--accent, var(--color-primary)) }`.
+ * No per-consumer code changes needed.
  *
- * Reduced-motion: the toggle is instant either way; no animated cross-fade
- * is required. We do honour `prefers-reduced-motion` by zeroing the chrome
- * opacity transition so the dim happens without a fade.
+ * Body text, borders, backgrounds, syntax highlighting, diff colours,
+ * destructive (red) palette stay unchanged — desaturating chrome does
+ * NOT drop body-text contrast below WCAG AA.
+ *
+ * Transition: 200 ms ease-in-out — gentle enough to feel like macOS,
+ * subtle enough not to draw attention. Reduced-motion users get an
+ * instantaneous swap (no transition) via the `@media` block below.
  * ========================================================================= */
-html[data-app-focused="false"] {
-  /* Re-point the accent token to neutral grey while unfocused. Every
+[data-quiet-layout-root][data-window-inactive="true"] {
+  /* Re-point the accent token to the neutral inactive variant. Every
      `--color-accent-primary` consumer picks this up automatically via the
      fallback chain in `:root { --color-accent-primary: var(--accent, ...) }`. */
-  --accent: var(--color-primary);
+  --accent: var(--color-accent-primary-inactive);
+  transition: background-color 200ms ease-in-out;
 }
 
-html[data-app-focused="false"] [data-quiet-layout-root] {
+/* Subtle opacity dim on pre-stamped chrome targets — same elements
+   `useQuietChrome` already manages for the fade-on-type pulse. */
+[data-quiet-layout-root][data-window-inactive="true"] [data-quiet-toolbar],
+[data-quiet-layout-root][data-window-inactive="true"] [data-quiet-status],
+[data-quiet-layout-root][data-window-inactive="true"] [data-testid="agent-orb"] {
   opacity: 0.85;
-  transition: opacity 200ms ease-out;
+  transition: opacity 200ms ease-in-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-app-focused="false"] [data-quiet-layout-root] {
+  [data-quiet-layout-root][data-window-inactive="true"] {
+    transition: none;
+  }
+  [data-quiet-layout-root][data-window-inactive="true"] [data-quiet-toolbar],
+  [data-quiet-layout-root][data-window-inactive="true"] [data-quiet-status],
+  [data-quiet-layout-root][data-window-inactive="true"] [data-testid="agent-orb"] {
     transition: none;
   }
 }

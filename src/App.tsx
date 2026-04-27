@@ -128,31 +128,10 @@ function App() {
   const { addProject, addExplorerFolder } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
-  // --- Window focus/blur — desaturate accent + fade chrome when app loses focus ---
-  // Mirrors native macOS behaviour: when the window blurs, accent affordances
-  // drop back to neutral grey and the QuietLayout chrome fades slightly. The
-  // CSS hook lives in `globals.css` under `html[data-app-focused="false"]`,
-  // which re-points `--accent` to `--color-primary` (every `--color-accent-primary`
-  // consumer falls back automatically via the var fallback chain).
-  //
-  // Initial state: focused (true). macOS apps start focused after launch and
-  // the first `blur` event fires only when the user clicks away.
-  useEffect(() => {
-    const root = document.documentElement;
-    const setFocused = (focused: boolean) => {
-      root.setAttribute("data-app-focused", focused ? "true" : "false");
-    };
-    setFocused(document.hasFocus());
-
-    const onFocus = () => setFocused(true);
-    const onBlur = () => setFocused(false);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, []);
+  // Window focus/blur de-emphasis lives in `useWindowFocus()` (audit #17,
+  // 2026-04-27 quiet-composer-migration). It is mounted from `QuietLayout`
+  // — Quiet Composer only — so the desaturate effect is scoped to the
+  // shell that ships beyond Phase 2.
 
   // --- Show main window after first themed paint (window starts hidden to prevent white flash) ---
   useEffect(() => {

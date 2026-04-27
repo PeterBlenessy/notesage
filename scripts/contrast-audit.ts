@@ -83,6 +83,18 @@ const PAIRS: Pair[] = [
   { fgVar: '--color-ring', bgVar: '--color-background', kind: 'ui', label: 'ring / background' },
   { fgVar: '--color-border-strong', bgVar: '--color-background', kind: 'ui', label: 'border-strong / background' },
   { fgVar: '--color-muted-foreground', bgVar: '--color-background', kind: 'ui', label: 'muted-foreground / background' },
+  // Audit #17 — macOS unfocused-window de-emphasis (Quiet Composer migration).
+  // `--color-accent-primary-inactive` is the neutral grey that `--accent` swaps
+  // to when the window loses focus; consumers (primary buttons, focus rings,
+  // switch ON, dirty dot, AgentOrb pulse ring) inherit it via the existing
+  // var fallback chain. Must clear 3:1 against `--color-background` in BOTH
+  // themes — regression lock for future tweaks.
+  {
+    fgVar: '--color-accent-primary-inactive',
+    bgVar: '--color-background',
+    kind: 'ui',
+    label: 'accent-primary-inactive / background',
+  },
 ];
 
 /**
@@ -170,14 +182,27 @@ function extractRuleBody(css: string, selectorRegex: RegExp): string | null {
 }
 
 /**
- * Build the light palette from `@theme { ... }` and the dark palette from
- * `.dark { ... }` rule bodies.
+ * Build the light palette from `@theme { ... }` plus `:root { ... }`, and the
+ * dark palette from `.dark { ... }` rule body.
+ *
+ * Tokens defined inside `:root {}` are part of the light theme but live
+ * outside `@theme {}` deliberately when they should NOT auto-register as
+ * Tailwind colour utilities (e.g. `--color-accent-primary` and
+ * `--color-accent-primary-inactive`, both audit-relevant per audit #17).
+ * Merging them into the light palette keeps the audit honest. `:root`
+ * declarations win over `@theme` declarations on conflict — that's also
+ * how the cascade resolves them at runtime.
  */
 function loadPalettes(): { light: Palette; dark: Palette } {
   const css = readFileSync(globalsPath, 'utf8');
 
   const themeBody = extractRuleBody(css, /@theme\s*\{/);
-  const darkBody = extractRuleBody(css, /\.dark\s*\{/);
+  // Use a more anchored regex for `:root` and `.dark` so we don't accidentally
+  // match the literal text inside a CSS comment (the file contains a doc
+  // comment about the dark-mode block; the prior loose regex matched the
+  // comment instead of the rule selector).
+  const rootBody = extractRuleBody(css, /(^|\n):root\s*\{/);
+  const darkBody = extractRuleBody(css, /(^|\n)\.dark\s*\{/);
 
   if (!themeBody) {
     throw new Error('Could not locate @theme {} block in globals.css');
@@ -186,8 +211,15 @@ function loadPalettes(): { light: Palette; dark: Palette } {
     throw new Error('Could not locate .dark {} block in globals.css');
   }
 
+  // Merge :root into the light palette so tokens defined outside @theme (the
+  // accent family) still get audited.
+  const light: Palette = extractPaletteFromBody(themeBody);
+  if (rootBody) {
+    Object.assign(light, extractPaletteFromBody(rootBody));
+  }
+
   return {
-    light: extractPaletteFromBody(themeBody),
+    light,
     dark: extractPaletteFromBody(darkBody),
   };
 }

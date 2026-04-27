@@ -107,7 +107,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #6 |
 | Files | `src/components/cmd/modes/__tests__/TaskMode.test.tsx` |
 
-## #8 — Add `--color-accent-primary-inactive` token + macOS unfocused CSS rules
+## #8 — Add `--color-accent-primary-inactive` token + macOS unfocused CSS rules ✅
 
 | Field | Value |
 | --- | --- |
@@ -118,7 +118,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | none |
 | Files | `src/styles/globals.css` |
 
-## #9 — `useWindowFocus()` hook + QuietLayout root attribute
+## #9 — `useWindowFocus()` hook + QuietLayout root attribute ✅
 
 | Field | Value |
 | --- | --- |
@@ -129,7 +129,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #8 |
 | Files | `src/hooks/useWindowFocus.ts` (new), `src/components/QuietLayout.tsx` |
 
-## #10 — Verify `--color-accent-primary` consumers swap correctly
+## #10 — Verify `--color-accent-primary` consumers swap correctly ✅
 
 | Field | Value |
 | --- | --- |
@@ -140,7 +140,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #9 |
 | Files | (verification — no file changes unless drift found) |
 
-## #11 — Tests for useWindowFocus + macOS unfocused behavior
+## #11 — Tests for useWindowFocus + macOS unfocused behavior ✅
 
 | Field | Value |
 | --- | --- |
@@ -171,7 +171,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #1 |
 | Files | `src/components/sidebar/quiet/__tests__/SidebarRowIndicators.test.tsx` (new or extend) |
 
-## #14 — WCAG AA contrast audit for the inactive accent token
+## #14 — WCAG AA contrast audit for the inactive accent token ✅
 
 | Field | Value |
 | --- | --- |

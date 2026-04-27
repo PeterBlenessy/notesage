@@ -314,6 +314,26 @@ Use this pattern when a hover-preview and a deep-dive overlay reveal the same da
 - Cap the preview list (folders 8, files 6 in the workspace tree) and surface overflow as "+N more…" with a "See full tree" link that opens the overlay
 - The overlay must trap focus while open and restore focus to the previously focused element on close
 
+### Window-Inactive De-Emphasis (macOS Native Polish)
+
+Mirror the macOS HIG: when the window loses key/main status (the user clicks into another app), AppKit desaturates accent affordances and softens chrome. WebKit content inside Tauri does not get this for free — `useWindowFocus()` (`src/hooks/useWindowFocus.ts`, mounted from `QuietLayout`) writes `data-window-inactive="true"` onto `[data-quiet-layout-root]` while the window is unfocused and removes it on refocus.
+
+CSS rules in `globals.css` key off the attribute and:
+
+- Re-point `--accent` to `--color-accent-primary-inactive` (a neutral grey audited at WCAG UI 3:1 — `oklch(60% 0 0)` light, `oklch(70% 0 0)` dark). Every consumer of `--color-accent-primary` (primary buttons, switch ON, focus rings, editor link, dirty dot, AgentOrb pulse ring) inherits the swap automatically through the `var(--accent, var(--color-primary))` fallback chain.
+- Apply a subtle `opacity: 0.85` dim to pre-stamped chrome targets (`[data-quiet-toolbar]`, `[data-quiet-status]`, `[data-testid="agent-orb"]`).
+- Honour `prefers-reduced-motion: reduce` — the 200 ms ease-in-out transition is zeroed under reduce; the swap still happens, just instantly.
+
+What stays unchanged: body text, borders, backgrounds, syntax highlighting, diff colors, `--color-destructive`. Desaturating chrome must NOT drop body-text contrast below WCAG AA — verified by `pnpm audit:contrast` (the inactive accent is a permanent regression-lock pair).
+
+Quiet Composer only — Classic Layout is on the Phase 3 deletion list, so the rules are scoped to the Quiet root rather than `<html>`.
+
+Anti-patterns to avoid:
+
+- ❌ Re-painting body text or borders when the window is inactive — only chrome and accent affordances de-emphasize
+- ❌ Adding the attribute to `<html>` to "fix" portal-mounted descendants — the cmd bar (which portals to `document.body`) intentionally stays bright, mirroring the fade-on-type exclusion for the same surface
+- ❌ Using a chromatic inactive variant — the whole point is desaturation; the inactive token MUST be zero-chroma neutral grey
+
 ## Spacing & Layout
 
 - **Generous whitespace**: Don't cram elements together. When in doubt, add more padding.

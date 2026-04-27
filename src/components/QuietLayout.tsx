@@ -15,6 +15,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
+import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { FocusPill } from "@/components/editor/FocusPill";
 import { RevertInvitation } from "@/components/RevertInvitation";
 import { useQuietChrome } from "@/lib/quiet-chrome";
@@ -115,6 +116,14 @@ export function QuietLayout(props: QuietLayoutProps) {
   // `[data-quiet-layout-root]` node below, so state lives on the DOM and
   // typing never triggers a React re-render.
   useFadeOnType();
+
+  // Audit #17 (2026-04-27 quiet-composer-migration) — macOS-style
+  // unfocused-window de-emphasis. Toggles `data-window-inactive="true"`
+  // on the `[data-quiet-layout-root]` node below; CSS in `globals.css`
+  // re-points `--accent` to the desaturated inactive variant and dims
+  // pre-stamped chrome targets. Quiet Composer only — Classic Layout is
+  // on the Phase 3 deletion list per the 2026-04-27 scoping decision.
+  useWindowFocus();
 
   // #56 — Focus mode. Owns the `⌘.` toggle and the `Esc` fall-through
   // chain (open popover → command bar expanded → inline edit → focus
