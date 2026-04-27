@@ -86,7 +86,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #4 |
 | Files | `src/components/editor/__tests__/StatusTray.test.tsx` (extend) |
 
-## #6 — TaskMode: group results by project (mirror legacy ActionsDashboard)
+## #6 — TaskMode: group results by project (mirror legacy ActionsDashboard) ✅
 
 | Field | Value |
 | --- | --- |
@@ -97,7 +97,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | none |
 | Files | `src/components/cmd/modes/TaskMode.tsx` |
 
-## #7 — Tests for TaskMode grouping
+## #7 — Tests for TaskMode grouping ✅
 
 | Field | Value |
 | --- | --- |

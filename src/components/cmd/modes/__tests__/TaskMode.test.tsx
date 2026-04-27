@@ -315,4 +315,232 @@ describe('TaskMode', () => {
     // above so this test simply documents the intended behaviour. The
     // existence-check on test #2 is the practical assertion.
   });
+
+  // -------------------------------------------------------------------------
+  // Grouping by project (audit finding #6 — mirrors ActionsDashboard)
+  // -------------------------------------------------------------------------
+
+  describe('grouping', () => {
+    it('groups results by project_root with uppercase header + open count', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 't1',
+          text: 'Refile receipts',
+          project_root: '/Users/me/Notesage/Revisor',
+          project_name: 'Revisor och Skatteexpert',
+        }),
+        makeAction({
+          id: 't2',
+          text: 'Email accountant',
+          project_root: '/Users/me/Notesage/Revisor',
+          project_name: 'Revisor och Skatteexpert',
+        }),
+        makeAction({
+          id: 't3',
+          text: 'Polish onboarding',
+          project_root: '/Users/me/Notesage/Notesage',
+          project_name: 'Notesage',
+        }),
+      ];
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Refile receipts')).toBeTruthy();
+      });
+
+      // Header text is uppercased via tracking-wider class but the DOM
+      // contains the project_name verbatim. Locate via the data attribute
+      // and assert each project's header + count.
+      const groupHeaders = document.querySelectorAll('[data-task-group-header]');
+      expect(groupHeaders.length).toBe(2);
+
+      const headerTexts = Array.from(groupHeaders).map(
+        (el) => el.textContent ?? '',
+      );
+      expect(headerTexts.some((t) => t.includes('Revisor och Skatteexpert'))).toBe(
+        true,
+      );
+      expect(headerTexts.some((t) => t.includes('(2 open)'))).toBe(true);
+      expect(headerTexts.some((t) => t.includes('Notesage'))).toBe(true);
+      expect(headerTexts.some((t) => t.includes('(1 open)'))).toBe(true);
+    });
+
+    it('renders ungrouped items under "Quick Notes" at the bottom', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 'q1',
+          text: 'Quick capture note',
+          project_root: undefined,
+          project_name: undefined,
+        }),
+        makeAction({
+          id: 't1',
+          text: 'Project task',
+          project_root: '/Users/me/Notesage/Project',
+          project_name: 'Project',
+        }),
+      ];
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Quick capture note')).toBeTruthy();
+      });
+
+      const headers = Array.from(
+        document.querySelectorAll('[data-task-group-header]'),
+      );
+      expect(headers.length).toBe(2);
+      // Last header should be Quick Notes (ungrouped bucket renders last).
+      const lastHeaderText = headers[headers.length - 1]?.textContent ?? '';
+      expect(lastHeaderText).toContain('Quick Notes');
+      expect(lastHeaderText).toContain('(1 open)');
+    });
+
+    it('does not render empty groups (only groups with visible items)', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 't1',
+          text: 'Only one task',
+          project_root: '/Users/me/Notesage/Project',
+          project_name: 'Project',
+        }),
+      ];
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Only one task')).toBeTruthy();
+      });
+
+      // Single project means one header — no ungrouped header should appear.
+      const headers = Array.from(
+        document.querySelectorAll('[data-task-group-header]'),
+      );
+      expect(headers.length).toBe(1);
+      const text = headers[0]?.textContent ?? '';
+      expect(text).toContain('Project');
+      expect(text).not.toContain('Quick Notes');
+    });
+
+    it('keyboard navigation walks all visible rows in order across groups', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 'a1',
+          text: 'Project A row',
+          file_path: '/p/a.md',
+          line_number: 1,
+          project_root: '/Users/me/Notesage/A',
+          project_name: 'A',
+        }),
+        makeAction({
+          id: 'b1',
+          text: 'Project B row',
+          file_path: '/p/b.md',
+          line_number: 2,
+          project_root: '/Users/me/Notesage/B',
+          project_name: 'B',
+        }),
+        makeAction({
+          id: 'q1',
+          text: 'Ungrouped row',
+          file_path: '/p/q.md',
+          line_number: 3,
+          project_root: undefined,
+          project_name: undefined,
+        }),
+      ];
+      const onPick = vi.fn();
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={onPick} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Project A row')).toBeTruthy();
+      });
+
+      // Initial highlight is row 0 (Project A row). ↓ moves to row 1
+      // (Project B row across a different group). ↓ again → ungrouped row.
+      fireEvent.keyDown(window, { key: 'ArrowDown' });
+      fireEvent.keyDown(window, { key: 'ArrowDown' });
+      fireEvent.keyDown(window, { key: 'Enter' });
+
+      expect(onPick).toHaveBeenCalledTimes(1);
+      const action = onPick.mock.calls[0][0] as TaskAction;
+      if (action.kind === 'navigate') {
+        expect(action.filePath).toBe('/p/q.md');
+        expect(action.line).toBe(3);
+      } else {
+        throw new Error('expected navigate action');
+      }
+    });
+
+    it('grouping respects active filters (project filter narrows groups)', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 'a1',
+          text: 'Keep me',
+          project_root: '/Users/me/Notesage/A',
+          project_name: 'A',
+        }),
+        makeAction({
+          id: 'b1',
+          text: 'Filter me out',
+          project_root: '/Users/me/Notesage/B',
+          project_name: 'B',
+        }),
+      ];
+      mockStore.filter = {
+        ...DEFAULT_FILTER,
+        project: '/Users/me/Notesage/A',
+      };
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Keep me')).toBeTruthy();
+      });
+      expect(screen.queryByText('Filter me out')).toBeNull();
+
+      const headers = Array.from(
+        document.querySelectorAll('[data-task-group-header]'),
+      );
+      expect(headers.length).toBe(1);
+      expect(headers[0]?.textContent ?? '').toContain('A');
+    });
+
+    it('falls back to project_root basename when project_name is missing', async () => {
+      mockStore.actions = [
+        makeAction({
+          id: 't1',
+          text: 'Some task',
+          project_root: '/Users/me/Notesage/Falls-Back',
+          project_name: undefined,
+        }),
+      ];
+
+      renderWithProviders(
+        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Some task')).toBeTruthy();
+      });
+
+      const headers = Array.from(
+        document.querySelectorAll('[data-task-group-header]'),
+      );
+      expect(headers[0]?.textContent ?? '').toContain('Falls-Back');
+    });
+  });
 });

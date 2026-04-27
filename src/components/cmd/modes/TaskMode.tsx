@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   CheckSquare2,
@@ -255,6 +255,33 @@ function TaskMode({
   );
 
   const rows = useMemo(() => filtered.slice(0, MAX_RESULTS), [filtered]);
+
+  // Group rows by project (mirrors ActionsDashboard at src/components/actions/
+  // ActionsDashboard.tsx:60-70). Items without a `project_root` collect under
+  // an `ungrouped` bucket that renders LAST as "Quick Notes". Iteration order
+  // of the Map is insertion order, so to put `ungrouped` last we insert it
+  // after all named project keys regardless of when the items themselves
+  // arrive in `rows`.
+  //
+  // The `highlight` index continues to address `rows` directly — render-time
+  // group rendering computes the absolute row index via a running counter so
+  // arrow-key navigation walks every visible row in order across groups.
+  const groupedRows = useMemo(() => {
+    const map = new Map<string, ActionItem[]>();
+    for (const item of rows) {
+      const key = item.project_root ?? 'ungrouped';
+      const list = map.get(key) ?? [];
+      list.push(item);
+      map.set(key, list);
+    }
+    // Re-order so 'ungrouped' is always last.
+    if (map.has('ungrouped')) {
+      const ungrouped = map.get('ungrouped')!;
+      map.delete('ungrouped');
+      map.set('ungrouped', ungrouped);
+    }
+    return map;
+  }, [rows]);
 
   // ---- Counts (for filter-button badges) -------------------------------
   const typeCounts = useMemo(() => {
@@ -606,65 +633,109 @@ function TaskMode({
           No actions match
         </div>
       ) : (
-        rows.map((row, index) => {
-          const active = index === highlight;
-          const Icon = SOURCE_ICONS[row.source_type] ?? Square;
-          const secondary = actionSecondaryLabel(row);
-          return (
-            <button
-              key={row.id}
-              id={`${listboxId}-opt-${index}`}
-              type="button"
-              data-task-row
-              data-source-type={row.source_type}
-              data-active={active ? "true" : undefined}
-              role="option"
-              aria-selected={active}
-              onClick={() => dispatch(row)}
-              onMouseEnter={() => setHighlight(index)}
-              className={cn(
-                // Match cmd-bar density (live-test 2026-04-26): denser rhythm,
-                // accent-fill highlight. Active row → white text on accent;
-                // secondary line uses /75 alpha so it stays readable on the
-                // bright accent.
-                "flex w-full items-start gap-2 px-3 py-1.5 text-left",
-                "text-[13px] transition-colors",
-                active
-                  ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-                  : "hover:bg-muted/60 text-foreground",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-              )}
-            >
-              <Icon
-                className={cn(
-                  "mt-[3px] h-3 w-3 shrink-0",
-                  active
-                    ? "text-[oklch(100%_0_0)]/75"
-                    : "text-muted-foreground",
-                )}
-                strokeWidth={1.5}
+        (() => {
+          // Running index across ALL groups so arrow-key navigation maps
+          // 1:1 to `highlight`. Groups are iterated in Map insertion order
+          // (project keys first, `ungrouped` always last per `groupedRows`).
+          let globalIndex = 0;
+          const elements: React.ReactNode[] = [];
+
+          for (const [projectRoot, items] of groupedRows.entries()) {
+            if (items.length === 0) continue; // Empty groups don't render.
+
+            const projectName =
+              items[0]?.project_name ??
+              projectRoot.split('/').pop() ??
+              'Files';
+            const label =
+              projectRoot === 'ungrouped' ? 'Quick Notes' : projectName;
+
+            // Group header — uppercase, tracking-wider, with open count.
+            // Mirrors ActionsDashboard.tsx:114-123 visually but tightened
+            // for the cmd-bar's narrower viewport. `aria-hidden` because
+            // the header is decorative — screen readers still announce
+            // each option via the listbox.
+            elements.push(
+              <div
+                key={`header:${projectRoot}`}
+                data-task-group-header
                 aria-hidden="true"
-              />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">
-                  {truncate(row.text, NAME_TRUNCATE)}
+                className="flex items-center gap-2 px-3 pt-2 pb-1"
+              >
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {label}
                 </span>
-                {secondary && (
-                  <span
+                <span className="text-[10px] text-muted-foreground/50">
+                  ({items.length} open)
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>,
+            );
+
+            for (const row of items) {
+              const index = globalIndex++;
+              const active = index === highlight;
+              const Icon = SOURCE_ICONS[row.source_type] ?? Square;
+              const secondary = actionSecondaryLabel(row);
+              elements.push(
+                <button
+                  key={row.id}
+                  id={`${listboxId}-opt-${index}`}
+                  type="button"
+                  data-task-row
+                  data-source-type={row.source_type}
+                  data-active={active ? 'true' : undefined}
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => dispatch(row)}
+                  onMouseEnter={() => setHighlight(index)}
+                  className={cn(
+                    // Match cmd-bar density (live-test 2026-04-26): denser
+                    // rhythm, accent-fill highlight. Active row → white text
+                    // on accent; secondary line uses /75 alpha so it stays
+                    // readable on the bright accent.
+                    'flex w-full items-start gap-2 px-3 py-1.5 text-left',
+                    'text-[13px] transition-colors',
+                    active
+                      ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
+                      : 'hover:bg-muted/60 text-foreground',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                  )}
+                >
+                  <Icon
                     className={cn(
-                      "truncate text-xs",
+                      'mt-[3px] h-3 w-3 shrink-0',
                       active
-                        ? "text-[oklch(100%_0_0)]/75"
-                        : "text-muted-foreground",
+                        ? 'text-[oklch(100%_0_0)]/75'
+                        : 'text-muted-foreground',
                     )}
-                  >
-                    {secondary}
-                  </span>
-                )}
-              </div>
-            </button>
-          );
-        })
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">
+                      {truncate(row.text, NAME_TRUNCATE)}
+                    </span>
+                    {secondary && (
+                      <span
+                        className={cn(
+                          'truncate text-xs',
+                          active
+                            ? 'text-[oklch(100%_0_0)]/75'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {secondary}
+                      </span>
+                    )}
+                  </div>
+                </button>,
+              );
+            }
+          }
+
+          return elements;
+        })()
       )}
     </div>
   );

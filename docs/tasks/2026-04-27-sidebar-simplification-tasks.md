@@ -220,7 +220,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M6. In-document tag/mention click → cmd bar
 
-### #17 — Branch `useAppLifecycle` tag/mention handlers on `uiPreview`
+### #17 — Branch `useAppLifecycle` tag/mention handlers on `uiPreview` ✅
 
 | Field | Value |
 | --- | --- |
