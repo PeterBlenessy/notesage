@@ -122,7 +122,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M4. Folders section
 
-### #8 — `workspace-store.explorerFolders` dedup helper
+### #8 — `workspace-store.explorerFolders` dedup helper ✅
 
 | Field | Value |
 | --- | --- |

@@ -308,7 +308,18 @@ function App() {
         if (isProject) {
           addProject(folderPath, tree);
         } else {
+          // Sidebar #8 — detect ⌘O re-open of an existing folder so we
+          // can fire a toast instead of silently refreshing the
+          // already-tracked entry. The store dedups by canonical
+          // path; we look up via the same canonical-aware selector
+          // it uses internally so `/var/foo` and the macOS-canonical
+          // `/private/var/foo` resolve to the same entry.
+          const existing = useWorkspaceStore.getState().getExplorerFolder(folderPath);
           addExplorerFolder(folderPath, tree);
+          if (existing) {
+            const name = folderPath.split("/").filter(Boolean).pop() ?? folderPath;
+            toast(`"${name}" is already in your sidebar`);
+          }
         }
       }
     } catch (error) {

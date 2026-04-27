@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { FileEntry } from "@/lib/tauri";
+import { canonicalizeMacPath } from "@/lib/path-utils";
 
 
 export interface WorkspaceProject {
@@ -49,6 +50,15 @@ interface WorkspaceStore {
   removeExplorerFolder: (path: string) => void;
   updateExplorerTree: (path: string, tree: FileEntry[]) => void;
   findOwningExplorerFolder: (filePath: string) => ExplorerFolder | undefined;
+  /**
+   * Exact-match lookup for an already-open explorer folder. Sidebar
+   * #8 — used by `App.tsx::handleOpenFolder` to decide whether `⌘O`
+   * is opening a fresh folder (no entry returned) or re-opening an
+   * existing one (entry returned, caller fires a "Folder already in
+   * sidebar" toast). Caller does NOT need to canonicalise — the
+   * lookup applies `canonicalizeMacPath` on input.
+   */
+  getExplorerFolder: (path: string) => ExplorerFolder | undefined;
 
   // Project actions
   addProject: (path: string, tree: FileEntry[]) => void;
@@ -99,37 +109,55 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       notesCollapsed: false,
 
       addExplorerFolder: (path, tree) => {
+        // Sidebar #8 — store the canonical form so two surface paths
+        // pointing at the same on-disk folder (`/var/foo` vs the
+        // macOS-canonical `/private/var/foo`) dedup. App.tsx's
+        // `handleOpenFolder` separately checks `getExplorerFolder`
+        // before calling us so it can fire a "Folder already in
+        // sidebar" toast on the dedup case.
+        const canonical = canonicalizeMacPath(path);
         set((state) => {
           // If already open, refresh its tree
-          if (state.explorerFolders.some((f) => f.path === path)) {
+          if (state.explorerFolders.some((f) => f.path === canonical)) {
             return {
               explorerFolders: state.explorerFolders.map((f) =>
-                f.path === path ? { ...f, fileTree: tree } : f
+                f.path === canonical ? { ...f, fileTree: tree } : f
               ),
             };
           }
           return {
-            explorerFolders: [...state.explorerFolders, { path, fileTree: tree }],
+            explorerFolders: [
+              ...state.explorerFolders,
+              { path: canonical, fileTree: tree },
+            ],
           };
         });
       },
 
       removeExplorerFolder: (path) => {
+        const canonical = canonicalizeMacPath(path);
         set((state) => ({
-          explorerFolders: state.explorerFolders.filter((f) => f.path !== path),
+          explorerFolders: state.explorerFolders.filter((f) => f.path !== canonical),
         }));
       },
 
       updateExplorerTree: (path, tree) => {
+        const canonical = canonicalizeMacPath(path);
         set((state) => ({
           explorerFolders: state.explorerFolders.map((f) =>
-            f.path === path ? { ...f, fileTree: tree } : f
+            f.path === canonical ? { ...f, fileTree: tree } : f
           ),
         }));
       },
 
       findOwningExplorerFolder: (filePath) => {
-        return get().explorerFolders.find((f) => filePath.startsWith(f.path + "/"));
+        const canonical = canonicalizeMacPath(filePath);
+        return get().explorerFolders.find((f) => canonical.startsWith(f.path + "/"));
+      },
+
+      getExplorerFolder: (path) => {
+        const canonical = canonicalizeMacPath(path);
+        return get().explorerFolders.find((f) => f.path === canonical);
       },
 
       addProject: (path, tree) => {
