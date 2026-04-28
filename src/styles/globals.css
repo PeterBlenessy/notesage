@@ -368,7 +368,12 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [data-slot="select-trigger"]:focus-visible {
-  border-color: oklch(40% 0 0);
+  /* User direction 2026-04-28 iter-6: text-input border on
+   * keyboard-focus uses the accent token to match every other
+   * focus indicator across the app. When no accent class is
+   * active, this resolves to `--color-primary` per the
+   * design-system fallback chain. */
+  border-color: var(--color-accent-primary);
 }
 
 /* No global focus-visible fallback. Components opt in explicitly

@@ -273,7 +273,7 @@ export function SettingsShell({
                 'absolute top-4 right-4 inline-flex items-center justify-center',
                 'rounded-xs text-muted-foreground opacity-70',
                 'transition-opacity duration-150 hover:opacity-100',
-                'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
               )}
               aria-label="Close settings"
             >

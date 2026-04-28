@@ -26,7 +26,7 @@ function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "peer inline-flex shrink-0 items-center rounded-full h-[18px] w-[34px] cursor-pointer transition-colors outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "peer inline-flex shrink-0 items-center rounded-full h-[18px] w-[34px] cursor-pointer transition-colors outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       style={{
