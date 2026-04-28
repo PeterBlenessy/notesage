@@ -1,6 +1,78 @@
 {
   "releases": [
     {
+      "version": "0.40.0",
+      "date": "2026-04-28",
+      "previousVersion": "0.39.1",
+      "sections": {
+        "features": [
+          "**Find files by name from the command bar.** Press `⌘⇧F` in Quiet Composer to open the command bar with `:file ` pre-filled, then start typing a filename. Results scope to your selected projects and `~/Notesage`. An empty query lists recently opened files so you can scan without typing",
+          "**Type `:` in the command bar to discover commands.** Bare `:` opens a list of every available \"verb\" command with a short description. Press `Tab` to autocomplete (`:f` → `:fi` → `:file `, jumping to the search box). The existing prefix shortcuts (`#` tags, `@` references, `/` skills, `!` tasks, `?` research, `>` commands) keep working exactly as before — `:` is a separate namespace for verb-style commands like `:file`",
+          "**Folders section in the sidebar.** Folders you open with `⌘O` now appear in their own section between Projects and Recent. Right-click for Reveal in Finder, Copy path, or Remove. The section hides itself when no folders are open",
+          "**Window dims when not focused.** When the Notesage window loses focus, accent colors fade to neutral grey and chrome softens — matching how native macOS apps signal \"this window isn't active\". Document text, syntax highlighting, and diffs stay unchanged. Reduced-motion users see the swap without the fade"
+        ],
+        "improvements": [
+          "**Click or Enter on a project row** in the sidebar now expands the project inline (showing its files and folders) instead of opening the README. README is still reachable via right-click → Open, or by expanding the project and clicking the README.md row",
+          "**\"+N more…\" rows are clickable** — activate to expand the project and show every child file and folder",
+          "**Hover previews on expanded child rows** — hover a child folder for the same one-level peek popover the project root has; hover a previewable file (markdown, text, code) for the rendered preview",
+          "**Settings → System → \"Show hidden files\"** toggle now actually shows dotfiles in the sidebar (it was a no-op — the toggle did nothing). `.DS_Store` is always hidden regardless of the setting",
+          "**Status tray's \"Open actions\"** now opens the command bar in `!` task-search mode under Quiet Composer (matching `⌘!`) instead of the legacy Actions dialog. New \"Actions\" row in the status tray shows the open-action count with the `⌘!` shortcut hint",
+          "**Folder file-count stays visible** when you navigate into a folder row with the keyboard (it was being hidden on focus)",
+          "**`⌘⇧E` opens the Export dialog** in Quiet Composer (the slide-in workspace tree overlay it used to open has been removed — see Removed below)",
+          "**`⌘O` for a folder you've already opened** shows a \"Folder is already in the sidebar\" toast instead of silently duplicating the row. Catches macOS path edge cases (`/var` vs `/private/var`) so you don't end up with two entries for the same place",
+          "**Pinned and Recent files clean up automatically** when you delete the underlying file — or when you delete a parent folder. No more orphaned entries pointing to deleted files",
+          "**Tray \"New Note\"** under Quiet Composer now opens the sidebar's inline-create row (matching what `⌘N` does) instead of the legacy New Note dialog",
+          "**Sidebar keyboard navigation polish** — focus rings now use the accent color across every section (Recent, Tags, and Mentions used to render muted grey rings); the \"Show more\" buttons no longer steal Tab focus between sections",
+          "**Pinned files filter faster** when you have many pinned items. Type-to-filter on hundreds or thousands of pinned files is now noticeably snappier",
+          "**Tooltip text no longer clips at the bottom** — letters with descenders (`p`, `g`, `q`, `y`, `j`) were being cut off everywhere tooltips appear (project-lock tooltip, file path hints, etc.)"
+        ],
+        "fixes": [
+          "**Project-lock tooltip on the sidebar** now shows the connection's friendly name (e.g., \"Claude Code (work)\") instead of a raw connection ID",
+          "**Agent task completion toast** now has an X button to dismiss it. The toast used to cover the agent orb's click area, so you couldn't click the orb to read the result without dismissing the toast first",
+          "**Clicking an in-document `#tag` or `@mention`** in Quiet Composer now opens the command bar with the matching prefix and drilldown (it used to open the legacy command palette, which doesn't exist in Quiet Composer)",
+          "**Agents you've delegated comments to** now clean up properly when the task completes or is cancelled — no more orphaned agent processes hanging around after the task is done"
+        ]
+      }
+    },
+    {
+      "version": "0.39.1",
+      "date": "2026-04-26",
+      "previousVersion": "0.39.0",
+      "sections": {
+        "fixes": [
+          "DOCX viewer's \"Convert to Markdown\" path now uses `@xmldom/xmldom` 0.9.10+ — closes four advisories (XML injection through DocumentType / processing-instruction / comment serialization, plus uncontrolled recursion) flagged when opening hostile DOCX content",
+          "Inline Excalidraw drawings bumped to `@excalidraw/excalidraw` 0.18.1, closing the Mermaid sequence-diagram XSS via KaTeX label rendering"
+        ]
+      }
+    },
+    {
+      "version": "0.39.0",
+      "date": "",
+      "previousVersion": "0.38.1",
+      "sections": {
+        "features": [
+          "**Quiet Composer Preview (opt-in).** A new UI shell with a floating command bar, a single agent orb, a flat-list sidebar, and a simplified status tray. Try it from **Settings → Appearance → \"UI\" → \"Quiet Composer\"**, or click \"Try it\" on the one-time invitation banner that appears after upgrading",
+          "**Workspace tree overlay (`⌘⇧E`).** Slide-in panel with the full project + folder tree, focus-trapped and keyboard-navigable",
+          "**Folder peek.** Hover a project row (or press `→` from the keyboard) for a one-level preview popover with shortcuts to open files",
+          "**Pinned files** in the sidebar — drag to reorder, drop from anywhere to pin",
+          "**Type-to-filter** in the sidebar — start typing while the sidebar has focus to filter Pinned, Projects, Recent, and Tags simultaneously",
+          "**Settings dialog rebuilt** as a two-pane shell with `⌘F` search, live preview for Appearance, and a denser AI & Agents panel",
+          "**System tray \"Recent\" submenu** (existing) now scopes by the chat footer's selected projects with an opt-in \"All Recent\" view",
+          "**Accent palette** — pick Default (neutral grey), Orange, Blue, or System (reads `NSColor.controlAccentColor` on macOS) from Settings → Appearance"
+        ],
+        "improvements": [
+          "**Floating command bar** is the new chat surface in Quiet Composer mode. Same providers, agents, branching, segments, scoped approvals — fewer pixels of chrome. Pinnable to the right edge if you prefer the panel layout",
+          "**Agent activity** moves from the rail to a single 46px ambient orb. Pulses while tasks are running; click for the full task list in a Popover-anchored panel",
+          "**Tab bar replaced** by the document filename in the title bar, with a dirty dot when there are unsaved changes",
+          "**Toolbars float** as backdrop-blurred pills above the document and viewers (PDF, EPUB, DOCX, PPTX, code editor) and fade while you type",
+          "**Focus mode** (`⌘.`) shows a small \"Focus · ⌘. to exit\" pill, restores focus to the previously-focused element on exit, and announces enter / exit to screen readers",
+          "**Status bar** simplified into a tray that opens on click — completions provider, comments, recording state, and shortcut help all in one place",
+          "**External-change handling** is now silent auto-reload by default, with a 3-second info toast (`<name> reloaded from disk`). The previous accept/reject UI is still available — toggle **Settings → Editor → \"Review external diff\"**",
+          "**Cross-project mode** indicator is now a compact \"Cross-project scope\" pill in the command bar's context row instead of a persistent banner above the chat input"
+        ]
+      }
+    },
+    {
       "version": "0.38.1",
       "date": "2026-04-20",
       "previousVersion": "0.38.0",
@@ -60,12 +132,12 @@
         "features": [
           "**Task agent session parity.** Comment-delegated tasks (via `useAgentTaskOperations`) now use the same restoration chain as the main chat (resume → load → list → new). Reopening a delegated thread after an app restart restores the agent's prior context instead of starting fresh. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.",
           "**EnvVar auth flow.** Enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` now drive a generic credential form — one password-style input per advertised variable, with the agent-provided \"Get yours at\" link as helper text. Replaces the hardcoded Gemini API-key panel.",
-          "**`resource_link` content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.",
-          "**`messageId` propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage)."
+          "`resource_link` **content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.",
+          "`messageId` **propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage)."
         ],
         "improvements": [
           "`user_message_chunk` events are now recognized as a silent no-op instead of logging \"Unknown ACP session update type\" on every agent echo. No state mutation; we already have the user message locally.",
-          "Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines).",
+          "Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (\\~130 lines).",
           "`credentials.envVars` retained as the storage layer for EnvVar auth (populated by the generic form, read at spawn time). Gemini connections with existing stored vars continue working without migration."
         ]
       }

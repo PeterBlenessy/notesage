@@ -108,3 +108,6 @@ Chronological log of major implementation milestones and changes.
 | 102 | [Release v0.37.0](102-release-v0.37.0.md) | ACP Protocol Tail — task agent parity + close, EnvVar auth, resource_link, messageId; 5 security advisories closed |
 | 103 | [Release v0.38.0](103-release-v0.38.0.md) | Project isolation — lock a project to one AI provider, scoped approvals, one-click re-authentication, tighter agent sandbox, Copilot & completions stay in scope |
 | 104 | [Release v0.38.1](104-release-v0.38.1.md) | Explicit file-attach for out-of-scope tabs, attachment audit trail, cleaner project switches mid-stream, correct history slicing after provider switch |
+| 105 | [Release v0.39.0](105-release-v0.39.0.md) | Quiet Composer Preview (opt-in) — floating command bar, agent orb, flat sidebar, accent palette, focus mode polish, rebuilt Settings, sidebar pinned files |
+| 106 | [Release v0.39.1](106-release-v0.39.1.md) | Security patch — closes XML injection / KaTeX XSS in DOCX viewer + Excalidraw drawings (no behavioural changes) |
+| 107 | [Release v0.40.0](107-release-v0.40.0.md) | File search verb (`⌘⇧F` → `:file`), `:` command discovery with Tab autocomplete, Folders sidebar section, window-inactive dimming, Quick Capture removed, sidebar polish |
