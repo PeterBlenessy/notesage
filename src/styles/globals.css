@@ -371,19 +371,18 @@ select:focus-visible,
   border-color: oklch(40% 0 0);
 }
 
-/* Global keyboard-focus indicator — fallback for elements that don't
- * opt into their own `focus-visible:` utility. Components with an
- * explicit `focus-visible:[outline:…]` win on specificity. The :where()
- * keeps the selector specificity at 0 so the cascade resolves cleanly.
+/* No global focus-visible fallback. Components opt in explicitly
+ * via `focus-visible:[outline:...]` utility classes. The previous
+ * global `:where(...)` rule (live-test 2026-04-28 iter-3) was
+ * judged too aggressive — it added outlines to every interactive
+ * element on every focus event, including programmatic focus and
+ * the various clicks that bubble through `:focus-visible` due to
+ * browser heuristics on text inputs.
  *
- * Color resolves through `--accent` (chromatic when picked) with a
- * `--color-foreground` fallback so the indicator is high-contrast
- * regardless of accent state.
+ * Components that need keyboard-focus visibility (Button, Settings
+ * nav, sidebar rows, etc.) declare it themselves with the same
+ * outline shorthand.
  */
-:where(button, [role="button"], [role="switch"], [role="checkbox"], [role="menuitem"], [role="option"], [role="tab"], a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid var(--accent, var(--color-foreground));
-  outline-offset: 2px;
-}
 
 html, body, #root {
   height: 100%;
