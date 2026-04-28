@@ -343,6 +343,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                       folder={folder}
                       isExpanded={isExpanded}
                       isFocused={focusedRowId === folder.path}
+                      hasFocusWithin={focusedRowId !== null}
                       isActive={
                         !!activeTabPath &&
                         activeTabPath.startsWith(folder.path + "/")
@@ -397,6 +398,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                             count={row.overflow.count}
                             kind={row.overflow.kind}
                             isFocused={focusedRowId === row.id}
+                            hasFocusWithin={focusedRowId !== null}
                             registerRef={(el) => registerRef(row.id, el)}
                             onActivate={() =>
                               setShowAllPaths((prev) => {
@@ -413,6 +415,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                             <ChildRow
                               row={row}
                               isFocused={focusedRowId === row.id}
+                              hasFocusWithin={focusedRowId !== null}
                               registerRef={(el) => registerRef(row.id, el)}
                               onKeyDown={(e) => handleChildKeyDown(e, row)}
                               onFocus={() => setFocusedRowId(row.id)}
@@ -464,6 +467,13 @@ interface FolderRowProps {
   folder: ExplorerFolder;
   isExpanded: boolean;
   isFocused: boolean;
+  /**
+   * Whether ANY row in the section currently has focus. When false
+   * (initial state, before the user has tabbed into the section), the
+   * row falls back to `tabIndex=0` so Tab from a sibling section can
+   * land here. Mirrors the pattern in `ProjectsSection`.
+   */
+  hasFocusWithin: boolean;
   isActive: boolean;
   registerRef: (el: HTMLElement | null) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -475,6 +485,7 @@ function FolderRow({
   folder,
   isExpanded,
   isFocused,
+  hasFocusWithin,
   isActive,
   registerRef,
   onKeyDown,
@@ -483,6 +494,12 @@ function FolderRow({
 }: FolderRowProps) {
   const name = folderBasename(folder.path);
   const Icon = isExpanded ? FolderOpen : Folder;
+  // Roving tabindex with a "no row focused yet" fallback. When the
+  // user hasn't tabbed into the section, the first FolderRow (which
+  // is the only one mounted with `hasFocusWithin === false`)
+  // exposes `tabIndex=0` so Tab from the previous section lands
+  // here. Once focus enters, only the focused row stays at 0.
+  const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
   return (
     <div
       ref={registerRef}
@@ -492,7 +509,7 @@ function FolderRow({
       aria-selected={isFocused ? "true" : undefined}
       aria-label={`Open folder ${name}`}
       data-row-type="folder"
-      tabIndex={isFocused ? 0 : -1}
+      tabIndex={tabIndex}
       onClick={onActivate}
       onKeyDown={onKeyDown}
       onFocus={onFocus}
@@ -527,6 +544,7 @@ interface OverflowRowProps {
   count: number;
   kind: "folder" | "file";
   isFocused: boolean;
+  hasFocusWithin: boolean;
   registerRef: (el: HTMLElement | null) => void;
   onActivate: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -537,12 +555,14 @@ function OverflowRow({
   count,
   kind,
   isFocused,
+  hasFocusWithin,
   registerRef,
   onActivate,
   onKeyDown,
   onFocus,
 }: OverflowRowProps) {
   const label = `Show ${count} more ${kind}${count === 1 ? "" : "s"}`;
+  const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
   return (
     <div
       ref={registerRef}
@@ -550,7 +570,7 @@ function OverflowRow({
       aria-level={2}
       aria-label={label}
       data-row-type="folder-overflow"
-      tabIndex={isFocused ? 0 : -1}
+      tabIndex={tabIndex}
       onClick={onActivate}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -575,6 +595,7 @@ function OverflowRow({
 interface ChildRowProps {
   row: FolderRowDescriptor;
   isFocused: boolean;
+  hasFocusWithin: boolean;
   registerRef: (el: HTMLElement | null) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
@@ -584,6 +605,7 @@ interface ChildRowProps {
 function ChildRow({
   row,
   isFocused,
+  hasFocusWithin,
   registerRef,
   onKeyDown,
   onFocus,
@@ -594,6 +616,11 @@ function ChildRow({
   const ariaLabel = row.entry.is_directory
     ? `Open folder ${row.entry.name}`
     : `Open file ${row.entry.name}`;
+  // ChildRow only renders inside an expanded FolderRow, so it sits
+  // BELOW the parent in tab order. The same fallback applies:
+  // expose `tabIndex=0` when no row is focused yet so external Tab
+  // can still reach the section through the parent FolderRow.
+  const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
   return (
     <div
       ref={registerRef}
@@ -602,7 +629,7 @@ function ChildRow({
       aria-selected={isFocused ? "true" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"
-      tabIndex={isFocused ? 0 : -1}
+      tabIndex={tabIndex}
       onClick={onActivate}
       onKeyDown={onKeyDown}
       onFocus={onFocus}

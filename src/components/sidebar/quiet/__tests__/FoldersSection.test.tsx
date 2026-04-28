@@ -244,4 +244,34 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     });
     expect(row.getAttribute("aria-expanded")).toBe("false");
   });
+
+  // Regression for keyboard-only walkthrough finding #5 (2026-04-28).
+  // Roving-tabindex sections with `tabIndex={isFocused ? 0 : -1}`
+  // are invisible to Tab when no row is focused yet — the entire
+  // section is skipped. The fix is the "no row focused yet"
+  // fallback that mirrors ProjectsSection: `isFocused ||
+  // !hasFocusWithin ? 0 : -1`.
+  it("first folder row is Tab-reachable when no row is focused yet (Tab order regression)", () => {
+    setExplorerFolders([
+      {
+        path: "/Users/me/code/alpha",
+        fileTree: [makeFile("a.md", "/Users/me/code/alpha/a.md")],
+      },
+      {
+        path: "/Users/me/code/beta",
+        fileTree: [makeFile("b.md", "/Users/me/code/beta/b.md")],
+      },
+    ]);
+    renderWithProviders(<FoldersSection />);
+
+    const folderRows = screen.getAllByRole("treeitem");
+    // At least one row must expose tabIndex=0 so external Tab from
+    // a sibling section (Projects above, Recent below) can land in
+    // FoldersSection. Without the fallback, every row is tabIndex=-1
+    // because focusedRowId starts at null.
+    const tabbable = folderRows.filter(
+      (row) => row.getAttribute("tabindex") === "0",
+    );
+    expect(tabbable.length).toBeGreaterThanOrEqual(1);
+  });
 });

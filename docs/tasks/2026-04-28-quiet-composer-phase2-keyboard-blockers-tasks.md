@@ -57,7 +57,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle B — Sidebar Folders Tab-reachability
 
-### #4 — Fix FoldersSection tabIndex roving pattern (Finding #5)
+### #4 — Fix FoldersSection tabIndex roving pattern (Finding #5) ✅
 
 | Field | Value |
 | --- | --- |
