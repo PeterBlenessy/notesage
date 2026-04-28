@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-28 |
-| **Status** | Not started |
+| **Status** | Complete (all 11 tasks ✅, 2026-04-28). Focus-border consistency surfaced during Bundle E live-test — separate effort, tracked in [GitHub issue #39](https://github.com/PeterBlenessy/notesage/issues/39). Per-component sweep + global !important rule both judged unsuitable; pre-sweep baseline restored at `02931f6c`. |
 | **Source QA pass** | [keyboard-only walkthrough](./qa/2026-04-21-keyboard-only.md) |
 | **Companion** | [voiceover-checklist](./qa/2026-04-21-voiceover-checklist.md) (clean pass — no actions needed) |
 | **Phase 2 gate** | [ui-refresh-rollout-tasks](./2026-04-21-ui-refresh-rollout-tasks.md) — "no P0/P1 issue reports outstanding for >2 weeks" before flipping default-on |
@@ -109,7 +109,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 | Depends on | — |
 | Files | `src/components/chat/AgentSwitchCard.tsx`, `src/components/chat/__tests__/AgentSwitchCard.test.tsx` (create if missing) |
 
-### #8 — Verify Shift+Tab from cmd-bar textarea reaches CommandBarContext (Finding #2 part b)
+### #8 — Verify Shift+Tab from cmd-bar textarea reaches CommandBarContext (Finding #2 part b) ✅
 
 | Field | Value |
 | --- | --- |
@@ -123,7 +123,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle F — Export PDF Tab investigation
 
-### #9 — Reproduce Finding #4 in the running app
+### #9 — Reproduce Finding #4 in the running app ✅
 
 | Field | Value |
 | --- | --- |
@@ -133,7 +133,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 | Depends on | — |
 | Files | This task file (add a "Repro notes for #10" subsection on completion) |
 
-### #10 — Fix Export Tab nav blocker (Finding #4)
+### #10 — Fix Export Tab nav blocker (Finding #4) ✅
 
 | Field | Value |
 | --- | --- |
@@ -147,7 +147,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle G — Re-verify
 
-### #11 — Re-run keyboard-only walkthrough end-to-end
+### #11 — Re-run keyboard-only walkthrough end-to-end ✅
 
 | Field | Value |
 | --- | --- |
