@@ -68,6 +68,19 @@ pub struct ContentSearchResult {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FilenameSearchResult {
+    /// Absolute path to the file.
+    pub path: String,
+    /// Basename (last path segment).
+    pub file_name: String,
+    /// Parent directory of the file (`""` when the file lives at filesystem root).
+    pub parent_dir: String,
+    /// Project root the file belongs to, or `None` for files in the
+    /// `~/Notesage` library / other non-project scopes.
+    pub project_root: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IndexStats {
     pub file_count: usize,
     pub tag_count: usize,
@@ -440,6 +453,67 @@ pub fn query_content(
         .map_err(|e| e.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Search files by basename (case-insensitive substring match).
+///
+/// Used by the FloatingCommandBar `:file` verb mode (PRD
+/// `2026-04-28-cmd-bar-verb-prefixes`). Empty/whitespace-only queries
+/// return an empty list — callers wanting an MRU listing render that
+/// from `editor-store.recentFiles` instead.
+///
+/// `LIKE` over `files.name` is fast enough for typical N=1k–10k file
+/// workspaces; switch to FTS5-on-name if rank/scale becomes an issue.
+pub fn query_filenames(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<FilenameSearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // SQL `LIKE` `%` and `_` are wildcards — escape them so the user's
+    // literal text matches as a substring. `\` is the escape char (set
+    // via `ESCAPE` clause) so it also needs escaping.
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%{}%", escaped);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT path, name, project_path
+             FROM files
+             WHERE name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+             ORDER BY name COLLATE NOCASE ASC
+             LIMIT ?2",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![pattern, limit as i64], |row| {
+            let path: String = row.get(0)?;
+            let file_name: String = row.get(1)?;
+            let project_root: Option<String> = row.get(2)?;
+            // Derive parent_dir from path; cheaper than another column
+            // and stays in sync with renames automatically.
+            let parent_dir = path
+                .rfind('/')
+                .map(|i| path[..i].to_string())
+                .unwrap_or_default();
+            Ok(FilenameSearchResult {
+                path,
+                file_name,
+                parent_dir,
+                project_root,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// Build an FTS5 query string from user input.
@@ -1066,5 +1140,99 @@ mod tests {
         // Toggle back
         let toggled2 = toggle_task_in_content(&toggled, "Buy groceries", "", "", false).unwrap();
         assert!(toggled2.contains("- [ ] Buy groceries"));
+    }
+
+    // ---- query_filenames tests (PRD 2026-04-28-cmd-bar-verb-prefixes #1) ----
+
+    #[test]
+    fn test_query_filenames_empty_query_returns_empty() {
+        let conn = setup_db();
+        insert_file(&conn, "/p/notes.md", "notes.md", None, None);
+        // Empty + whitespace-only inputs both return empty; the verb-mode
+        // frontend renders an MRU list in that case, not the entire index.
+        assert!(query_filenames(&conn, "", 50).unwrap().is_empty());
+        assert!(query_filenames(&conn, "   ", 50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_query_filenames_substring_match_case_insensitive() {
+        let conn = setup_db();
+        insert_file(&conn, "/p/README.md", "README.md", Some("/p"), None);
+        insert_file(&conn, "/p/notes.md", "notes.md", Some("/p"), None);
+        let result = query_filenames(&conn, "read", 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "README.md");
+        assert_eq!(result[0].path, "/p/README.md");
+        assert_eq!(result[0].parent_dir, "/p");
+        assert_eq!(result[0].project_root, Some("/p".to_string()));
+    }
+
+    #[test]
+    fn test_query_filenames_returns_files_alphabetically() {
+        let conn = setup_db();
+        insert_file(&conn, "/p/zebra.md", "zebra.md", Some("/p"), None);
+        insert_file(&conn, "/p/alpha.md", "alpha.md", Some("/p"), None);
+        insert_file(&conn, "/p/middle.md", "middle.md", Some("/p"), None);
+        let result = query_filenames(&conn, ".md", 50).unwrap();
+        let names: Vec<&str> = result.iter().map(|r| r.file_name.as_str()).collect();
+        assert_eq!(names, vec!["alpha.md", "middle.md", "zebra.md"]);
+    }
+
+    #[test]
+    fn test_query_filenames_respects_limit() {
+        let conn = setup_db();
+        for i in 0..10 {
+            let path = format!("/p/file{}.md", i);
+            let name = format!("file{}.md", i);
+            insert_file(&conn, &path, &name, Some("/p"), None);
+        }
+        let result = query_filenames(&conn, "file", 3).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_query_filenames_returns_dotfiles_when_matched() {
+        // Rust returns hits regardless of leading dot — the
+        // hidden-files toggle gating happens in the frontend
+        // (per task #9 in the verb-prefixes breakdown) so the user
+        // can flip the toggle without re-querying.
+        let conn = setup_db();
+        insert_file(&conn, "/p/.hidden.md", ".hidden.md", Some("/p"), None);
+        let result = query_filenames(&conn, "hidden", 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, ".hidden.md");
+    }
+
+    #[test]
+    fn test_query_filenames_project_root_null_for_library_files() {
+        // Files indexed via the global DB carry no project_path
+        // (the field is nullable on the SQL side); the result's
+        // project_root should be None so the frontend can render
+        // a "library" badge instead of a project badge.
+        let conn = setup_db();
+        insert_file(&conn, "/Users/me/Notesage/quick-notes.md", "quick-notes.md", None, None);
+        let result = query_filenames(&conn, "quick", 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].project_root, None);
+        assert_eq!(result[0].parent_dir, "/Users/me/Notesage");
+    }
+
+    #[test]
+    fn test_query_filenames_escapes_like_wildcards() {
+        // `%` and `_` are LIKE wildcards. A literal underscore in
+        // the user's query must match an underscore character in
+        // the filename, not "any single character".
+        let conn = setup_db();
+        insert_file(&conn, "/p/my_file.md", "my_file.md", Some("/p"), None);
+        insert_file(&conn, "/p/myXfile.md", "myXfile.md", Some("/p"), None);
+        let result = query_filenames(&conn, "my_file", 50).unwrap();
+        assert_eq!(result.len(), 1, "underscore should match literal _, not any char");
+        assert_eq!(result[0].file_name, "my_file.md");
+
+        // `%` similarly should be a literal substring search.
+        insert_file(&conn, "/p/100%report.md", "100%report.md", Some("/p"), None);
+        let result2 = query_filenames(&conn, "100%report", 50).unwrap();
+        assert_eq!(result2.len(), 1);
+        assert_eq!(result2[0].file_name, "100%report.md");
     }
 }

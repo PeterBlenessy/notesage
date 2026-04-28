@@ -851,6 +851,32 @@ pub async fn index_search_content(
     Ok(result)
 }
 
+/// Filename substring search across projects.
+///
+/// Powers the FloatingCommandBar `:file` verb mode (PRD
+/// `2026-04-28-cmd-bar-verb-prefixes`). Empty queries return an empty
+/// list — the frontend renders an MRU list from `editor-store.recentFiles`
+/// in that case rather than dumping every indexed file.
+#[tauri::command]
+pub async fn index_search_filenames(
+    state: tauri::State<'_, IndexState>,
+    project_paths: Vec<String>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<FilenameSearchResult>, String> {
+    let start = Instant::now();
+    let lim = limit.unwrap_or(50);
+    let result = with_dbs(&state, &project_paths, |conn| {
+        queries::query_filenames(conn, &query, lim)
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=search_filenames results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
+}
+
 /// Get index statistics.
 #[tauri::command]
 pub async fn index_stats(

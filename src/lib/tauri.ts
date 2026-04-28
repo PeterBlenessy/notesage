@@ -204,6 +204,22 @@ export interface IndexContentSearchResult {
   rank: number;
 }
 
+/**
+ * Result row from `index_search_filenames` — backs the FloatingCommandBar
+ * `:file` verb mode (PRD `2026-04-28-cmd-bar-verb-prefixes`).
+ *
+ * `project_root` is `null` for files indexed under the global DB
+ * (`~/Notesage` quick notes, etc.) so the picker can render a "library"
+ * badge instead of a project badge. `parent_dir` is derived from `path`
+ * server-side so renames stay consistent.
+ */
+export interface IndexFilenameSearchResult {
+  path: string;
+  file_name: string;
+  parent_dir: string;
+  project_root: string | null;
+}
+
 export interface IndexStats {
   file_count: number;
   tag_count: number;
@@ -973,6 +989,18 @@ export const tauriApi = {
     limit?: number,
   ): Promise<IndexContentSearchResult[]> {
     return await invoke<IndexContentSearchResult[]>("index_search_content", {
+      projectPaths,
+      query,
+      limit: limit ?? null,
+    });
+  },
+
+  async indexSearchFilenames(
+    projectPaths: string[],
+    query: string,
+    limit?: number,
+  ): Promise<IndexFilenameSearchResult[]> {
+    return await invoke<IndexFilenameSearchResult[]>("index_search_filenames", {
       projectPaths,
       query,
       limit: limit ?? null,

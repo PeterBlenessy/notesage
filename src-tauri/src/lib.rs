@@ -203,6 +203,7 @@ pub fn run() {
             index::index_toggle_task,
             index::index_goals,
             index::index_search_content,
+            index::index_search_filenames,
             index::index_stats,
             discover_skills,
             extract_skill_tools,
