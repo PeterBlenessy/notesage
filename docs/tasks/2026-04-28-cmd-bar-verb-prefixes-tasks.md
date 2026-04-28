@@ -49,7 +49,7 @@
 | Depends on | #2 |
 | Files | `docs/keyboard-shortcuts.md`, `docs/product-description.md`, `docs/audits/2026-04-27-quiet-composer-migration.md` |
 
-### #4 — Verb registry module
+### #4 — Verb registry module ✅
 
 | Field | Value |
 | --- | --- |
@@ -59,7 +59,7 @@
 | Depends on | — |
 | Files | `src/components/cmd/verb-modes.ts` |
 
-### #5 — `detectActiveVerb` detector + tests
+### #5 — `detectActiveVerb` detector + tests ✅
 
 | Field | Value |
 | --- | --- |
@@ -69,7 +69,7 @@
 | Depends on | #4 |
 | Files | `src/components/cmd/verb-modes.ts`, `src/components/cmd/__tests__/verb-modes.test.ts` |
 
-### #6 — `computeTabCompletion` pure function + tests
+### #6 — `computeTabCompletion` pure function + tests ✅
 
 | Field | Value |
 | --- | --- |
@@ -79,7 +79,7 @@
 | Depends on | #5 |
 | Files | `src/components/cmd/verb-modes.ts`, `src/components/cmd/__tests__/verb-modes.test.ts` |
 
-### #7 — Wire verb detection into FloatingCommandBar
+### #7 — Wire verb detection into FloatingCommandBar ✅
 
 | Field | Value |
 | --- | --- |

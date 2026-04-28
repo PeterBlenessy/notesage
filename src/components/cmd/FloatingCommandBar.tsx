@@ -76,6 +76,12 @@ import {
   detectActivePrefix,
   type ActivePrefix,
 } from "@/components/cmd/prefix-modes";
+import {
+  detectActiveVerb,
+  computeTabCompletion,
+  VERBS,
+  type ActiveVerb,
+} from "@/components/cmd/verb-modes";
 import SkillMode from "@/components/cmd/modes/SkillMode";
 import ReferenceMode from "@/components/cmd/modes/ReferenceMode";
 import TagMode, { type TagPickAction } from "@/components/cmd/modes/TagMode";
@@ -184,6 +190,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // mid-edit" reports.)
   const activePrefixRef = useRef<ActivePrefix | null>(null);
   activePrefixRef.current = activePrefix;
+  // Verb-prefix mirror — same shape as `activePrefix`, separate
+  // namespace. Verbs and noun prefixes are mutually exclusive: when
+  // `activePrefix` is non-null we force `activeVerb` to null so the
+  // every-existing single-char chord keeps winning. PRD
+  // `2026-04-28-cmd-bar-verb-prefixes`.
+  const [activeVerb, setActiveVerb] = useState<ActiveVerb | null>(null);
+  const activeVerbRef = useRef<ActiveVerb | null>(null);
+  activeVerbRef.current = activeVerb;
+  // Esc-suppression mirror of `dismissedPrefixRef` — when a typed
+  // verb is dismissed via Esc, suppress re-detection of the same `:`
+  // at the same index until the user actually deletes / replaces it.
+  const dismissedVerbRef = useRef<{ index: number } | null>(null);
   // #126 fix — when a typed prefix is dismissed via Esc, suppress
   // re-detection of the SAME prefix character at the SAME index until
   // the user actually deletes or replaces it. Without this the picker
@@ -600,6 +618,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           return;
         }
 
+        // Verb Esc — same two-stage semantics as noun prefixes (PRD
+        // `2026-04-28-cmd-bar-verb-prefixes`). Typed verb → first Esc
+        // clears the verb (back to chat mode, bar stays expanded);
+        // chord-seeded verb → first Esc collapses the bar.
+        const currentVerb = activeVerbRef.current;
+        if (currentVerb?.source === 'typed') {
+          dismissedVerbRef.current = { index: currentVerb.verbStart };
+          setActiveVerb(null);
+          requestAnimationFrame(() => inputRef.current?.focus());
+          return;
+        }
+
         if (editContextRef.current) {
           // #127 iter-2 — Esc cancels edit mode before collapsing.
           setEditContext(null);
@@ -640,7 +670,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         setExpanded(false);
         setInputValue("");
         setActivePrefix(null);
+        setActiveVerb(null);
         dismissedPrefixRef.current = null;
+        dismissedVerbRef.current = null;
         inputRef.current?.blur();
       }
     });
@@ -668,6 +700,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         if (next && next.prefixIndex === dismissed.index && value[dismissed.index] === dismissed.char) {
           // Still suppressed.
           setActivePrefix(null);
+          // Verb detection is also gated when a single-char prefix
+          // would have won, so skip it here too.
+          setActiveVerb(null);
           return;
         }
         // Pattern broken — clear suppression so future prefixes work.
@@ -675,6 +710,25 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       }
 
       setActivePrefix(next);
+
+      // Verb-prefix detection runs ONLY when no single-char prefix is
+      // active. Single-char prefixes win to preserve every existing
+      // chord (PRD `2026-04-28-cmd-bar-verb-prefixes`, "mutually
+      // exclusive" rule).
+      if (next) {
+        setActiveVerb(null);
+        return;
+      }
+      const verbNext = detectActiveVerb(value, cursor);
+      const dismissedVerb = dismissedVerbRef.current;
+      if (dismissedVerb) {
+        if (verbNext && verbNext.verbStart === dismissedVerb.index && value[dismissedVerb.index] === ':') {
+          setActiveVerb(null);
+          return;
+        }
+        dismissedVerbRef.current = null;
+      }
+      setActiveVerb(verbNext);
     },
     [],
   );
@@ -1057,6 +1111,33 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // bubble untouched so the keyboard hook picks it up.
         return;
       }
+      if (event.key === "Tab") {
+        // Verb-name autocomplete (PRD `2026-04-28-cmd-bar-verb-prefixes`).
+        // Only fires when a verb prefix is active AND the cursor is
+        // in the verb-name region (not the filter slot — filter Tab
+        // is the verb picker's to handle in #8). `computeTabCompletion`
+        // returns null when there's nothing to do, in which case we
+        // fall through and let the verb picker (or browser focus
+        // traversal) take Tab.
+        const el = event.currentTarget;
+        const cursor = el.selectionStart ?? inputValue.length;
+        const completion = computeTabCompletion(inputValue, cursor);
+        if (completion) {
+          event.preventDefault();
+          setInputValue(completion.newInput);
+          requestAnimationFrame(() => {
+            const node = inputRef.current;
+            if (!node) return;
+            node.focus();
+            node.setSelectionRange(completion.newCursor, completion.newCursor);
+            // Force re-detect against the new value/cursor so the
+            // verb picker (or discovery menu) updates without waiting
+            // for the next input event.
+            recomputePrefix(completion.newInput, completion.newCursor);
+          });
+          return;
+        }
+      }
       if (event.key === "Enter") {
         // When a prefix is active, Enter is reserved for the picker (handled
         // by mode pickers in #14–#19). We must NOT swallow Enter here — the
@@ -1076,7 +1157,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         return;
       }
     },
-    [activePrefix, editContext, collapse, handleSend],
+    [activePrefix, editContext, collapse, handleSend, inputValue, recomputePrefix],
   );
 
   // ---------------------------------------------------------------------
@@ -1235,6 +1316,32 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [],
   );
 
+  // Verb discovery menu picked a verb name (PRD
+  // `2026-04-28-cmd-bar-verb-prefixes`). Replace the `:typedName`
+  // slice with `:fullName ` and jump cursor into the filter slot.
+  // Mirrors the single-match path in `computeTabCompletion`.
+  const handlePickVerb = useCallback(
+    (verbName: string) => {
+      const current = activeVerbRef.current;
+      if (!current) return;
+      const before = inputValue.slice(0, current.verbStart);
+      const after = inputValue.slice(current.verbEnd);
+      const needsSpace = after === '' || !/\s/.test(after[0]);
+      const replaced = `:${verbName}${needsSpace ? ' ' : ''}`;
+      const newInput = before + replaced + after;
+      const newCursor = before.length + replaced.length;
+      setInputValue(newInput);
+      requestAnimationFrame(() => {
+        const node = inputRef.current;
+        if (!node) return;
+        node.focus();
+        node.setSelectionRange(newCursor, newCursor);
+        recomputePrefix(newInput, newCursor);
+      });
+    },
+    [inputValue, recomputePrefix],
+  );
+
   // ---------------------------------------------------------------------
   // Visual chrome
   //
@@ -1379,6 +1486,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           inputRef={inputRef}
           inputValue={inputValue}
           activePrefix={activePrefix}
+          activeVerb={activeVerb}
+          onPickVerb={handlePickVerb}
           activeOption={activeOption}
           onActiveOptionChange={setActiveOption}
           onInputChange={handleInputChange}
@@ -1766,6 +1875,15 @@ interface ExpandedContentProps {
   inputValue: string;
   activePrefix: ActivePrefix | null;
   /**
+   * Active verb-prefix detection (PRD `2026-04-28-cmd-bar-verb-prefixes`).
+   * When non-null AND `verb === null`, the discovery menu renders.
+   * Verbs are mutually exclusive with `activePrefix` — the parent
+   * forces this to null while a single-char prefix is active.
+   */
+  activeVerb: ActiveVerb | null;
+  /** Verb discovery menu picked a verb name — autocomplete + jump to filter. */
+  onPickVerb: (verbName: string) => void;
+  /**
    * Currently-highlighted option in the open mode picker, reported up by the
    * picker via `onActiveOptionChange`. Wired through to `aria-controls` /
    * `aria-activedescendant` on the combobox input below (#78).
@@ -1863,6 +1981,8 @@ function ExpandedContent({
   inputRef,
   inputValue,
   activePrefix,
+  activeVerb,
+  onPickVerb,
   activeOption,
   onActiveOptionChange,
   onInputChange,
@@ -1995,6 +2115,23 @@ function ExpandedContent({
             onPickResearch={onPickResearch}
             onPickPalette={onPickPalette}
           />
+        </div>
+      ) : activeVerb ? (
+        // Verb-mode picker tray (PRD `2026-04-28-cmd-bar-verb-prefixes`).
+        // When `verb === null` the user is in the discovery state
+        // (bare `:` or unmatched partial name) — render the verb
+        // discovery menu. When `verb !== null` the registered verb
+        // owns the picker (FileMode lands in #8; until then the slot
+        // renders empty so the bar's chrome stays sane).
+        <div className="flex-1 min-h-0 overflow-y-auto" data-cmd-picker-tray>
+          {activeVerb.verb === null ? (
+            <VerbDiscoveryMenu
+              typedName={activeVerb.typedName}
+              onPick={onPickVerb}
+            />
+          ) : null}
+          {/* Verb-matched picker dispatch lands in #8 — FileMode
+              renders here when `activeVerb.verb.id === 'file'`. */}
         </div>
       ) : null}
 
@@ -2475,6 +2612,60 @@ function ModePickerDispatch({
         />
       );
   }
+}
+
+// ---------------------------------------------------------------------------
+// VerbDiscoveryMenu — bare `:` (or `:partial-name`) discovery list
+// (PRD `2026-04-28-cmd-bar-verb-prefixes`). Renders every registered
+// verb whose name starts with the typed partial; an empty `typedName`
+// surfaces all verbs. Click / Enter on a row autocompletes to
+// `:fullName ` and jumps the cursor into the filter slot (the parent
+// owns that side of the wiring; this component just emits the picked
+// verb name).
+// ---------------------------------------------------------------------------
+
+interface VerbDiscoveryMenuProps {
+  typedName: string;
+  onPick: (verbName: string) => void;
+}
+
+function VerbDiscoveryMenu({ typedName, onPick }: VerbDiscoveryMenuProps) {
+  const verbs = Object.values(VERBS);
+  const filtered = typedName
+    ? verbs.filter((v) => v.name.startsWith(typedName))
+    : verbs;
+
+  if (filtered.length === 0) {
+    return (
+      <div className="px-3 py-2 text-xs text-muted-foreground" role="status">
+        No verb command matching <span className="font-mono">:{typedName}</span>
+      </div>
+    );
+  }
+
+  return (
+    <ul role="listbox" aria-label="Command bar verbs" className="m-0 p-0 list-none">
+      {filtered.map((verb) => (
+        <li key={verb.id}>
+          <button
+            type="button"
+            role="option"
+            aria-selected={false}
+            onClick={() => onPick(verb.name)}
+            className={cn(
+              "w-full text-left px-3 py-2 text-sm flex items-baseline gap-2",
+              "hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
+            )}
+          >
+            <span className="font-mono text-foreground">:{verb.name}</span>
+            <span className="text-xs text-muted-foreground truncate">
+              {verb.description}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default FloatingCommandBar;
