@@ -336,13 +336,30 @@
   border-color: var(--color-border);
 }
 
-/* Suppress WebKit's native focus ring — we use border-color changes instead */
-input:focus,
-textarea:focus,
-select:focus,
-button:focus,
-[data-slot="select-trigger"]:focus {
-  outline: none !important;
+/* Suppress WebKit's native focus ring on MOUSE focus only.
+ *
+ * `:focus:not(:focus-visible)` matches when the element is focused
+ * but the browser hasn't determined that the user wants visible
+ * focus (i.e., mouse-click focus on most platforms). Keyboard-driven
+ * focus reaches `:focus-visible` and we want THAT to keep its
+ * outline — every component's `focus-visible:[outline:…]` and
+ * `focus-visible:ring-…` utility relies on it.
+ *
+ * Live-test 2026-04-28 (iter-3): the previous `:focus { outline:
+ * none !important; box-shadow: none; }` killed every focus
+ * indicator across the app — keyboard users saw nothing on Tab.
+ * The `!important` overrode component-level `focus-visible:`
+ * outlines, and `box-shadow: none` nuked every `ring-*` utility
+ * since Tailwind rings render as box-shadows. Removing the
+ * `!important` AND scoping the rule to mouse focus restores the
+ * visibility while keeping mouse clicks ring-free.
+ */
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+[data-slot="select-trigger"]:focus:not(:focus-visible) {
+  outline: none;
   -webkit-focus-ring-color: transparent;
   box-shadow: none;
 }
@@ -352,6 +369,20 @@ textarea:focus-visible,
 select:focus-visible,
 [data-slot="select-trigger"]:focus-visible {
   border-color: oklch(40% 0 0);
+}
+
+/* Global keyboard-focus indicator — fallback for elements that don't
+ * opt into their own `focus-visible:` utility. Components with an
+ * explicit `focus-visible:[outline:…]` win on specificity. The :where()
+ * keeps the selector specificity at 0 so the cascade resolves cleanly.
+ *
+ * Color resolves through `--accent` (chromatic when picked) with a
+ * `--color-foreground` fallback so the indicator is high-contrast
+ * regardless of accent state.
+ */
+:where(button, [role="button"], [role="switch"], [role="checkbox"], [role="menuitem"], [role="option"], [role="tab"], a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent, var(--color-foreground));
+  outline-offset: 2px;
 }
 
 html, body, #root {
