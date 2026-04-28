@@ -19,7 +19,13 @@ const buttonVariants = cva(
   // - Using `outline-*` (CSS outline) instead of `ring-*` (box-shadow)
   //   so the indicator tracks the button's exact shape.
   // - The destructive variant overrides the color to red further down.
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // Use `transition-colors` (NOT `transition-all`) so the focus
+  // outline appears instantly. Live-test 2026-04-28 iter-7: with
+  // transition-all, outline-color animated from a default value to
+  // the accent over 150ms — the user perceived it as "blinks twice,
+  // first grey then accent". Color/bg transitions stay smooth; only
+  // the outline snaps.
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

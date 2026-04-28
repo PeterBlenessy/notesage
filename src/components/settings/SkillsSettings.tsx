@@ -88,7 +88,7 @@ function SkillCard({ skill, allSkills, onDelete, onMove, onEdit }: {
         {manageable && (onEdit || onDelete || onMove) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]">
                 <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
             </DropdownMenuTrigger>
@@ -226,7 +226,7 @@ function AgentCard({ agent, allAgents, onDelete, onMove, onEdit }: {
         {manageable && (onEdit || onDelete || onMove) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]">
                 <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
             </DropdownMenuTrigger>
@@ -623,7 +623,7 @@ export function SkillsSettings() {
         {/* Preview merged context */}
         {agentInstructions.length > 0 && (
           <Collapsible open={instructionsExpanded} onOpenChange={setInstructionsExpanded}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !instructionsExpanded && '-rotate-90')}
                 strokeWidth={1.5}

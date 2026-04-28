@@ -145,7 +145,7 @@ export const SettingsSearch = React.forwardRef<
         className={cn(
           'h-8 w-full rounded-md border border-border bg-background pl-7 pr-7',
           'text-[12px] placeholder:text-muted-foreground/60',
-          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          'focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
           // Strip the browser's default clear button — we render our own.
           '[&::-webkit-search-cancel-button]:appearance-none',
         )}
@@ -159,7 +159,7 @@ export const SettingsSearch = React.forwardRef<
             'absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5',
             'items-center justify-center rounded-sm text-muted-foreground',
             'transition-colors duration-150 hover:text-foreground hover:bg-muted',
-            'outline-none focus-visible:ring-1 focus-visible:ring-ring',
+            'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
           )}
         >
           <X strokeWidth={1.5} className="h-3.5 w-3.5" />

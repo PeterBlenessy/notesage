@@ -254,7 +254,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                     type="button"
                     onClick={handleNameConfirm}
                     disabled={renaming}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
                   >
                     {renaming ? (
                       <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />
@@ -266,7 +266,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                     type="button"
                     onClick={handleNameCancel}
                     disabled={renaming}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
                   >
                     <X className="h-4 w-4" strokeWidth={1.5} />
                   </button>
