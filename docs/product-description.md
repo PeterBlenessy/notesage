@@ -83,7 +83,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Click tray icon to toggle window visibility
 - Close-to-tray: optional hide-on-close instead of quit
 - Desktop notifications for agent task completion/errors (via `tauri-plugin-notification`)
-- ~~Quick Capture window (`Cmd+Shift+Space`) — floating 480x320 textarea with destination picker~~ — **NOT shipped.** No global shortcut is registered (`tauri-plugin-global-shortcut` is not in the build), no separate quick-capture window exists, and the in-app `quick-capture` palette entry just opens the regular New Note dialog. Tracked as a follow-up; the System Tray phase shipped the tray + notifications + autostart pieces but not this one.
+- ~~Quick Capture window (`Cmd+Shift+Space`) — floating 480x320 textarea with destination picker~~ — **REMOVED, not deferred.** Never shipped (no `tauri-plugin-global-shortcut` plugin, no separate quick-capture window). PRD `2026-04-28-cmd-bar-verb-prefixes` deleted the PaletteMode entry, the App.tsx routing branch, and this claim end-to-end. The System Tray phase shipped the tray + notifications + autostart pieces; Quick Capture is no longer a planned feature.
 - Start at login via `tauri-plugin-autostart` (macOS LaunchAgent)
 - Settings: System Tray section (show in tray, close to tray, start at login) + Notification toggles
 - PRD: `docs/prds/2026-03-11-system-tray.md`

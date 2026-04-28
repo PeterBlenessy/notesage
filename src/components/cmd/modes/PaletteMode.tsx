@@ -195,14 +195,6 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     execute: noop,
   },
   {
-    id: 'quick-capture',
-    label: 'Quick capture',
-    description: 'Open the floating quick-capture window',
-    icon: 'PencilLine',
-    shortcut: '⌘⇧Space',
-    execute: noop,
-  },
-  {
     id: 'open-keyboard-shortcuts',
     label: 'Keyboard shortcuts',
     description: 'View the full keyboard shortcuts reference',

@@ -29,7 +29,7 @@
 | Depends on | — |
 | Files | `src-tauri/src/index/mod.rs`, `src-tauri/src/index/queries.rs`, `src-tauri/src/lib.rs` (add to `generate_handler!`), `src/lib/tauri.ts` |
 
-### #2 — Delete Quick Capture from PaletteMode + App.tsx router
+### #2 — Delete Quick Capture from PaletteMode + App.tsx router ✅
 
 | Field | Value |
 | --- | --- |
@@ -39,7 +39,7 @@
 | Depends on | — |
 | Files | `src/components/cmd/modes/PaletteMode.tsx`, `src/App.tsx` |
 
-### #3 — Quick Capture removal — doc updates
+### #3 — Quick Capture removal — doc updates ✅
 
 | Field | Value |
 | --- | --- |
@@ -139,7 +139,7 @@
 | Depends on | #11 |
 | Files | `src/components/cmd/__tests__/FileMode.integration.test.tsx` |
 
-### #13 — Quick Capture removal regression test
+### #13 — Quick Capture removal regression test ✅
 
 | Field | Value |
 | --- | --- |

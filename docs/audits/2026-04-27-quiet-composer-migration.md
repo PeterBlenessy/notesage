@@ -44,23 +44,23 @@ The legacy `Layout.tsx` path is fully retained behind `uiPreview !== "quiet-comp
 
 **Fix:** in `useAppLifecycle`, branch on `uiPreview`. Quiet path emits `cmd-bar-events` `{ type: 'focus', prefix: '#'/'@', drilldown: { kind: 'tag'/'mention', name } }` — same payload shape the sidebar TagsSection and MentionsSection already use (verified working in `TagsSection.tsx:139`).
 
-### 2. Quick Capture (`⌘⇧Space`) is advertised but not shipped
+### 2. Quick Capture (`⌘⇧Space`) is advertised but not shipped — RESOLVED (removed, not built)
 
-**The lie surfaces in:**
+**Resolution (2026-04-28).** Decision: removal, not implementation. PRD `2026-04-28-cmd-bar-verb-prefixes` deletes the PaletteMode entry, the App.tsx routing branch, the keyboard-shortcuts and product-description claims end-to-end. A smoke test (`src/components/cmd/__tests__/no-quick-capture.test.ts`) regression-locks the removal so a future palette refactor can't silently re-add the false promise. If Quick Capture comes back later it will land as its own PRD with the global-shortcut plugin + separate window, not as a smuggled palette entry.
 
-- `docs/keyboard-shortcuts.md` (now corrected)
-- `docs/product-description.md` System Tray section (now corrected)
-- `src/components/KeyboardShortcutsDialogV2.tsx:93` — entry "Quick capture (global) ⌘⇧Space" (now removed)
-- `src/components/cmd/modes/PaletteMode.tsx:198-202` — palette entry "Open the floating quick-capture window" with `shortcut: '⌘⇧Space'`
+**The lie used to surface in:**
 
-**Reality (verified):**
+- `docs/keyboard-shortcuts.md` (corrected before removal)
+- `docs/product-description.md` System Tray section (corrected before removal)
+- `src/components/KeyboardShortcutsDialogV2.tsx:93` — entry "Quick capture (global) ⌘⇧Space" (removed in the audit-pass dialog rewrite)
+- `src/components/cmd/modes/PaletteMode.tsx:198-202` — palette entry (deleted)
+
+**Reality (verified, kept for history):**
 
 - No `tauri-plugin-global-shortcut` registered in `src-tauri/Cargo.toml` or `src-tauri/src/lib.rs`
 - No global keydown listener for `⌘⇧Space`
 - No separate `quick-capture` window registered in `src-tauri/tauri.conf.json`
-- The in-app palette entry's handler in `App.tsx:667-669` just calls `setNewNoteOpen(true)` — opens the regular New Note dialog, which is itself hidden when `uiPreview === "quiet-composer"` per `App.tsx:879`
-
-**Recommendation:** either (a) ship Quick Capture as a small standalone PRD (global-shortcut plugin + floating 480x320 window with destination picker — original spec), or (b) permanently remove the entry from the palette and the System Tray "Completed" roadmap claim. Don't leave it half-promised.
+- The in-app palette entry's handler used to call `setNewNoteOpen(true)` — opening the regular New Note dialog, which is itself hidden when `uiPreview === "quiet-composer"`
 
 ## HIGH findings
 

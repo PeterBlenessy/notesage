@@ -663,9 +663,6 @@ function App() {
         case "document-outline":
           setOutlineOpen(true);
           break;
-        case "quick-capture":
-          setNewNoteOpen(true);
-          break;
         case "open-keyboard-shortcuts":
           setShortcutsOpen(true);
           break;

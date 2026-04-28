@@ -66,8 +66,6 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
 | Toggle recording | `⌘⇧R` | Start/stop meeting recording |
 
-> **Quick capture (`⌘⇧Space`) is NOT shipped.** The previous entry claimed a global shortcut and a floating quick-capture window. Neither exists today: `tauri-plugin-global-shortcut` isn't in the build, no separate window is registered, and the in-app `quick-capture` palette entry just opens the regular New Note dialog. Tracked under the System Tray phase as a follow-up.
-
 ## Document Navigation
 
 | Action | Shortcut | Description |
@@ -138,11 +136,11 @@ Backspacing past a prefix character returns to the default (files + actions) mod
 
 ## Future Shortcuts (Planned but unshipped)
 
-- **`⌘⇧Space` Quick capture** — was scoped under the System Tray phase as a global shortcut + floating quick-capture window. Neither shipped (no `tauri-plugin-global-shortcut` registered, no separate window). The in-app `quick-capture` palette entry currently routes to the regular New Note dialog. See `docs/product-description.md` System Tray section for the deferral note.
-- **File-search mode in the Quiet Composer command bar** — `⌘⇧F` currently focuses the bar with no prefix and typing routes to chat input. The PRD intent was a real file-search mode (typing narrows a file-result list). Not yet built; `?` for research, `@` for references, `#` for tags, `!` for tasks all exist, but a dedicated `:file` (or similar) prefix does not.
+_None at the moment — the previous file-search and Quick Capture entries have been resolved. File-search ships as the `:file` verb mode in PRD `2026-04-28-cmd-bar-verb-prefixes`. Quick Capture was removed (see "Removed Shortcuts" below)._
 
 ## Removed Shortcuts
 
+- **`⌘⇧Space` Quick capture** — never shipped (no global-shortcut plugin, no separate window). Decision: removed end-to-end rather than deferred. The PaletteMode entry, the in-app `quick-capture` palette routing, and the System Tray phase claim were all deleted in PRD `2026-04-28-cmd-bar-verb-prefixes`.
 - **Preview HTML** — the inline HTML Preview viewer (formerly `⌘⇧P`) was removed in the M1.5 round of the UI Refresh PRD (`docs/prds/2026-04-21-ui-refresh.md`, "Preview as HTML"). Native HTML rendering with JavaScript is deferred to a separate PRD. The chord `⌘⇧P` was reassigned to the commands-palette (`>`) — see App Navigation.
 
 ## Implementation Notes
