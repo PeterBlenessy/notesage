@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "0.40.1",
+      "date": "2026-04-28",
+      "previousVersion": "0.40.0",
+      "sections": {
+        "improvements": [
+          "**Recently-opened documents now cycle with `⌃Tab` / `⌃⇧Tab`** — same convention VS Code uses, and works on every keyboard layout. (The previous `⌘⇧[` / `⌘⇧]` chord couldn't even be typed on Swedish and many European layouts where brackets need Option.)"
+        ],
+        "fixes": [
+          "**Sidebar right-click menu opens with `⌘⇧,`** on Swedish and other non-US keyboard layouts. The chord was checking only the produced character, which on those layouts is a semicolon when Shift is held — the menu never appeared.",
+          "**`⌘.` toggles focus mode** on every keyboard layout. Same shape of fix as the right-click menu.",
+          "**Sidebar's Folders section is now reachable with Tab.** It was invisible to keyboard navigation until something inside it had already received focus, which created a chicken-and-egg trap.",
+          "**Settings keyboard navigation is restored.** Tab from the search field now lands on the nav buttons on the left; ↑ / ↓ cycle through nav items instead of scrolling the right pane. Both were being eaten by the scroll viewport.",
+          "**Settings nav focus ring uses the accent color** so the keyboard focus is visible on inactive nav rows. It was rendering muted grey before, making it hard to see where focus had landed.",
+          "**Creating a new note in Quiet Composer puts the cursor in the editor**, not at the end of the inline-create row in the sidebar. After hitting Enter on the filename, focus now moves to the document so you can start typing immediately.",
+          "**Provider-switch card in chat autofocuses its primary action** when it appears. Tab from the chat input now reaches it, and screen readers announce the card on appearance instead of leaving the user stuck on a disabled textarea."
+        ]
+      }
+    },
+    {
       "version": "0.40.0",
       "date": "2026-04-28",
       "previousVersion": "0.39.1",
