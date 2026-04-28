@@ -206,6 +206,27 @@ describe('SettingsShell', () => {
     expect(dialog).not.toBeNull();
     expect(dialog!.getAttribute('data-slot')).toBe('settings-shell-content');
   });
+
+  // Regression for keyboard-only walkthrough finding #1 (2026-04-28).
+  // Radix `<ScrollArea>` Viewport carries `tabIndex=0` by default so
+  // keyboard users can scroll a long region — but in SettingsShell
+  // that captures Tab BEFORE the nav buttons see it (and bubbles
+  // ↑/↓ up to native scroll instead of `handleNavKeyDown`). The fix
+  // is the `viewportTabIndex={-1}` prop on both `<ScrollArea>`
+  // instances. This test asserts the Viewport is OUT of the Tab
+  // order so external Tab walks straight to the nav buttons inside.
+  it('ScrollArea viewports do NOT capture Tab (nav viewport tabIndex=-1)', () => {
+    renderShell({});
+    const viewports = document.querySelectorAll(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    // The shell renders one ScrollArea per pane (left nav + right
+    // content). Both must be tabIndex=-1.
+    expect(viewports.length).toBeGreaterThanOrEqual(2);
+    viewports.forEach((vp) => {
+      expect(vp.getAttribute('tabindex')).toBe('-1');
+    });
+  });
 });
 
 function renderWithProvidersOpen(props: {

@@ -162,7 +162,14 @@ export function SettingsShell({
                 {navHeader}
               </div>
             ) : null}
-            <ScrollArea className="flex-1">
+            {/* Pass `viewportTabIndex={-1}` so the ScrollArea's
+                inner Viewport doesn't capture Tab. The nav has its
+                own keyboard model (Tab to enter, ↑/↓ to cycle, see
+                `handleNavKeyDown`); a tabbable Viewport intercepts
+                Tab before the nav buttons see it AND bubbles ↑/↓
+                up to the browser's native scroll instead of our
+                handler. Verified 2026-04-28 keyboard-only walk. */}
+            <ScrollArea className="flex-1" viewportTabIndex={-1}>
               <nav
                 ref={navRef}
                 aria-label="Settings sections"
@@ -227,7 +234,13 @@ export function SettingsShell({
               sometimes sized to its content (no scroll) — multi-panel
               user feedback 2026-04-25. */}
           <div className="relative flex min-h-0 flex-col overflow-hidden">
-            <ScrollArea className="h-full">
+            {/* Same `viewportTabIndex={-1}` reasoning as the nav
+                column above — Tab from the nav should land on the
+                first focusable form control in the content pane,
+                not on the wrapping Viewport. Mouse-wheel + scrollbar
+                drag continue to scroll; only the keyboard-focus
+                contract changes. */}
+            <ScrollArea className="h-full" viewportTabIndex={-1}>
               {/* Live-test 2026-04-25 — dropped the inner
                   `max-w-[640px] mx-auto` centering. With the dialog
                   itself max-w-[1040px] and the nav at 236 px, the

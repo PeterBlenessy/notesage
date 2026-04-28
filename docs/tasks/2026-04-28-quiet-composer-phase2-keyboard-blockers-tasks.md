@@ -71,7 +71,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle C — Settings v2 nav focus
 
-### #5 — Fix Settings v2 ScrollArea Viewport Tab trap (Finding #1)
+### #5 — Fix Settings v2 ScrollArea Viewport Tab trap (Finding #1) ✅
 
 | Field | Value |
 | --- | --- |

@@ -216,5 +216,5 @@ Log all P0 keyboard-trap or mouse-required findings as Phase 2 tasks. The 5 spec
 | Flow 3 — Export PDF | HIGH | Tab navigation not working, export not possible |  |
 | Flow 4 — Switch provider mid-chat | CRITICAL | Tab navigation not working, cannot leave text input |  |
 | S2. Sidebar navigation (Quiet Composer) | MEDIUM | Folders section not selectable with tab at all, should come after Projects<br>I can not seem to open right click menu with ⌘⇧ | ⌘⇧, fixed in Bundle A (#1); Folders Tab is Bundle B (#4) |
-| S4. FocusBar / Settings keyboard nav | CRITICAL | Tab nav Not working at all, up/down arrow not working at all, it scrolls settings right pannel |  |
+| S4. FocusBar / Settings keyboard nav | CRITICAL | Tab nav Not working at all, up/down arrow not working at all, it scrolls settings right pannel | Fixed in Bundle C (#5) — `viewportTabIndex={-1}` on both ScrollArea panes |
 | S5. Recent document MRU cycling | MEDIUM | ⌘⇧\[ and ⌘⇧\] not working at all | Replaced chord with `⌃Tab` / `⌃⇧Tab` (VS Code convention, layout-independent). Old bracket binding removed entirely. |
