@@ -7,6 +7,7 @@ import {
   Command as CommandIcon,
   FileCode,
   FileText,
+  CheckSquare,
 } from "lucide-react";
 import type { Editor } from "@tiptap/react";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import type { Comment } from "@/stores/comment-store";
+import { useActionStore } from "@/stores/action-store";
 import type { ViewMode } from "@/lib/file-utils";
 import { MicButton } from "./toolbar/MicButton";
 import { CommentList } from "./CommentListPopover";
@@ -77,7 +79,12 @@ const COMPLETION_OPTIONS: CompletionOptionMeta[] = [
  * popover opens. These strings are stable contract between the dots in
  * `QuietStatusBar` and the tray layout below.
  */
-export type StatusTrayGroup = "completions" | "comments" | "session" | "help";
+export type StatusTrayGroup =
+  | "completions"
+  | "comments"
+  | "actions"
+  | "session"
+  | "help";
 
 export interface StatusTrayProps {
   /** Controlled open state. */
@@ -107,6 +114,14 @@ export interface StatusTrayProps {
 
   /** Opens the ⌘7 keyboard-shortcuts dialog from the Help group. */
   onShortcutsOpen?: () => void;
+
+  /**
+   * Opens the Actions dashboard from the Actions group (bugs #3-#5).
+   * Mirrors the legacy `ActionsIndicator` button in `StatusBar`'s
+   * full variant — the QuietStatusBar variant gets the same
+   * affordance via this group inside the popover.
+   */
+  onOpenActions?: () => void;
 
   /**
    * When provided on open, scroll the named group into view and give it
@@ -462,6 +477,54 @@ function CommentsGroup({
 // dot-click navigation. The `aria-label` on the section is now "Local
 // AI" so assistive tech announces the new framing.
 
+// ---------------------------------------------------------------------------
+// Actions group (bugs #3-#5) — open-actions count + click to open
+// ActionsDialog. Mirrors the legacy `ActionsIndicator` button in the
+// full-variant StatusBar but presents it as a click-to-reveal row
+// inside the StatusTray popover, consistent with the other groups.
+// When `openCount === 0` the row stays visible with a muted "No open
+// actions" state for consistency with the rest of the tray.
+// ---------------------------------------------------------------------------
+
+function ActionsGroup({ onOpenActions }: { onOpenActions?: () => void }) {
+  const openCount = useActionStore((s) => s.getOpenCount());
+  const handleClick = () => {
+    if (onOpenActions) onOpenActions();
+  };
+  // Visual style matches HelpGroup's "Keyboard shortcuts" button — a
+  // muted-foreground row with the chord on the right. Bugs #3 / live
+  // finding 8 (looks like a button, not a submenu item).
+  return (
+    <section className="space-y-2" aria-label="Actions">
+      <div className="flex items-center gap-2">
+        <CheckSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+        <span className="text-xs font-medium">Actions</span>
+      </div>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={!onOpenActions}
+        className={cn(
+          "w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors",
+          "rounded-sm px-2 py-1 hover:bg-muted/50",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "disabled:cursor-not-allowed disabled:opacity-60",
+        )}
+      >
+        <CheckSquare className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+        <span className="flex-1 text-left">
+          {openCount === 0
+            ? "No open actions"
+            : `${openCount} open ${openCount === 1 ? "action" : "actions"}`}
+        </span>
+        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+          {"⌘!"}
+        </span>
+      </button>
+    </section>
+  );
+}
+
 function SessionGroup() {
   const serverStatus = useLocalAIStore((s) => s.serverStatus);
   const activeModelId = useLocalAIStore((s) => s.activeModelId);
@@ -632,6 +695,7 @@ export function StatusTray({
   onDelegateAll,
   canDelegate = false,
   onShortcutsOpen,
+  onOpenActions,
   initialExpandedGroup,
   editor = null,
   viewMode,
@@ -641,6 +705,21 @@ export function StatusTray({
     onOpenChange(false);
     onShortcutsOpen?.();
   }, [onOpenChange, onShortcutsOpen]);
+
+  // Bugs #3 — clicking the Actions row should close the tray AND
+  // open the dashboard. Wrapper is undefined when no parent handler
+  // is provided so ActionsGroup can disable the button (avoids
+  // surfacing a no-op affordance).
+  const handleOpenActions = React.useMemo(
+    () =>
+      onOpenActions
+        ? () => {
+            onOpenChange(false);
+            onOpenActions();
+          }
+        : undefined,
+    [onOpenChange, onOpenActions],
+  );
 
   // Per-group refs used to deep-link into a section when a task #54 dot is
   // clicked. Each group wrapper holds a `tabIndex={-1}` so `.focus()` works
@@ -738,6 +817,13 @@ export function StatusTray({
                 canDelegate={canDelegate}
                 onCloseTray={() => onOpenChange(false)}
               />
+            </div>
+            {/* Bugs #3 — Actions group sits between Comments and
+                Session ("things to act on" cluster). Click closes the
+                tray + opens the ActionsDialog via the threaded
+                `onOpenActions` prop (Editor → StatusBar → here). */}
+            <div tabIndex={-1} className="p-3 focus:outline-none">
+              <ActionsGroup onOpenActions={handleOpenActions} />
             </div>
             <div ref={sessionRef} tabIndex={-1} className="p-3 focus:outline-none">
               <SessionGroup />

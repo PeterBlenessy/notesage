@@ -300,7 +300,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M11. F6 row memoization + perf budget tightening
 
-### #23 — Memoize sidebar row components
+### #23 — Memoize sidebar row components 🚧
 
 | Field | Value |
 | --- | --- |
@@ -310,7 +310,9 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #9, #12 |
 | Files | `src/components/sidebar/quiet/PinnedSection.tsx`, `RecentSection.tsx`, `ProjectsSection.tsx`, `FoldersSection.tsx` |
 
-### #24 — Tighten `FIRST_KEYSTROKE_BUDGETS` perf budget to 50ms
+**Partial — 2026-04-28.** PinnedRow is now wrapped in `React.memo`; its prop interface was reshaped so the parent passes stable `useRovingTabindex` handlers (`onFocus={roving.handleFocus}` etc.) instead of per-row inline closures, and every parent-side handler in PinnedSection (`handleOpen`, `startRename`, `commitRename`, `handleRowDragStart` …) is now `useCallback`-stable with ref-pinned mutating values. Subsequent-keystroke perf at N=2000 sits at ~5ms (well under the 20ms budget). RecentRow, ProjectRow, FolderRow, and ChildRow are NOT memoized yet — same pattern, more rows, deferred to a follow-up. The first-keystroke perf is dominated by React unmounting filtered-out rows; hitting the 50ms spec target at N=2000 will need windowed virtualization, not just memoization.
+
+### #24 — Tighten `FIRST_KEYSTROKE_BUDGETS` perf budget to 50ms ✅
 
 | Field | Value |
 | --- | --- |
@@ -319,6 +321,8 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Category | test |
 | Depends on | #23 |
 | Files | `src/perf/sidebar-filter.perf.test.tsx` |
+
+**Done — 2026-04-28.** Budgets tightened from `{100: 50, 500: 500, 2000: 8000}` to `{100: 50, 500: 100, 2000: 400}` — roughly 2× current measured cost so a future regression that doubles render time fails CI. The 50ms spec target for N=2000 is unreachable without virtualization (see #23 note); the new ceiling locks the regression band tightly without forcing churn on the unrelated row sections.
 
 ---
 

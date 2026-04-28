@@ -23,6 +23,7 @@ import { setBinaryData } from "@/lib/binary-cache";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
+import { FilePreview, isPreviewable } from "./FilePreview";
 import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
 import { beginFileDrag } from "./file-drag";
 import {
@@ -272,6 +273,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     const tab = s.openDocuments.find((t) => t.id === id);
     return tab?.filePath ?? null;
   });
+  // Live-test 2026-04-28 finding #4 — Settings > System > "Show hidden
+  // files" must propagate into every `derivePeekChildren` call below
+  // (inline expanded rows + ArrowRight navigation + active-row child
+  // detection) so the toggle is not a no-op.
+  const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
 
   // Filter projects by basename (case-insensitive substring). Expanded
   // children of a matching parent are preserved — we filter the project
@@ -291,6 +297,13 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // Each project's inline-expanded state is independent — this set tracks
   // absolute project paths that the user has expanded via ArrowRight.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Live-test 2026-04-28 finding #2 — when the user clicks a "+N more"
+  // overflow row, we add the project path to this set so the next
+  // re-derive uses the unbounded variant of `derivePeekChildren`.
+  // Per-project (not global) so a heavy project doesn't blow up
+  // sibling sections. Ephemeral — resets on full unmount, same as
+  // expandedPaths.
+  const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
 
   // Task #40 — inline rename for child FILE rows. Project roots are NOT
   // renameable in this task (bigger blast radius; separate follow-up).
@@ -477,7 +490,10 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     for (const project of projects) {
       list.push({ id: project.path, kind: "project", project });
       if (expandedPaths.has(project.path)) {
-        const children = derivePeekChildren(project.fileTree);
+        const children = derivePeekChildren(project.fileTree, {
+          unbounded: showAllPaths.has(project.path),
+          showHidden: showHiddenFiles,
+        });
         for (const folder of children.folders) {
           list.push({
             id: `${project.path}::${folder.path}`,
@@ -513,7 +529,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       }
     }
     return list;
-  }, [projects, expandedPaths]);
+  }, [projects, expandedPaths, showAllPaths, showHiddenFiles]);
 
   const focusRow = useCallback((rowId: string) => {
     const el = rowRefs.current.get(rowId);
@@ -671,7 +687,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         // simplification task #3 polish). `derivePeekChildren` returns
         // a `PeekChildren` object (folders + files + isEmpty), NOT a
         // flat array — use the `isEmpty` flag.
-        const children = derivePeekChildren(project.fileTree);
+        const children = derivePeekChildren(project.fileTree, {
+          showHidden: showHiddenFiles,
+        });
         if (children.isEmpty) return;
         if (!isExpanded) {
           toggleExpanded(project.path, true);
@@ -703,10 +721,15 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       }
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        void openProject(project);
+        // Live-test 2026-04-28 finding #1 — Enter on a project row
+        // also toggles inline-expand (matches click). README opens
+        // via right-click "Open" or by expanding then activating
+        // the README.md child row.
+        const isExpanded = expandedPaths.has(project.path);
+        toggleExpanded(project.path, !isExpanded);
       }
     },
-    [expandedPaths, rows, focusRow, toggleExpanded, openProject],
+    [expandedPaths, rows, focusRow, toggleExpanded, openProject, showHiddenFiles],
   );
 
   const handleChildKeyDown = useCallback(
@@ -823,7 +846,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
               !!activeTabPath && activeTabPath.startsWith(project.path + "/");
             const isExpanded = expandedPaths.has(project.path);
             const children = isExpanded
-              ? derivePeekChildren(project.fileTree)
+              ? derivePeekChildren(project.fileTree, { showHidden: showHiddenFiles })
               : null;
             const isPendingCreateHere =
               pendingCreateProjectPath === project.path && !!pendingCreate;
@@ -865,7 +888,16 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         isExpanded={isExpanded}
                         isFocused={focusedRowId === project.path}
                         hasFocusWithin={focusedRowId !== null}
-                        onOpen={() => void openProject(project)}
+                        // Live-test 2026-04-28 finding #1 — clicking
+                        // a project row now toggles inline-expand
+                        // instead of opening the README. README is
+                        // still reachable via right-click → "Open"
+                        // (which calls openProject through the
+                        // SidebarContextMenu) or by expanding +
+                        // clicking the README.md child row. Matches
+                        // standard tree-view behavior + the new
+                        // FoldersSection.
+                        onOpen={() => toggleExpanded(project.path, !isExpanded)}
                         onKeyDown={(e) => handleProjectKeyDown(e, project)}
                         onFocus={() => setFocusedRowId(project.path)}
                         onAddNote={() => handleAddToProject(project.path)}
@@ -925,6 +957,20 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                               !!row.entry && renamingPath === row.entry.path
                             }
                             onActivate={() => {
+                              // Live-test 2026-04-28 finding #2 —
+                              // overflow rows ("+N more…") flip the
+                              // per-project showAll flag so the next
+                              // re-derive uses the unbounded variant
+                              // of derivePeekChildren and renders
+                              // every child.
+                              if (row.overflow) {
+                                setShowAllPaths((prev) => {
+                                  const updated = new Set(prev);
+                                  updated.add(project.path);
+                                  return updated;
+                                });
+                                return;
+                              }
                               if (!row.entry) return;
                               if (row.entry.is_directory) {
                                 // Sidebar #20 — child-folder click no
@@ -955,15 +1001,48 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         // element to Radix's Slot so the prop injection
                         // lands; the row's own layout is unchanged.
                         if (!row.entry) return childRow;
-                        return (
+                        // Live-test 2026-04-28 finding #3 — expanded
+                        // child rows now get the same hover treatment
+                        // the project root has: FolderPeek for child
+                        // folders (one-level preview from the already-
+                        // loaded recursive tree), FilePreview for
+                        // previewable file extensions. Non-previewable
+                        // files (binary, unknown ext) fall through with
+                        // no popover, same as today.
+                        //
+                        // Wrap order matches the project-row chain:
+                        // FolderPeek/FilePreview OUTSIDE,
+                        // SidebarContextMenu INSIDE → the trigger Slot
+                        // sees a real <div>. Reversing the order breaks
+                        // right-click on the row (the function-component
+                        // wrapper drops the injected onContextMenu).
+                        const ctx = (
                           <SidebarContextMenu
-                            key={row.id}
                             filePath={row.entry.path}
                             kind={row.entry.is_directory ? "folder" : "file"}
                           >
                             <div>{childRow}</div>
                           </SidebarContextMenu>
                         );
+                        if (row.entry.is_directory) {
+                          return (
+                            <FolderPeek
+                              key={row.id}
+                              projectPath={row.entry.path}
+                              fileTree={row.entry.children ?? []}
+                            >
+                              {ctx}
+                            </FolderPeek>
+                          );
+                        }
+                        if (isPreviewable(row.entry.path)) {
+                          return (
+                            <FilePreview key={row.id} filePath={row.entry.path}>
+                              {ctx}
+                            </FilePreview>
+                          );
+                        }
+                        return <div key={row.id}>{ctx}</div>;
                       })}
                   </ul>
                 )}
@@ -1116,8 +1195,12 @@ function ProjectRow({
         className="relative inline-flex h-6 min-w-6 items-center justify-end shrink-0"
         aria-hidden={fileCount === null ? undefined : "false"}
       >
+        {/* Live-test 2026-04-28 finding #5 — count stays visible during
+            keyboard focus. The hover-hide stays so the per-row `+`
+            button (mouse-hover-only since the audit-#11 follow-up)
+            doesn't visually overlap the count when revealed. */}
         {fileCount !== null && (
-          <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 group-focus-within/row:opacity-0 transition-opacity duration-150">
+          <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 transition-opacity duration-150">
             {fileCount}
           </span>
         )}
@@ -1212,22 +1295,32 @@ function ChildRow({
   }, [isRenaming, row.entry]);
 
   if (row.overflow) {
-    // Overflow rows are focusable markers with no interactive action, so
-    // arrow-key navigation can still visit them. They are not announced
-    // as activatable — Enter is a no-op.
+    // Live-test 2026-04-28 finding #2 — overflow rows are now
+    // clickable. Activating expands the project to show every child
+    // (the parent flips its `showAllPaths` flag and re-derives via
+    // `derivePeekChildren(..., { unbounded: true })`).
+    const label = `Show ${row.overflow.count} more ${row.overflow.kind}${row.overflow.count === 1 ? "" : "s"}`;
     return (
       <div
         ref={setRef}
         role="treeitem"
         aria-level={2}
-        aria-disabled="true"
-        aria-label={`${row.overflow.count} more ${row.overflow.kind}${row.overflow.count === 1 ? "" : "s"}`}
+        aria-label={label}
         data-row-type="child-overflow"
         tabIndex={hasFocusWithin ? tabIndex : -1}
-        onKeyDown={onKeyDown}
+        onClick={onActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onActivate();
+            return;
+          }
+          onKeyDown?.(e);
+        }}
         onFocus={onFocus}
         className={cn(
-          "h-6 px-2 flex items-center text-xs text-muted-foreground",
+          "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
+          "hover:text-foreground hover:underline underline-offset-2 transition-colors",
           "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
         )}
       >

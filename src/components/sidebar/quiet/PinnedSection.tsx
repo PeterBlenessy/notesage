@@ -1,4 +1,6 @@
 import {
+  memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -90,14 +92,20 @@ interface PinnedRowProps {
   onStartRename: (path: string) => void;
   onCommitRename: (oldPath: string, newBasename: string) => void;
   onCancelRename: () => void;
-  onFocus: () => void;
-  onNavigate: (event: KeyboardEvent<HTMLElement>) => void;
+  // Sidebar #23 — these three handlers used to be passed as
+  // per-row inline closures (`() => roving.handleFocus(path)`),
+  // which made `React.memo` useless because shallow-eq always
+  // failed on every parent render. Reshape the contract so the
+  // parent passes the stable `useRovingTabindex` handlers and
+  // the row binds `path` / `event` inside its own DOM listeners.
+  onFocus: (path: string) => void;
+  onNavigate: (event: KeyboardEvent<HTMLElement>, path: string) => void;
   onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragEnd: () => void;
   onDragOverRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragLeaveRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDropRow: (event: DragEvent<HTMLDivElement>, index: number) => void;
-  registerRef: (el: HTMLDivElement | null) => void;
+  registerRef: (path: string, el: HTMLDivElement | null) => void;
 }
 
 /**
@@ -105,8 +113,15 @@ interface PinnedRowProps {
  * install the row-level ⌘⌥C / ⌘⌥R shortcut hook per row (#46) and carry
  * the per-row drag handlers locally (#44). The hook must run inside a
  * component because it captures `filePath` in the returned handler.
+ *
+ * Sidebar #23 — wrapped in `React.memo` so a parent type-to-filter
+ * keystroke that doesn't actually change a row's data props skips the
+ * row's render entirely. With N=2000 pinned items this is the dominant
+ * win on the `sidebar-filter.perf` benchmark. The interface above was
+ * reshaped to keep every handler prop reference-stable across parent
+ * renders so default shallow comparison succeeds.
  */
-function PinnedRow({
+function PinnedRowImpl({
   path,
   index,
   isActive,
@@ -167,9 +182,12 @@ function PinnedRow({
   // Shortcuts first (⌘⌥C / ⌘⌥R). Then roving-tabindex navigation (↑/↓ within
   // the section). Finally Enter / Space / F2 / ContextMenu. When an earlier
   // handler calls preventDefault chainKeyHandlers short-circuits.
+  // Sidebar #23 — bind `path` here (the parent passes
+  // `roving.handleKeyDown` directly so the prop ref is stable).
+  const navigate = (event: KeyboardEvent<HTMLElement>) => onNavigate(event, path);
   const onKeyDown = chainKeyHandlers(
     shortcutKeyDown,
-    onNavigate,
+    navigate,
     handleOpenKeys,
   );
 
@@ -186,7 +204,7 @@ function PinnedRow({
 
   const setRowRef = (el: HTMLDivElement | null) => {
     rowRef.current = el;
-    registerRef(el);
+    registerRef(path, el);
   };
 
   // Restore focus to the row after a rename session ends (commit or cancel).
@@ -238,7 +256,7 @@ function PinnedRow({
           // 2026-04-24).
           onClick={isRenaming ? undefined : handleClick}
           onKeyDown={isRenaming ? undefined : onKeyDown}
-          onFocus={onFocus}
+          onFocus={() => onFocus(path)}
           onDragStart={(e) => onDragStart(e, index)}
           onDragEnd={onDragEnd}
           onDragOver={(e) => onDragOverRow(e, index)}
@@ -316,6 +334,8 @@ function PinnedRow({
   );
 }
 
+const PinnedRow = memo(PinnedRowImpl);
+
 export function PinnedSection({ filter }: PinnedSectionProps) {
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
@@ -357,41 +377,52 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
   const rowIds = useMemo(() => visibleFiles.slice(), [visibleFiles]);
   const roving = useRovingTabindex({ rowIds });
 
-  const handleOpen = async (path: string) => {
-    try {
-      await openFile(path, basename(path));
-    } catch (error) {
-      toast.error(`Failed to open file: ${error}`);
-    }
-  };
+  // Sidebar #23 — wrap every handler we pass to <PinnedRow /> in
+  // `useCallback` so the memoized row's shallow-prop check actually
+  // succeeds. Without this, every parent re-render (e.g. each
+  // type-to-filter keystroke) hands every row a fresh closure and
+  // the memo is a no-op.
+  const handleOpen = useCallback(
+    async (path: string) => {
+      try {
+        await openFile(path, basename(path));
+      } catch (error) {
+        toast.error(`Failed to open file: ${error}`);
+      }
+    },
+    [openFile],
+  );
 
   // -----------------------------------------------------------------------
   // Rename handlers (task #40).
   // -----------------------------------------------------------------------
 
-  const startRename = (path: string) => {
+  const startRename = useCallback((path: string) => {
     setRenamingPath(path);
-  };
+  }, []);
 
-  const cancelRename = () => {
+  const cancelRename = useCallback(() => {
     setRenamingPath(null);
-  };
+  }, []);
 
-  const commitRename = async (oldPath: string, newBasename: string) => {
-    setRenamingPath(null);
-    const oldName = pathBasename(oldPath);
-    if (newBasename === oldName) {
-      // No-op commit — user pressed Enter without changing anything.
-      return;
-    }
-    const newPath = resolveRenamePath(oldPath, newBasename);
-    try {
-      await renamePath(oldPath, newPath);
-      toast.success(`Renamed to ${pathBasename(newPath)}`);
-    } catch (error) {
-      toast.error(`Failed to rename: ${error}`);
-    }
-  };
+  const commitRename = useCallback(
+    async (oldPath: string, newBasename: string) => {
+      setRenamingPath(null);
+      const oldName = pathBasename(oldPath);
+      if (newBasename === oldName) {
+        // No-op commit — user pressed Enter without changing anything.
+        return;
+      }
+      const newPath = resolveRenamePath(oldPath, newBasename);
+      try {
+        await renamePath(oldPath, newPath);
+        toast.success(`Renamed to ${pathBasename(newPath)}`);
+      } catch (error) {
+        toast.error(`Failed to rename: ${error}`);
+      }
+    },
+    [renamePath],
+  );
 
   // Listen for the Rename context-menu event. Only activate if the path is
   // visible in this section — other sections' listeners will see the same
@@ -420,103 +451,120 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
   // Drag source — pinned rows being reordered within the list.
   // -----------------------------------------------------------------------
 
-  const handleRowDragStart = (
-    event: DragEvent<HTMLDivElement>,
-    index: number,
-  ) => {
-    const path = visibleFiles[index];
-    if (!path) return;
-    beginFileDrag(event, path);
-    // `move` effect during same-list reorder; the outer container reads the
-    // MIME type via `hasFileDrag` regardless of effectAllowed.
-    event.dataTransfer.effectAllowed = "move";
-    // Use the ORIGINAL (unfiltered) index because reorderPinnedFiles works
-    // against `pinnedFiles`. When a filter is active `visibleFiles` is a
-    // subset; we need to map back to the source array.
-    const originalIndex = pinnedFiles.indexOf(path);
-    setDraggingIndex(originalIndex);
-  };
+  // Sidebar #23 — the drag handlers below need fresh `visibleFiles`,
+  // `pinnedFiles`, and `draggingIndex` on every fire, but their
+  // identity must stay stable across parent re-renders so the memoized
+  // PinnedRow shallow-prop check survives a type-to-filter keystroke.
+  // Stash mutating values on refs and read through them in the
+  // callbacks; the callbacks themselves carry empty dep arrays.
+  const visibleFilesRef = useRef(visibleFiles);
+  visibleFilesRef.current = visibleFiles;
+  const pinnedFilesRef = useRef(pinnedFiles);
+  pinnedFilesRef.current = pinnedFiles;
+  const draggingIndexRef = useRef(draggingIndex);
+  draggingIndexRef.current = draggingIndex;
 
-  const handleRowDragEnd = () => {
+  const handleRowDragStart = useCallback(
+    (event: DragEvent<HTMLDivElement>, index: number) => {
+      const path = visibleFilesRef.current[index];
+      if (!path) return;
+      beginFileDrag(event, path);
+      // `move` effect during same-list reorder; the outer container reads the
+      // MIME type via `hasFileDrag` regardless of effectAllowed.
+      event.dataTransfer.effectAllowed = "move";
+      // Use the ORIGINAL (unfiltered) index because reorderPinnedFiles works
+      // against `pinnedFiles`. When a filter is active `visibleFiles` is a
+      // subset; we need to map back to the source array.
+      const originalIndex = pinnedFilesRef.current.indexOf(path);
+      setDraggingIndex(originalIndex);
+    },
+    [],
+  );
+
+  const handleRowDragEnd = useCallback(() => {
     setDraggingIndex(null);
     setActiveDrop(null);
     setContainerActive(false);
-  };
+  }, []);
 
   // -----------------------------------------------------------------------
   // Drop target — pinned rows (precise above/below insertion).
   // -----------------------------------------------------------------------
 
-  const handleRowDragOver = (
-    event: DragEvent<HTMLDivElement>,
-    visibleIndex: number,
-  ) => {
-    if (!hasFileDrag(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect =
-      draggingIndex !== null ? "move" : "copy";
+  const handleRowDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>, visibleIndex: number) => {
+      if (!hasFileDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect =
+        draggingIndexRef.current !== null ? "move" : "copy";
 
-    const below = isBelowMidpoint(event, event.currentTarget);
-    // Translate visibleIndex back to the original pinnedFiles index so
-    // reorder math stays consistent under filtering.
-    const path = visibleFiles[visibleIndex];
-    if (!path) return;
-    const originalIndex = pinnedFiles.indexOf(path);
-    setActiveDrop({ index: originalIndex, edge: below ? "below" : "above" });
-  };
+      const below = isBelowMidpoint(event, event.currentTarget);
+      // Translate visibleIndex back to the original pinnedFiles index so
+      // reorder math stays consistent under filtering.
+      const path = visibleFilesRef.current[visibleIndex];
+      if (!path) return;
+      const originalIndex = pinnedFilesRef.current.indexOf(path);
+      setActiveDrop({
+        index: originalIndex,
+        edge: below ? "below" : "above",
+      });
+    },
+    [],
+  );
 
-  const handleRowDragLeave = (
-    event: DragEvent<HTMLDivElement>,
-    _visibleIndex: number,
-  ) => {
-    // Only clear if the pointer actually leaves the row element (not moving
-    // to a child). `relatedTarget` is the node the pointer moved INTO.
-    const next = event.relatedTarget as Node | null;
-    if (next && event.currentTarget.contains(next)) return;
-    setActiveDrop((current) => {
-      if (current === null) return current;
-      // We can't cheaply tell which row is leaving, so just clear when any
-      // row fires dragleave. The next dragover will repaint.
-      return null;
-    });
-  };
+  const handleRowDragLeave = useCallback(
+    (event: DragEvent<HTMLDivElement>, _visibleIndex: number) => {
+      // Only clear if the pointer actually leaves the row element (not moving
+      // to a child). `relatedTarget` is the node the pointer moved INTO.
+      const next = event.relatedTarget as Node | null;
+      if (next && event.currentTarget.contains(next)) return;
+      setActiveDrop((current) => {
+        if (current === null) return current;
+        // We can't cheaply tell which row is leaving, so just clear when any
+        // row fires dragleave. The next dragover will repaint.
+        return null;
+      });
+    },
+    [],
+  );
 
-  const handleRowDrop = (
-    event: DragEvent<HTMLDivElement>,
-    visibleIndex: number,
-  ) => {
-    if (!hasFileDrag(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
+  const handleRowDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, visibleIndex: number) => {
+      if (!hasFileDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
 
-    const path = event.dataTransfer.getData(FILE_DRAG_MIME);
-    if (!path) return;
+      const path = event.dataTransfer.getData(FILE_DRAG_MIME);
+      if (!path) return;
 
-    const targetPath = visibleFiles[visibleIndex];
-    if (!targetPath) return;
-    const targetIndex = pinnedFiles.indexOf(targetPath);
-    if (targetIndex < 0) return;
+      const targetPath = visibleFilesRef.current[visibleIndex];
+      if (!targetPath) return;
+      const pinned = pinnedFilesRef.current;
+      const targetIndex = pinned.indexOf(targetPath);
+      if (targetIndex < 0) return;
 
-    const below = isBelowMidpoint(event, event.currentTarget);
+      const below = isBelowMidpoint(event, event.currentTarget);
 
-    const existingIndex = pinnedFiles.indexOf(path);
-    if (existingIndex >= 0) {
-      // Reorder — path is already pinned.
-      const to = computeReorderTarget(existingIndex, targetIndex, below);
-      if (to !== null) reorderPinnedFiles(existingIndex, to);
-    } else {
-      // New pin — append, then reorder into place.
-      pinFile(path);
-      const fromIndex = pinnedFiles.length; // post-append index
-      const to = computeReorderTarget(fromIndex, targetIndex, below);
-      if (to !== null) reorderPinnedFiles(fromIndex, to);
-    }
+      const existingIndex = pinned.indexOf(path);
+      if (existingIndex >= 0) {
+        // Reorder — path is already pinned.
+        const to = computeReorderTarget(existingIndex, targetIndex, below);
+        if (to !== null) reorderPinnedFiles(existingIndex, to);
+      } else {
+        // New pin — append, then reorder into place.
+        pinFile(path);
+        const fromIndex = pinned.length; // post-append index
+        const to = computeReorderTarget(fromIndex, targetIndex, below);
+        if (to !== null) reorderPinnedFiles(fromIndex, to);
+      }
 
-    setActiveDrop(null);
-    setContainerActive(false);
-    setDraggingIndex(null);
-  };
+      setActiveDrop(null);
+      setContainerActive(false);
+      setDraggingIndex(null);
+    },
+    [pinFile, reorderPinnedFiles],
+  );
 
   // -----------------------------------------------------------------------
   // Drop target — outer container (append at end).
@@ -609,14 +657,14 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
                 onStartRename={startRename}
                 onCommitRename={commitRename}
                 onCancelRename={cancelRename}
-                onFocus={() => roving.handleFocus(path)}
-                onNavigate={(e) => roving.handleKeyDown(e, path)}
+                onFocus={roving.handleFocus}
+                onNavigate={roving.handleKeyDown}
                 onDragStart={handleRowDragStart}
                 onDragEnd={handleRowDragEnd}
                 onDragOverRow={handleRowDragOver}
                 onDragLeaveRow={handleRowDragLeave}
                 onDropRow={handleRowDrop}
-                registerRef={(el) => roving.registerRef(path, el)}
+                registerRef={roving.registerRef}
               />
             </li>
           );

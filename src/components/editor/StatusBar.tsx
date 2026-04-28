@@ -512,6 +512,7 @@ export function StatusBar({
         onDelegateAll={onDelegateAll}
         canDelegate={canDelegate}
         onShortcutsOpen={onShortcutsOpen}
+        onOpenActions={onOpenActions}
         viewMode={viewMode}
         onToggleViewMode={onToggleViewMode}
       />
@@ -908,6 +909,7 @@ function QuietStatusBar({
   onDelegateAll,
   canDelegate,
   onShortcutsOpen,
+  onOpenActions,
   viewMode,
   onToggleViewMode,
 }: {
@@ -919,6 +921,8 @@ function QuietStatusBar({
   onDelegateAll?: () => void;
   canDelegate?: boolean;
   onShortcutsOpen?: () => void;
+  /** Bugs #4 — passed through to StatusTray's ActionsGroup. */
+  onOpenActions?: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }) {
@@ -1124,6 +1128,7 @@ function QuietStatusBar({
         onDelegateAll={onDelegateAll}
         canDelegate={canDelegate}
         onShortcutsOpen={onShortcutsOpen}
+        onOpenActions={onOpenActions}
         initialExpandedGroup={initialGroup}
         editor={editor}
         viewMode={viewMode}

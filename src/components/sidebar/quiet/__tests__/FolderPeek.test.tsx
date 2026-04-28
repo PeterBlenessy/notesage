@@ -486,4 +486,20 @@ describe("derivePeekChildren", () => {
     expect(result.folders.map((f) => f.name)).toEqual(["docs"]);
     expect(result.files.map((f) => f.name)).toEqual(["visible.md"]);
   });
+
+  // Live-test 2026-04-28 finding #4 — when Settings > System >
+  // "Show hidden files" is on, dotfiles surface in the sidebar tree.
+  // .DS_Store is dropped regardless because it's never user-meaningful.
+  it("includes hidden entries when showHidden is true (but not .DS_Store)", () => {
+    const tree: FileEntry[] = [
+      makeFile(".hidden.md", "/p/.hidden.md"),
+      makeFile(".DS_Store", "/p/.DS_Store"),
+      makeFile("visible.md", "/p/visible.md"),
+      makeDir(".git", "/p/.git"),
+      makeDir("docs", "/p/docs"),
+    ];
+    const result = derivePeekChildren(tree, { showHidden: true });
+    expect(result.folders.map((f) => f.name)).toEqual([".git", "docs"]);
+    expect(result.files.map((f) => f.name)).toEqual([".hidden.md", "visible.md"]);
+  });
 });

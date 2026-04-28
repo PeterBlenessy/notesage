@@ -772,7 +772,16 @@ function App() {
     onToggleRecording: () => {
       window.dispatchEvent(new CustomEvent("notesage:toggle-recording"));
     },
-    onOpenActions: () => setActionsDialogOpen(true),
+    onOpenActions: () => {
+      // Same uiPreview branch as the StatusTray Actions row (live-
+      // test 2026-04-28 finding #6) so ⌘1 / ⌘! routes consistently
+      // to the cmd bar's `!`-mode under Quiet Composer.
+      if (useSettingsStore.getState().uiPreview === "quiet-composer") {
+        emitCmdBarEvent({ type: "focus", prefix: "!" });
+      } else {
+        setActionsDialogOpen(true);
+      }
+    },
     focusMode,
   });
 
@@ -795,7 +804,18 @@ function App() {
           updateVersion={updateState.updateInfo?.version ?? null}
           onUpdateClick={() => setUpdateDialogOpen(true)}
           onShortcutsOpen={() => setShortcutsOpen(true)}
-          onOpenActions={() => setActionsDialogOpen(true)}
+          onOpenActions={() => {
+            // Live-test 2026-04-28 finding #6 — under Quiet Composer
+            // the StatusTray's Actions row + ⌘1 chord both want to
+            // route to the cmd bar's `!`-mode (TaskMode), not the
+            // legacy ActionsDialog. Same uiPreview branching pattern
+            // as the in-document tag/mention click fix (audit #1).
+            if (useSettingsStore.getState().uiPreview === "quiet-composer") {
+              emitCmdBarEvent({ type: "focus", prefix: "!" });
+            } else {
+              setActionsDialogOpen(true);
+            }
+          }}
           onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
           onBrowseForProject={handleBrowseForProject}
           onOpenProjectSettings={handleOpenProjectSettings}

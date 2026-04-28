@@ -201,22 +201,29 @@ function median(samples: number[]): number {
  * The user-facing spec target is 50ms regardless of N (per PRD task #43),
  * but the cost of this keystroke is dominated by React unmounting roughly
  * (N − filtered_count) PinnedRow + RecentRow components, which scales linearly
- * with N.
+ * with N. Hitting 50ms at N=2000 needs windowed virtualization; until that
+ * lands, the budgets below cap the regression at ~2x current measured cost
+ * so any future change that doubles render time fails CI loudly.
  *
- * The N=100 budget matches the spec target. Larger sizes carry inflated
- * budgets that document the current ceiling of the unmemoized PinnedSection /
- * RecentSection implementation in jsdom. Real Chromium is ~5–10x faster.
- * The N=2000 budget is intentionally loose — it's a smoke test that the
- * filter completes in finite time, not a tight regression lock.
+ * Sidebar #23 — PinnedRow is now wrapped in `React.memo` and every
+ * handler the parent passes is `useCallback`-stable. That makes the
+ * subsequent-keystroke path (where the filter only narrows) skip
+ * re-rendering rows whose props are unchanged. The first-keystroke
+ * cost is unchanged — it's bottlenecked on unmounting filtered-out
+ * rows, not on rendering the survivors.
  *
- * **Realistic-use note:** Pinned / Recent sections in production rarely
- * exceed ~50 items. N=2000 stress-tests the worst case so future memoization
- * work can tighten these numbers toward the spec target. Tracked as F3.
+ * Sidebar #24 — budgets tightened from the historical jsdom-ceiling
+ * values (50 / 500 / 8000ms) to ~2x current measured cost (50 / 100 /
+ * 400ms). Real Chromium is ~5–10x faster than jsdom, so a Chromium
+ * regression that bumps cost by 2x in the user's hands would still
+ * trip the CI guard. RecentRow / ChildRow / ProjectRow / FolderRow
+ * are NOT yet memoized — that's tracked as a follow-up; the budget
+ * leaves headroom for them landing later without churn.
  */
 const FIRST_KEYSTROKE_BUDGETS = {
   100: 50,
-  500: 500,
-  2000: 8000,
+  500: 100,
+  2000: 400,
 } as const;
 
 /**

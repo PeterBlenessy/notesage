@@ -755,4 +755,86 @@ describe('StatusTray — task #53', () => {
     expect(document.querySelector('[aria-label="Switch to Markdown source"]')).toBeNull();
     expect(document.querySelector('[aria-label="Switch to Rich text"]')).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // ActionsGroup (bugs #3-#5) — open-actions count + click to open dialog
+  // -------------------------------------------------------------------------
+  describe('ActionsGroup (bugs #3-#5)', () => {
+    it('renders the Actions section heading when popover is open', () => {
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Actions');
+    });
+
+    it('shows muted "No open actions" when openCount === 0', () => {
+      // useActionStore.getOpenCount() defaults to 0 with no items seeded.
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('No open actions');
+    });
+
+    it('shows the open count when openCount > 0', async () => {
+      const { useActionStore } = await import('@/stores/action-store');
+      // Seed a single open task. The store's `getOpenCount` filters
+      // by `status === 'open'`.
+      useActionStore.setState({
+        actions: [
+          {
+            id: 't1',
+            source_type: 'task',
+            status: 'open',
+            text: 'Buy milk',
+            line: 1,
+            file: '/p/x.md',
+            project_root: '/p',
+            project_name: 'p',
+            updated_at: Date.now(),
+          },
+        ],
+      } as unknown as Parameters<typeof useActionStore.setState>[0]);
+
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('1 open action');
+      expect(text).not.toContain('No open actions');
+    });
+
+    it('clicking the row fires onOpenActions AND closes the popover', async () => {
+      // Reset action-store explicitly — the previous test seeds an
+      // action and the parent `beforeEach` doesn't touch this store.
+      const { useActionStore } = await import('@/stores/action-store');
+      useActionStore.setState({ actions: [] } as unknown as Parameters<typeof useActionStore.setState>[0]);
+
+      const onOpenActions = vi.fn();
+      const onOpenChange = vi.fn();
+      renderWithProviders(
+        <TrayHost
+          open={true}
+          onOpenChange={onOpenChange}
+          onOpenActions={onOpenActions}
+        />,
+      );
+      const button = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('No open actions'),
+      ) as HTMLButtonElement | undefined;
+      expect(button).toBeTruthy();
+      fireEvent.click(button!);
+      expect(onOpenActions).toHaveBeenCalledTimes(1);
+      // Tray closed as part of the click handler.
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+
+    it('button is disabled when onOpenActions is not provided', async () => {
+      const { useActionStore } = await import('@/stores/action-store');
+      useActionStore.setState({ actions: [] } as unknown as Parameters<typeof useActionStore.setState>[0]);
+
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const button = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('No open actions'),
+      ) as HTMLButtonElement | undefined;
+      expect(button).toBeTruthy();
+      // Without `onOpenActions` threaded in, the button shouldn't fire.
+      expect(button!.hasAttribute('disabled')).toBe(true);
+    });
+  });
 });

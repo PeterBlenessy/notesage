@@ -15,6 +15,7 @@ import { emitSidebarEvent } from "@/lib/sidebar-events";
 import { setBinaryData } from "@/lib/binary-cache";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
@@ -90,15 +91,32 @@ export interface PeekChildren {
 
 /**
  * Pure helper shared by `FolderPeek` (hover popover) and
- * `ProjectsSection` (inline keyboard expansion for task #37). Hidden
- * entries and `.DS_Store` are filtered out; caps are applied after
+ * `ProjectsSection` (inline keyboard expansion for task #37). `.DS_Store`
+ * is always dropped; dotfiles are dropped unless `showHidden` is true
+ * (Settings > System > "Show hidden files"). Caps are applied after
  * sorting so the visible slice is always the alphabetical head.
  */
-export function derivePeekChildren(tree: FileEntry[]): PeekChildren {
+export function derivePeekChildren(
+  tree: FileEntry[],
+  /**
+   * Live-test 2026-04-28 finding #2 — when the user clicks "+N more"
+   * on an overflow row, callers re-derive with `unbounded: true` so
+   * every child renders (no cap, no overflow markers). Default keeps
+   * the historical 8-folder / 6-file slice the hover popover was
+   * built around.
+   *
+   * Live-test 2026-04-28 finding #4 — `showHidden` reflects the
+   * Settings > System > "Show hidden files" toggle. The Rust listing
+   * still flags dotfiles via `entry.hidden`, so the UI must opt in to
+   * keep them; otherwise the toggle is a no-op in the Quiet sidebar.
+   */
+  options: { unbounded?: boolean; showHidden?: boolean } = {},
+): PeekChildren {
   const folders: FileEntry[] = [];
   const files: FileEntry[] = [];
   for (const entry of tree) {
-    if (entry.hidden || entry.name === ".DS_Store") continue;
+    if (entry.name === ".DS_Store") continue;
+    if (entry.hidden && !options.showHidden) continue;
     if (entry.is_directory) folders.push(entry);
     else files.push(entry);
   }
@@ -106,8 +124,10 @@ export function derivePeekChildren(tree: FileEntry[]): PeekChildren {
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   folders.sort(byName);
   files.sort(byName);
-  const visibleFolders = folders.slice(0, MAX_FOLDERS);
-  const visibleFiles = files.slice(0, MAX_FILES);
+  const folderCap = options.unbounded ? folders.length : MAX_FOLDERS;
+  const fileCap = options.unbounded ? files.length : MAX_FILES;
+  const visibleFolders = folders.slice(0, folderCap);
+  const visibleFiles = files.slice(0, fileCap);
   return {
     folders: visibleFolders,
     files: visibleFiles,
@@ -118,17 +138,19 @@ export function derivePeekChildren(tree: FileEntry[]): PeekChildren {
 }
 
 /**
- * Count direct + nested non-hidden file entries under a folder. Used
- * for the meta column on folder rows ("3 files", "12 files"). Walks
- * the FileEntry tree without any filesystem call — it relies on what
- * `list_directory` already loaded.
+ * Count direct + nested file entries under a folder. Used for the meta
+ * column on folder rows ("3 files", "12 files"). Walks the FileEntry
+ * tree without any filesystem call — it relies on what `list_directory`
+ * already loaded. `.DS_Store` is always dropped; dotfiles are dropped
+ * unless `showHidden` is true.
  */
-export function countFilesInFolder(folder: FileEntry): number {
+export function countFilesInFolder(folder: FileEntry, showHidden = false): number {
   if (!folder.is_directory || !folder.children) return 0;
   let count = 0;
   const walk = (entries: FileEntry[]) => {
     for (const entry of entries) {
-      if (entry.hidden || entry.name === ".DS_Store") continue;
+      if (entry.name === ".DS_Store") continue;
+      if (entry.hidden && !showHidden) continue;
       if (entry.is_directory) {
         if (entry.children) walk(entry.children);
       } else {
@@ -146,6 +168,12 @@ export function FolderPeek({
   children,
 }: FolderPeekProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // Reset the "show all" flag when the popover closes so a fresh
+  // hover opens at the default cap (avoids surprise giant popovers
+  // on subsequent hovers of a folder where the user once expanded).
+  useEffect(() => {
+    if (!isOpen) setUnbounded(false);
+  }, [isOpen]);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(
     null,
   );
@@ -156,9 +184,15 @@ export function FolderPeek({
   const openTab = useEditorStore((s) => s.openTab);
 
   const projectName = useMemo(() => projectBasename(projectPath), [projectPath]);
+  // Live-test 2026-04-28 finding #2 — clicking "+N more" in the
+  // popover flips this flag so the next derive uses the unbounded
+  // variant. Resets to false on close so a fresh peek opens at the
+  // default cap.
+  const [unbounded, setUnbounded] = useState(false);
+  const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const { folders, files, folderOverflow, fileOverflow, isEmpty } = useMemo(
-    () => derivePeekChildren(fileTree),
-    [fileTree],
+    () => derivePeekChildren(fileTree, { unbounded, showHidden: showHiddenFiles }),
+    [fileTree, unbounded, showHiddenFiles],
   );
 
   // `path → lastAccessedAt` lookup for the file-row meta column. We
@@ -469,7 +503,7 @@ export function FolderPeek({
                                 a glance, matching mockup-d's `.peek
                                 .meta`. */}
                             {(() => {
-                              const count = countFilesInFolder(entry);
+                              const count = countFilesInFolder(entry, showHiddenFiles);
                               return count > 0 ? (
                                 <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                                   {count} file{count === 1 ? "" : "s"}
@@ -486,9 +520,23 @@ export function FolderPeek({
                         </SidebarContextMenu>
                       ))}
                       {folderOverflow > 0 && (
-                        <div className="px-2 py-1 text-xs text-muted-foreground">
+                        // Live-test 2026-04-28 finding #2 — clickable
+                        // overflow expands the popover to show every
+                        // child (no more cap). The grouped state lives
+                        // in the popover's own `unbounded` flag and
+                        // resets on close.
+                        <button
+                          type="button"
+                          onClick={() => setUnbounded(true)}
+                          aria-label={`Show ${folderOverflow} more folder${folderOverflow === 1 ? "" : "s"}`}
+                          className={cn(
+                            "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
+                            "hover:text-foreground hover:underline underline-offset-2 transition-colors",
+                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
+                          )}
+                        >
                           +{folderOverflow} more…
-                        </div>
+                        </button>
                       )}
                     </div>
                   )}
@@ -566,9 +614,18 @@ export function FolderPeek({
                         </SidebarContextMenu>
                       ))}
                       {fileOverflow > 0 && (
-                        <div className="px-2 py-1 text-xs text-muted-foreground">
+                        <button
+                          type="button"
+                          onClick={() => setUnbounded(true)}
+                          aria-label={`Show ${fileOverflow} more file${fileOverflow === 1 ? "" : "s"}`}
+                          className={cn(
+                            "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
+                            "hover:text-foreground hover:underline underline-offset-2 transition-colors",
+                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
+                          )}
+                        >
                           +{fileOverflow} more…
-                        </div>
+                        </button>
                       )}
                     </div>
                   )}

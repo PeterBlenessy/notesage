@@ -10,9 +10,11 @@ import { Folder, FolderOpen, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type ExplorerFolder } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { type FileEntry } from "@/lib/tauri";
 import { FolderPeek, derivePeekChildren } from "./FolderPeek";
+import { FilePreview, isPreviewable } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import {
   ContextMenu,
@@ -62,11 +64,13 @@ interface FoldersSectionProps {
 }
 
 interface FolderRowDescriptor {
-  kind: "folder" | "child";
-  id: string; // = path
+  kind: "folder" | "child" | "overflow";
+  id: string; // = path or synthetic key for overflow
   folder: ExplorerFolder;
   /** For child rows: the underlying FileEntry. */
   entry?: FileEntry;
+  /** For overflow rows: how many more items + which kind. */
+  overflow?: { kind: "folder" | "file"; count: number };
 }
 
 function folderBasename(path: string): string {
@@ -82,11 +86,19 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
     return tab?.filePath ?? null;
   });
   const { openFile: openFileEntry } = useFileOperations();
+  // Live-test 2026-04-28 finding #4 — propagate the global "Show
+  // hidden files" setting into every `derivePeekChildren` call below
+  // so toggling it actually surfaces dotfiles in the sidebar tree.
+  const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
 
   // Per-folder inline expand state — same shape ProjectsSection uses.
   // Ephemeral (not persisted) — survives section re-render but resets
   // on full unmount.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Live-test 2026-04-28 finding #2 — when "+N more" is clicked,
+  // the folder path is added here so the next derive uses the
+  // unbounded variant.
+  const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
@@ -150,13 +162,24 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
     for (const folder of filteredFolders) {
       list.push({ kind: "folder", id: folder.path, folder });
       if (expandedPaths.has(folder.path)) {
-        const peek = derivePeekChildren(folder.fileTree);
+        const peek = derivePeekChildren(folder.fileTree, {
+          unbounded: showAllPaths.has(folder.path),
+          showHidden: showHiddenFiles,
+        });
         for (const dir of peek.folders) {
           list.push({
             kind: "child",
             id: dir.path,
             folder,
             entry: dir,
+          });
+        }
+        if (peek.folderOverflow > 0) {
+          list.push({
+            kind: "overflow",
+            id: `${folder.path}::__folder-overflow__`,
+            folder,
+            overflow: { kind: "folder", count: peek.folderOverflow },
           });
         }
         for (const file of peek.files) {
@@ -167,10 +190,18 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
             entry: file,
           });
         }
+        if (peek.fileOverflow > 0) {
+          list.push({
+            kind: "overflow",
+            id: `${folder.path}::__file-overflow__`,
+            folder,
+            overflow: { kind: "file", count: peek.fileOverflow },
+          });
+        }
       }
     }
     return list;
-  }, [filteredFolders, expandedPaths]);
+  }, [filteredFolders, expandedPaths, showAllPaths, showHiddenFiles]);
 
   const toggleExpanded = useCallback((path: string, next: boolean) => {
     setExpandedPaths((prev) => {
@@ -186,7 +217,9 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
       const isExpanded = expandedPaths.has(folder.path);
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        const peek = derivePeekChildren(folder.fileTree);
+        const peek = derivePeekChildren(folder.fileTree, {
+          showHidden: showHiddenFiles,
+        });
         if (peek.isEmpty) return;
         if (!isExpanded) {
           toggleExpanded(folder.path, true);
@@ -224,7 +257,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
         toggleExpanded(folder.path, !isExpanded);
       }
     },
-    [expandedPaths, rows, focusRow, toggleExpanded],
+    [expandedPaths, rows, focusRow, toggleExpanded, showHiddenFiles],
   );
 
   const handleChildKeyDown = useCallback(
@@ -352,20 +385,69 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
               {isExpanded && (
                 <ul role="group" className="m-0 p-0 list-none pl-4">
                   {rows
-                    .filter((r) => r.kind === "child" && r.folder.path === folder.path)
+                    .filter(
+                      (r) =>
+                        (r.kind === "child" || r.kind === "overflow") &&
+                        r.folder.path === folder.path,
+                    )
                     .map((row) => (
                       <li key={row.id} className="m-0 p-0">
-                        <ChildRow
-                          row={row}
-                          isFocused={focusedRowId === row.id}
-                          registerRef={(el) => registerRef(row.id, el)}
-                          onKeyDown={(e) => handleChildKeyDown(e, row)}
-                          onFocus={() => setFocusedRowId(row.id)}
-                          onActivate={() => {
-                            if (row.entry?.is_directory) return;
-                            if (row.entry) void openFileEntry(row.entry.path, row.entry.name);
-                          }}
-                        />
+                        {row.kind === "overflow" && row.overflow ? (
+                          <OverflowRow
+                            count={row.overflow.count}
+                            kind={row.overflow.kind}
+                            isFocused={focusedRowId === row.id}
+                            registerRef={(el) => registerRef(row.id, el)}
+                            onActivate={() =>
+                              setShowAllPaths((prev) => {
+                                const updated = new Set(prev);
+                                updated.add(folder.path);
+                                return updated;
+                              })
+                            }
+                            onKeyDown={(e) => handleChildKeyDown(e, row)}
+                            onFocus={() => setFocusedRowId(row.id)}
+                          />
+                        ) : (() => {
+                          const childRow = (
+                            <ChildRow
+                              row={row}
+                              isFocused={focusedRowId === row.id}
+                              registerRef={(el) => registerRef(row.id, el)}
+                              onKeyDown={(e) => handleChildKeyDown(e, row)}
+                              onFocus={() => setFocusedRowId(row.id)}
+                              onActivate={() => {
+                                if (row.entry?.is_directory) return;
+                                if (row.entry) void openFileEntry(row.entry.path, row.entry.name);
+                              }}
+                            />
+                          );
+                          // Live-test 2026-04-28 finding #3 — same hover
+                          // treatment ProjectsSection child rows get:
+                          // FolderPeek for folders (one level into the
+                          // already-loaded recursive tree), FilePreview
+                          // for previewable file extensions. Other files
+                          // render bare.
+                          if (!row.entry) return childRow;
+                          if (row.entry.is_directory) {
+                            return (
+                              <FolderPeek
+                                projectPath={row.entry.path}
+                                fileTree={row.entry.children ?? []}
+                              >
+                                <div>{childRow}</div>
+                              </FolderPeek>
+                            );
+                          }
+                          if (isPreviewable(row.entry.path)) {
+                            return (
+                              <FilePreview filePath={row.entry.path}>
+                                <div>{childRow}</div>
+                              </FilePreview>
+                            );
+                          }
+                          return childRow;
+                        })()}
                       </li>
                     ))}
                 </ul>
@@ -437,6 +519,55 @@ function FolderRow({
           that project rows do. AI-lock is intentionally NOT shown
           here — explorer folders aren't a lock target. */}
       <SidebarRowIndicators path={folder.path} kind="folder" />
+    </div>
+  );
+}
+
+interface OverflowRowProps {
+  count: number;
+  kind: "folder" | "file";
+  isFocused: boolean;
+  registerRef: (el: HTMLElement | null) => void;
+  onActivate: () => void;
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  onFocus: () => void;
+}
+
+function OverflowRow({
+  count,
+  kind,
+  isFocused,
+  registerRef,
+  onActivate,
+  onKeyDown,
+  onFocus,
+}: OverflowRowProps) {
+  const label = `Show ${count} more ${kind}${count === 1 ? "" : "s"}`;
+  return (
+    <div
+      ref={registerRef}
+      role="treeitem"
+      aria-level={2}
+      aria-label={label}
+      data-row-type="folder-overflow"
+      tabIndex={isFocused ? 0 : -1}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onActivate();
+          return;
+        }
+        onKeyDown(e);
+      }}
+      onFocus={onFocus}
+      className={cn(
+        "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
+        "hover:text-foreground hover:underline underline-offset-2 transition-colors",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
+      )}
+    >
+      +{count} more…
     </div>
   );
 }
