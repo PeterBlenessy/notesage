@@ -781,50 +781,13 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
 });
 
 // =============================================================================
-// QuietLayout — Cmd+Shift+E TreeOverlay handler (#139)
+// QuietLayout — Cmd+Shift+E TreeOverlay handler (#139) — REMOVED in #20
 // =============================================================================
-
-describe('QuietLayout — Cmd+Shift+E TreeOverlay handler (#139)', () => {
-  it('preempts the legacy Export-as-PDF chord even when focus is inside the overlay search input', () => {
-    // Stub the legacy listener that would open the export-as-PDF dialog
-    // on bubble-phase ⌘⇧E. If our capture-phase handler doesn't
-    // stopImmediatePropagation, this fires — that's the #139 regression.
-    const legacyHandler = vi.fn((e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
-        // Mimic legacy useKeyboardShortcuts opening the export dialog.
-      }
-    });
-    window.addEventListener('keydown', legacyHandler);
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-
-    // Simulate focus inside the overlay's search input (the previous
-    // carve-out skipped this case and let the legacy handler fire).
-    const fakeOverlay = document.createElement('div');
-    fakeOverlay.setAttribute('data-tree-overlay', '');
-    const fakeInput = document.createElement('input');
-    fakeOverlay.appendChild(fakeInput);
-    document.body.appendChild(fakeOverlay);
-    fakeInput.focus();
-
-    const event = new KeyboardEvent('keydown', {
-      key: 'e',
-      metaKey: true,
-      shiftKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-    fakeInput.dispatchEvent(event);
-
-    // QuietLayout's capture-phase handler must have called
-    // stopImmediatePropagation, preventing the legacy bubble-phase
-    // listener from receiving the event.
-    expect(event.defaultPrevented).toBe(true);
-    expect(legacyHandler).not.toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'e', metaKey: true, shiftKey: true }),
-    );
-
-    document.body.removeChild(fakeOverlay);
-    window.removeEventListener('keydown', legacyHandler);
-  });
-});
+//
+// The capture-phase listener in QuietLayout that preempted the legacy
+// Export-as-PDF chord was deleted alongside TreeOverlay in
+// sidebar-simplification task #20. ⌘⇧E now bubbles to
+// `useKeyboardShortcuts` and opens the multi-format Export dialog in
+// both shells. The original #139 regression test asserted the
+// preempt; with TreeOverlay gone there's nothing to preempt and
+// nothing to test here.

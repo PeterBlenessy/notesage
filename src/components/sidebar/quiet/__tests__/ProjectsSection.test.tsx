@@ -356,13 +356,13 @@ describe('ProjectsSection (quiet variant)', () => {
 // Keyboard navigation — task #37
 // ----------------------------------------------------------------------------
 
-import { useTreeOverlayStore } from '@/stores/tree-overlay-store';
+// useTreeOverlayStore was removed by sidebar-simplification task #20.
 
 describe('ProjectsSection — keyboard navigation (#37)', () => {
   beforeEach(() => {
-    // Reset the tree-overlay store between tests so activation assertions
-    // see a clean slate.
-    useTreeOverlayStore.setState({ open: false, focusedPath: null });
+    // tree-overlay-store was removed in sidebar-simplification task #20.
+    // Nothing to reset here; left as an anchor for the per-test setup
+    // pattern in case other resets get added later.
   });
 
   // Children land in derivePeekChildren order:
@@ -577,7 +577,12 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     });
   });
 
-  it('Enter on a child folder row opens the tree overlay focused on the folder path', () => {
+  // Sidebar-simplification task #20 — Enter on a child folder used to
+  // open TreeOverlay (now deleted). Today it's a silent no-op until
+  // the multi-level inline-expand follow-up lands. Test asserts the
+  // no-op so a future implementation can flip the assertion in one
+  // place.
+  it('Enter on a child folder row is a no-op (multi-level inline expand TBD)', () => {
     setProjects([projectWithChildren]);
     renderWithProviders(<ProjectsSection />);
 
@@ -588,12 +593,11 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     const docs = screen.getByRole('treeitem', { name: /open folder docs/i });
     fireEvent.keyDown(docs, { key: 'Enter' });
 
-    const overlay = useTreeOverlayStore.getState();
-    expect(overlay.open).toBe(true);
-    // Folder activation passes the folder's own path as the overlay focus
-    // so the overlay can expand directly into that folder (matching the
-    // task spec's `openOverlay(folderPath)` contract).
-    expect(overlay.focusedPath).toBe('/Users/me/Notesage/alpha/docs');
+    // Silent no-op: focus stays on the folder row, no extra rows
+    // rendered, no error thrown.
+    expect(
+      screen.getByRole('treeitem', { name: /open folder docs/i }),
+    ).toBeTruthy();
   });
 
   it('filters projects by basename substring when `filter` is provided (#43)', () => {

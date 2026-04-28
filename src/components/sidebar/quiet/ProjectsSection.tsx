@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
+// useTreeOverlayStore was removed by sidebar-simplification task #20.
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -745,18 +745,20 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         event.preventDefault();
         if (!row.entry) return;
         if (row.entry.is_directory) {
-          useTreeOverlayStore.getState().openOverlay(row.entry.path);
-        } else {
-          void openFileEntry(row.entry);
+          // Multi-level inline expand for child folders is a future
+          // enhancement (sidebar #20 follow-up). Today: silent no-op
+          // matching FoldersSection's child-folder behaviour.
+          return;
         }
+        void openFileEntry(row.entry);
       }
     },
     [rows, focusRow],
   );
 
-  const openTreeOverlayForProject = useCallback((projectPath: string) => {
-    useTreeOverlayStore.getState().openOverlay(projectPath);
-  }, []);
+  // openTreeOverlayForProject was removed by sidebar-simplification
+  // task #20. Child-folder activation now opens a future inline-
+  // expand walk (deferred — see FoldersSection for the same pattern).
 
   return (
     <section
@@ -925,10 +927,12 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                             onActivate={() => {
                               if (!row.entry) return;
                               if (row.entry.is_directory) {
-                                openTreeOverlayForProject(project.path);
-                              } else {
-                                void openFileEntry(row.entry);
+                                // Sidebar #20 — child-folder click no
+                                // longer opens TreeOverlay. Multi-level
+                                // inline expand is a future follow-up.
+                                return;
                               }
+                              void openFileEntry(row.entry);
                             }}
                             onKeyDown={(e) => handleChildKeyDown(e, row)}
                             onFocus={() => setFocusedRowId(row.id)}

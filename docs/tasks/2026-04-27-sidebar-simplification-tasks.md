@@ -262,7 +262,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M9. TreeOverlay deletion (only AFTER M3-M5 land)
 
-### #20 — Delete TreeOverlay component, store, listener, prop chain
+### #20 — Delete TreeOverlay component, store, listener, prop chain ✅
 
 | Field | Value |
 | --- | --- |
@@ -272,7 +272,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 | Depends on | #6, #10, #15 |
 | Files | `src/components/sidebar/quiet/TreeOverlay.tsx` (DELETE), `src/stores/tree-overlay-store.ts` (DELETE), `src/components/QuietLayout.tsx`, every caller (find via `grep -r 'TreeOverlay\|tree-overlay-store'`) |
 
-### #21 — Smoke test: no dangling imports after TreeOverlay deletion
+### #21 — Smoke test: no dangling imports after TreeOverlay deletion ✅
 
 | Field | Value |
 | --- | --- |

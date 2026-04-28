@@ -136,11 +136,8 @@ describe('Reduced-motion sweep (#86) — component-level guards', () => {
       file: 'src/components/editor/FocusPill.tsx',
       requireUseReducedMotion: true,
     },
-    {
-      name: 'TreeOverlay slide',
-      file: 'src/components/sidebar/quiet/TreeOverlay.tsx',
-      requireMotionReduce: /prefers-reduced-motion/,
-    },
+    // 'TreeOverlay slide' was removed by sidebar-simplification task
+    // #20 — TreeOverlay component deleted; nothing to sweep here.
     {
       name: 'FolderPeek unfurl',
       file: 'src/components/sidebar/quiet/FolderPeek.tsx',

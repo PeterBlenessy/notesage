@@ -5,11 +5,9 @@ import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
-import { TreeOverlay } from "@/components/sidebar/quiet/TreeOverlay";
 import { Editor } from "@/components/editor/Editor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useTreeOverlayStore } from "@/stores/tree-overlay-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
@@ -200,44 +198,11 @@ export function QuietLayout(props: QuietLayoutProps) {
     };
   }, [sidebarPinned]);
 
-  // `⌘⇧E` (or `Ctrl+Shift+E`) opens the TreeOverlay. Intentionally scoped to
-  // QuietLayout so the legacy shell's `useKeyboardShortcuts` (which binds the
-  // same chord to "Export as PDF") continues to own that chord outside the
-  // quiet-composer preview. We preventDefault + stopImmediatePropagation so
-  // the legacy handler, which registers a window-level listener at App
-  // mount, never gets to open its dialog while this layout is active.
-  const toggleOverlay = useTreeOverlayStore((s) => s.toggleOverlay);
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod || !event.shiftKey || event.altKey) return;
-      if (event.key.toLowerCase() !== "e") return;
-
-      // Live-test 2026-04-25 (#139 follow-up): the previous carve-out
-      // skipped this handler when the event target was inside the
-      // overlay (so the user could "type 'e' in the search box"). That
-      // was misguided — the chord requires the `mod` modifier, so it
-      // can NEVER be confused with raw `e` typing in the search input.
-      // Worse, the carve-out caused the second `⌘⇧E` press (focus
-      // landed in the overlay's search input on open) to fall through
-      // to the legacy `useKeyboardShortcuts` handler, which opens the
-      // Export-as-PDF dialog. Removing the carve-out makes the chord
-      // always toggle the overlay and always preempt the legacy
-      // export-dialog binding while QuietLayout is mounted.
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      // #104 fix — chord toggles; second press dismisses.
-      toggleOverlay();
-    };
-
-    // `capture: true` runs our handler before the legacy App-level listener,
-    // which registered with the default bubble-phase options. Combined with
-    // stopImmediatePropagation, this keeps the export dialog from firing.
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, { capture: true });
-    };
-  }, [toggleOverlay]);
+  // `⌘⇧E` capture-phase listener was REMOVED in sidebar #20 along with
+  // TreeOverlay. The chord now bubbles to the legacy
+  // `useKeyboardShortcuts` handler in both shells, where it opens the
+  // Export dialog (multi-format — PDF / DOCX / PPTX / HTML). Sidebar
+  // #22 covers the doc updates for that rebinding.
 
   // `⌘N` — inline create note (task #41). Routes to the QuietSidebar's
   // inline-edit row by setting `quiet-sidebar-store.pendingCreate` to the
@@ -468,12 +433,14 @@ export function QuietLayout(props: QuietLayoutProps) {
       <AgentOrb onCancelTask={onCancelTask} onClickTask={onClickTask} />
 
       {/*
-        TreeOverlay (PRD `2026-04-21-ui-refresh`, task #38). Slide-in
-        workspace-tree panel triggered by `⌘⇧E`. Rendered as a sibling of
-        the layout grid so it can stack above the sidebar without being
-        constrained by the grid's column track.
+        TreeOverlay was REMOVED in sidebar-simplification task #20. The
+        in-sidebar inline-expand pattern (`→` on a focused project /
+        folder) is now the canonical "see what's in this thing" path
+        — `FoldersSection` exists for ad-hoc `⌘O` folders, FolderPeek
+        hover-clicks dispatch `notesage:sidebar-expand-path` to the
+        same expand handler, and `⌘⇧E` is reclaimed by the Export
+        dialog (sidebar #22).
        */}
-      <TreeOverlay />
 
       {/*
         FocusPill (PRD `2026-04-21-ui-refresh`, task #55). Small pill at
