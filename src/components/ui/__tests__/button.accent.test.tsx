@@ -23,19 +23,17 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     expect(btn.className).toContain('hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]');
   });
 
-  it('default variant focus indicator uses accent + foreground fallback (live-test 2026-04-28)', () => {
+  it('default variant focus indicator is a 1px accent outline (live-test 2026-04-28 iter-5)', () => {
     const { container } = renderWithProviders(<Button>Save</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
-    // Focus indicator is a 2px solid outline OUTSIDE the button (offset
-    // 2px) using the full outline shorthand. The shorthand is critical:
-    // Tailwind v4's `outline-2` only sets width, not style — and the
-    // base `outline-none` sets style to `none`, so width-only
-    // overrides leave outline-style:none and the indicator is invisible.
-    // The arbitrary-value shorthand sets style + width + color together.
-    // Color resolves through `--accent` (chromatic when set) with a
-    // `--color-foreground` fallback so the indicator stays high-
-    // contrast even when no accent class is active.
-    expect(btn.className).toContain('focus-visible:[outline:2px_solid_var(--accent,var(--color-foreground))]');
+    // 1px solid outline through `--color-accent-primary`. Per user
+    // direction: always accent (no foreground fallback), 1px
+    // (2px read as too thick), full outline shorthand because
+    // Tailwind v4's `outline-N` only sets width, not style.
+    // When no accent class is set, `--color-accent-primary`
+    // resolves to `--color-primary` per the design-system
+    // fallback chain.
+    expect(btn.className).toContain('focus-visible:[outline:1px_solid_var(--color-accent-primary)]');
     expect(btn.className).toContain('focus-visible:[outline-offset:2px]');
   });
 

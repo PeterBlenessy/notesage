@@ -699,7 +699,7 @@ function TaskMode({
                     active
                       ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                       : 'hover:bg-muted/60 text-foreground',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                    'focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
                   )}
                 >
                   <Icon

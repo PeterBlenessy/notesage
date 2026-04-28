@@ -193,8 +193,8 @@ export function TagsSection({
                   "relative h-7 px-2 flex items-center gap-2 rounded-sm",
                   "text-[13px] text-foreground cursor-pointer",
                   "hover:bg-muted/50 transition-colors",
-                  "focus-visible:outline-none focus-visible:bg-muted/50",
-                  "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
+                  "focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+                  "focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] focus-visible:z-10",
                 )}
               >
                 <span className="truncate min-w-0">

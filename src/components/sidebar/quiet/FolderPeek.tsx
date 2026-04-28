@@ -486,7 +486,7 @@ export function FolderPeek({
                               "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
-                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                              "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
                             )}
                           >
                             <Folder
@@ -532,7 +532,7 @@ export function FolderPeek({
                           className={cn(
                             "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
                             "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
+                            "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] rounded-sm",
                           )}
                         >
                           +{folderOverflow} more…
@@ -570,7 +570,7 @@ export function FolderPeek({
                               "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
-                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                              "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
                             )}
                           >
                             {/* Live-test 2026-04-25 #152 — `FileIcon`
@@ -621,7 +621,7 @@ export function FolderPeek({
                           className={cn(
                             "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
                             "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
+                            "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] rounded-sm",
                           )}
                         >
                           +{fileOverflow} more…
@@ -649,7 +649,7 @@ export function FolderPeek({
                   "h-7 px-2 flex items-center justify-between gap-2 rounded-sm text-xs w-full",
                   "text-muted-foreground text-left",
                   "hover:bg-muted/50 hover:text-foreground transition-colors duration-150",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                  "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
                 )}
               >
                 <span className="truncate">Expand in sidebar</span>
