@@ -336,53 +336,80 @@
   border-color: var(--color-border);
 }
 
-/* Suppress WebKit's native focus ring on MOUSE focus only.
+/* ============================================================
+ * Keyboard focus indicator — single global rule.
  *
- * `:focus:not(:focus-visible)` matches when the element is focused
- * but the browser hasn't determined that the user wants visible
- * focus (i.e., mouse-click focus on most platforms). Keyboard-driven
- * focus reaches `:focus-visible` and we want THAT to keep its
- * outline — every component's `focus-visible:[outline:…]` and
- * `focus-visible:ring-…` utility relies on it.
+ * Pattern: VS Code / Linear / Figma. One source of truth for the
+ * visual; per-component focus-visible utilities defer to this.
  *
- * Live-test 2026-04-28 (iter-3): the previous `:focus { outline:
- * none !important; box-shadow: none; }` killed every focus
- * indicator across the app — keyboard users saw nothing on Tab.
- * The `!important` overrode component-level `focus-visible:`
- * outlines, and `box-shadow: none` nuked every `ring-*` utility
- * since Tailwind rings render as box-shadows. Removing the
- * `!important` AND scoping the rule to mouse focus restores the
- * visibility while keeping mouse clicks ring-free.
- */
-input:focus:not(:focus-visible),
-textarea:focus:not(:focus-visible),
-select:focus:not(:focus-visible),
-button:focus:not(:focus-visible),
-[data-slot="select-trigger"]:focus:not(:focus-visible) {
+ * Mouse focus (`:focus` without `:focus-visible`):
+ *   No outline. Browser default is suppressed; component
+ *   `focus-visible:ring-*` utilities render their box-shadow ring
+ *   only on keyboard focus, so mouse clicks stay ring-free too.
+ *
+ * Keyboard focus (`:focus-visible`):
+ *   1px solid `--color-accent-primary` outline, 2px offset (sits
+ *   OUTSIDE the element's box, no layout shift). Color resolves
+ *   to the user's chromatic accent when an `.accent-*` class is
+ *   active on `<html>`; otherwise falls back to `--color-primary`
+ *   per the design-system fallback chain.
+ *
+ *   The rule uses `!important` to override every component's
+ *   pre-existing `focus-visible:ring-*` utility (Tailwind rings
+ *   render as box-shadow → suppressing them here unifies the
+ *   indicator without touching ~50 component files).
+ *
+ *   `*:focus-visible` selector (specificity 0,1,0) plus
+ *   `!important` wins over Tailwind utility classes
+ *   (specificity 0,2,0) regardless of layer order.
+ *
+ * Destructive controls (e.g. delete buttons) keep their red focus
+ * indicator via the `[data-variant="destructive"]:focus-visible`
+ * carve-out below.
+ *
+ * Live-test 2026-04-28 (iter-9): previous attempts swept ~50
+ * component files individually and drifted into inconsistency.
+ * Reverted to baseline (`ae91f09f`); this single global rule
+ * replaces the per-component sweep. Same approach mature design
+ * systems use.
+ * ============================================================ */
+
+/* Strip browser default focus ring on every interaction; we
+ * provide our own indicator via :focus-visible below. */
+*:focus {
   outline: none;
   -webkit-focus-ring-color: transparent;
-  box-shadow: none;
 }
 
+/* Strip Tailwind ring-based focus indicators on mouse focus. */
+*:focus:not(:focus-visible) {
+  box-shadow: none !important;
+}
+
+/* Universal keyboard-focus outline. */
+*:focus-visible {
+  outline: 1px solid var(--color-accent-primary) !important;
+  outline-offset: 2px !important;
+  /* Suppress component-level box-shadow rings so we don't render
+   * BOTH a ring and an outline — the outline is the single cue. */
+  box-shadow: none !important;
+}
+
+/* Destructive variant — preserve the red focus indicator. */
+[data-variant="destructive"]:focus-visible {
+  outline-color: var(--color-destructive) !important;
+}
+
+/* Text input border-color cue on keyboard focus. The outline
+ * (above) sits outside the box; the border color change inside
+ * the box is the conventional input-focus signal. Both render
+ * together — that's the standard input affordance. */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [data-slot="select-trigger"]:focus-visible {
-  border-color: oklch(40% 0 0);
+  border-color: var(--color-accent-primary);
 }
-
-/* No global focus-visible fallback. Components opt in explicitly
- * via `focus-visible:[outline:...]` utility classes. The previous
- * global `:where(...)` rule (live-test 2026-04-28 iter-3) was
- * judged too aggressive — it added outlines to every interactive
- * element on every focus event, including programmatic focus and
- * the various clicks that bubble through `:focus-visible` due to
- * browser heuristics on text inputs.
- *
- * Components that need keyboard-focus visibility (Button, Settings
- * nav, sidebar rows, etc.) declare it themselves with the same
- * outline shorthand.
- */
 
 html, body, #root {
   height: 100%;
