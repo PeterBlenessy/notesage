@@ -197,27 +197,20 @@ export function SettingsShell({
                               'px-2 py-1.5 text-left text-[13px]',
                               'transition-colors duration-150 ease-in-out',
                               // Live-test 2026-04-28: focus indicator
-                              // was a low-contrast neutral grey ring
-                              // (`ring-ring`) against the muted nav
-                              // background, hard to see during ↑/↓
-                              // navigation. Match the sidebar pattern
-                              // (`5fa6ade4`): accent-coloured ring +
-                              // muted background on focus so a focused
-                              // (but not yet activated) item reads as
-                              // a clear "selection cursor". Active
-                              // item keeps its accent fill; the
-                              // focus ring sits on top in white-on-
-                              // accent for contrast.
-                              'outline-none focus-visible:ring-2 focus-visible:ring-offset-0',
+                              // was previously low-contrast — the
+                              // accent-fallback chain resolves to
+                              // grey when no accent class is active,
+                              // and `ring-…/50` halved opacity on top
+                              // of that. Switched to a 2px solid
+                              // outline that falls back to
+                              // `--color-foreground` (high contrast
+                              // on every surface) when no accent is
+                              // picked. Mirrors the shadcn Button
+                              // pattern updated in the same commit.
+                              'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent,var(--color-foreground))]',
                               active
-                                ? cn(
-                                    'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium',
-                                    'focus-visible:ring-[oklch(100%_0_0/0.5)]',
-                                  )
-                                : cn(
-                                    'text-foreground hover:bg-muted',
-                                    'focus-visible:bg-muted focus-visible:ring-[var(--accent,var(--primary))]',
-                                  ),
+                                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
+                                : 'text-foreground hover:bg-muted focus-visible:bg-muted',
                             )}
                           >
                             <Icon

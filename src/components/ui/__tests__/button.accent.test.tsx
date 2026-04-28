@@ -23,12 +23,18 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     expect(btn.className).toContain('hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]');
   });
 
-  it('default variant focus ring + border resolve through --color-accent-primary', () => {
+  it('default variant focus indicator uses accent + foreground fallback (live-test 2026-04-28)', () => {
     const { container } = renderWithProviders(<Button>Save</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
-    // Focus ring + border use the same fallback chain so accent extends to keyboard focus.
-    expect(btn.className).toContain('focus-visible:ring-[var(--color-accent-primary)]/50');
-    expect(btn.className).toContain('focus-visible:border-[var(--color-accent-primary)]');
+    // Focus indicator is a 2px solid outline OUTSIDE the button (offset
+    // 2px). Color resolves through `--accent` (chromatic when set) with
+    // a `--color-foreground` fallback so the indicator stays
+    // high-contrast even when no accent class is active. Replaces the
+    // previous `ring-…/50` setup which rendered medium-grey at 50%
+    // opacity on light backgrounds — near-invisible.
+    expect(btn.className).toContain('focus-visible:outline-2');
+    expect(btn.className).toContain('focus-visible:outline-offset-2');
+    expect(btn.className).toContain('focus-visible:outline-[var(--accent,var(--color-foreground))]');
   });
 
   it('link variant text resolves through --color-accent-primary', () => {

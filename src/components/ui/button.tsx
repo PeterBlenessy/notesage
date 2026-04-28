@@ -5,11 +5,22 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  // Base: focus ring + border resolve through --color-accent-primary so keyboard
-  // focus picks up the user's chosen accent. Falls back to --color-ring/--color-primary
-  // when no accent is set (today's neutral default). The destructive variant overrides
-  // the focus ring further down to keep destructive red, not accent.
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-[var(--color-accent-primary)] focus-visible:ring-[3px] focus-visible:ring-[var(--color-accent-primary)]/50 disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // Base: focus indicator is a 2px solid outline OUTSIDE the button
+  // (offset 2px) so it doesn't depend on the button having a real
+  // border AND doesn't take layout space. Color resolves through
+  // `--accent` (the user-picked chromatic accent) when set, falling
+  // back to `--color-foreground` (near-black light / near-white
+  // dark) instead of the previous `--color-primary` fallback —
+  // foreground is consistently high-contrast against any surface
+  // including the muted/30 chrome AgentSwitchCard / dialogs use.
+  // Live-test 2026-04-28: the previous `ring-[3px] ring-…/50`
+  // setup rendered medium-grey at 50 % opacity on light-grey
+  // backgrounds, near-invisible. The destructive variant overrides
+  // the outline color further down. Using `outline-*` (CSS
+  // outline) instead of `ring-*` (box-shadow) so the indicator
+  // tracks the button's exact shape and never clips against
+  // sibling elements.
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent,var(--color-foreground))] disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -18,7 +29,10 @@ const buttonVariants = cva(
         default:
           "bg-[var(--color-accent-primary)] text-primary-foreground hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:border-destructive dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          // Override the base outline color so destructive buttons
+          // keep their red focus indicator instead of inheriting the
+          // accent/foreground.
+          "bg-destructive text-white hover:bg-destructive/90 focus-visible:outline-destructive dark:bg-destructive/60",
         // Outline variant: the border IS the primary visual cue (no filled
         // background). Uses --color-border-strong to clear WCAG 1.4.11 (3:1).
         outline:
