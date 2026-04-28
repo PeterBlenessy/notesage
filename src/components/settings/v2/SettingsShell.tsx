@@ -196,18 +196,18 @@ export function SettingsShell({
                               'group relative flex w-full items-center gap-2.5 rounded-md',
                               'px-2 py-1.5 text-left text-[13px]',
                               'transition-colors duration-150 ease-in-out',
-                              // Live-test 2026-04-28: focus indicator
-                              // was previously low-contrast — the
-                              // accent-fallback chain resolves to
-                              // grey when no accent class is active,
-                              // and `ring-…/50` halved opacity on top
-                              // of that. Switched to a 2px solid
-                              // outline that falls back to
-                              // `--color-foreground` (high contrast
-                              // on every surface) when no accent is
-                              // picked. Mirrors the shadcn Button
-                              // pattern updated in the same commit.
-                              'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent,var(--color-foreground))]',
+                              // Live-test 2026-04-28 (iter-2): use
+                              // the full outline shorthand via an
+                              // arbitrary value so `outline-style:
+                              // solid` actually lands. Tailwind v4's
+                              // `outline-2` only sets width — combined
+                              // with the base `outline-none` it
+                              // produces an invisible outline (width
+                              // changes but style stays `none`). The
+                              // shorthand fixes that. Falls back to
+                              // `--color-foreground` when no accent
+                              // is picked.
+                              'outline-none focus-visible:[outline:2px_solid_var(--accent,var(--color-foreground))] focus-visible:[outline-offset:2px]',
                               active
                                 ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
                                 : 'text-foreground hover:bg-muted focus-visible:bg-muted',

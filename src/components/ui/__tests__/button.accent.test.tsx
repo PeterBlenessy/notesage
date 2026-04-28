@@ -27,14 +27,16 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     const { container } = renderWithProviders(<Button>Save</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
     // Focus indicator is a 2px solid outline OUTSIDE the button (offset
-    // 2px). Color resolves through `--accent` (chromatic when set) with
-    // a `--color-foreground` fallback so the indicator stays
-    // high-contrast even when no accent class is active. Replaces the
-    // previous `ring-…/50` setup which rendered medium-grey at 50%
-    // opacity on light backgrounds — near-invisible.
-    expect(btn.className).toContain('focus-visible:outline-2');
-    expect(btn.className).toContain('focus-visible:outline-offset-2');
-    expect(btn.className).toContain('focus-visible:outline-[var(--accent,var(--color-foreground))]');
+    // 2px) using the full outline shorthand. The shorthand is critical:
+    // Tailwind v4's `outline-2` only sets width, not style — and the
+    // base `outline-none` sets style to `none`, so width-only
+    // overrides leave outline-style:none and the indicator is invisible.
+    // The arbitrary-value shorthand sets style + width + color together.
+    // Color resolves through `--accent` (chromatic when set) with a
+    // `--color-foreground` fallback so the indicator stays high-
+    // contrast even when no accent class is active.
+    expect(btn.className).toContain('focus-visible:[outline:2px_solid_var(--accent,var(--color-foreground))]');
+    expect(btn.className).toContain('focus-visible:[outline-offset:2px]');
   });
 
   it('link variant text resolves through --color-accent-primary', () => {

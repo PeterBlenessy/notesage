@@ -20,7 +20,17 @@ const buttonVariants = cva(
   // outline) instead of `ring-*` (box-shadow) so the indicator
   // tracks the button's exact shape and never clips against
   // sibling elements.
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent,var(--color-foreground))] disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // Focus indicator: a 2px solid outline OUTSIDE the button.
+  //
+  // Tailwind v4 footgun — `outline-2` only sets `outline-width`, not
+  // `outline-style`. Combined with the base `outline-none` (which sets
+  // `outline-style: none`), the focus outline would have width + color
+  // but style stays `none` → invisible. Use the full outline shorthand
+  // via an arbitrary value so style + width + color all land together.
+  // Color resolves through `--accent` (chromatic if user picked one)
+  // with a `--color-foreground` fallback so the indicator stays
+  // high-contrast even when no accent class is active.
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:[outline:2px_solid_var(--accent,var(--color-foreground))] focus-visible:[outline-offset:2px] disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-70 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -31,8 +41,9 @@ const buttonVariants = cva(
         destructive:
           // Override the base outline color so destructive buttons
           // keep their red focus indicator instead of inheriting the
-          // accent/foreground.
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:outline-destructive dark:bg-destructive/60",
+          // accent/foreground. Same arbitrary-value form as the base
+          // so the style + width + color all land together.
+          "bg-destructive text-white hover:bg-destructive/90 focus-visible:[outline:2px_solid_var(--color-destructive)] dark:bg-destructive/60",
         // Outline variant: the border IS the primary visual cue (no filled
         // background). Uses --color-border-strong to clear WCAG 1.4.11 (3:1).
         outline:
