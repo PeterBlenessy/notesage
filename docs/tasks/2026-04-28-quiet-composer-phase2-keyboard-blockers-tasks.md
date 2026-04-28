@@ -99,7 +99,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle E — Chat AgentSwitchCard autofocus + Tab order verification
 
-### #7 — Auto-focus AgentSwitchCard's first button on mount (Finding #2 part a)
+### #7 — Auto-focus AgentSwitchCard's first button on mount (Finding #2 part a) ✅
 
 | Field | Value |
 | --- | --- |

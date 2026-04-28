@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useChatStore } from '@/stores/chat-store';
@@ -10,6 +11,25 @@ interface AgentSwitchCardProps {
 
 export function AgentSwitchCard({ newAgent, previousAgent, resolved }: AgentSwitchCardProps) {
   const resolveAgentSwitch = useChatStore((s) => s.resolveAgentSwitch);
+  const includeHistoryButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Move focus to the conservative default ("Include history") when
+  // the card appears. The chat textarea above the card is
+  // `disabled={switchPending}` while the prompt is unresolved, so
+  // without explicit autofocus the user is stuck — the textarea
+  // can't accept input AND Tab forward from it bypasses the card
+  // (the card is upstream in the DOM, before the textarea). Mirror
+  // of the PermissionCard pattern at `PermissionCard.tsx:116-119`.
+  // PRD-less bug fix tracked in
+  // `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
+  // task #7. The unresolved branch is the only one that needs this —
+  // the resolved branch is read-only chrome with no buttons.
+  useEffect(() => {
+    if (!resolved) {
+      includeHistoryButtonRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (resolved) {
     return (
@@ -26,7 +46,11 @@ export function AgentSwitchCard({ newAgent, previousAgent, resolved }: AgentSwit
   }
 
   return (
-    <div className="mx-4 my-3 p-3 rounded-lg border border-border bg-muted/30">
+    <div
+      role="alert"
+      aria-live="assertive"
+      className="mx-4 my-3 p-3 rounded-lg border border-border bg-muted/30"
+    >
       <div className="flex items-start gap-2.5">
         <ArrowRightLeft className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
         <div className="flex-1 min-w-0">
@@ -43,6 +67,7 @@ export function AgentSwitchCard({ newAgent, previousAgent, resolved }: AgentSwit
           )}
           <div className="flex items-center gap-2 mt-2.5">
             <Button
+              ref={includeHistoryButtonRef}
               variant="outline"
               size="sm"
               className="h-7 text-xs"
