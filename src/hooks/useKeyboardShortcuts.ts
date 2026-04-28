@@ -256,7 +256,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // ------------------------------------------------------------------
       // Focus mode — legacy only. useFocusMode owns ⌘. under quiet-composer.
       // ------------------------------------------------------------------
-      if (isMod && !isQuiet && key === ".") {
+      // Cross-keyboard layout safety — accept `event.code === "Period"`
+      // alongside `event.key === "."` so future layouts (where `.` may
+      // require a modifier or sit on a different physical key) don't
+      // silently break the chord.
+      if (isMod && !isQuiet && (key === "." || e.code === "Period")) {
         e.preventDefault();
         callbacks.onToggleFocusMode();
         return;
@@ -342,7 +346,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       }
 
       // ⌘, — settings
-      if (isMod && !e.shiftKey && !e.altKey && key === ",") {
+      // Cross-keyboard layout safety — `event.code === "Comma"` alongside
+      // `event.key === ","` defends against layouts where the comma
+      // physical key produces a different character (matches the
+      // `isContextMenuKey` pattern in `useSidebarItemShortcuts`).
+      if (isMod && !e.shiftKey && !e.altKey && (key === "," || e.code === "Comma")) {
         e.preventDefault();
         callbacks.onSettingsOpen();
         return;
@@ -409,12 +417,21 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // no-op that consumes the keystroke (intentional — avoids the chord
       // falling through to the browser's back/forward navigation).
       // ------------------------------------------------------------------
-      if (isMod && e.shiftKey && !e.altKey && (key === "[" || key === "]")) {
+      // Cross-keyboard layout safety: on Swedish (and many European)
+      // layouts `[` is `⌥8` and `]` is `⌥9` — pressing `⌘⇧[`
+      // literally cannot produce `[` because the bracket characters
+      // need Option. `event.code` reports the physical key position
+      // regardless of layout, so we accept either signal. See
+      // `docs/keyboard-shortcuts.md` "Cross-keyboard layout safety"
+      // for the project rule.
+      const isLeftBracket = key === "[" || e.code === "BracketLeft";
+      const isRightBracket = key === "]" || e.code === "BracketRight";
+      if (isMod && e.shiftKey && !e.altKey && (isLeftBracket || isRightBracket)) {
         e.preventDefault();
         window.dispatchEvent(
           new CustomEvent<{ direction: "previous" | "next" }>(
             CYCLE_RECENT_EVENT,
-            { detail: { direction: key === "[" ? "previous" : "next" } },
+            { detail: { direction: isLeftBracket ? "previous" : "next" } },
           ),
         );
         return;

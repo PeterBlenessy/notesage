@@ -38,11 +38,22 @@ export function openContextMenuOnElement(element: HTMLElement): void {
  *   - `⌘⇧,` / `Ctrl+Shift+,` — user-pressable fallback that doesn't require
  *     a dedicated key. Matches `metaKey || ctrlKey` to stay consistent with
  *     the rest of the sidebar's key handling.
+ *
+ * Cross-keyboard layout safety: `event.key` reports the produced
+ * character, which depends on the user's keyboard layout. On Swedish
+ * (and many European) layouts `Shift+,` produces `;`, not `,`, so
+ * checking `event.key === ","` alone misses the chord. We also check
+ * `event.code === "Comma"` which reports the physical key position
+ * regardless of layout. The OR keeps the helper layout-tolerant —
+ * neither check fights the other. See `docs/keyboard-shortcuts.md`
+ * "Cross-keyboard layout safety" for the project rule.
  */
 export function isContextMenuKey(event: KeyboardEvent<HTMLElement>): boolean {
   if (event.key === "ContextMenu") return true;
   const mod = event.metaKey || event.ctrlKey;
-  if (mod && event.shiftKey && event.key === ",") return true;
+  if (mod && event.shiftKey && (event.key === "," || event.code === "Comma")) {
+    return true;
+  }
   return false;
 }
 

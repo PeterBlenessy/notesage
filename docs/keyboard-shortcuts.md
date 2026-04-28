@@ -178,6 +178,27 @@ Currently targeting macOS:
 - Use `Mod` key in code to support both: `Mod+S` maps to `⌘S` on Mac, `Ctrl+S` on Windows
 - Double-tap `⌘` is mac-only — Windows/Linux equivalent (Super, Ctrl) is not yet wired
 
+### Cross-keyboard layout safety
+
+`KeyboardEvent.key` reports the **produced character** for a keystroke, which depends on the user's keyboard layout. `KeyboardEvent.code` reports the **physical key position** and is layout-independent. For chords using punctuation, ALWAYS check `event.code` alongside `event.key`.
+
+**Examples of the trap:**
+
+- `event.key === "["` for `⌘⇧[` works on US keyboards. Swedish (and many European) layouts produce `[` only via `⌥8`, so the chord never registers — `event.key` reports something like `Å` instead.
+- `event.key === ","` for `⌘⇧,` works on US. Swedish `Shift+,` produces `;`, not `,`, so the chord misses.
+- `event.key === "/"` for `⌘/` works on US. Nordic layouts produce `/` only via `Shift+7`, so plain `Cmd+/` would need `event.code === "Slash"` OR `event.shiftKey && event.code === "Digit7"` (the editor's view-mode chord at `useEditorKeyBindings.ts:82-94` already handles both).
+
+**The rule:**
+
+Any chord using a punctuation key (`,`, `.`, `[`, `]`, `;`, `'`, `\`, `/`, `-`, `=`, etc.) must accept BOTH `event.key === "<char>"` AND `event.code === "<KeyCodeName>"`. The OR keeps the chord layout-tolerant — neither check fights the other. Reference patterns:
+
+- `src/components/sidebar/quiet/useSidebarItemShortcuts.ts` (`isContextMenuKey`) — `Comma` fallback
+- `src/hooks/useKeyboardShortcuts.ts` — `BracketLeft` / `BracketRight`, `Comma`, `Period` fallbacks
+- `src/hooks/useFocusMode.ts` — `Period` fallback
+- `src/hooks/useEditorKeyBindings.ts` — `Slash` + Nordic `Shift+Digit7` pattern
+
+**KeyCodeName quick reference:** `,` → `"Comma"`, `.` → `"Period"`, `[` → `"BracketLeft"`, `]` → `"BracketRight"`, `;` → `"Semicolon"`, `'` → `"Quote"`, `\` → `"Backslash"`, `/` → `"Slash"`, `-` → `"Minus"`, `=` → `"Equal"`.
+
 ### Accessibility
 
 - All shortcuts should have menu equivalents

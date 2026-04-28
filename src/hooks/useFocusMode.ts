@@ -198,8 +198,17 @@ export function useFocusMode(): UseFocusModeResult {
       // ⌘. / Ctrl+. — toggle focus mode. We own this chord while the
       // QuietLayout is mounted; stopImmediatePropagation keeps the legacy
       // App-level handler from also firing.
+      // Cross-keyboard layout safety: accept `event.code === "Period"`
+      // alongside `event.key === "."` so future layouts where `.` is
+      // produced by a Shift modifier (e.g. AZERTY where `.` is `Shift+;`)
+      // don't silently lose the chord.
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.shiftKey && !event.altKey && event.key === ".") {
+      if (
+        mod &&
+        !event.shiftKey &&
+        !event.altKey &&
+        (event.key === "." || event.code === "Period")
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
         setActive((prev) => !prev);

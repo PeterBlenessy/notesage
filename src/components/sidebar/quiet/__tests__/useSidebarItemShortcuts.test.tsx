@@ -11,6 +11,7 @@ import {
 } from "@/test/component-harness";
 import {
   chainKeyHandlers,
+  isContextMenuKey,
   useSidebarItemShortcuts,
 } from "../useSidebarItemShortcuts";
 
@@ -280,5 +281,94 @@ describe("chainKeyHandlers", () => {
     chained(event);
 
     expect(b).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isContextMenuKey — cross-keyboard layout safety
+// (PRD-less: tracked in `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
+// task #1. Swedish keyboard `Shift+,` produces `;` not `,`, so the
+// chord must also accept `event.code === "Comma"` as a layout-
+// independent fallback.)
+// ---------------------------------------------------------------------------
+
+describe("isContextMenuKey", () => {
+  function ev(partial: Partial<KeyboardEvent>): React.KeyboardEvent<HTMLElement> {
+    return partial as unknown as React.KeyboardEvent<HTMLElement>;
+  }
+
+  it("matches the macOS / Windows Menu key", () => {
+    expect(isContextMenuKey(ev({ key: "ContextMenu" }))).toBe(true);
+  });
+
+  it("matches ⌘⇧, on US-style keyboards (key === ',')", () => {
+    expect(
+      isContextMenuKey(
+        ev({ key: ",", code: "Comma", metaKey: true, shiftKey: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches ⌘⇧, on Swedish-style keyboards (key === ';' but code === 'Comma')", () => {
+    // On Swedish keyboards, Shift+Comma produces `;`, not `,`. The
+    // physical key code stays "Comma" regardless of layout, so the
+    // OR fallback rescues the chord.
+    expect(
+      isContextMenuKey(
+        ev({ key: ";", code: "Comma", metaKey: true, shiftKey: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches Ctrl+Shift+, (non-mac equivalent)", () => {
+    expect(
+      isContextMenuKey(
+        ev({ key: ",", code: "Comma", ctrlKey: true, shiftKey: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects ⌘⇧; produced by a DIFFERENT physical key (e.g. dedicated semicolon key)", () => {
+    // The physical Semicolon key produces `;` with a different `code`
+    // value. Just because the produced character matches a layout
+    // somewhere doesn't mean we open the context menu — the chord
+    // must come from the Comma physical position.
+    expect(
+      isContextMenuKey(
+        ev({ key: ";", code: "Semicolon", metaKey: true, shiftKey: true }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects ⌘, without Shift (that's the Settings shortcut)", () => {
+    expect(
+      isContextMenuKey(
+        ev({ key: ",", code: "Comma", metaKey: true, shiftKey: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects bare ',' without modifiers", () => {
+    expect(isContextMenuKey(ev({ key: ",", code: "Comma" }))).toBe(false);
+  });
+
+  it("rejects ⌘⇧, with Alt (different chord)", () => {
+    // The helper isn't responsible for filtering Alt; this test just
+    // documents that we don't accidentally match alt-modified chords
+    // that other handlers might own.
+    expect(
+      isContextMenuKey(
+        ev({
+          key: ",",
+          code: "Comma",
+          metaKey: true,
+          shiftKey: true,
+          altKey: true,
+        }),
+      ),
+    ).toBe(true);
+    // Note: returns true because we don't check altKey. If a future
+    // chord conflicts, the helper would need to gate on `!altKey`.
+    // Documented here so the choice is explicit.
   });
 });
