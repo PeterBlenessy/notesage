@@ -103,7 +103,7 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 | Command palette / Command bar | `⌘K` | `⌘K` | Classic: open `CommandPalette`. Quiet Composer: focus the `FloatingCommandBar` |
 | Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
 | Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Classic: toggle ChatPanel. Quiet Composer: focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
-| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. **Quiet Composer (current behaviour): focuses the command bar with no prefix — typing goes to chat input, NOT file search.** There is no dedicated "files" prefix in the Quiet Composer cmd bar today. To find a file: open the bar with `⌘K`, then type the filename in chat-mode (no result list yet) — or arrow-into a project + `→` to inline-expand its contents. Sidebar #15's persistent search input + SQLite FTS results will land this for real |
+| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. Quiet Composer: focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
 | Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Classic: opens Actions dashboard. Quiet Composer: focuses the command bar with `!` prefix → TaskMode |
@@ -121,16 +121,22 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 
 ### Command Palette Prefix Modes
 
-Type a prefix character as the first character in the command palette / command bar input to switch modes:
+The command bar prefix grammar splits into two namespaces (PRD `2026-04-28-cmd-bar-verb-prefixes`):
 
-| Prefix | Mode | Description |
-| --- | --- | --- |
-| `!` | Tasks | Quiet Composer command-bar TaskMode (open / attach a task) |
-| `#` | Tags | Search for #tags across all files |
-| `@` | Mentions / References | Search for @mentions (legacy palette) or open ReferenceMode (Quiet Composer) |
-| `>` | Commands | Filter actions (New Note, Toggle Theme, etc.) |
-| `?` | Research | Search research files across all projects |
-| `/` | Skills | Quiet Composer command-bar SkillMode |
+- **Single-character prefixes — noun pickers.** Type the prefix as the first character of the input (or after whitespace) to enter the picker.
+- **`:` + multi-char name — verb commands.** Type `:` then the verb name (e.g., `:file `) to enter the verb's picker. Bare `:` opens a discovery menu listing every registered verb. `Tab` autocompletes the verb name (longest unambiguous prefix; full match adds a trailing space and jumps the cursor into the filter slot).
+
+Single-char prefixes win when both could match. Backspacing past the prefix returns to default chat-mode.
+
+| Namespace | Prefix | Mode | Description |
+| --- | --- | --- | --- |
+| Noun | `!` | Tasks | Quiet Composer command-bar TaskMode (open / attach a task) |
+| Noun | `#` | Tags | Search for #tags across all files |
+| Noun | `@` | Mentions / References | Search for @mentions (legacy palette) or open ReferenceMode (Quiet Composer) |
+| Noun | `>` | Commands | Filter actions (New Note, Toggle Theme, etc.) |
+| Noun | `?` | Research | Search research files across all projects |
+| Noun | `/` | Skills | Quiet Composer command-bar SkillMode |
+| Verb | `:file <query>` | FileMode | Filename search across the active chat scope. Empty query lists MRU files. Reserves `⌘⇧F` as the chord seed. |
 
 Backspacing past a prefix character returns to the default (files + actions) mode.
 

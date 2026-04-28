@@ -288,17 +288,18 @@ describe("useKeyboardShortcuts (quiet-composer path)", () => {
     expect(capturedBarEvents).toEqual([{ type: "focus", prefix: ">" }]);
   });
 
-  it("⌘⇧F emits cmd-bar focus (no prefix) for file search", () => {
+  it("⌘⇧F emits cmd-bar focus with `:file ` prefix (PRD verb-prefixes #11)", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     dispatchKey("F", { metaKey: true, shiftKey: true });
 
     expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
-    // One from useCommandBarShortcuts's own ⌘⇧F? No — that hook does not
-    // bind ⌘⇧F. The single focus event here comes from THIS hook's
-    // explicit emit for quiet-composer.
-    expect(capturedBarEvents).toEqual([{ type: "focus" }]);
+    // Trailing space in the prefix is intentional — the cursor lands
+    // in the verb's filter slot so the user can type the query
+    // immediately. The bar's `focus` subscriber treats this prefix
+    // as chord-seeded so the first Esc collapses the bar.
+    expect(capturedBarEvents).toEqual([{ type: "focus", prefix: ":file " }]);
   });
 
   it("⌘. does NOT toggle focus mode (useFocusMode owns it)", () => {

@@ -120,8 +120,8 @@ note-sage/
 │   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
 │   │   ├── cmd/            # Floating command bar (Quiet Composer)
 │   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx, CommandBarHistory.tsx
-│   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts
-│   │   │   └── modes/      # Prefix-mode pickers (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode)
+│   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
+│   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
 │   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx

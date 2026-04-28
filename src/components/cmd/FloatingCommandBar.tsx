@@ -88,6 +88,7 @@ import TagMode, { type TagPickAction } from "@/components/cmd/modes/TagMode";
 import TaskMode, { type TaskAction } from "@/components/cmd/modes/TaskMode";
 import ResearchMode from "@/components/cmd/modes/ResearchMode";
 import PaletteMode from "@/components/cmd/modes/PaletteMode";
+import FileMode from "@/components/cmd/modes/FileMode";
 import { log } from "@/lib/logger";
 
 /**
@@ -545,28 +546,57 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           setPendingMentionDrilldown(null);
         }
         if (event.prefix) {
-          const mode = Object.values(MODES).find(
-            (m) => m.prefix === event.prefix,
-          );
-          if (mode) {
-            // Prefill with the prefix character only — no trailing space.
-            // A space would (a) show an extra cursor-offset the user has to
-            // delete, (b) count as post-prefix typed filter text and mis-seed
-            // the picker's filter state. The input's onChange / selection
-            // handlers handle cursor/filter state from here on as the user
-            // types after the prefix.
-            setInputValue(event.prefix);
-            setActivePrefix({
-              mode,
-              prefixIndex: 0,
-              tokenStart: 0,
-              tokenEnd: 1,
-              filter: '',
-              // Chord-seeded: Esc collapses the bar in one stage (see the
-              // dismiss branch below). A `'typed'` prefix would instead
-              // require two Escs (first clears prefix, second collapses).
-              source: 'chord',
-            });
+          // Verb chord seeds (PRD `2026-04-28-cmd-bar-verb-prefixes`).
+          // Format `:<verb-name> ` — verb-prefix branch handled before
+          // the single-char MODES lookup so a `:file ` chord doesn't
+          // collide with the noun-prefix path.
+          if (event.prefix.startsWith(':')) {
+            // Strip optional trailing whitespace to find the verb
+            // name; the seeded inputValue keeps the trailing space so
+            // the cursor lands in the filter slot directly.
+            const verbName = event.prefix.slice(1).trimEnd();
+            const verb = VERBS[verbName as keyof typeof VERBS];
+            if (verb) {
+              setInputValue(event.prefix);
+              const verbEnd = 1 + verb.name.length;
+              const filterStart = event.prefix.length;
+              setActiveVerb({
+                verb,
+                verbStart: 0,
+                verbEnd,
+                filterStart,
+                filterEnd: event.prefix.length,
+                filter: '',
+                typedName: verb.name,
+                // Chord-seeded: Esc collapses the bar in one stage.
+                source: 'chord',
+              });
+              setActivePrefix(null);
+            }
+          } else {
+            const mode = Object.values(MODES).find(
+              (m) => m.prefix === event.prefix,
+            );
+            if (mode) {
+              // Prefill with the prefix character only — no trailing space.
+              // A space would (a) show an extra cursor-offset the user has to
+              // delete, (b) count as post-prefix typed filter text and mis-seed
+              // the picker's filter state. The input's onChange / selection
+              // handlers handle cursor/filter state from here on as the user
+              // types after the prefix.
+              setInputValue(event.prefix);
+              setActivePrefix({
+                mode,
+                prefixIndex: 0,
+                tokenStart: 0,
+                tokenEnd: 1,
+                filter: '',
+                // Chord-seeded: Esc collapses the bar in one stage (see the
+                // dismiss branch below). A `'typed'` prefix would instead
+                // require two Escs (first clears prefix, second collapses).
+                source: 'chord',
+              });
+            }
           }
         }
         // Defer focus to the next tick so the input has rendered when the
@@ -2129,9 +2159,12 @@ function ExpandedContent({
               typedName={activeVerb.typedName}
               onPick={onPickVerb}
             />
+          ) : activeVerb.verb.id === 'file' ? (
+            <FileMode
+              filter={activeVerb.filter}
+              onActiveOptionChange={onActiveOptionChange}
+            />
           ) : null}
-          {/* Verb-matched picker dispatch lands in #8 — FileMode
-              renders here when `activeVerb.verb.id === 'file'`. */}
         </div>
       ) : null}
 

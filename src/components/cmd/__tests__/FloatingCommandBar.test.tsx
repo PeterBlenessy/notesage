@@ -159,6 +159,11 @@ vi.mock('@/components/cmd/modes/ResearchMode', () => ({
 vi.mock('@/components/cmd/modes/PaletteMode', () => ({
   default: () => <div data-testid="palette-mode-stub" />,
 }));
+vi.mock('@/components/cmd/modes/FileMode', () => ({
+  default: ({ filter }: { filter: string }) => (
+    <div data-testid="file-mode-stub" data-filter={filter} />
+  ),
+}));
 
 // ---------------------------------------------------------------------------
 // Mock useAIOperations + chat-store so #23 can assert send wiring without
@@ -411,6 +416,69 @@ describe('FloatingCommandBar', () => {
     fireEvent.change(input, { target: { value: prefix } });
 
     expect(screen.getByTestId(stubTestId)).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // Verb prefix wiring (PRD `2026-04-28-cmd-bar-verb-prefixes`, #11 + #12)
+  // -------------------------------------------------------------------------
+
+  describe('verb prefix wiring', () => {
+    it('⌘⇧F chord seeds the bar with `:file ` and mounts FileMode (#11)', async () => {
+      renderWithProviders(<FloatingCommandBar />);
+      // Bar starts collapsed.
+      expect(screen.queryByTestId('file-mode-stub')).toBeNull();
+
+      // Emit the focus event the keyboard hook would emit on ⌘⇧F.
+      act(() => {
+        emitCmdBarEvent({ type: 'focus', prefix: ':file ' });
+      });
+
+      const stub = await screen.findByTestId('file-mode-stub');
+      expect(stub.getAttribute('data-filter')).toBe('');
+      // Input is prefilled with the verb prefix so the cursor lands
+      // in the filter slot.
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      expect(input.value).toBe(':file ');
+    });
+
+    it('typing `:` shows the verb discovery menu (#7 wiring + #4 registry)', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: ':' } });
+      // Discovery menu surfaces every registered verb. We only check
+      // for the `file` verb name to avoid fragile assertions about
+      // the full registry.
+      expect(screen.getByText(/:file/)).toBeTruthy();
+    });
+
+    it('typing `:fi` keeps the discovery menu (no full match yet)', () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: ':fi' } });
+      // Discovery menu (FileMode is NOT mounted yet — verb is unmatched).
+      expect(screen.queryByTestId('file-mode-stub')).toBeNull();
+      expect(screen.getByText(/:file/)).toBeTruthy();
+    });
+
+    it('typing `:file ` mounts FileMode with empty filter', async () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: ':file ' } });
+      const stub = await screen.findByTestId('file-mode-stub');
+      expect(stub.getAttribute('data-filter')).toBe('');
+    });
+
+    it('typing `:file readme` passes the filter to FileMode', async () => {
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+      const input = screen.getByRole('combobox') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: ':file readme' } });
+      const stub = await screen.findByTestId('file-mode-stub');
+      expect(stub.getAttribute('data-filter')).toBe('readme');
+    });
   });
 
   // -------------------------------------------------------------------------

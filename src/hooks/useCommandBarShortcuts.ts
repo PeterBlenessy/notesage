@@ -102,6 +102,11 @@ export function useCommandBarShortcuts(): void {
         emitCmdBarEvent({ type: 'focus', prefix: '>' });
         return;
       }
+      // Note: ⌘⇧F is owned by `useKeyboardShortcuts` (canonical chord
+      // routing for both Classic + Quiet Composer paths). It seeds
+      // `:file ` under Quiet Composer (PRD
+      // `2026-04-28-cmd-bar-verb-prefixes`, #11) and routes to the
+      // legacy palette under Classic.
 
       // ⌘1 / ⌘⇧1, ⌘2 / ⌘⇧2, ⌘3 / ⌘⇧3, ⌘4 / ⌘⇧4 — prefix shortcuts.
       // Both shifted and unshifted variants land here because

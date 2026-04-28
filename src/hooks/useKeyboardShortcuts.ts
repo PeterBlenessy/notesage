@@ -196,10 +196,14 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // ⌘⇧F — file search
       if (isMod && e.shiftKey && keyLower === "f") {
         if (isQuiet) {
-          // The quiet-composer cmd bar doesn't reserve a prefix for "files",
-          // so we emit a plain focus (empty query) and let the user type.
+          // Quiet Composer: seed the cmd bar with `:file ` so the
+          // FileMode picker (PRD `2026-04-28-cmd-bar-verb-prefixes`,
+          // #11) opens with the cursor in the filter slot. The
+          // trailing space is intentional — the bar's `focus`
+          // subscriber treats this prefix as chord-seeded so the
+          // first Esc collapses the bar.
           e.preventDefault();
-          emitCmdBarEvent({ type: "focus" });
+          emitCmdBarEvent({ type: "focus", prefix: ":file " });
           return;
         }
         e.preventDefault();

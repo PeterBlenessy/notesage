@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-28 |
-| **Status** | Not started |
+| **Status** | Complete (all 14 tasks ✅, 2026-04-28) |
 | **PRD** | [cmd-bar-verb-prefixes](../prds/2026-04-28-cmd-bar-verb-prefixes.md) |
 | **Total** | 14 tasks: 10S, 4M |
 | **Suggested order** | Backend (#1) → Quick Capture removal (#2 + #3, parallel-safe) → Verb infra (#4 → #5 → #6 → #7) → `:file` mode (#8 → #9 → #10 → #11) → Tests + docs (#12 → #13 → #14) |
@@ -89,7 +89,7 @@
 | Depends on | #4, #5, #6 |
 | Files | `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarContext.tsx` (mode badge if it lives there) |
 
-### #8 — `FileMode` picker component
+### #8 — `FileMode` picker component ✅
 
 | Field | Value |
 | --- | --- |
@@ -99,7 +99,7 @@
 | Depends on | #1, #4 |
 | Files | `src/components/cmd/modes/FileMode.tsx`, `src/components/cmd/__tests__/FileMode.test.tsx` |
 
-### #9 — `FileMode` scope + hidden-files gating
+### #9 — `FileMode` scope + hidden-files gating ✅
 
 | Field | Value |
 | --- | --- |
@@ -109,7 +109,7 @@
 | Depends on | #8 |
 | Files | `src/components/cmd/modes/FileMode.tsx`, `src/components/cmd/__tests__/FileMode.test.tsx` |
 
-### #10 — `FileMode` MRU empty-state
+### #10 — `FileMode` MRU empty-state ✅
 
 | Field | Value |
 | --- | --- |
@@ -119,7 +119,7 @@
 | Depends on | #9 |
 | Files | `src/components/cmd/modes/FileMode.tsx`, `src/components/cmd/__tests__/FileMode.test.tsx` |
 
-### #11 — Wire `⌘⇧F` to seed `:file `
+### #11 — Wire `⌘⇧F` to seed `:file ` ✅
 
 | Field | Value |
 | --- | --- |
@@ -129,7 +129,7 @@
 | Depends on | #7 |
 | Files | `src/hooks/useCommandBarShortcuts.ts`, `src/components/cmd/FloatingCommandBar.tsx` (only if the focus subscriber needs a tweak) |
 
-### #12 — `FileMode` integration test
+### #12 — `FileMode` integration test ✅
 
 | Field | Value |
 | --- | --- |
@@ -149,7 +149,7 @@
 | Depends on | #2, #3 |
 | Files | `src/components/cmd/__tests__/no-quick-capture.test.ts` |
 
-### #14 — Final docs sweep — keyboard-shortcuts + architecture
+### #14 — Final docs sweep — keyboard-shortcuts + architecture ✅
 
 | Field | Value |
 | --- | --- |
