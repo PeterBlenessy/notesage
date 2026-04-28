@@ -72,7 +72,7 @@ function ActionPill({
       className={cn(
         'inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium',
         'transition-colors duration-150 border',
-        'focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         active
           ? 'border-transparent bg-foreground/10 text-foreground hover:bg-foreground/15'
@@ -373,7 +373,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   className={cn(
                     'h-7 py-0 px-2 text-[14px] font-medium',
                     'bg-transparent border border-border',
-                    'focus-visible:border-[var(--color-accent-primary)]',
+                    'focus-visible:ring-0 focus-visible:border-foreground/50',
                     'rounded-md',
                   )}
                 />
@@ -415,7 +415,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',
                     'transition-opacity duration-150 opacity-0 group-hover/name:opacity-100',
-                    'focus-visible:opacity-100 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                    'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                   )}
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -460,7 +460,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   className={cn(
                     'min-h-[3rem] py-1 px-2 text-[12px] text-muted-foreground',
                     'bg-transparent border border-border resize-none',
-                    'focus-visible:border-[var(--color-accent-primary)]',
+                    'focus-visible:ring-0 focus-visible:border-foreground/50',
                     'rounded-md',
                   )}
                 />
@@ -506,7 +506,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',
                     'transition-opacity duration-150 opacity-0 group-hover/desc:opacity-100',
-                    'focus-visible:opacity-100 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                    'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                   )}
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.6} />

@@ -517,7 +517,7 @@ function FolderRow({
         "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
-        "relative focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] focus-visible:z-10",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
         isActive && "bg-muted text-foreground font-medium",
       )}
     >
@@ -584,7 +584,7 @@ function OverflowRow({
       className={cn(
         "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
         "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-        "relative focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] focus-visible:z-10",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
       )}
     >
       +{count} more…
@@ -637,7 +637,7 @@ function ChildRow({
         "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
-        "relative focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px] focus-visible:z-10",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
       )}
     >
       <Icon

@@ -124,7 +124,7 @@ function Segmented<T extends string>({
             className={cn(
               'inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5',
               'text-[12px] font-medium transition-colors duration-150',
-              'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+              'outline-none focus-visible:ring-2 focus-visible:ring-ring',
               active
                 ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                 : 'border-border text-muted-foreground hover:bg-muted',
@@ -325,7 +325,7 @@ export function AppearanceSettings() {
                   className={cn(
                     'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md',
                     'text-[12px] font-medium border transition-colors duration-150',
-                    'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                    'outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     isActive
                       ? 'border-foreground bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                       : 'border-border text-muted-foreground hover:bg-muted',
@@ -368,7 +368,7 @@ export function AppearanceSettings() {
                   <button
                     type="button"
                     onClick={() => setTintChroma(0)}
-                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
+                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150"
                     aria-label="Reset tint"
                   >
                     <RotateCcw className="h-3 w-3" strokeWidth={1.5} />

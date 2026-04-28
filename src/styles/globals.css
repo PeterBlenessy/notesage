@@ -336,35 +336,39 @@
   border-color: var(--color-border);
 }
 
-/* Suppress browser's native focus ring universally — we provide
- * our own focus-visible outline at the component level
- * (1px solid var(--color-accent-primary)).
+/* Suppress WebKit's native focus ring on MOUSE focus only.
  *
- * Layered into `base` so Tailwind's `utilities` layer (where the
- * `focus-visible:[outline:…]` utility classes live) wins on
- * cascade order. Without the `@layer` wrapper, an unlayered rule
- * has implicit highest-priority and ends up suppressing every
- * focus-visible outline too — symptom: "all borders are gone".
+ * `:focus:not(:focus-visible)` matches when the element is focused
+ * but the browser hasn't determined that the user wants visible
+ * focus (i.e., mouse-click focus on most platforms). Keyboard-driven
+ * focus reaches `:focus-visible` and we want THAT to keep its
+ * outline — every component's `focus-visible:[outline:…]` and
+ * `focus-visible:ring-…` utility relies on it.
  *
- * Live-test 2026-04-28 (iter-8 — fixes regression from iter-7).
+ * Live-test 2026-04-28 (iter-3): the previous `:focus { outline:
+ * none !important; box-shadow: none; }` killed every focus
+ * indicator across the app — keyboard users saw nothing on Tab.
+ * The `!important` overrode component-level `focus-visible:`
+ * outlines, and `box-shadow: none` nuked every `ring-*` utility
+ * since Tailwind rings render as box-shadows. Removing the
+ * `!important` AND scoping the rule to mouse focus restores the
+ * visibility while keeping mouse clicks ring-free.
  */
-@layer base {
-  *:focus {
-    outline: none;
-    -webkit-focus-ring-color: transparent;
-  }
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+[data-slot="select-trigger"]:focus:not(:focus-visible) {
+  outline: none;
+  -webkit-focus-ring-color: transparent;
+  box-shadow: none;
 }
 
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [data-slot="select-trigger"]:focus-visible {
-  /* User direction 2026-04-28 iter-6: text-input border on
-   * keyboard-focus uses the accent token to match every other
-   * focus indicator across the app. When no accent class is
-   * active, this resolves to `--color-primary` per the
-   * design-system fallback chain. */
-  border-color: var(--color-accent-primary);
+  border-color: oklch(40% 0 0);
 }
 
 /* No global focus-visible fallback. Components opt in explicitly

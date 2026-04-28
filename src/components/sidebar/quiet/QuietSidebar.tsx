@@ -241,7 +241,7 @@ function FilterBadge({ filter, onClear }: FilterBadgeProps) {
         className={cn(
           "shrink-0 rounded-sm p-0.5 -m-0.5",
           "hover:text-foreground hover:bg-muted transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         )}
       >
         <X className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />

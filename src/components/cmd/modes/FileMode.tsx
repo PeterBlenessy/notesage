@@ -297,7 +297,7 @@ function FileMode({
               isActive
                 ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
                 : "text-foreground hover:bg-muted/60",
-              "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <FileIcon

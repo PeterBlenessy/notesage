@@ -1720,7 +1720,7 @@ function PinnedResizeHandle() {
         // Invisible at rest (the bar's own border carries the edge);
         // distinctly visible on hover/focus.
         "bg-transparent hover:bg-muted-foreground transition-colors",
-        "focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+        "focus-visible:outline-none focus-visible:bg-muted-foreground",
         // 16px-wide invisible hit target centred on the visible 1px line so
         // the comfortable click area doesn't fight the hairline aesthetic.
         "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
@@ -1852,7 +1852,7 @@ function ExpandedResizeHandle({ side }: { side: "left" | "right" }) {
         "absolute top-0 h-full w-px cursor-col-resize",
         side === "right" ? "right-0" : "left-0",
         "bg-transparent hover:bg-muted-foreground transition-colors",
-        "focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+        "focus-visible:outline-none focus-visible:bg-muted-foreground",
         // 16px-wide invisible hit target centred on the visible line.
         "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
         "z-10",
@@ -1886,7 +1886,7 @@ function CompactContent({ onActivate }: CompactContentProps) {
         "flex h-full w-full items-center justify-center px-4",
         "text-left text-sm text-muted-foreground",
         "hover:text-foreground transition-colors",
-        "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
       <span>{COMPACT_PLACEHOLDER}</span>
@@ -2320,7 +2320,7 @@ function ExpandedContent({
                       "shrink-0 rounded-sm p-0.5",
                       "text-muted-foreground hover:text-foreground hover:bg-background/60",
                       "transition-colors",
-                      "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                     )}
                   >
                     <X
@@ -2370,7 +2370,7 @@ function ExpandedContent({
                     explicitAttachOffer.label,
                   )
                 }
-                className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
+                className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
                 aria-label={`Add ${explicitAttachOffer.label} to chat`}
               >
@@ -2395,7 +2395,7 @@ function ExpandedContent({
               "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
               "text-muted-foreground hover:text-foreground hover:bg-muted",
               "transition-colors",
-              "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2408,7 +2408,7 @@ function ExpandedContent({
             className={cn(
               "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
               "transition-colors",
-              "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               isDictating
                 ? "text-destructive animate-pulse"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted",
@@ -2461,7 +2461,7 @@ function ExpandedContent({
                 "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
                 "bg-destructive/10 text-destructive hover:bg-destructive/20",
                 "transition-colors",
-                "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-destructive)] focus-visible:[outline-offset:2px]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
               )}
             >
               <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
@@ -2483,7 +2483,7 @@ function ExpandedContent({
                 "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
                 "transition-opacity",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
-                "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
             >
               <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
@@ -2687,7 +2687,7 @@ function VerbDiscoveryMenu({ typedName, onPick }: VerbDiscoveryMenuProps) {
             onClick={() => onPick(verb.name)}
             className={cn(
               "w-full text-left px-3 py-2 text-sm flex items-baseline gap-2",
-              "hover:bg-muted/50 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+              "hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none",
             )}
           >
             <span className="font-mono text-foreground">:{verb.name}</span>

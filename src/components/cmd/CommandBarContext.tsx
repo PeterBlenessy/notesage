@@ -494,7 +494,7 @@ function ProviderPill({
           "border border-transparent bg-muted",
           "transition-colors duration-150",
           "hover:border-border",
-          "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         )}
         title={`Locked to ${
           lockedConnection?.label ?? "a specific provider"
@@ -528,7 +528,7 @@ function ProviderPill({
             "border border-transparent bg-muted",
             "transition-colors duration-150",
             "hover:border-border",
-            "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
           aria-label={`Active provider: ${label}`}
         >
@@ -664,7 +664,7 @@ function ProjectsPicker({
             projectPaths.length > 0
               ? "text-foreground bg-muted hover:border-border"
               : "text-muted-foreground hover:text-foreground hover:bg-muted hover:border-border",
-            "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
         >
           <FolderOpen className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
@@ -743,7 +743,7 @@ function ProjectsPicker({
                           onExplainLock(project.path);
                         }}
                         aria-label={`${name} is locked to a provider`}
-                        className="shrink-0 text-foreground hover:text-foreground/80 transition-colors rounded focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
+                        className="shrink-0 text-foreground hover:text-foreground/80 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                       >
                         <Lock className="h-3 w-3" strokeWidth={1.5} />
                       </button>
@@ -867,7 +867,7 @@ function ProviderQuickConfig({ connection }: { connection: Connection }) {
             "text-muted-foreground border border-transparent",
             "hover:text-foreground hover:bg-muted hover:border-border",
             "transition-colors duration-150",
-            "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
         >
           <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -959,7 +959,7 @@ function CrossProjectScopePill() {
         "text-[11px] font-medium",
         "bg-destructive/10 text-destructive border border-destructive/30",
         "hover:bg-destructive/15 hover:border-destructive/40 transition-colors",
-        "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-destructive)] focus-visible:[outline-offset:2px]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
       )}
     >
       <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={1.8} aria-hidden />
@@ -984,7 +984,7 @@ function IconButton({ ariaLabel, icon: Icon, onClick }: IconButtonProps) {
         "flex items-center justify-center w-6 h-6 rounded-md shrink-0",
         "text-muted-foreground hover:text-foreground hover:bg-muted",
         "transition-colors",
-        "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
       <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />

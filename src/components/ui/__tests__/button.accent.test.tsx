@@ -23,18 +23,12 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     expect(btn.className).toContain('hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]');
   });
 
-  it('default variant focus indicator is a 1px accent outline (live-test 2026-04-28 iter-5)', () => {
+  it('default variant focus ring + border resolve through --color-accent-primary', () => {
     const { container } = renderWithProviders(<Button>Save</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
-    // 1px solid outline through `--color-accent-primary`. Per user
-    // direction: always accent (no foreground fallback), 1px
-    // (2px read as too thick), full outline shorthand because
-    // Tailwind v4's `outline-N` only sets width, not style.
-    // When no accent class is set, `--color-accent-primary`
-    // resolves to `--color-primary` per the design-system
-    // fallback chain.
-    expect(btn.className).toContain('focus-visible:[outline:1px_solid_var(--color-accent-primary)]');
-    expect(btn.className).toContain('focus-visible:[outline-offset:2px]');
+    // Focus ring + border use the same fallback chain so accent extends to keyboard focus.
+    expect(btn.className).toContain('focus-visible:ring-[var(--color-accent-primary)]/50');
+    expect(btn.className).toContain('focus-visible:border-[var(--color-accent-primary)]');
   });
 
   it('link variant text resolves through --color-accent-primary', () => {

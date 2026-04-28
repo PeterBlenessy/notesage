@@ -130,7 +130,6 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
                 className={cn(
                   'h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150',
                   'hover:bg-muted text-muted-foreground hover:text-foreground',
-                  'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
                   currentModel && 'text-foreground',
                 )}
               >

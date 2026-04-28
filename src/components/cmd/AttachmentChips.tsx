@@ -99,7 +99,7 @@ function AttachmentChips({ chips, onRemove, className }: AttachmentChipsProps) {
                 "shrink-0 rounded-sm p-0.5",
                 "text-muted-foreground hover:text-foreground hover:bg-background/60",
                 "transition-colors",
-                "focus-visible:outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
             >
               <X className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />

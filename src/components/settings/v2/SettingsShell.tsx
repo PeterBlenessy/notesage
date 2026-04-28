@@ -196,13 +196,7 @@ export function SettingsShell({
                               'group relative flex w-full items-center gap-2.5 rounded-md',
                               'px-2 py-1.5 text-left text-[13px]',
                               'transition-colors duration-150 ease-in-out',
-                              // Live-test 2026-04-28 (iter-5): user
-                              // direction was "border only, no bg
-                              // shade" + 1px + always accent (no
-                              // foreground fallback). Outline shorthand
-                              // is required because Tailwind v4's
-                              // `outline-N` only sets width, not style.
-                              'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                              'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0',
                               active
                                 ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
                                 : 'text-foreground hover:bg-muted',
@@ -273,7 +267,7 @@ export function SettingsShell({
                 'absolute top-4 right-4 inline-flex items-center justify-center',
                 'rounded-xs text-muted-foreground opacity-70',
                 'transition-opacity duration-150 hover:opacity-100',
-                'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               )}
               aria-label="Close settings"
             >

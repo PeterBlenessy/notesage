@@ -301,7 +301,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150 hover:bg-accent active:opacity-80 focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150 hover:bg-accent active:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                       isActive
                         ? 'bg-accent text-foreground'
                         : 'text-muted-foreground'
