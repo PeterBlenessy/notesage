@@ -34,6 +34,7 @@ import {
   PAGE_BREAKS_RECALC_EVENT,
 } from "@/components/editor/extensions";
 import type { PageHFClickDetail } from "@/components/editor/extensions";
+import { FOCUS_EDITOR_EVENT } from "@/lib/editor-events";
 import { usePageSettings } from "@/hooks/usePageSettings";
 import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -291,6 +292,24 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     window.addEventListener(PAGE_HF_CLICK_EVENT, handler);
     return () => window.removeEventListener(PAGE_HF_CLICK_EVENT, handler);
   }, []);
+
+  // Listen for `notesage:focus-editor` events. Fired by callers that
+  // open a new tab AND want the cursor to land in the editor instead
+  // of falling to body — e.g., the Quiet sidebar's inline-create flow
+  // (`ProjectsSection.handleCreateCommit`). Without this, after the
+  // SidebarInlineEdit input commits and unmounts, focus has nowhere
+  // to inherit so it lands on body, leaving the cursor outside the
+  // editor. PRD-less bug fix tracked in
+  // `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
+  // task #6.
+  useEffect(() => {
+    if (!editor) return;
+    const handler = () => {
+      editor.commands.focus();
+    };
+    window.addEventListener(FOCUS_EDITOR_EVENT, handler);
+    return () => window.removeEventListener(FOCUS_EDITOR_EVENT, handler);
+  }, [editor]);
 
   const closeHfEditor = useCallback(() => {
     const state = hfEditStateRef.current;

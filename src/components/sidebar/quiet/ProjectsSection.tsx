@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
 import { FilePreview, isPreviewable } from "./FilePreview";
 import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
+import { dispatchFocusEditor } from "@/lib/editor-events";
 import { beginFileDrag } from "./file-drag";
 import {
   SIDEBAR_ENTER_RENAME_MODE_EVENT,
@@ -367,6 +368,14 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       try {
         await createFile(parentDir, fileName);
         await openFile(filePath, fileName);
+        // After the new file opens, hand keyboard focus to the editor.
+        // Without this, focus falls to body when SidebarInlineEdit
+        // unmounts (the input disappears mid-flow because we cleared
+        // `pendingCreate` above) — and the user has to click into
+        // the editor to start typing. PRD-less bug fix tracked in
+        // `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
+        // task #6.
+        dispatchFocusEditor();
         toast.success(`Created ${fileName}`);
       } catch (error) {
         toast.error(`Failed to create: ${error}`);

@@ -959,6 +959,68 @@ describe('ProjectsSection — inline create (#41)', () => {
     expect(mockCreateFile).not.toHaveBeenCalled();
     expect(screen.getByRole('alert').textContent).toMatch(/slash/i);
   });
+
+  // Regression for keyboard-only walkthrough finding #3 (2026-04-28).
+  // After commit, the inline-edit input unmounts and focus has nowhere
+  // to inherit unless we explicitly hand it to the editor. The
+  // `notesage:focus-editor` event tells the Editor (which subscribes
+  // via `FOCUS_EDITOR_EVENT`) to call `editor.commands.focus()`.
+  it('dispatches notesage:focus-editor after the new file opens', async () => {
+    const user = userEvent.setup();
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    const focusListener = vi.fn();
+    window.addEventListener('notesage:focus-editor', focusListener);
+    try {
+      useQuietSidebarStore.getState().setPendingCreate({
+        parentDir: '/Users/me/Notesage/alpha',
+      });
+      const input = await screen.findByLabelText(/create/i);
+      await user.type(input, 'draft{Enter}');
+
+      // Wait for the openFile chain to settle — the focus event
+      // fires AFTER `await openFile(...)` resolves, not during the
+      // initial commit.
+      await waitFor(() => {
+        expect(mockOpenFile).toHaveBeenCalled();
+      });
+      await waitFor(() => {
+        expect(focusListener).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      window.removeEventListener('notesage:focus-editor', focusListener);
+    }
+  });
+
+  it('does NOT dispatch notesage:focus-editor when commit fails', async () => {
+    const user = userEvent.setup();
+    setProjects([alpha]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Make createFile reject so the try/catch routes to the toast
+    // branch and the focus event must NOT fire.
+    mockCreateFile.mockRejectedValueOnce(new Error('disk full'));
+
+    const focusListener = vi.fn();
+    window.addEventListener('notesage:focus-editor', focusListener);
+    try {
+      useQuietSidebarStore.getState().setPendingCreate({
+        parentDir: '/Users/me/Notesage/alpha',
+      });
+      const input = await screen.findByLabelText(/create/i);
+      await user.type(input, 'draft{Enter}');
+
+      await waitFor(() => {
+        expect(mockCreateFile).toHaveBeenCalled();
+      });
+      // Give the rejected promise a tick to settle.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(focusListener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('notesage:focus-editor', focusListener);
+    }
+  });
 });
 
 // ----------------------------------------------------------------------------

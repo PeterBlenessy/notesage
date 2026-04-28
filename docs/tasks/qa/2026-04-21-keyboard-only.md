@@ -212,7 +212,7 @@ Log all P0 keyboard-trap or mouse-required findings as Phase 2 tasks. The 5 spec
 
 | Flow / Surface | Severity | Description | Filed as |
 | --- | --- | --- | --- |
-| Flow 1 — Create a new note - Quiet composer | HIGH | Cursor is NOT in the editor |  |
+| Flow 1 — Create a new note - Quiet composer | HIGH | Cursor is NOT in the editor | Fixed in Bundle D (#6) — `notesage:focus-editor` event after `openFile` resolves |
 | Flow 3 — Export PDF | HIGH | Tab navigation not working, export not possible |  |
 | Flow 4 — Switch provider mid-chat | CRITICAL | Tab navigation not working, cannot leave text input |  |
 | S2. Sidebar navigation (Quiet Composer) | MEDIUM | Folders section not selectable with tab at all, should come after Projects<br>I can not seem to open right click menu with ⌘⇧ | ⌘⇧, fixed in Bundle A (#1); Folders Tab is Bundle B (#4) |

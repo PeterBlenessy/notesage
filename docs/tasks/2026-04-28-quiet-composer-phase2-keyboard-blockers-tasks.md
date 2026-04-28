@@ -85,7 +85,7 @@ Findings #6 and #7 share a root cause: chord checks use `event.key === "<punctua
 
 ## Bundle D — New-note focus restoration
 
-### #6 — Restore focus to editor after Quiet inline-create commit (Finding #3)
+### #6 — Restore focus to editor after Quiet inline-create commit (Finding #3) ✅
 
 | Field | Value |
 | --- | --- |
