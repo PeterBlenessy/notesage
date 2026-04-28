@@ -60,7 +60,7 @@ describe("useRecentDocumentCycle", () => {
     unmount();
   });
 
-  it("⌘⇧[ (previous) advances toward older-accessed documents", () => {
+  it("⌃⇧Tab (previous) advances toward older-accessed documents", () => {
     // Access order: [c, b, a] — c is most recently active
     useEditorStore.setState({
       openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md"), mkTab("c", "/c.md")],
@@ -73,7 +73,7 @@ describe("useRecentDocumentCycle", () => {
     unmount();
   });
 
-  it("⌘⇧] (next) advances toward newer-accessed documents", () => {
+  it("⌃Tab (next) advances toward newer-accessed documents", () => {
     useEditorStore.setState({
       openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md"), mkTab("c", "/c.md")],
       activeTabId: "b",
@@ -182,7 +182,7 @@ describe("useRecentDocumentCycle — Quiet Composer mode", () => {
     useSettingsStore.setState({ uiPreview: "legacy" });
   });
 
-  it("walks recentFiles and loads the previous entry from disk on ⌘⇧[", async () => {
+  it("walks recentFiles and loads the previous entry from disk on ⌃⇧Tab", async () => {
     // Quiet Composer holds at most one open doc. The cycle hook should
     // walk the persisted MRU history (`recentFiles`) and `openFile` the
     // sibling entry from disk — `openFile` flows through `openTab`,
@@ -214,7 +214,7 @@ describe("useRecentDocumentCycle — Quiet Composer mode", () => {
     unmount();
   });
 
-  it("walks recentFiles forward on ⌘⇧] (toward newer entries)", async () => {
+  it("walks recentFiles forward on ⌃Tab (toward newer entries)", async () => {
     useEditorStore.setState({
       openDocuments: [mkTab("b", "/b.md")],
       activeTabId: "b",

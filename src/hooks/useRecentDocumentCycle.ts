@@ -8,14 +8,15 @@ import { CYCLE_RECENT_EVENT } from "@/hooks/useKeyboardShortcuts";
  * useRecentDocumentCycle — Task #77.
  *
  * Listens for the `notesage:cycle-recent` event (dispatched by the
- * `⌘⇧[` / `⌘⇧]` keyboard shortcut in `useKeyboardShortcuts`) and
- * advances the active document.
+ * `⌃Tab` / `⌃⇧Tab` keyboard shortcut in `useKeyboardShortcuts` —
+ * mirrors VS Code's MRU-cycle convention) and advances the active
+ * document.
  *
  * Two modes:
  *
  * 1. **Legacy shell** — cycles through `editor-store.documentAccessOrder`
- *    (the in-session MRU of already-open tabs). `⌘⇧[` advances toward
- *    older-accessed entries; `⌘⇧]` advances toward newer-accessed
+ *    (the in-session MRU of already-open tabs). `⌃⇧Tab` advances toward
+ *    older-accessed entries; `⌃Tab` advances toward newer-accessed
  *    entries. Both wrap.
  *
  * 2. **Quiet Composer shell** — there is at most one open doc at a time

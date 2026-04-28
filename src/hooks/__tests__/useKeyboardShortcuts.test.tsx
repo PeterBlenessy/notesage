@@ -451,32 +451,19 @@ describe("useKeyboardShortcuts (⌘W tab close)", () => {
 // ===========================================================================
 
 describe("useKeyboardShortcuts (scaffold bindings)", () => {
-  it("⌘⇧[ dispatches cycle-recent 'previous' (scaffold for #77)", () => {
+  // ⌃Tab / ⌃⇧Tab — MRU document cycle. Replaced ⌘⇧[ / ⌘⇧] in
+  // 2026-04-28 because brackets require Option on Swedish (and many
+  // European) keyboards, making the chord physically awkward even
+  // with an event.code fallback. Tab is a dedicated physical key on
+  // every keyboard. Mirrors VS Code's MRU-cycle convention.
+  it("⌃Tab dispatches cycle-recent 'next'", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     const listener = vi.fn<(e: Event) => void>();
     window.addEventListener(CYCLE_RECENT_EVENT, listener);
     try {
-      const event = dispatchKey("[", { metaKey: true, shiftKey: true });
-
-      expect(event.defaultPrevented).toBe(true);
-      expect(listener).toHaveBeenCalledTimes(1);
-      const detail = (listener.mock.calls[0]![0] as CustomEvent).detail;
-      expect(detail).toEqual({ direction: "previous" });
-    } finally {
-      window.removeEventListener(CYCLE_RECENT_EVENT, listener);
-    }
-  });
-
-  it("⌘⇧] dispatches cycle-recent 'next' (scaffold for #77)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    const listener = vi.fn<(e: Event) => void>();
-    window.addEventListener(CYCLE_RECENT_EVENT, listener);
-    try {
-      const event = dispatchKey("]", { metaKey: true, shiftKey: true });
+      const event = dispatchKey("Tab", { ctrlKey: true });
 
       expect(event.defaultPrevented).toBe(true);
       expect(listener).toHaveBeenCalledTimes(1);
@@ -487,28 +474,14 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     }
   });
 
-  // Cross-keyboard layout safety — `[` / `]` require Option on Swedish
-  // and many European keyboards, so `event.key` never reports the
-  // bracket characters at all when the user presses the chord. The
-  // physical key positions stay at `BracketLeft` / `BracketRight`
-  // regardless. Tracked: PRD-less bug fix in
-  // `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
-  // task #2.
-  it("⌘⇧[ falls back to event.code === 'BracketLeft' (Swedish keyboard)", () => {
+  it("⌃⇧Tab dispatches cycle-recent 'previous'", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     const listener = vi.fn<(e: Event) => void>();
     window.addEventListener(CYCLE_RECENT_EVENT, listener);
     try {
-      // On Swedish keyboard, the physical BracketLeft key with Cmd+Shift
-      // produces no `[` character — `event.key` is something else
-      // entirely (e.g. `Å`). The chord should still fire via `code`.
-      const event = dispatchKey("Å", {
-        code: "BracketLeft",
-        metaKey: true,
-        shiftKey: true,
-      });
+      const event = dispatchKey("Tab", { ctrlKey: true, shiftKey: true });
 
       expect(event.defaultPrevented).toBe(true);
       expect(listener).toHaveBeenCalledTimes(1);
@@ -519,23 +492,32 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     }
   });
 
-  it("⌘⇧] falls back to event.code === 'BracketRight' (Swedish keyboard)", () => {
+  it("plain Tab does NOT dispatch cycle-recent (would break editor indent)", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     const listener = vi.fn<(e: Event) => void>();
     window.addEventListener(CYCLE_RECENT_EVENT, listener);
     try {
-      const event = dispatchKey("Ä", {
-        code: "BracketRight",
-        metaKey: true,
-        shiftKey: true,
-      });
+      dispatchKey("Tab", {});
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(CYCLE_RECENT_EVENT, listener);
+    }
+  });
 
-      expect(event.defaultPrevented).toBe(true);
-      expect(listener).toHaveBeenCalledTimes(1);
-      const detail = (listener.mock.calls[0]![0] as CustomEvent).detail;
-      expect(detail).toEqual({ direction: "next" });
+  it("⌘Tab does NOT dispatch cycle-recent (macOS app-switcher must pass through)", () => {
+    // Defense in depth: never intercept ⌘Tab. macOS uses it for the
+    // app-switcher and that gesture is sacrosanct.
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    const listener = vi.fn<(e: Event) => void>();
+    window.addEventListener(CYCLE_RECENT_EVENT, listener);
+    try {
+      const event = dispatchKey("Tab", { metaKey: true });
+      expect(listener).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
     } finally {
       window.removeEventListener(CYCLE_RECENT_EVENT, listener);
     }

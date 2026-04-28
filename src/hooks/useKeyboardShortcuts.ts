@@ -43,8 +43,8 @@
  *   | ⌘N          | Open New Note dialog               | —                                              | QuietLayout (capture)    |
  *   | ⌘⇧N         | Open New Project dialog            | —                                              | QuietLayout (capture)    |
  *   | ⌘O          | Open folder picker                 | Open folder picker                             | this hook                |
- *   | ⌘⇧[         | Previous Recent doc (MRU)          | Previous Recent doc (MRU)                      | this hook → useRecentDocumentCycle |
- *   | ⌘⇧]         | Next Recent doc (MRU)              | Next Recent doc (MRU)                          | this hook → useRecentDocumentCycle |
+ *   | ⌃⇧Tab       | Previous Recent doc (MRU)          | Previous Recent doc (MRU)                      | this hook → useRecentDocumentCycle |
+ *   | ⌃Tab        | Next Recent doc (MRU)              | Next Recent doc (MRU)                          | this hook → useRecentDocumentCycle |
  *   | ⌘⌥C         | Copy active document's path        | Copy active document's path                    | this hook                |
  *   | ⌘⌥R         | Reveal active document in Finder   | Reveal active document in Finder               | this hook                |
  *   | Esc         | Exit focus mode (when active)      | —                                              | useFocusMode (capture)   |
@@ -408,30 +408,30 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       }
 
       // ------------------------------------------------------------------
-      // ⌘⇧[ / ⌘⇧] — cycle through Recent documents (MRU order).
+      // ⌃Tab / ⌃⇧Tab — cycle through Recent documents (MRU order).
       //
-      // TODO(#77): The MRU cycling logic itself is task #77. For #76 we
-      // install the binding scaffold and emit a custom event so the feature
-      // wire-up is a one-file change when #77 lands. Firing the event is
-      // harmless — no listener exists today, so the chord is effectively a
-      // no-op that consumes the keystroke (intentional — avoids the chord
-      // falling through to the browser's back/forward navigation).
+      // Mirrors VS Code's exact MRU-cycle chord. Picked over the previous
+      // ⌘⇧[ / ⌘⇧] binding (replaced 2026-04-28) because brackets require
+      // Option to type on Swedish (and many European) layouts, making the
+      // chord physically awkward even with an event.code fallback. Tab is
+      // a dedicated physical key on every keyboard — no layout dependency.
+      //
+      // The MRU cycling logic itself lives in `useRecentDocumentCycle`
+      // (Phase 1 task #77). This handler dispatches the cycle event;
+      // the consumer hook does the lookup.
+      //
+      // Note on macOS app-switcher: a long-press of ⌃Tab (>0.5s) opens
+      // the system app-switcher. A quick tap fires keydown first and
+      // we preventDefault, so the system never sees the chord.
       // ------------------------------------------------------------------
-      // Cross-keyboard layout safety: on Swedish (and many European)
-      // layouts `[` is `⌥8` and `]` is `⌥9` — pressing `⌘⇧[`
-      // literally cannot produce `[` because the bracket characters
-      // need Option. `event.code` reports the physical key position
-      // regardless of layout, so we accept either signal. See
-      // `docs/keyboard-shortcuts.md` "Cross-keyboard layout safety"
-      // for the project rule.
-      const isLeftBracket = key === "[" || e.code === "BracketLeft";
-      const isRightBracket = key === "]" || e.code === "BracketRight";
-      if (isMod && e.shiftKey && !e.altKey && (isLeftBracket || isRightBracket)) {
+      if (e.ctrlKey && !e.metaKey && !e.altKey && key === "Tab") {
+        // Defense in depth: gate on `ctrlKey && !metaKey` directly —
+        // never intercept ⌘Tab (macOS app-switcher).
         e.preventDefault();
         window.dispatchEvent(
           new CustomEvent<{ direction: "previous" | "next" }>(
             CYCLE_RECENT_EVENT,
-            { detail: { direction: isLeftBracket ? "previous" : "next" } },
+            { detail: { direction: e.shiftKey ? "previous" : "next" } },
           ),
         );
         return;

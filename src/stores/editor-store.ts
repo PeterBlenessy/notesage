@@ -87,8 +87,8 @@ const MAX_SCROLL_POSITIONS = 200;
 interface EditorStore {
   /** All open documents. Renamed from `tabs` in persist version 1 as part of
    *  the UI Refresh project — semantically the same set, but no longer bound to
-   *  a visible tab strip. Keyboard navigation (⌘⇧[/]) still cycles through
-   *  this array. */
+   *  a visible tab strip. Keyboard navigation (⌃Tab / ⌃⇧Tab) still cycles
+   *  through this array. */
   openDocuments: Tab[];
   activeTabId: string | null;
   recentFiles: RecentFile[];
@@ -105,8 +105,9 @@ interface EditorStore {
   /**
    * Session-only: MRU order of document IDs — first entry is the most
    * recently activated. Maintained by `openTab` / `setActiveTab` /
-   * `closeTab`. Drives the ⌘⇧[/] cycle shortcut (#77). Not persisted —
-   * access order resets on restart and repopulates as the user navigates.
+   * `closeTab`. Drives the ⌃Tab / ⌃⇧Tab cycle shortcut (#77). Not
+   * persisted — access order resets on restart and repopulates as the
+   * user navigates.
    */
   documentAccessOrder: string[];
 

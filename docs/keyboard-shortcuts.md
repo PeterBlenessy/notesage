@@ -70,8 +70,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Previous Recent doc | `⌘⇧[` | Cycle backward through MRU document history (works in both shells; live since task #77) |
-| Next Recent doc | `⌘⇧]` | Cycle forward through MRU document history |
+| Previous Recent doc | `⌃⇧Tab` | Cycle backward through MRU document history (mirrors VS Code's MRU-cycle convention; works in both shells) |
+| Next Recent doc | `⌃Tab` | Cycle forward through MRU document history |
 | Middle-click tab | Mouse middle button | Close document — Classic Layout only (Quiet Composer has no tab strip) |
 
 ## Slash Commands
