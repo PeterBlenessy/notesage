@@ -334,6 +334,7 @@ export function EditorSettings() {
                   onClick={() => setMeasurementUnit(unit)}
                   className={cn(
                     'inline-flex items-center justify-center px-3 text-[11px] font-medium transition-colors duration-150 hover:bg-accent',
+                    'outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]',
                     measurementUnit === unit
                       ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
                       : 'text-muted-foreground',

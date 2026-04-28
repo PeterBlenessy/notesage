@@ -368,7 +368,7 @@ export function AppearanceSettings() {
                   <button
                     type="button"
                     onClick={() => setTintChroma(0)}
-                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150"
+                    className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 outline-none focus-visible:[outline:1px_solid_var(--color-accent-primary)] focus-visible:[outline-offset:2px]"
                     aria-label="Reset tint"
                   >
                     <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
