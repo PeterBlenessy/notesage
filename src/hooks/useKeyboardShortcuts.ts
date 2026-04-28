@@ -31,7 +31,7 @@
  *   | ⌘F          | Open find in editor                | Open find in editor                            | this hook                |
  *   | ⌘W          | Close active tab (dirty guard)     | Close active tab (dirty guard)                 | this hook                |
  *   | ⌘.          | Toggle focus mode                  | —                                              | useFocusMode (capture)   |
- *   | ⌘⇧E         | Open Export dialog                 | —                                              | QuietLayout (capture)    |
+ *   | ⌘⇧E         | Open Export dialog                 | Open Export dialog                             | this hook (both paths since sidebar #22) |
  *   | ⌘⇧O         | Open document outline              | Open document outline                          | this hook                |
  *   | ⌘⇧L         | Toggle sidebar pin                 | Toggle sidebar pin                             | this hook                |
  *   | ⌘⇧A         | Toggle activity strip              | emit agent-orb `toggle`                        | this hook                |
@@ -360,8 +360,10 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘⇧E — export. QuietLayout preempts at capture phase under
-      // quiet-composer, so we're safe to handle unconditionally here.
+      // ⌘⇧E — Open Export dialog (multi-format: PDF / DOCX / PPTX /
+      // HTML). Sidebar-simplification task #22 — the capture-phase
+      // preempt that QuietLayout used to install for TreeOverlay was
+      // deleted in #20, so this handler now fires in both shells.
       if (isMod && e.shiftKey && keyLower === "e") {
         e.preventDefault();
         if (useEditorStore.getState().activeTabId) {

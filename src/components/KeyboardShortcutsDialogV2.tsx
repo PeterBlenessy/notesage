@@ -41,7 +41,7 @@ const categories: ShortcutCategory[] = [
       { action: "Close active document", keys: [["⌘", "W"]] },
       { action: "New note (inline-create row in sidebar)", keys: [["⌘", "N"]] },
       { action: "New project (inline-create row in sidebar)", keys: [["⌘", "⇧", "N"]] },
-      { action: "Export (PDF / DOCX / PPTX / HTML) — via > palette", keys: [["⌘", "⇧", "P"]] },
+      { action: "Export (PDF / DOCX / PPTX / HTML)", keys: [["⌘", "⇧", "E"]] },
     ],
   },
   {

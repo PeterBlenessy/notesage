@@ -11,7 +11,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Close active document | `⌘W` | Close the active document (warns if unsaved). Internally still called "tab" — see Implementation Notes |
 | New note | `⌘N` | Classic Layout: opens new-note dialog. Quiet Composer: opens inline-create row in the active project (no dialog) |
 | New project | `⌘⇧N` | Classic Layout: opens new-project dialog. Quiet Composer: opens inline-create row in the Projects section (no dialog) |
-| Export as PDF | `⌘⇧E` | Classic Layout only — opens the Export dialog (PDF/DOCX/PPTX/HTML). In Quiet Composer this chord is **rebound** to the TreeOverlay (capture-phase preempts the export binding) — export from the `>` palette or the right-click sidebar context menu instead |
+| Export | `⌘⇧E` | Open Export dialog (multi-format: PDF / DOCX / PPTX / HTML). Works in both shells since sidebar #20 deleted TreeOverlay (which used to preempt the chord under Quiet Composer). |
 
 ## Editor Formatting
 
@@ -105,7 +105,7 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 | Command palette / Command bar | `⌘K` | `⌘K` | Classic: open `CommandPalette`. Quiet Composer: focus the `FloatingCommandBar` |
 | Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
 | Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Classic: toggle ChatPanel. Quiet Composer: focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
-| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. **Quiet Composer (current behaviour): focuses the command bar with no prefix — typing goes to chat input, NOT file search.** There is no dedicated "files" prefix in the Quiet Composer cmd bar today. To find a file: open the bar with `⌘K`, then type the filename in chat-mode (no result list yet) — or use the TreeOverlay (`⌘⇧E`) for browsing |
+| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. **Quiet Composer (current behaviour): focuses the command bar with no prefix — typing goes to chat input, NOT file search.** There is no dedicated "files" prefix in the Quiet Composer cmd bar today. To find a file: open the bar with `⌘K`, then type the filename in chat-mode (no result list yet) — or arrow-into a project + `→` to inline-expand its contents. Sidebar #15's persistent search input + SQLite FTS results will land this for real |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
 | Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Classic: opens Actions dashboard. Quiet Composer: focuses the command bar with `!` prefix → TaskMode |
@@ -113,7 +113,7 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 | Tags | `⌘3` / `⌘⇧3` | `⌘#` | Classic: command palette in tags mode. Quiet Composer: focuses the command bar with `#` prefix → TagMode |
 | Research | `⌘4` / `⌘⇧4` | `⌘?` | Classic: command palette in research mode. Quiet Composer: focuses the command bar with `?` prefix → ResearchMode |
 | Commands palette | `⌘⇧P` | `⌘⇧P` | Classic: command palette in `>` (commands) mode. Quiet Composer: focuses the command bar with `>` prefix → PaletteMode |
-| Tree overlay (workspace tree) | `⌘⇧E` | `⌘⇧E` | Quiet Composer only — open the slide-in workspace tree overlay. Capture-phase listener preempts the legacy Export binding while QuietLayout is mounted |
+| ~~Tree overlay~~ | ~~`⌘⇧E`~~ | ~~`⌘⇧E`~~ | **REMOVED in sidebar-simplification task #20.** TreeOverlay deleted; the in-sidebar inline-expand pattern (`→` on a project / folder) replaces it. `⌘⇧E` reclaimed by Export above. |
 | Document outline | `⌘⇧O` | `⌘⇧O` | Open document outline (requires active file). Currently uses a legacy modal `Dialog` — has not been migrated to a Quiet Composer popover |
 | Keyboard shortcuts | `⌘⇧K` | `⌘⇧K` | Show keyboard shortcuts reference |
 | Copy path | `⌘⌥C` | `⌘⌥C` | Copy the active document's absolute path to the clipboard |
@@ -149,7 +149,7 @@ Backspacing past a prefix character returns to the default (files + actions) mod
 
 ### Owner table (Quiet Composer vs Legacy)
 
-The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Classic Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar` (`useCommandBarShortcuts`), while ⌘⇧E / ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners. `⌘.` (focus mode) is owned by `useFocusMode` at capture phase and the double-tap `⌘` summon path lives in `useDoubleTapCmd`. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
+The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Classic Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar` (`useCommandBarShortcuts`), while ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners. ⌘⇧E was previously a QuietLayout capture-phase chord (TreeOverlay) but was reclaimed by Export in sidebar-simplification #22 once TreeOverlay was deleted. `⌘.` (focus mode) is owned by `useFocusMode` at capture phase and the double-tap `⌘` summon path lives in `useDoubleTapCmd`. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
 
 ### Shortcut Priority
 

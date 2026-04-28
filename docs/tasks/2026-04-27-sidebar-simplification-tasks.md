@@ -286,7 +286,7 @@ The 9-step sidebar simplification program from the 2026-04-27 audit, plus 2 rela
 
 ## M10. ⌘⇧E rebinding to Open Export dialog
 
-### #22 — Re-bind `⌘⇧E` to Open Export dialog (multi-format)
+### #22 — Re-bind `⌘⇧E` to Open Export dialog (multi-format) ✅
 
 | Field | Value |
 | --- | --- |

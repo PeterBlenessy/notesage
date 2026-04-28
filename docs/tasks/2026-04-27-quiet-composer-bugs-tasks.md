@@ -150,7 +150,7 @@ Spot-checked during planning, 2026-04-27:
 | Depends on | #9 |
 | Files | `src/hooks/__tests__/useWindowFocus.test.ts` (new) |
 
-## #12 — KeyboardShortcutsDialogV2: post-sidebar-simplification verification
+## #12 — KeyboardShortcutsDialogV2: post-sidebar-simplification verification ✅
 
 | Field | Value |
 | --- | --- |
