@@ -1,0 +1,97 @@
+name: Issue enhancer
+
+# Rewrites triaged issues into the outcome-oriented template using
+# the issue-enhancer skill at .claude/skills/issue-enhancer/SKILL.md.
+# Triggered when a category label is added by issue-triage, plus a
+# 15-minute backstop sweep.
+
+on:
+  issues:
+    types: [labeled, edited]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  id-token: write   # claude-code-action uses OIDC for auth telemetry
+
+concurrency:
+  group: issue-enhancer-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  enhance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      # Precheck: only act on issues that have a category label and
+      # `needs-triage` AND don't yet have `enhanced`. Skips most events
+      # at zero token cost (e.g. someone adding a `frontend` area label
+      # to an already-enhanced issue).
+      - name: Find candidates
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            ISSUE="${{ github.event.issue.number }}"
+            LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+            HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
+            HAS_TRIAGED=$(echo "$LABELS" | jq 'any(. == "needs-triage")')
+            HAS_ENHANCED=$(echo "$LABELS" | jq 'any(. == "enhanced")')
+            if [[ "$HAS_CATEGORY" != "true" ]] || [[ "$HAS_TRIAGED" != "true" ]] || [[ "$HAS_ENHANCED" == "true" ]]; then
+              echo "Issue #$ISSUE not eligible (category=$HAS_CATEGORY triaged=$HAS_TRIAGED enhanced=$HAS_ENHANCED). Skipping."
+              echo "candidates=" >> "$GITHUB_OUTPUT"
+            else
+              echo "candidates=$ISSUE" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          # Cron / dispatch: find issues with category + needs-triage but no enhanced
+          ISSUES=$(gh issue list \
+            --label needs-triage \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore")) and ([.labels[].name] | any(. == "enhanced") | not)) | .number] | join(",")')
+          if [[ -z "$ISSUES" ]]; then
+            echo "No enhancement candidates. Skipping LLM step."
+            echo "candidates=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found candidates: $ISSUES"
+            echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run issue-enhancer skill
+        if: steps.find.outputs.candidates != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `issue-enhancer` skill at `.claude/skills/issue-enhancer/SKILL.md`.
+            Read the skill in full and follow it precisely.
+
+            **Trigger context**
+            - Event: ${{ github.event_name }}
+            - Repository: ${{ github.repository }}
+            - Issues to enhance (comma-separated): ${{ steps.find.outputs.candidates }}
+
+            For each issue number in the list above, run the skill once. Stop when all are done.
+
+            **Hard constraints** (also defined in the skill):
+            - Verify the issue has exactly one of `bug` / `enhancement` / `chore` and `needs-triage`.
+              The precheck filters but always re-verify with `gh issue view`.
+            - Pick the right template for the category.
+            - Preserve all reproduction steps, error messages, technical details verbatim.
+            - Add `enhanced`, remove `needs-triage` after rewriting body.
+            - Do NOT modify the title unless it is genuinely not outcome-shaped.
+            - Idempotent: if `enhanced` is already present, exit silently.
