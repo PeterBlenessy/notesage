@@ -38,8 +38,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Filter: skip issues that already have any of these labels
+          ALREADY_CLASSIFIED='bug|enhancement|chore|duplicate|wontfix'
           if [[ "${{ github.event_name }}" == "issues" ]]; then
-            echo "candidates=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            ISSUE="${{ github.event.issue.number }}"
+            EXISTING=$(gh issue view "$ISSUE" --json labels \
+              --jq "[.labels[].name | select(test(\"^($ALREADY_CLASSIFIED)$\"))] | length")
+            if [[ "$EXISTING" -gt 0 ]]; then
+              echo "Issue #$ISSUE already classified. Skipping LLM step (true idempotency)."
+              echo "candidates=" >> "$GITHUB_OUTPUT"
+            else
+              echo "candidates=$ISSUE" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           ISSUES=$(gh issue list \
@@ -84,6 +94,6 @@ jobs:
             - Do not modify the issue title or body.
             - Use `gh issue close --reason duplicate` only when closing as a
               duplicate of another open issue.
-            - Idempotent: running twice on the same issue produces the same
-              result. If a category label is already present, post a brief
-              "already classified" comment and stop.
+            - Idempotent: running twice produces the same result. The
+              precheck above already filters out classified issues — if you
+              somehow receive one anyway, exit silently without commenting.
