@@ -61,7 +61,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: --max-turns 30
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `issue-triage` skill at `.claude/skills/issue-triage/SKILL.md`.
             Read the skill in full and follow it precisely — it is the source of
