@@ -1,0 +1,117 @@
+name: Subtask planner
+
+# Breaks enhanced issues into red-test-list child sub-issues using the
+# subtask-planner skill at .claude/skills/subtask-planner/SKILL.md.
+# Triggers when an issue gets the `enhanced` label (from issue-enhancer)
+# or when `awaiting-research` is flipped back to `enhanced` after a
+# research subtask closes. Also runs as a 15-minute backstop sweep.
+
+on:
+  issues:
+    types: [labeled, edited]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  id-token: write   # claude-code-action uses OIDC for auth telemetry
+
+concurrency:
+  group: subtask-planner-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      # Precheck: only act on issues with `enhanced` and a category label,
+      # and that don't yet have `planned` or `awaiting-research`. This
+      # filters out: the planner's own children (which inherit `enhanced`
+      # but are sub-issues, not parents), already-planned issues, and
+      # issues currently in the research loop.
+      - name: Find candidates
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            ISSUE="${{ github.event.issue.number }}"
+            LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+            HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
+            HAS_ENHANCED=$(echo "$LABELS" | jq 'any(. == "enhanced")')
+            HAS_PLANNED=$(echo "$LABELS" | jq 'any(. == "planned")')
+            HAS_AWAITING=$(echo "$LABELS" | jq 'any(. == "awaiting-research")')
+            HAS_HITL_AFK=$(echo "$LABELS" | jq 'any(. == "hitl" or . == "afk")')
+            # Skip the planner's own children — they have `enhanced` + category
+            # but also have `hitl` or `afk` (which parent issues never do).
+            if [[ "$HAS_HITL_AFK" == "true" ]]; then
+              echo "Issue #$ISSUE is a subtask (has hitl/afk). Skipping."
+              echo "candidates=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [[ "$HAS_CATEGORY" != "true" ]] || [[ "$HAS_ENHANCED" != "true" ]] || [[ "$HAS_PLANNED" == "true" ]] || [[ "$HAS_AWAITING" == "true" ]]; then
+              echo "Issue #$ISSUE not eligible (category=$HAS_CATEGORY enhanced=$HAS_ENHANCED planned=$HAS_PLANNED awaiting=$HAS_AWAITING). Skipping."
+              echo "candidates=" >> "$GITHUB_OUTPUT"
+            else
+              echo "candidates=$ISSUE" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          # Cron / dispatch: find parent issues ready for planning
+          ISSUES=$(gh issue list \
+            --label enhanced \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore")) and ([.labels[].name] | any(. == "planned" or . == "awaiting-research" or . == "hitl" or . == "afk") | not)) | .number] | join(",")')
+          if [[ -z "$ISSUES" ]]; then
+            echo "No planning candidates. Skipping LLM step."
+            echo "candidates=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found candidates: $ISSUES"
+            echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run subtask-planner skill
+        if: steps.find.outputs.candidates != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `subtask-planner` skill at `.claude/skills/subtask-planner/SKILL.md`.
+            Read the skill in full and follow it precisely.
+
+            **Trigger context**
+            - Event: ${{ github.event_name }}
+            - Repository: ${{ github.repository }}
+            - Owner / Repo: PeterBlenessy / notesage
+            - Issues to plan (comma-separated): ${{ steps.find.outputs.candidates }}
+
+            For each parent issue in the list above, run the skill once. Stop when all are done.
+
+            **Hard constraints** (also defined in the skill):
+            - Each child sub-issue MUST be linked via the GraphQL `addSubIssue` mutation
+              (see SKILL.md "Sub-issue linking"). Without the link, GitHub's UI does not
+              show the children — the link is not optional.
+            - Each child carries a red-test list as definition of done.
+            - Each child labeled with the parent's category + `enhanced` + exactly one of
+              `hitl` / `afk`.
+            - Default count: 3-6 children. If you'd create more, the parent is too big.
+            - If under-specified, create ONE research subtask only and set parent to
+              `awaiting-research`.
+            - Idempotent: if parent has `planned` or `awaiting-research` already, exit silently.
+            - When using `gh issue create` with `--label`, the labels must already exist
+              on the repo. The current label set is: bug, enhancement, chore, needs-triage,
+              enhanced, awaiting-human, planned, in-progress, in-review, hitl, afk,
+              duplicate, wontfix, plus area labels (frontend, backend, rust, javascript,
+              dependencies, documentation).
