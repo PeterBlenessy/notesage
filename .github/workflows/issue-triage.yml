@@ -15,6 +15,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
+  id-token: write   # claude-code-action uses OIDC for auth telemetry
 
 concurrency:
   group: issue-triage-${{ github.event.issue.number || github.run_id }}
@@ -25,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Precheck: figure out which issues to process. For event triggers,
       # the issue number comes from the payload. For cron / dispatch,
