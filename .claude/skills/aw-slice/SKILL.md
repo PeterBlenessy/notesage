@@ -181,6 +181,7 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 - **No body modification** of the parent. Update labels only.
 - **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `refined` + `tdd` + `hitl|afk`. They do NOT get `feature` (only top-level parents do).
 - **Children get `hitl` or `afk`**, exactly one each.
+- **Every `hitl` marking MUST come with a "Why hitl" rationale** in the comment — specific files, acceptance criteria, or risks the human should review before flipping to `afk`. A bare "Marked: tdd + hitl" without rationale is incomplete and forces the human to re-derive what's risky.
 
 ## Comment templates
 
@@ -191,19 +192,19 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 
 **User value:** <one-sentence "User can …" statement>
 
-Passing this directly to `aw-tdd` (no sub-issues created). Marked `tdd + <afk|hitl>`.
+**Marked:** `tdd + <afk|hitl>` — <REQUIRED if hitl: which files / acceptance criteria / risks warrant human eyes; OPTIONAL but encouraged if afk: brief why-this-is-safe-to-automate>
 ```
 
 **Slice path (multiple independent values):**
 
 ```
-> *Sliced by the `aw-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
+> *Sliced by the `aw-slice` skill. Reply with corrections or to flip hitl/afk on any peer.*
 
 Identified <N> independent user values, each shipping as its own PR:
 
-- #<A> — <user-value sentence>
-- #<B> — <user-value sentence>
-- #<C> — <user-value sentence>
+- #<A> — <user-value sentence> · `<afk|hitl>` — <REQUIRED if hitl: specific concern>
+- #<B> — <user-value sentence> · `<afk|hitl>` — <REQUIRED if hitl: specific concern>
+- #<C> — <user-value sentence> · `<afk|hitl>` — <REQUIRED if hitl: specific concern>
 
 Order: <#A → #B → #C> (per `Depends on:` markers, if any).
 ```
