@@ -30,11 +30,15 @@ concurrency:
 
 jobs:
   slice:
-    # Skip when claude[bot] added the label — that means pipeline.yml is
-    # already processing this issue. Only fire on human label changes
-    # (e.g. awaiting-research → slice after research closes), cron, and
-    # workflow_dispatch.
-    if: github.event_name != 'issues' || github.actor != 'claude[bot]'
+    # For issues.labeled events: only fire when a HUMAN adds the `slice`
+    # label specifically. This is the post-research re-slice path
+    # (human flips awaiting-research → slice after a research subtask
+    # closes). Any other label change — bot-added, human-added but
+    # different label — is silently skipped at the job level.
+    # Cron and workflow_dispatch always fire.
+    if: |
+      github.event_name != 'issues' ||
+      (github.actor != 'claude[bot]' && github.event.label.name == 'slice')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
