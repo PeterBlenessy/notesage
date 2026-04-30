@@ -151,6 +151,6 @@ Restructured the body into the outcome-oriented `<category>` template. Reproduct
 
 ## Constraints from the dev process
 
-- After this skill: issue should have `<category>` + `feature` + `refined` (state) + `slice` (action). The `refine` action label is gone.
+- After this skill: issue should have `<category>` + `refined` (state) + `slice` (action). The `refine` action label is gone.
 - `aw-slice` is the next workflow in line. It triggers on the `slice` label and decides per-issue whether to create a research subtask first or break straight into implementation subtasks.
 - There is no separate `feature-research` skill — research becomes a regular subtask when `aw-slice` decides the parent is under-specified.

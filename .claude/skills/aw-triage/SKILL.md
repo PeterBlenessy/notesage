@@ -26,7 +26,7 @@ Classify a single top-level GitHub issue and set its category label. Don't modif
 3. **Decide a status.** Exactly one of:
    - **Duplicate of an open or merged issue** → close, comment `Duplicate of #N`, add `duplicate` label, stop.
    - **Match for a closed `wontfix` issue** → close, comment with the link and the prior reasoning, add `wontfix` label, stop.
-   - **Genuinely ambiguous** (one-line title, no body, mixes unrelated topics) → post a clarification comment, do NOT add a category label, do NOT add `refine`, do NOT add `feature`. Stop.
+   - **Genuinely ambiguous** (one-line title, no body, mixes unrelated topics) → post a clarification comment, do NOT add a category label, do NOT add `refine`. Stop.
    - **Otherwise** → continue to step 4.
 
 4. **Classify into exactly one category:**
@@ -36,14 +36,12 @@ Classify a single top-level GitHub issue and set its category label. Don't modif
 
 5. **Apply labels and comment.**
    - Add the chosen category label.
-   - Add the `feature` label (marks this as a top-level / parent issue — sub-issues created later by `aw-slice` do NOT get `feature`).
    - Add the `refine` action label (signals `aw-refine` to pick this up next).
    - Post the triage comment (template below).
 
 ## Output rules
 
 - **Exactly one** of `bug` / `enhancement` / `chore` per issue (or none, if asking for clarification).
-- **Always add `feature`** on a successful classification — `aw-triage` only runs on top-level issues, never on sub-issues.
 - **Exactly one** action label after a successful run: `refine`. Never set `slice`, `sliced`, `tdd`, or `review` here.
 - Never modify title or body.
 - **Idempotent** — running twice on the same issue produces the same result. The workflow precheck filters re-runs by checking for an existing category; the skill should still no-op if it sees one.
@@ -98,11 +96,11 @@ Once you reply, I'll re-run triage.
 - Mixes multiple unrelated changes (ask the user to split)
 - Mentions UI/UX feel without describing what is wrong or what would be better
 
-In all of these: post the clarification template, do not add a category, do not add `feature` or `refine`. The issue stays untriaged.
+In all of these: post the clarification template, do not add a category, do not add `refine`. The issue stays untriaged.
 
 ## Constraints from the dev process
 
 - Categories are mutually exclusive: do not stack `bug` + `enhancement`.
 - Area labels (`backend`, `frontend`, `rust`, `javascript`, `dependencies`, `documentation`) are NOT this skill's job — leave existing area labels alone, do not add new ones.
-- After a successful run: issue has `<category>` + `feature` + `refine` (plus any pre-existing area labels).
+- After a successful run: issue has `<category>` + `refine` (plus any pre-existing area labels).
 - `feature` ≠ category. `feature` is the "this is a top-level issue" marker, set on all parents regardless of whether they're bugs, enhancements, or chores. `enhancement` is the category for "new functionality / improvement". They co-exist on a feature-request issue: `enhancement + feature + refine`.

@@ -21,7 +21,6 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 1. **Read the issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
    - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
    - Verify it does NOT have `review` or be closed.
-   - The `feature` label is OK — it just means this is a top-level parent that aw-slice decided to ship as one PR rather than slicing.
 
 2. **Check `Depends on:` blockers.** Parse the body for `Depends on: #N` references. For each:
    - `gh issue view N --json state,labels --jq '.state'` — if not `CLOSED`, the dependency is not done.

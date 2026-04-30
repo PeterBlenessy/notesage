@@ -45,8 +45,8 @@ jobs:
       - uses: actions/checkout@v6
 
       # Precheck: act on parent issues with `feature` + `refined` + `slice`
-      # AND not yet `sliced` or `awaiting-research`. Filters out subtasks
-      # (which never have `feature`).
+      # AND not yet `sliced` or `awaiting-research`. Filters out anything not eligible
+      # .
       - name: Find candidates
         id: find
         env:
@@ -60,7 +60,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "issues" ]]; then
             ISSUE="${{ github.event.issue.number }}"
             LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
-            HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
             HAS_CLARIFIED=$(echo "$LABELS" | jq 'any(. == "refined")')
             HAS_SLICE=$(echo "$LABELS" | jq 'any(. == "slice")')
             HAS_SLICED=$(echo "$LABELS" | jq 'any(. == "sliced")')
@@ -75,7 +74,6 @@ jobs:
           fi
           ISSUES=$(gh issue list \
             --label slice \
-            --label feature \
             --label refined \
             --state open \
             --limit 5 \

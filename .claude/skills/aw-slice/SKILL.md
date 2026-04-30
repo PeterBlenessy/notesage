@@ -50,12 +50,13 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
      - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
      - Post a "passing through unsliced" comment (template below)
      - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
-   - **N independent value groups** — slice into N sub-issues, one per group:
-     - Title: `<verb-prefixed user-value statement> for #<parent>` (e.g. `feat(search): search across editor for #99`)
-     - Body: Goal (the user value) / Red tests / Green / Files likely to change / Definition of done
-     - Labels: parent's category + `refined` + `tdd` + one of `hitl` / `afk`. Children do NOT get `feature`.
-     - Link as sub-issue of parent
-     - Update parent labels: remove `slice`, add `sliced`. Stop.
+   - **N independent value groups** — split into N peer issues (NOT sub-issues; no parent/child link):
+     - **The original issue becomes the FIRST peer slice.** Rewrite its body to match the first value group only. Update its labels: remove `slice`, add `tdd` + one of `hitl` / `afk`. The original keeps its number, history, and comments.
+     - **Create N-1 new peer issues**, one per remaining value group:
+       - Title: `<verb-prefixed user-value statement>` (e.g. `feat(search): search across editor`)
+       - Body: Goal (the user value) / Red tests / Green / Files likely to change / Definition of done. Reference the original issue with `Split from #<original>` for context, but no GraphQL sub-issue link.
+       - Labels: same category as original + `refined` + `tdd` + one of `hitl` / `afk`.
+     - Post a comment on the original explaining the split. Stop.
 
    **Default to "don't slice."** Most issues are one user value. Only slice when you can clearly name N independent values, each independently useful.
 

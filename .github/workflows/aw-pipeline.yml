@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      subtasks: ${{ steps.collect.outputs.subtasks }}
+      ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v6
       - name: Run aw-slice skill
@@ -125,48 +125,40 @@ jobs:
             Run the `aw-slice` skill at `.claude/skills/aw-slice/SKILL.md`
             on issue #${{ github.event.issue.number }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
-            precisely. Each child sub-issue MUST be linked via the GraphQL
-            addSubIssue mutation. Each child labeled with category +
-            `refined` + `tdd` + exactly one of `hitl` / `afk`. Default 3-6
-            children. If under-specified, create ONE research subtask only
-            and set parent to `awaiting-research`.
-      - name: Collect afk work for matrix
-        id: collect
+            precisely. The unit is one user value = one PR. Default to NOT
+            slicing — most issues pass directly to aw-tdd as a single PR.
+            Slice only when the issue delivers N independent user values,
+            each independently shippable. When splitting, the original
+            issue becomes the FIRST peer slice (rewrite its body); create
+            N-1 new peer issues for the remaining values (no GraphQL
+            sub-issue link). If under-specified, create ONE research peer
+            and set the original to `awaiting-research`.
+      - name: Check if original issue is ready for tdd
+        id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PARENT: ${{ github.event.issue.number }}
+          ISSUE: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          # Two cases:
-          #   1. aw-slice decided "don't slice" — parent itself now has tdd+afk.
-          #      Matrix runs once on the parent.
-          #   2. aw-slice created sub-issues (multiple user values).
-          #      Matrix runs once per sub-issue with tdd+afk.
-          # hitl items are skipped (need human approval before tdd).
-          # awaiting-research / no children / no tdd label → matrix is skipped via `if:` below.
-          PARENT_LABELS=$(gh issue view "$PARENT" --json labels --jq '[.labels[].name]')
-          PARENT_HAS_TDD=$(echo "$PARENT_LABELS" | jq 'any(. == "tdd")')
-          PARENT_HAS_AFK=$(echo "$PARENT_LABELS" | jq 'any(. == "afk")')
-          if [[ "$PARENT_HAS_TDD" == "true" && "$PARENT_HAS_AFK" == "true" ]]; then
-            SUBTASKS="[$PARENT]"
-            echo "Don't-slice path: matrix on parent #$PARENT"
+          # The issue is tdd-ready iff aw-slice put `tdd + afk` on it
+          # (don't-slice path, OR the first peer slice in a split).
+          # awaiting-research / hitl / no tdd label → tdd job is skipped.
+          # Peer issues created by a split run through their own pipeline
+          # via the standalone aw-tdd cron when they enter the queue.
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+          HAS_TDD=$(echo "$LABELS" | jq 'any(. == "tdd")')
+          HAS_AFK=$(echo "$LABELS" | jq 'any(. == "afk")')
+          if [[ "$HAS_TDD" == "true" && "$HAS_AFK" == "true" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            SUBTASKS=$(gh api graphql -f query="query { repository(owner:\"PeterBlenessy\", name:\"notesage\") { issue(number:$PARENT) { subIssues(first:20) { nodes { number labels(first:10) { nodes { name } } } } } } }" \
-              --jq '[.data.repository.issue.subIssues.nodes[] | select((.labels.nodes | map(.name) | any(. == "tdd")) and (.labels.nodes | map(.name) | any(. == "afk"))) | .number]')
-            echo "Slice path: matrix on sub-issues $SUBTASKS"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "subtasks=$SUBTASKS" >> "$GITHUB_OUTPUT"
 
   tdd:
     needs: slice
-    if: needs.slice.outputs.subtasks != '[]' && needs.slice.outputs.subtasks != ''
+    if: needs.slice.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        subtask: ${{ fromJson(needs.slice.outputs.subtasks) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -190,7 +182,7 @@ jobs:
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
           prompt: |
             Run the `aw-tdd` skill at `.claude/skills/aw-tdd/SKILL.md` on
-            subtask #${{ matrix.subtask }} in this repository
+            issue #${{ github.event.issue.number }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely.
 

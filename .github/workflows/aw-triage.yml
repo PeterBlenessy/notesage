@@ -50,7 +50,7 @@ jobs:
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore" or . == "duplicate" or . == "wontfix" or . == "feature")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore" or . == "duplicate" or . == "wontfix")) | not) | .number] | first(.[])? // empty')
           if [[ -z "$ISSUES" ]]; then
             echo "No untriaged issues. Skipping LLM step."
             echo "candidates=" >> "$GITHUB_OUTPUT"
