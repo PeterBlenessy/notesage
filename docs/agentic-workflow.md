@@ -34,7 +34,7 @@ The skill files double as the canonical contract — every workflow's prompt is 
 ## Pipeline overview
 
 ```mermaid
-flowchart TD
+flowchart LR
   A[Human creates issue] -->|issues.opened fires aw-pipeline.yml| B[aw-triage]
   B -->|+ category, + feature, + refine| C[aw-refine]
   B -.->|duplicate / wontfix / ambiguous| Z[Closed or needs-info]
