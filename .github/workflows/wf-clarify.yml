@@ -1,8 +1,8 @@
-name: Issue enhancer
+name: WF — Clarify
 
 # Rewrites triaged issues into the outcome-oriented template using
-# the issue-enhancer skill at .claude/skills/issue-enhancer/SKILL.md.
-# Triggered when a category label is added by issue-triage, plus a
+# the wf-clarify skill at .claude/skills/wf-clarify/SKILL.md.
+# Triggered when a category label is added by wf-triage, plus a
 # 15-minute backstop sweep.
 
 on:
@@ -19,7 +19,7 @@ permissions:
   id-token: write   # claude-code-action uses OIDC for auth telemetry
 
 concurrency:
-  group: issue-enhancer-${{ github.event.issue.number || github.run_id }}
+  group: wf-clarify-${{ github.event.issue.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
             echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run issue-enhancer skill
+      - name: Run wf-clarify skill
         if: steps.find.outputs.candidates != ''
         uses: anthropics/claude-code-action@v1
         with:
@@ -77,7 +77,7 @@ jobs:
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
           prompt: |
-            Run the `issue-enhancer` skill at `.claude/skills/issue-enhancer/SKILL.md`.
+            Run the `wf-clarify` skill at `.claude/skills/wf-clarify/SKILL.md`.
             Read the skill in full and follow it precisely.
 
             **Trigger context**
@@ -92,6 +92,9 @@ jobs:
               The precheck filters but always re-verify with `gh issue view`.
             - Pick the right template for the category.
             - Preserve all reproduction steps, error messages, technical details verbatim.
-            - Add `enhanced`, remove `needs-triage` after rewriting body.
+            - Add `enhanced` AND `ready-for-planning` after rewriting body.
+              Remove `needs-triage`. The `ready-for-planning` label is the
+              explicit gate that wakes up `wf-slice` — without it, the
+              slicer will not act.
             - Do NOT modify the title unless it is genuinely not outcome-shaped.
             - Idempotent: if `enhanced` is already present, exit silently.

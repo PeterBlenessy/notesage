@@ -1,7 +1,7 @@
-name: Issue triage
+name: WF — Triage
 
-# Classifies fresh GitHub issues using the issue-triage skill at
-# .claude/skills/issue-triage/SKILL.md. Runs on every new issue and as
+# Classifies fresh GitHub issues using the wf-triage skill at
+# .claude/skills/wf-triage/SKILL.md. Runs on every new issue and as
 # a 15-minute backstop sweep for anything the event-trigger missed.
 
 on:
@@ -18,7 +18,7 @@ permissions:
   id-token: write   # claude-code-action uses OIDC for auth telemetry
 
 concurrency:
-  group: issue-triage-${{ github.event.issue.number || github.run_id }}
+  group: wf-triage-${{ github.event.issue.number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +66,7 @@ jobs:
             echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run issue-triage skill
+      - name: Run wf-triage skill
         if: steps.find.outputs.candidates != ''
         uses: anthropics/claude-code-action@v1
         with:
@@ -75,7 +75,7 @@ jobs:
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
           prompt: |
-            Run the `issue-triage` skill at `.claude/skills/issue-triage/SKILL.md`.
+            Run the `wf-triage` skill at `.claude/skills/wf-triage/SKILL.md`.
             Read the skill in full and follow it precisely — it is the source of
             truth for classification rules, comment templates, and idempotency.
 
@@ -90,7 +90,7 @@ jobs:
             **Hard constraints** (also defined in the skill):
             - Apply at most one of `bug` / `enhancement` / `chore` per issue.
             - Keep `needs-triage` after classification — the next workflow
-              (`issue-enhancer`) flips it to `enhanced`.
+              (`wf-clarify`) flips it to `enhanced`.
             - Do not modify the issue title or body.
             - Use `gh issue close --reason duplicate` only when closing as a
               duplicate of another open issue.

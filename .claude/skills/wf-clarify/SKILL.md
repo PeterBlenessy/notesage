@@ -1,11 +1,14 @@
 ---
-name: issue-enhancer
-description: Rewrite a triaged GitHub issue body into the outcome-oriented template (bug / enhancement / chore variants), preserving all reproduction details. Adds `enhanced`, removes `needs-triage`. Runs after `issue-triage` has classified the issue.
+name: wf-clarify
+description: Rewrite a triaged GitHub issue body into the outcome-oriented
+  template (bug / enhancement / chore variants), preserving all reproduction
+  details. Adds `enhanced`, removes `needs-triage`. Runs after `wf-triage`
+  has classified the issue.
 ---
 
 # Issue enhancer
 
-Rewrite a single GitHub issue body into the outcome-oriented template. The issue must already have a category label (`bug`, `enhancement`, or `chore`) — the `issue-triage` skill is responsible for that.
+Rewrite a single GitHub issue body into the outcome-oriented template. The issue must already have a category label (`bug`, `enhancement`, or `chore`) — the `wf-triage` skill is responsible for that.
 
 ## Inputs
 
@@ -15,6 +18,7 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 ## Process
 
 1. **Read the issue.**
+
    - `gh issue view $ISSUE_NUMBER --json title,body,labels`
    - Verify exactly one of `bug` / `enhancement` / `chore` is present. If not, post a clarification comment and stop.
    - If `enhanced` is already present, exit silently (idempotent).
@@ -22,12 +26,14 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 2. **Pick the matching template** (see Templates below) based on the category.
 
 3. **Rewrite the body.** Preserve verbatim:
+
    - Reproduction steps, error messages, code blocks
    - Environment / version / hardware details
    - User-provided technical context
    - Original outcome statement if it's already clear
 
    Improve:
+
    - Outcome focus — what observable behavior does the user want?
    - Scope clarity — what's in, what's out, what are non-goals?
    - Acceptance criteria — testable, observable outcomes (NOT implementation details)
@@ -37,7 +43,9 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 5. **Update the title** ONLY if the current title is genuinely not outcome-shaped (e.g. one-word, clickbait, or describes implementation). Otherwise leave it alone.
 
 6. **Update labels:**
+
    - Add `enhanced`
+   - Add `ready-for-planning` (the explicit gate that wakes up `wf-slice`)
    - Remove `needs-triage`
 
 7. **Post a brief comment** (template below).
@@ -103,7 +111,7 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 ## Open questions
 
-- <decisions that still need a human call; the `feature-research` skill will propose alternatives later>
+- <decisions that still need a human call; if these are blocking, `wf-slice` will create a research subtask first>
 ```
 
 ### Chore template
@@ -137,19 +145,19 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 - **Never** rewrite the body if the issue already has `enhanced`. Exit silently.
 - **Never** modify the title unless it is genuinely not outcome-shaped — most titles are fine.
 - **Preserve** all technical details from the original report verbatim. Quote in code blocks if needed.
-- **The `enhanced` label is the trigger** for downstream workflows (`subtask-planner`, `feature-research`). Adding it without proper rewriting WILL cause planner to act on a half-baked issue.
-- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `needs-triage`, do NOT add `enhanced`.
+- **`enhanced` + `ready-for-planning` together are the trigger** for `wf-slice`. Adding them without proper rewriting WILL cause the slicer to act on a half-baked issue.
+- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `needs-triage`, do NOT add `enhanced` or `ready-for-planning`.
 
 ## Comment template
 
 ```
-> *Enhanced automatically by the `issue-enhancer` skill. Reply with corrections or additional context.*
+> *Enhanced automatically by the `wf-clarify` skill. Reply with corrections or additional context.*
 
 Restructured the body into the outcome-oriented `<category>` template. Reproduction steps and technical details preserved verbatim.
 ```
 
 ## Constraints from the dev process
 
-- After this skill: issue should have `<category>` + `enhanced` (no `needs-triage`).
-- For `enhancement` category, the `feature-research` skill runs next to propose alternatives and set `awaiting-human`.
-- For `bug` and `chore`, `subtask-planner` runs when the planner workflow finds the `enhanced` label.
+- After this skill: issue should have `<category>` + `enhanced` + `ready-for-planning` (no `needs-triage`).
+- `wf-slice` is the next workflow in line. It triggers on `ready-for-planning` and decides per-issue whether to create a research subtask first or break straight into implementation subtasks.
+- There is no separate `feature-research` skill — research becomes a regular subtask when `wf-slice` decides the parent is under-specified.

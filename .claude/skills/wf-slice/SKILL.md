@@ -1,11 +1,11 @@
 ---
-name: subtask-planner
+name: wf-slice
 description: Break an enhanced GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if the parent is under-specified. Links children as GitHub sub-issues. Sets `planned` (or `awaiting-research`) on the parent.
 ---
 
-# Subtask planner
+# wf-slice
 
-Break an enhanced GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). The planner decides slicing strategy per issue, and creates a research sub-issue first if too little is known to plan confidently.
+Break an enhanced GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). The skill decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
 
 ## Inputs
 
@@ -16,8 +16,9 @@ Break an enhanced GitHub issue into actionable child sub-issues. Each child is s
 
 1. **Read the parent.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
-   - Verify it has `enhanced` and one of `bug` / `enhancement` / `chore`.
+   - Verify it has `enhanced` AND `ready-for-planning` AND one of `bug` / `enhancement` / `chore`.
    - Verify it does NOT have `planned` or `awaiting-research`. If it does, exit silently (idempotent).
+   - The `ready-for-planning` label is the explicit gate — it's set by `wf-clarify` after a successful enhancement, or by a human after a research subtask closes (`awaiting-research` → `ready-for-planning`). Bare `enhanced` alone is NOT a trigger.
 
 2. **Decide: clear plan or research first?**
    
@@ -43,6 +44,7 @@ Break an enhanced GitHub issue into actionable child sub-issues. Each child is s
     
     Update parent labels:
     - Remove `enhanced`
+    - Remove `ready-for-planning`
     - Add `awaiting-research`
     
     Post a comment on the parent (template below). Stop.
@@ -63,6 +65,7 @@ Break an enhanced GitHub issue into actionable child sub-issues. Each child is s
     
     Update parent labels:
     - Remove `enhanced`
+    - Remove `ready-for-planning`
     - Add `planned`
     
     Post a comment on the parent (template below). Stop.
@@ -178,7 +181,7 @@ Post findings as a comment on this issue, then close as completed. The planner w
 **Clear-plan path:**
 
 ```
-> *Planned automatically by the `subtask-planner` skill. Reply with corrections or to flip hitl/afk on any subtask.*
+> *Planned automatically by the `wf-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
 
 Sliced into <N> sub-issues using <horizontal|vertical> strategy. Each child carries a red-test list as its definition of done. Subtasks: <#A, #B, #C>.
 
@@ -190,7 +193,7 @@ Reasoning: <one-sentence why this slicing>.
 **Research-first path:**
 
 ```
-> *Planned automatically by the `subtask-planner` skill.*
+> *Planned automatically by the `wf-slice` skill.*
 
 Not enough is known to plan implementation subtasks confidently. Created research subtask <#R> covering: <question 1; question 2; ...>.
 
@@ -201,4 +204,4 @@ Will re-plan when the research subtask closes. Flip the parent label `awaiting-r
 
 - Parent state transition: `enhanced` → `planned` (clear path) or `enhanced` → `awaiting-research` (research path).
 - Re-planning trigger: human or automation flips `awaiting-research` → `enhanced` on the parent after the research subtask closes.
-- The `tdd-coder` workflow picks up children labeled `afk` + `enhanced` + category. It does not look at parents.
+- The `wf-tdd` workflow picks up children labeled `afk` + `enhanced` + category. It does not look at parents.

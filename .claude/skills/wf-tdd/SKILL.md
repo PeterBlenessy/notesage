@@ -1,5 +1,5 @@
 ---
-name: tdd-coder
+name: wf-tdd
 description: Implement an `afk + planned` subtask issue using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates issue labels through the in-progress → in-review lifecycle. Reverts and reports if anything fails.
 ---
 
@@ -92,7 +92,7 @@ If any hard gate fails:
 **Start:**
 
 ```
-> *Starting implementation via the `tdd-coder` skill (run id: <github.run_id>).*
+> *Starting implementation via the `wf-tdd` skill (run id: <github.run_id>).*
 
 Following red-green-refactor:
 1. Writing failing tests from the red-test list above
@@ -173,7 +173,7 @@ Implements #<issue-number>
 
 <anything the reviewer should pay attention to: edge cases, design alternatives considered, things that surprised the agent>
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code) via the `tdd-coder` skill.
+🤖 Generated with [Claude Code](https://claude.com/claude-code) via the `wf-tdd` skill.
 ```
 
 ## Output rules
@@ -189,6 +189,6 @@ Implements #<issue-number>
 
 ## Constraints from the dev process
 
-- Pick from `<category> + enhanced + afk` (sub-issues created by `subtask-planner`).
+- Pick from `<category> + enhanced + afk` (sub-issues created by `wf-slice`).
 - The retrospective workflow runs after merge — do not write retro entries from here.
 - If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-split rather than implementing partially.

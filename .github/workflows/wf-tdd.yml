@@ -1,9 +1,9 @@
-name: TDD coder
+name: WF — TDD
 
-# Implements `afk + planned` subtask issues using the tdd-coder skill at
-# .claude/skills/tdd-coder/SKILL.md. Writes failing tests first, implements
+# Implements `afk + planned` subtask issues using the wf-tdd skill at
+# .claude/skills/wf-tdd/SKILL.md. Writes failing tests first, implements
 # minimum to pass, runs the full test suite as a hard gate, opens a draft PR.
-# Triggers when a subtask gets the `afk` label (from subtask-planner) plus
+# Triggers when a subtask gets the `afk` label (from wf-slice) plus
 # a 15-minute backstop sweep. One subtask per run.
 
 on:
@@ -26,7 +26,7 @@ permissions:
 concurrency:
   # Per-issue: prevent two runs on the same subtask. Different subtasks
   # can run in parallel.
-  group: tdd-coder-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
+  group: wf-tdd-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -93,7 +93,7 @@ jobs:
             echo "candidate=$ISSUE" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run tdd-coder skill
+      - name: Run wf-tdd skill
         if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
@@ -102,7 +102,7 @@ jobs:
             --max-turns 200
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
           prompt: |
-            Run the `tdd-coder` skill at `.claude/skills/tdd-coder/SKILL.md`.
+            Run the `wf-tdd` skill at `.claude/skills/wf-tdd/SKILL.md`.
             Read the skill in full and follow it precisely. The skill defines
             the lifecycle, hard gates, and templates.
 
