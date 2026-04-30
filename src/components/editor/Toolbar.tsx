@@ -39,6 +39,7 @@ import {
   TableRowsSplit,
   TableColumnsSplit,
   Trash2,
+  Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -66,6 +67,7 @@ import {
 
 interface ToolbarProps {
   editor: Editor | null;
+  onSave?: () => void;
   onImageInsert?: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
@@ -128,7 +130,7 @@ function ToolbarSeparator() {
 
 // --- Main Toolbar ---
 
-export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
+export function Toolbar({ editor, onSave, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
   const isSource = viewMode === "source";
   const isPill = variant === "pill";
 
@@ -583,6 +585,25 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           >
             <Redo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
+
+          {onSave && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onSave}
+                  aria-label="Save (Cmd+S)"
+                  className="disabled:opacity-50 active:scale-90 text-muted-foreground"
+                >
+                  <Save className="size-4" strokeWidth={1.5} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                Save (Cmd+S)
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           <ToolbarSeparator />
 
