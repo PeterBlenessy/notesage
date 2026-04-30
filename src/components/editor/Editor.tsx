@@ -621,6 +621,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
             sourceWordWrap={sourceWordWrap}
             onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
+            onSave={activeTab ? () => saveFile(activeTab.filePath, activeTab.content, activeTab.id) : undefined}
             variant={toolbarVariant}
           />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
@@ -667,6 +668,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
                 sourceWordWrap={sourceWordWrap}
                 onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
+                onSave={activeTab ? () => saveFile(activeTab.filePath, activeTab.content, activeTab.id) : undefined}
                 variant="pill"
               />
             </div>
