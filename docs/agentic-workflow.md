@@ -21,7 +21,7 @@ This document describes the system as it exists today, the design choices that s
 ## Stack
 
 | Layer | Technology | Where |
-|---|---|---|
+| --- | --- | --- |
 | Runtime | GitHub Actions | `.github/workflows/aw-*.yml` |
 | Agent | `anthropics/claude-code-action@v1` | invoked from each workflow step |
 | Auth | OAuth via `CLAUDE_CODE_OAUTH_TOKEN` repo secret | uses your Claude Code subscription quota |
@@ -29,7 +29,7 @@ This document describes the system as it exists today, the design choices that s
 | State | GitHub issue labels + sub-issue links | label state machine, `addSubIssue` GraphQL mutation |
 | Branch convention | `claude/<entityType>-<issue-number>-<desc>` | claude-code-action default |
 
-The skill files double as the canonical contract — every workflow's prompt is just *"Run the `aw-<name>` skill at `.claude/skills/aw-<name>/SKILL.md`"* plus a few hard-constraint reminders. The substance lives in the SKILL.md files, version-controlled in the repo. This means you can edit skill behavior without touching workflows, and you can run the same skill manually in your terminal (Claude Code auto-discovers `.claude/skills/`).
+The skill files double as the canonical contract — every workflow's prompt is just *"Run the* `aw-<name>` *skill at* `.claude/skills/aw-<name>/SKILL.md`*"* plus a few hard-constraint reminders. The substance lives in the SKILL.md files, version-controlled in the repo. This means you can edit skill behavior without touching workflows, and you can run the same skill manually in your terminal (Claude Code auto-discovers `.claude/skills/`).
 
 ## Pipeline overview
 
@@ -40,7 +40,7 @@ flowchart TD
   B -.->|duplicate / wontfix / ambiguous| Z[Closed or needs-info]
   C -->|+ refined, + slice<br/>- refine| D[aw-slice]
   C -.->|still too vague| W[Comment + leave refine]
-  D -->|+ sliced<br/>create N sub-issues with<br/>tdd + hitl|afk + refined| E{Matrix TDD}
+  D -->|+ sliced<br/>create N sub-issues with<br/>tdd + hitl-or-afk + refined| E{Matrix TDD}
   D -->|+ awaiting-research<br/>create 1 research sub-issue| R[Research subtask]
   R -->|human posts findings + closes,<br/>flips parent: + slice - awaiting-research| D
   E -->|each afk child| F[aw-tdd]
@@ -69,7 +69,7 @@ Labels are the state of the system. They drive what each workflow does.
 These say "what's needed next." A workflow's precheck looks for its own action label, processes the issue, and replaces the action label with the next one in the chain.
 
 | Label | On | Means | Set by | Removed by |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `refine` | parent | aw-refine should pick this up | aw-triage | aw-refine |
 | `slice` | parent | aw-slice should pick this up | aw-refine (or human after research) | aw-slice |
 | `awaiting-research` | parent | paused waiting on research subtask | aw-slice (research path) | human after research closes |
@@ -81,7 +81,7 @@ These say "what's needed next." A workflow's precheck looks for its own action l
 These say "what's already happened." They survive through the chain so you can query "all issues the agent has refined" or "all parents that have been sliced."
 
 | Label | Means | Set by |
-|---|---|---|
+| --- | --- | --- |
 | `feature` | top-level / parent issue marker | aw-triage |
 | `refined` | aw-refine has rewritten the body | aw-refine |
 | `sliced` | aw-slice has run on this parent (terminal at parent level) | aw-slice |
@@ -89,7 +89,7 @@ These say "what's already happened." They survive through the chain so you can q
 ### Category labels (set by aw-triage, immutable through the pipeline)
 
 | Label | Means |
-|---|---|
+| --- | --- |
 | `bug` | broken behavior |
 | `enhancement` | new functionality / improvement |
 | `chore` | refactor, docs, tooling, dependency bump |
@@ -99,7 +99,7 @@ These say "what's already happened." They survive through the chain so you can q
 ### Execution gates (subtasks only)
 
 | Label | Means | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `hitl` | human in the loop | aw-tdd skips. Human flips to `afk` when ready. |
 | `afk` | agent may run autonomously | aw-tdd picks this up. |
 
@@ -108,7 +108,7 @@ Set by aw-slice on every child sub-issue (exactly one of `hitl` or `afk`). Heuri
 ### Closed states
 
 | Label | Means |
-|---|---|
+| --- | --- |
 | `wontfix` | closed without action; future similar issues should also be wontfix |
 | `duplicate` | closed as a duplicate of another open or merged issue |
 
@@ -127,6 +127,7 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 **Inputs:** issue number.
 
 **Process:**
+
 1. Read the issue. Search for duplicates and prior `wontfix` matches via `gh search issues`.
 2. Decide: duplicate → close + comment; wontfix-match → close + comment; ambiguous → comment asking for clarification, leave untriaged; otherwise classify into exactly one of `bug` / `enhancement` / `chore`.
 3. Apply: category + `feature` + `refine`. Post a triage comment with the chosen category and any duplicates considered.
@@ -142,6 +143,7 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 **Inputs:** issue number. Issue must have `refine` label and a category.
 
 **Process:**
+
 1. Read the issue.
 2. Pick a template based on category (bug / enhancement / chore — see `aw-refine/SKILL.md`).
 3. Rewrite the body into the outcome-oriented template. Preserve reproduction steps, error messages, and technical details verbatim.
@@ -158,6 +160,7 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 **Inputs:** parent issue number. Must have `feature` + `refined` + `slice`.
 
 **Process:**
+
 1. Read the parent. Decide whether the issue is **clear** (concrete outcome, testable acceptance criteria, enumerable subtasks) or **under-specified** (problem space, blocking unknowns, can't pick between technical alternatives).
 2. **Research-first path** (under-specified): create ONE child sub-issue `Research: <question> for #<parent>`, labeled `chore + refined + tdd + hitl`. Update parent: − `slice`, + `awaiting-research`. Stop. Human (or aw-tdd if marked afk) does the research, posts findings, closes the subtask. Human flips parent back to `slice`. aw-slice re-runs with richer context.
 3. **Clear path:** pick horizontal vs vertical slicing. Default horizontal. Create 3–6 child sub-issues. Each child:
@@ -168,7 +171,8 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 4. Update parent: − `slice`, + `sliced` (terminal at parent level).
 
 **HITL/AFK heuristics** (full list in SKILL.md):
-- `hitl` if: changes a public API, schema migration, security policy, removes major dep, rewrites a file with >10 callers, design-judgment criteria, research subtask
+
+- `hitl` if: changes a public API, schema migration, security policy, removes major dep, rewrites a file with &gt;10 callers, design-judgment criteria, research subtask
 - `afk` if: localized, observable acceptance criteria, well-tested component, doc-only change, clear bug fix
 - Default `hitl` when uncertain.
 
@@ -181,17 +185,20 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 **Inputs:** subtask issue number. Must have `tdd + afk + refined + <category>`. Must NOT have `feature` (parent marker), `review` (already in PR), or be closed.
 
 **Pre-flight:**
+
 1. Read the subtask + its parent + sibling subtasks for context.
 2. Check `Depends on:` blockers. If any are open, post a "blocked" comment and exit silently.
 3. Read the files listed in "Files likely to change:" plus their tests and 1–2 levels of imports.
 4. Remove `afk` from the subtask (claim it).
 
 **Red-Green-Refactor:**
+
 1. **Red:** write the failing tests exactly as listed in the subtask body. Run them. They MUST be RED. If any pass at this stage, the test is wrong or the bug isn't real — post a comment, fail closed.
 2. **Green:** write the minimum implementation to make the tests pass. Re-run. They MUST all pass.
 3. **Refactor:** if there's an obvious cleanup (extracted helper, deduplication) that doesn't change behavior, apply it. Re-run tests.
 
 **Hard gates** (failing any aborts the run):
+
 1. Red tests were red before green phase
 2. Red tests are green after green phase
 3. `pnpm test` passes (full suite)
@@ -212,6 +219,7 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 **Inputs:** merged PR number.
 
 **Process:**
+
 1. Read the merged PR (title, body, diff, reviews, comments) and the linked issue (body, labels, all comments).
 2. Identify which skill produced the PR (most likely `aw-tdd`, sometimes a research-subtask PR).
 3. Look for **divergence signals** between what the skill prescribed and what shipped:
@@ -252,6 +260,7 @@ Each job spins up its own runner but the jobs run back-to-back without waiting f
 ### Standalone backstops
 
 `aw-{triage,refine,slice,tdd}.yml`. Each has:
+
 - `schedule: */15 * * * *` cron
 - `workflow_dispatch:` with optional `issue_number` input
 - A bash precheck that finds one eligible candidate (or skips with `candidates=` empty)
@@ -260,14 +269,17 @@ Each job spins up its own runner but the jobs run back-to-back without waiting f
 Standalone `aw-slice.yml` ALSO listens to `issues: types: [labeled]` to pick up the post-research flip (human flips `awaiting-research → slice`). This is the only standalone with an event trigger.
 
 To prevent a race between `aw-pipeline.yml` and `aw-slice.yml` (when pipeline's refine job adds the `slice` label, that fires `issues.labeled`, which would also trigger `aw-slice.yml`), the standalone has:
+
 ```yaml
 if: github.event_name != 'issues' || github.actor != 'claude[bot]'
 ```
-The `if:` skips the issues-event path when claude[bot] is the actor (= pipeline is processing the issue). Cron and `workflow_dispatch` runs are unaffected. Human label changes (the actor is the human) still fire normally.
+
+The `if:` skips the issues-event path when claude\[bot\] is the actor (= pipeline is processing the issue). Cron and `workflow_dispatch` runs are unaffected. Human label changes (the actor is the human) still fire normally.
 
 ### `aw-retrospect.yml`
 
 Fires on `pull_request: types: [closed]`, gated by:
+
 ```yaml
 if: |
   github.event.pull_request.merged == true &&
@@ -282,7 +294,7 @@ if: |
 Worked example: human opens an issue describing a bug.
 
 | Step | Actor | Action | Resulting issue state |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Human | `gh issue create --title "..." --body "..."` | `(no labels)` |
 | 2 | aw-pipeline.yml | `issues.opened` event fires the pipeline | (pipeline starts) |
 | 3 | triage job | runs aw-triage skill | `bug + feature + refine` |
@@ -290,7 +302,7 @@ Worked example: human opens an issue describing a bug.
 | 5 | refine job | runs aw-refine skill | `bug + feature + refined + slice` (`refine` removed; body rewritten) |
 | 6 | refine job | precheck output: `ready=true` | (slice gate passed) |
 | 7 | slice job | runs aw-slice skill | `bug + feature + refined + sliced` (parent terminal) |
-| 7a | aw-slice (within slice job) | creates 3 sub-issues via `gh issue create + addSubIssue` mutation | each child: `bug + refined + tdd + (afk|hitl)` |
+| 7a | aw-slice (within slice job) | creates 3 sub-issues via `gh issue create + addSubIssue` mutation | each child: \`bug + refined + tdd + (afk |
 | 8 | slice job | collects afk children for matrix | `outputs.subtasks=[#65, #66, #67]` |
 | 9 | tdd matrix (3 parallel jobs) | each runs aw-tdd skill on its subtask | each child briefly `bug + refined + tdd` (after `afk` removal at start) |
 | 9a | aw-tdd | red-green-refactor + hard gates | (work happens on `claude/...` branch) |
@@ -301,7 +313,7 @@ Worked example: human opens an issue describing a bug.
 | 13 | aw-retrospect | finds signal (e.g. agent touched extra files) | opens draft PR `[retrospect] aw-tdd: ...` |
 | 14 | Human | reviews retro PR, merges (or rejects) | SKILL.md updated for future runs |
 
-Total wall time on a typical issue: ~15-20 minutes from `gh issue create` to draft PRs in matrix tdd.
+Total wall time on a typical issue: \~15-20 minutes from `gh issue create` to draft PRs in matrix tdd.
 
 ## Failure modes and recovery
 
@@ -315,7 +327,7 @@ Total wall time on a typical issue: ~15-20 minutes from `gh issue create` to dra
 
 ### Bot-triggered chain blocked by `allowed_bots`
 
-**What happened:** When aw-triage adds the `bug` label, that fires `issues.labeled` for downstream workflows. claude-code-action defaults to refusing bot-initiated runs ("Workflow initiated by non-human actor: claude (type: Bot). Add bot to allowed_bots list or use '*'").
+**What happened:** When aw-triage adds the `bug` label, that fires `issues.labeled` for downstream workflows. claude-code-action defaults to refusing bot-initiated runs ("Workflow initiated by non-human actor: claude (type: Bot). Add bot to allowed_bots list or use '\*'").
 
 **Fix:** added `allowed_bots: "claude[bot]"` to all downstream workflows. Specifically not `"*"` because the repo is public and `"*"` would let external apps trigger the action.
 
@@ -342,6 +354,7 @@ Total wall time on a typical issue: ~15-20 minutes from `gh issue create` to dra
 **Behavior:** any of red-not-red / green-not-green / `pnpm test` fail / typecheck fail / lint fail / unrelated files modified → discard local changes, re-add `afk`, post failure comment, exit. No PR opens.
 
 **Recovery:** human reads the failure comment. Either:
+
 - Fix the issue body (red-test list might be wrong), let cron pick it up again
 - Flip to `hitl`, implement manually
 - Close as `wontfix` if no longer relevant
@@ -363,6 +376,7 @@ The current shape of AW is the result of several pivots during development. This
 ### Choice: `aw-` prefix (not `wf-`, not `awf-`)
 
 We started with `wf-` (workflow). Renamed to `aw-` (agentic workflow) because:
+
 - `wf-` is generic and overlaps with non-AI workflow tooling
 - `aw-` ties the namespace to "agentic workflow" which is the literature term
 - Three letters (`awf-`) was considered but two reads cleaner once the meaning is fixed
@@ -374,10 +388,12 @@ The prefix groups the dev-process skills visually away from the regular Claude C
 A naive design uses one label per state: `triaged`, `refined`, `sliced`, etc. Workflows query by the current state.
 
 We chose two coexisting categories:
+
 - **Action labels** (mutually exclusive): `refine`, `slice`, `awaiting-research`, `tdd`, `review`. Says what's needed next.
 - **State markers** (accumulate): `feature`, `refined`, `sliced`. Says what's already happened.
 
 Why both? Two reasons:
+
 1. **Queryability.** With state markers, you can ask "show me all issues that have been refined" with `gh issue list --label refined`, even after they've moved on to slicing or sliced. Single-state labels hide history.
 2. **Decoupling action from state.** An issue can have `refined` (history) but no current action label — it's "done at parent level." That's `sliced` (terminal). Single-state collapses this distinction.
 
@@ -388,6 +404,7 @@ Tradeoff: more labels to manage. Worth it for the queryability.
 We needed a way to distinguish parent issues from sub-issues in the issue list view (GitHub's UI hides parent/child relationships in the flat list).
 
 Options considered:
+
 - `top-level` — descriptive but verbose
 - `parent` — concise, slightly ambiguous (is a parent without children still a parent?)
 - `epic` — Agile/JIRA convention, heavyweight feel
@@ -398,6 +415,7 @@ Options considered:
 ### Choice: research is a subtask, not a separate skill
 
 Originally we planned a `feature-research` skill for issues that were too vague to slice directly. After further thought, we collapsed it into aw-slice's research-first path. Reasons:
+
 1. Fewer skills to maintain
 2. Research becomes a regular subtask (with `tdd + hitl` labels), indistinguishable from any other in the queue
 3. Re-planning after research closes is just another aw-slice run
@@ -408,12 +426,14 @@ Originally we planned a `feature-research` skill for issues that were too vague 
 The naive design has each workflow event-trigger the next: aw-triage's label add fires aw-refine via `issues.labeled`, which fires aw-slice, etc.
 
 Problems with pure event-chain:
-- ~30s runner spin-up per stage = ~120s wasted setup over a 4-stage pipeline
+
+- \~30s runner spin-up per stage = \~120s wasted setup over a 4-stage pipeline
 - Each event is a separate billable runner minute
 - Sequential `issues.labeled` events introduce latency between stages
 - Concurrency cancellations when triggers race
 
 We chose a hybrid:
+
 - **Pipeline workflow** (`aw-pipeline.yml`) for the happy path. Single workflow, four jobs chained via `needs:`, matrix tdd. One trigger (`issues.opened`), all stages run back-to-back.
 - **Standalone workflows** (`aw-triage.yml`, etc.) as backstops. Cron sweeps + `workflow_dispatch` only (no event triggers, except aw-slice keeps `issues.labeled` for the post-research re-slice case).
 
@@ -426,17 +446,19 @@ We started designing with `gh-aw` (GitHub Agentic Workflows extension by GitHub 
 Switched to raw `claude-code-action@v1` so we could use OAuth via `CLAUDE_CODE_OAUTH_TOKEN`. This bills against the user's Claude Code subscription quota (Pro/Max), not against pay-per-token API rates.
 
 What we lost: gh-aw's declarative `safe-outputs` allowlist, `skip-if-match` cron deduplication, container firewall sandboxing. We rebuilt these in raw YAML:
+
 - Safe-outputs equivalent → guardrails written into the SKILL.md prompts (e.g. "apply at most one of bug/enhancement/chore")
 - skip-if-match equivalent → bash precheck that queries for candidates before invoking the LLM
 - Concurrency control → standard GH Actions `concurrency: group:` keyed per issue
 
-Result: ~25-line workflow YAMLs. Cleaner for our use case than the gh-aw markdown source + compiled `.lock.yml` pair.
+Result: \~25-line workflow YAMLs. Cleaner for our use case than the gh-aw markdown source + compiled `.lock.yml` pair.
 
 ### Choice: TDD red-green-refactor at the subtask level
 
 aw-tdd verifies that red tests are RED *before* writing any implementation. If a test passes from the start, that means either the test is wrong or the bug isn't real — both are signals to stop and ask.
 
 This is stricter than typical "agent writes tests + code together" patterns. Reasons:
+
 1. **Catches misunderstanding cheaply.** If aw-slice generated a wrong red-test list, aw-tdd notices on the first run instead of producing code that ships passing tests for the wrong thing.
 2. **Forces bug confirmation.** A test that's already green means the bug we thought we were fixing isn't actually broken. Without the red phase, we'd ship a no-op fix.
 3. **Aligns with human TDD practice.** The skill's discipline matches what a careful human developer would do; the artifacts (tests, implementations) read naturally.
@@ -444,6 +466,7 @@ This is stricter than typical "agent writes tests + code together" patterns. Rea
 ### Choice: HITL/AFK gates on subtasks
 
 Subtasks created by aw-slice get exactly one of:
+
 - `afk` — agent can implement autonomously
 - `hitl` — human approves before agent runs
 
@@ -453,7 +476,7 @@ This is the ONLY autonomy gate in the system besides "draft PR" (which is always
 
 ### Choice: aw-retrospect on every merge
 
-The retrospective skill is a self-improvement loop. After a claude[bot]-authored PR merges, it looks for divergence between what the originating skill prescribed and what shipped — extra files touched, manual fixes after merge, review pushback, test changes, etc. — and proposes a SKILL.md patch.
+The retrospective skill is a self-improvement loop. After a claude\[bot\]-authored PR merges, it looks for divergence between what the originating skill prescribed and what shipped — extra files touched, manual fixes after merge, review pushback, test changes, etc. — and proposes a SKILL.md patch.
 
 The patch goes through a draft PR. Humans always review. Skills get sharper over time.
 
@@ -516,6 +539,7 @@ To deploy AW in another repo:
 ### Multi-repo support
 
 Today AW runs in one repo at a time. Cross-repo features that would be valuable:
+
 - **Shared skill registry** — one repo holds the canonical SKILL.md files; other repos import via git submodule or sparse checkout.
 - **Cross-repo retros** — when a similar issue is opened in repo A and later in repo B, aw-retrospect could detect the pattern and propose a skill patch upstream.
 - **Shared label schema** — propagate label changes (rename, color) across repos.
@@ -523,6 +547,7 @@ Today AW runs in one repo at a time. Cross-repo features that would be valuable:
 ### Better retrospect signals
 
 The current divergence-signal heuristics in `aw-retrospect/SKILL.md` are basic (extra files, post-merge fixes, review comments, etc.). Possible improvements:
+
 - **Diff parsing** — recognize specific anti-patterns (e.g. agent kept adding TODOs, agent over-tested, agent under-tested edge cases).
 - **Time-to-merge correlation** — if PRs from a specific skill take much longer to merge than baseline, the skill's instructions might be unclear.
 - **Aggregate retros** — instead of one-PR-at-a-time, periodically run a "retro across last 10 merges" to find patterns.
@@ -530,6 +555,7 @@ The current divergence-signal heuristics in `aw-retrospect/SKILL.md` are basic (
 ### Cost monitoring / quota tracking
 
 Currently no visibility into how much subscription quota AW consumes. Could add:
+
 - A `quota` workflow that reports daily token usage by skill
 - Per-skill cost ceilings (e.g. aw-tdd costs more than aw-triage; track separately)
 - Alert when approaching subscription cap
@@ -537,6 +563,7 @@ Currently no visibility into how much subscription quota AW consumes. Could add:
 ### Skill versioning
 
 SKILL.md files are version-controlled but there's no formal versioning scheme. Possible approaches:
+
 - Frontmatter `version:` field that bumps on significant rule changes
 - Changelog at the bottom of each SKILL.md
 - Tag-based versioning so the action can pin to a specific skill version (`@v1`)
@@ -544,6 +571,7 @@ SKILL.md files are version-controlled but there's no formal versioning scheme. P
 ### Pipeline observability
 
 The pipeline is opaque while running. Could add:
+
 - Structured logging with `[aw:<skill>]` prefixes (similar to the app's `[perf:*]` pattern)
 - A "dashboard" issue per parent that auto-updates with progress
 - Slack/Discord notifications on pipeline failures
