@@ -112,9 +112,9 @@ Six workflow files. One *pipeline* + four *standalones* + one *retrospect*.
 | --- | --- | --- |
 | `aw-pipeline.yml` | `issues.opened` / `issues.reopened` | Happy path: 4 jobs chained via `needs:` (triage → refine → slice → tdd). Single workflow run, stages back-to-back. |
 | `aw-triage.yml` | cron `*/15`, `workflow_dispatch` | Backstop for any open issue lacking a category |
-| `aw-refine.yml` | cron, dispatch | Backstop for `refine`-flagged issues |
+| `aw-refine.yml` | cron, dispatch, `issues.labeled` (human-added `refine` only) | Backstop + instant-response on human re-add |
 | `aw-slice.yml` | cron, dispatch, `issues.labeled` (human-added `slice` only) | Backstop + post-research re-slice path |
-| `aw-tdd.yml` | cron, dispatch | Backstop for `tdd + afk` issues |
+| `aw-tdd.yml` | cron, dispatch, `issues.labeled` (human-added `afk` only) | Backstop + instant-response on hitl→afk flip |
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
 
 Each workflow has a bash precheck that finds candidates before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
