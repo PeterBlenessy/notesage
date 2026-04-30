@@ -1,7 +1,7 @@
-name: AW — Clarify
+name: AW — Refine
 
-# Rewrites clarify-flagged issues into the outcome-oriented template
-# using the aw-clarify skill at .claude/skills/aw-clarify/SKILL.md.
+# Rewrites refine-flagged issues into the outcome-oriented template
+# using the aw-refine skill at .claude/skills/aw-refine/SKILL.md.
 # Standalone backstop: cron sweep + workflow_dispatch only. The happy
 # path runs from aw-pipeline.yml.
 
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       issue_number:
-        description: "Specific issue number to clarify (optional — defaults to first eligible)"
+        description: "Specific issue number to refine (optional — defaults to first eligible)"
         required: false
 
 permissions:
@@ -21,18 +21,18 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aw-clarify-${{ inputs.issue_number || github.run_id }}
+  group: aw-refine-${{ inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
-  clarify:
+  refine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
-      # Precheck: find issues with the `clarify` action label that haven't
-      # been clarified yet (no `clarified` state marker).
+      # Precheck: find issues with the `refine` action label that haven't
+      # been refined yet (no `refined` state marker).
       - name: Find candidates
         id: find
         env:
@@ -44,11 +44,11 @@ jobs:
             exit 0
           fi
           ISSUES=$(gh issue list \
-            --label clarify \
+            --label refine \
             --state open \
             --limit 5 \
             --json number,labels \
-            --jq '[.[] | select([.labels[].name] | any(. == "clarified") | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select([.labels[].name] | any(. == "refined") | not) | .number] | first(.[])? // empty')
           if [[ -z "$ISSUES" ]]; then
             echo "No clarification candidates. Skipping LLM step."
             echo "candidates=" >> "$GITHUB_OUTPUT"
@@ -57,7 +57,7 @@ jobs:
             echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run aw-clarify skill
+      - name: Run aw-refine skill
         if: steps.find.outputs.candidates != ''
         uses: anthropics/claude-code-action@v1
         with:
@@ -67,17 +67,17 @@ jobs:
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
           prompt: |
-            Run the `aw-clarify` skill at `.claude/skills/aw-clarify/SKILL.md`
+            Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
             on issue #${{ steps.find.outputs.candidates }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely.
 
             **Hard constraints** (also defined in the skill):
             - Verify the issue has exactly one of `bug` / `enhancement` / `chore`
-              and the `clarify` action label.
+              and the `refine` action label.
             - Pick the right template for the category.
             - Preserve all reproduction steps, error messages, technical details verbatim.
-            - Add `clarified` (state) + `slice` (action) after rewriting body.
-              Remove `clarify` (the action label that triggered this).
+            - Add `refined` (state) + `slice` (action) after rewriting body.
+              Remove `refine` (the action label that triggered this).
             - Do NOT modify the title unless it is genuinely not outcome-shaped.
-            - Idempotent: if `clarified` is already present, exit silently.
+            - Idempotent: if `refined` is already present, exit silently.

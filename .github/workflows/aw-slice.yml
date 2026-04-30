@@ -1,6 +1,6 @@
 name: AW — Slice
 
-# Breaks clarified issues into red-test-list child sub-issues using
+# Breaks refined issues into red-test-list child sub-issues using
 # the aw-slice skill at .claude/skills/aw-slice/SKILL.md. Standalone
 # backstop: cron sweep + workflow_dispatch only, plus issues.labeled
 # (specifically for the post-research re-slice path when a human flips
@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Precheck: act on parent issues with `feature` + `clarified` + `slice`
+      # Precheck: act on parent issues with `feature` + `refined` + `slice`
       # AND not yet `sliced` or `awaiting-research`. Filters out subtasks
       # (which never have `feature`).
       - name: Find candidates
@@ -57,7 +57,7 @@ jobs:
             ISSUE="${{ github.event.issue.number }}"
             LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
             HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
-            HAS_CLARIFIED=$(echo "$LABELS" | jq 'any(. == "clarified")')
+            HAS_CLARIFIED=$(echo "$LABELS" | jq 'any(. == "refined")')
             HAS_SLICE=$(echo "$LABELS" | jq 'any(. == "slice")')
             HAS_SLICED=$(echo "$LABELS" | jq 'any(. == "sliced")')
             HAS_AWAITING=$(echo "$LABELS" | jq 'any(. == "awaiting-research")')
@@ -72,7 +72,7 @@ jobs:
           ISSUES=$(gh issue list \
             --label slice \
             --label feature \
-            --label clarified \
+            --label refined \
             --state open \
             --limit 5 \
             --json number,labels \
@@ -104,7 +104,7 @@ jobs:
             - Each child sub-issue MUST be linked via the GraphQL `addSubIssue`
               mutation. Without the link, GitHub's UI does not show the children.
             - Each child carries a red-test list as definition of done.
-            - Each child labeled with parent's category + `clarified` + `tdd` +
+            - Each child labeled with parent's category + `refined` + `tdd` +
               exactly one of `hitl` / `afk`. Children do NOT get `feature`.
             - Default count: 3-6 children. If you'd create more, the parent is too big.
             - If under-specified, create ONE research subtask only and set parent

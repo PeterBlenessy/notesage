@@ -46,7 +46,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Precheck: find one eligible subtask. Subtasks are issues with
-      # `tdd` + `afk` + `clarified` + a category, NOT having `feature`
+      # `tdd` + `afk` + `refined` + a category, NOT having `feature`
       # (which marks parents) and NOT having `review` (already in PR).
       - name: Find candidate
         id: find
@@ -61,7 +61,7 @@ jobs:
           ISSUE=$(gh issue list \
             --label tdd \
             --label afk \
-            --label clarified \
+            --label refined \
             --state open \
             --limit 10 \
             --json number,labels \

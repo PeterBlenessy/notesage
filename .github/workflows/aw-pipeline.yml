@@ -1,14 +1,14 @@
 name: AW — Pipeline
 
 # End-to-end AI dev-process pipeline triggered when a human opens or
-# reopens an issue. Runs triage → clarify → slice → matrix-tdd in one
+# reopens an issue. Runs triage → refine → slice → matrix-tdd in one
 # workflow with `needs:` dependencies, so each stage starts immediately
 # after its predecessor without waiting for separate GH Actions trigger
 # latency. Matrix at the tdd stage parallelizes implementation of afk
 # subtasks (up to 3 in flight at once).
 #
 # This workflow handles the HAPPY PATH on user issue creation. The
-# standalone workflows (aw-triage, aw-clarify, aw-slice, aw-tdd) are
+# standalone workflows (aw-triage, aw-refine, aw-slice, aw-tdd) are
 # the backstops — cron sweeps + workflow_dispatch + the post-research
 # re-slice trigger on aw-slice.
 
@@ -46,7 +46,7 @@ jobs:
             on issue #${{ github.event.issue.number }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely. Apply exactly one of `bug` / `enhancement` / `chore`,
-            add `feature` (parent marker) and `clarify` (action label), or
+            add `feature` (parent marker) and `refine` (action label), or
             close as duplicate / wontfix per the skill rules.
       - name: Check classification
         id: check
@@ -62,7 +62,7 @@ jobs:
           fi
           LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
           HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
-          HAS_CLARIFY=$(echo "$LABELS" | jq 'any(. == "clarify")')
+          HAS_CLARIFY=$(echo "$LABELS" | jq 'any(. == "refine")')
           if [[ "$HAS_FEATURE" == "true" ]] && [[ "$HAS_CLARIFY" == "true" ]]; then
             echo "classified=true" >> "$GITHUB_OUTPUT"
           else
@@ -70,7 +70,7 @@ jobs:
           fi
           echo "Classified: $HAS_FEATURE + $HAS_CLARIFY"
 
-  clarify:
+  refine:
     needs: triage
     if: needs.triage.outputs.classified == 'true'
     runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v6
-      - name: Run aw-clarify skill
+      - name: Run aw-refine skill
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -88,11 +88,11 @@ jobs:
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
           prompt: |
-            Run the `aw-clarify` skill at `.claude/skills/aw-clarify/SKILL.md`
+            Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
             on issue #${{ github.event.issue.number }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
-            precisely. Add `clarified` (state) + `slice` (action); remove
-            `clarify`. Pick the right template for the category.
+            precisely. Add `refined` (state) + `slice` (action); remove
+            `refine`. Pick the right template for the category.
       - name: Check ready-to-slice
         id: check
         env:
@@ -105,8 +105,8 @@ jobs:
           echo "Ready to slice: $HAS_SLICE"
 
   slice:
-    needs: clarify
-    if: needs.clarify.outputs.ready == 'true'
+    needs: refine
+    if: needs.refine.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -127,7 +127,7 @@ jobs:
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely. Each child sub-issue MUST be linked via the GraphQL
             addSubIssue mutation. Each child labeled with category +
-            `clarified` + `tdd` + exactly one of `hitl` / `afk`. Default 3-6
+            `refined` + `tdd` + exactly one of `hitl` / `afk`. Default 3-6
             children. If under-specified, create ONE research subtask only
             and set parent to `awaiting-research`.
       - name: Collect afk subtasks for matrix

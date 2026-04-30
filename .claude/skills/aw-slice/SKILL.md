@@ -1,11 +1,11 @@
 ---
 name: aw-slice
-description: Break a clarified GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if under-specified. Links children as GitHub sub-issues. Sets `sliced` on the parent (or `awaiting-research`).
+description: Break a refined GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if under-specified. Links children as GitHub sub-issues. Sets `sliced` on the parent (or `awaiting-research`).
 ---
 
 # aw-slice
 
-Break a clarified GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). Decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
+Break a refined GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). Decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
 
 ## Inputs
 
@@ -16,9 +16,9 @@ Break a clarified GitHub issue into actionable child sub-issues. Each child is s
 
 1. **Read the parent.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
-   - Verify it has `feature` AND `clarified` AND `slice` AND one of `bug` / `enhancement` / `chore`.
+   - Verify it has `feature` AND `refined` AND `slice` AND one of `bug` / `enhancement` / `chore`.
    - Verify it does NOT have `sliced` or `awaiting-research`. If it does, exit silently (idempotent).
-   - The `slice` action label is the explicit gate. Set by `aw-clarify` after a successful clarification, or by a human after a research subtask closes (`awaiting-research` → `slice`). Bare `clarified` alone is NOT a trigger.
+   - The `slice` action label is the explicit gate. Set by `aw-refine` after a successful clarification, or by a human after a research subtask closes (`awaiting-research` → `slice`). Bare `refined` alone is NOT a trigger.
 
 2. **Decide: clear plan or research first?**
 
@@ -39,7 +39,7 @@ Break a clarified GitHub issue into actionable child sub-issues. Each child is s
     Create ONE child issue:
     - Title: `Research: <specific question> for #<parent>`
     - Body: see "Research subtask template" below
-    - Labels: `chore`, `clarified`, `tdd`, `hitl` (research subtasks always need human review)
+    - Labels: `chore`, `refined`, `tdd`, `hitl` (research subtasks always need human review)
     - Link as sub-issue of parent (see "Sub-issue linking" below)
 
     Update parent labels:
@@ -59,7 +59,7 @@ Break a clarified GitHub issue into actionable child sub-issues. Each child is s
     Create N child issues (typically 3–6). For each:
     - Title: `<verb-prefixed concrete deliverable> for #<parent>` (e.g. `feat(store): add cmdBarExpandedHeight to settings store for #37`)
     - Body: see "Implementation subtask template" below — MUST include a red-test list as the definition of done
-    - Labels: parent's category (`bug`/`enhancement`/`chore`), `clarified`, `tdd`, plus exactly one of `hitl` / `afk`. Children do NOT get `feature` (only top-level parents do).
+    - Labels: parent's category (`bug`/`enhancement`/`chore`), `refined`, `tdd`, plus exactly one of `hitl` / `afk`. Children do NOT get `feature` (only top-level parents do).
     - Link as sub-issue of parent
 
     Update parent labels:
@@ -170,7 +170,7 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 - **Sub-issue links are mandatory.** Every child must be linked as a sub-issue of the parent via the GraphQL mutation above. Without the link, the parent's UI does not show the children.
 - **Idempotent:** if parent has `sliced` or `awaiting-research`, exit silently.
 - **No body modification** of the parent. Update labels only.
-- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `clarified` (state — they are created already in template shape) + `tdd` (action) + `hitl|afk` (gate). They do NOT get `feature` (only top-level parents do).
+- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `refined` (state — they are created already in template shape) + `tdd` (action) + `hitl|afk` (gate). They do NOT get `feature` (only top-level parents do).
 - **Children get `hitl` or `afk`**, exactly one each. Never both, never neither.
 - **Default count**: 3–6 children. If you'd create more, the parent is too big and should be split first (post a clarification comment instead of forcing an oversized plan).
 

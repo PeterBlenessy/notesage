@@ -75,7 +75,7 @@ jobs:
 
             **Hard constraints** (also defined in the skill):
             - Apply exactly one of `bug` / `enhancement` / `chore`.
-            - Add `feature` (parent marker) and `clarify` (action label).
+            - Add `feature` (parent marker) and `refine` (action label).
             - Do not modify the issue title or body.
             - Use `gh issue close --reason duplicate` only when closing as a
               duplicate of another open issue.

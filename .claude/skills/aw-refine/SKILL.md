@@ -1,23 +1,23 @@
 ---
-name: aw-clarify
-description: Rewrite a clarify-flagged GitHub issue body into the outcome-oriented template (bug / enhancement / chore variants), preserving all reproduction details. Adds `clarified` (state) + `slice` (action), removes `clarify`. Runs after `aw-triage` has classified the issue.
+name: aw-refine
+description: Rewrite a refine-flagged GitHub issue body into the outcome-oriented template (bug / enhancement / chore variants), preserving all reproduction details. Adds `refined` (state) + `slice` (action), removes `refine`. Runs after `aw-triage` has classified the issue.
 ---
 
-# aw-clarify
+# aw-refine
 
-Rewrite a single GitHub issue body into the outcome-oriented template. The issue must already have a category label (`bug`, `enhancement`, or `chore`) and the `clarify` action label — `aw-triage` is responsible for setting both.
+Rewrite a single GitHub issue body into the outcome-oriented template. The issue must already have a category label (`bug`, `enhancement`, or `chore`) and the `refine` action label — `aw-triage` is responsible for setting both.
 
 ## Inputs
 
-- `ISSUE_NUMBER` — the issue to clarify
+- `ISSUE_NUMBER` — the issue to refine
 - The issue's current body, title, labels (read via `gh issue view`)
 
 ## Process
 
 1. **Read the issue.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels`
-   - Verify exactly one of `bug` / `enhancement` / `chore` is present AND `clarify` is present. If not, post a clarification comment and stop.
-   - If `clarified` is already present, exit silently (idempotent).
+   - Verify exactly one of `bug` / `enhancement` / `chore` is present AND `refine` is present. If not, post a clarification comment and stop.
+   - If `refined` is already present, exit silently (idempotent).
 
 2. **Pick the matching template** (see Templates below) based on the category.
 
@@ -37,9 +37,9 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 5. **Update the title** ONLY if the current title is genuinely not outcome-shaped (e.g. one-word, clickbait, or describes implementation). Otherwise leave it alone.
 
 6. **Update labels:**
-   - Add `clarified` (persistent state marker — agent has clarified this issue's body)
+   - Add `refined` (persistent state marker — agent has refined this issue's body)
    - Add `slice` (action label — signals `aw-slice` to pick this up next)
-   - Remove `clarify` (the action label that triggered this run)
+   - Remove `refine` (the action label that triggered this run)
 
 7. **Post a brief comment** (template below).
 
@@ -135,22 +135,22 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 ## Output rules
 
-- **Never** rewrite the body if `clarified` is already present. Exit silently.
+- **Never** rewrite the body if `refined` is already present. Exit silently.
 - **Never** modify the title unless it is genuinely not outcome-shaped — most titles are fine.
 - **Preserve** all technical details from the original report verbatim. Quote in code blocks if needed.
-- **`clarified` is the state marker; `slice` is the action label** that triggers `aw-slice`. Both must be set after a successful run.
-- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `clarify` in place, do NOT add `clarified` or `slice`.
+- **`refined` is the state marker; `slice` is the action label** that triggers `aw-slice`. Both must be set after a successful run.
+- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `refine` in place, do NOT add `refined` or `slice`.
 
 ## Comment template
 
 ```
-> *Clarified automatically by the `aw-clarify` skill. Reply with corrections or additional context.*
+> *Refined automatically by the `aw-refine` skill. Reply with corrections or additional context.*
 
 Restructured the body into the outcome-oriented `<category>` template. Reproduction steps and technical details preserved verbatim.
 ```
 
 ## Constraints from the dev process
 
-- After this skill: issue should have `<category>` + `feature` + `clarified` (state) + `slice` (action). The `clarify` action label is gone.
+- After this skill: issue should have `<category>` + `feature` + `refined` (state) + `slice` (action). The `refine` action label is gone.
 - `aw-slice` is the next workflow in line. It triggers on the `slice` label and decides per-issue whether to create a research subtask first or break straight into implementation subtasks.
 - There is no separate `feature-research` skill — research becomes a regular subtask when `aw-slice` decides the parent is under-specified.

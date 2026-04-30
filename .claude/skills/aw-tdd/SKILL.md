@@ -17,7 +17,7 @@ Implement a single subtask issue end-to-end following the red-green-refactor cyc
 ## Pre-flight
 
 1. **Read the subtask issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
-   - Verify it has `tdd` AND `afk` AND `clarified` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
+   - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
    - Verify it does NOT have `review`, `feature` (it's a sub-issue, not a parent), or be closed.
 
 2. **Check `Depends on:` blockers.** Parse the body for `Depends on: #N` references. For each:
@@ -32,7 +32,7 @@ Implement a single subtask issue end-to-end following the red-green-refactor cyc
 
 Update the subtask issue's labels at three points:
 - **Start:** remove `afk` (claim it). The agent is now working on it. Post the start comment.
-- **PR opened:** add `review`, remove `tdd`. Post the done comment. (Keep `clarified`; `afk` was removed at start.)
+- **PR opened:** add `review`, remove `tdd`. Post the done comment. (Keep `refined`; `afk` was removed at start.)
 - **Failure:** re-add `afk`. Post the failure comment with the specific failure.
 
 ## Process: red-green-refactor
@@ -189,6 +189,6 @@ Implements #<issue-number>
 
 ## Constraints from the dev process
 
-- Pick from `tdd` + `afk` + `clarified` + category (sub-issues created by `aw-slice`).
+- Pick from `tdd` + `afk` + `refined` + category (sub-issues created by `aw-slice`).
 - The retrospective workflow runs after merge — do not write retro entries from here.
 - If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.
