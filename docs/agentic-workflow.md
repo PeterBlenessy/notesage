@@ -92,7 +92,7 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | --- | --- | --- | --- |
 | `aw-triage` | Classify, dedup, close-or-categorize | issue opened, or cron | category + `refine`, OR closed as duplicate/wontfix |
 | `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants) | `refine` label set | `+ refined`, `+ slice` |
-| `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: `+ tdd + (afk|hitl)`, OR N peer issues + first slice = original, OR `+ awaiting-research` |
+| `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: \`+ tdd + (afk |
 | `aw-tdd` | TDD red-green-refactor + draft PR | `tdd + afk + refined + category` | `+ review`, draft PR |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
 
@@ -110,7 +110,7 @@ Six workflow files. One *pipeline* + four *standalones* + one *retrospect*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
-| `aw-pipeline.yml` | \`issues.opened | reopened\` |
+| `aw-pipeline.yml` | `issues.opened` / `issues.reopened` | Happy path: 4 jobs chained via `needs:` (triage → refine → slice → tdd). Single workflow run, stages back-to-back. |
 | `aw-triage.yml` | cron `*/15`, `workflow_dispatch` | Backstop for any open issue lacking a category |
 | `aw-refine.yml` | cron, dispatch | Backstop for `refine`-flagged issues |
 | `aw-slice.yml` | cron, dispatch, `issues.labeled` (human-added `slice` only) | Backstop + post-research re-slice path |
