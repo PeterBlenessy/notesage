@@ -128,6 +128,12 @@ interface SettingsStore {
    */
   cmdBarExpandedWidth: number;
   /**
+   * Height (in pixels) of the floating command bar in the expanded state.
+   * Persisted across restarts. Clamped to 240–800. Default 480 (matches the
+   * previous hardcoded value so existing users see no visual change). Issue #37.
+   */
+  cmdBarExpandedHeight: number;
+  /**
    * Quiet-chrome preset controlling which chrome targets fade under the
    * `.app.typing` pulse (ui-refresh #51). One of the named presets, or
    * "custom" when any per-element override has been toggled. Default
@@ -257,6 +263,7 @@ interface SettingsStore {
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
   setCmdBarExpandedWidth: (width: number) => void;
+  setCmdBarExpandedHeight: (height: number) => void;
   setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
   /** #132 — toggle the translucent chrome + editor flow-under effect. */
   setQuietChromeTransparent: (enabled: boolean) => void;
@@ -315,6 +322,7 @@ export const useSettingsStore = create<SettingsStore>()(
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
       cmdBarExpandedWidth: 640,
+      cmdBarExpandedHeight: 480,
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       quietChromeTransparent: false,
@@ -592,6 +600,15 @@ export const useSettingsStore = create<SettingsStore>()(
         });
       },
 
+      setCmdBarExpandedHeight: (height: number) => {
+        // Clamp to the same min/max enforced by the top resize handle in
+        // `FloatingCommandBar`. 240 keeps the input row + buttons visible;
+        // 800 prevents the bar from dominating smaller displays.
+        set({
+          cmdBarExpandedHeight: Math.round(Math.max(240, Math.min(800, height))),
+        });
+      },
+
       setQuietChromePreset: (preset: QuietChromePreset | "custom") => {
         // Picking a named preset resets the overrides to that preset's
         // mapping so the Advanced switches mirror the effective state if
@@ -672,7 +689,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 12,
+      version: 13,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -799,6 +816,13 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           delete state.sidebarTagsHidden;
           delete state.sidebarMentionsHidden;
+        }
+        if (version < 13) {
+          // Issue #37 — resizable command bar height. Default to 480 (the
+          // previous hardcoded value) so existing users see zero visual change.
+          if (typeof state.cmdBarExpandedHeight !== 'number') {
+            state.cmdBarExpandedHeight = 480;
+          }
         }
         return state;
       },
