@@ -6,6 +6,7 @@ import {
   Underline,
   Strikethrough,
   Code,
+  Save,
   List,
   ListOrdered,
   ListChecks,
@@ -67,6 +68,7 @@ import {
 interface ToolbarProps {
   editor: Editor | null;
   onImageInsert?: () => void;
+  onSave?: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
   sourceWordWrap?: boolean;
@@ -105,6 +107,7 @@ function ToolbarButton({
           size="icon-xs"
           onClick={onClick}
           disabled={disabled}
+          title={title}
           className={cn(
             "disabled:opacity-50 active:scale-90",
             active
@@ -128,7 +131,7 @@ function ToolbarSeparator() {
 
 // --- Main Toolbar ---
 
-export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
+export function Toolbar({ editor, onImageInsert, onSave, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
   const isSource = viewMode === "source";
   const isPill = variant === "pill";
 
@@ -583,6 +586,12 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           >
             <Redo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
+
+          {onSave && (
+            <ToolbarButton onClick={onSave} title="Save (cmd+S)">
+              <Save className="size-4" strokeWidth={1.5} />
+            </ToolbarButton>
+          )}
 
           <ToolbarSeparator />
 
