@@ -1,17 +1,20 @@
 name: AW — TDD
 
-# Implements `tdd + afk` subtask issues using the aw-tdd skill at
+# Implements `tdd + afk` issues using the aw-tdd skill at
 # .claude/skills/aw-tdd/SKILL.md. Standalone backstop: cron sweep +
-# workflow_dispatch only. The happy path runs from aw-pipeline.yml's
-# matrix tdd job.
+# workflow_dispatch + label event (when a human flips hitl → afk,
+# fire instantly instead of waiting up to 15 min for cron). The happy
+# path runs from aw-pipeline.yml.
 
 on:
+  issues:
+    types: [labeled]   # respond instantly to human-added afk
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       issue_number:
-        description: "Specific subtask issue number to implement (optional)"
+        description: "Specific issue number to implement (optional)"
         required: false
 
 permissions:
@@ -21,11 +24,17 @@ permissions:
   id-token: write       # claude-code-action OIDC
 
 concurrency:
-  group: aw-tdd-${{ inputs.issue_number || github.run_id }}
+  group: aw-tdd-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   code:
+    # For issues.labeled events: only fire on human-added `afk` (the
+    # hitl → afk flip). Bot-added labels mean the pipeline is processing
+    # the issue — skip to avoid race. Cron + dispatch always fire.
+    if: |
+      github.event_name != 'issues' ||
+      (github.actor != 'claude[bot]' && github.event.label.name == 'afk')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -46,9 +55,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Precheck: find one eligible issue. Eligibility = `tdd` + `afk` +
-      # `refined` + a category, AND not yet `review`. The `feature` label
-      # is OK — under the don't-slice default, parents go directly to tdd
-      # without sub-issues.
+      # `refined` + a category, AND not yet `review`. Event triggers
+      # (issues.labeled) target the specific issue whose afk was added.
       - name: Find candidate
         id: find
         env:
@@ -57,6 +65,24 @@ jobs:
           set -euo pipefail
           if [[ -n "${{ inputs.issue_number }}" ]]; then
             echo "candidate=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            # Event trigger: the if-guard already verified label.name == 'afk'
+            # and actor is human. Verify the issue is fully eligible before
+            # passing to the LLM step.
+            ISSUE="${{ github.event.issue.number }}"
+            LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+            HAS_TDD=$(echo "$LABELS" | jq 'any(. == "tdd")')
+            HAS_REFINED=$(echo "$LABELS" | jq 'any(. == "refined")')
+            HAS_REVIEW=$(echo "$LABELS" | jq 'any(. == "review")')
+            HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
+            if [[ "$HAS_TDD" == "true" && "$HAS_REFINED" == "true" && "$HAS_CATEGORY" == "true" && "$HAS_REVIEW" != "true" ]]; then
+              echo "candidate=$ISSUE" >> "$GITHUB_OUTPUT"
+            else
+              echo "Issue #$ISSUE not eligible (tdd=$HAS_TDD refined=$HAS_REFINED category=$HAS_CATEGORY review=$HAS_REVIEW). Skipping."
+              echo "candidate=" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           ISSUE=$(gh issue list \

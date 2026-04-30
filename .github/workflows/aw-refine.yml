@@ -2,10 +2,13 @@ name: AW — Refine
 
 # Rewrites refine-flagged issues into the outcome-oriented template
 # using the aw-refine skill at .claude/skills/aw-refine/SKILL.md.
-# Standalone backstop: cron sweep + workflow_dispatch only. The happy
-# path runs from aw-pipeline.yml.
+# Standalone backstop: cron sweep + workflow_dispatch + label event
+# (when a human re-adds `refine` for recovery, fire instantly). The
+# happy path runs from aw-pipeline.yml.
 
 on:
+  issues:
+    types: [labeled]   # respond instantly to human-added refine
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -21,18 +24,24 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aw-refine-${{ inputs.issue_number || github.run_id }}
+  group: aw-refine-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
   refine:
+    # For issues.labeled events: only fire on human-added `refine`.
+    # Bot-added means the pipeline is processing — skip to avoid race.
+    if: |
+      github.event_name != 'issues' ||
+      (github.actor != 'claude[bot]' && github.event.label.name == 'refine')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
       # Precheck: find issues with the `refine` action label that haven't
-      # been refined yet (no `refined` state marker).
+      # been refined yet (no `refined` state marker). Event triggers
+      # target the specific issue whose label was just added.
       - name: Find candidates
         id: find
         env:
@@ -41,6 +50,10 @@ jobs:
           set -euo pipefail
           if [[ -n "${{ inputs.issue_number }}" ]]; then
             echo "candidates=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            echo "candidates=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           ISSUES=$(gh issue list \
