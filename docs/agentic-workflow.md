@@ -92,7 +92,7 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | --- | --- | --- | --- |
 | `aw-triage` | Classify, dedup, close-or-categorize | issue opened, or cron | category + `refine`, OR closed as duplicate/wontfix |
 | `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants) | `refine` label set | `+ refined`, `+ slice` |
-| `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: \`+ tdd + (afk |
+| `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: `+ tdd` + `afk`-or-`hitl`, OR N peer issues + first slice = original, OR `+ awaiting-research` |
 | `aw-tdd` | TDD red-green-refactor + draft PR | `tdd + afk + refined + category` | `+ review`, draft PR |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
 
