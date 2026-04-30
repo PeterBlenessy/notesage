@@ -1,0 +1,103 @@
+name: AW — Feedback
+
+# Listens for human feedback on hitl-labeled issues OR claude[bot]-authored
+# PRs. Translates the feedback into a label change or PR state change via
+# the aw-feedback skill. No code generation — only pipeline state changes.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: aw-feedback-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  feedback:
+    # Skip bot-authored comments/reviews to avoid loops.
+    if: github.actor != 'claude[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      # Determine context: issue-with-hitl, claude[bot]-PR, or skip.
+      - name: Determine context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EVENT="${{ github.event_name }}"
+
+          if [[ "$EVENT" == "pull_request_review" ]]; then
+            PR="${{ github.event.pull_request.number }}"
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+            if [[ "$AUTHOR" == "claude[bot]" ]]; then
+              echo "context=pr" >> "$GITHUB_OUTPUT"
+              echo "target=$PR" >> "$GITHUB_OUTPUT"
+            else
+              echo "context=skip" >> "$GITHUB_OUTPUT"
+              echo "Skipping: PR not authored by claude[bot]."
+            fi
+            exit 0
+          fi
+
+          # issue_comment fires for both issues and PRs
+          PR_URL="${{ github.event.issue.pull_request.url }}"
+          NUM="${{ github.event.issue.number }}"
+
+          if [[ -n "$PR_URL" ]]; then
+            # Comment is on a PR
+            AUTHOR=$(gh pr view "$NUM" --json author --jq '.author.login')
+            if [[ "$AUTHOR" == "claude[bot]" || "$AUTHOR" == "app/claude" ]]; then
+              echo "context=pr" >> "$GITHUB_OUTPUT"
+              echo "target=$NUM" >> "$GITHUB_OUTPUT"
+            else
+              echo "context=skip" >> "$GITHUB_OUTPUT"
+              echo "Skipping: PR not authored by claude[bot]."
+            fi
+          else
+            # Comment is on an issue — must have hitl label
+            HAS_HITL=$(gh issue view "$NUM" --json labels --jq '[.labels[].name] | any(. == "hitl")')
+            if [[ "$HAS_HITL" == "true" ]]; then
+              echo "context=issue" >> "$GITHUB_OUTPUT"
+              echo "target=$NUM" >> "$GITHUB_OUTPUT"
+            else
+              echo "context=skip" >> "$GITHUB_OUTPUT"
+              echo "Skipping: issue does not have hitl label."
+            fi
+          fi
+
+      - name: Run aw-feedback skill
+        if: steps.ctx.outputs.context != 'skip'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-feedback` skill at `.claude/skills/aw-feedback/SKILL.md`
+            on the **${{ steps.ctx.outputs.context }}** #${{ steps.ctx.outputs.target }}
+            in this repository (PeterBlenessy/notesage).
+
+            **Event:** `${{ github.event_name }}`
+            **Triggered by:** ${{ github.actor }} (a human, not claude[bot])
+
+            **Hard constraints:**
+            - This is the label-level feedback skill. Do NOT generate code.
+            - One action per run.
+            - Always post a comment with what you interpreted, even if no
+              label change.
+            - Read the most recent human comment and prior agent comments
+              before deciding.
