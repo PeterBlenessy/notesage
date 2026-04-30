@@ -36,20 +36,20 @@ The skill files double as the canonical contract — every workflow's prompt is 
 ```mermaid
 flowchart TD
   A[Human creates issue] -->|issues.opened fires aw-pipeline.yml| B[aw-triage]
-  B -->|+ category, + feature, + refine| C[aw-refine]
   B -.->|duplicate / wontfix / ambiguous| Z[Closed or needs-info]
-  C -->|+ refined, + slice<br/>- refine| D[aw-slice]
+  B -->|+ category, + feature, + refine| C[aw-refine]
   C -.->|still too vague| W[Comment + leave refine]
-  D -->|+ sliced<br/>create N sub-issues with<br/>tdd + hitl-or-afk + refined| E{Matrix TDD}
+  C -->|+ refined, + slice<br/>- refine| D[aw-slice]
   D -.->|+ awaiting-research<br/>create 1 research sub-issue| R[Research subtask<br/>human flips parent back<br/>to slice when done]
-  E -->|each afk child| F[aw-tdd]
+  D -->|+ sliced<br/>create N sub-issues with<br/>tdd + hitl-or-afk + refined| E{Matrix TDD}
   E -.->|hitl child: wait for human flip| H[Idle: hitl]
-  F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR]
+  E -->|each afk child| F[aw-tdd]
   F -.->|hard gate fails| FAIL[Re-add afk + failure comment]
+  F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR]
   G -->|human reviews + merges| M[Merged]
   M -->|pull_request.closed merged=true| N[aw-retrospect]
-  N -->|signal found| O[Draft retro PR<br/>proposing SKILL.md patch]
   N -.->|clean run, no signal| P[Comment: no patch needed]
+  N -->|signal found| O[Draft retro PR<br/>proposing SKILL.md patch]
 
   classDef skill fill:#1d76db,stroke:#fff,color:#fff
   classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
