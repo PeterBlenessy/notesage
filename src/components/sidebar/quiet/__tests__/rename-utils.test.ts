@@ -54,6 +54,29 @@ describe("resolveRenamePath", () => {
   });
 });
 
+describe("resolveRenamePath with isDirectory flag", () => {
+  it("skips extension carry-over for directories (isDirectory=true)", () => {
+    expect(resolveRenamePath("/parent/my.config", "new-name", true)).toBe(
+      "/parent/new-name",
+    );
+  });
+  it("honours explicit extension even for directories (isDirectory=true)", () => {
+    expect(resolveRenamePath("/parent/my.config", "new-name.txt", true)).toBe(
+      "/parent/new-name.txt",
+    );
+  });
+  it("preserves file extension when isDirectory=false", () => {
+    expect(resolveRenamePath("/parent/notes.md", "new-name", false)).toBe(
+      "/parent/new-name.md",
+    );
+  });
+  it("uses file behaviour when flag is omitted", () => {
+    expect(resolveRenamePath("/parent/my.config", "new-name")).toBe(
+      "/parent/new-name.config",
+    );
+  });
+});
+
 describe("validateRenameBasename", () => {
   it("returns null for empty input (SidebarInlineEdit cancels it)", () => {
     expect(validateRenameBasename("")).toBeNull();
