@@ -34,13 +34,22 @@ export function parentDir(path: string): string {
  *
  * Always returns an absolute path rooted in the old path's parent directory.
  */
-export function resolveRenamePath(oldPath: string, newBasename: string): string {
+export function resolveRenamePath(
+  oldPath: string,
+  newBasename: string,
+  isDirectory?: boolean,
+): string {
   const parent = parentDir(oldPath);
   const oldName = basename(oldPath);
 
   // Does the new name already carry an extension?
   const hasExt = newBasename.includes(".") && !newBasename.startsWith(".");
   if (hasExt) {
+    return parent ? `${parent}/${newBasename}` : `/${newBasename}`;
+  }
+
+  // Directories have no meaningful extension to preserve — rename as-is.
+  if (isDirectory) {
     return parent ? `${parent}/${newBasename}` : `/${newBasename}`;
   }
 
