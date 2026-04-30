@@ -34,15 +34,14 @@ The skill files double as the canonical contract — every workflow's prompt is 
 ## Pipeline overview
 
 ```mermaid
-flowchart LR
+flowchart TD
   A[Human creates issue] -->|issues.opened fires aw-pipeline.yml| B[aw-triage]
   B -->|+ category, + feature, + refine| C[aw-refine]
   B -.->|duplicate / wontfix / ambiguous| Z[Closed or needs-info]
   C -->|+ refined, + slice<br/>- refine| D[aw-slice]
   C -.->|still too vague| W[Comment + leave refine]
   D -->|+ sliced<br/>create N sub-issues with<br/>tdd + hitl-or-afk + refined| E{Matrix TDD}
-  D -->|+ awaiting-research<br/>create 1 research sub-issue| R[Research subtask]
-  R -->|human posts findings + closes,<br/>flips parent: + slice - awaiting-research| D
+  D -.->|+ awaiting-research<br/>create 1 research sub-issue| R[Research subtask<br/>human flips parent back<br/>to slice when done]
   E -->|each afk child| F[aw-tdd]
   E -.->|hitl child: wait for human flip| H[Idle: hitl]
   F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR]
