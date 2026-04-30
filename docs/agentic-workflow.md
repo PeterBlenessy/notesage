@@ -267,13 +267,15 @@ Each job spins up its own runner but the jobs run back-to-back without waiting f
 
 Standalone `aw-slice.yml` ALSO listens to `issues: types: [labeled]` to pick up the post-research flip (human flips `awaiting-research → slice`). This is the only standalone with an event trigger.
 
-To prevent a race between `aw-pipeline.yml` and `aw-slice.yml` (when pipeline's refine job adds the `slice` label, that fires `issues.labeled`, which would also trigger `aw-slice.yml`), the standalone has:
+To prevent a race between `aw-pipeline.yml` and `aw-slice.yml` (when pipeline's refine job adds the `slice` label, that fires `issues.labeled`, which would also trigger `aw-slice.yml`) AND to silence the skipped-run noise that previously appeared on every label change, the standalone has:
 
 ```yaml
-if: github.event_name != 'issues' || github.actor != 'claude[bot]'
+if: |
+  github.event_name != 'issues' ||
+  (github.actor != 'claude[bot]' && github.event.label.name == 'slice')
 ```
 
-The `if:` skips the issues-event path when claude\[bot\] is the actor (= pipeline is processing the issue). Cron and `workflow_dispatch` runs are unaffected. Human label changes (the actor is the human) still fire normally.
+The `if:` skips the issues-event path unless a HUMAN adds the specific `slice` label — i.e., the post-research re-slice path (human flips `awaiting-research → slice` after a research subtask closes). Cron and `workflow_dispatch` runs are unaffected. All other label changes — bot-added, or human-added but not `slice` — produce no run.
 
 ### `aw-retrospect.yml`
 
@@ -336,9 +338,19 @@ Total wall time on a typical issue: \~15-20 minutes from `gh issue create` to dr
 
 **What happened:** When pipeline's refine job adds the `slice` label, that fires `issues.labeled`, which triggers BOTH the pipeline's slice job (via `needs:`) AND the standalone aw-slice.yml (via the `issues: types: [labeled]` trigger). Both would call the agent on the same issue in parallel — double work and conflicting label updates.
 
-**Fix:** added `if: github.event_name != 'issues' || github.actor != 'claude[bot]'` at the standalone's job level. Skips bot-triggered events; only fires on human label changes (post-research re-slice) + cron + dispatch.
+**Fix (v1):** added `if: github.event_name != 'issues' || github.actor != 'claude[bot]'` at the standalone's job level. Skips bot-triggered events; only fires on human label changes (post-research re-slice) + cron + dispatch.
 
-**Lesson:** when the same event triggers both a pipeline and a standalone, explicit actor-based filtering is the cleanest separation.
+**Fix (v2 — noise reduction):** the v1 guard correctly prevented the race but every human-added label change to any issue still created a "skipped" run, polluting the run list. Tightened to also require the specific label being added:
+
+```yaml
+if: |
+  github.event_name != 'issues' ||
+  (github.actor != 'claude[bot]' && github.event.label.name == 'slice')
+```
+
+Now the standalone only fires on the one event we actually want — a human adding the `slice` label.
+
+**Lesson:** when the same event triggers both a pipeline and a standalone, explicit actor-based filtering separates concerns; tightening to the specific label being added eliminates run-list noise without losing functionality.
 
 ### Subtask blocked by `Depends on:`
 
