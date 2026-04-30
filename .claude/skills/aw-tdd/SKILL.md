@@ -1,24 +1,27 @@
 ---
 name: aw-tdd
-description: Implement a `tdd + afk` subtask issue using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates labels through tdd → review. Reverts and reports if anything fails.
+description: Implement a `tdd + afk` issue (a parent that aw-slice didn't slice, OR a sub-issue from a multi-value slice) using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates labels through tdd → review. Reverts and reports if anything fails.
 ---
 
 # aw-tdd
 
-Implement a single subtask issue end-to-end following the red-green-refactor cycle. Open a draft PR for human review when done. Fail closed (no PR) if anything goes wrong.
+Implement a single issue end-to-end following the red-green-refactor cycle. The issue is either a top-level parent (when aw-slice decided not to slice — the common case) or a sub-issue (when the parent had multiple independent user values). Open a draft PR for human review when done. Fail closed (no PR) if anything goes wrong.
+
+**One PR = one shippable unit of user value.** This is the core contract. The PR you open should make the user's life better in a concrete, observable way after merge. Settings store fields, CSS variables, or other infrastructure changes are NOT a unit on their own — they ship inside the PR that delivers the user value they enable.
 
 ## Inputs
 
-- `ISSUE_NUMBER` — the subtask issue to implement
-- The issue body (must include `Red tests` section)
+- `ISSUE_NUMBER` — the issue to implement (parent or sub-issue)
+- The issue body (must include `Red tests` section or equivalent acceptance criteria)
 - The codebase (already checked out)
 - `pnpm test`, `pnpm typecheck`, `pnpm lint` available
 
 ## Pre-flight
 
-1. **Read the subtask issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
+1. **Read the issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
    - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
-   - Verify it does NOT have `review`, `feature` (it's a sub-issue, not a parent), or be closed.
+   - Verify it does NOT have `review` or be closed.
+   - The `feature` label is OK — it just means this is a top-level parent that aw-slice decided to ship as one PR rather than slicing.
 
 2. **Check `Depends on:` blockers.** Parse the body for `Depends on: #N` references. For each:
    - `gh issue view N --json state,labels --jq '.state'` — if not `CLOSED`, the dependency is not done.

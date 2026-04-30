@@ -45,9 +45,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Precheck: find one eligible subtask. Subtasks are issues with
-      # `tdd` + `afk` + `refined` + a category, NOT having `feature`
-      # (which marks parents) and NOT having `review` (already in PR).
+      # Precheck: find one eligible issue. Eligibility = `tdd` + `afk` +
+      # `refined` + a category, AND not yet `review`. The `feature` label
+      # is OK — under the don't-slice default, parents go directly to tdd
+      # without sub-issues.
       - name: Find candidate
         id: find
         env:
@@ -65,7 +66,7 @@ jobs:
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "feature" or . == "review")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | .number] | first(.[])? // empty')
           if [[ -z "$ISSUE" ]]; then
             echo "No eligible subtasks. Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"

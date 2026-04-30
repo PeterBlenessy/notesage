@@ -1,11 +1,11 @@
 ---
 name: aw-slice
-description: Break a refined GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if under-specified. Links children as GitHub sub-issues. Sets `sliced` on the parent (or `awaiting-research`).
+description: Decide whether a refined GitHub issue ships as one PR or as N PRs. Default is one PR (no slicing) — issues with a single user value pass directly to aw-tdd. Slice only when the issue delivers N independent user values, each independently shippable. Creates a research sub-issue first if under-specified.
 ---
 
 # aw-slice
 
-Break a refined GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). Decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
+Decide how a refined GitHub issue should be implemented: as one PR (the common case) or as N PRs (when it delivers multiple independent user values). The unit is **user value** — what a user can do after the PR merges that they couldn't do before. One PR = one shippable unit of user value.
 
 ## Inputs
 
@@ -20,21 +20,46 @@ Break a refined GitHub issue into actionable child sub-issues. Each child is sma
    - Verify it does NOT have `sliced` or `awaiting-research`. If it does, exit silently (idempotent).
    - The `slice` action label is the explicit gate. Set by `aw-refine` after a successful clarification, or by a human after a research subtask closes (`awaiting-research` → `slice`). Bare `refined` alone is NOT a trigger.
 
-2. **Decide: clear plan or research first?**
+2. **First branch — research vs value-listing.**
 
-   The parent is **clear** if:
-   - The outcome is concrete and observable
-   - Acceptance criteria are testable
-   - The list of in-scope work is enumerable
-   - You can name 2–6 distinct sub-tasks with confidence
-
-   The parent is **under-specified** if:
+   The parent is **under-specified** (research-first) if:
    - The outcome describes a problem space, not a solution
    - You can't pick between obvious technical alternatives without more digging
-   - Open questions in the body affect the breakdown shape (which library? which API?)
-   - You'd be guessing at acceptance criteria for the children
+   - Open questions in the body affect the implementation shape (which library? which API?)
+   - You'd be guessing at acceptance criteria
 
-3a. **Research-first path** (under-specified):
+   Otherwise, proceed to **value-listing** (step 3).
+
+3. **List the user values delivered by this issue.**
+
+   The core question: **what can a user DO after this PR merges that they couldn't do before?** Each answer is a "user value." Phrase each one as: "User can [observable behaviour]."
+
+   Examples:
+   - "User can resize the cmd-bar by dragging the top edge, and the height persists." → 1 value
+   - "User can search across the editor" + "User can search across the sidebar" → 2 values (independent, each useful alone)
+   - "Internal: refactor the rename helper" → 0 user values; this isn't shippable on its own — it should be bundled with the user value it enables, or rejected
+
+   **Group values that share a single solution.** If two user behaviours come from the same change, they're one PR. Example: "drag handle works" + "viewport clamps the height" + "height persists across reloads" all share one solution (the resize implementation), so they're one value group.
+
+   **Test for groupings:** "If I stop here (after this PR merges), has the user gained something concrete and useful?" Yes → ship it as one PR. Half a value (e.g. just the settings store field, no UI) → not a PR; bundle it with the value it enables.
+
+4. **Decide: don't slice OR slice into N value-aligned children.**
+
+   - **0 value groups** — the issue describes only internal work with no user-visible result. Post a clarification comment asking "what user behaviour does this enable?" Leave `slice` in place. Stop.
+   - **1 value group (the common case)** — DO NOT slice. The parent itself becomes the work unit:
+     - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
+     - Post a "passing through unsliced" comment (template below)
+     - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
+   - **N independent value groups** — slice into N sub-issues, one per group:
+     - Title: `<verb-prefixed user-value statement> for #<parent>` (e.g. `feat(search): search across editor for #99`)
+     - Body: Goal (the user value) / Red tests / Green / Files likely to change / Definition of done
+     - Labels: parent's category + `refined` + `tdd` + one of `hitl` / `afk`. Children do NOT get `feature`.
+     - Link as sub-issue of parent
+     - Update parent labels: remove `slice`, add `sliced`. Stop.
+
+   **Default to "don't slice."** Most issues are one user value. Only slice when you can clearly name N independent values, each independently useful.
+
+3a. **Research-first path** (the under-specified branch from step 2):
 
     Create ONE child issue:
     - Title: `Research: <specific question> for #<parent>`
@@ -45,26 +70,6 @@ Break a refined GitHub issue into actionable child sub-issues. Each child is sma
     Update parent labels:
     - Remove `slice`
     - Add `awaiting-research`
-
-    Post a comment on the parent (template below). Stop.
-
-3b. **Clear-plan path**:
-
-    Pick a **slicing strategy**:
-    - **Horizontal** (one layer per subtask) — when the work has hard layer dependencies (schema → API → UI), tightly coupled changes that ship as one feature, or under ~6 children
-    - **Vertical** (tracer-bullet end-to-end slices) — when the issue lists multiple distinct user outcomes, when you can ship something useful after each slice, or when the feature spans many files
-
-    Default to horizontal when uncertain.
-
-    Create N child issues (typically 3–6). For each:
-    - Title: `<verb-prefixed concrete deliverable> for #<parent>` (e.g. `feat(store): add cmdBarExpandedHeight to settings store for #37`)
-    - Body: see "Implementation subtask template" below — MUST include a red-test list as the definition of done
-    - Labels: parent's category (`bug`/`enhancement`/`chore`), `refined`, `tdd`, plus exactly one of `hitl` / `afk`. Children do NOT get `feature` (only top-level parents do).
-    - Link as sub-issue of parent
-
-    Update parent labels:
-    - Remove `slice`
-    - Add `sliced`
 
     Post a comment on the parent (template below). Stop.
 
@@ -167,39 +172,62 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 
 ## Output rules
 
-- **Sub-issue links are mandatory.** Every child must be linked as a sub-issue of the parent via the GraphQL mutation above. Without the link, the parent's UI does not show the children.
-- **Idempotent:** if parent has `sliced` or `awaiting-research`, exit silently.
+- **Default to NOT slicing.** Most issues deliver one user value (or several values that share one solution). The parent itself is the work unit — pass it directly to `aw-tdd`. Slicing is the exception, not the default.
+- **Slice ONLY when you can name N independent user values.** If you can't articulate the N values as separate "User can …" sentences that each independently make the user's life better, don't slice.
+- **One PR = one shippable unit of user value.** A PR that delivers half a value (e.g. a settings store field with no consumer) is not a unit and should NOT be sliced out as its own subtask. Bundle it with the value it enables.
+- **Sub-issue links are mandatory** when slicing. Every child must be linked as a sub-issue of the parent via the GraphQL mutation. Without the link, the parent's UI does not show the children.
+- **Idempotent:** if parent has `sliced` or `awaiting-research` or `tdd`, exit silently.
 - **No body modification** of the parent. Update labels only.
-- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `refined` (state — they are created already in template shape) + `tdd` (action) + `hitl|afk` (gate). They do NOT get `feature` (only top-level parents do).
-- **Children get `hitl` or `afk`**, exactly one each. Never both, never neither.
-- **Default count**: 3–6 children. If you'd create more, the parent is too big and should be split first (post a clarification comment instead of forcing an oversized plan).
+- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `refined` + `tdd` + `hitl|afk`. They do NOT get `feature` (only top-level parents do).
+- **Children get `hitl` or `afk`**, exactly one each.
 
 ## Comment templates
 
-**Clear-plan path:**
+**Don't-slice path (the common case):**
 
 ```
-> *Sliced automatically by the `aw-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
+> *Reviewed by the `aw-slice` skill. This issue delivers one user value, so it ships as a single PR.*
 
-Sliced into <N> sub-issues using <horizontal|vertical> strategy. Each child carries a red-test list as its definition of done. Subtasks: <#A, #B, #C>.
+**User value:** <one-sentence "User can …" statement>
 
-Order: <#A → #B → #C> (per `Depends on:` markers).
+Passing this directly to `aw-tdd` (no sub-issues created). Marked `tdd + <afk|hitl>`.
+```
 
-Reasoning: <one-sentence why this slicing>.
+**Slice path (multiple independent values):**
+
+```
+> *Sliced by the `aw-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
+
+Identified <N> independent user values, each shipping as its own PR:
+
+- #<A> — <user-value sentence>
+- #<B> — <user-value sentence>
+- #<C> — <user-value sentence>
+
+Order: <#A → #B → #C> (per `Depends on:` markers, if any).
 ```
 
 **Research-first path:**
 
 ```
-> *Sliced automatically by the `aw-slice` skill.*
+> *Sliced by the `aw-slice` skill.*
 
-Not enough is known to plan implementation subtasks confidently. Created research subtask <#R> covering: <question 1; question 2; ...>.
+Not enough is known to identify the user values confidently. Created research subtask <#R> covering: <question 1; question 2; ...>.
 
 When the research subtask closes, flip this parent's labels: remove `awaiting-research`, add `slice` to re-trigger.
 ```
 
+**No-user-value path:**
+
+```
+> *Reviewed by the `aw-slice` skill. Could not identify a user value.*
+
+This issue describes internal work without a user-observable result. Could you clarify what user behaviour this enables, or which value-delivering issue this should be bundled with?
+```
+
 ## Constraints from the dev process
 
-- Parent state transition: `slice` → `sliced` (clear path) or `slice` → `awaiting-research` (research path).
+- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path).
 - Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
-- The `aw-tdd` workflow picks up children labeled `tdd` + `afk`. It does not look at parents.
+- The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it has `feature` (don't-slice parent) or not (sub-issue child).
+- One PR = one user value. If a PR delivers two unrelated values, it was sliced wrong — split into two PRs.

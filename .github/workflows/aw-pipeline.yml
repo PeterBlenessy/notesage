@@ -130,21 +130,32 @@ jobs:
             `refined` + `tdd` + exactly one of `hitl` / `afk`. Default 3-6
             children. If under-specified, create ONE research subtask only
             and set parent to `awaiting-research`.
-      - name: Collect afk subtasks for matrix
+      - name: Collect afk work for matrix
         id: collect
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PARENT: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          # Pull all sub-issues of the parent with tdd + afk labels.
-          # hitl subtasks are skipped — those need human approval before tdd.
-          # If no afk subtasks (research-first path or all hitl), tdd job is
-          # skipped via the `if:` below.
-          SUBTASKS=$(gh api graphql -f query="query { repository(owner:\"PeterBlenessy\", name:\"notesage\") { issue(number:$PARENT) { subIssues(first:20) { nodes { number labels(first:10) { nodes { name } } } } } } }" \
-            --jq '[.data.repository.issue.subIssues.nodes[] | select((.labels.nodes | map(.name) | any(. == "tdd")) and (.labels.nodes | map(.name) | any(. == "afk"))) | .number]')
+          # Two cases:
+          #   1. aw-slice decided "don't slice" — parent itself now has tdd+afk.
+          #      Matrix runs once on the parent.
+          #   2. aw-slice created sub-issues (multiple user values).
+          #      Matrix runs once per sub-issue with tdd+afk.
+          # hitl items are skipped (need human approval before tdd).
+          # awaiting-research / no children / no tdd label → matrix is skipped via `if:` below.
+          PARENT_LABELS=$(gh issue view "$PARENT" --json labels --jq '[.labels[].name]')
+          PARENT_HAS_TDD=$(echo "$PARENT_LABELS" | jq 'any(. == "tdd")')
+          PARENT_HAS_AFK=$(echo "$PARENT_LABELS" | jq 'any(. == "afk")')
+          if [[ "$PARENT_HAS_TDD" == "true" && "$PARENT_HAS_AFK" == "true" ]]; then
+            SUBTASKS="[$PARENT]"
+            echo "Don't-slice path: matrix on parent #$PARENT"
+          else
+            SUBTASKS=$(gh api graphql -f query="query { repository(owner:\"PeterBlenessy\", name:\"notesage\") { issue(number:$PARENT) { subIssues(first:20) { nodes { number labels(first:10) { nodes { name } } } } } } }" \
+              --jq '[.data.repository.issue.subIssues.nodes[] | select((.labels.nodes | map(.name) | any(. == "tdd")) and (.labels.nodes | map(.name) | any(. == "afk"))) | .number]')
+            echo "Slice path: matrix on sub-issues $SUBTASKS"
+          fi
           echo "subtasks=$SUBTASKS" >> "$GITHUB_OUTPUT"
-          echo "Collected afk subtasks for matrix: $SUBTASKS"
 
   tdd:
     needs: slice

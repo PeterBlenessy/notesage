@@ -160,14 +160,15 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 
 **Process:**
 
-1. Read the parent. Decide whether the issue is **clear** (concrete outcome, testable acceptance criteria, enumerable subtasks) or **under-specified** (problem space, blocking unknowns, can't pick between technical alternatives).
-2. **Research-first path** (under-specified): create ONE child sub-issue `Research: <question> for #<parent>`, labeled `chore + refined + tdd + hitl`. Update parent: − `slice`, + `awaiting-research`. Stop. Human (or aw-tdd if marked afk) does the research, posts findings, closes the subtask. Human flips parent back to `slice`. aw-slice re-runs with richer context.
-3. **Clear path:** pick horizontal vs vertical slicing. Default horizontal. Create 3–6 child sub-issues. Each child:
-   - Title: `<verb-prefixed concrete deliverable> for #<parent>`
-   - Body: Goal / Red tests / Green / Refactor / Files likely to change / Depends on / Definition of done
-   - Labels: parent's category + `refined` + `tdd` + exactly one of `hitl` / `afk`
-   - Linked as a sub-issue via `addSubIssue` GraphQL mutation
-4. Update parent: − `slice`, + `sliced` (terminal at parent level).
+1. Read the parent. Decide whether the issue is **under-specified** (problem space, blocking unknowns, can't pick between technical alternatives) → research path. Otherwise proceed to value listing.
+2. **Research-first path:** create ONE child sub-issue `Research: <question> for #<parent>`, labeled `chore + refined + tdd + hitl`. Update parent: − `slice`, + `awaiting-research`. Human (or aw-tdd if marked afk) does the research, posts findings, closes the subtask. Human flips parent back to `slice`. aw-slice re-runs with richer context.
+3. **List the user values** the issue delivers. Each value is a sentence: "User can \[observable behaviour\]." Group values that share a single solution.
+4. **Decide:** don't slice (the common case) OR slice into N value-aligned children.
+   - **0 user values** — the issue describes only internal work. Post a clarification comment asking what user behaviour this enables. Leave `slice` in place. Stop.
+   - **1 user value** (default) — DO NOT slice. The parent itself is the work unit. Update labels: − `slice`, + `tdd` + (`afk` or `hitl`). aw-tdd picks up the parent directly and produces ONE PR.
+   - **N independent user values** — slice into N sub-issues, one per value. Each child: `<category> + refined + tdd + (afk|hitl)`. Children do NOT get `feature`. Update parent: − `slice`, + `sliced`.
+
+**The decision rule:** *one PR = one shippable unit of user value.* A PR that delivers half a value (e.g. a settings store field with no consumer) is not a unit and should NOT be sliced out as its own subtask. Bundle it with the value it enables.
 
 **HITL/AFK heuristics** (full list in SKILL.md):
 
@@ -175,13 +176,13 @@ All skills live at `.claude/skills/aw-<name>/SKILL.md`. The skill body is the ag
 - `afk` if: localized, observable acceptance criteria, well-tested component, doc-only change, clear bug fix
 - Default `hitl` when uncertain.
 
-**Constraints:** Sub-issue links via GraphQL `addSubIssue` are mandatory — without them, the parent's UI doesn't show the children. Idempotent on `sliced` or `awaiting-research`. Children inherit category from parent. Children do NOT get `feature` (only top-level parents do). Default cap 3–6 children per slice.
+**Constraints:** Default to NOT slicing. Sub-issue links via GraphQL `addSubIssue` are mandatory when slicing — without them, the parent's UI doesn't show the children. Idempotent on `tdd`, `sliced`, or `awaiting-research`. Children inherit category from parent. Children do NOT get `feature` (only top-level parents do).
 
 ### `aw-tdd`
 
 **Triggered by:** `aw-pipeline.yml`'s matrix tdd job (one parallel matrix entry per `afk` subtask), or `aw-tdd.yml` on cron / dispatch.
 
-**Inputs:** subtask issue number. Must have `tdd + afk + refined + <category>`. Must NOT have `feature` (parent marker), `review` (already in PR), or be closed.
+**Inputs:** issue number. Must have `tdd + afk + refined + <category>`. May or may not have `feature` (under the don't-slice default, parents themselves get `tdd + afk` and aw-tdd processes them as one PR; under the multi-value path, sub-issues without `feature` are the work units). Must NOT have `review` (already in PR) or be closed.
 
 **Pre-flight:**
 
@@ -431,6 +432,26 @@ Originally we planned a `feature-research` skill for issues that were too vague 
 2. Research becomes a regular subtask (with `tdd + hitl` labels), indistinguishable from any other in the queue
 3. Re-planning after research closes is just another aw-slice run
 4. Removes the `awaiting-human` state entirely — `awaiting-research` is enough
+
+### Choice: one PR = one shippable user value (not "one PR per layer")
+
+**The pivot.** Originally aw-slice defaulted to slicing every refined issue into 3–6 sub-issues, each delivering one horizontal layer (settings store field, then CSS variable, then drag handle, then clamp logic, then docs). After the first end-to-end test, the failure mode was obvious: PR spam, no shippable features. Each PR was one layer; the user only got working software after 4–5 PRs stacked up. Plus the depends-on chain between layers was implicit and unwritten — aw-tdd produced PR #78 documenting CSS variables that didn't exist yet because the implementation PRs hadn't merged.
+
+**The new rule:** *one PR = one shippable unit of user value.* The unit is "user value," not "issue" and not "layer." A PR that delivers half a value (a settings field with no consumer; a CSS variable with no UI) is NOT a unit on its own — it ships INSIDE the PR that delivers the value it enables.
+
+aw-slice's decision becomes:
+
+1. List the user values: each is a sentence "User can \[observable behaviour\]."
+2. Group values that share a single solution.
+3. **0 user-value entries** → comment-and-stop (issue describes only internal work).
+4. **1 user-value entry** (the common case) → don't slice. Mark the parent itself with `tdd + (afk|hitl)` and pass directly to aw-tdd.
+5. **N independent user-value entries** → slice into N sub-issues, one per value.
+
+**Test for groupings:** *if I stop here (after this PR merges), has the user gained something concrete?* Yes → ship. No → bundle with the value it enables.
+
+**Why this works for feature flags.** A PR that delivers one complete user value is the natural unit for a feature flag: gate the merge with `if (flag.featureName)`, ramp it to opt-in users, evaluate, expand or roll back. A horizontal-layer PR can't be flag-gated meaningfully — the flag would point at machinery the user can't see.
+
+**Tradeoff with TDD red phase.** When aw-tdd runs on a parent (don't-slice path), it may receive a longer red-test list spanning multiple files. That's fine — the test list expresses the BEHAVIOR being delivered, not the lines of code. Multiple files in one PR is appropriate when they deliver one user value cohesively.
 
 ### Choice: pipeline workflow + standalone backstops (not pure event-chain)
 
