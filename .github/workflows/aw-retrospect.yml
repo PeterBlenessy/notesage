@@ -1,0 +1,58 @@
+name: AW — Retrospect
+
+# After a claude[bot]-authored PR is merged, run a short retrospective
+# to identify whether the originating skill could be improved by what
+# we learned. Proposes skill patches as a separate draft PR — never
+# auto-merges. Human reviews every proposed change.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write       # propose skill patches via a new branch + PR
+  pull-requests: write
+  issues: write         # post comments on merged PR
+  id-token: write       # claude-code-action OIDC
+
+concurrency:
+  group: aw-retrospect-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  retrospect:
+    # Only on actual merges, only for claude[bot]-authored PRs, and skip
+    # retro PRs (don't retro on retros).
+    if: |
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.user.login == 'claude[bot]' &&
+      !startsWith(github.event.pull_request.title, '[retrospect]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # need history to look at post-merge commits
+
+      - name: Run aw-retrospect skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Read,Edit,Write,Grep,Glob"
+          prompt: |
+            Run the `aw-retrospect` skill at `.claude/skills/aw-retrospect/SKILL.md`
+            on PR #${{ github.event.pull_request.number }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard constraints** (also defined in the skill):
+            - One skill patched per retro, max. Skip if no clear signal.
+            - Never modify a SKILL.md directly on main — always open a draft
+              PR with the proposed change on a `claude-retro/...` branch.
+            - Post a comment on the merged PR (#${{ github.event.pull_request.number }})
+              with the outcome (proposed patch link, or "no retro action").
+            - Idempotent: if a retro PR already exists for this merged PR
+              (branch name `claude-retro/<issue-number>-`), exit silently.
