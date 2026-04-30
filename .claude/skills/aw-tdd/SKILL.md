@@ -1,9 +1,9 @@
 ---
-name: wf-tdd
-description: Implement an `afk + planned` subtask issue using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates issue labels through the in-progress → in-review lifecycle. Reverts and reports if anything fails.
+name: aw-tdd
+description: Implement a `tdd + afk` subtask issue using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates labels through tdd → review. Reverts and reports if anything fails.
 ---
 
-# TDD coder
+# aw-tdd
 
 Implement a single subtask issue end-to-end following the red-green-refactor cycle. Open a draft PR for human review when done. Fail closed (no PR) if anything goes wrong.
 
@@ -17,12 +17,12 @@ Implement a single subtask issue end-to-end following the red-green-refactor cyc
 ## Pre-flight
 
 1. **Read the subtask issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
-   - Verify it has `afk` and `planned` and exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
-   - Verify it does NOT have `in-progress`, `in-review`, or be closed.
+   - Verify it has `tdd` AND `afk` AND `clarified` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
+   - Verify it does NOT have `review`, `feature` (it's a sub-issue, not a parent), or be closed.
 
 2. **Check `Depends on:` blockers.** Parse the body for `Depends on: #N` references. For each:
    - `gh issue view N --json state,labels --jq '.state'` — if not `CLOSED`, the dependency is not done.
-   - If any blocker is open, post a comment (template below), exit silently. Cron will pick this up later.
+   - If any blocker is open, post a comment (template below), exit silently. Cron will retry later.
 
 3. **Read the parent issue context.** The subtask title contains `for #<parent>`. Read the parent's body and any sibling subtasks to understand the broader feature.
 
@@ -31,9 +31,9 @@ Implement a single subtask issue end-to-end following the red-green-refactor cyc
 ## Lifecycle labels
 
 Update the subtask issue's labels at three points:
-- **Start:** add `in-progress`, remove `enhanced` and `afk`. Post the start comment.
-- **PR opened:** add `in-review`, remove `in-progress`. Post the done comment.
-- **Failure:** remove `in-progress`, re-add `afk`. Post the failure comment with the specific failure.
+- **Start:** remove `afk` (claim it). The agent is now working on it. Post the start comment.
+- **PR opened:** add `review`, remove `tdd`. Post the done comment. (Keep `clarified`; `afk` was removed at start.)
+- **Failure:** re-add `afk`. Post the failure comment with the specific failure.
 
 ## Process: red-green-refactor
 
@@ -77,14 +77,14 @@ When all gates pass:
 2. Commit changes with a message matching the repo's convention. The commit body must include `Implements #<issue-number>` so the PR auto-links.
 3. Push the branch.
 4. Open a **draft** PR via `gh pr create --draft --title "..." --body "..."`. Title pattern: same as commit subject. Body template below.
-5. Update the subtask issue: add `in-review`, remove `in-progress`. Post the done comment.
+5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment.
 
 ## On failure
 
 If any hard gate fails:
 
 1. Discard local changes: `git checkout -- .` and `git clean -fd` (only files that were modified by this run — never touch the user's pre-existing uncommitted work).
-2. Update the subtask issue: remove `in-progress`, re-add `afk` (so cron retries don't see this as already-running).
+2. Update the subtask issue: re-add `afk` (so cron retries don't see this as already-running).
 3. Post a failure comment with: which gate failed, the exact error output (truncated to ~50 lines), and any next-step suggestions.
 
 ## Comment templates
@@ -92,7 +92,7 @@ If any hard gate fails:
 **Start:**
 
 ```
-> *Starting implementation via the `wf-tdd` skill (run id: <github.run_id>).*
+> *Starting implementation via the `aw-tdd` skill (run id: <github.run_id>).*
 
 Following red-green-refactor:
 1. Writing failing tests from the red-test list above
@@ -126,7 +126,7 @@ Review the draft PR before marking it ready.
 
 <truncated error output, in code block, ~50 lines max>
 
-Reset back to `afk + planned`. Cron will not auto-retry — investigate and either:
+Reset back to `tdd + afk`. Cron will not auto-retry — investigate and either:
 - Fix the issue body / red-test list and let cron pick this up again, or
 - Flip to `hitl` to force human implementation, or
 - Close as `wontfix` if the issue is no longer relevant.
@@ -173,7 +173,7 @@ Implements #<issue-number>
 
 <anything the reviewer should pay attention to: edge cases, design alternatives considered, things that surprised the agent>
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code) via the `wf-tdd` skill.
+🤖 Generated with [Claude Code](https://claude.com/claude-code) via the `aw-tdd` skill.
 ```
 
 ## Output rules
@@ -181,14 +181,14 @@ Implements #<issue-number>
 - **Never push to `main`.** Always work on `claude/...` branches.
 - **Always open as draft.** Human reviews before merging.
 - **Hard gates are hard:** any failure → revert + comment + exit. Do not "force through".
-- **Idempotent on labels:** if `in-progress` already exists when this skill starts, exit silently — another run is in flight or crashed; don't double-implement.
+- **Idempotent on labels:** if `review` already exists when this skill starts, exit silently — another run is in flight or crashed; don't double-implement.
 - **One subtask per run.** Pick the first eligible from the candidates list and stop.
-- **Do not modify the issue body.** That is the planner's authorship.
+- **Do not modify the issue body.** That is `aw-slice`'s authorship.
 - **Do not modify sibling subtasks.** Each runs in its own coder pass.
 - **Do not bump dependencies, refactor adjacent code, or add features beyond the subtask scope.** Stay narrow.
 
 ## Constraints from the dev process
 
-- Pick from `<category> + enhanced + afk` (sub-issues created by `wf-slice`).
+- Pick from `tdd` + `afk` + `clarified` + category (sub-issues created by `aw-slice`).
 - The retrospective workflow runs after merge — do not write retro entries from here.
-- If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-split rather than implementing partially.
+- If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.

@@ -1,0 +1,96 @@
+name: AW — TDD
+
+# Implements `tdd + afk` subtask issues using the aw-tdd skill at
+# .claude/skills/aw-tdd/SKILL.md. Standalone backstop: cron sweep +
+# workflow_dispatch only. The happy path runs from aw-pipeline.yml's
+# matrix tdd job.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Specific subtask issue number to implement (optional)"
+        required: false
+
+permissions:
+  contents: write       # push branch
+  pull-requests: write  # open draft PR
+  issues: write         # update labels, post comments
+  id-token: write       # claude-code-action OIDC
+
+concurrency:
+  group: aw-tdd-${{ inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  code:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Precheck: find one eligible subtask. Subtasks are issues with
+      # `tdd` + `afk` + `clarified` + a category, NOT having `feature`
+      # (which marks parents) and NOT having `review` (already in PR).
+      - name: Find candidate
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.issue_number }}" ]]; then
+            echo "candidate=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ISSUE=$(gh issue list \
+            --label tdd \
+            --label afk \
+            --label clarified \
+            --state open \
+            --limit 10 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "feature" or . == "review")) | not) | .number] | first(.[])? // empty')
+          if [[ -z "$ISSUE" ]]; then
+            echo "No eligible subtasks. Skipping LLM step."
+            echo "candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found candidate: #$ISSUE"
+            echo "candidate=$ISSUE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run aw-tdd skill
+        if: steps.find.outputs.candidate != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 200
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-tdd` skill at `.claude/skills/aw-tdd/SKILL.md` on
+            subtask #${{ steps.find.outputs.candidate }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard gates**: red tests must be RED before implementation; full
+            `pnpm test` and `pnpm typecheck` must pass; only the files listed
+            in the subtask body may be modified. Open the PR as DRAFT
+            (`gh pr create --draft`). On any failure, re-add `afk` and post
+            the failure comment.

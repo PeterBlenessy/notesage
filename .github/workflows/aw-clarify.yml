@@ -1,0 +1,83 @@
+name: AW — Clarify
+
+# Rewrites clarify-flagged issues into the outcome-oriented template
+# using the aw-clarify skill at .claude/skills/aw-clarify/SKILL.md.
+# Standalone backstop: cron sweep + workflow_dispatch only. The happy
+# path runs from aw-pipeline.yml.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Specific issue number to clarify (optional — defaults to first eligible)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: aw-clarify-${{ inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  clarify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      # Precheck: find issues with the `clarify` action label that haven't
+      # been clarified yet (no `clarified` state marker).
+      - name: Find candidates
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.issue_number }}" ]]; then
+            echo "candidates=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ISSUES=$(gh issue list \
+            --label clarify \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select([.labels[].name] | any(. == "clarified") | not) | .number] | first(.[])? // empty')
+          if [[ -z "$ISSUES" ]]; then
+            echo "No clarification candidates. Skipping LLM step."
+            echo "candidates=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found candidate: #$ISSUES"
+            echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run aw-clarify skill
+        if: steps.find.outputs.candidates != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-clarify` skill at `.claude/skills/aw-clarify/SKILL.md`
+            on issue #${{ steps.find.outputs.candidates }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard constraints** (also defined in the skill):
+            - Verify the issue has exactly one of `bug` / `enhancement` / `chore`
+              and the `clarify` action label.
+            - Pick the right template for the category.
+            - Preserve all reproduction steps, error messages, technical details verbatim.
+            - Add `clarified` (state) + `slice` (action) after rewriting body.
+              Remove `clarify` (the action label that triggered this).
+            - Do NOT modify the title unless it is genuinely not outcome-shaped.
+            - Idempotent: if `clarified` is already present, exit silently.

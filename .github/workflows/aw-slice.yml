@@ -1,0 +1,108 @@
+name: AW — Slice
+
+# Breaks clarified issues into red-test-list child sub-issues using
+# the aw-slice skill at .claude/skills/aw-slice/SKILL.md. Standalone
+# backstop: cron sweep + workflow_dispatch only, plus issues.labeled
+# (specifically for the post-research re-slice path when a human flips
+# `awaiting-research` → `slice` after a research subtask closes). The
+# happy path runs from aw-pipeline.yml.
+
+on:
+  issues:
+    types: [labeled]   # only fires when `slice` is added by a human after research
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Specific issue number to slice (optional)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: aw-slice-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  slice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      # Precheck: act on parent issues with `feature` + `clarified` + `slice`
+      # AND not yet `sliced` or `awaiting-research`. Filters out subtasks
+      # (which never have `feature`).
+      - name: Find candidates
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.issue_number }}" ]]; then
+            echo "candidates=${{ inputs.issue_number }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${{ github.event_name }}" == "issues" ]]; then
+            ISSUE="${{ github.event.issue.number }}"
+            LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+            HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
+            HAS_CLARIFIED=$(echo "$LABELS" | jq 'any(. == "clarified")')
+            HAS_SLICE=$(echo "$LABELS" | jq 'any(. == "slice")')
+            HAS_SLICED=$(echo "$LABELS" | jq 'any(. == "sliced")')
+            HAS_AWAITING=$(echo "$LABELS" | jq 'any(. == "awaiting-research")')
+            if [[ "$HAS_FEATURE" != "true" ]] || [[ "$HAS_CLARIFIED" != "true" ]] || [[ "$HAS_SLICE" != "true" ]] || [[ "$HAS_SLICED" == "true" ]] || [[ "$HAS_AWAITING" == "true" ]]; then
+              echo "Issue #$ISSUE not eligible. Skipping."
+              echo "candidates=" >> "$GITHUB_OUTPUT"
+            else
+              echo "candidates=$ISSUE" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          ISSUES=$(gh issue list \
+            --label slice \
+            --label feature \
+            --label clarified \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "sliced" or . == "awaiting-research")) | not) | .number] | first(.[])? // empty')
+          if [[ -z "$ISSUES" ]]; then
+            echo "No slicing candidates. Skipping LLM step."
+            echo "candidates=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found candidate: #$ISSUES"
+            echo "candidates=$ISSUES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run aw-slice skill
+        if: steps.find.outputs.candidates != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-slice` skill at `.claude/skills/aw-slice/SKILL.md`
+            on issue #${{ steps.find.outputs.candidates }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard constraints** (also defined in the skill):
+            - Each child sub-issue MUST be linked via the GraphQL `addSubIssue`
+              mutation. Without the link, GitHub's UI does not show the children.
+            - Each child carries a red-test list as definition of done.
+            - Each child labeled with parent's category + `clarified` + `tdd` +
+              exactly one of `hitl` / `afk`. Children do NOT get `feature`.
+            - Default count: 3-6 children. If you'd create more, the parent is too big.
+            - If under-specified, create ONE research subtask only and set parent
+              to `awaiting-research` (and remove `slice`).
+            - Idempotent: if parent has `sliced` or `awaiting-research` already,
+              exit silently.

@@ -1,0 +1,189 @@
+name: AW — Pipeline
+
+# End-to-end AI dev-process pipeline triggered when a human opens or
+# reopens an issue. Runs triage → clarify → slice → matrix-tdd in one
+# workflow with `needs:` dependencies, so each stage starts immediately
+# after its predecessor without waiting for separate GH Actions trigger
+# latency. Matrix at the tdd stage parallelizes implementation of afk
+# subtasks (up to 3 in flight at once).
+#
+# This workflow handles the HAPPY PATH on user issue creation. The
+# standalone workflows (aw-triage, aw-clarify, aw-slice, aw-tdd) are
+# the backstops — cron sweeps + workflow_dispatch + the post-research
+# re-slice trigger on aw-slice.
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: write       # tdd needs to push branches
+  issues: write
+  pull-requests: write
+  id-token: write       # claude-code-action OIDC
+
+concurrency:
+  group: aw-pipeline-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      classified: ${{ steps.check.outputs.classified }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run aw-triage skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-triage` skill at `.claude/skills/aw-triage/SKILL.md`
+            on issue #${{ github.event.issue.number }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely. Apply exactly one of `bug` / `enhancement` / `chore`,
+            add `feature` (parent marker) and `clarify` (action label), or
+            close as duplicate / wontfix per the skill rules.
+      - name: Check classification
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh issue view ${{ github.event.issue.number }} --json state --jq '.state')
+          if [[ "$STATE" != "OPEN" ]]; then
+            echo "Issue closed (probably as duplicate or wontfix). Stopping pipeline."
+            echo "classified=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
+          HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
+          HAS_CLARIFY=$(echo "$LABELS" | jq 'any(. == "clarify")')
+          if [[ "$HAS_FEATURE" == "true" ]] && [[ "$HAS_CLARIFY" == "true" ]]; then
+            echo "classified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "classified=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Classified: $HAS_FEATURE + $HAS_CLARIFY"
+
+  clarify:
+    needs: triage
+    if: needs.triage.outputs.classified == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run aw-clarify skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-clarify` skill at `.claude/skills/aw-clarify/SKILL.md`
+            on issue #${{ github.event.issue.number }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely. Add `clarified` (state) + `slice` (action); remove
+            `clarify`. Pick the right template for the category.
+      - name: Check ready-to-slice
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
+          HAS_SLICE=$(echo "$LABELS" | jq 'any(. == "slice")')
+          echo "ready=$HAS_SLICE" >> "$GITHUB_OUTPUT"
+          echo "Ready to slice: $HAS_SLICE"
+
+  slice:
+    needs: clarify
+    if: needs.clarify.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      subtasks: ${{ steps.collect.outputs.subtasks }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run aw-slice skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-slice` skill at `.claude/skills/aw-slice/SKILL.md`
+            on issue #${{ github.event.issue.number }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely. Each child sub-issue MUST be linked via the GraphQL
+            addSubIssue mutation. Each child labeled with category +
+            `clarified` + `tdd` + exactly one of `hitl` / `afk`. Default 3-6
+            children. If under-specified, create ONE research subtask only
+            and set parent to `awaiting-research`.
+      - name: Collect afk subtasks for matrix
+        id: collect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PARENT: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          # Pull all sub-issues of the parent with tdd + afk labels.
+          # hitl subtasks are skipped — those need human approval before tdd.
+          # If no afk subtasks (research-first path or all hitl), tdd job is
+          # skipped via the `if:` below.
+          SUBTASKS=$(gh api graphql -f query="query { repository(owner:\"PeterBlenessy\", name:\"notesage\") { issue(number:$PARENT) { subIssues(first:20) { nodes { number labels(first:10) { nodes { name } } } } } } }" \
+            --jq '[.data.repository.issue.subIssues.nodes[] | select((.labels.nodes | map(.name) | any(. == "tdd")) and (.labels.nodes | map(.name) | any(. == "afk"))) | .number]')
+          echo "subtasks=$SUBTASKS" >> "$GITHUB_OUTPUT"
+          echo "Collected afk subtasks for matrix: $SUBTASKS"
+
+  tdd:
+    needs: slice
+    if: needs.slice.outputs.subtasks != '[]' && needs.slice.outputs.subtasks != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        subtask: ${{ fromJson(needs.slice.outputs.subtasks) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run aw-tdd skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 200
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-tdd` skill at `.claude/skills/aw-tdd/SKILL.md` on
+            subtask #${{ matrix.subtask }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            Hard gates: red tests must be RED before implementation; full
+            `pnpm test` and `pnpm typecheck` must pass; only the files
+            listed in the subtask body may be modified. Open the PR as
+            DRAFT (`gh pr create --draft`). Re-add `afk` on any failure.

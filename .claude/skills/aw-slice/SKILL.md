@@ -1,27 +1,27 @@
 ---
-name: wf-slice
-description: Break an enhanced GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if the parent is under-specified. Links children as GitHub sub-issues. Sets `planned` (or `awaiting-research`) on the parent.
+name: aw-slice
+description: Break a clarified GitHub issue into red-test-list child sub-issues using TDD red-green-refactor structure. Picks horizontal or vertical slicing per feature. Creates a research sub-issue first if under-specified. Links children as GitHub sub-issues. Sets `sliced` on the parent (or `awaiting-research`).
 ---
 
-# wf-slice
+# aw-slice
 
-Break an enhanced GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). The skill decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
+Break a clarified GitHub issue into actionable child sub-issues. Each child is small enough to land in isolation under TDD (red-green-refactor). Decides slicing strategy per issue, and creates a research sub-issue first if too little is known to slice confidently.
 
 ## Inputs
 
-- `ISSUE_NUMBER` — the parent issue to plan
+- `ISSUE_NUMBER` — the parent issue to slice
 - The issue body, title, labels, and any prior comments (read via `gh issue view`)
 
 ## Process
 
 1. **Read the parent.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
-   - Verify it has `enhanced` AND `ready-for-planning` AND one of `bug` / `enhancement` / `chore`.
-   - Verify it does NOT have `planned` or `awaiting-research`. If it does, exit silently (idempotent).
-   - The `ready-for-planning` label is the explicit gate — it's set by `wf-clarify` after a successful enhancement, or by a human after a research subtask closes (`awaiting-research` → `ready-for-planning`). Bare `enhanced` alone is NOT a trigger.
+   - Verify it has `feature` AND `clarified` AND `slice` AND one of `bug` / `enhancement` / `chore`.
+   - Verify it does NOT have `sliced` or `awaiting-research`. If it does, exit silently (idempotent).
+   - The `slice` action label is the explicit gate. Set by `aw-clarify` after a successful clarification, or by a human after a research subtask closes (`awaiting-research` → `slice`). Bare `clarified` alone is NOT a trigger.
 
 2. **Decide: clear plan or research first?**
-   
+
    The parent is **clear** if:
    - The outcome is concrete and observable
    - Acceptance criteria are testable
@@ -35,39 +35,37 @@ Break an enhanced GitHub issue into actionable child sub-issues. Each child is s
    - You'd be guessing at acceptance criteria for the children
 
 3a. **Research-first path** (under-specified):
-    
+
     Create ONE child issue:
     - Title: `Research: <specific question> for #<parent>`
     - Body: see "Research subtask template" below
-    - Labels: `chore`, `hitl`, `enhanced` (skip the triage+enhancer cycle since this is a planner-authored issue)
+    - Labels: `chore`, `clarified`, `tdd`, `hitl` (research subtasks always need human review)
     - Link as sub-issue of parent (see "Sub-issue linking" below)
-    
+
     Update parent labels:
-    - Remove `enhanced`
-    - Remove `ready-for-planning`
+    - Remove `slice`
     - Add `awaiting-research`
-    
+
     Post a comment on the parent (template below). Stop.
 
 3b. **Clear-plan path**:
-    
+
     Pick a **slicing strategy**:
     - **Horizontal** (one layer per subtask) — when the work has hard layer dependencies (schema → API → UI), tightly coupled changes that ship as one feature, or under ~6 children
     - **Vertical** (tracer-bullet end-to-end slices) — when the issue lists multiple distinct user outcomes, when you can ship something useful after each slice, or when the feature spans many files
-    
-    Default to horizontal when uncertain — it matches the pattern used for #37.
-    
+
+    Default to horizontal when uncertain.
+
     Create N child issues (typically 3–6). For each:
     - Title: `<verb-prefixed concrete deliverable> for #<parent>` (e.g. `feat(store): add cmdBarExpandedHeight to settings store for #37`)
     - Body: see "Implementation subtask template" below — MUST include a red-test list as the definition of done
-    - Labels: parent's category (`bug`/`enhancement`/`chore`), `enhanced`, plus exactly one of `hitl` / `afk`
+    - Labels: parent's category (`bug`/`enhancement`/`chore`), `clarified`, `tdd`, plus exactly one of `hitl` / `afk`. Children do NOT get `feature` (only top-level parents do).
     - Link as sub-issue of parent
-    
+
     Update parent labels:
-    - Remove `enhanced`
-    - Remove `ready-for-planning`
-    - Add `planned`
-    
+    - Remove `slice`
+    - Add `sliced`
+
     Post a comment on the parent (template below). Stop.
 
 ## HITL vs AFK heuristics
@@ -121,7 +119,7 @@ Find <specific information> needed to plan #<parent>.
 
 ## Output
 
-Post findings as a comment on this issue, then close as completed. The planner will re-run on #<parent> when this closes.
+Post findings as a comment on this issue, then close as completed. Flip the parent (#<parent>) from `awaiting-research` to `slice` to re-trigger planning.
 
 ## Definition of done
 
@@ -170,9 +168,9 @@ Post findings as a comment on this issue, then close as completed. The planner w
 ## Output rules
 
 - **Sub-issue links are mandatory.** Every child must be linked as a sub-issue of the parent via the GraphQL mutation above. Without the link, the parent's UI does not show the children.
-- **Idempotent:** if parent has `planned` or `awaiting-research`, exit silently.
+- **Idempotent:** if parent has `sliced` or `awaiting-research`, exit silently.
 - **No body modification** of the parent. Update labels only.
-- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They also get `enhanced` (skip triage+enhance for planner-authored issues — they are already shaped to the template).
+- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `clarified` (state — they are created already in template shape) + `tdd` (action) + `hitl|afk` (gate). They do NOT get `feature` (only top-level parents do).
 - **Children get `hitl` or `afk`**, exactly one each. Never both, never neither.
 - **Default count**: 3–6 children. If you'd create more, the parent is too big and should be split first (post a clarification comment instead of forcing an oversized plan).
 
@@ -181,7 +179,7 @@ Post findings as a comment on this issue, then close as completed. The planner w
 **Clear-plan path:**
 
 ```
-> *Planned automatically by the `wf-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
+> *Sliced automatically by the `aw-slice` skill. Reply with corrections or to flip hitl/afk on any subtask.*
 
 Sliced into <N> sub-issues using <horizontal|vertical> strategy. Each child carries a red-test list as its definition of done. Subtasks: <#A, #B, #C>.
 
@@ -193,15 +191,15 @@ Reasoning: <one-sentence why this slicing>.
 **Research-first path:**
 
 ```
-> *Planned automatically by the `wf-slice` skill.*
+> *Sliced automatically by the `aw-slice` skill.*
 
 Not enough is known to plan implementation subtasks confidently. Created research subtask <#R> covering: <question 1; question 2; ...>.
 
-Will re-plan when the research subtask closes. Flip the parent label `awaiting-research` → `enhanced` to re-trigger.
+When the research subtask closes, flip this parent's labels: remove `awaiting-research`, add `slice` to re-trigger.
 ```
 
 ## Constraints from the dev process
 
-- Parent state transition: `enhanced` → `planned` (clear path) or `enhanced` → `awaiting-research` (research path).
-- Re-planning trigger: human or automation flips `awaiting-research` → `enhanced` on the parent after the research subtask closes.
-- The `wf-tdd` workflow picks up children labeled `afk` + `enhanced` + category. It does not look at parents.
+- Parent state transition: `slice` → `sliced` (clear path) or `slice` → `awaiting-research` (research path).
+- Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
+- The `aw-tdd` workflow picks up children labeled `tdd` + `afk`. It does not look at parents.
