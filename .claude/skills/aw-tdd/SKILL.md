@@ -45,8 +45,8 @@ Update the subtask issue's labels at three points:
    - For Vitest: `pnpm vitest run <test-file>`
    - For Playwright: `pnpm playwright test <test-spec>`
 4. **Verify the tests are RED.** They MUST fail. If any test passes here:
-   - Either the test is wrong (it's testing something already true) or the bug is not real
-   - Post a comment explaining, fail the workflow, do NOT proceed to green
+   - **Exception for additive changes:** if a listed test covers an *existing, unchanged* code path (e.g. a regression guard verifying 'file behaviour still works when the new flag is false'), it is expected to be green before implementation. Continue as long as at least one test covering the *new* behaviour is red.
+   - Otherwise: the test is wrong (it's testing something already true) or the bug is not real — post a comment explaining, fail the workflow, do NOT proceed to green
 
 ### Green
 
