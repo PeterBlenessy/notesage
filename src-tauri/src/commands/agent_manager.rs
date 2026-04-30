@@ -459,6 +459,15 @@ async fn download_and_extract(
     Ok(())
 }
 
+/// Mark a file as executable (owner + group + other).  No-op on non-Unix targets.
+#[cfg(unix)]
+fn set_executable_bit(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let perms = std::fs::Permissions::from_mode(0o755);
+    std::fs::set_permissions(path, perms)
+        .map_err(|e| format!("chmod +x {}: {}", path.display(), e))
+}
+
 fn extract_zip(data: &[u8], agent_id: &str, bin_dir: &Path) -> Result<(), String> {
     let cursor = std::io::Cursor::new(data);
     let mut archive =
@@ -527,6 +536,9 @@ fn extract_zip(data: &[u8], agent_id: &str, bin_dir: &Path) -> Result<(), String
                 .collect::<Vec<_>>()
         ));
     }
+
+    #[cfg(unix)]
+    set_executable_bit(&bin_dir.join(agent_id))?;
 
     Ok(())
 }
@@ -610,6 +622,9 @@ fn extract_tar_gz(data: &[u8], agent_id: &str, bin_dir: &Path) -> Result<(), Str
             ));
         }
     }
+
+    #[cfg(unix)]
+    set_executable_bit(&bin_dir.join(agent_id))?;
 
     Ok(())
 }
@@ -1074,6 +1089,94 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
 #[tauri::command]
 pub async fn agent_install_node_runtime(app: AppHandle) -> Result<(), String> {
     download_node_runtime(&app).await
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn make_zip_archive(file_name: &str, content: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let buf = Vec::new();
+        let mut cursor = std::io::Cursor::new(buf);
+        let mut zip = zip::ZipWriter::new(&mut cursor);
+        // Intentionally use default options (no Unix execute bit) to simulate a
+        // downloaded archive that lacks the execute attribute.
+        let options = SimpleFileOptions::default();
+        zip.start_file(file_name, options).unwrap();
+        zip.write_all(content).unwrap();
+        zip.finish().unwrap();
+        cursor.into_inner()
+    }
+
+    #[cfg(unix)]
+    fn make_tar_gz_archive(file_name: &str, content: &[u8]) -> Vec<u8> {
+        use flate2::{write::GzEncoder, Compression};
+
+        let mut buf = Vec::new();
+        let enc = GzEncoder::new(&mut buf, Compression::default());
+        let mut builder = tar::Builder::new(enc);
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        // Explicitly set non-executable mode to simulate a "bare" archive entry.
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, file_name, content).unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+        buf
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extract_zip_produces_executable_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().to_path_buf();
+        let data = make_zip_archive("fake-agent", b"MZ fake binary");
+
+        extract_zip(&data, "fake-agent", &bin_dir).unwrap();
+
+        let bin_path = bin_dir.join("fake-agent");
+        assert!(bin_path.exists(), "binary must exist after zip extraction");
+
+        let mode = std::fs::metadata(&bin_path).unwrap().permissions().mode();
+        assert!(
+            mode & 0o111 != 0,
+            "binary extracted from zip must have execute bit set (got mode {:#o})",
+            mode
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extract_tar_gz_produces_executable_binary() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().to_path_buf();
+        let data = make_tar_gz_archive("fake-agent", b"ELF fake binary");
+
+        extract_tar_gz(&data, "fake-agent", &bin_dir).unwrap();
+
+        let bin_path = bin_dir.join("fake-agent");
+        assert!(bin_path.exists(), "binary must exist after tar.gz extraction");
+
+        let mode = std::fs::metadata(&bin_path).unwrap().permissions().mode();
+        assert!(
+            mode & 0o111 != 0,
+            "binary extracted from tar.gz must have execute bit set (got mode {:#o})",
+            mode
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
