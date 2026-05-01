@@ -64,6 +64,7 @@ vi.mock('@/stores/workspace-store', () => ({
       removeProject: vi.fn(),
       addProject: vi.fn(),
     }),
+    subscribe: vi.fn(() => () => {}),
   },
 }));
 

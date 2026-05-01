@@ -254,6 +254,56 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
 
     startupWithTimeout();
   }, []);
+
+  // --- Mid-session iCloud project detection ---
+  // When a project is added to the workspace after startup (e.g. via the
+  // "Open Folder" dialog or an iCloud sync arriving later), check whether
+  // it lives under the iCloud Notesage folder and prompt accordingly.
+  // Gated on startupReady so we don't double-fire for projects loaded
+  // during the initial reloadTrees() pass.
+  useEffect(() => {
+    let prevPaths = new Set(useWorkspaceStore.getState().projects.map((p) => p.path));
+
+    const unsubscribe = useWorkspaceStore.subscribe((state) => {
+      if (!useSettingsStore.getState().startupReady) return;
+      const currentPaths = new Set(state.projects.map((p) => p.path));
+      for (const path of currentPaths) {
+        if (!prevPaths.has(path)) {
+          detectProjectICloudSync(path);
+        }
+      }
+      prevPaths = currentPaths;
+    });
+
+    return unsubscribe;
+  }, []);
+}
+
+/**
+ * Detects whether a newly-added project lives under the iCloud Notesage
+ * folder and responds accordingly:
+ *  - Guard conditions: iCloud unavailable, path not under iCloud, already synced → no-op
+ *  - icloudEnabled ON: silently add the project to syncedProjectPaths and persist
+ *  - icloudEnabled OFF: show a toast prompting the user to enable sync
+ */
+export async function detectProjectICloudSync(projectPath: string): Promise<void> {
+  const settings = useSettingsStore.getState();
+  if (!settings.icloudAvailable || !settings.icloudNotesagePath) return;
+  if (!projectPath.startsWith(settings.icloudNotesagePath)) return;
+
+  const sync = useSyncStore.getState();
+  if (sync.isProjectSynced(projectPath)) return;
+
+  const notesRoot = settings.notesRootPath;
+
+  if (sync.icloudEnabled) {
+    sync.addSyncedProject(projectPath);
+    await useSyncStore.getState().saveSettings(notesRoot);
+  } else {
+    toast.info(
+      `"${projectPath.split("/").pop()}" is in iCloud Drive. Enable iCloud sync in Settings → Sync to keep it in sync across devices.`,
+    );
+  }
 }
 
 /** Race a promise against a per-step timeout. Returns undefined on timeout. */
@@ -409,17 +459,18 @@ async function reloadTrees() {
 
   // Load sync settings from disk
   if (notesRoot) {
-    const syncStore = useSyncStore.getState();
-    await syncStore.loadSettings(notesRoot);
+    await useSyncStore.getState().loadSettings(notesRoot);
+    // Re-read after await — the store was mutated by loadSettings
+    const freshSync = useSyncStore.getState();
 
-    if (syncStore.icloudEnabled) {
+    if (freshSync.icloudEnabled) {
       const icloudNotesagePath = settings.icloudNotesagePath;
       if (!icloudNotesagePath || !settings.icloudAvailable) {
-        syncStore.setICloudEnabled(false);
-        await syncStore.saveSettings(notesRoot);
+        freshSync.setICloudEnabled(false);
+        await freshSync.saveSettings(notesRoot);
         toast.info("iCloud is no longer available. Sync has been disabled.");
       } else {
-        await Promise.all(syncStore.syncedProjectPaths.map(async (syncedPath) => {
+        await Promise.all(freshSync.syncedProjectPaths.map(async (syncedPath) => {
           try {
             const tree = await withTimeout(
               tauriApi.listDirectory(syncedPath, settings.showHiddenFiles),
@@ -432,7 +483,7 @@ async function reloadTrees() {
             // On timeout: skip this synced project but don't remove it
           } catch {
             // Expected: synced project directory may have been removed from iCloud
-            syncStore.removeSyncedProject(syncedPath);
+            useSyncStore.getState().removeSyncedProject(syncedPath);
           }
         }));
 
@@ -441,7 +492,7 @@ async function reloadTrees() {
             (async () => {
               const found = await scanICloudForProjects(icloudNotesagePath);
               if (found) {
-                await syncStore.saveSettings(notesRoot);
+                await useSyncStore.getState().saveSettings(notesRoot);
               }
             })(),
             STEP_TIMEOUT_MS,
@@ -451,7 +502,7 @@ async function reloadTrees() {
           // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
         }
 
-        await syncStore.saveSettings(notesRoot);
+        await useSyncStore.getState().saveSettings(notesRoot);
       }
     }
   }
