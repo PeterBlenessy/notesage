@@ -41,3 +41,16 @@ playwright-report/
 *.app
 *.deb
 *.AppImage
+
+# Notesage app runtime data — written when this repo is opened as a project
+# in the running Notesage app (project.json, charts/, drawings/, comments/,
+# research/ etc. are all under this directory).
+.notesage/
+
+# Runtime lockfile for the `/schedule` skill (session id + pid + timestamp)
+.claude/scheduled_tasks.lock
+
+# Generated lockfiles for bundled-skill scripts (created by `npm install`
+# when the skill runs locally; not part of the skill's source).
+bundled-skills/**/scripts/package-lock.json
+bundled-skills/**/scripts/node_modules/
