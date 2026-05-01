@@ -32,9 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Precheck: act on parent issues with `feature` + `refined` + `slice`
-      # AND not yet `sliced` or `awaiting-research`. Filters out anything not eligible
-      # .
+      # Precheck: act on issues with `refined` + `slice` AND not yet
+      # `sliced` or `awaiting-research`. Category label (bug/enhancement/
+      # chore) is required as a sanity check that triage ran.
       - name: Find candidates
         id: find
         env:
@@ -48,11 +48,12 @@ jobs:
           if [[ "${{ github.event_name }}" == "issues" ]]; then
             ISSUE="${{ github.event.issue.number }}"
             LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
-            HAS_CLARIFIED=$(echo "$LABELS" | jq 'any(. == "refined")')
+            HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
+            HAS_REFINED=$(echo "$LABELS" | jq 'any(. == "refined")')
             HAS_SLICE=$(echo "$LABELS" | jq 'any(. == "slice")')
             HAS_SLICED=$(echo "$LABELS" | jq 'any(. == "sliced")')
             HAS_AWAITING=$(echo "$LABELS" | jq 'any(. == "awaiting-research")')
-            if [[ "$HAS_FEATURE" != "true" ]] || [[ "$HAS_CLARIFIED" != "true" ]] || [[ "$HAS_SLICE" != "true" ]] || [[ "$HAS_SLICED" == "true" ]] || [[ "$HAS_AWAITING" == "true" ]]; then
+            if [[ "$HAS_CATEGORY" != "true" ]] || [[ "$HAS_REFINED" != "true" ]] || [[ "$HAS_SLICE" != "true" ]] || [[ "$HAS_SLICED" == "true" ]] || [[ "$HAS_AWAITING" == "true" ]]; then
               echo "Issue #$ISSUE not eligible. Skipping."
               echo "candidates=" >> "$GITHUB_OUTPUT"
             else
@@ -93,13 +94,17 @@ jobs:
             precisely.
 
             **Hard constraints** (also defined in the skill):
-            - Each child sub-issue MUST be linked via the GraphQL `addSubIssue`
-              mutation. Without the link, GitHub's UI does not show the children.
-            - Each child carries a red-test list as definition of done.
-            - Each child labeled with parent's category + `refined` + `tdd` +
-              exactly one of `hitl` / `afk`. Children do NOT get `feature`.
-            - Default count: 3-6 children. If you'd create more, the parent is too big.
-            - If under-specified, create ONE research subtask only and set parent
-              to `awaiting-research` (and remove `slice`).
-            - Idempotent: if parent has `sliced` or `awaiting-research` already,
+            - Default to NOT slicing. One user value = one PR; most issues
+              pass directly to aw-tdd as a single PR (mark `tdd + (afk|hitl)`,
+              remove `slice`).
+            - Slice ONLY when the issue delivers N independent user values,
+              each independently shippable. Then: rewrite the original issue
+              body to be the FIRST peer slice; create N-1 NEW peer issues
+              with `Split from #<original>` in their body. NO GraphQL
+              parent/child link. NO `feature` label.
+            - Each peer carries the parent's category + `refined` + `tdd` +
+              exactly one of `hitl` / `afk`.
+            - If under-specified, create ONE research peer issue only and
+              set the original to `awaiting-research` (and remove `slice`).
+            - Idempotent: if `sliced` or `awaiting-research` already set,
               exit silently.

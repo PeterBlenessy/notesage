@@ -53,8 +53,8 @@ jobs:
             on issue #${{ github.event.issue.number }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely. Apply exactly one of `bug` / `enhancement` / `chore`,
-            add `feature` (parent marker) and `refine` (action label), or
-            close as duplicate / wontfix per the skill rules.
+            add `refine` (action label), or close as duplicate / wontfix
+            per the skill rules.
       - name: Check classification
         id: check
         env:
@@ -67,15 +67,17 @@ jobs:
             echo "classified=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # An issue counts as triaged iff it has a category label
+          # (bug/enhancement/chore) AND the `refine` action label.
           LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
-          HAS_FEATURE=$(echo "$LABELS" | jq 'any(. == "feature")')
-          HAS_CLARIFY=$(echo "$LABELS" | jq 'any(. == "refine")')
-          if [[ "$HAS_FEATURE" == "true" ]] && [[ "$HAS_CLARIFY" == "true" ]]; then
+          HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
+          HAS_REFINE=$(echo "$LABELS" | jq 'any(. == "refine")')
+          if [[ "$HAS_CATEGORY" == "true" ]] && [[ "$HAS_REFINE" == "true" ]]; then
             echo "classified=true" >> "$GITHUB_OUTPUT"
           else
             echo "classified=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Classified: $HAS_FEATURE + $HAS_CLARIFY"
+          echo "Classified: category=$HAS_CATEGORY refine=$HAS_REFINE"
 
   refine:
     needs: triage

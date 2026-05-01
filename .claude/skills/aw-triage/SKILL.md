@@ -1,6 +1,6 @@
 ---
 name: aw-triage
-description: Classify a fresh top-level GitHub issue (bug / enhancement / chore / duplicate / wontfix), set the category label, mark it as `feature` (parent), and add the `refine` action label so aw-refine picks it up next.
+description: Classify a fresh GitHub issue (bug / enhancement / chore / duplicate / wontfix), set the category label, and add the `refine` action label so aw-refine picks it up next.
 ---
 
 # aw-triage
@@ -103,4 +103,4 @@ In all of these: post the clarification template, do not add a category, do not 
 - Categories are mutually exclusive: do not stack `bug` + `enhancement`.
 - Area labels (`backend`, `frontend`, `rust`, `javascript`, `dependencies`, `documentation`) are NOT this skill's job — leave existing area labels alone, do not add new ones.
 - After a successful run: issue has `<category>` + `refine` (plus any pre-existing area labels).
-- `feature` ≠ category. `feature` is the "this is a top-level issue" marker, set on all parents regardless of whether they're bugs, enhancements, or chores. `enhancement` is the category for "new functionality / improvement". They co-exist on a feature-request issue: `enhancement + feature + refine`.
+- The `feature` label is **deprecated** and must NOT be added. It was a parent marker from the original sub-issue / parent–child design that we pivoted away from in favor of peer-issue splits. New work uses the category label (`bug` / `enhancement` / `chore`) alone — there is no separate "this is a parent" marker. If you encounter an issue with the legacy `feature` label, leave it as-is (don't strip historical labels) but do not add it to new issues.

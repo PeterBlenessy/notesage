@@ -31,9 +31,8 @@ jobs:
       - uses: actions/checkout@v6
 
       # Precheck: find untriaged top-level issues. An issue is untriaged
-      # iff it has no category label (bug/enhancement/chore) AND no
-      # already-classified state (duplicate/wontfix/feature) AND is open.
-      # The `feature` label means aw-triage has already run.
+      # iff it has no category label (bug/enhancement/chore/duplicate/
+      # wontfix) AND is open. Once a category is set, aw-triage has run.
       - name: Find candidates
         id: find
         env:
@@ -77,8 +76,8 @@ jobs:
 
             **Hard constraints** (also defined in the skill):
             - Apply exactly one of `bug` / `enhancement` / `chore`.
-            - Add `feature` (parent marker) and `refine` (action label).
+            - Add `refine` (action label) so aw-refine picks it up next.
             - Do not modify the issue title or body.
             - Use `gh issue close --reason duplicate` only when closing as a
               duplicate of another open issue.
-            - Idempotent: if `feature` is already set, exit silently.
+            - Idempotent: if a category label is already set, exit silently.

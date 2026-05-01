@@ -1,11 +1,11 @@
 ---
 name: aw-tdd
-description: Implement a `tdd + afk` issue (a parent that aw-slice didn't slice, OR a sub-issue from a multi-value slice) using TDD red-green-refactor. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates labels through tdd → review. Reverts and reports if anything fails.
+description: Implement a `tdd + afk` issue using TDD red-green-refactor. The issue is either an issue that aw-slice did not split (the common case) OR one of the peer issues created by aw-slice when an issue had multiple independent user values. Writes failing tests first, implements minimum to pass, runs full test suite as a hard gate, opens a draft PR. Updates labels through tdd → review. Reverts and reports if anything fails.
 ---
 
 # aw-tdd
 
-Implement a single issue end-to-end following the red-green-refactor cycle. The issue is either a top-level parent (when aw-slice decided not to slice — the common case) or a sub-issue (when the parent had multiple independent user values). Open a draft PR for human review when done. Fail closed (no PR) if anything goes wrong.
+Implement a single issue end-to-end following the red-green-refactor cycle. The issue is either an issue that aw-slice decided not to split (the common case) or a peer issue created by aw-slice when an issue had multiple independent user values. Open a draft PR for human review when done. Fail closed (no PR) if anything goes wrong.
 
 **One PR = one shippable unit of user value.** This is the core contract. The PR you open should make the user's life better in a concrete, observable way after merge. Settings store fields, CSS variables, or other infrastructure changes are NOT a unit on their own — they ship inside the PR that delivers the user value they enable.
 

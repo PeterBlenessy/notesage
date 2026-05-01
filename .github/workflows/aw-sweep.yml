@@ -45,8 +45,8 @@ jobs:
     timeout-minutes: 10
     steps:
       # Untriaged = open + no category (bug/enhancement/chore) and not
-      # already a closed-state marker (duplicate/wontfix). The `feature`
-      # label means aw-triage has already run on this issue.
+      # already a closed-state marker (duplicate/wontfix). Once a category
+      # is set, aw-triage has run on this issue.
       - name: Find candidate
         id: find
         env:

@@ -1,6 +1,6 @@
 ---
 name: aw-slice
-description: Decide whether a refined GitHub issue ships as one PR or as N PRs. Default is one PR (no slicing) — issues with a single user value pass directly to aw-tdd. Slice only when the issue delivers N independent user values, each independently shippable. Creates a research sub-issue first if under-specified.
+description: Decide whether a refined GitHub issue ships as one PR or as N PRs. Default is one PR (no slicing) — issues with a single user value pass directly to aw-tdd. Slice only when the issue delivers N independent user values, each independently shippable. Creates a research peer issue first if under-specified.
 ---
 
 # aw-slice
@@ -14,11 +14,12 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 
 ## Process
 
-1. **Read the parent.**
+1. **Read the issue.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
-   - Verify it has `feature` AND `refined` AND `slice` AND one of `bug` / `enhancement` / `chore`.
+   - Verify it has `refined` AND `slice` AND one of `bug` / `enhancement` / `chore`.
    - Verify it does NOT have `sliced` or `awaiting-research`. If it does, exit silently (idempotent).
-   - The `slice` action label is the explicit gate. Set by `aw-refine` after a successful clarification, or by a human after a research subtask closes (`awaiting-research` → `slice`). Bare `refined` alone is NOT a trigger.
+   - The `slice` action label is the explicit gate. Set by `aw-refine` after a successful clarification, or by a human after a research peer closes (`awaiting-research` → `slice`). Bare `refined` alone is NOT a trigger.
+   - The `feature` label is **deprecated**. Don't check for it; don't add it. It was a parent marker from the original sub-issue model that we pivoted away from in favor of peer-issue splits.
 
 2. **First branch — research vs value-listing.**
 
@@ -62,17 +63,16 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 
 3a. **Research-first path** (the under-specified branch from step 2):
 
-    Create ONE child issue:
-    - Title: `Research: <specific question> for #<parent>`
-    - Body: see "Research subtask template" below
-    - Labels: `chore`, `refined`, `tdd`, `hitl` (research subtasks always need human review)
-    - Link as sub-issue of parent (see "Sub-issue linking" below)
+    Create ONE peer issue (NOT a sub-issue — no parent/child link):
+    - Title: `Research: <specific question> for #<original>`
+    - Body: see "Research peer template" below. The body MUST reference the original via `Spawned from #<original>` so the relationship is queryable later.
+    - Labels: `chore`, `refined`, `tdd`, `hitl` (research peers always need human review)
 
-    Update parent labels:
+    Update the original issue's labels:
     - Remove `slice`
     - Add `awaiting-research`
 
-    Post a comment on the parent (template below). Stop.
+    Post a comment on the original (template below). Stop.
 
 ## HITL vs AFK heuristics
 
@@ -94,21 +94,18 @@ Mark `afk` (coder may pick autonomously) when:
 
 When uncertain, default to `hitl`. The user can flip to `afk` later.
 
-## Sub-issue linking
+## Peer issue references
 
-After `gh issue create` returns a URL, extract the child issue number and run:
+Peer issues are NOT linked via the GraphQL `addSubIssue` mutation — there is no parent/child relationship. Instead, the relationship is captured in the body text. Use one of these reference lines as the FIRST non-heading line of every newly-created peer's body:
 
-```
-PARENT_ID=$(gh api graphql -f query="query { repository(owner:\"OWNER\", name:\"REPO\") { issue(number:PARENT_NUM) { id } } }" --jq '.data.repository.issue.id')
-CHILD_ID=$(gh api graphql -f query="query { repository(owner:\"OWNER\", name:\"REPO\") { issue(number:CHILD_NUM) { id } } }" --jq '.data.repository.issue.id')
-gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\" }) { issue { number } subIssue { number } } }"
-```
+- For value-split peers (multi-value path): `Split from #<original>`
+- For research peers (research-first path): `Spawned from #<original>`
 
-Substitute owner / repo / parent / child numbers from the trigger context.
+This keeps the relationship queryable (`gh issue list --search "Split from #<N>"`) without needing GraphQL or a parent label.
 
 ## Templates
 
-### Research subtask template
+### Research peer template
 
 ```
 ## Goal
@@ -175,12 +172,12 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 
 - **Default to NOT slicing.** Most issues deliver one user value (or several values that share one solution). The parent itself is the work unit — pass it directly to `aw-tdd`. Slicing is the exception, not the default.
 - **Slice ONLY when you can name N independent user values.** If you can't articulate the N values as separate "User can …" sentences that each independently make the user's life better, don't slice.
-- **One PR = one shippable unit of user value.** A PR that delivers half a value (e.g. a settings store field with no consumer) is not a unit and should NOT be sliced out as its own subtask. Bundle it with the value it enables.
-- **Sub-issue links are mandatory** when slicing. Every child must be linked as a sub-issue of the parent via the GraphQL mutation. Without the link, the parent's UI does not show the children.
-- **Idempotent:** if parent has `sliced` or `awaiting-research` or `tdd`, exit silently.
-- **No body modification** of the parent. Update labels only.
-- **Children inherit category** (`bug`/`enhancement`/`chore`) from parent. They get `refined` + `tdd` + `hitl|afk`. They do NOT get `feature` (only top-level parents do).
-- **Children get `hitl` or `afk`**, exactly one each.
+- **One PR = one shippable unit of user value.** A PR that delivers half a value (e.g. a settings store field with no consumer) is not a unit and should NOT be sliced out. Bundle it with the value it enables.
+- **Slicing creates peer issues, not sub-issues.** When you split, rewrite the original issue body to be the FIRST peer slice; create N-1 NEW peer issues with `Split from #<original>` in the body. NO GraphQL parent/child link. NO `feature` label. The peers each independently enter the pipeline (each gets its own pipeline run, PR, merge).
+- **Idempotent:** if the issue has `sliced` or `awaiting-research` or `tdd`, exit silently.
+- **No body modification** when NOT slicing (the don't-slice path). When slicing, the original's body IS rewritten as slice 1 — that's the canonical path for the FIRST peer.
+- **Peers inherit category** (`bug`/`enhancement`/`chore`) from the original. They get `refined` + `tdd` + `hitl|afk`. They do NOT get `feature`.
+- **Each peer gets `hitl` or `afk`**, exactly one each.
 - **Every `hitl` marking MUST come with a "Why hitl" rationale** in the comment — specific files, acceptance criteria, or risks the human should review before flipping to `afk`. A bare "Marked: tdd + hitl" without rationale is incomplete and forces the human to re-derive what's risky.
 
 ## Comment templates
@@ -231,5 +228,5 @@ This issue describes internal work without a user-observable result. Could you c
 
 - Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path).
 - Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
-- The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it has `feature` (don't-slice parent) or not (sub-issue child).
+- The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it was the original or a peer split off from a multi-value parent.
 - One PR = one user value. If a PR delivers two unrelated values, it was sliced wrong — split into two PRs.
