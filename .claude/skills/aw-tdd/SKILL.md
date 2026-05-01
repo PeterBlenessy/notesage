@@ -76,7 +76,11 @@ Update the subtask issue's labels at three points:
 When all gates pass:
 
 1. Create a branch following `claude/<entityType>-<issue-number>-<short-description>` convention (claude-code-action handles this when `branch_prefix` is set).
-2. Commit changes with a message matching the repo's convention. The commit body must include `Implements #<issue-number>` so the PR auto-links.
+2. Commit changes with a message matching the repo's convention. The commit body must include a GitHub auto-close keyword so the PR auto-closes the issue on merge. Pick by category:
+   - `bug` → `Fixes #<issue-number>`
+   - `enhancement` or `chore` → `Resolves #<issue-number>`
+
+   GitHub only auto-closes on these keywords (with `close|closes|closed`, `fix|fixes|fixed`, `resolve|resolves|resolved` all working). `Implements`, `Addresses`, and similar do NOT trigger auto-close — earlier versions of this skill used `Implements` and produced PRs that merged without closing the issue.
 3. Push the branch.
 4. Open a **draft** PR via `gh pr create --draft --title "..." --body "..."`. Title pattern: same as commit subject. Body template below.
 5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment.
@@ -144,8 +148,10 @@ Reset back to `tdd + afk`. Cron will not auto-retry — investigate and either:
 
 ## PR body template
 
+The first line MUST be a GitHub auto-close line — `Fixes #<issue-number>` for `bug` issues, `Resolves #<issue-number>` for `enhancement` / `chore` issues. Without it the linked issue will not close on merge.
+
 ```
-Implements #<issue-number>
+<Fixes|Resolves> #<issue-number>
 
 ## Summary
 

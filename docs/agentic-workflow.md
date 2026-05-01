@@ -44,8 +44,9 @@ flowchart TD
   D -->|1 user value default:<br/>+ tdd, + hitl-or-afk<br/>- slice| F[aw-tdd<br/>on the same issue]
   F -.->|hitl: wait for human flip| H[Idle: hitl]
   F -.->|hard gate fails| FAIL[Re-add afk + failure comment]
-  F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR]
+  F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR<br/>body: Fixes/Resolves #N]
   G -->|human reviews + merges| M[Merged]
+  M -->|GitHub auto-close<br/>via 'Fixes #N' or 'Resolves #N'| IC[Issue closed]
   M -->|pull_request.closed merged=true| N[aw-retrospect]
   N -.->|clean run, no signal| P[Comment: no patch needed]
   N -->|signal found| O[Draft retro PR<br/>proposing SKILL.md patch]
@@ -54,11 +55,13 @@ flowchart TD
   classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
   classDef stop fill:#cccccc,stroke:#666,color:#000
   class B,C,D,F,N skill
-  class G,M,O terminal
+  class G,M,O,IC terminal
   class Z,W,H,FAIL,P,E stop
 ```
 
 The two pause points in this diagram (`Idle: hitl` and `Draft PR`) are not dead ends. Human comments at either point fire `aw-feedback`, which routes the agent back to any earlier stage based on the comment's intent. Small in-place code tweaks on the PR are handled by `aw-iterate` instead of a full re-implementation. See the feedback-loop diagram below.
+
+**How the issue closes.** Notesage doesn't have a "close-issue" step in the pipeline. `aw-tdd` writes a category-appropriate auto-close line into the PR body — `Fixes #N` for bugs, `Resolves #N` for enhancements and chores — and GitHub's built-in linked-issue mechanism auto-closes issue `#N` when the human merges the PR. The keyword matters: GitHub only auto-closes on `close|closes|closed`, `fix|fixes|fixed`, `resolve|resolves|resolved`. Earlier versions of `aw-tdd` wrote `Implements #N`, which is **not** a recognized keyword — those PRs merged cleanly but left the linked issue open and required manual cleanup. Other closure paths: `aw-triage` may close as `duplicate` or `wontfix` directly; research peers are closed by the human when findings are posted; peer issues from a multi-value split each enter their own pipeline and close the same way (PR merge → auto-close).
 
 ### Feedback loops (aw-feedback + aw-iterate)
 
