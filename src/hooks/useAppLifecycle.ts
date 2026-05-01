@@ -330,7 +330,10 @@ async function withTimeout<T>(
  * Full startup tree reload — loads explorer folders, projects, iCloud,
  * Quick Notes, SQLite index, and re-opens persisted tabs.
  */
-async function reloadTrees() {
+// Exported for direct testing of the iCloud detection branch (the
+// regression-lock test for the stale-snapshot bug fixed in this file).
+// Production callers go through `useAppLifecycle()`.
+export async function reloadTrees() {
   const t0 = performance.now();
   log.info("startup", "reloadTrees started");
   const ws = useWorkspaceStore.getState();
@@ -444,12 +447,20 @@ async function reloadTrees() {
   // Load system fonts for font picker (non-blocking)
   useEditorStylesStore.getState().loadSystemFonts();
 
-  // Detect iCloud availability
+  // Detect iCloud availability. Compute the truth locally instead of
+  // re-reading useSettingsStore.getState() afterwards — `settings` above
+  // is a stale snapshot, and reading `settings.icloudAvailable` later in
+  // this function returns `false` even though we just mutated the store.
+  // (PR #84 hit the same shape of bug for useSyncStore and fixed THAT
+  // store but not this one — the iCloud-disabled-on-reload regression.)
   log.info("startup", `Trees validated in ${Math.round(performance.now() - t0)}ms, starting iCloud detection`);
+  let icloudAvailable = false;
+  let icloudNotesagePath: string | null = null;
   try {
     const icloudRoot = await tauriApi.getICloudPath();
     if (icloudRoot) {
-      const icloudNotesagePath = `${icloudRoot}/Notesage`;
+      icloudNotesagePath = `${icloudRoot}/Notesage`;
+      icloudAvailable = true;
       settings.setICloudAvailable(true);
       settings.setICloudNotesagePath(icloudNotesagePath);
     }
@@ -464,8 +475,7 @@ async function reloadTrees() {
     const freshSync = useSyncStore.getState();
 
     if (freshSync.icloudEnabled) {
-      const icloudNotesagePath = settings.icloudNotesagePath;
-      if (!icloudNotesagePath || !settings.icloudAvailable) {
+      if (!icloudNotesagePath || !icloudAvailable) {
         freshSync.setICloudEnabled(false);
         await freshSync.saveSettings(notesRoot);
         toast.info("iCloud is no longer available. Sync has been disabled.");
