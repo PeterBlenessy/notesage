@@ -317,4 +317,55 @@ describe('ReferenceMode', () => {
 
     expect(await screen.findByText(/no matches/i)).toBeTruthy();
   });
+
+  // -------------------------------------------------------------------------
+  // Issue #38 — discrete checkmark selection indicator
+  // -------------------------------------------------------------------------
+
+  it('active reference row shows a data-picker-check element instead of an accent background fill', async () => {
+    mockProjects = [
+      {
+        path: '/Users/p/proj',
+        fileTree: [
+          makeFile('alpha.md', '/Users/p/proj/alpha.md'),
+          makeFile('beta.md', '/Users/p/proj/beta.md'),
+        ],
+      },
+    ];
+
+    const { container } = renderWithProviders(
+      <ReferenceMode filter="" onPick={() => {}} />,
+    );
+
+    await screen.findByText('alpha.md');
+
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+    expect(activeRow.querySelector('[data-picker-check]')).toBeTruthy();
+  });
+
+  it('inactive reference rows do not show a checkmark', async () => {
+    mockProjects = [
+      {
+        path: '/Users/p/proj',
+        fileTree: [
+          makeFile('alpha.md', '/Users/p/proj/alpha.md'),
+          makeFile('beta.md', '/Users/p/proj/beta.md'),
+        ],
+      },
+    ];
+
+    const { container } = renderWithProviders(
+      <ReferenceMode filter="" onPick={() => {}} />,
+    );
+
+    await screen.findByText('alpha.md');
+
+    const inactiveRows = container.querySelectorAll<HTMLElement>('[aria-selected="false"]');
+    expect(inactiveRows.length).toBeGreaterThan(0);
+    inactiveRows.forEach((row) => {
+      expect(row.querySelector('[data-picker-check]')).toBeNull();
+    });
+  });
 });

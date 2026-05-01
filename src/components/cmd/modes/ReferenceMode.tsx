@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   ChevronLeft,
   FileText,
   MessageSquare,
@@ -545,20 +546,13 @@ function ReferenceMode({
                   className={cn(
                     "flex items-start gap-2 px-3 py-1.5 cursor-pointer",
                     "text-[13px] transition-colors",
-                    selected
-                      ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-                      : "text-foreground hover:bg-muted/60",
+                    selected ? "bg-muted/80 text-foreground" : "text-foreground hover:bg-muted/60",
                   )}
                 >
                   <FileText
                     size={12}
                     strokeWidth={1.5}
-                    className={cn(
-                      "mt-[3px] shrink-0",
-                      selected
-                        ? "text-[oklch(100%_0_0)]/85"
-                        : "text-muted-foreground",
-                    )}
+                    className="mt-[3px] shrink-0 text-muted-foreground"
                     aria-hidden
                   />
                   <div className="flex min-w-0 flex-1 flex-col">
@@ -566,29 +560,24 @@ function ReferenceMode({
                       {occ.file_name}
                     </span>
                     {(occ.context_before || occ.context_after) && (
-                      <span
-                        className={cn(
-                          "truncate text-xs",
-                          selected
-                            ? "text-[oklch(100%_0_0)]/75"
-                            : "text-muted-foreground",
-                        )}
-                      >
+                      <span className="truncate text-xs text-muted-foreground">
                         …{occ.context_before}
-                        <span
-                          className={cn(
-                            "font-medium",
-                            selected
-                              ? "text-[oklch(100%_0_0)]"
-                              : "text-foreground",
-                          )}
-                        >
+                        <span className="font-medium text-foreground">
                           @{selectedPerson}
                         </span>
                         {occ.context_after}…
                       </span>
                     )}
                   </div>
+                  {selected && (
+                    <Check
+                      data-picker-check
+                      size={12}
+                      strokeWidth={2.5}
+                      className="mt-[3px] shrink-0 text-[var(--color-accent-primary)]"
+                      aria-hidden
+                    />
+                  )}
                 </li>
               );
             })}
@@ -661,47 +650,35 @@ function ResultRow({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       className={cn(
-        // Density (live-test 2026-04-26).
         "flex items-center gap-2 px-3 py-1.5 cursor-pointer text-[13px]",
         "transition-colors",
         highlighted
-          ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
+          ? "bg-muted/80 text-foreground"
           : "text-foreground hover:bg-muted/60",
       )}
     >
       <Icon
-        className={cn(
-          "h-3 w-3 shrink-0",
-          highlighted
-            ? "text-[oklch(100%_0_0)]/85"
-            : "text-muted-foreground",
-        )}
+        className="h-3 w-3 shrink-0 text-muted-foreground"
         strokeWidth={1.5}
         aria-hidden="true"
       />
-      <span
-        className={cn(
-          "shrink-0 rounded px-1 py-px text-[10px] uppercase tracking-wide",
-          highlighted
-            ? "bg-[oklch(100%_0_0)]/15 text-[oklch(100%_0_0)]/85"
-            : "border border-border bg-muted/40 text-muted-foreground",
-        )}
-      >
+      <span className="shrink-0 rounded px-1 py-px text-[10px] uppercase tracking-wide border border-border bg-muted/40 text-muted-foreground">
         {meta.label}
       </span>
       <span className="truncate">{result.name}</span>
-      {result.detail ? (
-        <span
-          className={cn(
-            "ml-auto truncate text-xs",
-            highlighted
-              ? "text-[oklch(100%_0_0)]/75"
-              : "text-muted-foreground",
-          )}
-        >
+      {result.detail && !highlighted ? (
+        <span className="ml-auto truncate text-xs text-muted-foreground">
           {result.detail}
         </span>
       ) : null}
+      {highlighted && (
+        <Check
+          data-picker-check
+          className="ml-auto h-3 w-3 shrink-0 text-[var(--color-accent-primary)]"
+          strokeWidth={2.5}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

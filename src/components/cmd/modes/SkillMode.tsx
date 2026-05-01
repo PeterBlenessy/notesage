@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
 
@@ -187,36 +187,30 @@ function SkillMode({
             className={cn(
               // Density (live-test 2026-04-26).
               'flex w-full items-start gap-2 px-3 py-1.5 text-left text-[13px] transition-colors duration-150',
-              active
-                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
-                : 'text-foreground hover:bg-muted/60',
+              active ? 'bg-muted/80 text-foreground' : 'text-foreground hover:bg-muted/60',
             )}
           >
             <Sparkles
-              className={cn(
-                'mt-[3px] size-3 shrink-0',
-                active
-                  ? 'text-[oklch(100%_0_0)]/85'
-                  : 'text-muted-foreground',
-              )}
+              className="mt-[3px] size-3 shrink-0 text-muted-foreground"
               strokeWidth={1.5}
               aria-hidden
             />
-            <span className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-medium">{skill.name}</span>
               {skill.description ? (
-                <span
-                  className={cn(
-                    'truncate text-xs',
-                    active
-                      ? 'text-[oklch(100%_0_0)]/75'
-                      : 'text-muted-foreground',
-                  )}
-                >
+                <span className="truncate text-xs text-muted-foreground">
                   {skill.description}
                 </span>
               ) : null}
             </span>
+            {active && (
+              <Check
+                data-picker-check
+                className="mt-[3px] size-3 shrink-0 text-[var(--color-accent-primary)]"
+                strokeWidth={2.5}
+                aria-hidden
+              />
+            )}
           </button>
         );
       })}
