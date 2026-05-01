@@ -89,22 +89,49 @@ Comment text like "lgtm", "approved", "ready", or a review with state `APPROVED`
 - `gh pr ready N` (mark as ready for review)
 - Post PR comment (template: **PR Approved**)
 
-### Reject / wrong approach
+### Reject implementation ("wrong code, redo")
 
-Comment text like "close this", "wrong direction", "start over", "not the right approach", or a review with state `CHANGES_REQUESTED` plus rejection sentiment.
+Comment text like "wrong implementation", "redo this approach", "code is wrong but the design is right". The acceptance criteria + scope are still good; only the code needs another attempt.
 
 **Action:**
 - Find the linked issue from `Implements #N` in the PR body.
 - `gh pr close N --comment "<rejection comment>"`
 - On the linked issue: `gh issue edit M --remove-label review --add-label tdd --add-label afk`
-- Post a final PR comment (template: **PR Rejected**)
+- Post a final PR comment (template: **PR Rejected — redo implementation**)
 
-### Specific change requested
+### Reject scope ("acceptance criteria are off")
 
-Phrases like "change X", "extract this", "use a different name", "move this code". Without code-modification capability, the agent can't iterate on the PR directly.
+Comment text like "this isn't what I asked for", "the acceptance criteria are wrong", "the scope is incorrect", "the issue body needs revision". The implementation may be fine, but it solved the wrong problem.
 
 **Action:**
-- Post PR comment (template: **Code change noted, manual flow needed**) explaining that for now, the human should close the PR and flip the issue back to `tdd + afk` if they want a redo with this guidance.
+- Find the linked issue from `Implements #N`.
+- `gh pr close N --comment "<rejection: scope wrong, re-refining>"`
+- On the linked issue: `gh issue edit M --remove-label review --remove-label refined --add-label refine`
+- The human's review comment will be context for aw-refine when it re-runs.
+- Post a final PR comment (template: **PR Rejected — re-refine scope**)
+
+### Reject slicing ("should have been N PRs")
+
+Comment text like "this should have been split", "too much in one PR", "this scope is too big".
+
+**Action:**
+- Find the linked issue from `Implements #N`.
+- `gh pr close N --comment "<rejection: slicing wrong, re-slicing>"`
+- On the linked issue: `gh issue edit M --remove-label review --add-label slice`
+- Post a final PR comment (template: **PR Rejected — re-slice**)
+
+### Specific change requested ("rename / extract / use library X")
+
+Phrases like "change X to Y", "rename this", "extract this into a helper", "use library Z instead", "add a case for empty input". The scope and approach are right; only a SMALL specific tweak is needed.
+
+**Action:**
+- Dispatch the `aw-iterate` workflow on the PR with the comment as context:
+  ```
+  gh workflow run aw-iterate.yml \
+    --field pr_number=<N> \
+    --field feedback_comment="<the human's comment text>"
+  ```
+- Post a PR comment (template: **Iteration dispatched**) acknowledging that a follow-up commit is on the way. `aw-iterate` will judge if the change is small enough and either push a commit or deflect back to label-reset.
 
 ### Question / chat
 
@@ -175,26 +202,36 @@ Could you clarify which of these you want?
 Marked the PR as ready for review. Merge when you're satisfied.
 ```
 
-### PR — Rejected
+### PR — Rejected — redo implementation
 
 ```
-> *Read by `aw-feedback`. Interpreted as: reject + reset.*
+> *Read by `aw-feedback`. Interpreted as: implementation wrong, scope still right.*
 
-Closing this PR and flipping issue #<N> back to `tdd + afk`. `aw-tdd` will take another pass.
+Closing this PR and flipping issue #<N> back to `tdd + afk`. `aw-tdd` will take another pass with the scope unchanged.
 ```
 
-### PR — Code change noted, manual flow needed
+### PR — Rejected — re-refine scope
 
 ```
-> *Read by `aw-feedback`. Interpreted as: requested code change.*
+> *Read by `aw-feedback`. Interpreted as: scope wrong, re-refining.*
 
-I noted the change — but I can only act on label changes from this skill, not iterate on code in an existing PR. To redo with this guidance:
-1. Close this PR
-2. Flip issue #<N> back to `tdd + afk`
+Closing this PR and resetting issue #<N> to `refine`. The feedback above will be context for `aw-refine` when it re-runs. The new refinement may then produce a different slicing or implementation.
+```
 
-`aw-tdd` will take another pass with your comment in scope.
+### PR — Rejected — re-slice
 
-(Code-iteration on PRs is planned but not yet implemented — see "Tier 2" in the design doc.)
+```
+> *Read by `aw-feedback`. Interpreted as: slicing wrong.*
+
+Closing this PR and resetting issue #<N> to `slice`. `aw-slice` will re-evaluate one-PR-vs-multiple with your feedback in mind.
+```
+
+### PR — Iteration dispatched
+
+```
+> *Read by `aw-feedback`. Interpreted as: specific code change.*
+
+Dispatched `aw-iterate` to attempt a follow-up commit on this PR's branch. It'll judge whether the change is small enough for in-place iteration. If so, you'll see a new commit shortly. If too big, it'll deflect back here with a reset suggestion.
 ```
 
 ## Constraints from the dev process

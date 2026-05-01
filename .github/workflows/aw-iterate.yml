@@ -1,0 +1,99 @@
+name: AW — Iterate
+
+# Pushes a small follow-up commit on an existing draft PR's branch in
+# response to specific human feedback. Triggered by aw-feedback via
+# workflow_dispatch when the feedback is a specific code change.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to iterate on"
+        required: true
+        type: string
+      feedback_comment:
+        description: "The feedback comment text (or summary) that triggered this iteration"
+        required: true
+        type: string
+
+permissions:
+  contents: write       # push follow-up commit
+  pull-requests: write  # post PR comment
+  issues: write         # for cross-linked issue comments
+  id-token: write       # claude-code-action OIDC
+
+concurrency:
+  # Per-PR concurrency to prevent two iterations stepping on each other
+  group: aw-iterate-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  iterate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # Check out the PR's branch (NOT main). This requires fetching
+      # the PR's head ref and switching to it before installing deps.
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Switch to PR head branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          BRANCH=$(gh pr view "$PR" --json headRefName --jq '.headRefName')
+          echo "PR #$PR is on branch: $BRANCH"
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          git config user.name "claude[bot]"
+          git config user.email "claude[bot]@users.noreply.github.com"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run aw-iterate skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "claude[bot]"
+          claude_args: |
+            --max-turns 100
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-iterate` skill at `.claude/skills/aw-iterate/SKILL.md`
+            on PR #${{ inputs.pr_number }} in this repository
+            (PeterBlenessy/notesage).
+
+            **Feedback to address:**
+            ```
+            ${{ inputs.feedback_comment }}
+            ```
+
+            The PR's branch is already checked out and dependencies are
+            installed.
+
+            **Hard constraints:**
+            - First decide: is this change SMALL + SPECIFIC enough for in-place
+              iteration (≤200 lines added, ≤5 files, bounded scope)? If not,
+              deflect with the deflection comment template — do NOT push code.
+            - If iterating: red-green-refactor for any new behavior; full
+              `pnpm test` + `pnpm typecheck` must pass; only the files
+              relevant to the requested change may be modified.
+            - One commit per iteration.
+            - Push to the PR's existing branch — do NOT open a new PR or
+              close the existing one.
+            - On any failure, revert local changes and post the failure
+              comment.
