@@ -29,15 +29,19 @@ vi.mock('@/hooks/useReducedMotion', () => ({
 
 const setCmdBarPinnedMock = vi.fn<(pinned: boolean) => void>();
 const setCmdBarPinnedWidthMock = vi.fn<(width: number) => void>();
+const setCmdBarExpandedHeightMock = vi.fn<(height: number) => void>();
 let mockCmdBarPinned = false;
 let mockCmdBarPinnedWidth = 400;
+let mockCmdBarExpandedHeight = 480;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     get cmdBarPinnedWidth() { return mockCmdBarPinnedWidth; },
+    get cmdBarExpandedHeight() { return mockCmdBarExpandedHeight; },
     setCmdBarPinned: (v: boolean) => setCmdBarPinnedMock(v),
     setCmdBarPinnedWidth: (v: number) => setCmdBarPinnedWidthMock(v),
+    setCmdBarExpandedHeight: (v: number) => setCmdBarExpandedHeightMock(v),
   };
   return {
     useSettingsStore: Object.assign(
@@ -235,14 +239,17 @@ describe('FloatingCommandBar', () => {
     // Reset mocked settings-store state.
     mockCmdBarPinned = false;
     mockCmdBarPinnedWidth = 400;
+    mockCmdBarExpandedHeight = 480;
     setCmdBarPinnedMock.mockReset();
     setCmdBarPinnedWidthMock.mockReset();
+    setCmdBarExpandedHeightMock.mockReset();
     sendChatMessageMock.mockReset();
     sendChatMessageMock.mockImplementation(() => Promise.resolve());
     // Clean DOM between tests — portals leak otherwise
     document.body.innerHTML = '';
-    // Also clean the CSS variable that pinned mode sets on <html>
+    // Also clean the CSS variables that resize handles set on <html>
     document.documentElement.style.removeProperty('--cmd-bar-pinned-width');
+    document.documentElement.style.removeProperty('--cmd-bar-expanded-height');
   });
 
   it('renders compact state by default with the placeholder hint visible', () => {
@@ -882,6 +889,135 @@ describe('FloatingCommandBar', () => {
       expect(bar).toBeTruthy();
       expect(bar!.hasAttribute('role')).toBe(false);
       expect(bar!.hasAttribute('aria-label')).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Top resize handle — expanded height (#37)
+  // Drag the top edge of the expanded floating bar to change its height.
+  // -------------------------------------------------------------------------
+
+  describe('top resize handle — expanded height (#37)', () => {
+    it('renders when the bar is floating and expanded (not compact, not pinned)', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      expect(handle).toBeTruthy();
+    });
+
+    it('does NOT render when the bar is compact (not expanded)', () => {
+      mockCmdBarPinned = false;
+      renderWithProviders(<FloatingCommandBar />);
+      // Bar stays compact — no click.
+      expect(
+        screen.queryByRole('slider', { name: /resize command bar height/i }),
+      ).toBeNull();
+    });
+
+    it('does NOT render when the bar is pinned', () => {
+      mockCmdBarPinned = true;
+      renderWithProviders(<FloatingCommandBar />);
+      expect(
+        screen.queryByRole('slider', { name: /resize command bar height/i }),
+      ).toBeNull();
+    });
+
+    it('has correct ARIA attributes (role, orientation, min, max, now)', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 480;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+      expect(handle.getAttribute('aria-valuemin')).toBe('240');
+      expect(handle.getAttribute('aria-valuemax')).toBe('800');
+      expect(handle.getAttribute('aria-valuenow')).toBe('480');
+      expect((handle as HTMLElement).tabIndex).toBe(0);
+    });
+
+    it('ArrowUp increases height by the keyboard step and calls setCmdBarExpandedHeight', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 480;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      fireEvent.keyDown(handle, { key: 'ArrowUp' });
+
+      expect(setCmdBarExpandedHeightMock).toHaveBeenCalledWith(500);
+    });
+
+    it('ArrowDown decreases height by the keyboard step and calls setCmdBarExpandedHeight', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 480;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      fireEvent.keyDown(handle, { key: 'ArrowDown' });
+
+      expect(setCmdBarExpandedHeightMock).toHaveBeenCalledWith(460);
+    });
+
+    it('ArrowUp at the maximum height clamps to 800', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 800;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      fireEvent.keyDown(handle, { key: 'ArrowUp' });
+
+      expect(setCmdBarExpandedHeightMock).toHaveBeenCalledWith(800);
+    });
+
+    it('ArrowDown at the minimum height clamps to 240', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 240;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const handle = screen.getByRole('slider', {
+        name: /resize command bar height/i,
+      });
+      fireEvent.keyDown(handle, { key: 'ArrowDown' });
+
+      expect(setCmdBarExpandedHeightMock).toHaveBeenCalledWith(240);
+    });
+
+    it('syncs --cmd-bar-expanded-height CSS variable from persisted value on mount', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 600;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      expect(
+        document.documentElement.style.getPropertyValue('--cmd-bar-expanded-height'),
+      ).toBe('600px');
+    });
+
+    it('expanded bar inline style drives height via var(--cmd-bar-expanded-height)', () => {
+      mockCmdBarPinned = false;
+      mockCmdBarExpandedHeight = 480;
+      renderWithProviders(<FloatingCommandBar />);
+      fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+      const bar = document.body.querySelector('[data-cmd-bar]') as HTMLElement | null;
+      expect(bar).toBeTruthy();
+      expect(bar!.getAttribute('style')).toContain('--cmd-bar-expanded-height');
     });
   });
 });
