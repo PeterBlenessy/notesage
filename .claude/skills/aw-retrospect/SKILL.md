@@ -24,7 +24,8 @@ After a bot-authored PR is merged (the bot identity is `github-actions[bot]`; le
 
 3. **Identify the originating skill.** Most claude PRs come from `aw-tdd`, but also possible: a research PR from `aw-slice`'s research subtask, or a docs PR from a previous retrospective. Check the PR's commit messages and the issue's comments.
 
-4. **Look for divergence signals** between what the skill prescribed and what actually shipped:
+4. **Look for divergence signals** between what the skill prescribed and what actually shipped. Run these in order — the first two are deterministic, easy to check, and catch the largest classes of mistake:
+   - **Linked issue did NOT auto-close:** find the issue referenced in the PR body (look for `#<N>` mentions; the canonical pattern is `Fixes #N` for bugs and `Resolves #N` for enhancements/chores). Fetch its state via `gh issue view <N> --json state`. If `OPEN` after the PR merged, the skill's PR-body template used a keyword GitHub does NOT recognize (`Implements`, `Addresses`, `Implementing`, etc. — only `close|closes|closed`, `fix|fixes|fixed`, `resolve|resolves|resolved` trigger auto-close). **This is a strong signal — propose a patch.** Verify by checking `gh pr view <PR> --json closingIssuesReferences` is empty even though the PR body names an issue.
    - **Diff vs declared scope:** the issue body listed "Files likely to change: A, B" but the PR also touched C, D. Either the issue's scope was wrong or the skill should look harder before declaring scope.
    - **Manual fixes after merge:** look at the next 5 commits to `main` after the merge. If they fix something the agent introduced, that's a signal.
    - **Review comments:** human reviewers flagged something. Note the topic.
