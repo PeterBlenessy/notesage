@@ -269,23 +269,18 @@ describe('SkillMode', () => {
   });
 
   // -------------------------------------------------------------------------
-  // #88 — active row styling: muted bg + accent border replaces accent fill
+  // #88 — active row styling: muted bg + accent border replaces solid fill
   // -------------------------------------------------------------------------
 
-  it('active row uses muted-bg + accent-border (not solid accent fill)', () => {
-    const { container } = renderWithProviders(
-      <SkillMode filter="" onPick={vi.fn()} />,
-    );
-
+  it('active row uses muted bg with accent border instead of solid accent fill (#88)', () => {
+    const { container } = renderWithProviders(<SkillMode filter="" onPick={vi.fn()} />);
     const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
     expect(activeRow).toBeTruthy();
-
-    // New style: muted background + border with accent color.
-    expect(activeRow.className).toContain('bg-muted');
+    // New styling
+    expect(activeRow.classList.contains('bg-muted')).toBe(true);
     expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
-
-    // Old solid-fill style must be gone.
+    expect(activeRow.classList.contains('text-foreground')).toBe(true);
+    // Old solid accent fill must be gone
     expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
-    expect(activeRow.className).not.toContain('text-[oklch(100%_0_0)]');
   });
 });
