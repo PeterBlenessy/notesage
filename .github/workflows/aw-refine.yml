@@ -2,17 +2,14 @@ name: AW — Refine
 
 # Rewrites refine-flagged issues into the outcome-oriented template
 # using the aw-refine skill at .claude/skills/aw-refine/SKILL.md.
-# The cron sweep was consolidated into aw-sweep.yml — this standalone
-# now exists for two paths only:
-#   1. workflow_dispatch — used by aw-feedback after a label flip and
-#      for manual one-off re-refinement.
-#   2. issues.labeled — for the case where a human directly edits the
-#      `refine` label without going through aw-feedback.
+# The cron sweep was consolidated into aw-sweep.yml; the issues.labeled
+# trigger was also moved there (one Actions tile per human label edit
+# instead of N skipped). This standalone now exists ONLY as a
+# workflow_dispatch entry point — used by aw-feedback after a label
+# flip and for manual one-off re-refinement.
 # The happy path runs from aw-pipeline.yml.
 
 on:
-  issues:
-    types: [labeled]   # respond instantly to human-added refine
   workflow_dispatch:
     inputs:
       issue_number:
@@ -31,11 +28,6 @@ concurrency:
 
 jobs:
   refine:
-    # For issues.labeled events: only fire on human-added `refine`.
-    # Bot-added means the pipeline is processing — skip to avoid race.
-    if: |
-      github.event_name != 'issues' ||
-      (github.actor != 'github-actions[bot]' && github.event.label.name == 'refine')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

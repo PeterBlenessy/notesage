@@ -18,6 +18,13 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+  # Also fire on every label edit. The four parallel precheck jobs each
+  # filter for their own label state — only the matching one (if any)
+  # runs the skill, the others exit in ~5s. Net: one Actions tile per
+  # human label edit instead of three skipped tiles from the four
+  # standalones each carrying their own `issues.labeled` trigger.
+  issues:
+    types: [labeled, unlabeled]
 
 permissions:
   contents: write       # tdd needs to push branches

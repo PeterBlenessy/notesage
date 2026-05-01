@@ -83,7 +83,11 @@ When all gates pass:
    GitHub only auto-closes on these keywords (with `close|closes|closed`, `fix|fixes|fixed`, `resolve|resolves|resolved` all working). `Implements`, `Addresses`, and similar do NOT trigger auto-close — earlier versions of this skill used `Implements` and produced PRs that merged without closing the issue.
 3. Push the branch.
 4. Open a **draft** PR via `gh pr create --draft --title "..." --body "..."`. Title pattern: same as commit subject. Body template below.
-5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment.
+
+   **Always attempt the PR creation.** Do NOT pre-emptively decide it will fail because the run is acting as `github-actions[bot]` — the workflow grants `pull-requests: write` to `GITHUB_TOKEN`. If `gh pr create` succeeds, capture the URL for the done comment.
+
+   **If `gh pr create` returns the error `GitHub Actions is not permitted to create or approve pull requests`** (a repo-level setting under Settings → Actions → General → "Workflow permissions"), the skill cannot create the PR but the work is done. Post the **PR creation blocked** comment template (below) including the exact branch name and the auto-close keyword line so a human can paste them into a manual `gh pr create` command. Still flip `tdd → review` so the queue advances; the human will create the PR.
+5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment (or the **PR creation blocked** template if step 4 hit the repo-setting block).
 
 ## On failure
 
@@ -107,6 +111,40 @@ Following red-green-refactor:
 4. Opening draft PR if all gates pass
 
 Will update this comment thread with progress.
+```
+
+**PR creation blocked (repo setting):**
+
+Use this template ONLY when `gh pr create` returned `GitHub Actions is not permitted to create or approve pull requests`. Tests, branch, and commit are all done — only the PR creation step was blocked by the repo-level "Allow GitHub Actions to create and approve pull requests" setting.
+
+```
+> *Implementation complete. Branch pushed, but PR creation is blocked by a repo setting.*
+
+All hard gates passed:
+- Red phase: <N> tests written, all initially failing ✓
+- Green phase: minimum implementation, all <N> tests passing ✓
+- Full test suite: passing ✓
+- Typecheck: clean ✓
+
+**To open the PR, a maintainer can either:**
+
+A. Enable the setting (one-time fix for future runs too) — Settings → Actions → General → "Workflow permissions" → check **"Allow GitHub Actions to create and approve pull requests"** → Save. Then re-run `aw-tdd` via `gh workflow run aw-tdd.yml --field issue_number=<N>`.
+
+B. Open the PR manually:
+\`\`\`
+gh pr create --draft \\
+  --base main \\
+  --head <branch-name> \\
+  --title "<commit subject>" \\
+  --body "<Fixes|Resolves> #<N>
+
+## Summary
+<one-paragraph summary>
+"
+\`\`\`
+
+Branch: \`<branch-name>\`
+Auto-close keyword: \`<Fixes|Resolves> #<N>\`
 ```
 
 **Done (PR opened):**

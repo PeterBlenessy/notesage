@@ -70,6 +70,20 @@ Phrases like "split this into N PRs", "wrong slicing", "this should be one PR no
 - `gh workflow run aw-slice.yml --field issue_number=N`
 - Post comment (template: **Re-slicing**)
 
+### Clarification that resolves the open questions
+
+The issue body's `## Open questions` section is where `aw-refine` or `aw-slice` flagged unresolved decisions. When the human comments answering one of those questions AND the answer covers ALL listed open questions AND the comment introduces no new concerns, treat as soft approval.
+
+How to recognize: the comment maps cleanly onto a question in the body (e.g. "Should X happen for Y?" → "Yes, X should happen" / "No, leave Y alone"). Short, declarative, scoped to the existing question set. Does NOT introduce new requirements ("also do Z"), question existing acceptance criteria, or shift scope.
+
+**Action:**
+- Update the issue body's `## Open questions` section (or `## Acceptance criteria` if the answer affects a specific criterion) to reflect the resolution. Mark the question as resolved with the human's answer inline.
+- `gh issue edit N --remove-label hitl --add-label afk`
+- `gh workflow run aw-tdd.yml --field issue_number=N`
+- Post comment (template: **Clarification accepted, proceeding**)
+
+When in doubt — if the comment introduces ANY new requirement, raises a NEW question, or only partially answers the open questions — fall through to "Specific code/file guidance" or "Question / chat" instead of soft-approving.
+
 ### Specific code/file guidance ("do it this way")
 
 Phrases like "use library X", "change the approach to Y", "extract this into a helper", "use the existing utility".
@@ -183,6 +197,14 @@ Resetting to `refine`. Your comment above will be context when `aw-refine` re-ru
 > *Read by `aw-feedback`. Interpreted as: redo slicing.*
 
 Resetting to `slice`. `aw-slice` will re-evaluate with your feedback in mind.
+```
+
+### Issue HITL — Clarification accepted, proceeding
+
+```
+> *Read by `aw-feedback`. Interpreted as: clarification resolves the open questions in the issue body.*
+
+Updated the issue body to reflect: <one-sentence paraphrase of the resolution>. All open questions are now resolved with no new concerns raised, so flipping `hitl → afk` and dispatching `aw-tdd` to proceed.
 ```
 
 ### Issue HITL — Code guidance noted

@@ -2,18 +2,13 @@ name: AW — Slice
 
 # Decides whether a refined issue ships as one PR or as N peer issues
 # using the aw-slice skill at .claude/skills/aw-slice/SKILL.md. The
-# cron sweep was consolidated into aw-sweep.yml — this standalone now
-# exists for two paths only:
-#   1. workflow_dispatch — used by aw-feedback after a label flip and
-#      for manual one-off re-slicing.
-#   2. issues.labeled — primarily the post-research re-slice path when
-#      a human flips `awaiting-research` → `slice` after a research
-#      subtask closes.
+# cron sweep was consolidated into aw-sweep.yml; the issues.labeled
+# trigger was also moved there. This standalone now exists ONLY as a
+# workflow_dispatch entry point — used by aw-feedback after a label
+# flip and for manual one-off re-slicing.
 # The happy path runs from aw-pipeline.yml.
 
 on:
-  issues:
-    types: [labeled]   # only fires when `slice` is added by a human after research
   workflow_dispatch:
     inputs:
       issue_number:
@@ -32,15 +27,6 @@ concurrency:
 
 jobs:
   slice:
-    # For issues.labeled events: only fire when a HUMAN adds the `slice`
-    # label specifically. This is the post-research re-slice path
-    # (human flips awaiting-research → slice after a research subtask
-    # closes). Any other label change — bot-added, human-added but
-    # different label — is silently skipped at the job level.
-    # Cron and workflow_dispatch always fire.
-    if: |
-      github.event_name != 'issues' ||
-      (github.actor != 'github-actions[bot]' && github.event.label.name == 'slice')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
