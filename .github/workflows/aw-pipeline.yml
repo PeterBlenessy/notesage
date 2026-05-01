@@ -38,7 +38,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
+          # PR creation) trigger the built-in recursion guard — downstream
+          # workflows listening on issues.labeled / issue_comment / pull_request
+          # do NOT fire for our own actions. Bot identity becomes
+          # github-actions[bot] (not claude[bot]).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
@@ -84,7 +90,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
+          # PR creation) trigger the built-in recursion guard — downstream
+          # workflows listening on issues.labeled / issue_comment / pull_request
+          # do NOT fire for our own actions. Bot identity becomes
+          # github-actions[bot] (not claude[bot]).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
@@ -118,7 +130,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
+          # PR creation) trigger the built-in recursion guard — downstream
+          # workflows listening on issues.labeled / issue_comment / pull_request
+          # do NOT fire for our own actions. Bot identity becomes
+          # github-actions[bot] (not claude[bot]).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 60
             --allowedTools "Bash(gh:*),Read"
@@ -177,7 +195,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
+          # PR creation) trigger the built-in recursion guard — downstream
+          # workflows listening on issues.labeled / issue_comment / pull_request
+          # do NOT fire for our own actions. Bot identity becomes
+          # github-actions[bot] (not claude[bot]).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 200
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"

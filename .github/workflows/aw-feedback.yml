@@ -1,8 +1,10 @@
 name: AW — Feedback
 
-# Listens for human feedback on hitl-labeled issues OR claude[bot]-authored
-# PRs. Translates the feedback into a label change or PR state change via
-# the aw-feedback skill. No code generation — only pipeline state changes.
+# Listens for human feedback on hitl-labeled issues OR
+# github-actions[bot]-authored PRs (the bot identity Notesage uses since
+# we switched the agent's gh calls to GITHUB_TOKEN). Translates the
+# feedback into a label change or PR state change via the aw-feedback
+# skill. No code generation — only pipeline state changes.
 
 on:
   issue_comment:
@@ -23,14 +25,20 @@ concurrency:
 
 jobs:
   feedback:
-    # Skip bot-authored comments/reviews to avoid loops.
-    if: github.actor != 'claude[bot]'
+    # Skip bot-authored comments/reviews to avoid loops. Belt-and-braces:
+    # GITHUB_TOKEN-driven actions don't fire issue_comment/pull_request_review
+    # at all (recursion guard), so this guard mostly catches legacy
+    # claude[bot] artifacts and other automation.
+    if: github.actor != 'github-actions[bot]' && github.actor != 'claude[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
-      # Determine context: issue-with-hitl, claude[bot]-PR, or skip.
+      # Determine context: issue-with-hitl, bot-authored PR, or skip.
+      # Bot identity is github-actions[bot] (since the agent uses
+      # GITHUB_TOKEN); legacy claude[bot] / app/claude PRs are also
+      # accepted so historical PRs still receive feedback routing.
       - name: Determine context
         id: ctx
         env:
@@ -39,15 +47,20 @@ jobs:
           set -euo pipefail
           EVENT="${{ github.event_name }}"
 
+          is_our_bot() {
+            local a="$1"
+            [[ "$a" == "github-actions[bot]" || "$a" == "claude[bot]" || "$a" == "app/claude" ]]
+          }
+
           if [[ "$EVENT" == "pull_request_review" ]]; then
             PR="${{ github.event.pull_request.number }}"
             AUTHOR="${{ github.event.pull_request.user.login }}"
-            if [[ "$AUTHOR" == "claude[bot]" ]]; then
+            if is_our_bot "$AUTHOR"; then
               echo "context=pr" >> "$GITHUB_OUTPUT"
               echo "target=$PR" >> "$GITHUB_OUTPUT"
             else
               echo "context=skip" >> "$GITHUB_OUTPUT"
-              echo "Skipping: PR not authored by claude[bot]."
+              echo "Skipping: PR not authored by our bot."
             fi
             exit 0
           fi
@@ -59,12 +72,12 @@ jobs:
           if [[ -n "$PR_URL" ]]; then
             # Comment is on a PR
             AUTHOR=$(gh pr view "$NUM" --json author --jq '.author.login')
-            if [[ "$AUTHOR" == "claude[bot]" || "$AUTHOR" == "app/claude" ]]; then
+            if is_our_bot "$AUTHOR"; then
               echo "context=pr" >> "$GITHUB_OUTPUT"
               echo "target=$NUM" >> "$GITHUB_OUTPUT"
             else
               echo "context=skip" >> "$GITHUB_OUTPUT"
-              echo "Skipping: PR not authored by claude[bot]."
+              echo "Skipping: PR not authored by our bot."
             fi
           else
             # Comment is on an issue — must have hitl label
@@ -83,7 +96,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"
@@ -93,7 +108,7 @@ jobs:
             in this repository (PeterBlenessy/notesage).
 
             **Event:** `${{ github.event_name }}`
-            **Triggered by:** ${{ github.actor }} (a human, not claude[bot])
+            **Triggered by:** ${{ github.actor }} (a human, not the bot)
 
             **Hard constraints:**
             - This is the label-level feedback skill. Do NOT generate code.

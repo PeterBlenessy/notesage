@@ -65,7 +65,7 @@ The two pause points in this diagram (`Idle: hitl` and `Draft PR`) are not dead 
 ```mermaid
 flowchart TD
   H[Idle: hitl on issue] -.->|human comment| FB[aw-feedback]
-  G[Draft PR by claude-bot] -.->|comment or review| FB
+  G[Draft PR by bot] -.->|comment or review| FB
   FB -.->|approve / lgtm| AP[hitl → afk<br/>or gh pr ready]
   FB -.->|redo scope<br/>acceptance criteria wrong| RC[Close PR if any +<br/>reset issue to refine]
   FB -.->|wrong slicing| RS[Close PR if any +<br/>reset issue to slice]
@@ -171,9 +171,9 @@ Total wall time: \~10–15 min from `gh issue create` to draft PR.
 
 **Hard gate failure in aw-tdd:** any of red-not-red / `pnpm test` / typecheck / lint / unrelated-files-modified → revert local changes, re-add `afk`, post failure comment. Human investigates.
 
-**Pipeline + standalone race:** when pipeline's bot adds a label, the same event would fire the standalone workflow. Mitigated by job-level guards: `aw-slice.yml` requires `github.actor != 'claude[bot]' && github.event.label.name == 'slice'`. Skips bot-triggered events; only fires on human label changes (post-research re-slice) + cron + dispatch.
+**Pipeline + standalone race (resolved by GITHUB_TOKEN):** historically, when the pipeline's bot added a label the same event fired the standalone workflow, producing a skipped tile per label change. Resolved by switching the agent's `gh` calls to `GITHUB_TOKEN` — see *Choice: GITHUB_TOKEN for surgical event triggers* below. Standalones still carry a defence-in-depth `if:` that requires `github.actor != 'github-actions[bot]'` for `issues.labeled` events, but the trigger no longer fires for bot-initiated label changes in the first place.
 
-**Bot-chain blocked:** by default, `claude-code-action` refuses bot-initiated runs. Each downstream workflow has `allowed_bots: "claude[bot]"` to permit chained triggers.
+**Bot-chain blocked:** by default, `claude-code-action` refuses bot-initiated runs. Each downstream workflow has `allowed_bots: "github-actions[bot]"` to permit chained triggers (legacy `claude[bot]` value updated as part of the GITHUB_TOKEN switch).
 
 ## Design choices and rationale
 
@@ -216,6 +216,24 @@ Fewer skills to maintain. Research becomes a regular peer issue, indistinguishab
 The naive design has each workflow event-trigger the next: aw-triage's label add fires aw-refine via `issues.labeled`, etc. Problems: \~30s runner spin-up per stage = \~120s wasted setup; each event is a separate billable runner minute; sequential events introduce latency; concurrency cancellations when triggers race.
 
 We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chained via `needs:`); standalone workflows as backstops (cron + dispatch only, plus aw-slice keeps `issues.labeled` for the post-research re-slice case). Pipeline pays the runner spin-up once per stage but stages run back-to-back. Standalones pick up anything the pipeline missed.
+
+### Choice: GITHUB_TOKEN for surgical event triggers (not GitHub App token)
+
+**The pivot.** Originally `claude-code-action` defaulted to its built-in GitHub App identity (`claude[bot]`) for every GitHub API call the agent made — label changes, comments, PR creation. Each label change therefore appeared as a real `issues.labeled` event and re-fired every workflow listening on that trigger. The standalones (`aw-refine`, `aw-slice`, `aw-tdd`, `aw-feedback`) all carried `if:` actor-guards and skipped immediately, but GitHub still creates a run record before evaluating the guard. Result: dozens of grey "skipped" tiles per pipeline run, polluting the Actions audit trail.
+
+**The mechanism.** GitHub has a built-in anti-recursion guard: events caused by `GITHUB_TOKEN` do NOT create new workflow runs (except `workflow_dispatch` and `repository_dispatch`). GitHub App installation tokens are NOT subject to this guard.
+
+**The fix.** Pass `github_token: ${{ secrets.GITHUB_TOKEN }}` to every `claude-code-action` step. The agent's `Bash(gh:*)` calls then run as `github-actions[bot]`, label changes don't fire downstream events, and the standalones only fire when a human (or external automation) actually changes a label or comments. The Actions tab becomes an honest log: every visible run represents work the system intended to do.
+
+**Knock-on changes.** Bot identity flips from `claude[bot]` to `github-actions[bot]`:
+
+- `allowed_bots: "github-actions[bot]"` in every downstream workflow (still required because bot-chained pipeline runs need the action to allow bot-initiated invocation).
+- `if: github.actor != 'github-actions[bot]'` actor-guards on the standalones (defence-in-depth — the trigger itself no longer fires for bot label changes, but the guard catches edge cases).
+- `aw-feedback` and `aw-retrospect` accept BOTH `github-actions[bot]` (current) and `claude[bot]` / `app/claude` (legacy PRs from before the switch) as bot-authored.
+- `aw-iterate` configures git as `github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>` so commits author cleanly.
+- `claude-code-action`'s `use_sticky_comment` feature stops working with custom token. We don't use it.
+
+**What we keep.** OAuth still authenticates the LLM call via `claude_code_oauth_token` — that's separate from the GitHub API token. We still get subscription quota, not pay-per-token.
 
 ### Choice: claude-code-action with OAuth (not gh-aw, not API key)
 

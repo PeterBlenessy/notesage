@@ -1,9 +1,9 @@
 name: AW — Retrospect
 
-# After a claude[bot]-authored PR is merged, run a short retrospective
-# to identify whether the originating skill could be improved by what
-# we learned. Proposes skill patches as a separate draft PR — never
-# auto-merges. Human reviews every proposed change.
+# After a github-actions[bot]-authored PR is merged, run a short
+# retrospective to identify whether the originating skill could be
+# improved by what we learned. Proposes skill patches as a separate
+# draft PR — never auto-merges. Human reviews every proposed change.
 
 on:
   pull_request:
@@ -21,11 +21,15 @@ concurrency:
 
 jobs:
   retrospect:
-    # Only on actual merges, only for claude[bot]-authored PRs, and skip
-    # retro PRs (don't retro on retros).
+    # Only on actual merges, only for our bot-authored PRs (the bot identity
+    # is github-actions[bot] because the agent uses GITHUB_TOKEN), and skip
+    # retro PRs (don't retro on retros). Legacy claude[bot]-authored PRs
+    # from before the GITHUB_TOKEN switch are also matched so historical
+    # merges still trigger retrospect.
     if: |
       github.event.pull_request.merged == true &&
-      github.event.pull_request.user.login == 'claude[bot]' &&
+      (github.event.pull_request.user.login == 'github-actions[bot]' ||
+       github.event.pull_request.user.login == 'claude[bot]') &&
       !startsWith(github.event.pull_request.title, '[retrospect]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -38,7 +42,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 60
             --allowedTools "Bash(gh:*),Read,Edit,Write,Grep,Glob"

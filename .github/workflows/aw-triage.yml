@@ -64,6 +64,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale: GITHUB_TOKEN triggers the
+          # built-in recursion guard so the agent's gh calls don't spawn
+          # downstream skipped runs. Bot identity becomes github-actions[bot].
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --max-turns 30
             --allowedTools "Bash(gh:*),Read"

@@ -49,8 +49,10 @@ jobs:
           echo "PR #$PR is on branch: $BRANCH"
           git fetch origin "$BRANCH"
           git checkout "$BRANCH"
-          git config user.name "claude[bot]"
-          git config user.email "claude[bot]@users.noreply.github.com"
+          # Match the GitHub Actions bot identity so commits author cleanly
+          # and pushes via GITHUB_TOKEN don't trigger downstream workflows.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -68,7 +70,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 100
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"

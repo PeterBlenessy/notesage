@@ -34,7 +34,7 @@ jobs:
     # the issue — skip to avoid race. Cron + dispatch always fire.
     if: |
       github.event_name != 'issues' ||
-      (github.actor != 'claude[bot]' && github.event.label.name == 'afk')
+      (github.actor != 'github-actions[bot]' && github.event.label.name == 'afk')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -106,7 +106,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_bots: "claude[bot]"
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 200
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"

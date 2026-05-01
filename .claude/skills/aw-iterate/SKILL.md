@@ -5,7 +5,7 @@ description: Push a small follow-up commit on an existing draft PR branch in res
 
 # aw-iterate
 
-Make a SMALL, SPECIFIC change to an existing claude[bot]-authored draft PR in response to human review feedback. Push a follow-up commit on the same branch — no new PR, no closing the existing one.
+Make a SMALL, SPECIFIC change to an existing bot-authored draft PR in response to human review feedback. Push a follow-up commit on the same branch — no new PR, no closing the existing one. The bot identity is `github-actions[bot]` (legacy claude[bot] PRs from before the GITHUB_TOKEN switch are also accepted).
 
 This skill is the in-place iteration path. For "wrong scope" or "wrong approach," that's a different feedback intent — `aw-feedback` resets the issue to `refine` or `tdd + afk` and a new PR is opened from scratch.
 
@@ -36,7 +36,7 @@ The size budget: ≤200 lines diff added beyond the existing PR, ≤5 files modi
 ## Pre-flight
 
 1. **Read the PR.** `gh pr view $PR_NUMBER --json title,body,labels,files,headRefName,author`
-   - Verify author is `claude[bot]`. If not, exit silently (we don't iterate on human PRs).
+   - Verify author is `github-actions[bot]` or legacy `claude[bot]` / `app/claude`. If not, exit silently (we don't iterate on human PRs).
    - Verify state is `OPEN` and `isDraft == true`. If merged or non-draft, exit silently.
 2. **Read the issue** linked from the PR body (`Implements #N`). Need the original acceptance criteria for context.
 3. **Read the feedback comment** + any prior review comments on the PR.

@@ -12,7 +12,7 @@ Interpret human feedback (issue comment, PR comment, or PR review) on an item in
 This skill runs in TWO contexts. The triggering workflow tells you which:
 
 1. **Issue with `hitl` label** — the agent paused, waiting for human feedback. Human commented. Decide approve / redo refine / redo slice / chat.
-2. **PR opened by `claude[bot]`** — human is reviewing the agent's PR. Comment or review submitted. Decide approve / reject / specific change / chat.
+2. **PR opened by our bot** (`github-actions[bot]`, or legacy `claude[bot]` / `app/claude` for older PRs) — human is reviewing the agent's PR. Comment or review submitted. Decide approve / reject / specific change / chat.
 
 ## Inputs
 
@@ -28,7 +28,7 @@ This skill runs in TWO contexts. The triggering workflow tells you which:
    - PR: `gh pr view N --json title,body,state,labels,comments,reviews,headRefName`
 2. **Confirm context:**
    - Issue context: issue must have `hitl` label. If not, exit silently.
-   - PR context: PR's author must be `claude[bot]`. If not, exit silently.
+   - PR context: PR's author must be `github-actions[bot]` (or legacy `claude[bot]` / `app/claude`). If not, exit silently.
 3. **Identify the latest human comment.** Skip bot comments. The triggering comment is usually the latest, but verify.
 4. **Read prior agent comments** for context (especially aw-slice's "Why hitl" rationale or aw-tdd's "Done" comment).
 

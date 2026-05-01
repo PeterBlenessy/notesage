@@ -5,7 +5,7 @@ description: After a claude-authored PR is merged, look for divergence between w
 
 # aw-retrospect
 
-After a `claude[bot]`-authored PR is merged, run a short retrospective. Identify whether the skill that produced the PR could be improved by what we learned. Propose patches as a separate draft PR.
+After a bot-authored PR is merged (the bot identity is `github-actions[bot]`; legacy `claude[bot]` PRs from before the GITHUB_TOKEN switch are also accepted), run a short retrospective. Identify whether the skill that produced the PR could be improved by what we learned. Propose patches as a separate draft PR.
 
 ## Inputs
 
@@ -112,6 +112,6 @@ Looked at the merged PR for #<issue> and identified one signal worth feeding bac
 
 ## Constraints from the dev process
 
-- Triggers on `pull_request.closed` filtered to `merged == true` AND author == `claude[bot]`.
+- Triggers on `pull_request.closed` filtered to `merged == true` AND author ∈ {`github-actions[bot]`, `claude[bot]`}. (The current bot identity is `github-actions[bot]`; legacy `claude[bot]` PRs from before the GITHUB_TOKEN switch are also accepted.)
 - Open issues in the queue are unaffected. Future agent runs use the patched skill if the retro PR is merged.
 - Skill files live at `.claude/skills/aw-<name>/SKILL.md`. Never edit anything outside `.claude/skills/`.
