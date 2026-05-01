@@ -36,12 +36,19 @@ This skill runs in TWO contexts. The triggering workflow tells you which:
 
 Categorize the human's comment into one of these intents:
 
+### Why every label flip is followed by an explicit `gh workflow run`
+
+The standalone workflows (`aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`) listen on `issues.labeled`. Normally, a label change instantly fires the matching workflow. **But our workflows authenticate with `GITHUB_TOKEN`** (see `docs/agentic-workflow.md` → "GITHUB_TOKEN for surgical event triggers"), and per GitHub's recursion guard, events triggered by `GITHUB_TOKEN` do NOT create new workflow runs — only `workflow_dispatch` and `repository_dispatch` are exempt.
+
+So when this skill flips `hitl → afk` or resets `→ refine`, the corresponding standalone does NOT auto-fire. The next cron sweep would eventually pick it up (15-min cadence), but that breaks the conversational tightness the feedback loop is built for. Every label flip in this skill MUST be followed by `gh workflow run <next>.yml --field issue_number=N` to advance the pipeline immediately.
+
 ### Approve / proceed
 
 Phrases like "approved", "lgtm", "looks good", "go ahead", "ship it", "yes", "do it".
 
 **Action:**
 - `gh issue edit N --remove-label hitl --add-label afk`
+- `gh workflow run aw-tdd.yml --field issue_number=N`
 - Post comment (template: **Approved**)
 
 ### Redo refined scope
@@ -50,6 +57,7 @@ Phrases like "rewrite the scope", "redo refine", "the acceptance criteria are wr
 
 **Action:**
 - `gh issue edit N --remove-label tdd --remove-label hitl --remove-label refined --add-label refine`
+- `gh workflow run aw-refine.yml --field issue_number=N`
 - The human's comment will be context for aw-refine when it re-runs.
 - Post comment (template: **Re-refining**)
 
@@ -59,6 +67,7 @@ Phrases like "split this into N PRs", "wrong slicing", "this should be one PR no
 
 **Action:**
 - `gh issue edit N --remove-label tdd --remove-label hitl --add-label slice`
+- `gh workflow run aw-slice.yml --field issue_number=N`
 - Post comment (template: **Re-slicing**)
 
 ### Specific code/file guidance ("do it this way")
@@ -94,9 +103,10 @@ Comment text like "lgtm", "approved", "ready", or a review with state `APPROVED`
 Comment text like "wrong implementation", "redo this approach", "code is wrong but the design is right". The acceptance criteria + scope are still good; only the code needs another attempt.
 
 **Action:**
-- Find the linked issue from `Implements #N` in the PR body.
+- Find the linked issue from the PR body's auto-close line (`Fixes #M` / `Resolves #M`; legacy: `Implements #M`).
 - `gh pr close N --comment "<rejection comment>"`
 - On the linked issue: `gh issue edit M --remove-label review --add-label tdd --add-label afk`
+- `gh workflow run aw-tdd.yml --field issue_number=M`
 - Post a final PR comment (template: **PR Rejected — redo implementation**)
 
 ### Reject scope ("acceptance criteria are off")
@@ -104,9 +114,10 @@ Comment text like "wrong implementation", "redo this approach", "code is wrong b
 Comment text like "this isn't what I asked for", "the acceptance criteria are wrong", "the scope is incorrect", "the issue body needs revision". The implementation may be fine, but it solved the wrong problem.
 
 **Action:**
-- Find the linked issue from `Implements #N`.
+- Find the linked issue from the PR body's auto-close line (`Fixes #M` / `Resolves #M`; legacy: `Implements #M`).
 - `gh pr close N --comment "<rejection: scope wrong, re-refining>"`
 - On the linked issue: `gh issue edit M --remove-label review --remove-label refined --add-label refine`
+- `gh workflow run aw-refine.yml --field issue_number=M`
 - The human's review comment will be context for aw-refine when it re-runs.
 - Post a final PR comment (template: **PR Rejected — re-refine scope**)
 
@@ -115,9 +126,10 @@ Comment text like "this isn't what I asked for", "the acceptance criteria are wr
 Comment text like "this should have been split", "too much in one PR", "this scope is too big".
 
 **Action:**
-- Find the linked issue from `Implements #N`.
+- Find the linked issue from the PR body's auto-close line (`Fixes #M` / `Resolves #M`; legacy: `Implements #M`).
 - `gh pr close N --comment "<rejection: slicing wrong, re-slicing>"`
 - On the linked issue: `gh issue edit M --remove-label review --add-label slice`
+- `gh workflow run aw-slice.yml --field issue_number=M`
 - Post a final PR comment (template: **PR Rejected — re-slice**)
 
 ### Specific change requested ("rename / extract / use library X")
