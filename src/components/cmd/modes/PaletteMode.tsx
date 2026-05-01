@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  Check,
   Command as CommandIcon,
   FileOutput,
   FilePlus,
@@ -319,33 +320,31 @@ function PaletteMode({
               // the tightened sibling pickers.
               'flex items-center gap-2 px-3 py-1.5 text-left text-[13px]',
               'transition-colors',
-              isHighlighted
-                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
-                : 'text-foreground hover:bg-muted/60',
+              isHighlighted ? 'bg-muted/80 text-foreground' : 'text-foreground hover:bg-muted/60',
               'focus-visible:outline-none',
             )}
           >
             <Icon
-              className={cn(
-                'h-3.5 w-3.5 shrink-0',
-                isHighlighted
-                  ? 'text-[oklch(100%_0_0)]/85'
-                  : 'text-muted-foreground',
-              )}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
               strokeWidth={1.5}
               aria-hidden="true"
             />
             <span className="flex-1 truncate">{cmd.label}</span>
             {cmd.shortcut ? (
               <kbd
-                className={cn(
-                  'shrink-0 rounded border border-border bg-background',
-                  'px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground',
-                )}
+                className="shrink-0 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
               >
                 {cmd.shortcut}
               </kbd>
             ) : null}
+            {isHighlighted && (
+              <Check
+                data-picker-check
+                className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
+                strokeWidth={2.5}
+                aria-hidden="true"
+              />
+            )}
           </button>
         );
       })}

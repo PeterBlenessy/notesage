@@ -248,4 +248,45 @@ describe('TagMode', () => {
     expect(rows[0].getAttribute('aria-selected')).toBe('true');
     expect(rows[1].getAttribute('aria-selected')).toBe('false');
   });
+
+  // -------------------------------------------------------------------------
+  // Issue #38 — discrete checkmark selection indicator
+  // -------------------------------------------------------------------------
+
+  it('active tag row shows a data-picker-check element instead of an accent background fill', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'alpha', file_count: 9 },
+      { tag: 'beta', file_count: 4 },
+    ]);
+
+    const { container } = renderWithProviders(
+      <TagMode filter="" onPick={() => {}} />,
+    );
+
+    await waitFor(() => expect(screen.getByText('alpha')).toBeTruthy());
+
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+    expect(activeRow.querySelector('[data-picker-check]')).toBeTruthy();
+  });
+
+  it('inactive tag rows do not show a checkmark', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'alpha', file_count: 9 },
+      { tag: 'beta', file_count: 4 },
+    ]);
+
+    const { container } = renderWithProviders(
+      <TagMode filter="" onPick={() => {}} />,
+    );
+
+    await waitFor(() => expect(screen.getByText('alpha')).toBeTruthy());
+
+    const inactiveRows = container.querySelectorAll<HTMLElement>('[aria-selected="false"]');
+    expect(inactiveRows.length).toBeGreaterThan(0);
+    inactiveRows.forEach((row) => {
+      expect(row.querySelector('[data-picker-check]')).toBeNull();
+    });
+  });
 });

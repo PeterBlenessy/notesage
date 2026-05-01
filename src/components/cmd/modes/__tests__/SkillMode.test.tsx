@@ -267,4 +267,36 @@ describe('SkillMode', () => {
 
     document.body.removeChild(input);
   });
+
+  // -------------------------------------------------------------------------
+  // Issue #38 — discrete checkmark selection indicator
+  // Active rows must use a right-aligned checkmark, NOT an accent background fill.
+  // -------------------------------------------------------------------------
+
+  it('active row shows a data-picker-check element instead of an accent background fill', () => {
+    const { container } = renderWithProviders(
+      <SkillMode filter="" onPick={vi.fn()} />,
+    );
+
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+
+    // Must NOT use full-row accent fill.
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+
+    // Must show a checkmark indicator.
+    expect(activeRow.querySelector('[data-picker-check]')).toBeTruthy();
+  });
+
+  it('inactive rows do not show a checkmark', () => {
+    const { container } = renderWithProviders(
+      <SkillMode filter="" onPick={vi.fn()} />,
+    );
+
+    const inactiveRows = container.querySelectorAll<HTMLElement>('[aria-selected="false"]');
+    expect(inactiveRows.length).toBeGreaterThan(0);
+    inactiveRows.forEach((row) => {
+      expect(row.querySelector('[data-picker-check]')).toBeNull();
+    });
+  });
 });

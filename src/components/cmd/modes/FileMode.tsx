@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { tauriApi, type IndexFilenameSearchResult } from "@/lib/tauri";
 import {
   getDefaultPaletteScope,
@@ -294,32 +295,30 @@ function FileMode({
             onClick={() => selectIndex(index)}
             className={cn(
               "flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[13px]",
-              isActive
-                ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-                : "text-foreground hover:bg-muted/60",
+              isActive ? "bg-muted/80 text-foreground" : "text-foreground hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <FileIcon
               fileName={row.name}
-              className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                isActive ? "opacity-90" : "text-muted-foreground",
-              )}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
             />
             <span className="flex-1 truncate font-medium">{row.name}</span>
-            {row.parentDir && (
+            {row.parentDir && !isActive && (
               <span
-                className={cn(
-                  "shrink-0 truncate max-w-[40%] text-xs",
-                  isActive
-                    ? "text-[oklch(100%_0_0)]/75"
-                    : "text-muted-foreground",
-                )}
+                className="shrink-0 truncate max-w-[40%] text-xs text-muted-foreground"
                 title={row.parentDir}
               >
                 {row.parentDir}
               </span>
+            )}
+            {isActive && (
+              <Check
+                data-picker-check
+                className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
+                strokeWidth={2.5}
+                aria-hidden="true"
+              />
             )}
           </button>
         );

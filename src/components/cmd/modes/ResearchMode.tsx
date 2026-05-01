@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Check } from "lucide-react";
 import { tauriApi, type IndexResearchResult } from "@/lib/tauri";
 import {
   getDefaultPaletteScope,
@@ -224,20 +224,13 @@ function ResearchMode({
               // Density (live-test 2026-04-26).
               "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
               "transition-colors text-[13px]",
-              isActive
-                ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-                : "text-foreground hover:bg-muted/60",
+              isActive ? "bg-muted/80 text-foreground" : "text-foreground hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <div className="flex w-full items-center gap-2">
               <BookOpen
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0",
-                  isActive
-                    ? "text-[oklch(100%_0_0)]/85"
-                    : "text-muted-foreground",
-                )}
+                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
@@ -245,27 +238,21 @@ function ResearchMode({
                 {result.title}
               </span>
               {result.date_saved && (
-                <span
-                  className={cn(
-                    "shrink-0 text-xs tabular-nums",
-                    isActive
-                      ? "text-[oklch(100%_0_0)]/75"
-                      : "text-muted-foreground",
-                  )}
-                >
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {result.date_saved}
                 </span>
               )}
+              {isActive && (
+                <Check
+                  data-picker-check
+                  className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
+                  strokeWidth={2.5}
+                  aria-hidden="true"
+                />
+              )}
             </div>
             {(displaySource || result.tags.length > 0) && (
-              <div
-                className={cn(
-                  "flex w-full items-center gap-2 pl-5 text-xs",
-                  isActive
-                    ? "text-[oklch(100%_0_0)]/75"
-                    : "text-muted-foreground",
-                )}
-              >
+              <div className="flex w-full items-center gap-2 pl-5 text-xs text-muted-foreground">
                 {displaySource && (
                   <span className="truncate">{displaySource}</span>
                 )}
