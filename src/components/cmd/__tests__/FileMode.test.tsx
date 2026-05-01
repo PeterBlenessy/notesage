@@ -278,4 +278,25 @@ describe('FileMode — selection (#8)', () => {
     });
     expect(openedFiles).toEqual(['/p/alpha/notes.md']);
   });
+
+  // -------------------------------------------------------------------------
+  // #88 — active row styling: muted bg + accent border replaces solid fill
+  // -------------------------------------------------------------------------
+
+  it('active row uses muted bg with accent border instead of solid accent fill (#88)', async () => {
+    setMockInvokeHandler('index_search_filenames', () => [
+      { path: '/p/alpha/notes.md', file_name: 'notes.md', parent_dir: '/p/alpha', project_root: '/p/alpha' },
+    ]);
+    renderWithProviders(<FileMode filter="notes" />);
+    await waitFor(() => {
+      expect(screen.queryByRole('option', { name: /notes\.md/i })).toBeTruthy();
+    });
+    const activeRow = screen.getByRole('option', { name: /notes\.md/i });
+    // New styling
+    expect(activeRow.classList.contains('bg-muted')).toBe(true);
+    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+    expect(activeRow.classList.contains('text-foreground')).toBe(true);
+    // Old solid accent fill must be gone
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+  });
 });

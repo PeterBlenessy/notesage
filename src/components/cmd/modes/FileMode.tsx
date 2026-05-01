@@ -295,27 +295,19 @@ function FileMode({
             className={cn(
               "flex items-center gap-2 px-3 py-1.5 text-left transition-colors text-[13px]",
               isActive
-                ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
+                ? "bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground"
                 : "text-foreground hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}
           >
             <FileIcon
               fileName={row.name}
-              className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                isActive ? "opacity-90" : "text-muted-foreground",
-              )}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
             />
             <span className="flex-1 truncate font-medium">{row.name}</span>
             {row.parentDir && (
               <span
-                className={cn(
-                  "shrink-0 truncate max-w-[40%] text-xs",
-                  isActive
-                    ? "text-[oklch(100%_0_0)]/75"
-                    : "text-muted-foreground",
-                )}
+                className="shrink-0 truncate max-w-[40%] text-xs text-muted-foreground"
                 title={row.parentDir}
               >
                 {row.parentDir}

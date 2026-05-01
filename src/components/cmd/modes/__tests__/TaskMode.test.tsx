@@ -543,4 +543,26 @@ describe('TaskMode', () => {
       expect(headers[0]?.textContent ?? '').toContain('Falls-Back');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // #88 — active row styling: muted bg + accent border replaces solid fill
+  // -------------------------------------------------------------------------
+
+  it('active row uses muted bg with accent border instead of solid accent fill (#88)', async () => {
+    mockStore.actions = [
+      makeAction({ id: 't1', text: 'Fix the bug' }),
+    ];
+    const { container } = renderWithProviders(
+      <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+    );
+    await waitFor(() => expect(screen.getByText('Fix the bug')).toBeTruthy());
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+    // New styling
+    expect(activeRow.classList.contains('bg-muted')).toBe(true);
+    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+    expect(activeRow.classList.contains('text-foreground')).toBe(true);
+    // Old solid accent fill must be gone
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+  });
 });

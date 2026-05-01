@@ -320,18 +320,13 @@ function PaletteMode({
               'flex items-center gap-2 px-3 py-1.5 text-left text-[13px]',
               'transition-colors',
               isHighlighted
-                ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
+                ? 'bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground'
                 : 'text-foreground hover:bg-muted/60',
               'focus-visible:outline-none',
             )}
           >
             <Icon
-              className={cn(
-                'h-3.5 w-3.5 shrink-0',
-                isHighlighted
-                  ? 'text-[oklch(100%_0_0)]/85'
-                  : 'text-muted-foreground',
-              )}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
               strokeWidth={1.5}
               aria-hidden="true"
             />

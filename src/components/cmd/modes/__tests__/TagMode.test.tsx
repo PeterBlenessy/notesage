@@ -248,4 +248,26 @@ describe('TagMode', () => {
     expect(rows[0].getAttribute('aria-selected')).toBe('true');
     expect(rows[1].getAttribute('aria-selected')).toBe('false');
   });
+
+  // -------------------------------------------------------------------------
+  // #88 — active row styling: muted bg + accent border replaces solid fill
+  // -------------------------------------------------------------------------
+
+  it('active row uses muted bg with accent border instead of solid accent fill (#88)', async () => {
+    indexTagsMock.mockResolvedValue([
+      { tag: 'work', file_count: 5 },
+    ]);
+    const { container } = renderWithProviders(
+      <TagMode filter="" onPick={() => {}} />,
+    );
+    await waitFor(() => expect(screen.getByText('work')).toBeTruthy());
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+    // New styling
+    expect(activeRow.classList.contains('bg-muted')).toBe(true);
+    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+    expect(activeRow.classList.contains('text-foreground')).toBe(true);
+    // Old solid accent fill must be gone
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+  });
 });

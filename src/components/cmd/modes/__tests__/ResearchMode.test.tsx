@@ -182,4 +182,26 @@ describe('ResearchMode', () => {
     // Wait for the call to settle.
     await screen.findByText('No research matches');
   });
+
+  // -------------------------------------------------------------------------
+  // #88 — active row styling: muted bg + accent border replaces solid fill
+  // -------------------------------------------------------------------------
+
+  it('active row uses muted bg with accent border instead of solid accent fill (#88)', async () => {
+    indexSearchResearchMock.mockResolvedValue([
+      makeResult({ file: '/r/alpha.md', title: 'Alpha' }),
+    ]);
+    const { container } = renderWithProviders(
+      <ResearchMode filter="" onPick={() => {}} />,
+    );
+    await screen.findByText('Alpha');
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+    // New styling
+    expect(activeRow.classList.contains('bg-muted')).toBe(true);
+    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+    expect(activeRow.classList.contains('text-foreground')).toBe(true);
+    // Old solid accent fill must be gone
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+  });
 });
