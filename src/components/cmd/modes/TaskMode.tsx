@@ -690,25 +690,16 @@ function TaskMode({
                   onClick={() => dispatch(row)}
                   onMouseEnter={() => setHighlight(index)}
                   className={cn(
-                    // Match cmd-bar density (live-test 2026-04-26): denser
-                    // rhythm, accent-fill highlight. Active row → white text
-                    // on accent; secondary line uses /75 alpha so it stays
-                    // readable on the bright accent.
                     'flex w-full items-start gap-2 px-3 py-1.5 text-left',
                     'text-[13px] transition-colors',
                     active
-                      ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]'
+                      ? 'bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground'
                       : 'hover:bg-muted/60 text-foreground',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                   )}
                 >
                   <Icon
-                    className={cn(
-                      'mt-[3px] h-3 w-3 shrink-0',
-                      active
-                        ? 'text-[oklch(100%_0_0)]/75'
-                        : 'text-muted-foreground',
-                    )}
+                    className="mt-[3px] h-3 w-3 shrink-0 text-muted-foreground"
                     strokeWidth={1.5}
                     aria-hidden="true"
                   />
@@ -717,14 +708,7 @@ function TaskMode({
                       {truncate(row.text, NAME_TRUNCATE)}
                     </span>
                     {secondary && (
-                      <span
-                        className={cn(
-                          'truncate text-xs',
-                          active
-                            ? 'text-[oklch(100%_0_0)]/75'
-                            : 'text-muted-foreground',
-                        )}
-                      >
+                      <span className="truncate text-xs text-muted-foreground">
                         {secondary}
                       </span>
                     )}

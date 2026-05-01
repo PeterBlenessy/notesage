@@ -543,4 +543,26 @@ describe('TaskMode', () => {
       expect(headers[0]?.textContent ?? '').toContain('Falls-Back');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // #88 — active row styling: muted bg + accent border replaces accent fill
+  // -------------------------------------------------------------------------
+
+  it('active row uses muted-bg + accent-border (not solid accent fill)', () => {
+    mockStore.actions = [makeAction({ text: 'First task' })];
+    const { container } = renderWithProviders(
+      <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
+    );
+
+    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
+    expect(activeRow).toBeTruthy();
+
+    // New style: muted background + border with accent color.
+    expect(activeRow.className).toContain('bg-muted');
+    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+
+    // Old solid-fill style must be gone.
+    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
+    expect(activeRow.className).not.toContain('text-[oklch(100%_0_0)]');
+  });
 });
