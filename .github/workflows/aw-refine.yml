@@ -2,15 +2,17 @@ name: AW — Refine
 
 # Rewrites refine-flagged issues into the outcome-oriented template
 # using the aw-refine skill at .claude/skills/aw-refine/SKILL.md.
-# Standalone backstop: cron sweep + workflow_dispatch + label event
-# (when a human re-adds `refine` for recovery, fire instantly). The
-# happy path runs from aw-pipeline.yml.
+# The cron sweep was consolidated into aw-sweep.yml — this standalone
+# now exists for two paths only:
+#   1. workflow_dispatch — used by aw-feedback after a label flip and
+#      for manual one-off re-refinement.
+#   2. issues.labeled — for the case where a human directly edits the
+#      `refine` label without going through aw-feedback.
+# The happy path runs from aw-pipeline.yml.
 
 on:
   issues:
     types: [labeled]   # respond instantly to human-added refine
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       issue_number:

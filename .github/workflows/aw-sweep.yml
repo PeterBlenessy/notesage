@@ -1,0 +1,278 @@
+name: AW — Sweep
+
+# Single cron-driven sweep that does the work the four standalones used
+# to do via individual `schedule:` triggers. One workflow run per tick,
+# four parallel jobs (triage / refine / slice / tdd) — each does a
+# cheap `gh + jq` precheck FIRST and only checks out the repo / installs
+# pnpm if a candidate is actually found. Idle ticks finish in ~20s
+# total runner time with no checkouts and no installs.
+#
+# The standalone workflows (aw-triage.yml, aw-refine.yml, aw-slice.yml,
+# aw-tdd.yml) keep their `workflow_dispatch` + `issues.labeled` triggers
+# for manual one-off targeting and human label edits — they just no
+# longer carry the `schedule:` trigger. aw-pipeline.yml is unchanged
+# (still fires on issues.opened / reopened for the happy-path
+# fan-through).
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write       # tdd needs to push branches
+  issues: write
+  pull-requests: write
+  id-token: write       # claude-code-action OIDC
+
+concurrency:
+  # Per-stage concurrency keyed by run id so two ticks don't overlap on
+  # the same stage. Issue-level concurrency happens inside each skill
+  # via `gh issue edit` idempotency.
+  group: aw-sweep-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Untriaged = open + no category (bug/enhancement/chore) and not
+      # already a closed-state marker (duplicate/wontfix). The `feature`
+      # label means aw-triage has already run on this issue.
+      - name: Find candidate
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CAND=$(gh issue list \
+            --repo PeterBlenessy/notesage \
+            --state open \
+            --limit 10 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore" or . == "duplicate" or . == "wontfix")) | not) | .number] | first(.[])? // empty')
+          if [[ -z "$CAND" ]]; then
+            echo "No untriaged issues. Skipping LLM step."
+            echo "candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found triage candidate: #$CAND"
+            echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.find.outputs.candidate != ''
+
+      - name: Run aw-triage skill
+        if: steps.find.outputs.candidate != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale: GITHUB_TOKEN triggers the
+          # built-in recursion guard so the agent's gh calls don't spawn
+          # downstream skipped runs. Bot identity becomes github-actions[bot].
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-triage` skill at `.claude/skills/aw-triage/SKILL.md`
+            on issue #${{ steps.find.outputs.candidate }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard constraints** (also defined in the skill):
+            - Apply exactly one of `bug` / `enhancement` / `chore`.
+            - Add `refine` (action label) so the next sweep tick picks it up.
+            - Do not modify the issue title or body.
+            - Use `gh issue close --reason duplicate` only when closing as a
+              duplicate of another open issue.
+            - Idempotent: if a category is already set, exit silently.
+
+  refine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Refine candidate = open + `refine` label + NOT yet `refined`.
+      - name: Find candidate
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CAND=$(gh issue list \
+            --repo PeterBlenessy/notesage \
+            --label refine \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select([.labels[].name] | any(. == "refined") | not) | .number] | first(.[])? // empty')
+          if [[ -z "$CAND" ]]; then
+            echo "No refine candidates. Skipping LLM step."
+            echo "candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found refine candidate: #$CAND"
+            echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.find.outputs.candidate != ''
+
+      - name: Run aw-refine skill
+        if: steps.find.outputs.candidate != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
+            on issue #${{ steps.find.outputs.candidate }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard constraints** (also defined in the skill):
+            - Verify the issue has exactly one of `bug` / `enhancement` / `chore`
+              and the `refine` action label.
+            - Pick the right template for the category.
+            - Preserve all reproduction steps, error messages, technical details verbatim.
+            - Add `refined` (state) + `slice` (action) after rewriting body.
+              Remove `refine` (the action label that triggered this).
+            - Do NOT modify the title unless it is genuinely not outcome-shaped.
+            - Idempotent: if `refined` is already present, exit silently.
+
+  slice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Slice candidate = open + `slice` + `refined` AND NOT `sliced` /
+      # `awaiting-research`.
+      - name: Find candidate
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CAND=$(gh issue list \
+            --repo PeterBlenessy/notesage \
+            --label slice \
+            --label refined \
+            --state open \
+            --limit 5 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "sliced" or . == "awaiting-research")) | not) | .number] | first(.[])? // empty')
+          if [[ -z "$CAND" ]]; then
+            echo "No slicing candidates. Skipping LLM step."
+            echo "candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found slice candidate: #$CAND"
+            echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.find.outputs.candidate != ''
+
+      - name: Run aw-slice skill
+        if: steps.find.outputs.candidate != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Read"
+          prompt: |
+            Run the `aw-slice` skill at `.claude/skills/aw-slice/SKILL.md`
+            on issue #${{ steps.find.outputs.candidate }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely. The unit is one user value = one PR. Default to NOT
+            slicing — most issues pass directly to aw-tdd as a single PR.
+            Slice only when the issue delivers N independent user values,
+            each independently shippable. When splitting, the original
+            issue becomes the FIRST peer slice (rewrite its body); create
+            N-1 new peer issues for the remaining values (no GraphQL
+            sub-issue link). If under-specified, create ONE research peer
+            and set the original to `awaiting-research`.
+
+            **Hard constraints** (also defined in the skill):
+            - Idempotent: if parent has `sliced` or `awaiting-research`
+              already, exit silently.
+
+  tdd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # TDD candidate = open + `tdd` + `afk` + `refined` + a category,
+      # AND not yet `review`.
+      - name: Find candidate
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CAND=$(gh issue list \
+            --repo PeterBlenessy/notesage \
+            --label tdd \
+            --label afk \
+            --label refined \
+            --state open \
+            --limit 10 \
+            --json number,labels \
+            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | .number] | first(.[])? // empty')
+          if [[ -z "$CAND" ]]; then
+            echo "No tdd candidates. Skipping LLM step."
+            echo "candidate=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found tdd candidate: #$CAND"
+            echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Heavy setup is gated behind candidate found — idle ticks skip
+      # checkout + pnpm install entirely.
+      - uses: actions/checkout@v6
+        if: steps.find.outputs.candidate != ''
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        if: steps.find.outputs.candidate != ''
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: steps.find.outputs.candidate != ''
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        if: steps.find.outputs.candidate != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Run aw-tdd skill
+        if: steps.find.outputs.candidate != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 200
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-tdd` skill at `.claude/skills/aw-tdd/SKILL.md` on
+            issue #${{ steps.find.outputs.candidate }} in this repository
+            (PeterBlenessy/notesage). Read the skill in full and follow it
+            precisely.
+
+            **Hard gates**: red tests must be RED before implementation; full
+            `pnpm test` and `pnpm typecheck` must pass; only the files listed
+            in the issue body may be modified. Open the PR as DRAFT
+            (`gh pr create --draft`). The PR body's first line MUST be
+            `Fixes #N` (bug) or `Resolves #N` (enhancement / chore) — these
+            are GitHub's auto-close keywords. On any failure, re-add `afk`
+            and post the failure comment.

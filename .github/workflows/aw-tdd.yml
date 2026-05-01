@@ -1,16 +1,17 @@
 name: AW — TDD
 
 # Implements `tdd + afk` issues using the aw-tdd skill at
-# .claude/skills/aw-tdd/SKILL.md. Standalone backstop: cron sweep +
-# workflow_dispatch + label event (when a human flips hitl → afk,
-# fire instantly instead of waiting up to 15 min for cron). The happy
-# path runs from aw-pipeline.yml.
+# .claude/skills/aw-tdd/SKILL.md. The cron sweep was consolidated into
+# aw-sweep.yml — this standalone now exists for two paths only:
+#   1. workflow_dispatch — used by aw-feedback after hitl→afk flip and
+#      for manual one-off re-implementation.
+#   2. issues.labeled — for the case where a human directly flips
+#      `hitl → afk` without going through aw-feedback.
+# The happy path runs from aw-pipeline.yml.
 
 on:
   issues:
     types: [labeled]   # respond instantly to human-added afk
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       issue_number:

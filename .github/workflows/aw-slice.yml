@@ -1,17 +1,19 @@
 name: AW — Slice
 
-# Breaks refined issues into red-test-list child sub-issues using
-# the aw-slice skill at .claude/skills/aw-slice/SKILL.md. Standalone
-# backstop: cron sweep + workflow_dispatch only, plus issues.labeled
-# (specifically for the post-research re-slice path when a human flips
-# `awaiting-research` → `slice` after a research subtask closes). The
-# happy path runs from aw-pipeline.yml.
+# Decides whether a refined issue ships as one PR or as N peer issues
+# using the aw-slice skill at .claude/skills/aw-slice/SKILL.md. The
+# cron sweep was consolidated into aw-sweep.yml — this standalone now
+# exists for two paths only:
+#   1. workflow_dispatch — used by aw-feedback after a label flip and
+#      for manual one-off re-slicing.
+#   2. issues.labeled — primarily the post-research re-slice path when
+#      a human flips `awaiting-research` → `slice` after a research
+#      subtask closes.
+# The happy path runs from aw-pipeline.yml.
 
 on:
   issues:
     types: [labeled]   # only fires when `slice` is added by a human after research
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       issue_number:

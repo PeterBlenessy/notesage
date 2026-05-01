@@ -1,6 +1,6 @@
 # Agentic Workflow (AW)
 
-The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Seven Claude Code skills, eight GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed.
+The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Seven Claude Code skills, nine GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed.
 
 This document captures the system as it stands today and the design choices that shaped it. Skill rules live in `.claude/skills/aw-<name>/SKILL.md` (the source of truth for agent behavior).
 
@@ -139,20 +139,21 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Eight workflow files. One *pipeline* + four *standalones* + one *retrospect* + two *feedback loops*.
+Nine workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
 | `aw-pipeline.yml` | `issues.opened` / `issues.reopened` | Happy path: 4 jobs chained via `needs:` (triage → refine → slice → tdd). Single workflow run, stages back-to-back. |
-| `aw-triage.yml` | cron `*/15`, `workflow_dispatch` | Backstop for any open issue lacking a category |
-| `aw-refine.yml` | cron, dispatch, `issues.labeled` (human-added `refine` only) | Backstop + instant-response on human re-add |
-| `aw-slice.yml` | cron, dispatch, `issues.labeled` (human-added `slice` only) | Backstop + post-research re-slice path |
-| `aw-tdd.yml` | cron, dispatch, `issues.labeled` (human-added `afk` only) | Backstop + instant-response on hitl→afk flip |
+| `aw-sweep.yml` | cron `*/15`, `workflow_dispatch` | The single cron-driven backstop. Four parallel jobs (triage / refine / slice / tdd), each does a cheap `gh + jq` precheck FIRST and only checks out the repo (and runs `pnpm install` for the tdd job) if a candidate is actually found. Idle ticks finish in \~20s of total runner time, one Actions tile. |
+| `aw-triage.yml` | `workflow_dispatch` | Manual one-off re-triage entry point |
+| `aw-refine.yml` | `workflow_dispatch`, `issues.labeled` (human-added `refine` only) | Manual one-off + instant-response on human label edit. Also the dispatch target for `aw-feedback`'s "redo refined scope" action. |
+| `aw-slice.yml` | `workflow_dispatch`, `issues.labeled` (human-added `slice` only) | Manual one-off + post-research re-slice path. Also the dispatch target for `aw-feedback`'s "redo slicing" action. |
+| `aw-tdd.yml` | `workflow_dispatch`, `issues.labeled` (human-added `afk` only) | Manual one-off + instant-response on human `hitl → afk` flip. Also the dispatch target for `aw-feedback`'s "approve" / "redo implementation" actions. |
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
-| `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or claude\[bot\] PRs; redirect pipeline. |
+| `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
 
-Each workflow has a bash precheck that finds candidates before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
+Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
 ## Lifecycle (worked example, default path)
 
@@ -218,7 +219,17 @@ Fewer skills to maintain. Research becomes a regular peer issue, indistinguishab
 
 The naive design has each workflow event-trigger the next: aw-triage's label add fires aw-refine via `issues.labeled`, etc. Problems: \~30s runner spin-up per stage = \~120s wasted setup; each event is a separate billable runner minute; sequential events introduce latency; concurrency cancellations when triggers race.
 
-We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chained via `needs:`); standalone workflows as backstops (cron + dispatch only, plus aw-slice keeps `issues.labeled` for the post-research re-slice case). Pipeline pays the runner spin-up once per stage but stages run back-to-back. Standalones pick up anything the pipeline missed.
+We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chained via `needs:`); standalone workflows as backstops (workflow_dispatch + `issues.labeled` for human edits). Pipeline pays the runner spin-up once per stage but stages run back-to-back. Standalones pick up anything the pipeline missed via the sweep workflow described below.
+
+### Choice: one cron sweep workflow (not four parallel cron-triggered standalones)
+
+**The pivot.** Originally each standalone (`aw-triage`, `aw-refine`, `aw-slice`, `aw-tdd`) carried its own `schedule: */15` trigger. Every cron tick fired four separate workflow runs that each ran a precheck against the issue queue and exited silently if there was no work. Cost per idle tick: 4 Actions tiles, \~3-4 minutes total runner time (the `aw-tdd` one paid the full `pnpm install` cost just to find no candidate).
+
+**The fix.** A single `aw-sweep.yml` runs on cron with four parallel jobs — same skills, same prechecks, same outcomes. Each job's precheck is its FIRST step (just `gh + jq`, no checkout), and `actions/checkout@v6` / `pnpm/action-setup@v4` / `pnpm install` are gated on `if: steps.find.outputs.candidate != ''`. Idle ticks finish in \~20s with no checkouts and no installs.
+
+**Why not chain through the pipeline workflow.** `aw-pipeline.yml` chains via `needs:` because each stage operates on the SAME issue (the one that fired `issues.opened`). On cron there is no specific issue — each stage independently sweeps for its own queue (untriaged issues, refine-labeled, slice-labeled, tdd-ready). Different issues at different stages. The four parallel jobs in the sweep workflow share nothing beyond the workflow run id, which is exactly what we want.
+
+**What standalones still exist for.** The four standalones lost their `schedule:` triggers but kept `workflow_dispatch` (so `aw-feedback` can dispatch them after a label flip — see the explicit-dispatch entry below) and `issues.labeled` (so a human directly editing a label still gets instant pickup). They're now manual-and-targeted entry points; the cron-driven discovery happens once, in `aw-sweep.yml`.
 
 ### Choice: GITHUB_TOKEN for surgical event triggers (not GitHub App token)
 
@@ -237,6 +248,8 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 - `claude-code-action`'s `use_sticky_comment` feature stops working with custom token. We don't use it.
 
 **What we keep.** OAuth still authenticates the LLM call via `claude_code_oauth_token` — that's separate from the GitHub API token. We still get subscription quota, not pay-per-token.
+
+**Side effect — explicit dispatch from** `aw-feedback`**.** A consequence of the recursion guard is that when one of our workflows flips a label on the human's behalf (`aw-feedback` resetting `hitl → afk`, `→ refine`, `→ slice`, etc.), the corresponding standalone does NOT auto-fire from the `issues.labeled` event. Without intervention, the next sweep cron tick (\~15 min later) would eventually pick it up, breaking the conversational tightness the feedback loop is built for. Fix: every label-flip action in `aw-feedback`'s skill is followed by an explicit `gh workflow run <next>.yml --field issue_number=N`. `workflow_dispatch` events ARE exempt from the recursion guard (along with `repository_dispatch`), so the dispatched workflow fires immediately.
 
 ### Choice: claude-code-action with OAuth (not gh-aw, not API key)
 

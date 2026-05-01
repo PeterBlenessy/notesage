@@ -2,13 +2,11 @@ name: AW — Triage
 
 # Classifies untriaged GitHub issues using the aw-triage skill at
 # .claude/skills/aw-triage/SKILL.md. The happy path runs from
-# aw-pipeline.yml on issues.opened. This standalone workflow is the
-# backstop: cron sweeps untriaged issues every 15 minutes and
-# workflow_dispatch lets you re-trigger manually.
+# aw-pipeline.yml on issues.opened. The cron sweep was consolidated
+# into aw-sweep.yml — this standalone now exists ONLY as a manual
+# `workflow_dispatch` entry point for one-off re-triage.
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       issue_number:
