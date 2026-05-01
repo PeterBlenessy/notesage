@@ -243,7 +243,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                     className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
                   >
                     <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
-                    {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
+                    {allSelected && <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.5} />}
                   </button>
                 )}
                 {projects.map((project) => {
@@ -257,7 +257,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                       className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
                     >
                       <span className="truncate">{name}</span>
-                      {isChecked && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                      {isChecked && <Check className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={2.5} />}
                     </button>
                   );
                 })}

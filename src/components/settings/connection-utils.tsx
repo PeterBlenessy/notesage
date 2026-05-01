@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 
 // --- Connection timeout helper ---
@@ -214,5 +214,32 @@ export function SetupGuideView({ guide }: { guide: SetupGuide }) {
         ))}
       </ol>
     </div>
+  );
+}
+
+// --- Reusable provider/connection picker row ---
+
+export interface ProviderPickerRowProps {
+  label: string;
+  isSelected: boolean;
+  onClick: () => void;
+  icon?: ReactNode;
+}
+
+export function ProviderPickerRow({ label, isSelected, onClick, icon }: ProviderPickerRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        {icon}
+        <span className="truncate">{label}</span>
+      </span>
+      {isSelected && (
+        <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+      )}
+    </button>
   );
 }

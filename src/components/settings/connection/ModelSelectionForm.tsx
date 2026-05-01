@@ -377,7 +377,7 @@ export function ModelSelectionForm({
                     <CommandGroup>
                       {models.map((modelId) => (
                         <CommandItem key={modelId} value={modelId} onSelect={(val) => { onModelChange(val); onModelPopoverOpenChange(false); }}>
-                          <Check className={cn('mr-2 h-3.5 w-3.5', model === modelId ? 'opacity-100' : 'opacity-0')} />
+                          <Check className={cn('mr-2 h-3.5 w-3.5', model === modelId ? 'opacity-100' : 'opacity-0')} strokeWidth={2.5} />
                           <span className="truncate text-sm">{modelId}</span>
                         </CommandItem>
                       ))}
