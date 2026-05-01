@@ -18,6 +18,8 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 
 ## Pre-flight
 
+0. **Check for a PR already in flight.** Before anything else: `gh pr list --search "resolves #$ISSUE_NUMBER OR fixes #$ISSUE_NUMBER OR closes #$ISSUE_NUMBER" --state open --json number,url`. If any open PR referencing this issue is found, exit silently — a concurrent run has already claimed the issue. Do not rely solely on the `review` label: GitHub label writes have latency, and two concurrent triggers can both pass the label check before either has written to the API.
+
 1. **Read the issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
    - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
    - Verify it does NOT have `review` or be closed.
