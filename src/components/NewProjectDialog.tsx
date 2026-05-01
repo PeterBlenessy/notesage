@@ -16,7 +16,6 @@ import { serializeFrontmatter } from "@/lib/frontmatter";
 import { PROJECT_TEMPLATES, type ProjectTemplate } from "@/lib/project-templates";
 import { getGoalTemplate } from "@/lib/goal-templates";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useSyncStore } from "@/stores/sync-store";
 import { FolderOpen, Loader2, Info, Cloud } from "lucide-react";
 
 interface NewProjectDialogProps {
@@ -40,16 +39,19 @@ export function NewProjectDialog({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { notesRootPath, icloudAvailable, icloudNotesagePath } = useSettingsStore();
-  const { icloudEnabled, addSyncedProject, saveSettings } = useSyncStore();
 
-  const showICloudCheckbox = icloudEnabled && icloudAvailable && !isCustomLocation;
+  // The "Create in iCloud Drive" checkbox shows whenever iCloud Drive is
+  // detected at the OS level. There is no separate global iCloud-enabled
+  // toggle to gate on — sync state is derived from the path the project
+  // ends up at.
+  const showICloudCheckbox = icloudAvailable && !isCustomLocation;
 
   useEffect(() => {
     if (open) {
       setProjectName("");
       setLocation(notesRootPath);
       setIsCustomLocation(false);
-      setSyncToICloud(icloudEnabled && icloudAvailable);
+      setSyncToICloud(icloudAvailable);
       setSelectedTemplate(PROJECT_TEMPLATES[0]);
       setError("");
       setIsCreating(false);
@@ -57,7 +59,7 @@ export function NewProjectDialog({
         inputRef.current?.focus();
       });
     }
-  }, [open, notesRootPath, icloudEnabled, icloudAvailable]);
+  }, [open, notesRootPath, icloudAvailable]);
 
   const handleChooseLocation = async () => {
     try {
@@ -76,7 +78,7 @@ export function NewProjectDialog({
   const handleResetLocation = () => {
     setLocation(notesRootPath);
     setIsCustomLocation(false);
-    setSyncToICloud(icloudEnabled && icloudAvailable);
+    setSyncToICloud(icloudAvailable);
     setError("");
   };
 
@@ -142,12 +144,8 @@ export function NewProjectDialog({
         }
       }
 
-      // Track as synced project if created in iCloud
-      if (syncToICloud && icloudNotesagePath) {
-        addSyncedProject(projectPath);
-        await saveSettings(notesRootPath);
-      }
-
+      // No sync-state bookkeeping — the project's path determines whether
+      // it's synced (under iCloud Notesage = synced, anywhere else = local).
       onCreated(projectPath);
       onOpenChange(false);
     } catch (err) {

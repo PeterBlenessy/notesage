@@ -134,10 +134,12 @@ describe('v2 settings panels', () => {
     expect(screen.getAllByText('Skills').length).toBeGreaterThan(0);
   });
 
-  it('ProjectsSettings mounts and renders version control + iCloud groups', () => {
+  it('ProjectsSettings mounts and renders the Version Control group', () => {
+    // The legacy global iCloud Sync group was removed when sync state
+    // became a pure derivation from the project path. Per-project sync
+    // (move-to/move-from iCloud) lives inside each ProjectCard now.
     renderWithProviders(<ProjectsSettings />);
     expect(screen.getByText('Version Control')).toBeTruthy();
     expect(screen.getByText('Enable git')).toBeTruthy();
-    expect(screen.getAllByText('iCloud Sync').length).toBeGreaterThan(0);
   });
 });

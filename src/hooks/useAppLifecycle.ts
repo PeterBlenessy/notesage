@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useChatStore } from "@/stores/chat-store";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
@@ -255,55 +254,14 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
     startupWithTimeout();
   }, []);
 
-  // --- Mid-session iCloud project detection ---
-  // When a project is added to the workspace after startup (e.g. via the
-  // "Open Folder" dialog or an iCloud sync arriving later), check whether
-  // it lives under the iCloud Notesage folder and prompt accordingly.
-  // Gated on startupReady so we don't double-fire for projects loaded
-  // during the initial reloadTrees() pass.
-  useEffect(() => {
-    let prevPaths = new Set(useWorkspaceStore.getState().projects.map((p) => p.path));
-
-    const unsubscribe = useWorkspaceStore.subscribe((state) => {
-      if (!useSettingsStore.getState().startupReady) return;
-      const currentPaths = new Set(state.projects.map((p) => p.path));
-      for (const path of currentPaths) {
-        if (!prevPaths.has(path)) {
-          detectProjectICloudSync(path);
-        }
-      }
-      prevPaths = currentPaths;
-    });
-
-    return unsubscribe;
-  }, []);
-}
-
-/**
- * Detects whether a newly-added project lives under the iCloud Notesage
- * folder and responds accordingly:
- *  - Guard conditions: iCloud unavailable, path not under iCloud, already synced → no-op
- *  - icloudEnabled ON: silently add the project to syncedProjectPaths and persist
- *  - icloudEnabled OFF: show a toast prompting the user to enable sync
- */
-export async function detectProjectICloudSync(projectPath: string): Promise<void> {
-  const settings = useSettingsStore.getState();
-  if (!settings.icloudAvailable || !settings.icloudNotesagePath) return;
-  if (!projectPath.startsWith(settings.icloudNotesagePath)) return;
-
-  const sync = useSyncStore.getState();
-  if (sync.isProjectSynced(projectPath)) return;
-
-  const notesRoot = settings.notesRootPath;
-
-  if (sync.icloudEnabled) {
-    sync.addSyncedProject(projectPath);
-    await useSyncStore.getState().saveSettings(notesRoot);
-  } else {
-    toast.info(
-      `"${projectPath.split("/").pop()}" is in iCloud Drive. Enable iCloud sync in Settings → Sync to keep it in sync across devices.`,
-    );
-  }
+  // Mid-session iCloud detection used to live here as a separate
+  // useEffect that subscribed to workspace-store changes and called
+  // detectProjectICloudSync() on every newly-added project. It's been
+  // removed — sync state is now derived purely from `path.startsWith
+  // (icloudNotesagePath + "/")`, so adding a project under iCloud
+  // Notesage automatically appears synced (cloud badge, settings UI)
+  // without any side-effect step. There is no longer an "enable iCloud
+  // sync" global toggle to consult or prompt for.
 }
 
 /** Race a promise against a per-step timeout. Returns undefined on timeout. */
@@ -468,52 +426,24 @@ export async function reloadTrees() {
     // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
   }
 
-  // Load sync settings from disk
-  if (notesRoot) {
-    await useSyncStore.getState().loadSettings(notesRoot);
-    // Re-read after await — the store was mutated by loadSettings
-    const freshSync = useSyncStore.getState();
-
-    if (freshSync.icloudEnabled) {
-      if (!icloudNotesagePath || !icloudAvailable) {
-        freshSync.setICloudEnabled(false);
-        await freshSync.saveSettings(notesRoot);
-        toast.info("iCloud is no longer available. Sync has been disabled.");
-      } else {
-        await Promise.all(freshSync.syncedProjectPaths.map(async (syncedPath) => {
-          try {
-            const tree = await withTimeout(
-              tauriApi.listDirectory(syncedPath, settings.showHiddenFiles),
-              STEP_TIMEOUT_MS,
-              `listDirectory(synced:${syncedPath.split('/').pop()})`,
-            );
-            if (tree) {
-              ws.addProject(syncedPath, tree);
-            }
-            // On timeout: skip this synced project but don't remove it
-          } catch {
-            // Expected: synced project directory may have been removed from iCloud
-            useSyncStore.getState().removeSyncedProject(syncedPath);
-          }
-        }));
-
-        try {
-          await withTimeout(
-            (async () => {
-              const found = await scanICloudForProjects(icloudNotesagePath);
-              if (found) {
-                await useSyncStore.getState().saveSettings(notesRoot);
-              }
-            })(),
-            STEP_TIMEOUT_MS,
-            "scanICloudForProjects",
-          );
-        } catch {
-          // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
-        }
-
-        await useSyncStore.getState().saveSettings(notesRoot);
-      }
+  // Scan iCloud Notesage for projects that arrived via iCloud sync
+  // from other devices. The previous "load sync settings + iterate
+  // syncedProjectPaths + addProject" loop is gone — synced projects
+  // are already in `ws.projects` from the persisted workspace state
+  // (their paths happen to start with the iCloud Notesage path), and
+  // the regular tree-validation loop above already refreshed them.
+  // What remains is the cross-device discovery scan: find any project
+  // folder under iCloud Notesage that ISN'T already in the workspace
+  // and add it.
+  if (icloudAvailable && icloudNotesagePath) {
+    try {
+      await withTimeout(
+        scanICloudForProjects(icloudNotesagePath),
+        STEP_TIMEOUT_MS,
+        "scanICloudForProjects",
+      );
+    } catch {
+      // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
     }
   }
 

@@ -1,30 +1,21 @@
 // @vitest-environment jsdom
 
 /**
- * Regression-lock test for issue #40 / PR #84 — iCloud sync getting
- * silently disabled on every app reload because of a stale Zustand
- * snapshot in `reloadTrees()`.
+ * Regression-lock test for issue #40 / PR #84 — iCloud sync used to
+ * get silently disabled on every app reload because of a stale Zustand
+ * snapshot in `reloadTrees()` (the `useSettingsStore` capture at the
+ * top of the function never picked up `setICloudAvailable(true)` later
+ * in the same function). PR #84 fixed the same-shape bug for the now-
+ * deleted `useSyncStore` but missed this one; commit `8884a61f`
+ * replaced the stale-snapshot read with a locally-computed
+ * `icloudAvailable` / `icloudNotesagePath`, killing the failure mode
+ * at the source.
  *
- * The bug: `reloadTrees()` captures `const settings =
- * useSettingsStore.getState()` at the top of the function. Later it
- * calls `tauriApi.getICloudPath()` and, on success, calls
- * `settings.setICloudAvailable(true)` to mutate the store. The local
- * `settings` snapshot is NOT refreshed, so the subsequent check
- * `if (!icloudNotesagePath || !settings.icloudAvailable)` reads the
- * stale `false` and the code disables iCloud sync + posts the
- * "iCloud is no longer available" toast.
- *
- * PR #84 fixed the same shape of bug for `useSyncStore` (introduced
- * `freshSync = useSyncStore.getState()` after `loadSettings()`) but
- * missed `useSettingsStore`. The fix in this file's commit replaces
- * the stale-snapshot read with locally-computed `icloudAvailable` /
- * `icloudNotesagePath` variables, eliminating the failure mode at
- * the source instead of band-aid re-reads.
- *
- * The test mocks `tauriApi.getICloudPath` to RESOLVE successfully
- * (the case PR #84's existing tests don't exercise — they mock it
- * to `null`, exiting the iCloud branch entirely) and asserts the
- * disable + toast path is NOT taken.
+ * Since the global iCloud-enabled toggle and `useSyncStore` itself
+ * have been removed, the test now just verifies the local-variables
+ * fix: when getICloudPath resolves to a real path, the code reaches
+ * the iCloud branch (calls scanICloudForProjects) and never falls
+ * through to a "no longer available" path.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -37,12 +28,9 @@ import '@/test/tauri-mock';
 // and the test body.
 const {
   settingsState,
-  syncState,
-  setICloudEnabledMock,
-  saveSyncSettingsMock,
-  loadSyncSettingsMock,
   getICloudPathMock,
   toastInfoMock,
+  scanICloudForProjectsMock,
 } = vi.hoisted(() => {
   const settingsState = {
     notesRootPath: '/Users/test/Notesage',
@@ -60,27 +48,14 @@ const {
     setICloudAvailable: vi.fn((v: boolean) => { settingsState.icloudAvailable = v; }),
     setICloudNotesagePath: vi.fn((p: string) => { settingsState.icloudNotesagePath = p; }),
   };
-  const setICloudEnabledMock = vi.fn();
-  const saveSyncSettingsMock = vi.fn().mockResolvedValue(undefined);
-  const loadSyncSettingsMock = vi.fn().mockResolvedValue(undefined);
-  const syncState = {
-    icloudEnabled: false,
-    syncedProjectPaths: [] as string[],
-    loadSettings: loadSyncSettingsMock,
-    saveSettings: saveSyncSettingsMock,
-    setICloudEnabled: setICloudEnabledMock,
-    removeSyncedProject: vi.fn(),
-  };
   const getICloudPathMock = vi.fn();
   const toastInfoMock = vi.fn();
+  const scanICloudForProjectsMock = vi.fn().mockResolvedValue(false);
   return {
     settingsState,
-    syncState,
-    setICloudEnabledMock,
-    saveSyncSettingsMock,
-    loadSyncSettingsMock,
     getICloudPathMock,
     toastInfoMock,
+    scanICloudForProjectsMock,
   };
 });
 
@@ -103,9 +78,6 @@ vi.mock('@/stores/workspace-store', () => ({
 }));
 vi.mock('@/stores/editor-store', () => ({
   useEditorStore: { getState: () => ({ openDocuments: [], setOpenDocuments: vi.fn(), persistedTabs: [], persistedActiveFilePath: null, loadTabContent: vi.fn() }) },
-}));
-vi.mock('@/stores/sync-store', () => ({
-  useSyncStore: { getState: () => syncState },
 }));
 vi.mock('@/stores/editor-styles-store', () => ({
   useEditorStylesStore: { getState: () => ({ loadSettings: vi.fn(), loadSystemFonts: vi.fn() }) },
@@ -137,7 +109,7 @@ vi.mock('@/lib/frontmatter', () => ({ parseFrontmatter: vi.fn(() => ({ frontmatt
 vi.mock('@/lib/file-utils', () => ({ getFileType: vi.fn(() => 'markdown'), isBinaryFileType: vi.fn(() => false) }));
 vi.mock('@/lib/binary-cache', () => ({ setBinaryData: vi.fn() }));
 vi.mock('@/lib/refresh-notes-tree', () => ({ refreshNotesTree: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('@/lib/scan-icloud-projects', () => ({ scanICloudForProjects: vi.fn().mockResolvedValue(false) }));
+vi.mock('@/lib/scan-icloud-projects', () => ({ scanICloudForProjects: scanICloudForProjectsMock }));
 vi.mock('@/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }, setLogLevel: vi.fn() }));
 
 vi.mock('sonner', () => ({ toast: { info: toastInfoMock, warning: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
@@ -148,34 +120,42 @@ describe('reloadTrees — iCloud detection (regression for #40 / PR #84)', () =>
   beforeEach(() => {
     settingsState.icloudAvailable = false;
     settingsState.icloudNotesagePath = null;
-    syncState.icloudEnabled = true;
-    syncState.syncedProjectPaths = [];
-    setICloudEnabledMock.mockReset();
-    saveSyncSettingsMock.mockReset();
-    loadSyncSettingsMock.mockReset().mockResolvedValue(undefined);
+    settingsState.setICloudAvailable.mockClear();
+    settingsState.setICloudNotesagePath.mockClear();
     toastInfoMock.mockReset();
     getICloudPathMock.mockReset();
+    scanICloudForProjectsMock.mockReset().mockResolvedValue(false);
   });
 
-  it('does NOT disable iCloud sync when getICloudPath resolves successfully', async () => {
-    // The bug: settings.icloudAvailable was a stale snapshot — captured at
-    // the top of reloadTrees (false) and never refreshed after the
-    // setICloudAvailable(true) call. The check then read stale `false`
-    // and triggered the disable path. Fix verified: with getICloudPath
-    // resolving to a real path and the user's icloudEnabled being true,
-    // the function must NOT call setICloudEnabled(false) and must NOT
-    // post the "iCloud is no longer available" toast.
+  it('marks iCloud available + scans for projects when getICloudPath resolves', async () => {
+    // Regression-lock: the stale-Zustand-snapshot bug used to skip the
+    // iCloud branch even when getICloudPath resolved successfully. The
+    // fix replaces the stale snapshot read with locally-computed
+    // booleans. With the fix in place: getICloudPath resolving to a
+    // real path means the store is marked available AND
+    // scanICloudForProjects runs (cross-device project discovery).
     getICloudPathMock.mockResolvedValue('/Users/test/Library/Mobile Documents/com~apple~CloudDocs');
 
     await reloadTrees();
 
-    expect(setICloudEnabledMock).not.toHaveBeenCalledWith(false);
+    expect(settingsState.setICloudAvailable).toHaveBeenCalledWith(true);
+    expect(settingsState.setICloudNotesagePath).toHaveBeenCalledWith(
+      '/Users/test/Library/Mobile Documents/com~apple~CloudDocs/Notesage',
+    );
+    expect(scanICloudForProjectsMock).toHaveBeenCalledWith(
+      '/Users/test/Library/Mobile Documents/com~apple~CloudDocs/Notesage',
+    );
     expect(toastInfoMock).not.toHaveBeenCalledWith(
       expect.stringContaining('iCloud is no longer available'),
     );
-    // Sanity: the iCloud-available branch did run (the store was marked
-    // available), so the assertions above aren't passing for an
-    // unrelated reason.
-    expect(settingsState.setICloudAvailable).toHaveBeenCalledWith(true);
+  });
+
+  it('does NOT scan when getICloudPath returns null', async () => {
+    getICloudPathMock.mockResolvedValue(null);
+
+    await reloadTrees();
+
+    expect(settingsState.setICloudAvailable).not.toHaveBeenCalled();
+    expect(scanICloudForProjectsMock).not.toHaveBeenCalled();
   });
 });

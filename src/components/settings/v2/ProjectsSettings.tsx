@@ -4,7 +4,6 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { tauriApi } from '@/lib/tauri';
 import { ProjectCard } from '../ProjectCard';
-import { SyncSettings as LegacySyncSettings } from '../SyncSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
@@ -23,9 +22,11 @@ function basename(path: string): string {
  * to reveal the full `<ProjectSettings>` form. The whole card row is
  * the accordion trigger — no separate gear icon.
  *
- * Global Version Control + iCloud Sync groups stay below for now (their
- * global on/off toggles affect cross-machine workflows; revisit
- * removing them in a follow-up batch).
+ * Global Version Control group stays below. The global iCloud Sync
+ * group was removed when sync state became a pure derivation from the
+ * project path (a project under iCloud Notesage = synced; anywhere
+ * else = local). Per-project sync (move-to/move-from iCloud) lives
+ * inside each ProjectCard now.
  */
 export function ProjectsSettings() {
   const projects = useWorkspaceStore((s) => s.projects);
@@ -103,16 +104,6 @@ export function ProjectsSettings() {
         )}
       </SettingsGroup>
 
-      <SettingsGroup label="iCloud Sync">
-        {/* Non-bare — the inner SyncSettings component now renders a
-            flat Enable toggle row that lives on the tinted island
-            (matches the Version Control group above). The legacy
-            duplicate "iCloud Sync" header inside SyncSettings was
-            dropped (live-test 2026-04-26). */}
-        <div className="py-1">
-          <LegacySyncSettings />
-        </div>
-      </SettingsGroup>
     </>
   );
 }

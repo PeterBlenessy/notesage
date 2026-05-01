@@ -49,7 +49,6 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
-import { useSyncStore } from "@/stores/sync-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { tauriApi } from "@/lib/tauri";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
@@ -489,13 +488,10 @@ function App() {
         if (ws.projects.length > 0) {
           target = ws.projects[0].path;
         } else {
-          const settings = useSettingsStore.getState();
-          const sync = useSyncStore.getState();
-          if (sync.icloudEnabled && sync.syncQuickNotes && settings.icloudNotesagePath) {
-            target = settings.icloudNotesagePath;
-          } else {
-            target = settings.notesRootPath;
-          }
+          // Quick Notes target = the user's notes root. If the notes root
+          // happens to live under iCloud Drive, Quick Notes are synced; if
+          // not, they're local. Either way, the path is `notesRootPath`.
+          target = useSettingsStore.getState().notesRootPath;
         }
       }
     }

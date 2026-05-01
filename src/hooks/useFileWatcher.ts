@@ -6,7 +6,6 @@ import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
-import { useSyncStore } from "@/stores/sync-store";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -127,12 +126,9 @@ export function useFileWatcher() {
                   if (useWorkspaceStore.getState().projects.some((p) => p.path === projectRoot)) return;
                   useWorkspaceStore.getState().addProject(projectRoot, tree);
 
-                  const syncStore = useSyncStore.getState();
-                  syncStore.addSyncedProject(projectRoot);
-                  const notesRoot = useSettingsStore.getState().notesRootPath;
-                  if (notesRoot) {
-                    await syncStore.saveSettings(notesRoot);
-                  }
+                  // The project's path is under iCloud Notesage, so it's
+                  // already "synced" by virtue of where it lives — no
+                  // separate sync-state bookkeeping required.
                 } catch {
                   // Expected: iCloud project discovery may fail for partially synced directories
                 }

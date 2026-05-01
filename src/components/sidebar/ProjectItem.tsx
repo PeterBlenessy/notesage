@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useSyncStore } from "@/stores/sync-store";
+import { useIsProjectSynced } from "@/lib/icloud-sync";
 import { useGitOperations } from "@/hooks/useGitOperations";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { toast } from "sonner";
@@ -64,7 +64,7 @@ export function ProjectItem({
     : null;
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
-  const isSynced = useSyncStore((s) => s.syncedProjectPaths.includes(projectPath));
+  const isSynced = useIsProjectSynced(projectPath);
   const { isGitRepo, initGit, initRepo } = useGitOperations(projectPath);
 
   // Initialize git when this project is first rendered (only if git is enabled)

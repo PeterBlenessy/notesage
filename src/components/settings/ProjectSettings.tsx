@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useSkillStore } from '@/stores/skill-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSyncStore } from '@/stores/sync-store';
+import { isProjectSynced } from '@/lib/icloud-sync';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -53,13 +53,6 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
   const connections = useConnectionsStore((s) => s.connections);
   const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
-  const {
-    icloudEnabled,
-    syncedProjectPaths,
-    addSyncedProject,
-    removeSyncedProject,
-    saveSettings,
-  } = useSyncStore();
 
   const [pendingSync, setPendingSync] = useState<boolean | null>(null);
   const [applying, setApplying] = useState(false);
@@ -77,12 +70,18 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
 
   const nameChanged = localName.trim() !== '' && localName !== (metadata?.name ?? '');
 
-  const isSynced = syncedProjectPaths.includes(projectPath);
+  // Sync state is derived from path — under the iCloud Notesage folder
+  // means synced, anywhere else means local. There is no separate flag.
+  const isSynced = isProjectSynced(projectPath, icloudNotesagePath);
   const displaySynced = pendingSync ?? isSynced;
   const syncChanged = pendingSync !== null && pendingSync !== isSynced;
 
-  // Show sync section for all projects when iCloud is enabled
-  const showSyncSection = icloudEnabled && icloudAvailable;
+  // Show the sync action whenever iCloud Drive is detected. There is
+  // no longer a global "Enable iCloud Sync" toggle to gate on — sync is
+  // a property of the path, and the only way to "enable" sync is to
+  // move the project under iCloud Drive (which this section's apply
+  // button does).
+  const showSyncSection = icloudAvailable;
 
   /** Confirm rename: rename the project folder on disk to localName. */
   const handleNameConfirm = useCallback(async () => {
@@ -119,12 +118,8 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
       await tauriApi.renamePath(projectPath, newPath);
       await migrateProjectPath(projectPath, newPath);
 
-      // Update synced project path if applicable
-      if (syncedProjectPaths.includes(projectPath)) {
-        const syncStore = useSyncStore.getState();
-        syncStore.updateProjectPath(projectPath, newPath);
-        await syncStore.saveSettings(notesRootPath!);
-      }
+      // No global sync state to update — sync is derived from the path,
+      // so the rename's path change IS the state update.
 
       onPathChanged?.(newPath);
       toast.success(`Project folder renamed to "${newName}"`);
@@ -134,7 +129,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     } finally {
       setRenaming(false);
     }
-  }, [metadata, localName, projectPath, renaming, updateMetadata, syncedProjectPaths, notesRootPath, onPathChanged]);
+  }, [metadata, localName, projectPath, renaming, updateMetadata, onPathChanged]);
 
   const handleNameCancel = useCallback(() => {
     if (metadata) {
@@ -152,38 +147,28 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     setApplying(true);
     try {
       if (pendingSync && icloudNotesagePath) {
-        // Check if the project is already in the iCloud Notesage folder
-        const alreadyInICloud = projectPath.startsWith(icloudNotesagePath + "/");
-        if (alreadyInICloud) {
-          // Already in iCloud — just register as synced, no migration needed
-          addSyncedProject(projectPath);
-          await saveSettings(notesRootPath);
-          toast.success("Project marked as synced to iCloud");
-        } else {
-          // Enable sync: move to iCloud
-          const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
-          await migrateProjectPath(projectPath, newPath);
-          addSyncedProject(newPath);
-          await saveSettings(notesRootPath);
-          onPathChanged?.(newPath);
-          toast.success("Project synced to iCloud");
-        }
+        // Move the project under iCloud Notesage. The path change after
+        // migrateToICloud + migrateProjectPath flips `isProjectSynced`
+        // automatically — no separate "register as synced" step.
+        const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
+        await migrateProjectPath(projectPath, newPath);
+        onPathChanged?.(newPath);
+        toast.success("Project moved to iCloud Drive");
       } else if (!pendingSync && notesRootPath) {
-        // Disable sync: move back to local
+        // Move the project back out of iCloud to the local library.
+        // Same logic: the path change IS the state change.
         const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
         await migrateProjectPath(projectPath, newPath);
-        removeSyncedProject(projectPath);
-        await saveSettings(notesRootPath);
         onPathChanged?.(newPath);
         toast.success("Project moved to local library");
       }
     } catch (err) {
-      toast.error(`Failed to ${pendingSync ? "sync" : "unsync"} project: ${err}`);
+      toast.error(`Failed to ${pendingSync ? "move to iCloud" : "move to local"}: ${err}`);
     } finally {
       setPendingSync(null);
       setApplying(false);
     }
-  }, [pendingSync, projectPath, icloudNotesagePath, notesRootPath, addSyncedProject, removeSyncedProject, saveSettings, onPathChanged]);
+  }, [pendingSync, projectPath, icloudNotesagePath, notesRootPath, onPathChanged]);
 
   const allAgents = metadata ? getUserInvocableAgents() : [];
   const selectedConnection = metadata ? connections.find((c) => c.id === metadata.ai.provider) : undefined;

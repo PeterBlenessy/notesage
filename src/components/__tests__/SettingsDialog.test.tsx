@@ -33,10 +33,6 @@ vi.mock('@/components/settings/PromptsSettings', () => ({
   PromptsSettings: () => null,
 }));
 
-vi.mock('@/components/settings/SyncSettings', () => ({
-  SyncSettings: () => null,
-}));
-
 vi.mock('@/components/settings/SkillsSettings', () => ({
   SkillsSettings: () => null,
 }));
@@ -136,7 +132,6 @@ describe('SettingsDialog', () => {
       'Skills & Agents',
       'Transcription',
       'Version Control',
-      'Sync',
       'Advanced',
       'About',
     ];

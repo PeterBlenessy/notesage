@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { tauriApi } from '@/lib/tauri';
 import { migrateProjectPath } from '@/lib/migrate-project-path';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
-import { useSyncStore } from '@/stores/sync-store';
+import { useIsProjectSynced } from '@/lib/icloud-sync';
 import { useGitStore } from '@/stores/git-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -88,9 +88,7 @@ function ActionPill({
 export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
   const metadata = useProjectMetadataStore((s) => s.getMetadata(projectPath));
   const updateMetadata = useProjectMetadataStore((s) => s.updateMetadata);
-  const isSynced = useSyncStore((s) =>
-    s.syncedProjectPaths.includes(projectPath),
-  );
+  const isSynced = useIsProjectSynced(projectPath);
   const isGitRepo = useGitStore(
     (s) => s.repos[projectPath]?.isGitRepo ?? false,
   );
@@ -103,7 +101,6 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
   const clearAiLock = useProjectMetadataStore((s) => s.clearAiLock);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } =
     useSettingsStore();
-  const { addSyncedProject, removeSyncedProject, saveSettings } = useSyncStore();
 
   // Inline edit state — view mode shows text, edit mode swaps in an
   // input with save/cancel affordances.
@@ -243,37 +240,27 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
     setBusy(true);
     try {
       if (enable && icloudNotesagePath) {
-        const alreadyInICloud = projectPath.startsWith(
-          icloudNotesagePath + '/',
+        // Move under iCloud Notesage. The path change after the
+        // migration flips `isProjectSynced` on its own — there is no
+        // separate sync flag to update.
+        const newPath = await tauriApi.migrateToICloud(
+          projectPath,
+          icloudNotesagePath,
         );
-        if (alreadyInICloud) {
-          addSyncedProject(projectPath);
-          await saveSettings(notesRootPath);
-          toast.success('Project marked as synced to iCloud');
-        } else {
-          const newPath = await tauriApi.migrateToICloud(
-            projectPath,
-            icloudNotesagePath,
-          );
-          await migrateProjectPath(projectPath, newPath);
-          addSyncedProject(newPath);
-          await saveSettings(notesRootPath);
-          onPathChanged?.(newPath);
-          toast.success('Project synced to iCloud');
-        }
+        await migrateProjectPath(projectPath, newPath);
+        onPathChanged?.(newPath);
+        toast.success('Project moved to iCloud Drive');
       } else if (!enable && notesRootPath) {
         const newPath = await tauriApi.migrateFromICloud(
           projectPath,
           notesRootPath,
         );
         await migrateProjectPath(projectPath, newPath);
-        removeSyncedProject(projectPath);
-        await saveSettings(notesRootPath);
         onPathChanged?.(newPath);
         toast.success('Project moved to local library');
       }
     } catch (err) {
-      toast.error(`Failed to ${enable ? 'sync' : 'unsync'}: ${err}`);
+      toast.error(`Failed to ${enable ? 'move to iCloud' : 'move to local'}: ${err}`);
     } finally {
       setBusy(false);
     }

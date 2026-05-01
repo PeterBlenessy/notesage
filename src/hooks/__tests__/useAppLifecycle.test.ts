@@ -82,10 +82,6 @@ vi.mock('@/stores/editor-store', () => ({
   },
 }));
 
-vi.mock('@/stores/sync-store', () => ({
-  useSyncStore: { getState: () => ({ icloudEnabled: false, syncedProjectPaths: [], loadSettings: vi.fn(), saveSettings: vi.fn(), setICloudEnabled: vi.fn(), removeSyncedProject: vi.fn() }) },
-}));
-
 vi.mock('@/stores/editor-styles-store', () => ({
   useEditorStylesStore: { getState: () => ({ loadSettings: vi.fn(), loadSystemFonts: vi.fn() }) },
 }));

@@ -7,7 +7,6 @@ import { ProjectSettings } from '@/components/settings/ProjectSettings';
 import { useProjectMetadataStore, createDefaultMetadata } from '@/stores/project-metadata-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSyncStore } from '@/stores/sync-store';
 import type { Connection } from '@/lib/ai/connections';
 
 vi.mock('@/stores/skill-store', () => ({
@@ -66,10 +65,6 @@ describe('ProjectSettings — AI Provider Lock', () => {
       icloudAvailable: false,
       icloudNotesagePath: null,
       notesRootPath: '/test/notes',
-    });
-    useSyncStore.setState({
-      icloudEnabled: false,
-      syncedProjectPaths: [],
     });
     seedConnections();
   });

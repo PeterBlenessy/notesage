@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw, ShieldCheck, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,6 @@ import {
 import { ConnectionsSettings } from './ConnectionsSettings';
 import { UseCaseRoutingSettings } from './UseCaseRoutingSettings';
 import { PromptsSettings } from './PromptsSettings';
-import { SyncSettings } from './SyncSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { TranscriptionSettings } from './TranscriptionSettings';
 import { LocalAISettings } from './LocalAISettings';
@@ -55,7 +54,7 @@ import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'general' | 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'privacy' | 'developer' | 'about';
+export type SettingsTab = 'general' | 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'privacy' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -85,7 +84,6 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'skills', label: 'Skills & Agents', icon: Blocks },
   { id: 'transcription', label: 'Transcription', icon: Mic },
   { id: 'git', label: 'Version Control', icon: GitBranch },
-  { id: 'sync', label: 'Sync', icon: Cloud },
   { id: 'privacy', label: 'Privacy', icon: ShieldCheck },
   { id: 'developer', label: 'Advanced', icon: Code },
   { id: 'about', label: 'About', icon: Info },
@@ -1094,11 +1092,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-            {activeTab === 'sync' && (
-              <div className="p-6">
-                <SyncSettings />
               </div>
             )}
             {activeTab === 'privacy' && (

@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useSyncStore } from "@/stores/sync-store";
 
 /**
  * Start filesystem watchers for all relevant directories.
@@ -12,7 +11,6 @@ export function useStartWatchers() {
   const startupReady = useSettingsStore((s) => s.startupReady);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
-  const icloudEnabled = useSyncStore((s) => s.icloudEnabled);
   const projects = useWorkspaceStore((s) => s.projects);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
 
@@ -27,8 +25,10 @@ export function useStartWatchers() {
       paths.push(notesRootPath);
     }
 
-    // iCloud Notesage folder (when sync is enabled)
-    if (icloudEnabled && icloudNotesagePath) {
+    // iCloud Notesage folder (when iCloud Drive is detected). Watching
+    // it lets useFileWatcher.ts pick up newly-arrived projects from
+    // other devices and add them to the workspace.
+    if (icloudNotesagePath) {
       paths.push(icloudNotesagePath);
     }
 
@@ -56,5 +56,5 @@ export function useStartWatchers() {
         console.error(`Failed to watch ${notesageDir}:`, err);
       });
     });
-  }, [startupReady, notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerFolders]);
+  }, [startupReady, notesRootPath, icloudNotesagePath, projects, explorerFolders]);
 }
