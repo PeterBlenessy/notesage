@@ -58,6 +58,34 @@ flowchart TD
   class Z,W,H,FAIL,P,E stop
 ```
 
+The two pause points in this diagram (`Idle: hitl` and `Draft PR`) are not dead ends. Human comments at either point fire `aw-feedback`, which routes the agent back to any earlier stage based on the comment's intent. Small in-place code tweaks on the PR are handled by `aw-iterate` instead of a full re-implementation. See the feedback-loop diagram below.
+
+### Feedback loops (aw-feedback + aw-iterate)
+
+```mermaid
+flowchart TD
+  H[Idle: hitl on issue] -.->|human comment| FB[aw-feedback]
+  G[Draft PR by claude-bot] -.->|comment or review| FB
+  FB -.->|approve / lgtm| AP[hitl → afk<br/>or gh pr ready]
+  FB -.->|redo scope<br/>acceptance criteria wrong| RC[Close PR if any +<br/>reset issue to refine]
+  FB -.->|wrong slicing| RS[Close PR if any +<br/>reset issue to slice]
+  FB -.->|wrong implementation,<br/>scope still right| RT[Close PR +<br/>reset issue to tdd + afk]
+  FB -.->|specific small change<br/>rename / extract / add case| IT[aw-iterate]
+  FB -.->|chat / unclear| Q[Reply asking<br/>for clarification]
+  IT -.->|≤200 lines, ≤5 files,<br/>hard gates pass| PUSH[New commit<br/>on PR branch]
+  IT -.->|too big or scope-changing| DEFL[Deflection comment<br/>suggesting reset]
+
+  classDef skill fill:#1d76db,stroke:#fff,color:#fff
+  classDef feedback fill:#d4a017,stroke:#fff,color:#fff
+  classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
+  classDef stop fill:#cccccc,stroke:#666,color:#000
+  class FB,IT feedback
+  class H,G,AP,RC,RS,RT,DEFL,Q stop
+  class PUSH terminal
+```
+
+`aw-feedback` is the only skill that NEVER generates code. It only changes labels and PR state. Code changes (even tiny ones) go through `aw-iterate`, which checks out the existing PR branch, applies the same hard gates as `aw-tdd` (red-green-refactor where new behavior is added, full test suite, typecheck, no unrelated files), and pushes one commit. If the requested change is too big for safe in-place iteration, `aw-iterate` deflects back to `aw-feedback`'s reset paths — a small wrong commit pollutes the PR; a deflection is recoverable.
+
 ## Label scheme
 
 Labels are the state of the system.
