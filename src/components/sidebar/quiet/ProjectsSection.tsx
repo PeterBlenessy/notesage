@@ -306,9 +306,10 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // expandedPaths.
   const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
 
-  // Task #40 — inline rename for child FILE rows. Project roots are NOT
-  // renameable in this task (bigger blast radius; separate follow-up).
+  // Task #40 — inline rename for child FILE rows.
+  // Issue #89 — project root rename added here.
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(null);
   const { renamePath, createFile, createFolder, openFile } = useFileOperations();
 
   // Task #41 — inline create note. The pending signal comes from either the
@@ -482,6 +483,24 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     [renamePath],
   );
 
+  const cancelProjectRootRename = useCallback(() => setRenamingProjectPath(null), []);
+  const commitProjectRootRename = useCallback(
+    async (oldPath: string, newBasename: string) => {
+      setRenamingProjectPath(null);
+      const oldName = pathBasename(oldPath);
+      if (newBasename === oldName) return;
+      const newPath = resolveRenamePath(oldPath, newBasename, true);
+      try {
+        await renamePath(oldPath, newPath);
+        useWorkspaceStore.getState().updateProjectPath(oldPath, newPath, []);
+        toast.success(`Renamed to ${pathBasename(newPath)}`);
+      } catch (error) {
+        toast.error(`Failed to rename: ${error}`);
+      }
+    },
+    [renamePath],
+  );
+
   // Roving tabindex: only one row is focusable at a time. `focusedRowId`
   // stays in sync with the DOM via the keydown handlers, and unrelated
   // clicks / pointer focus also update it so Tab returning to the section
@@ -611,6 +630,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       const detail = (event as CustomEvent<{ filePath: string }>).detail;
       if (!detail?.filePath) return;
       if (!visibleChildPaths.has(detail.filePath)) return;
+      if (pathBasename(detail.filePath).startsWith(".")) return;
       setRenamingPath(detail.filePath);
     }
     window.addEventListener(
@@ -665,6 +685,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const handleProjectKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, project: WorkspaceProject) => {
+      if (event.key === "F2") {
+        event.preventDefault();
+        setRenamingProjectPath(project.path);
+        return;
+      }
       // #80 — keyboard context-menu gesture (Menu key / Shift+F10 / ⌘⇧,).
       // Synthesises a contextmenu event on the focused row so the project's
       // SidebarContextMenu opens from the keyboard. Currently no
@@ -733,7 +758,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         toggleExpanded(project.path, !isExpanded);
       }
     },
-    [expandedPaths, rows, focusRow, toggleExpanded, openProject, showHiddenFiles],
+    [expandedPaths, rows, focusRow, toggleExpanded, openProject, showHiddenFiles, setRenamingProjectPath],
   );
 
   const handleChildKeyDown = useCallback(
@@ -892,6 +917,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         isExpanded={isExpanded}
                         isFocused={focusedRowId === project.path}
                         hasFocusWithin={focusedRowId !== null}
+                        isRenaming={renamingProjectPath === project.path}
                         // Live-test 2026-04-28 finding #1 — clicking
                         // a project row now toggles inline-expand
                         // instead of opening the README. README is
@@ -905,6 +931,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         onKeyDown={(e) => handleProjectKeyDown(e, project)}
                         onFocus={() => setFocusedRowId(project.path)}
                         onAddNote={() => handleAddToProject(project.path)}
+                        onEnterRenameMode={() => setRenamingProjectPath(project.path)}
+                        onCommitRename={(newBasename) => void commitProjectRootRename(project.path, newBasename)}
+                        onCancelRename={cancelProjectRootRename}
                         registerRef={(el) =>
                           rowRefs.current.set(project.path, el)
                         }
@@ -1091,10 +1120,14 @@ interface ProjectRowProps {
   isExpanded: boolean;
   isFocused: boolean;
   hasFocusWithin: boolean;
+  isRenaming: boolean;
   onOpen: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
   onAddNote: () => void;
+  onEnterRenameMode: () => void;
+  onCommitRename: (newBasename: string) => void;
+  onCancelRename: () => void;
   registerRef: (el: HTMLDivElement | null) => void;
 }
 
@@ -1104,10 +1137,14 @@ function ProjectRow({
   isExpanded,
   isFocused,
   hasFocusWithin,
+  isRenaming,
   onOpen,
   onKeyDown,
   onFocus,
   onAddNote,
+  onEnterRenameMode,
+  onCommitRename,
+  onCancelRename,
   registerRef,
 }: ProjectRowProps) {
   const name = useMemo(() => projectBasename(project.path), [project.path]);
@@ -1126,6 +1163,16 @@ function ProjectRow({
   // section has no focused row yet.
   const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
 
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.detail === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+      onEnterRenameMode();
+      return;
+    }
+    onOpen();
+  };
+
   return (
     <div
       ref={registerRef}
@@ -1138,8 +1185,8 @@ function ProjectRow({
       data-active={isActive ? "true" : undefined}
       data-row-type="project"
       tabIndex={tabIndex}
-      onClick={onOpen}
-      onKeyDown={onKeyDown}
+      onClick={isRenaming ? undefined : handleClick}
+      onKeyDown={isRenaming ? undefined : onKeyDown}
       onFocus={onFocus}
       className={cn(
         "group/row h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
@@ -1179,64 +1226,63 @@ function ProjectRow({
           aria-hidden="true"
         />
       )}
-      <span className="truncate min-w-0 flex-1">{name}</span>
-      {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
-         *  the aggregate git "●" glyph when any file inside the project
-         *  has changes, and the pending-external-change dot. */}
-      <SidebarRowIndicators path={project.path} kind="project" />
-      {/* Live-test 2026-04-25 — alignment, take 2. The number stays
-       *  RIGHT-ALIGNED at the row's right padding edge (matching the
-       *  Pinned/Recent time hints, which use `ml-auto` to anchor to
-       *  the same edge). The hover `+` button overlays the slot at
-       *  the same right edge — the button is 24×24 so its centre sits
-       *  12 px in from the right edge, exactly matching the section-
-       *  header `+` centre. Slot height bumped to h-6 (24 px) so the
-       *  button's hover highlight is no longer clipped by an h-5 slot
-       *  bound. `min-w-6` keeps the slot at least button-wide while
-       *  letting wider numbers (3+ digits) push the slot out without
-       *  pushing the button glyph off-centre. */}
-      <span
-        className="relative inline-flex h-6 min-w-6 items-center justify-end shrink-0"
-        aria-hidden={fileCount === null ? undefined : "false"}
-      >
-        {/* Live-test 2026-04-28 finding #5 — count stays visible during
-            keyboard focus. The hover-hide stays so the per-row `+`
-            button (mouse-hover-only since the audit-#11 follow-up)
-            doesn't visually overlap the count when revealed. */}
-        {fileCount !== null && (
-          <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 transition-opacity duration-150">
-            {fileCount}
+      {isRenaming ? (
+        <SidebarInlineEdit
+          mode="rename"
+          initialValue={name}
+          validate={validateRenameBasename}
+          onCommit={onCommitRename}
+          onCancel={onCancelRename}
+          className="flex-1 min-w-0"
+        />
+      ) : (
+        <>
+          <span className="truncate min-w-0 flex-1">{name}</span>
+          {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
+             *  the aggregate git "●" glyph when any file inside the project
+             *  has changes, and the pending-external-change dot. */}
+          <SidebarRowIndicators path={project.path} kind="project" />
+          {/* Live-test 2026-04-25 — alignment, take 2. The number stays
+           *  RIGHT-ALIGNED at the row's right padding edge (matching the
+           *  Pinned/Recent time hints, which use `ml-auto` to anchor to
+           *  the same edge). The hover `+` button overlays the slot at
+           *  the same right edge — the button is 24×24 so its centre sits
+           *  12 px in from the right edge, exactly matching the section-
+           *  header `+` centre. Slot height bumped to h-6 (24 px) so the
+           *  button's hover highlight is no longer clipped by an h-5 slot
+           *  bound. `min-w-6` keeps the slot at least button-wide while
+           *  letting wider numbers (3+ digits) push the slot out without
+           *  pushing the button glyph off-centre. */}
+          <span
+            className="relative inline-flex h-6 min-w-6 items-center justify-end shrink-0"
+            aria-hidden={fileCount === null ? undefined : "false"}
+          >
+            {/* Live-test 2026-04-28 finding #5 — count stays visible during
+                keyboard focus. The hover-hide stays so the per-row `+`
+                button (mouse-hover-only since the audit-#11 follow-up)
+                doesn't visually overlap the count when revealed. */}
+            {fileCount !== null && (
+              <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 transition-opacity duration-150">
+                {fileCount}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`New note in ${name}`}
+              tabIndex={-1}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAddNote();
+              }}
+              className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150"
+            >
+              <Plus strokeWidth={1.5} />
+            </Button>
           </span>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`New note in ${name}`}
-          tabIndex={-1}
-          onClick={(event) => {
-            event.stopPropagation();
-            onAddNote();
-          }}
-          // Anchor the button to the slot's top-right. The button is
-          // 24×24 (size-icon-xs) and the slot is h-6 (24 px), so it
-          // fills the vertical space exactly — no clipping. Right edge
-          // = slot right = row right - px-2 (8 px), so its centre lines
-          // up with the section-header `+` centre (row right - 20 px).
-          //
-          // Visibility = mouse-hover ONLY. We dropped
-          // `group-focus-within/row:opacity-100` and
-          // `focus-visible:opacity-100` (audit 2026-04-27 finding #11
-          // follow-up): the `+` is a discoverability affordance for
-          // mouse users, and showing it inside the keyboard focus ring
-          // cluttered the focused row. Keyboard users reach "new note
-          // in <project>" via the right-click context menu or `⌘N`
-          // while a project row is focused.
-          className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150"
-        >
-          <Plus strokeWidth={1.5} />
-        </Button>
-      </span>
+        </>
+      )}
     </div>
   );
 }
@@ -1362,7 +1408,9 @@ function ChildRow({
     if (event.detail === 2) {
       event.preventDefault();
       event.stopPropagation();
-      onStartRename(entry.path);
+      if (!entry.name.startsWith(".")) {
+        onStartRename(entry.path);
+      }
       return;
     }
     onActivate();

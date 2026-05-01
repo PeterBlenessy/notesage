@@ -96,7 +96,7 @@ export function SidebarInlineEdit({
         aria-label={mode === "rename" ? "Rename" : "Create"}
         aria-invalid={validationError ? true : undefined}
         aria-describedby={validationError ? errorId : undefined}
-        className="h-7 px-2 py-0 text-sm"
+        className="h-7 px-2 py-0 text-sm overflow-x-auto"
       />
       {validationError ? (
         <span
