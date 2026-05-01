@@ -292,7 +292,7 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 
 ## Working with the system
 
-**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`, create `.github/workflows/aw-<name>.yml` mirroring an existing standalone (precheck + claude-code-action), add the new action label(s), wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. Update this doc.
+**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`. Add a new job to `aw-sweep.yml` with the precheck-first pattern (gh + jq precheck as step 1, checkout + skill invocation gated on `if: steps.find.outputs.candidate != ''`). Create `.github/workflows/aw-<name>.yml` for `workflow_dispatch` + `issues.labeled` (mirror an existing standalone — precheck + claude-code-action with `github_token: ${{ secrets.GITHUB_TOKEN }}` and `allowed_bots: "github-actions[bot]"`). Add the new action label(s). Wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. If the skill is reachable from `aw-feedback`, add the matching `gh workflow run aw-<name>.yml --field issue_number=N` to the relevant action block in `aw-feedback`'s SKILL.md. Update this doc.
 
 **Renaming a label:** `gh label edit <old> --name <new>`. Updates all existing issues automatically. Then update SKILL.md and workflow YAML references.
 
@@ -318,5 +318,6 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 - **AFK** — agent-OK-to-run-autonomously. `afk`-labeled issue is picked up by aw-tdd without approval.
 - **Hard gate** — a check in aw-tdd that aborts the run on failure (red-not-red, tests fail, typecheck fail, unrelated files modified).
 - **Pipeline workflow** — `aw-pipeline.yml`. Single workflow with sequential jobs that runs the happy path on issue creation.
-- **Standalone workflow** — `aw-triage.yml`, etc. Backstops on cron + dispatch.
+- **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. Manual-and-targeted entry points (`workflow_dispatch` + `issues.labeled`). Cron-driven discovery happens in `aw-sweep.yml`, not here.
+- **Sweep workflow** — `aw-sweep.yml`. The single cron-driven backstop. Four parallel jobs (one per pipeline stage) with precheck-first gating so idle ticks finish in \~20s with no checkouts and no installs.
 - **Retro PR** — draft PR opened by aw-retrospect proposing a SKILL.md patch.
