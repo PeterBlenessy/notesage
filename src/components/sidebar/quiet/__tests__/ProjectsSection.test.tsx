@@ -805,6 +805,160 @@ describe('ProjectsSection — inline rename (#40)', () => {
 });
 
 // ----------------------------------------------------------------------------
+// Task #62 — folder double-click rename
+// ----------------------------------------------------------------------------
+
+describe('ProjectsSection — folder double-click rename (#62)', () => {
+  const project: WorkspaceProject = {
+    path: '/Users/me/Notesage/alpha',
+    fileTree: [
+      makeFile('note.md', '/Users/me/Notesage/alpha/note.md'),
+      makeDir('docs', '/Users/me/Notesage/alpha/docs', [
+        makeFile('intro.md', '/Users/me/Notesage/alpha/docs/intro.md'),
+      ]),
+    ],
+  };
+
+  it('double-clicking a directory child row renders SidebarInlineEdit with the folder basename', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' }); // expand
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder docs/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('docs');
+    // Must NOT open the folder.
+    expect(mockOpenFile).not.toHaveBeenCalled();
+  });
+
+  it('committing a folder rename calls renamePath with the new folder path', async () => {
+    const user = userEvent.setup();
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder docs/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, 'documents{Enter}');
+
+    await waitFor(() => {
+      expect(mockRenamePath).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha/docs',
+        '/Users/me/Notesage/alpha/documents',
+      );
+    });
+  });
+
+  it('Escape cancels folder rename without calling renamePath', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder docs/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = await screen.findByLabelText(/rename/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    });
+    expect(mockRenamePath).not.toHaveBeenCalled();
+  });
+
+  it('double-clicking a project-root row does NOT render SidebarInlineEdit', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    fireEvent.click(projectRow, { detail: 2 });
+
+    // Give React time to render any side-effects
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT on a visible folder path enters rename mode', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Expand the project so docs/ is visible.
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/alpha/docs' },
+      }),
+    );
+
+    const input = await screen.findByLabelText(/rename/i);
+    expect(input).toBeTruthy();
+  });
+
+  it('renaming a folder named "my.folder" preserves no extension (treated as directory)', async () => {
+    const user = userEvent.setup();
+    const projectWithDottedFolder: WorkspaceProject = {
+      path: '/Users/me/Notesage/alpha',
+      fileTree: [
+        makeDir('my.folder', '/Users/me/Notesage/alpha/my.folder'),
+      ],
+    };
+    setProjects([projectWithDottedFolder]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder my\.folder/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, 'my-folder{Enter}');
+
+    await waitFor(() => {
+      // isDirectory=true → resolveRenamePath must NOT preserve ".folder" extension
+      expect(mockRenamePath).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha/my.folder',
+        '/Users/me/Notesage/alpha/my-folder',
+      );
+    });
+  });
+});
+
+// ----------------------------------------------------------------------------
 // Task #41 — inline create note
 // ----------------------------------------------------------------------------
 
