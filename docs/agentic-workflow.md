@@ -1,6 +1,6 @@
 # Agentic Workflow (AW)
 
-The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Five Claude Code skills, six GitHub Actions workflows, coordinated through a label state machine.
+The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Seven Claude Code skills, eight GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed.
 
 This document captures the system as it stands today and the design choices that shaped it. Skill rules live in `.claude/skills/aw-<name>/SKILL.md` (the source of truth for agent behavior).
 
@@ -94,6 +94,8 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants) | `refine` label set | `+ refined`, `+ slice` |
 | `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: `+ tdd` + `afk`-or-`hitl`, OR N peer issues + first slice = original, OR `+ awaiting-research` |
 | `aw-tdd` | TDD red-green-refactor + draft PR | `tdd + afk + refined + category` | `+ review`, draft PR |
+| `aw-feedback` | Interpret human comment on hitl issue or claude\[bot\] PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on claude\[bot\] PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
+| `aw-iterate` | Push small follow-up commit on existing draft PR | `workflow_dispatch` from aw-feedback | new commit on PR branch (or deflection comment if change is too big) |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
 
 **The slice decision** is the most important skill rule. aw-slice asks: "what user values does this issue deliver?" Each value is a sentence "User can \[observable behaviour\]." Then:
@@ -106,7 +108,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Six workflow files. One *pipeline* + four *standalones* + one *retrospect*.
+Eight workflow files. One *pipeline* + four *standalones* + one *retrospect* + two *feedback loops*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -116,6 +118,8 @@ Six workflow files. One *pipeline* + four *standalones* + one *retrospect*.
 | `aw-slice.yml` | cron, dispatch, `issues.labeled` (human-added `slice` only) | Backstop + post-research re-slice path |
 | `aw-tdd.yml` | cron, dispatch, `issues.labeled` (human-added `afk` only) | Backstop + instant-response on hitl→afk flip |
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
+| `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or claude\[bot\] PRs; redirect pipeline. |
+| `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
 
 Each workflow has a bash precheck that finds candidates before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
@@ -202,6 +206,23 @@ Exception (added by retrospective): tests that cover existing unchanged code pat
 Every issue that reaches the `tdd` action label gets exactly one of `afk` (agent runs autonomously) or `hitl` (human approves first). aw-slice picks via heuristics: `hitl` for public API change / schema migration / security policy / many-caller refactor / design-judgment / research; `afk` for localized, observable, well-tested. Default `hitl` when uncertain.
 
 This is the only autonomy gate besides "draft PR" (always required). Without it, every issue would auto-execute as soon as it reaches `tdd`, with no human review until the PR opens. With it, a human can flip `hitl → afk` after a quick review.
+
+### Choice: human feedback as a first-class loop (aw-feedback + aw-iterate)
+
+A `hitl` label without a feedback handler is a one-way pause signal — the human gets blocked but has no way to redirect the agent without manually editing labels. We made human feedback a real conversation gate.
+
+`aw-feedback` runs on every comment/review on a hitl-labeled issue or claude\[bot\]-authored PR. It interprets the human's natural language and decides which pipeline stage to redirect to:
+
+- "approve" / "lgtm" → `hitl → afk` (proceed) or `gh pr ready` (mark PR review-ready)
+- "redo scope" / "acceptance criteria are wrong" → reset to `refine` (re-runs aw-refine with the comment as context)
+- "wrong slicing" → reset to `slice`
+- "wrong implementation" → close PR + reset to `tdd + afk`
+- "rename X" / "extract Y" → dispatch `aw-iterate` to push a follow-up commit on the existing branch
+- chat / unclear → reply asking for clarification
+
+`aw-iterate` is the in-place PR iteration skill. When the requested change is small and specific (≤200 lines added, ≤5 files, bounded scope), it checks out the PR's branch, makes the change with the same hard gates as aw-tdd (red-green-refactor, full test suite, no unrelated files), and pushes a follow-up commit. For changes that exceed the budget, it deflects back to label-reset (close + reset to refine/tdd).
+
+This closes the conversation loop. The agent can be redirected from ANY pause point to ANY earlier pipeline stage based on the human's natural-language comment — no slash commands, no manual label edits.
 
 ### Choice: aw-retrospect on every merge
 
