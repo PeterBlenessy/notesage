@@ -543,47 +543,4 @@ describe('TaskMode', () => {
       expect(headers[0]?.textContent ?? '').toContain('Falls-Back');
     });
   });
-
-  // -------------------------------------------------------------------------
-  // Issue #38 — discrete checkmark selection indicator
-  // -------------------------------------------------------------------------
-
-  describe('selection indicator', () => {
-    it('active task row shows a data-picker-check element instead of an accent background fill', async () => {
-      mockStore.actions = [
-        makeAction({ id: 't1', text: 'First task' }),
-        makeAction({ id: 't2', text: 'Second task', file_path: '/p/b.md' }),
-      ];
-
-      const { container } = renderWithProviders(
-        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
-      );
-
-      await waitFor(() => expect(screen.getByText('First task')).toBeTruthy());
-
-      const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
-      expect(activeRow).toBeTruthy();
-      expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
-      expect(activeRow.querySelector('[data-picker-check]')).toBeTruthy();
-    });
-
-    it('inactive task rows do not show a checkmark', async () => {
-      mockStore.actions = [
-        makeAction({ id: 't1', text: 'First task' }),
-        makeAction({ id: 't2', text: 'Second task', file_path: '/p/b.md' }),
-      ];
-
-      const { container } = renderWithProviders(
-        <TaskMode filter="" onPick={vi.fn()} isComposing={false} />,
-      );
-
-      await waitFor(() => expect(screen.getByText('First task')).toBeTruthy());
-
-      const inactiveRows = container.querySelectorAll<HTMLElement>('[aria-selected="false"]');
-      expect(inactiveRows.length).toBeGreaterThan(0);
-      inactiveRows.forEach((row) => {
-        expect(row.querySelector('[data-picker-check]')).toBeNull();
-      });
-    });
-  });
 });

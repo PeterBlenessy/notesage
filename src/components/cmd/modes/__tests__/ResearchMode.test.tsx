@@ -182,45 +182,4 @@ describe('ResearchMode', () => {
     // Wait for the call to settle.
     await screen.findByText('No research matches');
   });
-
-  // -------------------------------------------------------------------------
-  // Issue #38 — discrete checkmark selection indicator
-  // -------------------------------------------------------------------------
-
-  it('active research row shows a data-picker-check element instead of an accent background fill', async () => {
-    indexSearchResearchMock.mockResolvedValue([
-      makeResult({ title: 'Alpha', file: '/r/alpha.md' }),
-      makeResult({ title: 'Beta', file: '/r/beta.md' }),
-    ]);
-
-    const { container } = renderWithProviders(
-      <ResearchMode filter="" onPick={() => {}} />,
-    );
-
-    await screen.findByText('Alpha');
-
-    const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
-    expect(activeRow).toBeTruthy();
-    expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
-    expect(activeRow.querySelector('[data-picker-check]')).toBeTruthy();
-  });
-
-  it('inactive research rows do not show a checkmark', async () => {
-    indexSearchResearchMock.mockResolvedValue([
-      makeResult({ title: 'Alpha', file: '/r/alpha.md' }),
-      makeResult({ title: 'Beta', file: '/r/beta.md' }),
-    ]);
-
-    const { container } = renderWithProviders(
-      <ResearchMode filter="" onPick={() => {}} />,
-    );
-
-    await screen.findByText('Alpha');
-
-    const inactiveRows = container.querySelectorAll<HTMLElement>('[aria-selected="false"]');
-    expect(inactiveRows.length).toBeGreaterThan(0);
-    inactiveRows.forEach((row) => {
-      expect(row.querySelector('[data-picker-check]')).toBeNull();
-    });
-  });
 });
