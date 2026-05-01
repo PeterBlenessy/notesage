@@ -467,11 +467,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   }, []);
   const cancelRename = useCallback(() => setRenamingPath(null), []);
   const commitRename = useCallback(
-    async (oldPath: string, newBasename: string) => {
+    async (oldPath: string, newBasename: string, isDirectory?: boolean) => {
       setRenamingPath(null);
       const oldName = pathBasename(oldPath);
       if (newBasename === oldName) return;
-      const newPath = resolveRenamePath(oldPath, newBasename);
+      const newPath = resolveRenamePath(oldPath, newBasename, isDirectory);
       try {
         await renamePath(oldPath, newPath);
         toast.success(`Renamed to ${pathBasename(newPath)}`);
@@ -591,31 +591,26 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     return unsubscribe;
   }, [projects]);
 
-  // Collect every currently-visible child FILE path so the event listener
-  // can decide whether it owns this rename request. Projects + folders +
-  // overflow markers are intentionally excluded — they are not renameable
-  // in this task.
-  const visibleChildFilePaths = useMemo(() => {
+  // Collect every currently-visible child path (files AND folders) so the
+  // event listener can decide whether it owns this rename request. Project
+  // roots and overflow markers are intentionally excluded.
+  const visibleChildPaths = useMemo(() => {
     const paths = new Set<string>();
     for (const row of rows) {
-      if (
-        row.kind === "child" &&
-        row.entry &&
-        !row.entry.is_directory
-      ) {
+      if (row.kind === "child" && row.entry) {
         paths.add(row.entry.path);
       }
     }
     return paths;
   }, [rows]);
 
-  // Rename context-menu event. Only activate on visible child file paths;
-  // project roots and folders are skipped.
+  // Rename context-menu event. Activate on any visible child path (files or
+  // folders); project roots are skipped.
   useEffect(() => {
     function handleRenameEvent(event: Event) {
       const detail = (event as CustomEvent<{ filePath: string }>).detail;
       if (!detail?.filePath) return;
-      if (!visibleChildFilePaths.has(detail.filePath)) return;
+      if (!visibleChildPaths.has(detail.filePath)) return;
       setRenamingPath(detail.filePath);
     }
     window.addEventListener(
@@ -628,7 +623,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         handleRenameEvent,
       );
     };
-  }, [visibleChildFilePaths]);
+  }, [visibleChildPaths]);
 
   const openProject = useCallback(async (project: WorkspaceProject) => {
     if (project.fileTree.length === 0) return;
@@ -1255,7 +1250,7 @@ interface ChildRowProps {
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
   onStartRename: (path: string) => void;
-  onCommitRename: (oldPath: string, newBasename: string) => void;
+  onCommitRename: (oldPath: string, newBasename: string, isDirectory?: boolean) => void;
   onCancelRename: () => void;
   registerRef: (el: HTMLDivElement | null) => void;
 }
@@ -1349,13 +1344,13 @@ function ChildRow({
   // not — only file paths can be pinned in Phase 1. Projects themselves
   // (row.kind === "project") stay non-draggable too.
   const draggable = !entry.is_directory;
-  // Rename support — files only. Folders and project roots are explicitly
-  // out of scope in this task.
-  const renameable = !entry.is_directory;
+  // F2 rename — files only (folders excluded per task #40).
+  // Double-click rename — files AND folders (task #62).
+  const renameableViaKeyboard = !entry.is_directory;
 
   // Chain rename-aware handling with the parent's navigation handler.
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (renameable && event.key === "F2") {
+    if (renameableViaKeyboard && event.key === "F2") {
       event.preventDefault();
       onStartRename(entry.path);
       return;
@@ -1364,7 +1359,7 @@ function ChildRow({
   };
 
   const handleRowClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (renameable && event.detail === 2) {
+    if (event.detail === 2) {
       event.preventDefault();
       event.stopPropagation();
       onStartRename(entry.path);
@@ -1412,7 +1407,7 @@ function ChildRow({
           mode="rename"
           initialValue={entry.name}
           validate={validateRenameBasename}
-          onCommit={(value) => onCommitRename(entry.path, value)}
+          onCommit={(value) => onCommitRename(entry.path, value, entry.is_directory)}
           onCancel={onCancelRename}
           className="flex-1 min-w-0"
         />
