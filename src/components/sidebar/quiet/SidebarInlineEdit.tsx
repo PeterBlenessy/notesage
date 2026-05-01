@@ -33,7 +33,10 @@ export function SidebarInlineEdit({
     if (!input) return;
     input.focus();
     if (mode === "rename") {
-      input.select();
+      // Scroll to the start before selecting all so long names show their
+      // beginning, not their end (issue #89 — rename input width overflow).
+      input.setSelectionRange(0, 0);
+      input.setSelectionRange(0, input.value.length);
     } else {
       const end = input.value.length;
       input.setSelectionRange(end, end);

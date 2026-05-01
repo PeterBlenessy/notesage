@@ -12,6 +12,7 @@ import {
 import { ProjectsSection, countMarkdownFiles } from '../ProjectsSection';
 import { useWorkspaceStore, type WorkspaceProject } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { FileEntry } from '@/lib/tauri';
 
 // ----------------------------------------------------------------------------
@@ -74,6 +75,7 @@ function resetStores(): void {
     persistedTabs: [],
     persistedActiveFilePath: null,
   });
+  useSettingsStore.setState({ showHiddenFiles: false });
 }
 
 beforeEach(() => {
@@ -665,7 +667,7 @@ describe('ProjectsSection — inline rename (#40)', () => {
     expect(input.value).toBe('note.md');
   });
 
-  it('F2 on a project row does NOT enter rename mode', () => {
+  it('F2 on a project row DOES enter rename mode (updated for #89)', async () => {
     setProjects([project]);
     renderWithProviders(<ProjectsSection />);
 
@@ -675,8 +677,9 @@ describe('ProjectsSection — inline rename (#40)', () => {
     projectRow.focus();
     fireEvent.keyDown(projectRow, { key: 'F2' });
 
-    // No rename input appears — project roots aren't renameable in this task.
-    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    // Project-root rename was added in issue #89.
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('alpha');
   });
 
   it('F2 on a folder child row does NOT enter rename mode', () => {
@@ -889,7 +892,7 @@ describe('ProjectsSection — folder double-click rename (#62)', () => {
     expect(mockRenamePath).not.toHaveBeenCalled();
   });
 
-  it('double-clicking a project-root row does NOT render SidebarInlineEdit', async () => {
+  it('double-clicking a project-root row DOES render SidebarInlineEdit with the project basename', async () => {
     setProjects([project]);
     renderWithProviders(<ProjectsSection />);
 
@@ -898,9 +901,10 @@ describe('ProjectsSection — folder double-click rename (#62)', () => {
     }) as HTMLElement;
     fireEvent.click(projectRow, { detail: 2 });
 
-    // Give React time to render any side-effects
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('alpha');
+    // Double-click must NOT open the project.
+    expect(mockOpenFile).not.toHaveBeenCalled();
   });
 
   it('SIDEBAR_ENTER_RENAME_MODE_EVENT on a visible folder path enters rename mode', async () => {
@@ -1182,7 +1186,6 @@ describe('ProjectsSection — inline create (#41)', () => {
 // ----------------------------------------------------------------------------
 
 import { buildProjectNameValidator } from '../ProjectsSection';
-import { useSettingsStore } from '@/stores/settings-store';
 import { toast } from 'sonner';
 
 describe('buildProjectNameValidator (#42)', () => {
@@ -1594,5 +1597,262 @@ describe('ProjectsSection — ARIA + keyboard primitives (#80)', () => {
       screen.getByRole('treeitem', { name: /open file readme\.md/i }),
     ).toBeTruthy();
     expect(screen.queryByText('.hidden.md')).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Issue #89 — project-root rename + system-folder safety + rename-input width
+// ----------------------------------------------------------------------------
+
+describe('ProjectsSection — project-root rename + system-folder safety + input width (#89)', () => {
+  const project: WorkspaceProject = {
+    path: '/Users/me/Notesage/alpha',
+    fileTree: [
+      makeFile('note.md', '/Users/me/Notesage/alpha/note.md'),
+      makeDir('docs', '/Users/me/Notesage/alpha/docs', []),
+    ],
+  };
+
+  // Project with dotfile (system) folders so we can test the safety gate.
+  const projectWithSystemFolders: WorkspaceProject = {
+    path: '/Users/me/Notesage/myproject',
+    fileTree: [
+      makeFile('readme.md', '/Users/me/Notesage/myproject/readme.md'),
+      makeDir('.notesage', '/Users/me/Notesage/myproject/.notesage', []),
+      makeDir('.git', '/Users/me/Notesage/myproject/.git', []),
+      makeDir('.claude', '/Users/me/Notesage/myproject/.claude', []),
+      makeDir('src', '/Users/me/Notesage/myproject/src', []),
+    ],
+  };
+
+  // ── project-root double-click rename ──────────────────────────────────────
+
+  it('double-clicking a project-root row renders SidebarInlineEdit pre-filled with the project basename', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    fireEvent.click(projectRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('alpha');
+  });
+
+  it('Escape on a project-root rename cancels without calling renamePath', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    fireEvent.click(projectRow, { detail: 2 });
+
+    const input = await screen.findByLabelText(/rename/i);
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/rename/i)).toBeNull();
+    });
+    expect(mockRenamePath).not.toHaveBeenCalled();
+  });
+
+  it('committing a project-root rename calls renamePath with the new path AND updates workspace-store', async () => {
+    const user = userEvent.setup();
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    fireEvent.click(projectRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, 'beta{Enter}');
+
+    await waitFor(() => {
+      expect(mockRenamePath).toHaveBeenCalledWith(
+        '/Users/me/Notesage/alpha',
+        '/Users/me/Notesage/beta',
+      );
+    });
+    // workspace-store must also be updated so the sidebar reflects the new path.
+    await waitFor(() => {
+      const projects = useWorkspaceStore.getState().projects;
+      expect(projects[0].path).toBe('/Users/me/Notesage/beta');
+    });
+  });
+
+  // ── F2 on project-root row ─────────────────────────────────────────────────
+
+  it('pressing F2 on a focused project-root row renders SidebarInlineEdit', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    projectRow.focus();
+    fireEvent.keyDown(projectRow, { key: 'F2' });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('alpha');
+  });
+
+  // ── system-folder safety — double-click blocked ───────────────────────────
+
+  it('double-clicking a .notesage child folder does NOT enter rename mode', async () => {
+    // dotfile folders are hidden by default; show them explicitly.
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder \.notesage/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('double-clicking a .git child folder does NOT enter rename mode', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder \.git/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('double-clicking a .claude child folder does NOT enter rename mode', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder \.claude/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('double-clicking a non-system folder (src) still enters rename mode', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder src/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.value).toBe('src');
+  });
+
+  // ── system-folder safety — SIDEBAR_ENTER_RENAME_MODE_EVENT blocked ─────────
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT is blocked for .notesage child folders', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Expand so .notesage appears in visibleChildPaths.
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/myproject/.notesage' },
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT is blocked for .git child folders', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/myproject/.git' },
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  // ── rename input width ─────────────────────────────────────────────────────
+
+  it('the rename input rendered inside a child row has the w-full class (no overflow)', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder docs/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.className).toMatch(/\bw-full\b/);
+  });
+
+  it('the rename input rendered for a project-root row has the w-full class', async () => {
+    setProjects([project]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project alpha/i,
+    }) as HTMLElement;
+    fireEvent.click(projectRow, { detail: 2 });
+
+    const input = (await screen.findByLabelText(/rename/i)) as HTMLInputElement;
+    expect(input.className).toMatch(/\bw-full\b/);
   });
 });
