@@ -1,6 +1,6 @@
 # Agentic Workflow (AW)
 
-The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Seven Claude Code skills, nine GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed.
+The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Eight Claude Code skills, ten GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed. Every bot-authored draft PR is independently reviewed by `aw-review` before being marked ready for human review.
 
 This document captures the system as it stands today and the design choices that shaped it. Skill rules live in `.claude/skills/aw-<name>/SKILL.md` (the source of truth for agent behavior).
 
@@ -45,7 +45,10 @@ flowchart TD
   F -.->|hitl: wait for human flip| H[Idle: hitl]
   F -.->|hard gate fails| FAIL[Re-add afk + failure comment]
   F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR<br/>body: Fixes/Resolves #N]
-  G -->|human reviews + merges| M[Merged]
+  G -->|pull_request.opened fires aw-review.yml| RV[aw-review]
+  RV -.->|gaps found:<br/>close PR + reset to tdd + afk<br/>(max 2 retries, then escalate)| F
+  RV -->|all criteria met| RDY[PR marked ready]
+  RDY -->|human reviews + merges| M[Merged]
   M -->|GitHub auto-close<br/>via 'Fixes #N' or 'Resolves #N'| IC[Issue closed]
   M -->|pull_request.closed merged=true| N[aw-retrospect]
   N -.->|clean run, no signal| P[Comment: no patch needed]
@@ -54,8 +57,8 @@ flowchart TD
   classDef skill fill:#1d76db,stroke:#fff,color:#fff
   classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
   classDef stop fill:#cccccc,stroke:#666,color:#000
-  class B,C,D,F,N skill
-  class G,M,O,IC terminal
+  class B,C,D,F,N,RV skill
+  class G,M,O,IC,RDY terminal
   class Z,W,H,FAIL,P,E stop
 ```
 
@@ -115,6 +118,8 @@ Labels are the state of the system.
 
 **Closed states**: `wontfix`, `duplicate`.
 
+**Escalation marker**: `needs-human` — set by `aw-review` when 2 retry cycles have already happened on an issue. Signals that `aw-tdd` has been unable to fully address the issue autonomously and a human reviewer must take over (merge as-is, land a fix on the branch, or comment new guidance and remove the label to allow another retry).
+
 ## Skills
 
 Each skill is a markdown file with action rules. Workflows just point the agent at it. SKILL.md is the source of truth for behavior.
@@ -125,7 +130,8 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants) | `refine` label set | `+ refined`, `+ slice` |
 | `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: `+ tdd` + `afk`-or-`hitl`, OR N peer issues + first slice = original, OR `+ awaiting-research` |
 | `aw-tdd` | TDD red-green-refactor + draft PR | `tdd + afk + refined + category` | `+ review`, draft PR |
-| `aw-feedback` | Interpret human comment on hitl issue or claude\[bot\] PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on claude\[bot\] PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
+| `aw-review` | Independent review of a bot-authored draft PR — checks the issue body PLUS comments after `refined` against the diff and tests; flags qualitative criteria for human visual review | `pull_request.opened` for bot-authored draft PR | per-criterion checklist comment; clean → `gh pr ready`; gaps → close PR + reset to `tdd + afk` (max 2 retries) |
+| `aw-feedback` | Interpret human comment on hitl issue or bot PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on bot-authored PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
 | `aw-iterate` | Push small follow-up commit on existing draft PR | `workflow_dispatch` from aw-feedback | new commit on PR branch (or deflection comment if change is too big) |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
 
@@ -139,7 +145,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Nine workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops*.
+Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -149,6 +155,7 @@ Nine workflow files. One *pipeline* + one *sweep* + four *standalones* + one *re
 | `aw-refine.yml` | `workflow_dispatch`, `issues.labeled` (human-added `refine` only) | Manual one-off + instant-response on human label edit. Also the dispatch target for `aw-feedback`'s "redo refined scope" action. |
 | `aw-slice.yml` | `workflow_dispatch`, `issues.labeled` (human-added `slice` only) | Manual one-off + post-research re-slice path. Also the dispatch target for `aw-feedback`'s "redo slicing" action. |
 | `aw-tdd.yml` | `workflow_dispatch`, `issues.labeled` (human-added `afk` only) | Manual one-off + instant-response on human `hitl → afk` flip. Also the dispatch target for `aw-feedback`'s "approve" / "redo implementation" actions. |
+| `aw-review.yml` | `pull_request.opened/ready_for_review/reopened` for bot-authored draft PR, `workflow_dispatch` | Independent review on a fresh runner — separate agent session from `aw-tdd`. Reads the issue body + every comment posted after the latest `refined` marker, reads the PR diff, checks each acceptance criterion against the implementation, flags qualitative criteria for human visual review. Clean → marks PR ready. Gaps → closes PR and resets the issue to `tdd + afk` (bounded to 2 retries before escalating to human via the `needs-human` label). |
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
@@ -286,6 +293,18 @@ A `hitl` label without a feedback handler is a one-way pause signal — the huma
 
 This closes the conversation loop. The agent can be redirected from ANY pause point to ANY earlier pipeline stage based on the human's natural-language comment — no slash commands, no manual label edits.
 
+### Choice: aw-review as an independent gate before "ready for review"
+
+**The pivot.** Originally `aw-tdd` opened a draft PR and immediately flipped the issue to `review`, expecting the human to be the next gate. Two PRs (#85 and #86) merged through that gate looked clean on paper (tests green, code reads well) but **didn't actually fix the user's problem**. PR #86 changed 7 pickers in `cmd/modes/` while the user's issue actually pointed at chat-footer pickers — the agent took "command bar pickers" too literally. PR #85 implemented `criterion 4` of issue #62 verbatim while the user had commented THREE times asking for criterion 4 to be flipped — `aw-refine` re-ran but didn't fold the comments into the body, and `aw-tdd` faithfully implemented the stale criterion. Neither the implementer nor the post-merge audit caught it. The user was the reviewer, and the user was angry.
+
+**The fix.** A separate workflow (`aw-review.yml`) fires on every bot-authored draft PR, runs in a fresh runner with a fresh `claude-code-action` invocation — meaning the reviewer agent has zero shared context with the implementer. It reads the issue body PLUS every comment posted after the latest `refined` marker, then reads the PR diff and tests, and judges per acceptance criterion: ✓ Covered, ⚠ Needs human visual review (qualitative property the tests don't verify), or ✗ Missing. For "all X" / "every Y" claims it greps the codebase and enumerates coverage. For comments since `refined` it checks both the body update AND the diff implementation.
+
+**Outcomes.** Clean → posts a structured checklist comment, marks PR ready. Gaps → closes PR, resets the issue to `tdd + afk`, dispatches `aw-tdd` to retry with the gap list as context. After 2 reset cycles, escalates to human via the `needs-human` label rather than looping forever.
+
+**Why a separate workflow (not a job in aw-pipeline).** The whole point is independence — the implementer's reasoning chain shouldn't pollute the reviewer's judgment. Same pattern as a two-pizza review where the implementer and the reviewer are different people. A separate workflow guarantees a separate agent session, separate runner, separate everything except the on-disk repo.
+
+**What aw-review explicitly DOES NOT do.** It never modifies code (read-only on the repo), never auto-merges (humans still merge; aw-review just approves draft → ready). It also doesn't act on human-authored PRs — those are out of scope.
+
 ### Choice: aw-retrospect on every merge
 
 Self-improvement loop. On claude\[bot\] PR merge, look for divergence between the originating skill's rules and what shipped (extra files touched, manual fixes after merge, review pushback, test changes, retries). Propose a SKILL.md patch as a draft PR. Always reviewed, never auto-merged. Inspired by rmstdope/my-copilot's `self-learning-skills` pattern.
@@ -320,4 +339,6 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 - **Pipeline workflow** — `aw-pipeline.yml`. Single workflow with sequential jobs that runs the happy path on issue creation.
 - **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. Manual-and-targeted entry points (`workflow_dispatch` + `issues.labeled`). Cron-driven discovery happens in `aw-sweep.yml`, not here.
 - **Sweep workflow** — `aw-sweep.yml`. The single cron-driven backstop. Four parallel jobs (one per pipeline stage) with precheck-first gating so idle ticks finish in \~20s with no checkouts and no installs.
+- **Review workflow** — `aw-review.yml`. Independent review of a bot-authored draft PR on a fresh runner. Read-only on code; only modifies labels, PR state, and posts comments. Bounded to 2 reset cycles before escalating via the `needs-human` label.
+- **needs-human** — escalation label set by `aw-review` when 2 retry cycles have already happened on an issue.
 - **Retro PR** — draft PR opened by aw-retrospect proposing a SKILL.md patch.

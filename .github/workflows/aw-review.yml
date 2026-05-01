@@ -1,0 +1,81 @@
+name: AW — Review
+
+# Independent review of every claude[bot] / github-actions[bot]-authored
+# draft PR. Reads the issue body PLUS every comment posted after the
+# latest `refined` marker, reads the PR diff, and verifies that every
+# acceptance criterion AND every user-comment scope-change is satisfied.
+# Posts a per-criterion checklist; if gaps are found, closes the PR and
+# resets the issue to `tdd + afk` so aw-tdd can retry with the gap list
+# as context (bounded to 2 retries).
+#
+# Runs as a SEPARATE workflow (separate runner, separate claude-code-action
+# invocation, fresh agent session) so the reviewer has no shared context
+# with the implementer — same pattern as a two-pizza review.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (optional — skips event filter)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write          # update labels, post comments on linked issue
+  pull-requests: write   # close PR, mark ready, post review comments
+  actions: write         # to dispatch aw-tdd if gaps are found
+  id-token: write        # claude-code-action OIDC
+
+concurrency:
+  group: aw-review-pr-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Only on bot-authored draft PRs (workflow_dispatch always passes since
+    # it explicitly targets a PR). The pre-flight inside the skill double-
+    # checks; this `if:` saves a runner spin-up on human-authored PRs.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == true &&
+       (github.event.pull_request.user.login == 'github-actions[bot]' ||
+        github.event.pull_request.user.login == 'claude[bot]' ||
+        github.event.pull_request.user.login == 'app/claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run aw-review skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # See aw-pipeline.yml for the rationale.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: "github-actions[bot]"
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Bash(grep:*),Bash(rg:*),Read,Grep,Glob"
+          prompt: |
+            Run the `aw-review` skill at `.claude/skills/aw-review/SKILL.md`
+            on PR #${{ github.event.pull_request.number || inputs.pr_number }}
+            in this repository (PeterBlenessy/notesage).
+
+            **Hard constraints** (also defined in the skill):
+            - Read-only on code. Never modify files in the PR's branch.
+              Only label changes, PR state changes, and comments are allowed.
+            - Read the issue body AND every comment posted after the latest
+              `refined` marker. Both are part of the user's request.
+            - For each acceptance criterion: ✓ Covered, ⚠ Needs human visual
+              review (qualitative property tests don't verify), or ✗ Missing.
+            - For universal claims ("all X", "every Y"): grep the codebase,
+              enumerate matches, verify coverage. Flag explicit gaps.
+            - For user comments after `refined`: each represents a scope
+              change that should be reflected in BOTH the body AND the diff.
+              Body-only or diff-only is a gap.
+            - On clean review: post checklist, mark PR ready (`gh pr ready`).
+            - On gaps: post checklist, close PR, reset issue to `tdd + afk`,
+              dispatch `aw-tdd` (UNLESS 2 prior resets — then escalate to
+              human via `needs-human` label).
