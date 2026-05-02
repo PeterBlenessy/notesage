@@ -985,6 +985,7 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 **Events emitted:**
 
 - `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-renamed` (`{ old_path: String, new_path: String, is_directory: bool }`): Emitted for same-volume renames where the OS provides both paths in a single event (`Modify(Name(Both))`). `is_directory` reflects whether the renamed path is a directory. Cross-volume moves are not detected as renames — they arrive as separate delete + create events.
 
 **Filtering applied before emission:**
 

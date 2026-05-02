@@ -112,6 +112,22 @@ fn event_kind(kind: &notify::EventKind) -> Option<FileChangeKind> {
     }
 }
 
+/// If `event` is a `Modify(Name(Both))` rename event with at least two paths,
+/// return references to `(old_path, new_path)`.  Otherwise return `None`.
+///
+/// Extracting this check into a pure function makes it unit-testable without
+/// an `AppHandle`.
+fn extract_rename_both<'a>(
+    event: &'a DebouncedEvent,
+) -> Option<(&'a std::path::Path, &'a std::path::Path)> {
+    if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = event.kind {
+        if event.paths.len() >= 2 {
+            return Some((&event.paths[0], &event.paths[1]));
+        }
+    }
+    None
+}
+
 /// Try to canonicalize a path, falling back to the original if it fails.
 fn normalize_path(path: &std::path::Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
@@ -163,33 +179,32 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             for event in events {
                 // Handle rename-both events (same-volume renames where notify
                 // knows both the old and new path in a single event).
-                if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = event.kind {
-                    if event.paths.len() >= 2 {
-                        let old_path = &event.paths[0];
-                        let new_path = &event.paths[1];
-                        let is_directory = new_path.is_dir();
-                        let rename_event = FileRenamedEvent {
-                            old_path: old_path.to_string_lossy().to_string(),
-                            new_path: new_path.to_string_lossy().to_string(),
-                            is_directory,
-                        };
-                        if let Err(e) = app_handle.emit("file-renamed", &rename_event) {
-                            log::error!(target: "notesage::watcher", "Failed to emit file-renamed event: {:?}", e);
-                        }
-                        // Queue reindex for both the old (delete) and new (create) paths.
-                        if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
-                            indexer.queue_reindex(
-                                old_path.to_string_lossy().to_string(),
-                                FileChangeKind::Delete,
-                            );
-                            indexer.queue_reindex(
-                                new_path.to_string_lossy().to_string(),
-                                FileChangeKind::Create,
-                            );
-                        }
-                        // Skip normal event processing — rename is handled above.
-                        continue;
+                if let Some((old_path, new_path)) = extract_rename_both(&event) {
+                    let is_directory = new_path.is_dir();
+                    let rename_event = FileRenamedEvent {
+                        old_path: old_path.to_string_lossy().to_string(),
+                        new_path: new_path.to_string_lossy().to_string(),
+                        is_directory,
+                    };
+                    if let Err(e) = app_handle.emit("file-renamed", &rename_event) {
+                        log::error!(target: "notesage::watcher", "Failed to emit file-renamed event: {:?}", e);
                     }
+                    // Queue reindex for both the old (delete) and new (create) paths.
+                    if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                        indexer.queue_reindex(
+                            old_path.to_string_lossy().to_string(),
+                            FileChangeKind::Delete,
+                        );
+                        indexer.queue_reindex(
+                            new_path.to_string_lossy().to_string(),
+                            FileChangeKind::Create,
+                        );
+                    }
+                    // Skip normal event processing — the rename-both event is
+                    // fully handled above.  Paired delete/create events for the
+                    // same paths are suppressed by continuing past the normal
+                    // batch-push logic.
+                    continue;
                 }
 
                 let change_kind = match event_kind(&event.kind) {
@@ -419,5 +434,65 @@ mod tests {
             is_directory: true,
         };
         assert!(event.is_directory);
+    }
+
+    #[test]
+    fn extract_rename_both_returns_paths_for_rename_both_event() {
+        let mut inner = notify::Event::new(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+        );
+        inner.paths.push(PathBuf::from("/old/foo.md"));
+        inner.paths.push(PathBuf::from("/new/bar.md"));
+        let event = DebouncedEvent { event: inner, time: Instant::now() };
+
+        let result = extract_rename_both(&event);
+        assert!(result.is_some());
+        let (old_path, new_path) = result.unwrap();
+        assert_eq!(old_path, std::path::Path::new("/old/foo.md"));
+        assert_eq!(new_path, std::path::Path::new("/new/bar.md"));
+    }
+
+    #[test]
+    fn extract_rename_both_returns_none_for_create_event() {
+        let mut inner = notify::Event::new(
+            notify::EventKind::Create(notify::event::CreateKind::File),
+        );
+        inner.paths.push(PathBuf::from("/new/foo.md"));
+        let event = DebouncedEvent { event: inner, time: Instant::now() };
+
+        assert!(extract_rename_both(&event).is_none());
+    }
+
+    #[test]
+    fn extract_rename_both_returns_none_for_remove_event() {
+        let mut inner = notify::Event::new(
+            notify::EventKind::Remove(notify::event::RemoveKind::File),
+        );
+        inner.paths.push(PathBuf::from("/old/foo.md"));
+        let event = DebouncedEvent { event: inner, time: Instant::now() };
+
+        assert!(extract_rename_both(&event).is_none());
+    }
+
+    #[test]
+    fn extract_rename_both_returns_none_when_fewer_than_two_paths() {
+        let mut inner = notify::Event::new(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+        );
+        inner.paths.push(PathBuf::from("/only/one.md"));
+        let event = DebouncedEvent { event: inner, time: Instant::now() };
+
+        assert!(extract_rename_both(&event).is_none());
+    }
+
+    #[test]
+    fn extract_rename_both_returns_none_for_rename_from_event() {
+        let mut inner = notify::Event::new(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+        );
+        inner.paths.push(PathBuf::from("/old/foo.md"));
+        let event = DebouncedEvent { event: inner, time: Instant::now() };
+
+        assert!(extract_rename_both(&event).is_none());
     }
 }

@@ -27,6 +27,7 @@ vi.mock('sonner', () => ({ toast: toastMock }));
 // Dynamic import happens after the mock is in place.
 let toastExternalChange: typeof import('@/lib/notifications').toastExternalChange;
 let toastExternalReload: typeof import('@/lib/notifications').toastExternalReload;
+let toastExternalRename: typeof import('@/lib/notifications').toastExternalRename;
 
 describe('notifications — external-change helpers', () => {
   beforeEach(async () => {
@@ -41,6 +42,7 @@ describe('notifications — external-change helpers', () => {
     const mod = await import('@/lib/notifications');
     toastExternalChange = mod.toastExternalChange;
     toastExternalReload = mod.toastExternalReload;
+    toastExternalRename = mod.toastExternalRename;
   });
 
   // ==========================================================================
@@ -174,6 +176,56 @@ describe('notifications — external-change helpers', () => {
 
       const [message] = toastMock.info.mock.calls[0];
       expect(message).toBe('readme.md reloaded from disk');
+    });
+  });
+
+  // ==========================================================================
+  // toastExternalRename
+  // ==========================================================================
+
+  describe('toastExternalRename', () => {
+    it('shows info toast when no onSave callback (clean tab)', () => {
+      toastExternalRename({ oldPath: '/project/foo.md', newPath: '/project/bar.md' });
+
+      expect(toastMock.info).toHaveBeenCalledTimes(1);
+      const [message, opts] = toastMock.info.mock.calls[0];
+      expect(message).toContain('foo.md');
+      expect(message).toContain('bar.md');
+      expect(opts.duration).toBe(3000);
+    });
+
+    it('shows sticky toast with Save now action when onSave is provided (dirty tab)', () => {
+      const onSave = vi.fn();
+      toastExternalRename({ oldPath: '/project/foo.md', newPath: '/project/bar.md', onSave });
+
+      expect(toastMock).toHaveBeenCalledTimes(1);
+      expect(toastMock.info).not.toHaveBeenCalled();
+      const [, opts] = toastMock.mock.calls[0];
+      expect(opts.duration).toBe(Infinity);
+      expect(opts.action.label).toBe('Save now');
+    });
+
+    it('invoking Save now action calls the onSave callback', () => {
+      const onSave = vi.fn();
+      toastExternalRename({ oldPath: '/project/foo.md', newPath: '/project/bar.md', onSave });
+
+      const [, opts] = toastMock.mock.calls[0];
+      opts.action.onClick();
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a stable id based on the old path', () => {
+      toastExternalRename({ oldPath: '/project/foo.md', newPath: '/project/bar.md' });
+
+      const [, opts] = toastMock.info.mock.calls[0];
+      expect(opts.id).toBe('external-rename:/project/foo.md');
+    });
+
+    it('info toast does not have a Save now action (no unsaved edits)', () => {
+      toastExternalRename({ oldPath: '/a.md', newPath: '/b.md' });
+
+      const [, opts] = toastMock.info.mock.calls[0];
+      expect(opts.action).toBeUndefined();
     });
   });
 });

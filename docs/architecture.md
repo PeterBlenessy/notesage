@@ -42,7 +42,7 @@ note-sage/
 │   │   │   ├── json_rpc.rs # Shared JSON-RPC 2.0 types, Content-Length framing, pending requests
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
-│   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
+│   │   │   ├── watcher.rs  # Filesystem watcher (notify crate) — emits `file-changed-batch` for create/modify/delete and `file-renamed` for same-volume renames
 │   │   │   ├── ai_streaming.rs # AI streaming orchestrators (Anthropic, OpenAI, Ollama, compatible)
 │   │   │   ├── tool_execution.rs # Tool call parsing, accumulators (extracted from ai_streaming)
 │   │   │   ├── segment_builder.rs # Thinking tag detection, template extraction (extracted from ai_streaming)
