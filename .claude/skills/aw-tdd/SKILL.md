@@ -89,6 +89,14 @@ When all gates pass:
    **If `gh pr create` returns the error `GitHub Actions is not permitted to create or approve pull requests`** (a repo-level setting under Settings → Actions → General → "Workflow permissions"), the skill cannot create the PR but the work is done. Post the **PR creation blocked** comment template (below) including the exact branch name and the auto-close keyword line so a human can paste them into a manual `gh pr create` command. Still flip `tdd → review` so the queue advances; the human will create the PR.
 5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment (or the **PR creation blocked** template if step 4 hit the repo-setting block).
 
+6. **Dispatch `aw-review` on the new PR.** Run:
+
+   ```
+   gh workflow run aw-review.yml --field pr_number=<N>
+   ```
+
+   This is required because the PR was created via `gh pr create` using `GITHUB_TOKEN`, and per GitHub's recursion guard, events triggered by `GITHUB_TOKEN` do NOT fire downstream workflows (only `workflow_dispatch` and `repository_dispatch` are exempt). Without this explicit dispatch, `aw-review` never runs on bot-authored PRs and the independent-review gate is silently bypassed. Skip this step ONLY when the **PR creation blocked** path was taken (step 4) — there's no PR to review.
+
 ## On failure
 
 If any hard gate fails:

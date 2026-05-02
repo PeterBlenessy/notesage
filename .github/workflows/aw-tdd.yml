@@ -19,6 +19,7 @@ permissions:
   contents: write       # push branch
   pull-requests: write  # open draft PR
   issues: write         # update labels, post comments
+  actions: write        # dispatch aw-review.yml after the PR is created
   id-token: write       # claude-code-action OIDC
 
 concurrency:

@@ -30,6 +30,7 @@ permissions:
   contents: write       # tdd needs to push branches
   issues: write
   pull-requests: write
+  actions: write        # tdd dispatches aw-review.yml after the PR is created
   id-token: write       # claude-code-action OIDC
 
 concurrency:
