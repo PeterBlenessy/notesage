@@ -842,6 +842,58 @@ describe('updateFilePaths', () => {
   });
 });
 
+describe('renameOpenDocument', () => {
+  it('single file rename: updates filePath, fileName, persistedTabs, recentFiles, scrollPositions', () => {
+    useEditorStore.getState().openTab('/old/note.md', 'note.md', 'content');
+    useEditorStore.getState().setScrollPosition('/old/note.md', 0.5);
+
+    useEditorStore.getState().renameOpenDocument('/old/note.md', '/new/renamed.md');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments[0].filePath).toBe('/new/renamed.md');
+    expect(state.openDocuments[0].fileName).toBe('renamed.md');
+    expect(state.persistedTabs[0].filePath).toBe('/new/renamed.md');
+    expect(state.persistedTabs[0].fileName).toBe('renamed.md');
+    expect(state.recentFiles[0].path).toBe('/new/renamed.md');
+    expect(state.recentFiles[0].name).toBe('renamed.md');
+    expect(state.scrollPositions['/new/renamed.md']).toBe(0.5);
+    expect(state.scrollPositions['/old/note.md']).toBeUndefined();
+  });
+
+  it('folder cascade: rewrites all descendant tab paths and fileNames', () => {
+    useEditorStore.getState().openTab('/old/dir/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/old/dir/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
+
+    useEditorStore.getState().renameOpenDocument('/old/dir', '/new/dir');
+
+    const state = useEditorStore.getState();
+    const a = state.openDocuments.find(t => t.fileName === 'a.md');
+    const b = state.openDocuments.find(t => t.fileName === 'b.md');
+    const c = state.openDocuments.find(t => t.fileName === 'c.md');
+    expect(a!.filePath).toBe('/new/dir/a.md');
+    expect(b!.filePath).toBe('/new/dir/b.md');
+    expect(c!.filePath).toBe('/other/c.md');
+  });
+
+  it('folder cascade: updates recentFiles name when the recent entry is a direct child', () => {
+    useEditorStore.getState().openTab('/old/dir/file.md', 'file.md', 'x');
+
+    useEditorStore.getState().renameOpenDocument('/old/dir', '/renamed/dir');
+
+    const recents = useEditorStore.getState().recentFiles;
+    expect(recents[0].path).toBe('/renamed/dir/file.md');
+    expect(recents[0].name).toBe('file.md');
+  });
+
+  it('does not modify tabs whose path does not match', () => {
+    useEditorStore.getState().openTab('/keep/x.md', 'x.md', 'x');
+    useEditorStore.getState().renameOpenDocument('/other', '/changed');
+
+    expect(getTab('/keep/x.md')).toBeDefined();
+  });
+});
+
 describe('viewMode', () => {
   it('setViewMode changes the tab view mode', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');

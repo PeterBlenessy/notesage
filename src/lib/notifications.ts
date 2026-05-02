@@ -108,3 +108,40 @@ export function toastExternalReload(filePath: string): void {
     duration: 3000,
   });
 }
+
+export interface ExternalRenameToastOptions {
+  /** Old absolute path (before rename). */
+  oldPath: string;
+  /** New absolute path (after rename). */
+  newPath: string;
+  /** When the renamed file had unsaved edits, provide a callback to save them. */
+  onSave?: () => void;
+}
+
+/**
+ * Toast shown when an external rename is detected:
+ * - Clean tab: 3-second info toast.
+ * - Dirty tab: sticky toast with "Save now" action (unsaved edits follow the new path).
+ */
+export function toastExternalRename(options: ExternalRenameToastOptions): void {
+  const { oldPath, newPath, onSave } = options;
+  const oldName = fileNameFromPath(oldPath);
+  const newName = fileNameFromPath(newPath);
+
+  if (onSave) {
+    toast(`${oldName} renamed to ${newName} externally — your unsaved edits stay on the new path.`, {
+      id: `external-rename:${oldPath}`,
+      duration: Infinity,
+      closeButton: true,
+      action: {
+        label: "Save now",
+        onClick: onSave,
+      },
+    });
+  } else {
+    toast.info(`${oldName} renamed to ${newName}`, {
+      id: `external-rename:${oldPath}`,
+      duration: 3000,
+    });
+  }
+}
