@@ -140,6 +140,13 @@ interface EditorStore {
   renameTab: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /**
+   * Rename a single file or folder across all in-memory state.
+   * For a file rename: rewrites the exact matching path.
+   * For a folder rename: rewrites all descendant paths (prefix cascade).
+   * Always updates `fileName` in affected tabs.
+   */
+  renameOpenDocument: (oldPath: string, newPath: string) => void;
   /** Set view mode for a markdown tab (session-only, not persisted). */
   setViewMode: (tabId: string, mode: ViewMode) => void;
   /** Toggle between WYSIWYG and source mode for a markdown tab. */
@@ -558,6 +565,43 @@ export const useEditorStore = create<EditorStore>()(
               ...rf,
               path: rewrite(rf.path),
             })),
+            scrollPositions: Object.fromEntries(
+              Object.entries(state.scrollPositions).map(([k, v]) => [rewrite(k), v])
+            ),
+          };
+        });
+      },
+
+      renameOpenDocument: (oldPath: string, newPath: string) => {
+        set((state) => {
+          const rewrite = (p: string): string => {
+            if (p === oldPath) return newPath;
+            if (p.startsWith(oldPath + '/')) return newPath + p.slice(oldPath.length);
+            return p;
+          };
+
+          return {
+            openDocuments: state.openDocuments.map((tab) => {
+              const newFilePath = rewrite(tab.filePath);
+              if (newFilePath === tab.filePath) return tab;
+              const newFileName = newFilePath.split('/').pop() ?? newFilePath;
+              return { ...tab, filePath: newFilePath, fileName: newFileName };
+            }),
+            persistedTabs: state.persistedTabs.map((pt) => {
+              const newFilePath = rewrite(pt.filePath);
+              if (newFilePath === pt.filePath) return pt;
+              const newFileName = newFilePath.split('/').pop() ?? newFilePath;
+              return { ...pt, filePath: newFilePath, fileName: newFileName };
+            }),
+            persistedActiveFilePath: state.persistedActiveFilePath
+              ? rewrite(state.persistedActiveFilePath)
+              : null,
+            recentFiles: state.recentFiles.map((rf) => {
+              const newRfPath = rewrite(rf.path);
+              if (newRfPath === rf.path) return rf;
+              const newName = newRfPath.split('/').pop() ?? newRfPath;
+              return { ...rf, path: newRfPath, name: newName };
+            }),
             scrollPositions: Object.fromEntries(
               Object.entries(state.scrollPositions).map(([k, v]) => [rewrite(k), v])
             ),

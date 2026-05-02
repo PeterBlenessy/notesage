@@ -1,4 +1,5 @@
 use notify::RecursiveMode;
+use notify::event::{ModifyKind, RenameMode};
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -160,6 +161,37 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
+                // Handle rename-both events (same-volume renames where notify
+                // knows both the old and new path in a single event).
+                if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = event.kind {
+                    if event.paths.len() >= 2 {
+                        let old_path = &event.paths[0];
+                        let new_path = &event.paths[1];
+                        let is_directory = new_path.is_dir();
+                        let rename_event = FileRenamedEvent {
+                            old_path: old_path.to_string_lossy().to_string(),
+                            new_path: new_path.to_string_lossy().to_string(),
+                            is_directory,
+                        };
+                        if let Err(e) = app_handle.emit("file-renamed", &rename_event) {
+                            log::error!(target: "notesage::watcher", "Failed to emit file-renamed event: {:?}", e);
+                        }
+                        // Queue reindex for both the old (delete) and new (create) paths.
+                        if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                            indexer.queue_reindex(
+                                old_path.to_string_lossy().to_string(),
+                                FileChangeKind::Delete,
+                            );
+                            indexer.queue_reindex(
+                                new_path.to_string_lossy().to_string(),
+                                FileChangeKind::Create,
+                            );
+                        }
+                        // Skip normal event processing — rename is handled above.
+                        continue;
+                    }
+                }
+
                 let change_kind = match event_kind(&event.kind) {
                     Some(k) => k,
                     None => continue,
@@ -300,4 +332,92 @@ pub async fn clear_self_write(app: AppHandle, path: String) -> Result<(), String
     let normalized = normalize_path(&PathBuf::from(path));
     state.self_writes.lock().remove(&normalized);
     Ok(())
+}
+
+/// Payload emitted to the frontend via `file-renamed`.
+#[derive(Clone, Serialize)]
+pub struct FileRenamedEvent {
+    pub old_path: String,
+    pub new_path: String,
+    pub is_directory: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn is_self_write_returns_true_for_recently_marked_path() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let path = PathBuf::from("/tmp/test_file.md");
+        self_writes.insert(path.clone(), Instant::now());
+
+        assert!(is_self_write(&mut self_writes, &path));
+    }
+
+    #[test]
+    fn is_self_write_returns_false_for_unmarked_path() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let path = PathBuf::from("/tmp/test_file.md");
+
+        assert!(!is_self_write(&mut self_writes, &path));
+    }
+
+    #[test]
+    fn is_self_write_returns_false_after_ttl_expires() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let path = PathBuf::from("/tmp/expired_file.md");
+        // Insert with a timestamp that's already beyond the TTL
+        self_writes.insert(
+            path.clone(),
+            Instant::now() - SELF_WRITE_TTL - Duration::from_millis(1),
+        );
+
+        assert!(!is_self_write(&mut self_writes, &path));
+        // Expired entry should have been pruned
+        assert!(self_writes.is_empty());
+    }
+
+    #[test]
+    fn is_self_write_prunes_expired_entries_on_check() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let expired = PathBuf::from("/tmp/expired.md");
+        let fresh = PathBuf::from("/tmp/fresh.md");
+
+        self_writes.insert(
+            expired.clone(),
+            Instant::now() - SELF_WRITE_TTL - Duration::from_millis(1),
+        );
+        self_writes.insert(fresh.clone(), Instant::now());
+
+        // Checking expired path also prunes it
+        let _ = is_self_write(&mut self_writes, &expired);
+
+        // Fresh entry stays; expired is pruned
+        assert!(!self_writes.contains_key(&expired));
+        assert!(self_writes.contains_key(&fresh));
+    }
+
+    #[test]
+    fn file_renamed_event_fields_are_correct() {
+        let event = FileRenamedEvent {
+            old_path: "/old/path/foo.md".to_string(),
+            new_path: "/new/path/bar.md".to_string(),
+            is_directory: false,
+        };
+        assert_eq!(event.old_path, "/old/path/foo.md");
+        assert_eq!(event.new_path, "/new/path/bar.md");
+        assert!(!event.is_directory);
+    }
+
+    #[test]
+    fn file_renamed_event_is_directory_flag_works() {
+        let event = FileRenamedEvent {
+            old_path: "/old/dir".to_string(),
+            new_path: "/new/dir".to_string(),
+            is_directory: true,
+        };
+        assert!(event.is_directory);
+    }
 }
