@@ -985,12 +985,14 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 **Events emitted:**
 
 - `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-renamed` (`{ old_path: String, new_path: String, is_directory: bool }`): Emitted for same-volume renames detected by `notify`'s `Modify(Name(Both))` event (produced by `RecommendedCache`/FileIdMap). The renamed paths are excluded from the `file-changed` batch so the frontend does not see a spurious delete + create pair.
 
 **Filtering applied before emission:**
 
 - `.git/` internals and `.DS_Store` files silently dropped
 - Self-written files suppressed (see `mark_self_write`)
 - Directory events skipped (except deletes)
+- Same-volume renames routed to `file-renamed` rather than `file-changed`
 - macOS: `modify` events for paths that no longer exist reclassified as `delete`
 
 ### unwatch_directory

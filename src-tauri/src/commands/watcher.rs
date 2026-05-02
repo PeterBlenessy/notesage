@@ -1,4 +1,5 @@
-use notify::RecursiveMode;
+use notify::{EventKind, RecursiveMode};
+use notify::event::{ModifyKind, RenameMode};
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -160,6 +161,39 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
+                // Handle same-volume renames: FileIdMap coalesces into
+                // Modify(Name(Both)) with paths = [old_path, new_path].
+                if let EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = &event.kind {
+                    if event.paths.len() == 2 {
+                        let old_path = &event.paths[0];
+                        let new_path = &event.paths[1];
+                        // Skip self-writes on either end
+                        if !is_self_write(&mut self_writes, old_path)
+                            && !is_self_write(&mut self_writes, new_path)
+                        {
+                            let is_directory = new_path.is_dir();
+                            #[derive(serde::Serialize)]
+                            struct FileRenamedEvent {
+                                old_path: String,
+                                new_path: String,
+                                is_directory: bool,
+                            }
+                            if let Err(e) = app_handle.emit("file-renamed", FileRenamedEvent {
+                                old_path: old_path.to_string_lossy().to_string(),
+                                new_path: new_path.to_string_lossy().to_string(),
+                                is_directory,
+                            }) {
+                                log::error!(
+                                    target: "notesage::watcher",
+                                    "Failed to emit file-renamed event: {:?}",
+                                    e
+                                );
+                            }
+                        }
+                        continue; // Don't add rename paths to the file-changed batch
+                    }
+                }
+
                 let change_kind = match event_kind(&event.kind) {
                     Some(k) => k,
                     None => continue,
@@ -300,4 +334,65 @@ pub async fn clear_self_write(app: AppHandle, path: String) -> Result<(), String
     let normalized = normalize_path(&PathBuf::from(path));
     state.self_writes.lock().remove(&normalized);
     Ok(())
+}
+
+/// Rewrite `path` if it starts with `old_prefix` (as a path component boundary).
+/// Returns the rewritten path, or the original unchanged if no match.
+pub(crate) fn rewrite_path_prefix(old_prefix: &str, new_prefix: &str, path: &str) -> String {
+    // Exact match
+    if path == old_prefix {
+        return new_prefix.to_string();
+    }
+    // Prefix match — require component boundary (prefix must be followed by '/')
+    let prefix_with_sep = format!("{}/", old_prefix);
+    if path.starts_with(&prefix_with_sep) {
+        return format!("{}/{}", new_prefix, &path[prefix_with_sep.len()..]);
+    }
+    path.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rewrite_path_prefix_exact_match() {
+        assert_eq!(
+            rewrite_path_prefix("/old/foo.md", "/new/foo.md", "/old/foo.md"),
+            "/new/foo.md"
+        );
+    }
+
+    #[test]
+    fn rewrite_path_prefix_child_path() {
+        assert_eq!(
+            rewrite_path_prefix("/old/dir", "/new/dir", "/old/dir/sub/file.md"),
+            "/new/dir/sub/file.md"
+        );
+    }
+
+    #[test]
+    fn rewrite_path_prefix_no_match_unchanged() {
+        assert_eq!(
+            rewrite_path_prefix("/old/dir", "/new/dir", "/other/file.md"),
+            "/other/file.md"
+        );
+    }
+
+    #[test]
+    fn rewrite_path_prefix_no_partial_component_match() {
+        // "/old/dir2" must NOT be rewritten when old prefix is "/old/dir"
+        assert_eq!(
+            rewrite_path_prefix("/old/dir", "/new/dir", "/old/dir2/file.md"),
+            "/old/dir2/file.md"
+        );
+    }
+
+    #[test]
+    fn rewrite_path_prefix_direct_child() {
+        assert_eq!(
+            rewrite_path_prefix("/project/old", "/project/new", "/project/old/readme.md"),
+            "/project/new/readme.md"
+        );
+    }
 }

@@ -140,6 +140,12 @@ interface EditorStore {
   renameTab: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /**
+   * Rewrite open-document paths after an external file or folder rename.
+   * Uses component-boundary matching so `/old/dir` rewrites `/old/dir/file.md`
+   * but does NOT rewrite `/old/dir2/file.md`.
+   */
+  renameOpenDocument: (oldPath: string, newPath: string) => void;
   /** Set view mode for a markdown tab (session-only, not persisted). */
   setViewMode: (tabId: string, mode: ViewMode) => void;
   /** Toggle between WYSIWYG and source mode for a markdown tab. */
@@ -558,6 +564,52 @@ export const useEditorStore = create<EditorStore>()(
               ...rf,
               path: rewrite(rf.path),
             })),
+            scrollPositions: Object.fromEntries(
+              Object.entries(state.scrollPositions).map(([k, v]) => [rewrite(k), v])
+            ),
+          };
+        });
+      },
+
+      renameOpenDocument: (oldPath: string, newPath: string) => {
+        // Component-boundary-safe rewrite: exact match or oldPath + "/"
+        const rewrite = (p: string): string => {
+          if (p === oldPath) return newPath;
+          if (p.startsWith(oldPath + "/")) return newPath + p.slice(oldPath.length);
+          return p;
+        };
+        set((state) => {
+          return {
+            openDocuments: state.openDocuments.map((tab) => {
+              const newFilePath = rewrite(tab.filePath);
+              if (newFilePath === tab.filePath) return tab;
+              return {
+                ...tab,
+                filePath: newFilePath,
+                fileName: newFilePath.split("/").pop() ?? newFilePath,
+              };
+            }),
+            persistedTabs: state.persistedTabs.map((pt) => {
+              const newFilePath = rewrite(pt.filePath);
+              if (newFilePath === pt.filePath) return pt;
+              return {
+                ...pt,
+                filePath: newFilePath,
+                fileName: newFilePath.split("/").pop() ?? newFilePath,
+              };
+            }),
+            persistedActiveFilePath: state.persistedActiveFilePath
+              ? rewrite(state.persistedActiveFilePath)
+              : null,
+            recentFiles: state.recentFiles.map((rf) => {
+              const newRfPath = rewrite(rf.path);
+              if (newRfPath === rf.path) return rf;
+              return {
+                ...rf,
+                path: newRfPath,
+                name: newRfPath.split("/").pop() ?? newRfPath,
+              };
+            }),
             scrollPositions: Object.fromEntries(
               Object.entries(state.scrollPositions).map(([k, v]) => [rewrite(k), v])
             ),

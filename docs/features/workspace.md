@@ -103,7 +103,17 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 4. Events filtered: `.git/` internals and `.DS_Store` silently dropped
 5. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
 6. Reindex queue always drained after event processing (unconditionally, not gated on frontend batch)
-7. Non-self-write events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+7. Same-volume renames detected as `Modify(Name(Both))` by `RecommendedCache` (FileIdMap) — emitted as a separate `file-renamed` Tauri event with `{ old_path, new_path, is_directory }` payload. The paired paths are skipped from the regular `file-changed-batch`.
+8. Non-self-write, non-rename events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+
+**Frontend rename handler (**`useFileRenameSync.ts`**):**
+
+Listens for `file-renamed` events and keeps the frontend state in sync:
+
+- **Open tabs**: `editor-store.renameOpenDocument()` rewrites `filePath`, `fileName`, `persistedTabs`, `recentFiles`, and `scrollPositions` — uses component-boundary matching so `/old/dir` rewrites `/old/dir/file.md` but not `/old/dir2/file.md`.
+- **Workspace projects**: if the renamed path matches a project root exactly, `workspace-store.updateProjectPath()` renames the project. Pinned file paths updated via `workspace-store.updateFilePaths()`.
+- **File tree refresh**: triggered after any folder rename so the sidebar reflects the new structure.
+- **Dirty-file rename toast**: `toastExternalRename` in `src/lib/notifications.ts` shown when a dirty (unsaved) open tab is renamed externally — prompts the user to save the preserved edits to the new path.
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
@@ -119,7 +129,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency. Self-write suppression is implemented at the Rust/backend level — `saveFile` calls `mark_self_write` before writing, and the backend excludes self-written paths from the `file-changed-batch` payload
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`; frontend strips `/private/` prefix
 - **Toast dedup**: Stable `id: "external-change:<filePath>"` prevents duplicate notifications; repeated changes to the same file collapse into one toast
-- **Toast helpers**: `toastExternalChange` / `toastExternalReload` live in `src/lib/notifications.ts` — single source of truth for external-change UX
+- **Toast helpers**: `toastExternalChange`, `toastExternalReload`, and `toastExternalRename` live in `src/lib/notifications.ts` — single source of truth for external-change UX
 - **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete. Startup has a 30s global timeout and 10s per-step timeouts for cloud storage operations, ensuring `startupReady` is always set even if cloud paths hang.
 
 ## Key Files
@@ -136,7 +146,8 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
-| `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |
+| `src/hooks/useFileRenameSync.ts` | Rename sync handler — rewrites open tabs, projects, pinned files on `file-renamed` events |
+| `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload`, `toastExternalRename` — external-change toast helpers |
 | `src/hooks/useProjectMetadata.ts` | Auto-bootstrap `.notesage/project.json` |
 | `src/lib/scan-icloud-projects.ts` | iCloud project auto-discovery |
 | `src/stores/workspace-store.ts` | Explorer folders, projects, notes tree |

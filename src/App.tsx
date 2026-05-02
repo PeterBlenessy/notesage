@@ -44,6 +44,7 @@ import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useAccent } from "@/hooks/useAccent";
+import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useSettingsStore, type UiPreview } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -161,6 +162,7 @@ function App() {
   // ============================================================
   useProjectMetadata();
   useStartWatchers();
+  useFileRenameSync();
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab
   // (e.g. "On Craft.md — Notesage"). Falls back to "Notesage" when no

@@ -1137,6 +1137,76 @@ describe('Quiet Composer single-document semantics', () => {
   });
 });
 
+// ===========================================================================
+// renameOpenDocument
+// ===========================================================================
+
+describe('renameOpenDocument', () => {
+  it('rewrites filePath, fileName, persistedTabs, recentFiles, scrollPositions for a single file', () => {
+    useEditorStore.getState().openTab('/project/notes/foo.md', 'foo.md', 'content');
+    useEditorStore.getState().setScrollPosition('/project/notes/foo.md', 0.5);
+
+    useEditorStore.getState().renameOpenDocument('/project/notes/foo.md', '/project/notes/bar.md');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments[0].filePath).toBe('/project/notes/bar.md');
+    expect(state.openDocuments[0].fileName).toBe('bar.md');
+    expect(state.persistedTabs[0].filePath).toBe('/project/notes/bar.md');
+    expect(state.persistedTabs[0].fileName).toBe('bar.md');
+    expect(state.recentFiles[0].path).toBe('/project/notes/bar.md');
+    expect(state.recentFiles[0].name).toBe('bar.md');
+    expect(state.scrollPositions['/project/notes/bar.md']).toBe(0.5);
+    expect(state.scrollPositions['/project/notes/foo.md']).toBeUndefined();
+  });
+
+  it('updates persistedActiveFilePath when renaming the active file', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+
+    useEditorStore.getState().renameOpenDocument('/a.md', '/b.md');
+
+    expect(useEditorStore.getState().persistedActiveFilePath).toBe('/b.md');
+  });
+
+  it('cascades to all descendant tabs on a folder rename', () => {
+    useEditorStore.getState().openTab('/project/old/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/project/old/sub/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/project/other/c.md', 'c.md', 'c');
+    useEditorStore.getState().setScrollPosition('/project/old/a.md', 0.3);
+
+    useEditorStore.getState().renameOpenDocument('/project/old', '/project/new');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments[0].filePath).toBe('/project/new/a.md');
+    expect(state.openDocuments[1].filePath).toBe('/project/new/sub/b.md');
+    expect(state.openDocuments[2].filePath).toBe('/project/other/c.md');
+    expect(state.scrollPositions['/project/new/a.md']).toBe(0.3);
+    expect(state.scrollPositions['/project/old/a.md']).toBeUndefined();
+  });
+
+  it('cascades recentFiles and persistedTabs on a folder rename', () => {
+    useEditorStore.getState().openTab('/project/old/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/project/old/sub/b.md', 'b.md', 'b');
+
+    useEditorStore.getState().renameOpenDocument('/project/old', '/project/new');
+
+    const state = useEditorStore.getState();
+    // recentFiles — most-recent first
+    expect(state.recentFiles[0].path).toBe('/project/new/sub/b.md');
+    expect(state.recentFiles[1].path).toBe('/project/new/a.md');
+    // persistedTabs order preserved
+    expect(state.persistedTabs[0].filePath).toBe('/project/new/a.md');
+    expect(state.persistedTabs[1].filePath).toBe('/project/new/sub/b.md');
+  });
+
+  it('is a no-op when no open document matches the old path', () => {
+    useEditorStore.getState().openTab('/other.md', 'other.md', 'content');
+
+    useEditorStore.getState().renameOpenDocument('/no-such-file.md', '/still-missing.md');
+
+    expect(useEditorStore.getState().openDocuments[0].filePath).toBe('/other.md');
+  });
+});
+
 describe('scroll-to targets', () => {
   it('setScrollToTag sets and clears scrollToTag', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
