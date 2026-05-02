@@ -344,6 +344,10 @@ export function useFileOperations() {
   const renamePath = useCallback(
     async (oldPath: string, newPath: string) => {
       try {
+        // Mark both paths as self-write so the watcher does not fire
+        // a `file-renamed` event for this in-app rename.
+        await tauriApi.markSelfWrite(oldPath);
+        await tauriApi.markSelfWrite(newPath);
         await tauriApi.renamePath(oldPath, newPath);
         // Update open tab if this file is open in the editor
         useEditorStore.getState().renameTab(oldPath, newPath);

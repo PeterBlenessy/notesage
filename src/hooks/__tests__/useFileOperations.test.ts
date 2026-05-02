@@ -327,6 +327,7 @@ describe('useFileOperations', () => {
   describe('renamePath', () => {
     it('renames a path and updates open tabs', async () => {
       setMockInvokeHandler('read_file', () => 'Content');
+      setMockInvokeHandler('mark_self_write', () => undefined);
       setMockInvokeHandler('rename_path', () => undefined);
       setMockInvokeHandler('list_directory', () => []);
 
@@ -349,6 +350,7 @@ describe('useFileOperations', () => {
     });
 
     it('throws when rename_path fails', async () => {
+      setMockInvokeHandler('mark_self_write', () => undefined);
       setMockInvokeHandler('rename_path', () => {
         throw new Error('Target already exists');
       });

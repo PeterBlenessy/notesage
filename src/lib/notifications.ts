@@ -108,3 +108,31 @@ export function toastExternalReload(filePath: string): void {
     duration: 3000,
   });
 }
+
+/**
+ * Sticky toast shown when a file that has unsaved edits is renamed externally.
+ * The tab path has already been rewritten to the new path; this toast gives
+ * the user a one-click Save action so the edits land at the new path.
+ *
+ * When the file has no unsaved edits, call this without `onSave` — the toast
+ * will omit the action button.
+ */
+export function toastExternalRename(
+  oldName: string,
+  newName: string,
+  onSave?: () => void,
+): string | number {
+  return toast(`${oldName} renamed to ${newName} externally${onSave ? " — your unsaved edits stay on the new path. Save now?" : ""}`, {
+    id: `external-rename:${newName}`,
+    duration: Infinity,
+    closeButton: true,
+    ...(onSave
+      ? {
+          action: {
+            label: "Save",
+            onClick: onSave,
+          },
+        }
+      : {}),
+  });
+}

@@ -1,3 +1,4 @@
+use notify::event::{ModifyKind, RenameMode};
 use notify::RecursiveMode;
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,15 @@ pub enum FileChangeKind {
 pub struct FileChangedEvent {
     pub path: String,
     pub kind: FileChangeKind,
+}
+
+/// Event payload emitted to the frontend via `file-renamed`.
+/// Both paths are populated; `is_directory` reflects the new path.
+#[derive(Clone, Serialize)]
+pub struct FileRenamedEvent {
+    pub old_path: String,
+    pub new_path: String,
+    pub is_directory: bool,
 }
 
 /// How long a self-write mark stays active. Must cover:
@@ -160,6 +170,52 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
+                // Handle same-volume renames: notify_debouncer_full with
+                // FileIdMap correlates old+new paths into a single event with
+                // RenameMode::Both. Emit `file-renamed` and skip the paired
+                // delete+create so the frontend does not double-handle.
+                if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = &event.kind {
+                    if let (Some(old_path), Some(new_path)) =
+                        (event.paths.get(0), event.paths.get(1))
+                    {
+                        // Honor mark_self_write — sidebar-initiated renames use this.
+                        if is_self_write(&mut self_writes, old_path)
+                            || is_self_write(&mut self_writes, new_path)
+                        {
+                            continue;
+                        }
+
+                        // Queue reindex for both paths so the SQLite index
+                        // stays consistent (delete old row, insert new row).
+                        if let Some(indexer) =
+                            app_handle.try_state::<crate::index::IndexState>()
+                        {
+                            indexer.queue_reindex(
+                                old_path.to_string_lossy().to_string(),
+                                FileChangeKind::Delete,
+                            );
+                            indexer.queue_reindex(
+                                new_path.to_string_lossy().to_string(),
+                                FileChangeKind::Create,
+                            );
+                        }
+
+                        let payload = FileRenamedEvent {
+                            old_path: old_path.to_string_lossy().to_string(),
+                            new_path: new_path.to_string_lossy().to_string(),
+                            is_directory: new_path.is_dir(),
+                        };
+                        if let Err(e) = app_handle.emit("file-renamed", &payload) {
+                            log::error!(
+                                target: "notesage::watcher",
+                                "Failed to emit file-renamed event: {:?}",
+                                e
+                            );
+                        }
+                    }
+                    continue; // suppress paired delete+create batch entries
+                }
+
                 let change_kind = match event_kind(&event.kind) {
                     Some(k) => k,
                     None => continue,

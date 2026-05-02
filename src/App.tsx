@@ -30,6 +30,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useWindowTitle } from "@/hooks/useWindowTitle";
@@ -161,6 +162,7 @@ function App() {
   // ============================================================
   useProjectMetadata();
   useStartWatchers();
+  useFileRenameSync();
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab
   // (e.g. "On Craft.md — Notesage"). Falls back to "Notesage" when no

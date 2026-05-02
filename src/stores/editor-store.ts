@@ -138,6 +138,12 @@ interface EditorStore {
   clearExternalChange: (filePath: string) => void;
   /** Update a single tab's file path and name after a rename. */
   renameTab: (oldPath: string, newPath: string) => void;
+  /**
+   * Handle an external rename — rewrites the exact path AND any descendant paths
+   * (folder cascade). Used by `useFileRenameSync` when the watcher fires a
+   * `file-renamed` event.
+   */
+  renameOpenDocument: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
   /** Set view mode for a markdown tab (session-only, not persisted). */
@@ -469,6 +475,51 @@ export const useEditorStore = create<EditorStore>()(
             Object.entries(state.scrollPositions).map(([k, v]) =>
               k === oldPath ? [newPath, v] : [k, v]
             )
+          ),
+        }));
+      },
+
+      renameOpenDocument: (oldPath: string, newPath: string) => {
+        const newName = newPath.split("/").pop() ?? newPath;
+        const prefix = oldPath + "/";
+        const rewritePath = (p: string): string => {
+          if (p === oldPath) return newPath;
+          if (p.startsWith(prefix)) return newPath + p.slice(oldPath.length);
+          return p;
+        };
+        set((state) => ({
+          openDocuments: state.openDocuments.map((tab) => {
+            const next = rewritePath(tab.filePath);
+            if (next === tab.filePath) return tab;
+            return {
+              ...tab,
+              filePath: next,
+              fileName: tab.filePath === oldPath ? newName : tab.fileName,
+            };
+          }),
+          persistedTabs: state.persistedTabs.map((pt) => {
+            const next = rewritePath(pt.filePath);
+            if (next === pt.filePath) return pt;
+            return {
+              ...pt,
+              filePath: next,
+              fileName: pt.filePath === oldPath ? newName : pt.fileName,
+            };
+          }),
+          persistedActiveFilePath: state.persistedActiveFilePath
+            ? rewritePath(state.persistedActiveFilePath)
+            : null,
+          recentFiles: state.recentFiles.map((rf) => {
+            const next = rewritePath(rf.path);
+            if (next === rf.path) return rf;
+            return {
+              ...rf,
+              path: next,
+              name: rf.path === oldPath ? newName : rf.name,
+            };
+          }),
+          scrollPositions: Object.fromEntries(
+            Object.entries(state.scrollPositions).map(([k, v]) => [rewritePath(k), v])
           ),
         }));
       },

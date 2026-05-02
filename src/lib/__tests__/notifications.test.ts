@@ -176,4 +176,61 @@ describe('notifications — external-change helpers', () => {
       expect(message).toBe('readme.md reloaded from disk');
     });
   });
+
+  // ==========================================================================
+  // toastExternalRename
+  // ==========================================================================
+
+  describe('toastExternalRename', () => {
+    let toastExternalRename: typeof import('@/lib/notifications').toastExternalRename;
+
+    beforeEach(async () => {
+      toastMock.mockClear();
+      toastMock.info.mockClear();
+      const mod = await import('@/lib/notifications');
+      toastExternalRename = mod.toastExternalRename;
+    });
+
+    it('fires a sticky toast showing old and new filenames', () => {
+      toastExternalRename('foo.md', 'bar.md');
+
+      expect(toastMock).toHaveBeenCalledTimes(1);
+      const [message] = toastMock.mock.calls[0];
+      expect(message).toContain('foo.md');
+      expect(message).toContain('bar.md');
+    });
+
+    it('is sticky (duration: Infinity) so the user can act on unsaved edits', () => {
+      toastExternalRename('foo.md', 'bar.md');
+
+      const [, opts] = toastMock.mock.calls[0];
+      expect(opts.duration).toBe(Infinity);
+    });
+
+    it('exposes a Save action that invokes the onSave callback', () => {
+      const onSave = vi.fn();
+      toastExternalRename('foo.md', 'bar.md', onSave);
+
+      const [, opts] = toastMock.mock.calls[0];
+      expect(opts.action?.label).toBe('Save');
+      opts.action?.onClick();
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    it('has no Save action when onSave is not provided', () => {
+      toastExternalRename('foo.md', 'bar.md');
+
+      const [, opts] = toastMock.mock.calls[0];
+      expect(opts.action).toBeUndefined();
+    });
+
+    it('uses a stable id keyed to the new filename so repeated events collapse', () => {
+      toastExternalRename('foo.md', 'bar.md');
+      toastExternalRename('foo.md', 'bar.md');
+
+      const id1 = toastMock.mock.calls[0][1].id;
+      const id2 = toastMock.mock.calls[1][1].id;
+      expect(id1).toBe(id2);
+    });
+  });
 });
