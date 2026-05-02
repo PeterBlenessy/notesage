@@ -2,20 +2,23 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
-import { emitMockEvent } from '@/test/tauri-mock';
+import { emitMockEvent, setMockInvokeHandler } from '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
 
 const mockRefreshFileTree = vi.fn();
+const mockSaveFile = vi.fn();
 
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: () => ({
     refreshFileTree: mockRefreshFileTree,
+    saveFile: mockSaveFile,
   }),
   refreshGitForPath: vi.fn(),
 }));
@@ -304,5 +307,145 @@ describe('useFileRenameSync — self-write suppression', () => {
     expect(mockToastFn).not.toHaveBeenCalled();
     expect(mockToastFn.info).not.toHaveBeenCalled();
     expect(mockToastFn.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Save Now action wiring (Gap #10 from aw-review on #111)
+// ---------------------------------------------------------------------------
+
+describe('useFileRenameSync — Save Now action wiring', () => {
+  it('invoking the Save Now toast action calls saveFile with the new path and tab content', async () => {
+    const tab = makeTab({
+      filePath: '/project/notes/foo.md',
+      fileName: 'foo.md',
+      isDirty: true,
+      content: '# Unsaved edits',
+    });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/notes/foo.md', '/project/notes/bar.md');
+    });
+
+    // The dirty-tab path should call toast() (not toast.info()) with a Save now action
+    expect(mockToastFn).toHaveBeenCalled();
+    const toastOpts = mockToastFn.mock.calls[0][1] as Record<string, unknown>;
+    expect(toastOpts?.action).toBeDefined();
+
+    // Invoke the Save Now action — it should call saveFile on the new path
+    await act(async () => {
+      await (toastOpts.action as { onClick: () => Promise<void> }).onClick();
+    });
+
+    expect(mockSaveFile).toHaveBeenCalledWith(
+      '/project/notes/bar.md',
+      '# Unsaved edits',
+      tab.id,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sidecar migration for non-project file renames (Gap #7 from aw-review on #111)
+// ---------------------------------------------------------------------------
+
+/** Same djb2-style hash used by useCommentOperations and useFileRenameSync. */
+function hashPath(filePath: string): string {
+  let h = 0;
+  for (let i = 0; i < filePath.length; i++) {
+    h = ((h << 5) - h + filePath.charCodeAt(i)) | 0;
+  }
+  return 'path-' + ((h >>> 0).toString(16));
+}
+
+describe('useFileRenameSync — sidecar migration for non-project files', () => {
+  const notesRoot = '/home/user/Notesage';
+  const oldFilePath = '/home/user/documents/old-note.md';
+  const newFilePath = '/home/user/documents/renamed-note.md';
+
+  function sidecarPath(filePath: string) {
+    return `${notesRoot}/.notesage/comments/${hashPath(filePath)}.json`;
+  }
+
+  it('copies the comment sidecar to the new hash path when the sidecar exists', async () => {
+    // File is not under any project root
+    useWorkspaceStore.setState({ projects: [], explorerFolders: [], pinnedFiles: [] });
+    useSettingsStore.setState({ notesRootPath: notesRoot } as Parameters<typeof useSettingsStore.setState>[0]);
+
+    const commentContent = JSON.stringify([{ id: 'c1', text: 'hello' }]);
+
+    setMockInvokeHandler('path_exists', (args) => {
+      return (args as Record<string, string>).path === sidecarPath(oldFilePath);
+    });
+    setMockInvokeHandler('read_file', () => commentContent);
+
+    const writeCalls: Array<Record<string, unknown>> = [];
+    setMockInvokeHandler('write_file', (args) => {
+      writeCalls.push(args as Record<string, unknown>);
+      return undefined;
+    });
+
+    setMockInvokeHandler('delete_path', () => undefined);
+
+    renderHook(() => useFileRenameSync());
+
+    await act(async () => {
+      emitFileRenamed(oldFilePath, newFilePath, false);
+    });
+
+    expect(writeCalls.length).toBeGreaterThan(0);
+    const writeToNew = writeCalls.find((c) => c.path === sidecarPath(newFilePath));
+    expect(writeToNew).toBeDefined();
+    expect(writeToNew?.content).toBe(commentContent);
+  });
+
+  it('deletes the old sidecar after a successful migration', async () => {
+    useWorkspaceStore.setState({ projects: [], explorerFolders: [], pinnedFiles: [] });
+    useSettingsStore.setState({ notesRootPath: notesRoot } as Parameters<typeof useSettingsStore.setState>[0]);
+
+    const commentContent = JSON.stringify([{ id: 'c2', text: 'another comment' }]);
+
+    setMockInvokeHandler('path_exists', () => true);
+    setMockInvokeHandler('read_file', () => commentContent);
+    setMockInvokeHandler('write_file', () => undefined);
+
+    const deleteCalls: Array<Record<string, unknown>> = [];
+    setMockInvokeHandler('delete_path', (args) => {
+      deleteCalls.push(args as Record<string, unknown>);
+      return undefined;
+    });
+
+    renderHook(() => useFileRenameSync());
+
+    await act(async () => {
+      emitFileRenamed(oldFilePath, newFilePath, false);
+    });
+
+    const deleteOfOld = deleteCalls.find((c) => c.path === sidecarPath(oldFilePath));
+    expect(deleteOfOld).toBeDefined();
+  });
+
+  it('does nothing when no sidecar exists for the old path', async () => {
+    useWorkspaceStore.setState({ projects: [], explorerFolders: [], pinnedFiles: [] });
+    useSettingsStore.setState({ notesRootPath: notesRoot } as Parameters<typeof useSettingsStore.setState>[0]);
+
+    setMockInvokeHandler('path_exists', () => false);
+
+    const writeCalls: unknown[] = [];
+    setMockInvokeHandler('write_file', (args) => { writeCalls.push(args); return undefined; });
+    const deleteCalls: unknown[] = [];
+    setMockInvokeHandler('delete_path', (args) => { deleteCalls.push(args); return undefined; });
+
+    renderHook(() => useFileRenameSync());
+
+    await act(async () => {
+      emitFileRenamed(oldFilePath, newFilePath, false);
+    });
+
+    expect(writeCalls).toHaveLength(0);
+    expect(deleteCalls).toHaveLength(0);
   });
 });

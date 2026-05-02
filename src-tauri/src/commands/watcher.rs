@@ -130,6 +130,113 @@ fn is_self_write(self_writes: &mut HashMap<PathBuf, Instant>, path: &std::path::
     self_writes.contains_key(&normalized)
 }
 
+// ---------------------------------------------------------------------------
+// Testable event-classification logic
+// ---------------------------------------------------------------------------
+
+/// Output of classifying a batch of debounced events.
+pub(crate) struct ProcessedWatcherEvents {
+    /// Same-volume renames detected via `Modify(Name(Both))`.
+    pub rename_events: Vec<FileRenamedEvent>,
+    /// File-level creates / modifies / deletes to forward to the frontend.
+    /// Self-write paths are excluded; `.git/` and `.DS_Store` are filtered.
+    pub file_changes: Vec<FileChangedEvent>,
+    /// Paths to queue for SQLite reindex (always includes self-writes).
+    pub reindex: Vec<(String, FileChangeKind)>,
+}
+
+/// Classify a slice of debounced events without any Tauri or I/O side-effects,
+/// making the logic independently testable.
+///
+/// `self_writes` is consulted (and pruned) for self-write suppression.
+pub(crate) fn process_watcher_events(
+    events: &[DebouncedEvent],
+    self_writes: &mut HashMap<PathBuf, Instant>,
+) -> ProcessedWatcherEvents {
+    let mut out = ProcessedWatcherEvents {
+        rename_events: Vec::new(),
+        file_changes: Vec::new(),
+        reindex: Vec::new(),
+    };
+
+    for event in events {
+        // Handle rename-both events (same-volume renames where notify provides
+        // both the old and new paths in a single Modify(Name(Both)) event).
+        if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = event.kind {
+            if event.paths.len() >= 2 {
+                let old_path = &event.paths[0];
+                let new_path = &event.paths[1];
+                let is_directory = new_path.is_dir();
+                out.rename_events.push(FileRenamedEvent {
+                    old_path: old_path.to_string_lossy().to_string(),
+                    new_path: new_path.to_string_lossy().to_string(),
+                    is_directory,
+                });
+                // Queue reindex for old (delete) and new (create) paths.
+                out.reindex.push((
+                    old_path.to_string_lossy().to_string(),
+                    FileChangeKind::Delete,
+                ));
+                out.reindex.push((
+                    new_path.to_string_lossy().to_string(),
+                    FileChangeKind::Create,
+                ));
+                // Do not produce a file-changed-batch entry — the rename event
+                // covers this transition; emitting a paired delete+create would
+                // confuse the frontend into showing a spurious "external change".
+                continue;
+            }
+        }
+
+        let change_kind = match event_kind(&event.kind) {
+            Some(k) => k,
+            None => continue,
+        };
+
+        for path in &event.paths {
+            // Skip .git/ internals and .DS_Store.
+            let path_str = path.to_string_lossy();
+            if path_str.contains("/.git/")
+                || path_str.ends_with("/.git")
+                || path_str.ends_with("/.DS_Store")
+            {
+                continue;
+            }
+
+            // On macOS, FSEvents reports file deletions as a Modify on the
+            // deleted path. Reclassify: Modify + no longer exists → Delete.
+            let effective_kind = if change_kind == FileChangeKind::Modify && !path.exists() {
+                FileChangeKind::Delete
+            } else {
+                change_kind.clone()
+            };
+
+            // Skip directories, but NOT for deletes (already gone → is_dir() false).
+            if effective_kind != FileChangeKind::Delete && path.is_dir() {
+                continue;
+            }
+
+            // Always reindex — self-writes still need the SQLite index updated.
+            out.reindex.push((
+                path.to_string_lossy().to_string(),
+                effective_kind.clone(),
+            ));
+
+            // Suppress frontend notification for paths Notesage itself wrote.
+            if is_self_write(self_writes, path) {
+                continue;
+            }
+
+            out.file_changes.push(FileChangedEvent {
+                path: path.to_string_lossy().to_string(),
+                kind: effective_kind,
+            });
+        }
+    }
+
+    out
+}
+
 /// Ensure the debouncer is created (lazy init) and return access to it.
 fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<WatcherState>();
@@ -158,92 +265,20 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let state = app_handle.state::<WatcherState>();
             let mut self_writes = state.self_writes.lock();
 
-            let mut batch: Vec<FileChangedEvent> = Vec::new();
+            // Classify events using the testable helper.
+            let processed = process_watcher_events(&events, &mut self_writes);
 
-            for event in events {
-                // Handle rename-both events (same-volume renames where notify
-                // knows both the old and new path in a single event).
-                if let notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = event.kind {
-                    if event.paths.len() >= 2 {
-                        let old_path = &event.paths[0];
-                        let new_path = &event.paths[1];
-                        let is_directory = new_path.is_dir();
-                        let rename_event = FileRenamedEvent {
-                            old_path: old_path.to_string_lossy().to_string(),
-                            new_path: new_path.to_string_lossy().to_string(),
-                            is_directory,
-                        };
-                        if let Err(e) = app_handle.emit("file-renamed", &rename_event) {
-                            log::error!(target: "notesage::watcher", "Failed to emit file-renamed event: {:?}", e);
-                        }
-                        // Queue reindex for both the old (delete) and new (create) paths.
-                        if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
-                            indexer.queue_reindex(
-                                old_path.to_string_lossy().to_string(),
-                                FileChangeKind::Delete,
-                            );
-                            indexer.queue_reindex(
-                                new_path.to_string_lossy().to_string(),
-                                FileChangeKind::Create,
-                            );
-                        }
-                        // Skip normal event processing — rename is handled above.
-                        continue;
-                    }
+            // Emit rename events to the frontend.
+            for rename_event in &processed.rename_events {
+                if let Err(e) = app_handle.emit("file-renamed", rename_event) {
+                    log::error!(target: "notesage::watcher", "Failed to emit file-renamed event: {:?}", e);
                 }
+            }
 
-                let change_kind = match event_kind(&event.kind) {
-                    Some(k) => k,
-                    None => continue,
-                };
-
-                for path in &event.paths {
-                    // Skip .git/ internals — these are never user-facing files
-                    // and iCloud-synced repos flood the watcher with index.lock events.
-                    // Also skip .DS_Store (macOS Finder metadata).
-                    let path_str = path.to_string_lossy();
-                    if path_str.contains("/.git/")
-                        || path_str.ends_with("/.git")
-                        || path_str.ends_with("/.DS_Store")
-                    {
-                        continue;
-                    }
-
-                    // On macOS, FSEvents often reports file deletions as
-                    // "modify" on the parent directory or the deleted path.
-                    // Reclassify: if notify says "modify" but the path no
-                    // longer exists, treat it as a delete.
-                    let effective_kind = if change_kind == FileChangeKind::Modify && !path.exists() {
-                        FileChangeKind::Delete
-                    } else {
-                        change_kind.clone()
-                    };
-
-                    // Skip directories, but NOT for delete events (file is
-                    // already gone so is_dir() would return false anyway).
-                    if effective_kind != FileChangeKind::Delete && path.is_dir() {
-                        continue;
-                    }
-
-                    // Always reindex — even self-writes need the SQLite index updated
-                    // so the actions dashboard, tag search, etc. stay current.
-                    if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
-                        indexer.queue_reindex(
-                            path.to_string_lossy().to_string(),
-                            effective_kind.clone(),
-                        );
-                    }
-
-                    // Skip frontend events for files Notesage itself wrote
-                    // (prevents false "external change" detection in the editor).
-                    if is_self_write(&mut self_writes, path) {
-                        continue;
-                    }
-
-                    batch.push(FileChangedEvent {
-                        path: path.to_string_lossy().to_string(),
-                        kind: effective_kind,
-                    });
+            // Forward reindex requests to the index subsystem.
+            if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                for (path, kind) in &processed.reindex {
+                    indexer.queue_reindex(path.clone(), kind.clone());
                 }
             }
 
@@ -252,9 +287,9 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             // processing for tag/mention autocomplete to stay current.
             crate::index::process_reindex_queue(&app_handle);
 
-            // Emit batch event with non-self-write changes to the frontend
-            if !batch.is_empty() {
-                if let Err(e) = app_handle.emit("file-changed-batch", &batch) {
+            // Emit batch event with non-self-write file changes to the frontend.
+            if !processed.file_changes.is_empty() {
+                if let Err(e) = app_handle.emit("file-changed-batch", &processed.file_changes) {
                     log::error!(target: "notesage::watcher", "Failed to emit file-changed-batch event: {:?}", e);
                 }
             }
@@ -419,5 +454,46 @@ mod tests {
             is_directory: true,
         };
         assert!(event.is_directory);
+    }
+
+    // -----------------------------------------------------------------------
+    // process_watcher_events — event-handler loop extracted for testability
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn process_watcher_events_rename_both_emits_one_rename_event() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let event = notify::Event::new(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+        )
+        .add_path(PathBuf::from("/tmp/old.md"))
+        .add_path(PathBuf::from("/tmp/new.md"));
+        let debounced = DebouncedEvent::new(event, Instant::now());
+
+        let result = process_watcher_events(&[debounced], &mut self_writes);
+
+        assert_eq!(result.rename_events.len(), 1, "expected exactly one rename event");
+        assert_eq!(result.rename_events[0].old_path, "/tmp/old.md");
+        assert_eq!(result.rename_events[0].new_path, "/tmp/new.md");
+        assert!(!result.rename_events[0].is_directory);
+    }
+
+    #[test]
+    fn process_watcher_events_rename_both_suppresses_file_changed_batch() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let event = notify::Event::new(
+            notify::EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+        )
+        .add_path(PathBuf::from("/tmp/old.md"))
+        .add_path(PathBuf::from("/tmp/new.md"));
+        let debounced = DebouncedEvent::new(event, Instant::now());
+
+        let result = process_watcher_events(&[debounced], &mut self_writes);
+
+        assert!(
+            result.file_changes.is_empty(),
+            "rename event should not produce file-changed-batch entries; \
+             paired delete+create are suppressed in favour of the rename event"
+        );
     }
 }

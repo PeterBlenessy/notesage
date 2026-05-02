@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
@@ -13,13 +15,50 @@ interface FileRenamedPayload {
   is_directory: boolean;
 }
 
+/** djb2-style hash matching useCommentOperations — produces `path-<hex>`. */
+function hashPath(filePath: string): string {
+  let h = 0;
+  for (let i = 0; i < filePath.length; i++) {
+    h = ((h << 5) - h + filePath.charCodeAt(i)) | 0;
+  }
+  return "path-" + ((h >>> 0).toString(16));
+}
+
+/**
+ * Migrate a comment sidecar file from the old hash-keyed path to the new one
+ * when a non-project file is renamed externally. No-op when no sidecar exists.
+ */
+async function migrateFileSidecar(
+  oldFilePath: string,
+  newFilePath: string,
+  notesRootPath: string,
+): Promise<void> {
+  const oldSidecar = `${notesRootPath}/.notesage/comments/${hashPath(oldFilePath)}.json`;
+  const newSidecar = `${notesRootPath}/.notesage/comments/${hashPath(newFilePath)}.json`;
+
+  try {
+    const exists = await invoke<boolean>("path_exists", { path: oldSidecar });
+    if (!exists) return;
+
+    const content = await invoke<string>("read_file", { path: oldSidecar });
+    await invoke("write_file", { path: newSidecar, content });
+    await invoke("delete_path", { path: oldSidecar });
+  } catch (err) {
+    log.warn("useFileRenameSync", `sidecar migration failed: ${err}`);
+  }
+}
+
 /**
  * Listens for `file-renamed` events emitted by the Rust watcher and keeps
  * all in-memory state (open documents, recent files, workspace projects,
  * pinned files) consistent with the rename that happened on disk.
+ *
+ * Also migrates comment sidecar files for non-project files and wires up the
+ * "Save now" toast action for dirty tabs so unsaved edits are persisted to the
+ * new path.
  */
 export function useFileRenameSync(): void {
-  const { refreshFileTree } = useFileOperations();
+  const { refreshFileTree, saveFile } = useFileOperations();
 
   useEffect(() => {
     const unlisten = listen<FileRenamedPayload>("file-renamed", (event) => {
@@ -50,10 +89,7 @@ export function useFileRenameSync(): void {
           oldPath: old_path,
           newPath: new_path,
           onSave: affectedTab.isDirty
-            ? () => {
-                // Content stays at the new path; mark it clean via a no-op save
-                // (editor auto-save will pick it up on next keystroke or blur).
-              }
+            ? () => saveFile(new_path, affectedTab.content, affectedTab.id)
             : undefined,
         });
       } else {
@@ -63,6 +99,18 @@ export function useFileRenameSync(): void {
         );
         if (wasRecent) {
           toastExternalRename({ oldPath: old_path, newPath: new_path });
+        }
+      }
+
+      // --- Sidecar migration for non-project files ---
+      if (!is_directory) {
+        const projects = useWorkspaceStore.getState().projects;
+        const isProjectFile = projects.some((p) => old_path.startsWith(p.path + "/") || old_path === p.path);
+        if (!isProjectFile) {
+          const notesRootPath = useSettingsStore.getState().notesRootPath;
+          if (notesRootPath) {
+            void migrateFileSidecar(old_path, new_path, notesRootPath);
+          }
         }
       }
 
@@ -94,5 +142,5 @@ export function useFileRenameSync(): void {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [refreshFileTree]);
+  }, [refreshFileTree, saveFile]);
 }

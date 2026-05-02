@@ -984,13 +984,14 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 
 **Events emitted:**
 
-- `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-changed-batch` (`[{ path: String, kind: String }]`): Array of file-system changes. `kind` is one of `"create"`, `"modify"`, or `"delete"`. Self-writes and `.git/` internals are already filtered; directory events (non-delete) are excluded.
+- `file-renamed` (`{ old_path: String, new_path: String, is_directory: bool }`): Emitted for same-volume renames detected via `notify`'s `Modify(Name(Both))` event — the watcher knows both the old and new path atomically. The frontend handles this event in `useFileRenameSync` to update open tabs, recent files, pinned files, and project paths in one step. A paired `file-changed-batch` entry is NOT emitted for rename events; the `file-renamed` event is the sole notification.
 
 **Filtering applied before emission:**
 
 - `.git/` internals and `.DS_Store` files silently dropped
-- Self-written files suppressed (see `mark_self_write`)
-- Directory events skipped (except deletes)
+- Self-written files suppressed from `file-changed-batch` (see `mark_self_write`); `file-renamed` events are NOT suppressed for self-writes — the frontend's `self-rename-filter` handles that distinction
+- Directory events skipped for `file-changed-batch` (except deletes)
 - macOS: `modify` events for paths that no longer exist reclassified as `delete`
 
 ### unwatch_directory
@@ -1060,10 +1061,17 @@ await invoke('watch_directory', { path: '/path/to/project' });
 await invoke('mark_self_write', { path: '/path/to/file.md' });
 await invoke('write_file', { path: '/path/to/file.md', content });
 
-// Listen for external changes
-listen<{ path: string; kind: string }>('file-changed', (event) => {
-  const { path, kind } = event.payload;
-  // Handle create/modify/delete...
+// Listen for file create/modify/delete changes (batch)
+listen<Array<{ path: string; kind: string }>>('file-changed-batch', (event) => {
+  for (const { path, kind } of event.payload) {
+    // Handle create/modify/delete...
+  }
+});
+
+// Listen for same-volume renames (old+new path known atomically)
+listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-renamed', (event) => {
+  const { old_path, new_path, is_directory } = event.payload;
+  // Update open tabs, sidebar, pinned files...
 });
 ```
 

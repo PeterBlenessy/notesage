@@ -104,6 +104,14 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 5. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
 6. Reindex queue always drained after event processing (unconditionally, not gated on frontend batch)
 7. Non-self-write events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+8. Same-volume renames detected via `notify`'s `Modify(Name(Both))` event kind — a single `file-renamed` Tauri event (`{ old_path, new_path, is_directory }`) is emitted instead of a paired delete+create, so the frontend can update open tabs and sidebar state atomically. The event-classification logic is extracted into `process_watcher_events()` (pure function, no Tauri state) and tested independently.
+
+**Frontend rename handler (**`useFileRenameSync.ts`**):**
+
+- Listens for `file-renamed` events and updates all in-memory state atomically: open document paths + file names, recent-files list, pinned files, workspace project paths.
+- **Self-write suppression**: in-app renames (sidebar inline-edit, `rename_path` Tauri command) track both old and new paths via `trackSelfRename` / `isSelfRename` in `src/lib/self-rename-filter.ts`. When both paths are recognised the event is consumed silently — no toast, no state churn.
+- **Dirty-tab Save Now**: when an externally renamed file has unsaved edits, a sticky toast offers "Save now" which calls `saveFile(newPath, content, tabId)` to persist the in-memory content under the new path.
+- **Sidecar migration**: for non-project files (files not under any workspace project root), comment sidecars are keyed by a `path-<hex>` hash. On an external rename the hook computes old and new sidecar paths, copies the JSON content, and deletes the old sidecar — so comments survive renames transparently.
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
