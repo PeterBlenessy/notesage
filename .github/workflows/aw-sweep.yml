@@ -2,17 +2,26 @@ name: AW — Sweep
 
 # Single cron-driven sweep that does the work the four standalones used
 # to do via individual `schedule:` triggers. One workflow run per tick,
-# four parallel jobs (triage / refine / slice / tdd) — each does a
-# cheap `gh + jq` precheck FIRST and only checks out the repo / installs
-# pnpm if a candidate is actually found. Idle ticks finish in ~20s
-# total runner time with no checkouts and no installs.
+# four parallel stages (triage / refine / slice / tdd) — each stage is
+# split into a `find_<stage>` job that runs a cheap `gh + jq` precheck
+# and outputs the candidate issue number, and a `<stage>` job that runs
+# the skill (gated on `needs.find_<stage>.outputs.candidate != ''`).
+#
+# Why the find/skill split: the per-stage concurrency group needs to
+# reference the candidate issue number to share a key with the pipeline
+# job and the standalone for that same stage+issue (#98). GitHub
+# evaluates `concurrency:` at JOB level using `needs.*` outputs only —
+# `steps.*.outputs.*` from the same job is NOT available at concurrency
+# evaluation time. Splitting each stage into find + skill jobs makes the
+# candidate available via `needs.find_<stage>.outputs.candidate` for the
+# skill job's concurrency expression.
 #
 # The standalone workflows (aw-triage.yml, aw-refine.yml, aw-slice.yml,
-# aw-tdd.yml) keep their `workflow_dispatch` + `issues.labeled` triggers
-# for manual one-off targeting and human label edits — they just no
-# longer carry the `schedule:` trigger. aw-pipeline.yml is unchanged
-# (still fires on issues.opened / reopened for the happy-path
-# fan-through).
+# aw-tdd.yml) are `workflow_dispatch`-only manual entry points. The
+# sweep is the auto-trigger backstop: cron every 15 min PLUS
+# `issues.labeled/unlabeled` for instant-pickup on label edits.
+# aw-pipeline.yml fires on issues.opened / reopened for the happy-path
+# fan-through.
 
 on:
   schedule:
@@ -33,17 +42,19 @@ permissions:
   actions: write        # tdd dispatches aw-review.yml after the PR is created
   id-token: write       # claude-code-action OIDC
 
-concurrency:
-  # Per-stage concurrency keyed by run id so two ticks don't overlap on
-  # the same stage. Issue-level concurrency happens inside each skill
-  # via `gh issue edit` idempotency.
-  group: aw-sweep-${{ github.run_id }}
-  cancel-in-progress: false
+# NOTE: workflow-level concurrency removed. Per-skill-job concurrency
+# uses `aw-stage-{stage}-{candidate}` so it shares a key with the
+# pipeline + standalone for that same issue+stage (#98). The find_*
+# jobs run unconditionally on each tick (they're cheap precheck-only)
+# and don't need concurrency gating.
 
 jobs:
-  triage:
+  # ── triage ────────────────────────────────────────────────────────────────
+  find_triage:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      candidate: ${{ steps.find.outputs.candidate }}
     steps:
       # Untriaged = open + no category (bug/enhancement/chore) and not
       # already a closed-state marker (duplicate/wontfix). Once a category
@@ -68,11 +79,21 @@ jobs:
             echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
           fi
 
+  triage:
+    needs: find_triage
+    if: needs.find_triage.outputs.candidate != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      # Shared `aw-stage-{stage}-{issue}` group across pipeline / sweep /
+      # standalone (#98). Falls back to run_id when candidate is empty so
+      # this expression never evaluates to a malformed key.
+      group: aw-stage-triage-${{ needs.find_triage.outputs.candidate || github.run_id }}
+      cancel-in-progress: false
+    steps:
       - uses: actions/checkout@v6
-        if: steps.find.outputs.candidate != ''
 
       - name: Run aw-triage skill
-        if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -85,7 +106,7 @@ jobs:
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-triage` skill at `.claude/skills/aw-triage/SKILL.md`
-            on issue #${{ steps.find.outputs.candidate }} in this repository
+            on issue #${{ needs.find_triage.outputs.candidate }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely.
 
@@ -97,9 +118,12 @@ jobs:
               duplicate of another open issue.
             - Idempotent: if a category is already set, exit silently.
 
-  refine:
+  # ── refine ────────────────────────────────────────────────────────────────
+  find_refine:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      candidate: ${{ steps.find.outputs.candidate }}
     steps:
       # Refine candidate = open + `refine` label + NOT yet `refined`.
       - name: Find candidate
@@ -123,11 +147,18 @@ jobs:
             echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
           fi
 
+  refine:
+    needs: find_refine
+    if: needs.find_refine.outputs.candidate != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: aw-stage-refine-${{ needs.find_refine.outputs.candidate || github.run_id }}
+      cancel-in-progress: false
+    steps:
       - uses: actions/checkout@v6
-        if: steps.find.outputs.candidate != ''
 
       - name: Run aw-refine skill
-        if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -138,7 +169,7 @@ jobs:
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
-            on issue #${{ steps.find.outputs.candidate }} in this repository
+            on issue #${{ needs.find_refine.outputs.candidate }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely.
 
@@ -152,9 +183,12 @@ jobs:
             - Do NOT modify the title unless it is genuinely not outcome-shaped.
             - Idempotent: if `refined` is already present, exit silently.
 
-  slice:
+  # ── slice ─────────────────────────────────────────────────────────────────
+  find_slice:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      candidate: ${{ steps.find.outputs.candidate }}
     steps:
       # Slice candidate = open + `slice` + `refined` AND NOT `sliced` /
       # `awaiting-research`.
@@ -180,11 +214,18 @@ jobs:
             echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
           fi
 
+  slice:
+    needs: find_slice
+    if: needs.find_slice.outputs.candidate != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: aw-stage-slice-${{ needs.find_slice.outputs.candidate || github.run_id }}
+      cancel-in-progress: false
+    steps:
       - uses: actions/checkout@v6
-        if: steps.find.outputs.candidate != ''
 
       - name: Run aw-slice skill
-        if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -195,7 +236,7 @@ jobs:
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-slice` skill at `.claude/skills/aw-slice/SKILL.md`
-            on issue #${{ steps.find.outputs.candidate }} in this repository
+            on issue #${{ needs.find_slice.outputs.candidate }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely. The unit is one user value = one PR. Default to NOT
             slicing — most issues pass directly to aw-tdd as a single PR.
@@ -210,9 +251,12 @@ jobs:
             - Idempotent: if parent has `sliced` or `awaiting-research`
               already, exit silently.
 
-  tdd:
+  # ── tdd ───────────────────────────────────────────────────────────────────
+  find_tdd:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
+    outputs:
+      candidate: ${{ steps.find.outputs.candidate }}
     steps:
       # TDD candidate = open + `tdd` + `afk` + `refined` + a category,
       # AND not yet `review`.
@@ -239,30 +283,32 @@ jobs:
             echo "candidate=$CAND" >> "$GITHUB_OUTPUT"
           fi
 
-      # Heavy setup is gated behind candidate found — idle ticks skip
-      # checkout + pnpm install entirely.
+  tdd:
+    needs: find_tdd
+    if: needs.find_tdd.outputs.candidate != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: aw-stage-tdd-${{ needs.find_tdd.outputs.candidate || github.run_id }}
+      cancel-in-progress: false
+    steps:
       - uses: actions/checkout@v6
-        if: steps.find.outputs.candidate != ''
         with:
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-        if: steps.find.outputs.candidate != ''
         with:
           version: 9
 
       - uses: actions/setup-node@v4
-        if: steps.find.outputs.candidate != ''
         with:
           node-version: 22
           cache: "pnpm"
 
       - name: Install dependencies
-        if: steps.find.outputs.candidate != ''
         run: pnpm install --frozen-lockfile
 
       - name: Run aw-tdd skill
-        if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -273,7 +319,7 @@ jobs:
             --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
           prompt: |
             Run the `aw-tdd` skill at `.claude/skills/aw-tdd/SKILL.md` on
-            issue #${{ steps.find.outputs.candidate }} in this repository
+            issue #${{ needs.find_tdd.outputs.candidate }} in this repository
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely.
 

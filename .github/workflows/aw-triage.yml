@@ -20,7 +20,11 @@ permissions:
   id-token: write   # claude-code-action uses OIDC for auth telemetry
 
 concurrency:
-  group: aw-triage-${{ inputs.issue_number || github.run_id }}
+  # Shared `aw-stage-{stage}-{issue}` group across all entry points (pipeline,
+  # sweep, this standalone). Any runner doing the same stage on the same issue
+  # queues behind the others — fixes #98 cross-workflow race that gave us
+  # duplicate slice/tdd runs in the past.
+  group: aw-stage-triage-${{ inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:

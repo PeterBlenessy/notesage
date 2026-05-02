@@ -23,14 +23,21 @@ permissions:
   actions: write        # tdd dispatches aw-review.yml after the PR is created
   id-token: write       # claude-code-action OIDC
 
-concurrency:
-  group: aw-pipeline-${{ github.event.issue.number }}
-  cancel-in-progress: false
+# NOTE: workflow-level concurrency removed in favor of per-job
+# `aw-stage-{stage}-{issue}` groups (#98). The whole-pipeline group
+# only blocked the SAME workflow file from running twice on one issue;
+# it did NOT prevent the pipeline's slice job from racing with a sweep
+# slice job for the same issue. Per-job groups, sharing keys with the
+# sweep + standalones, do.
 
 jobs:
   triage:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      # Shared across pipeline / sweep / standalone — see aw-triage.yml.
+      group: aw-stage-triage-${{ github.event.issue.number }}
+      cancel-in-progress: false
     outputs:
       classified: ${{ steps.check.outputs.classified }}
     steps:
@@ -85,6 +92,9 @@ jobs:
     if: needs.triage.outputs.classified == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: aw-stage-refine-${{ github.event.issue.number }}
+      cancel-in-progress: false
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -125,6 +135,9 @@ jobs:
     if: needs.refine.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    concurrency:
+      group: aw-stage-slice-${{ github.event.issue.number }}
+      cancel-in-progress: false
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -181,6 +194,9 @@ jobs:
     if: needs.slice.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: aw-stage-tdd-${{ github.event.issue.number }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
