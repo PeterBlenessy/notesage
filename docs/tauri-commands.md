@@ -984,14 +984,16 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 
 **Events emitted:**
 
-- `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-changed-batch` (`{ path: String, kind: String }[]`): Emitted when one or more files are created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`. Batched per debounce window (500ms).
+- `file-renamed` (`{ old_path: String, new_path: String, is_directory: Boolean }`): Emitted for same-volume renames where the watcher knows both the old and new path in a single event (`Modify(Name(Both))`). Not emitted for cross-volume moves (those arrive as a separate create + delete pair). `is_directory` is `true` when the new path is a directory.
 
 **Filtering applied before emission:**
 
 - `.git/` internals and `.DS_Store` files silently dropped
-- Self-written files suppressed (see `mark_self_write`)
-- Directory events skipped (except deletes)
+- Self-written files suppressed from `file-changed-batch` (see `mark_self_write`) but still trigger SQLite reindex
+- Directory events skipped for `file-changed-batch` (except deletes)
 - macOS: `modify` events for paths that no longer exist reclassified as `delete`
+- Rename-both events are routed exclusively to `file-renamed` and never appear in `file-changed-batch`
 
 ### unwatch_directory
 
@@ -1060,10 +1062,17 @@ await invoke('watch_directory', { path: '/path/to/project' });
 await invoke('mark_self_write', { path: '/path/to/file.md' });
 await invoke('write_file', { path: '/path/to/file.md', content });
 
-// Listen for external changes
-listen<{ path: string; kind: string }>('file-changed', (event) => {
-  const { path, kind } = event.payload;
-  // Handle create/modify/delete...
+// Listen for external file changes (batched)
+listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+  for (const { path, kind } of event.payload) {
+    // Handle create/modify/delete...
+  }
+});
+
+// Listen for renames (same-volume, knows both paths)
+listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-renamed', (event) => {
+  const { old_path, new_path, is_directory } = event.payload;
+  // Update open documents, sidebar, pinned files...
 });
 ```
 

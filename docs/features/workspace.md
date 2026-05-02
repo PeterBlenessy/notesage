@@ -104,6 +104,19 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 5. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
 6. Reindex queue always drained after event processing (unconditionally, not gated on frontend batch)
 7. Non-self-write events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+8. Same-volume renames where `notify` delivers a `Modify(Name(Both))` event with both paths are emitted as a `file-renamed` event (`{ old_path, new_path, is_directory }`) and are NOT included in the `file-changed-batch` — event classification lives in `process_watcher_events()` (pure function, unit-testable without `AppHandle`)
+
+**Rename sync (**`useFileRenameSync.ts`**):**
+
+1. Listens for `file-renamed` events from the Rust watcher
+2. Self-rename suppression: if the app initiated the rename via `useFileOperations.renamePath`, `trackSelfRename` marks both paths; `isSelfRename` checks both and the event is dropped silently
+3. `editorStore.renameOpenDocument(old_path, new_path)` updates all open tab file paths and recent-file entries atomically
+4. Toast notification:
+   - Clean tab: 3-second info toast ("foo.md renamed to bar.md")
+   - Dirty tab: sticky toast ("foo.md renamed to bar.md — unsaved edits") with a **Save now** action that calls `saveFile(newPath, content, tabId)` — writes content to the new path and marks the tab clean
+5. Path-keyed sidecar migration (non-project files only): non-project files store comments in `~/.notesage/comments/path-<hex>.json` keyed by `hashPath(filePath)`. On rename the old sidecar is read, written to the new hash path, and the old file deleted. Project files use UUID-keyed sidecars from frontmatter that survive renames without migration.
+6. Folder rename: iterates all open tabs under the new path (already updated by step 3) and runs sidecar migration per descendant non-project file
+7. Workspace store: project-root renames call `updateProjectPath`; non-root folder renames call `refreshFileTree`; pinned-file paths updated via `updateFilePaths`
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
@@ -135,6 +148,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/NewNoteDialog.tsx` | New note creation |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
+| `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
 | `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |
 | `src/hooks/useProjectMetadata.ts` | Auto-bootstrap `.notesage/project.json` |
