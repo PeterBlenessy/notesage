@@ -24,6 +24,16 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
    - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
    - Verify it does NOT have `review` or be closed.
 
+1.5. **Check for prior `aw-review` rejections (retry detection).** Find any closed bot-authored PRs for this issue:
+   ```
+   gh pr list --search "resolves #$ISSUE_NUMBER OR fixes #$ISSUE_NUMBER OR closes #$ISSUE_NUMBER" --state closed --json number,author --jq '[.[] | select(.author.login == "github-actions[bot]" or .author.login == "app/github-actions")]'
+   ```
+   If any exist, this is a **retry**. For the most recent closed PR:
+   - Read its review comments: `gh pr view <N> --json comments --jq '[.comments[] | select(.author.login == "github-actions")] | last | .body'`
+   - Extract every criterion marked `✗ Missing` or identified as a bug/regression (empty callbacks, wrong behavior)
+   - **These gaps are your highest-priority red tests.** Write a failing test for each before writing any other implementation. The aw-review will check the same criteria again — if there is no test for a gap, you will introduce the same gap again.
+   - Also check if the issue body lists files in scope that were NOT in the previous PR's diff; read those files before starting implementation.
+
 2. **Check `Depends on:` blockers.** Parse the body for `Depends on: #N` references. For each:
    - `gh issue view N --json state,labels --jq '.state'` — if not `CLOSED`, the dependency is not done.
    - If any blocker is open, post a comment (template below), exit silently. Cron will retry later.
