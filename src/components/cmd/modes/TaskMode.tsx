@@ -693,7 +693,7 @@ function TaskMode({
                     'flex w-full items-start gap-2 px-3 py-1.5 text-left',
                     'text-[13px] transition-colors',
                     active
-                      ? 'bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground'
+                      ? 'bg-muted/80 text-foreground'
                       : 'hover:bg-muted/60 text-foreground',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                   )}
