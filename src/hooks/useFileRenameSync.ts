@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
 import { log } from "@/lib/logger";
 
@@ -23,6 +24,11 @@ export function useFileRenameSync(): void {
   useEffect(() => {
     const unlisten = listen<FileRenamedPayload>("file-renamed", (event) => {
       const { old_path, new_path, is_directory } = event.payload;
+
+      if (isSelfRename(old_path, new_path)) {
+        consumeSelfRename(old_path, new_path);
+        return;
+      }
 
       log.info("useFileRenameSync", `rename detected: ${old_path} → ${new_path} (dir=${is_directory})`);
 
