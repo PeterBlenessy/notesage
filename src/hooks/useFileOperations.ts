@@ -11,6 +11,7 @@ import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { toast } from "sonner";
+import { trackSelfRename } from "@/lib/self-rename-filter";
 
 /** Recursively count files in a FileEntry tree. */
 function countFiles(entries: FileEntry[]): number {
@@ -344,6 +345,9 @@ export function useFileOperations() {
   const renamePath = useCallback(
     async (oldPath: string, newPath: string) => {
       try {
+        trackSelfRename(oldPath, newPath);
+        await tauriApi.markSelfWrite(oldPath);
+        await tauriApi.markSelfWrite(newPath);
         await tauriApi.renamePath(oldPath, newPath);
         // Update open tab if this file is open in the editor
         useEditorStore.getState().renameTab(oldPath, newPath);

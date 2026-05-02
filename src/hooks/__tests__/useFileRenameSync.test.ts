@@ -39,6 +39,7 @@ let mockToastFn: any;
 // ---------------------------------------------------------------------------
 
 let useFileRenameSync: typeof import('@/hooks/useFileRenameSync').useFileRenameSync;
+let trackSelfRename: typeof import('@/lib/self-rename-filter').trackSelfRename;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,9 +104,11 @@ beforeEach(async () => {
   (sonner as any).toast = fn;
   mockToastFn = fn;
 
-  // Lazy-import hook after mocks are configured
+  // Lazy-import hook and self-rename filter after mocks are configured
   const mod = await import('@/hooks/useFileRenameSync');
   useFileRenameSync = mod.useFileRenameSync;
+  const filterMod = await import('@/lib/self-rename-filter');
+  trackSelfRename = filterMod.trackSelfRename;
 
   resetStores();
 });
@@ -280,5 +283,26 @@ describe('useFileRenameSync — project root rename', () => {
     );
 
     vi.restoreAllMocks();
+  });
+});
+
+describe('useFileRenameSync — self-write suppression', () => {
+  it('does not toast and does not update open tabs when both paths are tracked as self-renames', async () => {
+    const tab = makeTab({ filePath: '/project/notes/foo.md', fileName: 'foo.md' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+
+    // Mark the rename as self-initiated BEFORE the event fires
+    trackSelfRename('/project/notes/foo.md', '/project/notes/bar.md');
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/notes/foo.md', '/project/notes/bar.md');
+    });
+
+    // No toast of any kind should have been shown for a self-initiated rename
+    expect(mockToastFn).not.toHaveBeenCalled();
+    expect(mockToastFn.info).not.toHaveBeenCalled();
+    expect(mockToastFn.warning).not.toHaveBeenCalled();
   });
 });
