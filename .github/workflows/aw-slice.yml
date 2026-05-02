@@ -22,7 +22,9 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aw-slice-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
+  # Shared `aw-stage-{stage}-{issue}` group across all entry points — see
+  # aw-triage.yml for the rationale (#98 cross-workflow race fix).
+  group: aw-stage-slice-${{ github.event.issue.number || inputs.issue_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
