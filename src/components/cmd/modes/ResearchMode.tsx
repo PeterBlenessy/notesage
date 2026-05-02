@@ -225,7 +225,7 @@ function ResearchMode({
               "flex flex-col items-start gap-0.5 px-3 py-1.5 text-left",
               "transition-colors text-[13px]",
               isActive
-                ? "bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground"
+                ? "bg-muted/80 text-foreground"
                 : "text-foreground hover:bg-muted/60",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             )}

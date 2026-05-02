@@ -188,7 +188,7 @@ function SkillMode({
               // Density (live-test 2026-04-26).
               'flex w-full items-start gap-2 px-3 py-1.5 text-left text-[13px] transition-colors duration-150',
               active
-                ? 'bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground'
+                ? 'bg-muted/80 text-foreground'
                 : 'text-foreground hover:bg-muted/60',
             )}
           >

@@ -320,7 +320,7 @@ function PaletteMode({
               'flex items-center gap-2 px-3 py-1.5 text-left text-[13px]',
               'transition-colors',
               isHighlighted
-                ? 'bg-muted border border-[var(--color-accent-primary)] rounded-md text-foreground'
+                ? 'bg-muted/80 text-foreground'
                 : 'text-foreground hover:bg-muted/60',
               'focus-visible:outline-none',
             )}

@@ -548,7 +548,7 @@ describe('TaskMode', () => {
   // #88 — active row styling: muted bg + accent border replaces solid fill
   // -------------------------------------------------------------------------
 
-  it('active row uses muted bg with accent border instead of solid accent fill (#88)', async () => {
+  it('active row uses neutral bg-muted/80 (matches PickerItem) — no accent border, no accent fill', async () => {
     mockStore.actions = [
       makeAction({ id: 't1', text: 'Fix the bug' }),
     ];
@@ -559,8 +559,8 @@ describe('TaskMode', () => {
     const activeRow = container.querySelector('[aria-selected="true"]') as HTMLElement;
     expect(activeRow).toBeTruthy();
     // New styling
-    expect(activeRow.classList.contains('bg-muted')).toBe(true);
-    expect(activeRow.className).toContain('border-[var(--color-accent-primary)]');
+    expect(activeRow.className).toContain('bg-muted/80');
+    expect(activeRow.className).not.toContain('border-[var(--color-accent-primary)]');
     expect(activeRow.classList.contains('text-foreground')).toBe(true);
     // Old solid accent fill must be gone
     expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
