@@ -108,3 +108,34 @@ export function toastExternalReload(filePath: string): void {
     duration: 3000,
   });
 }
+
+export interface ExternalRenameToastOptions {
+  /** Absolute path of the file before the rename. */
+  oldPath: string;
+  /** Absolute path of the file after the rename. */
+  newPath: string;
+  /** Invoked when the user clicks "Save" — persist unsaved edits to the new path. */
+  onSave: () => void;
+}
+
+/**
+ * Sticky action toast shown when a file with unsaved edits is renamed
+ * externally. Prompts the user to save their in-memory content to the new path.
+ *
+ * Uses a stable id derived from newPath so duplicate events collapse into one
+ * toast.
+ */
+export function toastExternalRename(options: ExternalRenameToastOptions): string | number {
+  const { oldPath, newPath, onSave } = options;
+  const oldName = fileNameFromPath(oldPath);
+  const newName = fileNameFromPath(newPath);
+  return toast(`${oldName} renamed to ${newName} externally`, {
+    id: `external-rename:${newPath}`,
+    duration: Infinity,
+    closeButton: true,
+    action: {
+      label: "Save",
+      onClick: onSave,
+    },
+  });
+}

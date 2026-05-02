@@ -14,6 +14,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
+import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
@@ -271,6 +272,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const hfEditStateRef = useRef(hfEditState);
   hfEditStateRef.current = hfEditState;
   useFileWatcher();
+  useFileRenameSync();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);

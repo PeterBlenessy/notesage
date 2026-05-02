@@ -1,4 +1,4 @@
-use notify::RecursiveMode;
+use notify::{RecursiveMode, EventKind, event::{ModifyKind, RenameMode}};
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -21,6 +21,14 @@ pub enum FileChangeKind {
 pub struct FileChangedEvent {
     pub path: String,
     pub kind: FileChangeKind,
+}
+
+/// Event payload emitted to the frontend via `file-renamed`.
+#[derive(Clone, Serialize)]
+pub struct FileRenamedEvent {
+    pub old_path: String,
+    pub new_path: String,
+    pub is_directory: bool,
 }
 
 /// How long a self-write mark stays active. Must cover:
@@ -160,6 +168,57 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
+                // Handle same-volume renames before the generic kind dispatch.
+                // notify reports them as Modify(Name(Both)) with two paths:
+                // [old_path, new_path].
+                if let EventKind::Modify(ModifyKind::Name(RenameMode::Both)) = &event.kind {
+                    if let (Some(old), Some(new)) = (event.paths.get(0), event.paths.get(1)) {
+                        // Filter .git internals for renames too.
+                        let old_str = old.to_string_lossy();
+                        let new_str = new.to_string_lossy();
+                        if old_str.contains("/.git/") || old_str.ends_with("/.git")
+                            || new_str.contains("/.git/") || new_str.ends_with("/.git")
+                        {
+                            continue;
+                        }
+
+                        // Skip self-writes.
+                        if is_self_write(&mut self_writes, old)
+                            || is_self_write(&mut self_writes, new)
+                        {
+                            continue;
+                        }
+
+                        let is_directory = new.is_dir();
+                        let rename_event = FileRenamedEvent {
+                            old_path: old.to_string_lossy().to_string(),
+                            new_path: new.to_string_lossy().to_string(),
+                            is_directory,
+                        };
+
+                        if let Err(e) = app_handle.emit("file-renamed", &rename_event) {
+                            log::error!(
+                                target: "notesage::watcher",
+                                "Failed to emit file-renamed event: {:?}",
+                                e
+                            );
+                        }
+
+                        // Queue reindex for both old (delete) and new (create).
+                        if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                            indexer.queue_reindex(
+                                old.to_string_lossy().to_string(),
+                                FileChangeKind::Delete,
+                            );
+                            indexer.queue_reindex(
+                                new.to_string_lossy().to_string(),
+                                FileChangeKind::Create,
+                            );
+                        }
+                    }
+                    continue;
+                }
+
                 let change_kind = match event_kind(&event.kind) {
                     Some(k) => k,
                     None => continue,

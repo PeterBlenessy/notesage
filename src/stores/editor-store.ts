@@ -140,6 +140,15 @@ interface EditorStore {
   renameTab: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /**
+   * Handle an external file or folder rename atomically. For a file rename,
+   * rewrites the exact matching tab; for a folder rename, rewrites all
+   * descendant paths. In both cases fileName is kept correct.
+   *
+   * `isDirectory` defaults to auto-detection: true when no open document
+   * matches `oldPath` exactly (i.e. the path is a directory prefix).
+   */
+  renameOpenDocument: (oldPath: string, newPath: string, isDirectory?: boolean) => void;
   /** Set view mode for a markdown tab (session-only, not persisted). */
   setViewMode: (tabId: string, mode: ViewMode) => void;
   /** Toggle between WYSIWYG and source mode for a markdown tab. */
@@ -471,6 +480,67 @@ export const useEditorStore = create<EditorStore>()(
             )
           ),
         }));
+      },
+
+      renameOpenDocument: (oldPath: string, newPath: string, isDirectory?: boolean) => {
+        set((state) => {
+          const resolvedIsDirectory =
+            isDirectory !== undefined
+              ? isDirectory
+              : !state.openDocuments.some((t) => t.filePath === oldPath);
+          const rewritePath = (p: string): string => {
+            if (resolvedIsDirectory) {
+              const prefix = oldPath.endsWith("/") ? oldPath : oldPath + "/";
+              if (p === oldPath || p.startsWith(prefix)) {
+                return newPath + p.slice(oldPath.length);
+              }
+              return p;
+            }
+            return p === oldPath ? newPath : p;
+          };
+
+          const rewriteTab = (tab: typeof state.openDocuments[number]) => {
+            const rewritten = rewritePath(tab.filePath);
+            if (rewritten === tab.filePath) return tab;
+            return {
+              ...tab,
+              filePath: rewritten,
+              // Only update fileName for exact-match (file rename); folder
+              // renames keep the filename unchanged.
+              fileName: resolvedIsDirectory ? tab.fileName : (newPath.split("/").pop() ?? newPath),
+            };
+          };
+
+          const rewriteRecentFile = (rf: typeof state.recentFiles[number]) => {
+            const rewritten = rewritePath(rf.path);
+            if (rewritten === rf.path) return rf;
+            return {
+              ...rf,
+              path: rewritten,
+              name: resolvedIsDirectory ? rf.name : (newPath.split("/").pop() ?? newPath),
+            };
+          };
+
+          return {
+            openDocuments: state.openDocuments.map(rewriteTab),
+            persistedTabs: state.persistedTabs.map((pt) => {
+              const rewritten = rewritePath(pt.filePath);
+              if (rewritten === pt.filePath) return pt;
+              return {
+                ...pt,
+                filePath: rewritten,
+                fileName: resolvedIsDirectory ? pt.fileName : (newPath.split("/").pop() ?? newPath),
+              };
+            }),
+            persistedActiveFilePath: state.persistedActiveFilePath
+              ? rewritePath(state.persistedActiveFilePath)
+              : null,
+            recentFiles: state.recentFiles.map(rewriteRecentFile),
+            scrollPositions: Object.fromEntries(
+              Object.entries(state.scrollPositions).map(([k, v]) => [rewritePath(k), v])
+            ),
+          };
+        });
       },
 
       setViewMode: (tabId: string, mode: ViewMode) => {

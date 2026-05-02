@@ -177,3 +177,60 @@ describe('notifications — external-change helpers', () => {
     });
   });
 });
+
+// ==========================================================================
+// toastExternalRename
+// ==========================================================================
+
+describe('toastExternalRename', () => {
+  let toastExternalRename: typeof import('@/lib/notifications').toastExternalRename;
+
+  beforeEach(async () => {
+    toastMock.mockClear();
+    const mod = await import('@/lib/notifications');
+    toastExternalRename = mod.toastExternalRename;
+  });
+
+  it('fires a sticky toast mentioning the old and new file names', () => {
+    const onSave = vi.fn();
+
+    toastExternalRename({
+      oldPath: '/project/notes/foo.md',
+      newPath: '/project/notes/bar.md',
+      onSave,
+    });
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    const [message, opts] = toastMock.mock.calls[0];
+    expect(message).toContain('foo.md');
+    expect(message).toContain('bar.md');
+    expect(opts.duration).toBe(Infinity);
+  });
+
+  it('exposes a Save action that invokes onSave', () => {
+    const onSave = vi.fn();
+
+    toastExternalRename({
+      oldPath: '/project/notes/foo.md',
+      newPath: '/project/notes/bar.md',
+      onSave,
+    });
+
+    const [, opts] = toastMock.mock.calls[0];
+    expect(opts.action.label).toBe('Save');
+    opts.action.onClick();
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a stable id derived from newPath so duplicates collapse', () => {
+    const onSave = vi.fn();
+
+    toastExternalRename({ oldPath: '/a.md', newPath: '/b.md', onSave });
+    toastExternalRename({ oldPath: '/a.md', newPath: '/b.md', onSave });
+
+    const id1 = toastMock.mock.calls[0][1].id;
+    const id2 = toastMock.mock.calls[1][1].id;
+    expect(id1).toBe(id2);
+    expect(id1).toBe('external-rename:/b.md');
+  });
+});

@@ -103,7 +103,16 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 4. Events filtered: `.git/` internals and `.DS_Store` silently dropped
 5. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
 6. Reindex queue always drained after event processing (unconditionally, not gated on frontend batch)
-7. Non-self-write events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+7. `Modify(Name(Both))` events (same-volume renames) emitted as `file-renamed` Tauri events with `{ old_path, new_path, is_directory }` payload — handled before the generic kind dispatch
+8. Non-self-write modify/create/delete events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
+
+**Frontend rename handler (**`useFileRenameSync.ts`**):**
+
+Listens for `file-renamed` events and keeps all in-memory state in sync:
+
+1. Rewrites `openDocuments`, `persistedTabs`, `recentFiles`, `scrollPositions`, `persistedActiveFilePath` via `editor-store.renameOpenDocument(oldPath, newPath, isDirectory)`
+2. For dirty files: shows a sticky `toastExternalRename` toast with a **Save** action so unsaved edits are not silently lost
+3. For project-root renames: calls `workspace-store.updateProjectPath` and triggers a file tree refresh
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
@@ -118,8 +127,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Tiptap is source of truth**: Must use `editor.commands.setContent()` to visually reflect changes
 - **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency. Self-write suppression is implemented at the Rust/backend level — `saveFile` calls `mark_self_write` before writing, and the backend excludes self-written paths from the `file-changed-batch` payload
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`; frontend strips `/private/` prefix
-- **Toast dedup**: Stable `id: "external-change:<filePath>"` prevents duplicate notifications; repeated changes to the same file collapse into one toast
-- **Toast helpers**: `toastExternalChange` / `toastExternalReload` live in `src/lib/notifications.ts` — single source of truth for external-change UX
+- **Toast dedup**: Stable `id: "external-change:<filePath>"` / `id: "external-rename:<newPath>"` prevents duplicate notifications; repeated events collapse into one toast
+- **Toast helpers**: `toastExternalChange` / `toastExternalReload` / `toastExternalRename` live in `src/lib/notifications.ts` — single source of truth for external-change UX
+- **Rename vs. modify**: same-volume renames arrive as `Modify(Name(Both))` with two paths; cross-volume renames arrive as delete + create pairs and are handled by `useFileWatcher` as separate events
 - **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete. Startup has a 30s global timeout and 10s per-step timeouts for cloud storage operations, ensuring `startupReady` is always set even if cloud paths hang.
 
 ## Key Files
@@ -135,8 +145,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/NewNoteDialog.tsx` | New note creation |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
+| `src/hooks/useFileRenameSync.ts` | Listens for `file-renamed` events and syncs editor tabs, recent files, and workspace projects |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
-| `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |
+| `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload`, `toastExternalRename` — external-change toast helpers |
 | `src/hooks/useProjectMetadata.ts` | Auto-bootstrap `.notesage/project.json` |
 | `src/lib/scan-icloud-projects.ts` | iCloud project auto-discovery |
 | `src/stores/workspace-store.ts` | Explorer folders, projects, notes tree |

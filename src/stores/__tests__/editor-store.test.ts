@@ -1160,3 +1160,74 @@ describe('scroll-to targets', () => {
     expect(getTabById(tabId)!.scrollToText).toBeUndefined();
   });
 });
+
+// ===========================================================================
+// renameOpenDocument — external rename handler (file + folder cascade)
+// ===========================================================================
+
+describe('renameOpenDocument', () => {
+  it('renames a single open tab by exact path match', () => {
+    useEditorStore.getState().openTab('/project/notes/foo.md', 'foo.md', 'content');
+    useEditorStore.getState().setScrollPosition('/project/notes/foo.md', 0.4);
+
+    useEditorStore.getState().renameOpenDocument('/project/notes/foo.md', '/project/notes/bar.md');
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments[0].filePath).toBe('/project/notes/bar.md');
+    expect(state.openDocuments[0].fileName).toBe('bar.md');
+    expect(state.recentFiles[0].path).toBe('/project/notes/bar.md');
+    expect(state.recentFiles[0].name).toBe('bar.md');
+    expect(state.scrollPositions['/project/notes/bar.md']).toBe(0.4);
+    expect(state.scrollPositions['/project/notes/foo.md']).toBeUndefined();
+  });
+
+  it('folder rename rewrites all descendant tab paths in one atomic update', () => {
+    useEditorStore.getState().openTab('/project/old/a.md', 'a.md', 'a-content');
+    useEditorStore.getState().openTab('/project/old/sub/b.md', 'b.md', 'b-content');
+    useEditorStore.getState().openTab('/project/other/c.md', 'c.md', 'c-content');
+
+    useEditorStore.getState().renameOpenDocument('/project/old', '/project/new');
+
+    const state = useEditorStore.getState();
+    const paths = state.openDocuments.map((t) => t.filePath);
+    expect(paths).toContain('/project/new/a.md');
+    expect(paths).toContain('/project/new/sub/b.md');
+    expect(paths).toContain('/project/other/c.md');
+    // fileNames of descendant tabs stay the same (only filePath prefix changes)
+    const aTab = state.openDocuments.find((t) => t.filePath === '/project/new/a.md');
+    expect(aTab?.fileName).toBe('a.md');
+  });
+
+  it('folder rename rewrites recentFiles entries under the old folder', () => {
+    useEditorStore.getState().openTab('/notes/old/foo.md', 'foo.md', 'content');
+    useEditorStore.getState().openTab('/notes/old/bar.md', 'bar.md', 'content');
+    useEditorStore.getState().openTab('/notes/keep.md', 'keep.md', 'content');
+
+    useEditorStore.getState().renameOpenDocument('/notes/old', '/notes/renamed');
+
+    const state = useEditorStore.getState();
+    const recentPaths = state.recentFiles.map((r) => r.path);
+    expect(recentPaths).toContain('/notes/renamed/foo.md');
+    expect(recentPaths).toContain('/notes/renamed/bar.md');
+    expect(recentPaths).toContain('/notes/keep.md');
+    expect(recentPaths.some((p) => p.startsWith('/notes/old'))).toBe(false);
+  });
+
+  it('does not affect tabs that do not match oldPath', () => {
+    useEditorStore.getState().openTab('/project/a.md', 'a.md', 'content');
+    useEditorStore.getState().openTab('/other/b.md', 'b.md', 'content');
+
+    useEditorStore.getState().renameOpenDocument('/project/a.md', '/project/renamed.md');
+
+    expect(getTab('/other/b.md')).toBeDefined();
+    expect(getTab('/other/b.md')!.filePath).toBe('/other/b.md');
+  });
+
+  it('updates persistedActiveFilePath when renaming the active file', () => {
+    useEditorStore.getState().openTab('/project/active.md', 'active.md', 'content');
+
+    useEditorStore.getState().renameOpenDocument('/project/active.md', '/project/moved.md');
+
+    expect(useEditorStore.getState().persistedActiveFilePath).toBe('/project/moved.md');
+  });
+});

@@ -984,14 +984,16 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 
 **Events emitted:**
 
-- `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-changed-batch` (`[{ path: String, kind: String }]`): Batch of create/modify/delete events. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+- `file-renamed` (`{ old_path: String, new_path: String, is_directory: bool }`): Emitted for same-volume renames (detected as `Modify(Name(Both))`). Frontend hook `useFileRenameSync` rewrites open tabs, recent files, and workspace project paths accordingly.
 
 **Filtering applied before emission:**
 
 - `.git/` internals and `.DS_Store` files silently dropped
 - Self-written files suppressed (see `mark_self_write`)
-- Directory events skipped (except deletes)
+- Directory events skipped (except deletes and renames)
 - macOS: `modify` events for paths that no longer exist reclassified as `delete`
+- Renames handled before generic kind dispatch — `Modify(Name(Both))` emits `file-renamed` and skips the `file-changed-batch` path
 
 ### unwatch_directory
 
@@ -1060,10 +1062,17 @@ await invoke('watch_directory', { path: '/path/to/project' });
 await invoke('mark_self_write', { path: '/path/to/file.md' });
 await invoke('write_file', { path: '/path/to/file.md', content });
 
-// Listen for external changes
-listen<{ path: string; kind: string }>('file-changed', (event) => {
-  const { path, kind } = event.payload;
-  // Handle create/modify/delete...
+// Listen for external changes (create/modify/delete)
+listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+  for (const { path, kind } of event.payload) {
+    // Handle create/modify/delete...
+  }
+});
+
+// Listen for external renames (same-volume moves)
+listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-renamed', (event) => {
+  const { old_path, new_path, is_directory } = event.payload;
+  // Update open tabs, project paths, etc. via useFileRenameSync
 });
 ```
 
