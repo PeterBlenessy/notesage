@@ -70,6 +70,12 @@ import {
 import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { type AttachmentChip } from "@/components/cmd/AttachmentChips";
 import CommandBarStream from "@/components/cmd/CommandBarStream";
 import {
@@ -2244,15 +2250,23 @@ function ExpandedContent({
       {editing ? (
         <div className="flex items-center justify-between px-3 pt-2 pb-1">
           <span className="text-xs text-muted-foreground">Editing message</span>
-          <button
-            type="button"
-            onClick={onCancelEdit}
-            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-            title="Cancel editing"
-            aria-label="Cancel editing"
-          >
-            <X className="h-3 w-3" strokeWidth={1.5} />
-          </button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onCancelEdit}
+                  className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Cancel editing"
+                >
+                  <X className="h-3 w-3" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                Cancel editing
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       ) : null}
 
@@ -2468,52 +2482,67 @@ function ExpandedContent({
               );
             })}
             {pendingAttachments.map((att) => (
-              <span
-                key={att.id}
-                className="relative group shrink-0 h-8 w-8 rounded-md overflow-hidden border border-border bg-muted"
-                title={att.name}
-              >
-                <img
-                  src={`data:${att.mimeType};base64,${att.data}`}
-                  alt={att.name}
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => onRemoveAttachment(att.id)}
-                  aria-label={`Remove ${att.name}`}
-                  className={cn(
-                    "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
-                    "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
-                    "hover:bg-background p-px",
-                  )}
-                >
-                  <X className="h-2.5 w-2.5 text-foreground" strokeWidth={1.5} />
-                </button>
-              </span>
+              <TooltipProvider key={att.id} delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="relative group shrink-0 h-8 w-8 rounded-md overflow-hidden border border-border bg-muted"
+                    >
+                      <img
+                        src={`data:${att.mimeType};base64,${att.data}`}
+                        alt={att.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onRemoveAttachment(att.id)}
+                        aria-label={`Remove ${att.name}`}
+                        className={cn(
+                          "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
+                          "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+                          "hover:bg-background p-px",
+                        )}
+                      >
+                        <X className="h-2.5 w-2.5 text-foreground" strokeWidth={1.5} />
+                      </button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs max-w-[260px]">
+                    {att.name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             ))}
             {/* Explicit-attach offer — dashed `+ Add <file> to chat`
                 button when the active tab sits outside the selected
                 project scope. Sits at the END of the strip so the
                 primary attachments take the leading slots. */}
             {explicitAttachOffer ? (
-              <button
-                type="button"
-                onClick={() =>
-                  onAttachExplicit(
-                    explicitAttachOffer.path,
-                    explicitAttachOffer.label,
-                  )
-                }
-                className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                title={`Add ${explicitAttachOffer.path} to chat (outside selected project scope)`}
-                aria-label={`Add ${explicitAttachOffer.label} to chat`}
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-                <span className="truncate">
-                  Add {explicitAttachOffer.label} to chat
-                </span>
-              </button>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onAttachExplicit(
+                          explicitAttachOffer.path,
+                          explicitAttachOffer.label,
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-md border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs px-1.5 py-0.5 max-w-[220px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={`Add ${explicitAttachOffer.label} to chat`}
+                    >
+                      <Plus className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      <span className="truncate">
+                        Add {explicitAttachOffer.label} to chat
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs max-w-[280px]">
+                    Add {explicitAttachOffer.path} to chat (outside selected project scope)
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             ) : null}
           </div>
         )}
@@ -2521,40 +2550,56 @@ function ExpandedContent({
         {/* Icon + textarea row — image-attach, mic, textarea, send
             ALL on one row. No internal separator above this row. */}
         <div className="px-3 py-2 flex items-end gap-2">
-          <button
-            type="button"
-            onClick={onPickImage}
-            aria-label="Attach image"
-            title="Attach image"
-            className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-              "text-muted-foreground hover:text-foreground hover:bg-muted",
-              "transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            )}
-          >
-            <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={onMicToggle}
-            aria-label={isDictating ? "Stop dictation" : "Start dictation"}
-            title={isDictating ? "Stop dictation" : "Start dictation"}
-            className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-              "transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-              isDictating
-                ? "text-destructive animate-pulse"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted",
-            )}
-          >
-            {isDictating ? (
-              <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
-            ) : (
-              <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
-            )}
-          </button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onPickImage}
+                  aria-label="Attach image"
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                    "text-muted-foreground hover:text-foreground hover:bg-muted",
+                    "transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  )}
+                >
+                  <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                Attach image
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onMicToggle}
+                  aria-label={isDictating ? "Stop dictation" : "Start dictation"}
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                    "transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    isDictating
+                      ? "text-destructive animate-pulse"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                  )}
+                >
+                  {isDictating ? (
+                    <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  ) : (
+                    <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                {isDictating ? "Stop dictation" : "Start dictation"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <textarea
             ref={inputRef}
             rows={1}
@@ -2587,42 +2632,58 @@ function ExpandedContent({
             )}
           />
           {isLoading ? (
-            <button
-              type="button"
-              onClick={onStop}
-              aria-label="Stop generation"
-              title="Stop generation"
-              className={cn(
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                "bg-destructive/10 text-destructive hover:bg-destructive/20",
-                "transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
-              )}
-            >
-              <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
-            </button>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onStop}
+                    aria-label="Stop generation"
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                      "bg-destructive/10 text-destructive hover:bg-destructive/20",
+                      "transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+                    )}
+                  >
+                    <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[220px]">
+                  Stop generation
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : (
-            <button
-              type="button"
-              onClick={onSend}
-              aria-label="Send message"
-              title="Send"
-              disabled={
-                switchPending ||
-                (inputValue.trim().length === 0 &&
-                  chips.length === 0 &&
-                  pendingAttachments.length === 0)
-              }
-              className={cn(
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
-                "transition-opacity",
-                "disabled:opacity-40 disabled:cursor-not-allowed",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-              )}
-            >
-              <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-            </button>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onSend}
+                    aria-label="Send message"
+                    disabled={
+                      switchPending ||
+                      (inputValue.trim().length === 0 &&
+                        chips.length === 0 &&
+                        pendingAttachments.length === 0)
+                    }
+                    className={cn(
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+                      "bg-[var(--color-accent-primary)] text-white hover:opacity-90",
+                      "transition-opacity",
+                      "disabled:opacity-40 disabled:cursor-not-allowed",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    )}
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[220px]">
+                  Send message
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
       </div>

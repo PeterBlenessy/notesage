@@ -12,9 +12,53 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus, Segment } from '@/lib/ai/types';
 import { TextSegmentView, ThinkingSegmentView, ToolCallSegmentView, ToolResultSegmentView, ImageSegmentView, ToolCallGroup } from './segments';
 import { PlanSegmentView } from './segments/PlanSegmentView';
+
+/**
+ * Small wrapper that adds a consistent React Tooltip (300 ms delay,
+ * top-aligned, neutral styling) to a message-action icon button.
+ * Mirrors the FloatingCommandBar / CommandBarContext / IconButton
+ * pattern so every chrome button in the chat surface looks the same.
+ */
+function ActionIconButton({
+  label,
+  onClick,
+  className,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            className={className}
+          >
+            {children}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-[220px]">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
   if (isActive && activity.status === 'running') {
@@ -169,14 +213,21 @@ function AttachmentFileStrip({ message }: { message: ChatMessageType }) {
   return (
     <div className="mb-1.5 flex flex-wrap gap-1">
       {attachments.map((a, i) => (
-        <span
-          key={`${a.timestamp}-${i}`}
-          className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-          title={a.detail ?? a.label}
-        >
-          <Paperclip className="h-2.5 w-2.5 shrink-0" strokeWidth={1.5} />
-          <span className="truncate max-w-[180px]">{a.label}</span>
-        </span>
+        <TooltipProvider key={`${a.timestamp}-${i}`} delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                <Paperclip className="h-2.5 w-2.5 shrink-0" strokeWidth={1.5} />
+                <span className="truncate max-w-[180px]">{a.label}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs max-w-[260px]">
+              {a.detail ?? a.label}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ))}
     </div>
   );
@@ -188,24 +239,32 @@ function AttachmentThumbnails({ message }: { message: ChatMessageType }) {
   return (
     <div className="flex flex-wrap gap-2 mb-2">
       {message.attachments.map((att) => (
-        <button
-          key={att.id}
-          className="block rounded-md overflow-hidden border border-border hover:border-foreground/30 transition-colors duration-150 cursor-pointer"
-          onClick={() => {
-            const win = window.open('', '_blank');
-            if (win) {
-              win.document.write(`<img src="data:${att.mimeType};base64,${att.data}" style="max-width:100%;height:auto" />`);
-              win.document.title = att.name ?? 'Image';
-            }
-          }}
-          title={att.name ?? 'Click to view full size'}
-        >
-          <img
-            src={`data:${att.mimeType};base64,${att.data}`}
-            alt={att.name ?? 'Attached image'}
-            className="max-w-[120px] max-h-[120px] object-contain"
-          />
-        </button>
+        <TooltipProvider key={att.id} delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="block rounded-md overflow-hidden border border-border hover:border-foreground/30 transition-colors duration-150 cursor-pointer"
+                onClick={() => {
+                  const win = window.open('', '_blank');
+                  if (win) {
+                    win.document.write(`<img src="data:${att.mimeType};base64,${att.data}" style="max-width:100%;height:auto" />`);
+                    win.document.title = att.name ?? 'Image';
+                  }
+                }}
+                aria-label={att.name ?? 'View attached image full size'}
+              >
+                <img
+                  src={`data:${att.mimeType};base64,${att.data}`}
+                  alt={att.name ?? 'Attached image'}
+                  className="max-w-[120px] max-h-[120px] object-contain"
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs max-w-[260px]">
+              {att.name ?? 'Click to view full size'}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       ))}
     </div>
   );
@@ -290,14 +349,23 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
       return (
         <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-                title="Message actions"
-              >
-                <Ellipsis className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-              </button>
-            </DropdownMenuTrigger>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
+                      aria-label="Message actions"
+                    >
+                      <Ellipsis className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs max-w-[220px]">
+                  Message actions
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <DropdownMenuContent align="start" side="bottom" className="min-w-[130px] p-0.5">
               {onEdit && (
                 <DropdownMenuItem onClick={onEdit} className="text-xs h-7 px-2">
@@ -329,73 +397,51 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
       );
     }
 
+    const actionBtnCls = "h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors";
     return (
       <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
         {onEdit && (
-          <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-            onClick={onEdit}
-            title="Edit message"
-          >
+          <ActionIconButton label="Edit message" onClick={onEdit} className={actionBtnCls}>
             <Pencil className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-          </button>
+          </ActionIconButton>
         )}
         {onResend && (
-          <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-            onClick={onResend}
-            title="Resend message"
-          >
+          <ActionIconButton label="Resend message" onClick={onResend} className={actionBtnCls}>
             <RotateCcw className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-          </button>
+          </ActionIconButton>
         )}
         {onBranch && (
-          <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-            onClick={onBranch}
-            title="Branch from here"
-          >
+          <ActionIconButton label="Branch from here" onClick={onBranch} className={actionBtnCls}>
             <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-          </button>
+          </ActionIconButton>
         )}
-        <button
-          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-          onClick={onCopy}
-          title="Copy message"
-        >
+        <ActionIconButton label={copied ? 'Copied' : 'Copy message'} onClick={onCopy} className={actionBtnCls}>
           {copied ? (
             <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
           ) : (
             <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
           )}
-        </button>
+        </ActionIconButton>
       </div>
     );
   }
 
   // Assistant messages — always inline
+  const actionBtnCls = "h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors";
   return (
     <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
       {onBranch && (
-        <button
-          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-          onClick={onBranch}
-          title="Branch from here"
-        >
+        <ActionIconButton label="Branch from here" onClick={onBranch} className={actionBtnCls}>
           <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-        </button>
+        </ActionIconButton>
       )}
-      <button
-        className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-        onClick={onCopy}
-        title="Copy message"
-      >
+      <ActionIconButton label={copied ? 'Copied' : 'Copy message'} onClick={onCopy} className={actionBtnCls}>
         {copied ? (
           <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
         ) : (
           <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         )}
-      </button>
+      </ActionIconButton>
     </div>
   );
 }
@@ -766,16 +812,25 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
                   <span className="text-xs font-medium shrink-0 mt-px text-muted-foreground">
                     {i + 1}.
                   </span>
-                  <button
-                    onClick={() => handleOpenUrl(citation.url)}
-                    className="text-xs leading-snug text-left transition-colors duration-150 hover:underline truncate text-foreground"
-                    title={citation.url}
-                  >
-                    <span className="flex items-center gap-1">
-                      <span className="truncate">{citation.title || citation.url}</span>
-                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-50" strokeWidth={1.5} />
-                    </span>
-                  </button>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handleOpenUrl(citation.url)}
+                          className="text-xs leading-snug text-left transition-colors duration-150 hover:underline truncate text-foreground"
+                          aria-label={`Open ${citation.title || citation.url}`}
+                        >
+                          <span className="flex items-center gap-1">
+                            <span className="truncate">{citation.title || citation.url}</span>
+                            <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-50" strokeWidth={1.5} />
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs max-w-[320px] break-all">
+                        {citation.url}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </li>
               ))}
             </ol>
@@ -784,13 +839,13 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
 
         {/* Delete button — circular, positioned like macOS notification dismiss */}
         {!isLoading && message.timestamp && (
-          <button
-            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all bg-card border border-border hover:bg-foreground/10 hover:text-foreground`}
+          <ActionIconButton
+            label="Delete message"
             onClick={() => deleteMessage(message.timestamp!)}
-            title="Delete message"
+            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all bg-card border border-border hover:bg-foreground/10 hover:text-foreground`}
           >
             <X className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />
-          </button>
+          </ActionIconButton>
         )}
 
         {/* Action buttons — bottom row */}

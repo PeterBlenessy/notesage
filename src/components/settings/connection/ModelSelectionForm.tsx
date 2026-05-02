@@ -376,9 +376,20 @@ export function ModelSelectionForm({
                   {models.length > 0 && (
                     <CommandGroup>
                       {models.map((modelId) => (
-                        <CommandItem key={modelId} value={modelId} onSelect={(val) => { onModelChange(val); onModelPopoverOpenChange(false); }}>
-                          <Check className={cn('mr-2 h-3.5 w-3.5', model === modelId ? 'opacity-100' : 'opacity-0')} />
+                        <CommandItem
+                          key={modelId}
+                          value={modelId}
+                          onSelect={(val) => { onModelChange(val); onModelPopoverOpenChange(false); }}
+                          className="flex items-center justify-between gap-2"
+                        >
                           <span className="truncate text-sm">{modelId}</span>
+                          {model === modelId && (
+                            <Check
+                              data-picker-check
+                              className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
+                              strokeWidth={2.5}
+                            />
+                          )}
                         </CommandItem>
                       ))}
                     </CommandGroup>

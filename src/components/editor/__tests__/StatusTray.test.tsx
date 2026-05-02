@@ -1,5 +1,16 @@
 // @vitest-environment jsdom
 
+// Radix Tooltip uses ResizeObserver (via @radix-ui/react-use-size) for
+// trigger sizing. jsdom doesn't ship one — polyfill before any imports
+// pull Radix in, otherwise every render that mounts a <Tooltip> throws.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 import '@/test/tauri-mock';
 import React, { useRef } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';

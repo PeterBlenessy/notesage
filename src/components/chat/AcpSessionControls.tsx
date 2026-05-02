@@ -8,10 +8,12 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { PickerItem } from '@/components/ui/picker-item';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -168,19 +170,19 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
+              <DropdownMenuTrigger asChild>
                 <button
-                  className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
+                  className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <Shield className="h-4 w-4" strokeWidth={1.5} />
                   {currentLabel.name}
                   <ChevronUp className="h-3 w-3 opacity-50" />
                 </button>
-              </PopoverTrigger>
+              </DropdownMenuTrigger>
             </TooltipTrigger>
             {currentLabel.tooltip && (
               <TooltipContent side="top" className="text-xs max-w-[200px]">
@@ -189,44 +191,35 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
             )}
           </Tooltip>
         </TooltipProvider>
-        <PopoverContent
+        <DropdownMenuContent
           align="start"
           side="top"
           className="w-auto min-w-[120px] max-w-[250px] p-1"
         >
-          {commonModes.map((cm) => {
-            const isActive = currentCommon?.key === cm.commonKey;
-            const showLock = restricted && isUnrestrictedMode(cm.agentModeId);
-            return (
-              <button
-                key={cm.commonKey}
-                className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors duration-150 ${
-                  isActive
-                    ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-                onClick={() => { if (!isActive) handleSetMode(cm.agentModeId, cm.name); }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span>{cm.name}</span>
-                  {showLock && <Lock className="h-3 w-3 opacity-40" />}
-                </div>
-                {cm.tooltip && (
-                  <div
-                    className={`text-[10px] mt-0.5 leading-tight ${
-                      isActive
-                        ? 'text-[oklch(100%_0_0)]/85'
-                        : 'text-muted-foreground'
-                    }`}
-                  >
-                    {cm.tooltip}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </PopoverContent>
-      </Popover>
+          <DropdownMenuRadioGroup
+            value={currentCommon?.key ?? ''}
+            onValueChange={(value) => {
+              const next = commonModes.find((cm) => cm.commonKey === value);
+              if (next && next.commonKey !== currentCommon?.key) {
+                handleSetMode(next.agentModeId, next.name);
+              }
+            }}
+          >
+            {commonModes.map((cm) => {
+              const showLock = restricted && isUnrestrictedMode(cm.agentModeId);
+              return (
+                <PickerItem
+                  key={cm.commonKey}
+                  value={cm.commonKey}
+                  label={cm.name}
+                  description={cm.tooltip || undefined}
+                  trailing={showLock ? <Lock className="h-3 w-3 opacity-40" /> : undefined}
+                />
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* Mode-sandbox conflict dialog */}
       <AlertDialog open={!!conflictMode} onOpenChange={(o) => { if (!o) setConflictMode(null); }}>
@@ -348,19 +341,19 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
     : prettifyOptionName(rawDisplayName);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
+            <DropdownMenuTrigger asChild>
               <button
-                className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
+                className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 {option.category === 'thought_level' && <Brain className="h-4 w-4" strokeWidth={1.5} />}
                 {triggerLabel}
                 <ChevronUp className="h-3 w-3 opacity-50" />
               </button>
-            </PopoverTrigger>
+            </DropdownMenuTrigger>
           </TooltipTrigger>
           {option.description && (
             <TooltipContent side="top" className="text-xs max-w-[200px]">
@@ -369,7 +362,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
           )}
         </Tooltip>
       </TooltipProvider>
-      <PopoverContent
+      <DropdownMenuContent
         align="start"
         side="top"
         className="w-auto min-w-[140px] max-w-[300px] p-1"
@@ -377,30 +370,26 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
         <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
           {option.name}
         </div>
-        {options.map((opt) => {
-          const optValue = opt.value ?? opt.name;
-          const isActive = optValue === currentValue;
-          return (
-            <button
-              key={optValue}
-              className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors duration-150 ${
-                isActive
-                  ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] font-medium'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-              onClick={() => { if (!isActive) handleSetValue(optValue); }}
-            >
-              <div>{prettifyOptionName(opt.name)}</div>
-              {opt.description && (
-                <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-                  {opt.description}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </PopoverContent>
-    </Popover>
+        <DropdownMenuRadioGroup
+          value={currentValue ?? ''}
+          onValueChange={(value) => {
+            if (value !== currentValue) handleSetValue(value);
+          }}
+        >
+          {options.map((opt) => {
+            const optValue = opt.value ?? opt.name;
+            return (
+              <PickerItem
+                key={optValue}
+                value={optValue}
+                label={prettifyOptionName(opt.name)}
+                description={opt.description}
+              />
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 });
 

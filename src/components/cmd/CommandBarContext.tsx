@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, Check, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProviderLogo } from "@/components/ProviderLogo";
@@ -17,14 +17,10 @@ import { AGENT_KNOWN_MODELS } from "@/components/settings/connection/ModelSelect
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { PickerCheckboxItem, PickerItem } from "@/components/ui/picker-item";
 import {
   Tooltip,
   TooltipContent,
@@ -514,58 +510,55 @@ function ProviderPill({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-testid="cmd-bar-provider"
-          data-locked="false"
-          className={cn(
-            // Live-test 2026-04-26 — matches the legacy chat-footer
-            // picker rhythm (h-7, text-xs font-medium, transparent
-            // border, soft `bg-muted` fill — same as ProjectChip).
-            "inline-flex items-center gap-1.5 h-7 px-2 rounded-md shrink-0",
-            "text-xs font-medium text-foreground",
-            "border border-transparent bg-muted",
-            "transition-colors duration-150",
-            "hover:border-border",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-          aria-label={`Active provider: ${label}`}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-testid="cmd-bar-provider"
+                data-locked="false"
+                className={cn(
+                  // Live-test 2026-04-26 — matches the legacy chat-footer
+                  // picker rhythm (h-7, text-xs font-medium, transparent
+                  // border, soft `bg-muted` fill — same as ProjectChip).
+                  "inline-flex items-center gap-1.5 h-7 px-2 rounded-md shrink-0",
+                  "text-xs font-medium text-foreground",
+                  "border border-transparent bg-muted",
+                  "transition-colors duration-150",
+                  "hover:border-border",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                )}
+                aria-label={`Active provider: ${label}`}
+              >
+                {provider ? (
+                  <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
+                ) : null}
+                <span>{label}</span>
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[220px]">
+            Active provider: {label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent align="start" className="min-w-[200px] p-1">
+        <DropdownMenuRadioGroup
+          value={connection?.id ?? ""}
+          onValueChange={(value) => {
+            if (value && value !== connection?.id) onPick(value);
+          }}
         >
-          {provider ? (
-            <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
-          ) : null}
-          <span>{label}</span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[200px]">
-        {connections.map((c) => {
-          const isActive = c.id === connection?.id;
-          return (
-            <DropdownMenuItem
+          {connections.map((c) => (
+            <PickerItem
               key={c.id}
-              onSelect={() => onPick(c.id)}
-              aria-label={`Switch provider to ${c.label}`}
-              aria-current={isActive ? "true" : undefined}
-              className={cn(
-                "flex items-center gap-2 cursor-pointer text-xs",
-                isActive && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
-              )}
-            >
-              <ProviderLogo provider={c.provider} className="w-4 h-4" bare />
-              <span className={cn("flex-1 truncate", !isActive && "text-foreground")}>
-                {c.label}
-              </span>
-              {isActive ? (
-                <Check
-                  className="h-3.5 w-3.5 shrink-0"
-                  strokeWidth={1.5}
-                  aria-hidden
-                />
-              ) : null}
-            </DropdownMenuItem>
-          );
-        })}
+              value={c.id}
+              label={c.label}
+              leading={<ProviderLogo provider={c.provider} className="w-4 h-4" bare />}
+            />
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -645,41 +638,55 @@ function ProjectsPicker({
     workspaceProjects.length > 0 &&
     projectPaths.length === workspaceProjects.length;
 
+  const tooltipText =
+    projectPaths.length === 0
+      ? "Pick projects to scope chat to"
+      : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} in scope: ${triggerLabel}`;
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={
-            projectPaths.length === 0
-              ? "Pick projects"
-              : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} selected — ${triggerLabel}`
-          }
-          className={cn(
-            // Same h-7 chat-footer rhythm as ProviderPill.
-            "inline-flex items-center gap-1.5 h-7 px-2 rounded-md min-w-0 shrink",
-            "text-xs font-medium",
-            "border border-transparent",
-            "transition-colors duration-150",
-            projectPaths.length > 0
-              ? "text-foreground bg-muted hover:border-border"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted hover:border-border",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-        >
-          <FolderOpen className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-          <span className="truncate min-w-0">{triggerLabel}</span>
-          {anyLocked ? (
-            <Lock
-              className="w-3 h-3 opacity-60 shrink-0"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          ) : null}
-          <ChevronUp className="w-3 h-3 opacity-50 shrink-0" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-64 p-1">
+    <DropdownMenu>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={
+                  projectPaths.length === 0
+                    ? "Pick projects"
+                    : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} selected — ${triggerLabel}`
+                }
+                className={cn(
+                  // Same h-7 chat-footer rhythm as ProviderPill.
+                  "inline-flex items-center gap-1.5 h-7 px-2 rounded-md min-w-0 shrink",
+                  "text-xs font-medium",
+                  "border border-transparent",
+                  "transition-colors duration-150",
+                  projectPaths.length > 0
+                    ? "text-foreground bg-muted hover:border-border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted hover:border-border",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                )}
+              >
+                <FolderOpen className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+                <span className="truncate min-w-0">{triggerLabel}</span>
+                {anyLocked ? (
+                  <Lock
+                    className="w-3 h-3 opacity-60 shrink-0"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <ChevronUp className="w-3 h-3 opacity-50 shrink-0" />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[260px]">
+            {tooltipText}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent side="top" align="start" className="w-64 p-1">
         <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
           Projects
         </div>
@@ -690,9 +697,10 @@ function ProjectsPicker({
         ) : (
           <>
             {workspaceProjects.length > 1 ? (
-              <button
-                type="button"
-                onClick={() => {
+              <PickerCheckboxItem
+                label={allSelected ? "Deselect all" : "Select all"}
+                checked={allSelected}
+                onCheckedChange={() => {
                   if (allSelected) {
                     // Deselect all selected.
                     for (const p of [...projectPaths]) onRemove(p);
@@ -704,13 +712,8 @@ function ProjectsPicker({
                     }
                   }
                 }}
-                className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-              >
-                <span>{allSelected ? "Deselect all" : "Select all"}</span>
-                {allSelected ? (
-                  <Check className="h-3 w-3 text-[var(--color-accent-primary)]" />
-                ) : null}
-              </button>
+                onSelect={(e: Event) => e.preventDefault()}
+              />
             ) : null}
             {sortedProjects.map((project) => {
               const isChecked = projectPaths.includes(project.path);
@@ -719,49 +722,45 @@ function ProjectsPicker({
                 metadataMap[project.path]?.name?.trim() ||
                 basename(project.path);
               return (
-                <button
+                <PickerCheckboxItem
                   key={project.path}
-                  type="button"
-                  onClick={() => {
-                    if (isChecked) onRemove(project.path);
-                    else onToggle(project.path);
-                  }}
-                  aria-label={
-                    isChecked
-                      ? `Deselect ${name}`
-                      : `Select ${name}`
-                  }
-                  className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                >
-                  <span className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className="truncate text-left">{name}</span>
-                    {locked ? (
-                      <button
-                        type="button"
+                  label={name}
+                  trailing={
+                    locked ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation();
                           onExplainLock(project.path);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onExplainLock(project.path);
+                          }
+                        }}
                         aria-label={`${name} is locked to a provider`}
-                        className="shrink-0 text-foreground hover:text-foreground/80 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                        className="shrink-0 inline-flex text-foreground hover:text-foreground/80 transition-colors rounded cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                       >
                         <Lock className="h-3 w-3" strokeWidth={1.5} />
-                      </button>
-                    ) : null}
-                  </span>
-                  {isChecked ? (
-                    <Check
-                      className="h-3 w-3 shrink-0 text-[var(--color-accent-primary)]"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                </button>
+                      </span>
+                    ) : null
+                  }
+                  checked={isChecked}
+                  onCheckedChange={() => {
+                    if (isChecked) onRemove(project.path);
+                    else onToggle(project.path);
+                  }}
+                  onSelect={(e: Event) => e.preventDefault()}
+                />
               );
             })}
           </>
         )}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -855,25 +854,37 @@ function ProviderQuickConfig({ connection }: { connection: Connection }) {
     });
   };
 
+  const tooltipText = currentModel
+    ? `Model: ${prettyModelName(currentModel)}`
+    : "Default model — click to choose";
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Provider quick config"
-          title="Provider quick config"
-          className={cn(
-            "inline-flex items-center justify-center h-7 w-7 rounded-md shrink-0",
-            "text-muted-foreground border border-transparent",
-            "hover:text-foreground hover:bg-muted hover:border-border",
-            "transition-colors duration-150",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-        >
-          <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Provider quick config"
+                className={cn(
+                  "inline-flex items-center justify-center h-7 w-7 rounded-md shrink-0",
+                  "text-muted-foreground border border-transparent",
+                  "hover:text-foreground hover:bg-muted hover:border-border",
+                  "transition-colors duration-150",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                )}
+              >
+                <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[240px]">
+            {tooltipText}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent
         side="top"
         align="start"
         className="w-64 max-h-[320px] overflow-y-auto p-1"
@@ -881,19 +892,17 @@ function ProviderQuickConfig({ connection }: { connection: Connection }) {
         <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
           Model
         </div>
-        <button
-          type="button"
-          onClick={() => handlePickModel(undefined)}
-          className={cn(
-            "w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-accent/50",
-            !currentModel ? "text-foreground" : "text-muted-foreground",
-          )}
+        <DropdownMenuRadioGroup
+          value={currentModel ?? ""}
+          onValueChange={(value) => {
+            handlePickModel(value === "" ? undefined : value);
+          }}
         >
-          <span>Default</span>
-          {!currentModel ? (
-            <Check className="h-3 w-3 shrink-0 text-[var(--color-accent-primary)]" />
-          ) : null}
-        </button>
+          <PickerItem value="" label="Default" />
+          {models.map((m) => (
+            <PickerItem key={m} value={m} label={prettyModelName(m)} />
+          ))}
+        </DropdownMenuRadioGroup>
         {fetching ? (
           <div className="flex items-center justify-center py-2">
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -904,32 +913,13 @@ function ProviderQuickConfig({ connection }: { connection: Connection }) {
             {fetchError}
           </p>
         ) : null}
-        {models.map((m) => {
-          const isActive = m === currentModel;
-          return (
-            <button
-              key={m}
-              type="button"
-              onClick={() => handlePickModel(m)}
-              className={cn(
-                "w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-accent/50",
-                isActive ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              <span className="truncate">{prettyModelName(m)}</span>
-              {isActive ? (
-                <Check className="h-3 w-3 shrink-0 text-[var(--color-accent-primary)]" />
-              ) : null}
-            </button>
-          );
-        })}
         {!fetching && !fetchError && models.length === 0 ? (
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground italic">
             No models available
           </p>
         ) : null}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -972,23 +962,34 @@ interface IconButtonProps {
   ariaLabel: string;
   icon: typeof Clock;
   onClick: () => void;
+  /** Tooltip text shown on hover/focus. Defaults to `ariaLabel`. */
+  tooltip?: string;
 }
 
-function IconButton({ ariaLabel, icon: Icon, onClick }: IconButtonProps) {
+function IconButton({ ariaLabel, icon: Icon, onClick, tooltip }: IconButtonProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      className={cn(
-        "flex items-center justify-center w-6 h-6 rounded-md shrink-0",
-        "text-muted-foreground hover:text-foreground hover:bg-muted",
-        "transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-      )}
-    >
-      <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
-    </button>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={ariaLabel}
+            className={cn(
+              "flex items-center justify-center w-6 h-6 rounded-md shrink-0",
+              "text-muted-foreground hover:text-foreground hover:bg-muted",
+              "transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            )}
+          >
+            <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-[220px]">
+          {tooltip ?? ariaLabel}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
