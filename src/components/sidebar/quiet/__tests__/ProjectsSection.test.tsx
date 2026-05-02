@@ -9,7 +9,7 @@ import {
   waitFor,
   setMockInvokeHandler,
 } from '@/test/component-harness';
-import { ProjectsSection, countMarkdownFiles } from '../ProjectsSection';
+import { ProjectsSection, countMarkdownFiles, isSystemFolderName } from '../ProjectsSection';
 import { useWorkspaceStore, type WorkspaceProject } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -88,6 +88,42 @@ beforeEach(() => {
   mockCreateFolder.mockResolvedValue('/Users/me/Notesage/new-project');
   mockOpenFile.mockReset();
   mockOpenFile.mockResolvedValue(undefined);
+});
+
+// ----------------------------------------------------------------------------
+// isSystemFolderName — pure helper (issue #89)
+// ----------------------------------------------------------------------------
+
+describe('isSystemFolderName', () => {
+  it('returns true for any leading-dot name (well-known tool dirs)', () => {
+    expect(isSystemFolderName('.notesage')).toBe(true);
+    expect(isSystemFolderName('.claude')).toBe(true);
+    expect(isSystemFolderName('.git')).toBe(true);
+    expect(isSystemFolderName('.vscode')).toBe(true);
+    expect(isSystemFolderName('.github')).toBe(true);
+    expect(isSystemFolderName('.cursor')).toBe(true);
+    expect(isSystemFolderName('.codex')).toBe(true);
+  });
+
+  it('returns true for arbitrary leading-dot names not on any known list', () => {
+    // Proves the guard is "any dotfile", not a hardcoded allow-list.
+    expect(isSystemFolderName('.env')).toBe(true);
+    expect(isSystemFolderName('.env-secret')).toBe(true);
+    expect(isSystemFolderName('.gitignore')).toBe(true);
+    expect(isSystemFolderName('.npmrc')).toBe(true);
+    expect(isSystemFolderName('.foo-bar-baz')).toBe(true);
+    expect(isSystemFolderName('.')).toBe(true);
+    expect(isSystemFolderName('..')).toBe(true);
+  });
+
+  it('returns false for any name that does not start with a dot', () => {
+    expect(isSystemFolderName('src')).toBe(false);
+    expect(isSystemFolderName('docs')).toBe(false);
+    expect(isSystemFolderName('readme.md')).toBe(false);
+    expect(isSystemFolderName('my-project')).toBe(false);
+    expect(isSystemFolderName('a.notesage')).toBe(false); // dot in middle ≠ leading
+    expect(isSystemFolderName('')).toBe(false);
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -1614,6 +1650,8 @@ describe('ProjectsSection — project-root rename + system-folder safety + input
   };
 
   // Project with dotfile (system) folders so we can test the safety gate.
+  // `.env-secret` is included to prove the guard is "any leading-dot name",
+  // not a hardcoded allow-list of well-known tool dirs.
   const projectWithSystemFolders: WorkspaceProject = {
     path: '/Users/me/Notesage/myproject',
     fileTree: [
@@ -1621,6 +1659,7 @@ describe('ProjectsSection — project-root rename + system-folder safety + input
       makeDir('.notesage', '/Users/me/Notesage/myproject/.notesage', []),
       makeDir('.git', '/Users/me/Notesage/myproject/.git', []),
       makeDir('.claude', '/Users/me/Notesage/myproject/.claude', []),
+      makeDir('.env-secret', '/Users/me/Notesage/myproject/.env-secret', []),
       makeDir('src', '/Users/me/Notesage/myproject/src', []),
     ],
   };
@@ -1761,6 +1800,25 @@ describe('ProjectsSection — project-root rename + system-folder safety + input
     expect(screen.queryByLabelText(/rename/i)).toBeNull();
   });
 
+  it('double-clicking an arbitrary dotfile folder (.env-secret) does NOT enter rename mode (proves leading-dot guard, not hardcoded list)', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const folderRow = screen.getByRole('treeitem', {
+      name: /open folder \.env-secret/i,
+    }) as HTMLElement;
+    fireEvent.click(folderRow, { detail: 2 });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
   it('double-clicking a non-system folder (src) still enters rename mode', async () => {
     useSettingsStore.setState({ showHiddenFiles: true });
     setProjects([projectWithSystemFolders]);
@@ -1816,6 +1874,26 @@ describe('ProjectsSection — project-root rename + system-folder safety + input
     window.dispatchEvent(
       new CustomEvent('sidebar:enter-rename-mode', {
         detail: { filePath: '/Users/me/Notesage/myproject/.git' },
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(/rename/i)).toBeNull();
+  });
+
+  it('SIDEBAR_ENTER_RENAME_MODE_EVENT is blocked for arbitrary dotfile folders (.env-secret)', async () => {
+    useSettingsStore.setState({ showHiddenFiles: true });
+    setProjects([projectWithSystemFolders]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', {
+      name: /open project myproject/i,
+    });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    window.dispatchEvent(
+      new CustomEvent('sidebar:enter-rename-mode', {
+        detail: { filePath: '/Users/me/Notesage/myproject/.env-secret' },
       }),
     );
 

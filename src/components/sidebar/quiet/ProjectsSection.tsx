@@ -80,8 +80,23 @@ export interface ProjectsSectionProps {
  *
  * Exported for unit testing.
  */
-/** Issue #89 — system/dotfile folders that must never be renamed via the UI. */
-const SYSTEM_FOLDER_NAMES = [".notesage", ".claude", ".git", ".vscode"] as const;
+/**
+ * Issue #89 — any dotfile folder must never be renamed via the UI.
+ *
+ * Renaming `.notesage` corrupts the project (loses metadata, comments,
+ * drawings, charts). The same risk applies to other tool dirs (`.claude`,
+ * `.git`, `.vscode`, `.cursor`, `.codex`, `.github`, etc.) and to user
+ * dotfiles whose tools may not survive being renamed (`.env`, `.gitignore`,
+ * `.npmrc`, …). The only safe rule is: any leading-dot name is a no-op for
+ * UI rename. Power users who genuinely want to rename a dotfile can do it
+ * outside Notesage; the cost of accidental corruption inside the app is
+ * much higher than the cost of bouncing them to the terminal.
+ *
+ * Exported for unit tests.
+ */
+export function isSystemFolderName(name: string): boolean {
+  return name.startsWith(".");
+}
 
 export function countMarkdownFiles(tree: FileEntry[]): number {
   let count = 0;
@@ -643,9 +658,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       const detail = (event as CustomEvent<{ filePath: string }>).detail;
       if (!detail?.filePath) return;
       if (!visibleChildPaths.has(detail.filePath)) return;
-      // Issue #89 — block rename for system/dotfile folders.
+      // Issue #89 — block rename for any dotfile folder.
       const name = pathBasename(detail.filePath);
-      if ((SYSTEM_FOLDER_NAMES as readonly string[]).includes(name)) return;
+      if (isSystemFolderName(name)) return;
       setRenamingPath(detail.filePath);
     }
     window.addEventListener(
@@ -1425,9 +1440,8 @@ function ChildRow({
   // not — only file paths can be pinned in Phase 1. Projects themselves
   // (row.kind === "project") stay non-draggable too.
   const draggable = !entry.is_directory;
-  // Issue #89 — system/dotfile folders must never enter rename mode.
-  const isSystemFolder =
-    entry.is_directory && (SYSTEM_FOLDER_NAMES as readonly string[]).includes(entry.name);
+  // Issue #89 — any dotfile folder must never enter rename mode.
+  const isSystemFolder = entry.is_directory && isSystemFolderName(entry.name);
   // F2 rename — files only (folders excluded per task #40).
   // Double-click rename — files AND non-system folders (task #62, #89).
   const renameableViaKeyboard = !entry.is_directory;
