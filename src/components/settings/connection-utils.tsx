@@ -216,3 +216,10 @@ export function SetupGuideView({ guide }: { guide: SetupGuide }) {
     </div>
   );
 }
+
+// (Removed unused `ProviderPickerRow` — superseded by the canonical
+// `<PickerItem>` / `<PickerCheckboxItem>` in `src/components/ui/picker-item.tsx`.
+// Picker rows everywhere now compose `DropdownMenuPrimitive.RadioItem` /
+// `CheckboxItem` from Radix, getting free keyboard navigation, ARIA roles,
+// and focus management — which the plain-`<button>` ProviderPickerRow
+// reinvented poorly.)

@@ -49,8 +49,8 @@ describe('ChatMessage — resend/edit buttons', () => {
     );
 
     // In jsdom, ResizeObserver is not real so buttons stay inline (non-collapsed)
-    expect(screen.getByTitle('Edit message')).toBeDefined();
-    expect(screen.getByTitle('Resend message')).toBeDefined();
+    expect(screen.getByLabelText('Edit message')).toBeDefined();
+    expect(screen.getByLabelText('Resend message')).toBeDefined();
   });
 
   it('does not show edit/resend on assistant messages', () => {
@@ -62,8 +62,8 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    expect(screen.queryByTitle('Edit message')).toBeNull();
-    expect(screen.queryByTitle('Resend message')).toBeNull();
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+    expect(screen.queryByLabelText('Resend message')).toBeNull();
   });
 
   it('does not show edit/resend on system-status messages', () => {
@@ -73,8 +73,8 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    expect(screen.queryByTitle('Edit message')).toBeNull();
-    expect(screen.queryByTitle('Resend message')).toBeNull();
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+    expect(screen.queryByLabelText('Resend message')).toBeNull();
   });
 
   it('calls onEdit when edit button is clicked', () => {
@@ -87,7 +87,7 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    fireEvent.click(screen.getByTitle('Edit message'));
+    fireEvent.click(screen.getByLabelText('Edit message'));
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
@@ -101,7 +101,7 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    fireEvent.click(screen.getByTitle('Resend message'));
+    fireEvent.click(screen.getByLabelText('Resend message'));
     expect(onResend).toHaveBeenCalledOnce();
   });
 
@@ -112,8 +112,8 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    expect(screen.queryByTitle('Edit message')).toBeNull();
-    expect(screen.queryByTitle('Resend message')).toBeNull();
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+    expect(screen.queryByLabelText('Resend message')).toBeNull();
   });
 
   it('does not show action buttons while loading', () => {
@@ -127,8 +127,8 @@ describe('ChatMessage — resend/edit buttons', () => {
       />
     );
 
-    expect(screen.queryByTitle('Edit message')).toBeNull();
-    expect(screen.queryByTitle('Resend message')).toBeNull();
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+    expect(screen.queryByLabelText('Resend message')).toBeNull();
 
     mockChatState.isLoading = false;
   });

@@ -256,6 +256,31 @@ vi.mock('@/components/ui/tooltip', () => {
 // queryable from jsdom without simulating pointer events through Radix's
 // internal state machine. We preserve `asChild` on the trigger by rendering
 // children directly.
+// --- Picker mocks ---
+//
+// AcpModePicker (and friends) compose `<DropdownMenuRadioGroup>` + custom
+// `<PickerItem>` rows that internally use Radix `DropdownMenuPrimitive.RadioItem`.
+// In jsdom + happy-dom we mock both layers:
+//   - DropdownMenu wrappers render content inline (no portal, no open gate)
+//     so labels are queryable directly.
+//   - DropdownMenuRadioGroup pushes its onValueChange into a React context
+//     so PickerItem rows can dispatch the click as a value-change.
+//   - PickerItem / PickerCheckboxItem render as plain buttons that call
+//     the right callback on click. Production uses Radix; tests skip Radix.
+//
+// Result: `screen.getByText('Plan')` + `fireEvent.click(planItem)` works
+// the same way it did against the old plain-`<button>` rows.
+//
+// React import is hoisted via vi.hoisted because vi.mock factories themselves
+// run before module-scope imports — the context object MUST be created inside
+// the hoisted block so both mock factories can reference the same instance.
+type PickerRadioGroupContextValue = { value: string; onValueChange?: (v: string) => void } | null;
+const { PickerRadioGroupContext } = vi.hoisted((): { PickerRadioGroupContext: React.Context<PickerRadioGroupContextValue> } => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactRuntime = require('react') as typeof import('react');
+  return { PickerRadioGroupContext: ReactRuntime.createContext<PickerRadioGroupContextValue>(null) };
+});
+
 vi.mock('@/components/ui/dropdown-menu', () => {
   const Pass = ({ children }: { children?: React.ReactNode }) => <>{children}</>;
   const Trigger = ({ children }: { children?: React.ReactNode; asChild?: boolean }) =>
@@ -283,6 +308,19 @@ vi.mock('@/components/ui/dropdown-menu', () => {
       {children}
     </button>
   );
+  const RadioGroup = ({
+    children,
+    value,
+    onValueChange,
+  }: {
+    children?: React.ReactNode;
+    value?: string;
+    onValueChange?: (v: string) => void;
+  }) => (
+    <PickerRadioGroupContext.Provider value={{ value: value ?? '', onValueChange }}>
+      {children}
+    </PickerRadioGroupContext.Provider>
+  );
   return {
     DropdownMenu: Pass,
     DropdownMenuTrigger: Trigger,
@@ -290,8 +328,70 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     DropdownMenuItem: Item,
     DropdownMenuLabel: Pass,
     DropdownMenuSeparator: () => <hr />,
+    DropdownMenuRadioGroup: RadioGroup,
   };
 });
+
+vi.mock('@/components/ui/picker-item', () => ({
+  PickerItem: ({
+    value,
+    label,
+    description,
+    leading,
+    trailing,
+  }: {
+    value: string;
+    label: string;
+    description?: string;
+    leading?: React.ReactNode;
+    trailing?: React.ReactNode;
+  }) => {
+    const ctx = React.useContext(PickerRadioGroupContext);
+    const isChecked = ctx?.value === value;
+    return (
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={isChecked}
+        aria-label={label}
+        data-slot="picker-item"
+        data-checked={isChecked ? 'true' : 'false'}
+        onClick={() => ctx?.onValueChange?.(value)}
+      >
+        <div>
+          {leading}
+          <span>{label}</span>
+          {trailing}
+        </div>
+        {description && <div>{description}</div>}
+      </button>
+    );
+  },
+  PickerCheckboxItem: ({
+    label,
+    checked,
+    onCheckedChange,
+    trailing,
+  }: {
+    label: string;
+    checked?: boolean;
+    onCheckedChange?: (v: boolean) => void;
+    trailing?: React.ReactNode;
+  }) => (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={!!checked}
+      aria-label={label}
+      data-slot="picker-checkbox-item"
+      data-checked={checked ? 'true' : 'false'}
+      onClick={() => onCheckedChange?.(!checked)}
+    >
+      <span>{label}</span>
+      {trailing}
+    </button>
+  ),
+}));
 
 // Mock ProviderLogo to avoid asset-resolution side-effects.
 vi.mock('@/components/ProviderLogo', () => ({
@@ -644,11 +744,16 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      const items = screen.getAllByRole('button', { name: /switch provider to/i });
-      expect(items).toHaveLength(3);
-      expect(screen.getByRole('button', { name: /switch provider to anthropic/i })).toBeTruthy();
-      expect(screen.getByRole('button', { name: /switch provider to openai/i })).toBeTruthy();
-      expect(screen.getByRole('button', { name: /switch provider to ollama/i })).toBeTruthy();
+      // ProviderQuickConfig also renders a Default model PickerItem when an
+      // interactive connection is active; filter by connection-label to count
+      // only provider-picker rows.
+      const providerItems = screen
+        .getAllByRole('menuitemradio')
+        .filter((el) => /^(anthropic|openai|ollama)$/i.test(el.getAttribute('aria-label') ?? ''));
+      expect(providerItems).toHaveLength(3);
+      expect(screen.getByRole('menuitemradio', { name: /^anthropic$/i })).toBeTruthy();
+      expect(screen.getByRole('menuitemradio', { name: /^openai$/i })).toBeTruthy();
+      expect(screen.getByRole('menuitemradio', { name: /^ollama$/i })).toBeTruthy();
     });
 
     it('hides connections that lack the "interactive" capability', () => {
@@ -664,11 +769,11 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      expect(screen.getByRole('button', { name: /switch provider to anthropic/i })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: /switch provider to inline only/i })).toBeNull();
+      expect(screen.getByRole('menuitemradio', { name: /^anthropic$/i })).toBeTruthy();
+      expect(screen.queryByRole('menuitemradio', { name: /^inline only$/i })).toBeNull();
     });
 
-    it('marks the currently active connection with aria-current', () => {
+    it('marks the currently active connection with aria-checked', () => {
       const a = makeConnection({ id: 'conn-a', label: 'Anthropic' });
       const b = makeConnection({ id: 'conn-b', label: 'OpenAI', provider: 'openai' });
       mockInteractiveConnection = a;
@@ -676,11 +781,11 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      const activeItem = screen.getByRole('button', { name: /switch provider to anthropic/i });
-      const inactiveItem = screen.getByRole('button', { name: /switch provider to openai/i });
+      const activeItem = screen.getByRole('menuitemradio', { name: /^anthropic$/i });
+      const inactiveItem = screen.getByRole('menuitemradio', { name: /^openai$/i });
 
-      expect(activeItem.getAttribute('aria-current')).toBe('true');
-      expect(inactiveItem.getAttribute('aria-current')).not.toBe('true');
+      expect(activeItem.getAttribute('aria-checked')).toBe('true');
+      expect(inactiveItem.getAttribute('aria-checked')).toBe('false');
     });
 
     it('selecting a different connection calls setRouting("interactive", id)', () => {
@@ -691,7 +796,7 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      const openaiItem = screen.getByRole('button', { name: /switch provider to openai/i });
+      const openaiItem = screen.getByRole('menuitemradio', { name: /^openai$/i });
       fireEvent.click(openaiItem);
 
       expect(setRoutingMock).toHaveBeenCalledWith('interactive', 'conn-b');
@@ -704,7 +809,7 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      const activeItem = screen.getByRole('button', { name: /switch provider to anthropic/i });
+      const activeItem = screen.getByRole('menuitemradio', { name: /^anthropic$/i });
       fireEvent.click(activeItem);
 
       expect(setRoutingMock).not.toHaveBeenCalled();
@@ -719,7 +824,7 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      fireEvent.click(screen.getByRole('button', { name: /switch provider to openai/i }));
+      fireEvent.click(screen.getByRole('menuitemradio', { name: /^openai$/i }));
 
       // We dispatch the same store action ChatFooter uses. ChatPanel's effect
       // already short-circuits AgentSwitchCard when messages.length === 0, so
@@ -743,7 +848,7 @@ describe('CommandBarContext', () => {
 
       renderWithProviders(<CommandBarContext />);
 
-      fireEvent.click(screen.getByRole('button', { name: /switch provider to openai/i }));
+      fireEvent.click(screen.getByRole('menuitemradio', { name: /^openai$/i }));
 
       // The AgentSwitchCard prompt is fired by ChatPanel's effect when
       // `effectiveConnection?.id` flips. Reusing the same setRouting action
@@ -758,9 +863,7 @@ describe('CommandBarContext', () => {
       mockConnections = [];
       renderWithProviders(<CommandBarContext />);
 
-      expect(
-        screen.queryAllByRole('button', { name: /switch provider to/i }),
-      ).toHaveLength(0);
+      expect(screen.queryAllByRole('menuitemradio')).toHaveLength(0);
     });
   });
 
@@ -791,7 +894,8 @@ describe('CommandBarContext', () => {
 
       openPicker();
       // Clicking a CHECKED project deselects it via toggleProjectPath.
-      const item = screen.getByRole('button', { name: /deselect alpha/i });
+      const item = screen.getByRole('menuitemcheckbox', { name: /^alpha$/i });
+      expect(item.getAttribute('aria-checked')).toBe('true');
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
@@ -809,17 +913,13 @@ describe('CommandBarContext', () => {
       ];
       renderWithProviders(<CommandBarContext />);
 
-      // All three projects render; selected one uses "Deselect" label,
-      // unselected ones use "Select" label.
-      expect(
-        screen.getByRole('button', { name: /deselect alpha/i }),
-      ).toBeTruthy();
-      expect(
-        screen.getByRole('button', { name: /select beta/i }),
-      ).toBeTruthy();
-      expect(
-        screen.getByRole('button', { name: /select gamma/i }),
-      ).toBeTruthy();
+      // All three projects render; selected one is aria-checked, others not.
+      const alpha = screen.getByRole('menuitemcheckbox', { name: /^alpha$/i });
+      const beta = screen.getByRole('menuitemcheckbox', { name: /^beta$/i });
+      const gamma = screen.getByRole('menuitemcheckbox', { name: /^gamma$/i });
+      expect(alpha.getAttribute('aria-checked')).toBe('true');
+      expect(beta.getAttribute('aria-checked')).toBe('false');
+      expect(gamma.getAttribute('aria-checked')).toBe('false');
     });
 
     it('clicking an unchecked project in the popover calls toggleProjectPath (selects)', () => {
@@ -829,7 +929,8 @@ describe('CommandBarContext', () => {
       ];
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /select alpha/i });
+      const item = screen.getByRole('menuitemcheckbox', { name: /^alpha$/i });
+      expect(item.getAttribute('aria-checked')).toBe('false');
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/alpha');
@@ -886,7 +987,7 @@ describe('CommandBarContext', () => {
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /select locked-b/i });
+      const item = screen.getByRole('menuitemcheckbox', { name: /^locked-b$/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).not.toHaveBeenCalled();
@@ -909,7 +1010,7 @@ describe('CommandBarContext', () => {
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /select free/i });
+      const item = screen.getByRole('menuitemcheckbox', { name: /^free$/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).not.toHaveBeenCalled();
@@ -936,7 +1037,7 @@ describe('CommandBarContext', () => {
       };
       renderWithProviders(<CommandBarContext />);
 
-      const item = screen.getByRole('button', { name: /select locked-c/i });
+      const item = screen.getByRole('menuitemcheckbox', { name: /^locked-c$/i });
       fireEvent.click(item);
 
       expect(toggleProjectPathMock).toHaveBeenCalledWith('/Users/p/Projects/locked-c');

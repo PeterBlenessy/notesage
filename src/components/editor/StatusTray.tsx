@@ -24,7 +24,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
@@ -179,42 +184,48 @@ function EditorToolsGroup({
   return (
     <section className="flex items-center gap-2" aria-label="Editor tools">
       {showMic && (
-        // Live-test 2026-04-25 — `showTooltip={false}` because the
-        // popover lands initial focus on this button, and Radix's
-        // focus-triggered tooltip would always auto-open on popover
-        // open. The mic button's row inside the tray already conveys
-        // its purpose; no extra tooltip needed here.
-        <MicButton editor={editor ?? null} showTooltip={false} />
+        // Re-enable the MicButton's built-in Tooltip so it matches the
+        // rest of the tray's chrome (consistent with source toggle,
+        // completion picker, actions, shortcuts). Earlier `showTooltip={false}`
+        // suppressed it to avoid the focus-on-popover-open auto-show, but
+        // the user explicitly wants tooltip parity here.
+        <MicButton editor={editor ?? null} />
       )}
       {showSourceToggle && (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={isSource}
-          aria-label={
-            isSource ? "Switch to Rich text" : "Switch to Markdown source"
-          }
-          onClick={onToggleViewMode}
-          className={cn(
-            "ml-auto inline-flex items-center gap-1.5 h-7 px-2 rounded-sm border border-border",
-            "text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50",
-            "transition-colors",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-          title={isSource ? "Rich text" : "Markdown source"}
-        >
-          {isSource ? (
-            <>
-              <FileText className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-              <span>Source</span>
-            </>
-          ) : (
-            <>
-              <FileCode className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
-              <span>WYSIWYG</span>
-            </>
-          )}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isSource}
+              aria-label={
+                isSource ? "Switch to Rich text" : "Switch to Markdown source"
+              }
+              onClick={onToggleViewMode}
+              className={cn(
+                "ml-auto inline-flex items-center gap-1.5 h-7 px-2 rounded-sm border border-border",
+                "text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                "transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+            >
+              {isSource ? (
+                <>
+                  <FileText className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                  <span>Source</span>
+                </>
+              ) : (
+                <>
+                  <FileCode className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                  <span>WYSIWYG</span>
+                </>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[220px]">
+            {isSource ? "Rich text" : "Markdown source"}
+          </TooltipContent>
+        </Tooltip>
       )}
     </section>
   );
@@ -297,28 +308,31 @@ function CompletionsGroup() {
           const active = opt.value === activeOption;
           const disabled = isDisabled(opt.value);
           return (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={opt.label}
-              disabled={disabled}
-              onClick={() => handleSelect(opt.value)}
-              title={
-                disabled ? `${opt.label} — not configured` : opt.label
-              }
-              className={cn(
-                "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                active
-                  ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-                disabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
-              )}
-            >
-              {opt.label}
-            </button>
+            <Tooltip key={opt.value}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={opt.label}
+                  disabled={disabled}
+                  onClick={() => handleSelect(opt.value)}
+                  className={cn(
+                    "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    active
+                      ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                    disabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                {disabled ? `${opt.label} — not configured` : opt.label}
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </div>
@@ -500,27 +514,34 @@ function ActionsGroup({ onOpenActions }: { onOpenActions?: () => void }) {
         <CheckSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
         <span className="text-xs font-medium">Actions</span>
       </div>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={!onOpenActions}
-        className={cn(
-          "w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors",
-          "rounded-sm px-2 py-1 hover:bg-muted/50",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          "disabled:cursor-not-allowed disabled:opacity-60",
-        )}
-      >
-        <CheckSquare className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-        <span className="flex-1 text-left">
-          {openCount === 0
-            ? "No open actions"
-            : `${openCount} open ${openCount === 1 ? "action" : "actions"}`}
-        </span>
-        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-          {"⌘!"}
-        </span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={handleClick}
+            disabled={!onOpenActions}
+            className={cn(
+              "w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors",
+              "rounded-sm px-2 py-1 hover:bg-muted/50",
+              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            <CheckSquare className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+            <span className="flex-1 text-left">
+              {openCount === 0
+                ? "No open actions"
+                : `${openCount} open ${openCount === 1 ? "action" : "actions"}`}
+            </span>
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+              {"⌘!"}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-[220px]">
+          Open the actions dashboard
+        </TooltipContent>
+      </Tooltip>
     </section>
   );
 }
@@ -565,14 +586,20 @@ function SessionGroup() {
       <div className="flex items-center gap-2">
         <Cpu className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
         <span className="text-xs font-medium">Local AI</span>
-        <span
-          className={cn("ml-auto h-1.5 w-1.5 rounded-full shrink-0", dot)}
-          data-testid="local-ai-status-dot"
-          data-server-status={serverStatus}
-          role="status"
-          aria-label={`Local AI ${statusLabel}`}
-          title={statusLabel}
-        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className={cn("ml-auto h-1.5 w-1.5 rounded-full shrink-0", dot)}
+              data-testid="local-ai-status-dot"
+              data-server-status={serverStatus}
+              role="status"
+              aria-label={`Local AI ${statusLabel}`}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[220px]">
+            {statusLabel}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Model picker — populated with downloaded models only. Picking a
@@ -653,21 +680,28 @@ function HelpGroup({
         <span className="text-xs font-medium">Help</span>
       </div>
       {onShortcutsOpen && (
-        <button
-          type="button"
-          onClick={onShortcutsOpen}
-          className={cn(
-            "w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors",
-            "rounded-sm px-2 py-1 hover:bg-muted/50",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          )}
-        >
-          <CommandIcon className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-          <span className="flex-1 text-left">Keyboard shortcuts</span>
-          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-            {"\u23187"}
-          </span>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onShortcutsOpen}
+              className={cn(
+                "w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors",
+                "rounded-sm px-2 py-1 hover:bg-muted/50",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+            >
+              <CommandIcon className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+              <span className="flex-1 text-left">Keyboard shortcuts</span>
+              <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                {"\u23187"}
+              </span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[220px]">
+            Show all keyboard shortcuts
+          </TooltipContent>
+        </Tooltip>
       )}
     </section>
   );
