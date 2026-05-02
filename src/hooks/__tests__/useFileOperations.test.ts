@@ -327,6 +327,7 @@ describe('useFileOperations', () => {
   describe('renamePath', () => {
     it('renames a path and updates open tabs', async () => {
       setMockInvokeHandler('read_file', () => 'Content');
+      setMockInvokeHandler('mark_self_write', () => undefined);
       setMockInvokeHandler('rename_path', () => undefined);
       setMockInvokeHandler('list_directory', () => []);
 
@@ -349,6 +350,7 @@ describe('useFileOperations', () => {
     });
 
     it('throws when rename_path fails', async () => {
+      setMockInvokeHandler('mark_self_write', () => undefined);
       setMockInvokeHandler('rename_path', () => {
         throw new Error('Target already exists');
       });
@@ -360,6 +362,54 @@ describe('useFileOperations', () => {
           await result.current.renamePath('/project/a.md', '/project/b.md');
         }),
       ).rejects.toThrow('Target already exists');
+    });
+
+    it('calls markSelfWrite for both old and new paths before invoking rename_path', async () => {
+      const callOrder: string[] = [];
+
+      setMockInvokeHandler('mark_self_write', (args) => {
+        callOrder.push(`mark_self_write:${args?.path}`);
+      });
+      setMockInvokeHandler('rename_path', () => {
+        callOrder.push('rename_path');
+      });
+      setMockInvokeHandler('list_directory', () => []);
+
+      const { result } = renderHook(() => useFileOperations());
+
+      await act(async () => {
+        await result.current.renamePath('/project/old.md', '/project/new.md');
+      });
+
+      // Both markSelfWrite calls must happen before rename_path
+      const markOldIdx = callOrder.indexOf('mark_self_write:/project/old.md');
+      const markNewIdx = callOrder.indexOf('mark_self_write:/project/new.md');
+      const renameIdx = callOrder.indexOf('rename_path');
+
+      expect(markOldIdx).toBeGreaterThanOrEqual(0);
+      expect(markNewIdx).toBeGreaterThanOrEqual(0);
+      expect(renameIdx).toBeGreaterThanOrEqual(0);
+      expect(markOldIdx).toBeLessThan(renameIdx);
+      expect(markNewIdx).toBeLessThan(renameIdx);
+    });
+
+    it('calls markSelfWrite for both old and new paths for a folder rename', async () => {
+      const markPaths: string[] = [];
+
+      setMockInvokeHandler('mark_self_write', (args) => {
+        markPaths.push(args?.path as string);
+      });
+      setMockInvokeHandler('rename_path', () => undefined);
+      setMockInvokeHandler('list_directory', () => []);
+
+      const { result } = renderHook(() => useFileOperations());
+
+      await act(async () => {
+        await result.current.renamePath('/project/docs', '/project/documentation');
+      });
+
+      expect(markPaths).toContain('/project/docs');
+      expect(markPaths).toContain('/project/documentation');
     });
   });
 
