@@ -42,11 +42,25 @@ permissions:
   actions: write        # tdd dispatches aw-review.yml after the PR is created
   id-token: write       # claude-code-action OIDC
 
-# NOTE: workflow-level concurrency removed. Per-skill-job concurrency
-# uses `aw-stage-{stage}-{candidate}` so it shares a key with the
-# pipeline + standalone for that same issue+stage (#98). The find_*
-# jobs run unconditionally on each tick (they're cheap precheck-only)
-# and don't need concurrency gating.
+# Workflow-level concurrency — scoped to the triggering issue (#103).
+#
+# When `gh issue edit --add-label tdd --remove-label slice` fires, GitHub
+# emits TWO events (one `labeled` and one `unlabeled`) which can trigger
+# two concurrent sweep runs. Scoping the group to the issue number collapses
+# those into a single slot; `cancel-in-progress: true` cancels the second
+# run since it delivers no new information.
+#
+# For cron ticks (no issue.number) the fallback to `github.run_id` keeps
+# each cron run in its own slot — cron sweeps are independent and should
+# never cancel each other.
+#
+# The per-skill-job concurrency groups (aw-stage-{stage}-{candidate}) are
+# RETAINED unchanged — they guard cross-workflow races between the pipeline,
+# sweep, and standalone workflows for the same issue+stage (#98). This
+# workflow-level block only prevents duplicate SWEEP runs for the same issue.
+concurrency:
+  group: aw-sweep-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   # ── triage ────────────────────────────────────────────────────────────────
