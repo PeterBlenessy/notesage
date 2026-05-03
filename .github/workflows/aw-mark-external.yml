@@ -1,0 +1,62 @@
+name: AW — Mark external issues
+
+# Tiny no-LLM gatekeeper: when a non-trusted author opens a new issue,
+# label it `external`. The AW pipeline + sweep both gate on this label
+# (or `aw-approved`) to prevent untrusted external issues from auto-
+# flowing through triage → refine → slice → tdd → bot PR without
+# explicit owner approval.
+#
+# Trusted associations (issue flows normally with no `external` label):
+#   - OWNER         — repo owner
+#   - COLLABORATOR  — has push access
+#   - MEMBER        — org member (n/a for personal repos)
+#
+# Everyone else (CONTRIBUTOR / FIRST_TIME_CONTRIBUTOR / FIRST_TIMER /
+# NONE / MANNEQUIN) gets the `external` label.
+#
+# To opt-in an external issue: add the `aw-approved` label
+# (`gh issue edit N --add-label aw-approved`). The next sweep tick
+# will pick it up.
+#
+# Cost: ~3s of runner time per non-trusted issue, zero LLM cost.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+concurrency:
+  # Per-issue: don't double-label if multiple events fire (shouldn't
+  # happen for `opened`, but defence-in-depth).
+  group: aw-mark-external-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  mark:
+    if: |
+      github.event.issue.author_association != 'OWNER' &&
+      github.event.issue.author_association != 'COLLABORATOR' &&
+      github.event.issue.author_association != 'MEMBER'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Add external label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          ASSOC: ${{ github.event.issue.author_association }}
+        run: |
+          set -euo pipefail
+          echo "Issue #$ISSUE author_association: $ASSOC — labelling 'external'"
+          gh issue edit "$ISSUE" --repo "$REPO" --add-label external
+          gh issue comment "$ISSUE" --repo "$REPO" --body "$(cat <<'EOF'
+          > *Marked `external` automatically by the AW gatekeeper.*
+
+          This issue was filed by an account without write access to the repo, so the AW pipeline (`aw-triage` → `aw-refine` → `aw-slice` → `aw-tdd`) will NOT auto-process it. The repo owner reviews external issues before letting them into the agent pipeline.
+
+          **For the maintainer:** to opt this issue in, add the `aw-approved` label. The next sweep tick (every 15 min) will pick it up and run it through the normal pipeline.
+          EOF
+          )"

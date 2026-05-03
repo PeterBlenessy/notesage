@@ -65,14 +65,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Filter out external-but-not-approved issues. The author-association
+          # gate (aw-mark-external.yml) labels untrusted-author issues as
+          # `external`. Owner reviews and adds `aw-approved` to opt them in.
+          # See `Choice: author-association gate for external issues` in
+          # docs/agentic-workflow.md.
           CAND=$(gh issue list \
             --repo PeterBlenessy/notesage \
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore" or . == "duplicate" or . == "wontfix")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "bug" or . == "enhancement" or . == "chore" or . == "duplicate" or . == "wontfix")) | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
           if [[ -z "$CAND" ]]; then
-            echo "No untriaged issues. Skipping LLM step."
+            echo "No untriaged issues (or all eligible candidates are external+unapproved). Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"
           else
             echo "Found triage candidate: #$CAND"
@@ -132,15 +137,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Same external-author gate as the triage precheck above.
           CAND=$(gh issue list \
             --repo PeterBlenessy/notesage \
             --label refine \
             --state open \
             --limit 5 \
             --json number,labels \
-            --jq '[.[] | select([.labels[].name] | any(. == "refined") | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select([.labels[].name] | any(. == "refined") | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
           if [[ -z "$CAND" ]]; then
-            echo "No refine candidates. Skipping LLM step."
+            echo "No refine candidates (or all are external+unapproved). Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"
           else
             echo "Found refine candidate: #$CAND"
@@ -198,6 +204,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Same external-author gate as the triage precheck above.
           CAND=$(gh issue list \
             --repo PeterBlenessy/notesage \
             --label slice \
@@ -205,7 +212,7 @@ jobs:
             --state open \
             --limit 5 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "sliced" or . == "awaiting-research")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "sliced" or . == "awaiting-research")) | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
           if [[ -z "$CAND" ]]; then
             echo "No slicing candidates. Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"
@@ -266,6 +273,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Same external-author gate as the triage precheck above.
           CAND=$(gh issue list \
             --repo PeterBlenessy/notesage \
             --label tdd \
@@ -274,9 +282,9 @@ jobs:
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
           if [[ -z "$CAND" ]]; then
-            echo "No tdd candidates. Skipping LLM step."
+            echo "No tdd candidates (or all are external+unapproved). Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"
           else
             echo "Found tdd candidate: #$CAND"
