@@ -34,7 +34,10 @@ The skill files double as the canonical contract — every workflow's prompt is 
 
 ```mermaid
 flowchart TD
-  A[Human creates issue] -->|issues.opened fires aw-pipeline.yml| B[aw-triage]
+  A[Human creates issue] -->|issues.opened fires aw-mark-external.yml| GATE{Author<br/>trusted?}
+  GATE -.->|no — labels 'external'<br/>+ posts comment| EXT[Idle: external<br/>owner reviews,<br/>adds 'aw-approved'<br/>to opt-in]
+  EXT -.->|owner adds<br/>'aw-approved'| B
+  GATE -->|yes OWNER/COLLABORATOR/MEMBER<br/>OR aw-approved label| B[aw-triage]
   B -.->|duplicate / wontfix / ambiguous| Z[Closed or needs-info]
   B -->|+ category, + refine| C[aw-refine]
   C -.->|still too vague| W[Comment + leave refine]
@@ -57,9 +60,11 @@ flowchart TD
   classDef skill fill:#1d76db,stroke:#fff,color:#fff
   classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
   classDef stop fill:#cccccc,stroke:#666,color:#000
+  classDef gate fill:#d4a017,stroke:#fff,color:#fff
   class B,C,D,F,N,RV skill
   class G,M,O,IC,RDY terminal
-  class Z,W,H,FAIL,P,E stop
+  class Z,W,H,FAIL,P,E,EXT stop
+  class GATE gate
 ```
 
 The two pause points in this diagram (`Idle: hitl` and `Draft PR`) are not dead ends. Human comments at either point fire `aw-feedback`, which routes the agent back to any earlier stage based on the comment's intent. Small in-place code tweaks on the PR are handled by `aw-iterate` instead of a full re-implementation. See the feedback-loop diagram below.
@@ -167,19 +172,21 @@ Each precheck-bearing workflow finds candidates with `gh + jq` before invoking t
 
 **Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
 
-## Lifecycle (worked example, default path)
+## Lifecycle (worked example, default path — owner-filed issue)
 
 | Step | Issue state |
 | --- | --- |
-| Human creates issue | (no labels) |
+| Human (owner) creates issue | (no labels) |
 | aw-pipeline.yml fires; aw-triage classifies | `bug + refine` |
 | aw-refine rewrites body | `bug + refined + slice` |
 | aw-slice: 1 user value, don't slice | `bug + refined + tdd + afk` |
 | aw-tdd: red-green-refactor + draft PR | `bug + refined + review` |
-| Human merges PR | issue closed via `Implements #N` |
+| Human merges PR | issue auto-closed via `Fixes #N` (or `Resolves #N` for enhancement / chore) |
 | aw-retrospect: looks for divergence | optional draft retro PR |
 
 Total wall time: \~10–15 min from `gh issue create` to draft PR.
+
+**External-author flow.** Issues from non-trusted authors (anyone other than OWNER / COLLABORATOR / MEMBER) get labelled `external` by `aw-mark-external.yml` and a comment is posted explaining the gate. The pipeline + sweep skip them entirely. Owner reviews each one and either closes it (spam / off-topic / malicious) or adds `aw-approved`. The next sweep tick (\~15 min) picks up `aw-approved` issues and runs the same lifecycle as above. See "Choice: author-association gate for external issues" for the rationale.
 
 ## Failure modes
 
@@ -187,9 +194,13 @@ Total wall time: \~10–15 min from `gh issue create` to draft PR.
 
 **Hard gate failure in aw-tdd:** any of red-not-red / `pnpm test` / typecheck / lint / unrelated-files-modified → revert local changes, re-add `afk`, post failure comment. Human investigates.
 
-**Pipeline + standalone race (resolved by GITHUB_TOKEN):** historically, when the pipeline's bot added a label the same event fired the standalone workflow, producing a skipped tile per label change. Resolved by switching the agent's `gh` calls to `GITHUB_TOKEN` — see *Choice: GITHUB_TOKEN for surgical event triggers* below. Standalones still carry a defence-in-depth `if:` that requires `github.actor != 'github-actions[bot]'` for `issues.labeled` events, but the trigger no longer fires for bot-initiated label changes in the first place.
+**Pipeline + standalone race (resolved by GITHUB_TOKEN):** historically, when the pipeline's bot added a label the same event fired the standalone workflow, producing a skipped tile per label change. Resolved by switching the agent's `gh` calls to `GITHUB_TOKEN` — see *Choice: GITHUB_TOKEN for surgical event triggers* below. The standalones (`aw-triage`, `aw-refine`, `aw-slice`, `aw-tdd`) are now `workflow_dispatch`-only — they no longer carry an `issues.labeled` trigger; the sweep workflow's `issues: [labeled, unlabeled]` trigger handles label-edit auto-pickup with prechecks instead. See "Choice: one cron sweep workflow" for the rationale.
 
 **Bot-chain blocked:** by default, `claude-code-action` refuses bot-initiated runs. Each downstream workflow has `allowed_bots: "github-actions[bot]"` to permit chained triggers (legacy `claude[bot]` value updated as part of the GITHUB_TOKEN switch).
+
+**Bot PRs without CI checks:** before #118, bot-authored PRs created via `gh pr create` with `GITHUB_TOKEN` did not fire `pull_request` events (the recursion guard suppresses them). `test.yml` therefore never ran on bot PRs. Fixed by routing PR creation through a fine-grained `WORKFLOW_PAT` — see *Choice: WORKFLOW_PAT for bot-PR CI gating* below.
+
+**External issues riding the pipeline:** by default the pipeline auto-processed every newly-opened issue regardless of author. Mitigated by an author-association gate that labels external issues `external` and requires owner-applied `aw-approved` to release them — see *Choice: author-association gate for external issues* below.
 
 ## Design choices and rationale
 
@@ -231,15 +242,15 @@ Fewer skills to maintain. Research becomes a regular peer issue, indistinguishab
 
 The naive design has each workflow event-trigger the next: aw-triage's label add fires aw-refine via `issues.labeled`, etc. Problems: \~30s runner spin-up per stage = \~120s wasted setup; each event is a separate billable runner minute; sequential events introduce latency; concurrency cancellations when triggers race.
 
-We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chained via `needs:`); standalone workflows as backstops (workflow_dispatch + `issues.labeled` for human edits). Pipeline pays the runner spin-up once per stage but stages run back-to-back. Standalones pick up anything the pipeline missed via the sweep workflow described below.
+We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chained via `needs:`); standalone workflows as `workflow_dispatch`-only manual entry points (used by `aw-feedback` to redirect after a label flip); the sweep workflow as the cron + label-edit backstop that picks up anything the pipeline missed. Pipeline pays the runner spin-up once per stage but stages run back-to-back. The sweep handles all label-edit auto-pickup via prechecks (so we don't need `issues.labeled` triggers on each standalone).
 
 ### Choice: one cron sweep workflow (not four parallel cron-triggered standalones)
 
 **The pivot.** Originally each standalone (`aw-triage`, `aw-refine`, `aw-slice`, `aw-tdd`) carried its own `schedule: */15` trigger. Every cron tick fired four separate workflow runs that each ran a precheck against the issue queue and exited silently if there was no work. Cost per idle tick: 4 Actions tiles, \~3-4 minutes total runner time (the `aw-tdd` one paid the full `pnpm install` cost just to find no candidate).
 
-**The fix.** A single `aw-sweep.yml` runs on cron with four parallel jobs — same skills, same prechecks, same outcomes. Each job's precheck is its FIRST step (just `gh + jq`, no checkout), and `actions/checkout@v6` / `pnpm/action-setup@v4` / `pnpm install` are gated on `if: steps.find.outputs.candidate != ''`. Idle ticks finish in \~20s with no checkouts and no installs.
+**The fix.** A single `aw-sweep.yml` runs on cron with eight parallel jobs — four `find_<stage>` precheck jobs (just `gh + jq`, no checkout) and four `<stage>` skill jobs gated on `needs.find_<stage>.outputs.candidate != ''`. The find/skill split is required so each skill job's `aw-stage-{stage}-{candidate}` concurrency group can reference the candidate at job-evaluation time (GitHub evaluates `concurrency:` using `needs.*` outputs only — `steps.*` outputs from the same job aren't visible at that point). Idle ticks finish in \~20s with no checkouts.
 
-**Why not chain through the pipeline workflow.** `aw-pipeline.yml` chains via `needs:` because each stage operates on the SAME issue (the one that fired `issues.opened`). On cron there is no specific issue — each stage independently sweeps for its own queue (untriaged issues, refine-labeled, slice-labeled, tdd-ready). Different issues at different stages. The four parallel jobs in the sweep workflow share nothing beyond the workflow run id, which is exactly what we want.
+**Why not chain through the pipeline workflow.** `aw-pipeline.yml` chains via `needs:` because each stage operates on the SAME issue (the one that fired `issues.opened`). On cron there is no specific issue — each stage independently sweeps for its own queue (untriaged issues, refine-labeled, slice-labeled, tdd-ready). Different issues at different stages. The eight parallel jobs in the sweep workflow share nothing beyond the workflow run id, which is exactly what we want.
 
 **What standalones still exist for.** The four standalones lost their `schedule:` triggers and are now `workflow_dispatch`-only manual entry points (used by `aw-feedback` after a label flip — see the explicit-dispatch entry below). The auto-pickup on label edits moved INTO `aw-sweep.yml` via its `issues: types: [labeled, unlabeled]` trigger plus its prechecks: instead of four standalones each carrying their own `issues.labeled` trigger (which produced four skipped tiles per label edit), the sweep fires once on each label edit and only the matching stage's precheck finds a candidate. Net: one Actions tile per label edit instead of four.
 
@@ -259,12 +270,14 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 
 **The mechanism.** GitHub has a built-in anti-recursion guard: events caused by `GITHUB_TOKEN` do NOT create new workflow runs (except `workflow_dispatch` and `repository_dispatch`). GitHub App installation tokens are NOT subject to this guard.
 
-**The fix.** Pass `github_token: ${{ secrets.GITHUB_TOKEN }}` to every `claude-code-action` step. The agent's `Bash(gh:*)` calls then run as `github-actions[bot]`, label changes don't fire downstream events, and the standalones only fire when a human (or external automation) actually changes a label or comments. The Actions tab becomes an honest log: every visible run represents work the system intended to do.
+**The fix.** Pass `github_token: ${{ secrets.GITHUB_TOKEN }}` to every label-and-comment-only `claude-code-action` step (triage / refine / slice / feedback / review and the non-tdd jobs in pipeline/sweep). The agent's `Bash(gh:*)` calls then run as `github-actions[bot]`, label changes don't fire downstream events, and the Actions tab becomes an honest log: every visible run represents work the system intended to do.
+
+**Caveat — PR-creating workflows use `WORKFLOW_PAT` instead.** This recursion-guard suppression is correct for label/comment edits but breaks CI on bot PRs (the same suppression hides the `pull_request: opened` event from `test.yml`). Workflows that create PRs (aw-tdd / aw-iterate / aw-retrospect / pipeline-tdd / sweep-tdd) use `WORKFLOW_PAT` so their PRs DO fire CI. See *Choice: WORKFLOW_PAT for bot-PR CI gating* below.
 
 **Knock-on changes.** Bot identity flips from `claude[bot]` to `github-actions[bot]`:
 
 - `allowed_bots: "github-actions[bot]"` in every downstream workflow (still required because bot-chained pipeline runs need the action to allow bot-initiated invocation).
-- `if: github.actor != 'github-actions[bot]'` actor-guards on the standalones (defence-in-depth — the trigger itself no longer fires for bot label changes, but the guard catches edge cases).
+- ~~`if: github.actor != 'github-actions[bot]'` actor-guards on the standalones~~ — no longer needed: the standalones lost their `issues.labeled` trigger entirely (sweep handles label-edit auto-pickup now). Historical note kept for context.
 - `aw-feedback` and `aw-retrospect` accept BOTH `github-actions[bot]` (current) and `claude[bot]` / `app/claude` (legacy PRs from before the switch) as bot-authored.
 - `aw-iterate` configures git as `github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>` so commits author cleanly.
 - `claude-code-action`'s `use_sticky_comment` feature stops working with custom token. We don't use it.
@@ -384,13 +397,19 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 
 ## Working with the system
 
-**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`. Add a new job to `aw-sweep.yml` with the precheck-first pattern (gh + jq precheck as step 1, checkout + skill invocation gated on `if: steps.find.outputs.candidate != ''`). Create `.github/workflows/aw-<name>.yml` for `workflow_dispatch` + `issues.labeled` (mirror an existing standalone — precheck + claude-code-action with `github_token: ${{ secrets.GITHUB_TOKEN }}` and `allowed_bots: "github-actions[bot]"`). Add the new action label(s). Wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. If the skill is reachable from `aw-feedback`, add the matching `gh workflow run aw-<name>.yml --field issue_number=N` to the relevant action block in `aw-feedback`'s SKILL.md. Update this doc.
+**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`. Add the skill's stage to `aw-sweep.yml` as a `find_<name>` + `<name>` job pair (find runs the gh + jq precheck and outputs the candidate; skill job gates on `needs.find_<name>.outputs.candidate != ''` and uses `aw-stage-<name>-${{ needs.find_<name>.outputs.candidate || github.run_id }}` as its concurrency group — see *Choice: shared `aw-stage-{stage}-{issue}` concurrency group*). Create `.github/workflows/aw-<name>.yml` for `workflow_dispatch` only (mirror an existing standalone — workflow-level concurrency `aw-stage-<name>-${{ ... }}`, precheck + claude-code-action with the right `github_token` per *Choice: WORKFLOW_PAT for bot-PR CI gating* — `WORKFLOW_PAT` if it creates PRs or pushes to PR branches, `GITHUB_TOKEN` otherwise). If the skill ever runs against external-author candidates via the sweep, extend each new `find_<name>` precheck JQ with the `external`/`aw-approved` filter (see *Choice: author-association gate for external issues*). Add the new action label(s). Wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. If the skill is reachable from `aw-feedback`, add the matching `gh workflow run aw-<name>.yml --field issue_number=N` to the relevant action block in `aw-feedback`'s SKILL.md. Update this doc.
 
-**Renaming a label:** `gh label edit <old> --name <new>`. Updates all existing issues automatically. Then update SKILL.md and workflow YAML references.
+**Renaming a label:** `gh label edit <old> --name <new>`. Updates all existing issues automatically. Then update SKILL.md, workflow YAML references, and the regression-lock tests in `src/lib/__tests__/aw-*.test.ts`.
 
-**Monitoring:** `gh workflow list`, `gh run list --workflow aw-pipeline.yml`, `gh issue list --label tdd --label afk`, `gh pr list --draft`.
+**Approving an external issue:** review the body, then `gh issue edit <N> --add-label aw-approved`. Next sweep tick (\~15 min) picks it up. Or close the issue if it's spam / off-topic / malicious.
 
-**OAuth setup (one-time):** `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`.
+**Monitoring:** `gh workflow list`, `gh run list --workflow aw-pipeline.yml`, `gh issue list --label tdd --label afk`, `gh issue list --label external` (queue of external issues awaiting review), `gh pr list --draft`.
+
+**One-time setup:**
+
+- **OAuth (Claude subscription):** `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN`. Powers the LLM call in every skill.
+- **WORKFLOW_PAT (bot-PR CI gating):** GitHub UI → Settings → Developer settings → Personal access tokens → Fine-grained tokens. Scope to this repo; permissions: Contents R&W, Pull requests R&W, Workflows R&W, Issues R&W, Actions Read, Metadata Read. Save as repo secret `WORKFLOW_PAT`. 90-day expiry — calendar a rotation reminder. See *Choice: WORKFLOW_PAT for bot-PR CI gating*.
+- **Labels:** `external` (gray) and `aw-approved` (green) — created automatically the first time they're applied, but worth setting colors/descriptions via `gh label create` for queue clarity.
 
 ## Open questions
 
@@ -409,9 +428,13 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 - **HITL** — human in the loop. `hitl`-labeled issue waits for human approval before aw-tdd runs.
 - **AFK** — agent-OK-to-run-autonomously. `afk`-labeled issue is picked up by aw-tdd without approval.
 - **Hard gate** — a check in aw-tdd that aborts the run on failure (red-not-red, tests fail, typecheck fail, unrelated files modified).
-- **Pipeline workflow** — `aw-pipeline.yml`. Single workflow with sequential jobs that runs the happy path on issue creation.
-- **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. Manual-and-targeted entry points (`workflow_dispatch`-only). Called explicitly by `aw-feedback` via `gh workflow run` after a label flip. Auto-discovery on cron and label-edit events is handled by the sweep, not the standalones.
-- **Sweep workflow** — `aw-sweep.yml`. The single cron-driven auto-trigger backstop: cron every 15 min plus `issues.labeled/unlabeled` for instant pickup on label edits. Four parallel jobs (one per pipeline stage) with precheck-first gating so idle ticks finish in \~20s with no checkouts and no installs.
+- **Pipeline workflow** — `aw-pipeline.yml`. Single workflow with sequential jobs that runs the happy path on issue creation. Triage job carries the author-association `if:` gate; downstream stages cascade via `needs:`.
+- **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. `workflow_dispatch`-only manual entry points used by `aw-feedback` to redirect the pipeline after a label flip. Cron-driven discovery and label-edit auto-pickup happen in `aw-sweep.yml`, not here.
+- **Sweep workflow** — `aw-sweep.yml`. The single cron-driven backstop AND auto-trigger for label edits. Eight parallel jobs (`find_<stage>` + `<stage>` skill pair per stage). The find/skill split lets each skill job's `aw-stage-{stage}-{candidate}` concurrency group reference the candidate via `needs.find_<stage>.outputs.candidate`. Idle ticks finish in \~20s with no checkouts.
+- **Gatekeeper workflow** — `aw-mark-external.yml`. Tiny no-LLM workflow that fires on `issues.opened` for non-trusted authors and labels them `external` + posts an explanatory comment.
 - **Review workflow** — `aw-review.yml`. Independent review of a bot-authored draft PR on a fresh runner. Read-only on code; only modifies labels, PR state, and posts comments. Bounded to 2 reset cycles before escalating via the `needs-human` label.
 - **needs-human** — escalation label set by `aw-review` when 2 retry cycles have already happened on an issue.
+- **external** — label auto-applied by `aw-mark-external.yml` to issues from non-trusted authors. Pipeline + sweep prechecks skip these unless `aw-approved` is also present.
+- **aw-approved** — label manually applied by the owner to opt an external issue into the pipeline. Pipeline + sweep accept it as if the author were trusted.
+- **WORKFLOW_PAT** — fine-grained Personal Access Token stored as a repo secret. Used by PR-creating workflows (aw-tdd / aw-iterate / aw-retrospect / pipeline-tdd / sweep-tdd) so the resulting PR fires `pull_request` events normally and CI runs. Other workflows keep `GITHUB_TOKEN` for recursion-guard suppression.
 - **Retro PR** — draft PR opened by aw-retrospect proposing a SKILL.md patch.
