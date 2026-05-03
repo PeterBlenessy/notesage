@@ -2,23 +2,43 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
-import { emitMockEvent } from '@/test/tauri-mock';
+import { emitMockEvent, setMockInvokeHandler } from '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Module mocks
 // ---------------------------------------------------------------------------
 
 const mockRefreshFileTree = vi.fn();
+const mockSaveFile = vi.fn().mockResolvedValue(true);
 
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: () => ({
     refreshFileTree: mockRefreshFileTree,
+    saveFile: mockSaveFile,
   }),
   refreshGitForPath: vi.fn(),
 }));
+
+// ---------------------------------------------------------------------------
+// Test helpers — must mirror production algorithms exactly
+// ---------------------------------------------------------------------------
+
+/** Mirror of the hashPath in useCommentOperations.ts — do NOT change algorithm. */
+function hashPath(path: string): string {
+  let h = 0;
+  for (let i = 0; i < path.length; i++) {
+    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
+  }
+  return 'path-' + (h >>> 0).toString(16);
+}
+
+function sidecarPath(notesRoot: string, filePath: string): string {
+  return `${notesRoot}/.notesage/comments/${hashPath(filePath)}.json`;
+}
 
 vi.mock('@/lib/logger', () => ({
   log: {
@@ -304,5 +324,201 @@ describe('useFileRenameSync — self-write suppression', () => {
     expect(mockToastFn).not.toHaveBeenCalled();
     expect(mockToastFn.info).not.toHaveBeenCalled();
     expect(mockToastFn.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED tests: Save Now wiring (Gap #10)
+// ---------------------------------------------------------------------------
+
+describe('useFileRenameSync — Save Now wiring', () => {
+  it('invoking the Save Now toast action calls saveFile with the new path and tab content', async () => {
+    const NOTES_ROOT = '/Users/testuser/Notesage';
+    const tab = makeTab({
+      id: 'tab-dirty',
+      filePath: '/notes/original.md',
+      fileName: 'original.md',
+      isDirty: true,
+      content: '# Unsaved edits here',
+    });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    // path_exists → false so sidecar migration is a no-op (not what we're testing here)
+    setMockInvokeHandler('path_exists', () => false);
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/notes/original.md', '/notes/renamed.md');
+    });
+
+    await vi.runAllTimersAsync();
+
+    // The sticky toast should have been called (dirty tab → onSave provided)
+    expect(mockToastFn).toHaveBeenCalled();
+    const [, toastOptions] = mockToastFn.mock.calls[0];
+    expect(toastOptions?.action?.onClick).toBeDefined();
+
+    // Invoke the "Save now" action
+    await act(async () => {
+      await toastOptions.action.onClick();
+    });
+
+    // saveFile must be called with the NEW path, the tab's content, and the tab id
+    expect(mockSaveFile).toHaveBeenCalledWith('/notes/renamed.md', '# Unsaved edits here', 'tab-dirty');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED tests: Sidecar migration (Gap #7)
+// ---------------------------------------------------------------------------
+
+describe('useFileRenameSync — sidecar migration', () => {
+  const NOTES_ROOT = '/Users/testuser/Notesage';
+
+  it('migrates sidecar to new hash path when a non-project file is renamed', async () => {
+    const OLD_PATH = '/notes/foo.md';
+    const NEW_PATH = '/notes/bar.md';
+    const oldSidecar = sidecarPath(NOTES_ROOT, OLD_PATH);
+    const newSidecar = sidecarPath(NOTES_ROOT, NEW_PATH);
+    const sidecarContent = JSON.stringify([{ id: 'c1', body: 'a comment' }]);
+
+    const tab = makeTab({ filePath: OLD_PATH, fileName: 'foo.md' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const writtenFiles: Array<{ path: string; content: string }> = [];
+    setMockInvokeHandler('path_exists', (args) => (args as { path: string }).path === oldSidecar);
+    setMockInvokeHandler('read_file', () => sidecarContent);
+    setMockInvokeHandler('write_file', (args) => {
+      const { path, content } = args as { path: string; content: string };
+      writtenFiles.push({ path, content });
+    });
+    setMockInvokeHandler('delete_path', () => undefined);
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => { emitFileRenamed(OLD_PATH, NEW_PATH); });
+    await vi.runAllTimersAsync();
+
+    expect(writtenFiles).toContainEqual({ path: newSidecar, content: sidecarContent });
+  });
+
+  it('deletes old sidecar after migrating for non-project file rename', async () => {
+    const OLD_PATH = '/notes/foo.md';
+    const NEW_PATH = '/notes/bar.md';
+    const oldSidecar = sidecarPath(NOTES_ROOT, OLD_PATH);
+
+    const tab = makeTab({ filePath: OLD_PATH, fileName: 'foo.md' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const deletedPaths: string[] = [];
+    setMockInvokeHandler('path_exists', (args) => (args as { path: string }).path === oldSidecar);
+    setMockInvokeHandler('read_file', () => '[]');
+    setMockInvokeHandler('write_file', () => undefined);
+    setMockInvokeHandler('delete_path', (args) => { deletedPaths.push((args as { path: string }).path); });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => { emitFileRenamed(OLD_PATH, NEW_PATH); });
+    await vi.runAllTimersAsync();
+
+    expect(deletedPaths).toContain(oldSidecar);
+  });
+
+  it('no-op when sidecar does not exist for non-project file rename', async () => {
+    const tab = makeTab({ filePath: '/notes/nosidecar.md', fileName: 'nosidecar.md' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const writtenFiles: string[] = [];
+    const deletedPaths: string[] = [];
+    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('write_file', (args) => { writtenFiles.push((args as { path: string }).path); });
+    setMockInvokeHandler('delete_path', (args) => { deletedPaths.push((args as { path: string }).path); });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => { emitFileRenamed('/notes/nosidecar.md', '/notes/renamed.md'); });
+    await vi.runAllTimersAsync();
+
+    expect(writtenFiles).toHaveLength(0);
+    expect(deletedPaths).toHaveLength(0);
+  });
+
+  it('skips sidecar migration when the file is inside a project', async () => {
+    const tab = makeTab({ filePath: '/myproject/doc.md', fileName: 'doc.md' });
+    useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({
+      projects: [{ path: '/myproject', fileTree: [] }],
+      pinnedFiles: [],
+      explorerFolders: [],
+    });
+
+    const writtenFiles: string[] = [];
+    const deletedPaths: string[] = [];
+    setMockInvokeHandler('path_exists', () => true); // sidecar "exists" but should be skipped
+    setMockInvokeHandler('write_file', (args) => { writtenFiles.push((args as { path: string }).path); });
+    setMockInvokeHandler('delete_path', (args) => { deletedPaths.push((args as { path: string }).path); });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => { emitFileRenamed('/myproject/doc.md', '/myproject/renamed.md'); });
+    await vi.runAllTimersAsync();
+
+    // Project files use UUID-keyed sidecars — migration must NOT run
+    expect(writtenFiles).toHaveLength(0);
+    expect(deletedPaths).toHaveLength(0);
+  });
+
+  it('migrates all descendant sidecars when a non-project folder is renamed', async () => {
+    const OLD_FOLDER = '/notes/docs';
+    const NEW_FOLDER = '/notes/renamed';
+    const OLD_A = `${OLD_FOLDER}/a.md`;
+    const OLD_B = `${OLD_FOLDER}/b.md`;
+    const NEW_A = `${NEW_FOLDER}/a.md`;
+    const NEW_B = `${NEW_FOLDER}/b.md`;
+
+    const oldSidecarA = sidecarPath(NOTES_ROOT, OLD_A);
+    const oldSidecarB = sidecarPath(NOTES_ROOT, OLD_B);
+    const newSidecarA = sidecarPath(NOTES_ROOT, NEW_A);
+    const newSidecarB = sidecarPath(NOTES_ROOT, NEW_B);
+
+    const tabA = makeTab({ id: 'ta', filePath: OLD_A, fileName: 'a.md' });
+    const tabB = makeTab({ id: 'tb', filePath: OLD_B, fileName: 'b.md' });
+    useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: tabA.id });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const oldSidecars = new Set([oldSidecarA, oldSidecarB]);
+    const writtenFiles: Array<{ path: string; content: string }> = [];
+    const deletedPaths: string[] = [];
+    const CONTENT = '[{"id":"c1"}]';
+    setMockInvokeHandler('path_exists', (args) => oldSidecars.has((args as { path: string }).path));
+    setMockInvokeHandler('read_file', () => CONTENT);
+    setMockInvokeHandler('write_file', (args) => {
+      const { path, content } = args as { path: string; content: string };
+      writtenFiles.push({ path, content });
+    });
+    setMockInvokeHandler('delete_path', (args) => { deletedPaths.push((args as { path: string }).path); });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => { emitFileRenamed(OLD_FOLDER, NEW_FOLDER, true); });
+    await vi.runAllTimersAsync();
+
+    // Both descendant sidecars must be migrated to new hash paths
+    expect(writtenFiles).toContainEqual({ path: newSidecarA, content: CONTENT });
+    expect(writtenFiles).toContainEqual({ path: newSidecarB, content: CONTENT });
+    // Both old sidecars must be deleted
+    expect(deletedPaths).toContain(oldSidecarA);
+    expect(deletedPaths).toContain(oldSidecarB);
   });
 });

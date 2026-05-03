@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
+import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
 
 interface FileRenamedPayload {
@@ -13,13 +15,45 @@ interface FileRenamedPayload {
   is_directory: boolean;
 }
 
+/** Hash algorithm matching useCommentOperations.ts — must stay in sync. */
+function hashPath(path: string): string {
+  let h = 0;
+  for (let i = 0; i < path.length; i++) {
+    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
+  }
+  return "path-" + (h >>> 0).toString(16);
+}
+
+function sidecarFilePath(notesRootPath: string, filePath: string): string {
+  return `${notesRootPath}/.notesage/comments/${hashPath(filePath)}.json`;
+}
+
+/** Migrate a single non-project file's path-keyed sidecar on rename. */
+async function migrateFileSidecar(
+  oldFilePath: string,
+  newFilePath: string,
+  notesRootPath: string
+): Promise<void> {
+  const oldSidecar = sidecarFilePath(notesRootPath, oldFilePath);
+  const newSidecar = sidecarFilePath(notesRootPath, newFilePath);
+  try {
+    const exists = await tauriApi.pathExists(oldSidecar);
+    if (!exists) return;
+    const content = await tauriApi.readFile(oldSidecar);
+    await tauriApi.writeFile(newSidecar, content);
+    await tauriApi.deletePath(oldSidecar);
+  } catch (err) {
+    log.warn("useFileRenameSync", `sidecar migration failed ${oldSidecar} → ${newSidecar}: ${err}`);
+  }
+}
+
 /**
  * Listens for `file-renamed` events emitted by the Rust watcher and keeps
  * all in-memory state (open documents, recent files, workspace projects,
  * pinned files) consistent with the rename that happened on disk.
  */
 export function useFileRenameSync(): void {
-  const { refreshFileTree } = useFileOperations();
+  const { refreshFileTree, saveFile } = useFileOperations();
 
   useEffect(() => {
     const unlisten = listen<FileRenamedPayload>("file-renamed", (event) => {
@@ -50,9 +84,8 @@ export function useFileRenameSync(): void {
           oldPath: old_path,
           newPath: new_path,
           onSave: affectedTab.isDirty
-            ? () => {
-                // Content stays at the new path; mark it clean via a no-op save
-                // (editor auto-save will pick it up on next keystroke or blur).
+            ? async () => {
+                await saveFile(affectedTab.filePath, affectedTab.content ?? "", affectedTab.id);
               }
             : undefined,
         });
@@ -63,6 +96,39 @@ export function useFileRenameSync(): void {
         );
         if (wasRecent) {
           toastExternalRename({ oldPath: old_path, newPath: new_path });
+        }
+      }
+
+      // --- Sidecar migration for non-project files ---
+      const { notesRootPath } = useSettingsStore.getState();
+      const { projects } = useWorkspaceStore.getState();
+
+      const isValidNotesRoot =
+        notesRootPath != null &&
+        notesRootPath.length > 0 &&
+        !notesRootPath.startsWith("~");
+
+      if (isValidNotesRoot) {
+        if (!is_directory) {
+          // Single file rename: migrate sidecar if not inside a project.
+          const isProjectFile = projects.some((p) => old_path.startsWith(p.path + "/"));
+          if (!isProjectFile) {
+            void migrateFileSidecar(old_path, new_path, notesRootPath!).catch(() => {});
+          }
+        } else {
+          // Folder rename: migrate sidecars for all open descendant files
+          // that are not inside a project.
+          const descendantTabs = openDocs.filter((tab) =>
+            tab.filePath.startsWith(new_path + "/")
+          );
+          for (const tab of descendantTabs) {
+            const isProjectFile = projects.some((p) => tab.filePath.startsWith(p.path + "/"));
+            if (!isProjectFile) {
+              // Reconstruct the old file path: replace the new prefix with the old one.
+              const oldFilePath = old_path + tab.filePath.slice(new_path.length);
+              void migrateFileSidecar(oldFilePath, tab.filePath, notesRootPath!).catch(() => {});
+            }
+          }
         }
       }
 
@@ -94,5 +160,5 @@ export function useFileRenameSync(): void {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [refreshFileTree]);
+  }, [refreshFileTree, saveFile]);
 }
