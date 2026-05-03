@@ -9,6 +9,8 @@
   padding-right: var(--editor-padding-right, 6rem);
   background-color: var(--color-background);
   color: var(--color-foreground);
+  /* Required by ProseMirror to suppress its white-space check warning */
+  white-space: pre-wrap;
   /* Base font from paragraph preset (legacy vars kept for backwards compat) */
   font-family: var(--ns-paragraph-font-family, var(--editor-font-family));
   font-size: var(--ns-paragraph-font-size, var(--editor-font-size, 16px));
