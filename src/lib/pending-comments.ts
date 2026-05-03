@@ -35,6 +35,7 @@ import { getEditorRef } from '@/lib/editor-bridge';
 import { findTextInDoc } from '@/lib/pm-text-search';
 import { setCommentDecorations } from '@/components/editor/extensions/comment-mark';
 import { parseFrontmatter } from '@/lib/frontmatter';
+import { hashPath } from '@/lib/comment-storage';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 
@@ -87,14 +88,6 @@ function stripMarkdownSyntax(text: string): string {
     .trim();
 }
 
-/** Simple deterministic hash of a string → hex string (matches useCommentOperations). */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return 'path-' + (h >>> 0).toString(16);
-}
 
 /**
  * Process a pending comments JSON file.

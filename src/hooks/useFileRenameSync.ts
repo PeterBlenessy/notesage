@@ -8,24 +8,12 @@ import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
 import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
+import { commentSidecarPath } from "@/lib/comment-storage";
 
 interface FileRenamedPayload {
   old_path: string;
   new_path: string;
   is_directory: boolean;
-}
-
-/** Hash algorithm matching useCommentOperations.ts — must stay in sync. */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return "path-" + (h >>> 0).toString(16);
-}
-
-function sidecarFilePath(notesRootPath: string, filePath: string): string {
-  return `${notesRootPath}/.notesage/comments/${hashPath(filePath)}.json`;
 }
 
 /** Migrate a single non-project file's path-keyed sidecar on rename. */
@@ -34,8 +22,8 @@ async function migrateFileSidecar(
   newFilePath: string,
   notesRootPath: string
 ): Promise<void> {
-  const oldSidecar = sidecarFilePath(notesRootPath, oldFilePath);
-  const newSidecar = sidecarFilePath(notesRootPath, newFilePath);
+  const oldSidecar = commentSidecarPath(notesRootPath, oldFilePath);
+  const newSidecar = commentSidecarPath(notesRootPath, newFilePath);
   try {
     const exists = await tauriApi.pathExists(oldSidecar);
     if (!exists) return;

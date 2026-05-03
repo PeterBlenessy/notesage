@@ -10,6 +10,7 @@ import { setCommentDecorations } from '@/components/editor/extensions/comment-ma
 import type { SkillContent, ScriptResult, ArgMapping } from '@/lib/tauri';
 import type { ToolResult } from '@/lib/ai/types';
 import { isToolCallAllowed, isPathAllowed } from '@/lib/ai/path-filter';
+import { hashPath } from '@/lib/comment-storage';
 
 export interface ToolCallScope {
   projectRoots: string[];
@@ -131,15 +132,6 @@ async function executeSkillTool(
   if (result.stderr) content += `\nSTDERR: ${result.stderr}`;
   if (result.exit_code !== 0) content += `\nExit code: ${result.exit_code}`;
   return content;
-}
-
-/** Simple deterministic hash of a string → hex string (matches useCommentOperations). */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return 'path-' + (h >>> 0).toString(16);
 }
 
 interface CommentContext {
