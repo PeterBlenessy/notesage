@@ -66,7 +66,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: "github-actions[bot]"
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-triage` skill at `.claude/skills/aw-triage/SKILL.md`
@@ -75,6 +75,23 @@ jobs:
             precisely. Apply exactly one of `bug` / `enhancement` / `chore`,
             add `refine` (action label), or close as duplicate / wontfix
             per the skill rules.
+      - name: Verify triage actually completed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh issue view ${{ github.event.issue.number }} --json state --jq '.state')
+          if [[ "$STATE" != "OPEN" ]]; then
+            echo "Issue closed (duplicate/wontfix). Triage complete."
+            exit 0
+          fi
+          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
+          HAS_CATEGORY=$(echo "$LABELS" | jq -r 'any(. == "bug" or . == "enhancement" or . == "chore")')
+          HAS_REFINE=$(echo "$LABELS" | jq -r 'any(. == "refine")')
+          if [[ "$HAS_CATEGORY" != "true" ]] || [[ "$HAS_REFINE" != "true" ]]; then
+            echo "::error::aw-triage agent exited cleanly but did NOT flip labels (category=$HAS_CATEGORY, refine=$HAS_REFINE). Likely ran out of --max-turns budget. Sweep cron will recover within 15 min."
+            exit 1
+          fi
       - name: Check classification
         id: check
         env:
@@ -123,7 +140,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: "github-actions[bot]"
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
@@ -131,6 +148,18 @@ jobs:
             (PeterBlenessy/notesage). Read the skill in full and follow it
             precisely. Add `refined` (state) + `slice` (action); remove
             `refine`. Pick the right template for the category.
+      - name: Verify refine actually completed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          LABELS=$(gh issue view ${{ github.event.issue.number }} --json labels --jq '[.labels[].name]')
+          HAS_SLICE=$(echo "$LABELS" | jq -r 'any(. == "slice")')
+          HAS_REFINED=$(echo "$LABELS" | jq -r 'any(. == "refined")')
+          if [[ "$HAS_SLICE" != "true" ]] || [[ "$HAS_REFINED" != "true" ]]; then
+            echo "::error::aw-refine agent exited cleanly but did NOT flip labels (slice=$HAS_SLICE, refined=$HAS_REFINED). Likely ran out of --max-turns budget. Sweep cron will recover within 15 min."
+            exit 1
+          fi
       - name: Check ready-to-slice
         id: check
         env:
@@ -180,6 +209,32 @@ jobs:
             N-1 new peer issues for the remaining values (no GraphQL
             sub-issue link). If under-specified, create ONE research peer
             and set the original to `awaiting-research`.
+      - name: Verify slice actually completed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+          HAS_TDD=$(echo "$LABELS" | jq -r 'any(. == "tdd")')
+          HAS_AFK_OR_HITL=$(echo "$LABELS" | jq -r 'any(. == "afk" or . == "hitl")')
+          HAS_AWAITING=$(echo "$LABELS" | jq -r 'any(. == "awaiting-research")')
+          # Valid outcomes: (tdd + afk|hitl) OR awaiting-research OR issue was split
+          # (peer issues now carry tdd; original may have been rewritten)
+          if [[ "$HAS_AWAITING" == "true" ]]; then
+            echo "Slice set awaiting-research. OK."
+            exit 0
+          fi
+          if [[ "$HAS_TDD" == "true" && "$HAS_AFK_OR_HITL" == "true" ]]; then
+            echo "Slice set tdd + afk/hitl. OK."
+            exit 0
+          fi
+          # Check if the issue was sliced (original rewritten as peer slice 1)
+          HAS_SLICE=$(echo "$LABELS" | jq -r 'any(. == "slice")')
+          if [[ "$HAS_SLICE" == "false" ]]; then
+            echo "::error::aw-slice agent exited cleanly but did NOT produce a valid outcome (tdd=$HAS_TDD, afk/hitl=$HAS_AFK_OR_HITL, awaiting-research=$HAS_AWAITING). Likely ran out of --max-turns budget. Sweep cron will recover within 15 min."
+            exit 1
+          fi
       - name: Check if original issue is ready for tdd
         id: check
         env:
@@ -251,3 +306,24 @@ jobs:
             `pnpm test` and `pnpm typecheck` must pass; only the files
             listed in the subtask body may be modified. Open the PR as
             DRAFT (`gh pr create --draft`). Re-add `afk` on any failure.
+      - name: Verify tdd actually completed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          LABELS=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name]')
+          HAS_REVIEW=$(echo "$LABELS" | jq -r 'any(. == "review")')
+          if [[ "$HAS_REVIEW" == "true" ]]; then
+            echo "aw-tdd opened a PR and set review label. OK."
+            exit 0
+          fi
+          # Also accept if a draft PR referencing this issue already exists
+          # (label write can have latency; PR existence is authoritative).
+          PR_COUNT=$(gh pr list --search "fixes #$ISSUE OR resolves #$ISSUE" --state open --json number --jq 'length')
+          if [[ "$PR_COUNT" -gt 0 ]]; then
+            echo "aw-tdd opened a PR (found $PR_COUNT). OK."
+            exit 0
+          fi
+          echo "::error::aw-tdd agent exited cleanly but did NOT open a PR or set the review label (review=$HAS_REVIEW, open PRs=$PR_COUNT). Likely ran out of --max-turns budget or hit a hard gate. Sweep cron will recover within 15 min."
+          exit 1

@@ -410,8 +410,8 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 - **AFK** — agent-OK-to-run-autonomously. `afk`-labeled issue is picked up by aw-tdd without approval.
 - **Hard gate** — a check in aw-tdd that aborts the run on failure (red-not-red, tests fail, typecheck fail, unrelated files modified).
 - **Pipeline workflow** — `aw-pipeline.yml`. Single workflow with sequential jobs that runs the happy path on issue creation.
-- **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. Manual-and-targeted entry points (`workflow_dispatch` + `issues.labeled`). Cron-driven discovery happens in `aw-sweep.yml`, not here.
-- **Sweep workflow** — `aw-sweep.yml`. The single cron-driven backstop. Four parallel jobs (one per pipeline stage) with precheck-first gating so idle ticks finish in \~20s with no checkouts and no installs.
+- **Standalone workflow** — `aw-triage.yml`, `aw-refine.yml`, `aw-slice.yml`, `aw-tdd.yml`. Manual-and-targeted entry points (`workflow_dispatch`-only). Called explicitly by `aw-feedback` via `gh workflow run` after a label flip. Auto-discovery on cron and label-edit events is handled by the sweep, not the standalones.
+- **Sweep workflow** — `aw-sweep.yml`. The single cron-driven auto-trigger backstop: cron every 15 min plus `issues.labeled/unlabeled` for instant pickup on label edits. Four parallel jobs (one per pipeline stage) with precheck-first gating so idle ticks finish in \~20s with no checkouts and no installs.
 - **Review workflow** — `aw-review.yml`. Independent review of a bot-authored draft PR on a fresh runner. Read-only on code; only modifies labels, PR state, and posts comments. Bounded to 2 reset cycles before escalating via the `needs-human` label.
 - **needs-human** — escalation label set by `aw-review` when 2 retry cycles have already happened on an issue.
 - **Retro PR** — draft PR opened by aw-retrospect proposing a SKILL.md patch.
