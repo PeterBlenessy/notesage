@@ -129,8 +129,26 @@ describe('AW workflow concurrency convention (#98)', () => {
   describe('Sweep workflow — find/skill split + per-skill concurrency', () => {
     const sweep = loadWorkflow('aw-sweep');
 
-    it('has NO workflow-level concurrency (per-job groups on the skill jobs)', () => {
-      expect(sweep.concurrency).toBeUndefined();
+    // Issue #103 — when `gh issue edit --add-label tdd --remove-label slice`
+    // fires, GitHub emits TWO events (labeled + unlabeled) which can trigger
+    // two concurrent sweep runs. A workflow-level concurrency block scoped to
+    // the issue number collapses those two events into a single run.
+    // `cancel-in-progress: true` ensures the second event (which delivers no
+    // new information) cancels instead of racing the first.
+    // The `github.run_id` fallback preserves isolation for cron ticks
+    // (where `github.event.issue.number` is empty).
+    it('has workflow-level concurrency block to prevent duplicate issue-event runs', () => {
+      expect(sweep.concurrency).toBeDefined();
+    });
+
+    it('uses issue-scoped group with run_id fallback for cron isolation', () => {
+      expect(sweep.concurrency!.group).toBe(
+        "aw-sweep-${{ github.event.issue.number || github.run_id }}",
+      );
+    });
+
+    it('uses cancel-in-progress: true to collapse duplicate labeled/unlabeled events', () => {
+      expect(sweep.concurrency!['cancel-in-progress']).toBe(true);
     });
 
     for (const stage of STAGES) {
