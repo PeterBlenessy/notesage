@@ -102,7 +102,7 @@ jobs:
           # downstream skipped runs. Bot identity becomes github-actions[bot].
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-triage` skill at `.claude/skills/aw-triage/SKILL.md`
@@ -165,7 +165,7 @@ jobs:
           # See aw-pipeline.yml for the rationale.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`

@@ -75,7 +75,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: "github-actions[bot]"
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --allowedTools "Bash(gh:*),Read"
           prompt: |
             Run the `aw-refine` skill at `.claude/skills/aw-refine/SKILL.md`
