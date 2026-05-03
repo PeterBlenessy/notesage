@@ -201,6 +201,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # WORKFLOW_PAT — the tdd job opens PRs and may push edits to
+          # .github/workflows/, which GITHUB_TOKEN can't write to. See
+          # "Choice: WORKFLOW_PAT for bot-PR CI gating" in
+          # docs/agentic-workflow.md.
+          token: ${{ secrets.WORKFLOW_PAT }}
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -214,12 +219,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
-          # PR creation) trigger the built-in recursion guard — downstream
-          # workflows listening on issues.labeled / issue_comment / pull_request
-          # do NOT fire for our own actions. Bot identity becomes
-          # github-actions[bot] (not claude[bot]).
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Use WORKFLOW_PAT for the tdd job specifically — the bot-authored
+          # PR it creates needs to fire `pull_request` events to run CI.
+          # GITHUB_TOKEN's recursion guard suppresses those events.
+          # The other stages in this pipeline (triage / refine / slice)
+          # don't open PRs and stay on GITHUB_TOKEN.
+          github_token: ${{ secrets.WORKFLOW_PAT }}
           allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 200

@@ -162,6 +162,8 @@ Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *ret
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
+**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
+
 ## Lifecycle (worked example, default path)
 
 | Step | Issue state |
@@ -267,6 +269,33 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 **What we keep.** OAuth still authenticates the LLM call via `claude_code_oauth_token` — that's separate from the GitHub API token. We still get subscription quota, not pay-per-token.
 
 **Side effect — explicit dispatch from** `aw-feedback`**.** A consequence of the recursion guard is that when one of our workflows flips a label on the human's behalf (`aw-feedback` resetting `hitl → afk`, `→ refine`, `→ slice`, etc.), the corresponding standalone does NOT auto-fire from the `issues.labeled` event. Without intervention, the next sweep cron tick (\~15 min later) would eventually pick it up, breaking the conversational tightness the feedback loop is built for. Fix: every label-flip action in `aw-feedback`'s skill is followed by an explicit `gh workflow run <next>.yml --field issue_number=N`. `workflow_dispatch` events ARE exempt from the recursion guard (along with `repository_dispatch`), so the dispatched workflow fires immediately.
+
+### Choice: WORKFLOW_PAT for bot-PR CI gating (#118)
+
+**The problem.** The GITHUB_TOKEN choice above is correct for label/comment edits — recursion guard suppression keeps the Actions tab honest. But it has a downside the original choice didn't address: **PRs created by `gh pr create` via `GITHUB_TOKEN` also don't fire `pull_request` events.** That means `test.yml` (which listens on `pull_request: opened/synchronize/reopened`) never runs on bot-authored PRs. We were merging bot PRs based only on the agent's local-runner test pass, with zero CI verification — the agent's container can't even compile some platform-specific code (`glib-2.0` for the Rust backend on Linux), so Rust regressions silently slipped through. Plus a separate gap: `GITHUB_TOKEN` lacks the `workflows:write` scope, so bot PRs that need to touch `.github/workflows/` couldn't be pushed at all (cost a manual-rerun on PR #105 yesterday).
+
+**The fix.** A fine-grained Personal Access Token (`WORKFLOW_PAT`) scoped to this repo only, with `Contents:R&W + Pull requests:R&W + Workflows:R&W + Issues:R&W + Actions:R + Metadata:R`. Used by every workflow that creates PRs or pushes commits to PR branches:
+
+- `aw-tdd.yml` (standalone), `aw-pipeline.yml` `tdd:` job, `aw-sweep.yml` `tdd:` job — open the implementation PR
+- `aw-iterate.yml` — pushes follow-up commits, needs `pull_request: synchronize` to fire CI
+- `aw-retrospect.yml` — opens skill-patch PRs, same CI gating need
+
+The other workflows (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) keep `GITHUB_TOKEN` because they only flip labels and post comments — operations that benefit from recursion-guard suppression and don't need CI re-firing.
+
+**Side effects.**
+
+- Bot identity for PR-creating runs becomes the PAT owner (the human who minted the token), not `github-actions[bot]`. The `allowed_bots: "github-actions[bot]"` filter still works because `claude-code-action`'s internal git operations are still bot-attributed.
+- `aw-tdd`'s SKILL.md "PR creation blocked" fallback paragraph (for the case where the repo setting "Allow GitHub Actions to create and approve pull requests" is off) is now unreachable — the PAT has the rights regardless of that repo setting. The fallback was removed when this choice landed.
+- `aw-tdd`'s SKILL.md step "Dispatch `aw-review` on the new PR" was also marked optional — the PR's `pull_request: opened` event now fires automatically (the recursion guard does NOT suppress PAT-initiated events), so `aw-review.yml` triggers on its own. The explicit dispatch is kept as a defence-in-depth safety net.
+- The repo-level "Allow GitHub Actions to create and approve pull requests" setting can be turned OFF (one less attack surface) — PR creation no longer routes through the `github-actions[bot]` identity.
+
+**Token rotation cadence.** Fine-grained PATs expire at most every 365 days but typically configured for 90 days. Calendar reminder for the human owner of the token to regenerate before expiry; secret value updates without any workflow file changes.
+
+**Why not GitHub App.** Strictly more secure but significantly more setup (app creation, private key management, install on repo, `actions/create-github-app-token` in every workflow). Overkill for solo-dev / one repo today; revisit if multi-repo expansion happens later.
+
+**Why not `pull_request_target`.** Would solve the CI gap by running tests in the base-branch context with secrets available, but [GitHub Security Lab guidance](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) treats this pattern as dangerous because it exposes secrets to potentially-untrusted PR code. Bot PRs are trusted today, but the precedent leaks to any future contributor PRs.
+
+**Regression lock.** `src/lib/__tests__/aw-workflow-pat.test.ts` parses every `aw-*.yml` and asserts the PAT/GITHUB_TOKEN choice per workflow — catches drift if a future edit accidentally swaps the token in the wrong direction.
 
 ### Choice: claude-code-action with OAuth (not gh-aw, not API key)
 

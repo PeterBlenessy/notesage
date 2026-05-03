@@ -38,10 +38,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # Use the fine-grained PAT so the follow-up commit push fires
+          # `pull_request: synchronize` and re-runs CI on the PR. See
+          # "Choice: WORKFLOW_PAT for bot-PR CI gating" in
+          # docs/agentic-workflow.md.
+          token: ${{ secrets.WORKFLOW_PAT }}
 
       - name: Switch to PR head branch
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           PR: ${{ inputs.pr_number }}
         run: |
           set -euo pipefail
@@ -49,8 +54,6 @@ jobs:
           echo "PR #$PR is on branch: $BRANCH"
           git fetch origin "$BRANCH"
           git checkout "$BRANCH"
-          # Match the GitHub Actions bot identity so commits author cleanly
-          # and pushes via GITHUB_TOKEN don't trigger downstream workflows.
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -70,8 +73,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # See aw-pipeline.yml for the rationale.
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # WORKFLOW_PAT (not GITHUB_TOKEN) so the follow-up commit push
+          # triggers `pull_request: synchronize` and CI re-runs on the PR.
+          github_token: ${{ secrets.WORKFLOW_PAT }}
           allowed_bots: "github-actions[bot]"
           claude_args: |
             --max-turns 100
