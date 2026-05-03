@@ -58,6 +58,10 @@ export function useCommentOperations(editor: Editor | null) {
   // Comment key: UUID for project files, path hash for non-project files
   const commentKey = isProjectFile ? documentId : (activeTab?.filePath ? hashPath(activeTab.filePath) : null);
 
+  // For non-project files, pass the actual file path so the sidecar embeds
+  // originalPath for folder-rename reverse-lookup (issue #117).
+  const originalFilePath = isProjectFile ? undefined : (activeTab?.filePath ?? undefined);
+
   // Load comments when opening a file
   useEffect(() => {
     if (!commentKey || !storageRoot) {
@@ -105,10 +109,10 @@ export function useCommentOperations(editor: Editor | null) {
             id: c.id, from: c.from, to: c.to, anchorText: c.anchorText,
           })),
         );
-        saveComments(commentKey, storageRoot);
+        saveComments(commentKey, storageRoot, originalFilePath);
       }
     });
-  }, [commentKey, storageRoot, editor, loadComments, saveComments]);
+  }, [commentKey, storageRoot, originalFilePath, editor, loadComments, saveComments]);
 
   // Sync remapped positions from plugin → store on every document change,
   // and debounce-save to disk so tab switches see current positions.
@@ -138,9 +142,10 @@ export function useCommentOperations(editor: Editor | null) {
       // Capture current values to avoid stale closure if tab switches during debounce.
       const currentKey = commentKey;
       const currentRoot = storageRoot;
+      const currentOriginalFilePath = originalFilePath;
       if (positionSaveTimeoutRef.current) clearTimeout(positionSaveTimeoutRef.current);
       positionSaveTimeoutRef.current = setTimeout(() => {
-        saveComments(currentKey, currentRoot);
+        saveComments(currentKey, currentRoot, currentOriginalFilePath);
       }, 2000);
     };
 
@@ -151,10 +156,10 @@ export function useCommentOperations(editor: Editor | null) {
       if (positionSaveTimeoutRef.current) {
         clearTimeout(positionSaveTimeoutRef.current);
         positionSaveTimeoutRef.current = null;
-        saveComments(commentKey, storageRoot);
+        saveComments(commentKey, storageRoot, originalFilePath);
       }
     };
-  }, [editor, commentKey, storageRoot, updateCommentPositions, saveComments]);
+  }, [editor, commentKey, storageRoot, originalFilePath, updateCommentPositions, saveComments]);
 
   // Sync decorations when comments change — filter out resolved comments.
   // Merge with plugin's authoritative remapped positions to prevent overwriting.
@@ -242,12 +247,12 @@ export function useCommentOperations(editor: Editor | null) {
         author: 'You',
       });
 
-      await saveComments(commentKey, storageRoot);
+      await saveComments(commentKey, storageRoot, originalFilePath);
       setActiveComment(comment.id);
 
       return comment;
     },
-    [editor, commentKey, storageRoot, addComment, saveComments, setActiveComment]
+    [editor, commentKey, storageRoot, originalFilePath, addComment, saveComments, setActiveComment]
   );
 
   /** Edit a comment's body. */
@@ -255,9 +260,9 @@ export function useCommentOperations(editor: Editor | null) {
     async (commentId: string, body: string) => {
       if (!commentKey || !storageRoot) return;
       updateComment(commentKey, commentId, body);
-      await saveComments(commentKey, storageRoot);
+      await saveComments(commentKey, storageRoot, originalFilePath);
     },
-    [commentKey, storageRoot, updateComment, saveComments]
+    [commentKey, storageRoot, originalFilePath, updateComment, saveComments]
   );
 
   /** Delete a comment. */
@@ -265,9 +270,9 @@ export function useCommentOperations(editor: Editor | null) {
     async (commentId: string) => {
       if (!commentKey || !storageRoot) return;
       deleteComment(commentKey, commentId);
-      await saveComments(commentKey, storageRoot);
+      await saveComments(commentKey, storageRoot, originalFilePath);
     },
-    [commentKey, storageRoot, deleteComment, saveComments]
+    [commentKey, storageRoot, originalFilePath, deleteComment, saveComments]
   );
 
   /** Get the active comment object. */

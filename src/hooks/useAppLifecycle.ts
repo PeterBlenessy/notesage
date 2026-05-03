@@ -9,6 +9,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
+import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
@@ -460,6 +461,31 @@ export async function reloadTrees() {
   // Load Quick Notes tree
   log.info("startup", `iCloud/sync complete in ${Math.round(performance.now() - t0)}ms, loading notes tree`);
   await refreshNotesTree();
+
+  // One-time backfill: add originalPath to path-keyed comment sidecars that predate issue #117.
+  {
+    const notesRoot = useSettingsStore.getState().notesRootPath;
+    const isValidNotesRoot = notesRoot != null && notesRoot.length > 0 && !notesRoot.startsWith("~");
+    if (isValidNotesRoot) {
+      const projectRoots = new Set(useWorkspaceStore.getState().projects.map((p) => p.path));
+      const flatten = (entries: FileEntry[]): string[] => {
+        const out: string[] = [];
+        for (const e of entries) {
+          if (e.is_directory && e.children) {
+            out.push(...flatten(e.children));
+          } else if (!e.is_directory) {
+            out.push(e.path);
+          }
+        }
+        return out;
+      };
+      const notesTree = useWorkspaceStore.getState().notesTree ?? [];
+      const mdFilePaths = flatten(notesTree).filter(
+        (p) => p.endsWith(".md") && !Array.from(projectRoots).some((pr) => p.startsWith(pr + "/")),
+      );
+      void backfillSidecarOriginalPaths(notesRoot!, mdFilePaths).catch(() => {});
+    }
+  }
 
   // Initialize the SQLite document index.
   // If init fails (corrupted DB), auto-recover by deleting the DB and retrying.
