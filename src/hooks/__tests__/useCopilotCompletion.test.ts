@@ -363,21 +363,27 @@ describe('useCopilotCompletion', () => {
       expect(invoke).toHaveBeenCalledWith('copilot_lsp_stop');
     });
 
-    it('stops LSP on unmount when connection changes trigger effect re-run', async () => {
+    it('does NOT stop LSP on unmount when connection ID is unchanged', async () => {
+      // Regression-lock for the React Strict Mode double-mount bug: the
+      // previous implementation called copilot_lsp_stop on every effect-2
+      // cleanup, including Strict Mode's probe unmount. That sent
+      // shutdown+exit to a healthy LSP and surfaced as the bogus
+      // "process exited unexpectedly" error.
+      //
+      // Backend `kill_on_drop(true)` on the Child handle covers app-exit
+      // cleanup, so the frontend doesn't need to stop on unmount.
       const conn = makeAgentManagedConnection();
       setupWithConnection(conn);
       setupWithProject('/project');
 
       const { rerender, unmount } = renderHook(() => useCopilotCompletion(null));
 
-      // Let LSP start — this sets lspReady to true
+      // Let LSP start
       await act(async () => {
         await vi.runAllTimersAsync();
       });
 
-      // Force a re-render so the effect re-runs with lspReady=true in its closure.
-      // This simulates a workingDir change which causes the effect to re-register
-      // its cleanup with the current lspReady value.
+      // Trigger an effect re-run with the SAME connection ID — should not stop.
       act(() => {
         useWorkspaceStore.setState({
           projects: [{ path: '/project2', fileTree: [] }],
@@ -394,7 +400,7 @@ describe('useCopilotCompletion', () => {
 
       unmount();
 
-      expect(invoke).toHaveBeenCalledWith('copilot_lsp_stop');
+      expect(invoke).not.toHaveBeenCalledWith('copilot_lsp_stop');
     });
   });
 
