@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
+import { parseSidecar, serializeSidecar } from '@/lib/comment-storage';
 
 export interface CommentReply {
   id: string;
@@ -88,7 +89,8 @@ interface CommentStore {
   requestScrollToComment: (id: string) => void;
   clearScrollToComment: () => void;
   updateCommentPositions: (documentId: string, positions: Array<{id: string; from: number; to: number; anchorText: string; nodeId?: string; nodeOffset?: number; nodeEndOffset?: number}>) => void;
-  saveComments: (documentId: string, projectRoot: string) => Promise<void>;
+  /** Pass `originalFilePath` for non-project (path-keyed) sidecars to embed the reverse-lookup path. */
+  saveComments: (documentId: string, projectRoot: string, originalFilePath?: string) => Promise<void>;
   clearDocument: (documentId: string) => void;
 }
 
@@ -111,9 +113,10 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         return;
       }
       const raw = await tauriApi.readFile(filePath);
-      let parsed: unknown;
+      let rawComments: Comment[];
       try {
-        parsed = JSON.parse(raw);
+        const data = parseSidecar(raw);
+        rawComments = data.comments;
       } catch (parseError) {
         console.error('Failed to parse comment file:', filePath, parseError);
         log.error('comments', `Failed to parse comment file: ${filePath}`, parseError);
@@ -123,7 +126,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         }));
         return;
       }
-      const comments: Comment[] = (parsed as Comment[]).map((c: Comment) => {
+      const comments: Comment[] = rawComments.map((c: Comment) => {
         // Reset 'delegated' status on load — agent sessions don't survive restart
         if (c.status === 'delegated') {
           return { ...c, status: (c.replies && c.replies.length > 0) ? 'done' : 'open' };
@@ -372,7 +375,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     });
   },
 
-  saveComments: async (documentId: string, projectRoot: string) => {
+  saveComments: async (documentId: string, projectRoot: string, originalFilePath?: string) => {
     const comments = get().commentsByDocument[documentId] ?? [];
     const dirPath = `${projectRoot}/.notesage/comments`;
     const filePath = `${dirPath}/${documentId}.json`;
@@ -387,7 +390,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         }
         await tauriApi.createDirectory(dirPath);
       }
-      await tauriApi.writeFile(filePath, JSON.stringify(comments, null, 2));
+      await tauriApi.writeFile(filePath, serializeSidecar(comments, originalFilePath));
     } catch (error) {
       log.error('comments', 'Failed to save comments', error);
       toast.error(`Failed to save comments: ${error}`);

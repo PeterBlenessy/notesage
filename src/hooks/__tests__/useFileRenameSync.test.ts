@@ -516,3 +516,168 @@ describe('useFileRenameSync — sidecar migration', () => {
     expect(deletedPaths).toContain(oldSidecarB);
   });
 });
+
+// ---------------------------------------------------------------------------
+// RED tests: Folder rename — closed-tab sidecar reverse-lookup (issue #117)
+// ---------------------------------------------------------------------------
+
+describe('useFileRenameSync — folder rename: closed-tab sidecar reverse-lookup', () => {
+  const NOTES_ROOT = '/Users/testuser/Notesage';
+
+  it('migrates sidecar for closed-tab non-project file via originalPath reverse-lookup', async () => {
+    const OLD_FOLDER = '/notes/docs';
+    const NEW_FOLDER = '/notes/renamed';
+    const OLD_FILE = `${OLD_FOLDER}/closed.md`;
+    const NEW_FILE = `${NEW_FOLDER}/closed.md`;
+
+    // NO open tabs — the file is closed
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const oldSidecarFilePath = sidecarPath(NOTES_ROOT, OLD_FILE);
+    const newSidecarFilePath = sidecarPath(NOTES_ROOT, NEW_FILE);
+    const oldSidecarFilename = oldSidecarFilePath.split('/').pop()!;
+    const commentsDir = `${NOTES_ROOT}/.notesage/comments`;
+
+    const existingSidecar = JSON.stringify({
+      originalPath: OLD_FILE,
+      comments: [{ id: 'c1', body: 'test comment' }],
+    });
+
+    const writtenFiles: Array<{ path: string; content: string }> = [];
+    const deletedPaths: string[] = [];
+
+    setMockInvokeHandler('list_directory', (args) => {
+      const { path } = args as { path: string };
+      if (path === commentsDir) {
+        return [{ name: oldSidecarFilename, path: oldSidecarFilePath, is_directory: false, hidden: false }];
+      }
+      return [];
+    });
+    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('read_file', (args) => {
+      if ((args as { path: string }).path === oldSidecarFilePath) return existingSidecar;
+      return '[]';
+    });
+    setMockInvokeHandler('write_file', (args) => {
+      const { path, content } = args as { path: string; content: string };
+      writtenFiles.push({ path, content });
+    });
+    setMockInvokeHandler('delete_path', (args) => {
+      deletedPaths.push((args as { path: string }).path);
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed(OLD_FOLDER, NEW_FOLDER, true); });
+    await vi.runAllTimersAsync();
+
+    // New sidecar must be written to the new hash path
+    const written = writtenFiles.find((w) => w.path === newSidecarFilePath);
+    expect(written).toBeDefined();
+    const parsed = JSON.parse(written!.content);
+    // originalPath must be updated to the new file path
+    expect(parsed.originalPath).toBe(NEW_FILE);
+    expect(parsed.comments).toHaveLength(1);
+
+    // Old sidecar must be deleted
+    expect(deletedPaths).toContain(oldSidecarFilePath);
+  });
+
+  it('skips reverse-lookup sidecar whose originalPath is inside a project root', async () => {
+    const OLD_FOLDER = '/notes/docs';
+    const NEW_FOLDER = '/notes/renamed';
+    const PROJECT_ROOT = '/myproject';
+    const PROJECT_FILE = `${PROJECT_ROOT}/nested/project-file.md`;
+
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({
+      projects: [{ path: PROJECT_ROOT, fileTree: [] }],
+      pinnedFiles: [],
+      explorerFolders: [],
+    });
+
+    const projectSidecarFilePath = sidecarPath(NOTES_ROOT, PROJECT_FILE);
+    const projectSidecarFilename = projectSidecarFilePath.split('/').pop()!;
+    const commentsDir = `${NOTES_ROOT}/.notesage/comments`;
+
+    const existingSidecar = JSON.stringify({
+      originalPath: PROJECT_FILE,
+      comments: [{ id: 'c1', body: 'project comment' }],
+    });
+
+    const writtenFiles: string[] = [];
+    const deletedPaths: string[] = [];
+
+    setMockInvokeHandler('list_directory', (args) => {
+      const { path } = args as { path: string };
+      if (path === commentsDir) {
+        return [{ name: projectSidecarFilename, path: projectSidecarFilePath, is_directory: false, hidden: false }];
+      }
+      return [];
+    });
+    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('read_file', () => existingSidecar);
+    setMockInvokeHandler('write_file', (args) => {
+      writtenFiles.push((args as { path: string }).path);
+    });
+    setMockInvokeHandler('delete_path', (args) => {
+      deletedPaths.push((args as { path: string }).path);
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed(OLD_FOLDER, NEW_FOLDER, true); });
+    await vi.runAllTimersAsync();
+
+    // Project files use UUID-keyed sidecars — must NOT be touched by path rename
+    expect(writtenFiles).toHaveLength(0);
+    expect(deletedPaths).toHaveLength(0);
+  });
+
+  it('does not process sidecar with originalPath outside the renamed folder', async () => {
+    const OLD_FOLDER = '/notes/docs';
+    const NEW_FOLDER = '/notes/renamed';
+    const UNRELATED_FILE = '/other-folder/unrelated.md';
+
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
+    useSettingsStore.setState({ notesRootPath: NOTES_ROOT });
+    useWorkspaceStore.setState({ projects: [], pinnedFiles: [], explorerFolders: [] });
+
+    const unrelatedSidecarFilePath = sidecarPath(NOTES_ROOT, UNRELATED_FILE);
+    const unrelatedSidecarFilename = unrelatedSidecarFilePath.split('/').pop()!;
+    const commentsDir = `${NOTES_ROOT}/.notesage/comments`;
+
+    const existingSidecar = JSON.stringify({
+      originalPath: UNRELATED_FILE,
+      comments: [{ id: 'c2', body: 'unrelated' }],
+    });
+
+    const writtenFiles: string[] = [];
+    const deletedPaths: string[] = [];
+
+    setMockInvokeHandler('list_directory', (args) => {
+      const { path } = args as { path: string };
+      if (path === commentsDir) {
+        return [{ name: unrelatedSidecarFilename, path: unrelatedSidecarFilePath, is_directory: false, hidden: false }];
+      }
+      return [];
+    });
+    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('read_file', () => existingSidecar);
+    setMockInvokeHandler('write_file', (args) => {
+      writtenFiles.push((args as { path: string }).path);
+    });
+    setMockInvokeHandler('delete_path', (args) => {
+      deletedPaths.push((args as { path: string }).path);
+    });
+
+    renderHook(() => useFileRenameSync());
+    act(() => { emitFileRenamed(OLD_FOLDER, NEW_FOLDER, true); });
+    await vi.runAllTimersAsync();
+
+    // Unrelated sidecar must be left untouched
+    expect(writtenFiles).toHaveLength(0);
+    expect(deletedPaths).toHaveLength(0);
+  });
+});

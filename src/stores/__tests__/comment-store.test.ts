@@ -847,3 +847,82 @@ describe('comment-store', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// RED tests: sidecar format with originalPath (issue #117)
+// ---------------------------------------------------------------------------
+
+describe('comment-store — sidecar originalPath format (issue #117)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useCommentStore.setState({
+      commentsByDocument: {},
+      activeCommentId: null,
+      scrollToCommentId: null,
+      activitiesByComment: {},
+      delegationModeByComment: {},
+      partialReplyVersion: 0,
+    });
+  });
+
+  describe('saveComments with originalFilePath', () => {
+    it('writes { originalPath, comments } envelope when originalFilePath is provided', async () => {
+      const comment = makeComment({ id: 'c1', documentId: 'path-abc123' });
+      useCommentStore.setState({ commentsByDocument: { 'path-abc123': [comment] } });
+      mockedTauriApi.pathExists.mockResolvedValue(true);
+      mockedTauriApi.writeFile.mockResolvedValue(undefined);
+
+      await useCommentStore.getState().saveComments('path-abc123', '/notesroot', '/notes/myfile.md');
+
+      const writtenJson = mockedTauriApi.writeFile.mock.calls[0][1] as string;
+      const parsed = JSON.parse(writtenJson);
+      expect(parsed.originalPath).toBe('/notes/myfile.md');
+      expect(Array.isArray(parsed.comments)).toBe(true);
+      expect(parsed.comments).toHaveLength(1);
+      expect(parsed.comments[0].id).toBe('c1');
+    });
+
+    it('still writes plain array format when originalFilePath is NOT provided', async () => {
+      const comment = makeComment({ id: 'c1' });
+      useCommentStore.setState({ commentsByDocument: { 'doc-1': [comment] } });
+      mockedTauriApi.pathExists.mockResolvedValue(true);
+      mockedTauriApi.writeFile.mockResolvedValue(undefined);
+
+      await useCommentStore.getState().saveComments('doc-1', '/project');
+
+      const writtenJson = mockedTauriApi.writeFile.mock.calls[0][1] as string;
+      const parsed = JSON.parse(writtenJson);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].id).toBe('c1');
+    });
+  });
+
+  describe('loadComments backward compatibility', () => {
+    it('loads comments from { originalPath, comments } new format', async () => {
+      const comment = makeComment({ id: 'c1', documentId: 'path-abc123' });
+      const sidecar = JSON.stringify({ originalPath: '/notes/myfile.md', comments: [comment] });
+      mockedTauriApi.pathExists.mockResolvedValue(true);
+      mockedTauriApi.readFile.mockResolvedValue(sidecar);
+
+      await useCommentStore.getState().loadComments('path-abc123', '/notesroot');
+
+      const comments = useCommentStore.getState().commentsByDocument['path-abc123'];
+      expect(comments).toHaveLength(1);
+      expect(comments[0].id).toBe('c1');
+    });
+
+    it('still loads from plain array format (old sidecars)', async () => {
+      const comment = makeComment({ id: 'c1', documentId: 'path-abc123' });
+      const sidecar = JSON.stringify([comment]);
+      mockedTauriApi.pathExists.mockResolvedValue(true);
+      mockedTauriApi.readFile.mockResolvedValue(sidecar);
+
+      await useCommentStore.getState().loadComments('path-abc123', '/notesroot');
+
+      const comments = useCommentStore.getState().commentsByDocument['path-abc123'];
+      expect(comments).toHaveLength(1);
+      expect(comments[0].id).toBe('c1');
+    });
+  });
+});
