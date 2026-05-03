@@ -285,13 +285,16 @@ pub async fn copilot_lsp_start(
         .ok_or_else(|| "copilot-language-server not found. Install via: npm install -g @github/copilot-language-server".to_string())?;
 
     // Spawn the LSP process — inject login shell PATH so the process
-    // (a Node.js script) can find Node and other dependencies
+    // (a Node.js script) can find Node and other dependencies.
+    // stderr is piped (not nulled) so panics, Node stack traces, and
+    // out-of-memory messages from the LSP surface in our logs instead of
+    // disappearing into /dev/null when the process exits unexpectedly.
     let mut spawn_cmd = tokio::process::Command::new(&binary_path);
     spawn_cmd
         .arg("--stdio")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     if let Some(shell_path) = get_shell_path() {
         spawn_cmd.env("PATH", shell_path);
@@ -303,6 +306,29 @@ pub async fn copilot_lsp_start(
     let child_pid = child.id();
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Drain stderr line-by-line into the log so any panic/error from the
+    // LSP is visible. Without this, "LSP process exited unexpectedly"
+    // arrives with no diagnostic context.
+    {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut reader = BufReader::new(stderr).lines();
+        tokio::spawn(async move {
+            loop {
+                match reader.next_line().await {
+                    Ok(Some(line)) => {
+                        log::error!(target: "notesage::copilot", "LSP stderr: {}", line);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        log::warn!(target: "notesage::copilot", "LSP stderr read error: {}", e);
+                        break;
+                    }
+                }
+            }
+        });
+    }
 
     // Create the JSON-RPC transport (spawns reader loop)
     let pending_server_requests: PendingServerRequests = Arc::new(Mutex::new(HashMap::new()));

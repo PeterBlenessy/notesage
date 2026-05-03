@@ -110,16 +110,26 @@ export function useCopilotCompletion(editor: Editor | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection?.id, workingDir, lspReady]);
 
-  // Stop the LSP when the connection changes or the hook unmounts.
-  // Pulled out of the start effect so a working-directory change does NOT
-  // trigger a stop — the backend handles folder updates in-place.
+  // Stop the LSP only when the user genuinely switches between different
+  // Copilot LSP connection IDs (A → B). The previous "stop on cleanup"
+  // pattern fired on every effect cleanup — including React Strict Mode's
+  // mount→unmount→mount probe in dev — which sent shutdown+exit to a
+  // healthy LSP and surfaced as the bogus "process exited unexpectedly"
+  // error. App-exit cleanup is covered by `kill_on_drop(true)` on the
+  // backend Child handle, so we don't need an unmount path here.
+  const prevConnectionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!connection) return;
-    return () => {
+    const currId = connection?.id ?? null;
+    const prevId = prevConnectionIdRef.current;
+    prevConnectionIdRef.current = currId;
+
+    // Real transition between two different connections (not initial mount,
+    // not Strict Mode re-mount with the same ID).
+    if (prevId !== null && prevId !== currId) {
       invoke('copilot_lsp_stop').catch(() => {});
       setLspReady(false);
       sentWorkingDir.current = null;
-    };
+    }
   }, [connection?.id]);
 
   // -------------------------------------------------------------------------
@@ -397,8 +407,15 @@ export function useCopilotCompletion(editor: Editor | null) {
   }, [editor, connection?.id]);
 
   // -------------------------------------------------------------------------
-  // Listen for status changes (for future UI indicators)
+  // Listen for status changes — auto-respawn on fatal exit with backoff
   // -------------------------------------------------------------------------
+
+  // Track recent crash timestamps to back off when the LSP keeps dying.
+  // Three crashes inside 60s → stop auto-restarting and surface a sticky
+  // toast so the user knows there's a real problem to investigate.
+  const crashTimestamps = useRef<number[]>([]);
+  const CRASH_WINDOW_MS = 60_000;
+  const CRASH_LIMIT = 3;
 
   useEffect(() => {
     if (!connection) return;
@@ -408,9 +425,34 @@ export function useCopilotCompletion(editor: Editor | null) {
 
     listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
       const { kind, message } = event.payload;
-      if (kind === 'Error') {
-        log.error('copilot', 'Status error', { kind, message });
+      if (kind !== 'Error') return;
+
+      log.error('copilot', 'Status error', { kind, message });
+
+      // Auto-respawn path — track recent crashes for backoff.
+      const now = Date.now();
+      crashTimestamps.current = crashTimestamps.current.filter(
+        (t) => now - t < CRASH_WINDOW_MS,
+      );
+      crashTimestamps.current.push(now);
+
+      if (crashTimestamps.current.length >= CRASH_LIMIT) {
+        toast.error(
+          'GitHub Copilot keeps crashing. Inline completions disabled — check the dev console for the LSP stderr trace.',
+          { id: 'copilot-lsp-crash-loop', duration: Infinity },
+        );
+        return;
       }
+
+      // Flip lspReady → false so the start effect re-fires and calls
+      // `copilot_lsp_start` again. The backend's start command is idempotent
+      // and self-heals stale state via `child.try_wait()`.
+      setLspReady(false);
+      sentWorkingDir.current = null;
+      toast.warning(`Copilot LSP exited (${message}) — restarting`, {
+        id: 'copilot-lsp-restart',
+        duration: 3000,
+      });
     }).then((fn) => {
       if (mounted) {
         unlistenFn = fn;
