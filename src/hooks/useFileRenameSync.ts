@@ -8,6 +8,7 @@ import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
 import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
+import { commentSidecarPath } from "@/lib/comment-storage";
 
 interface FileRenamedPayload {
   old_path: string;
@@ -15,17 +16,8 @@ interface FileRenamedPayload {
   is_directory: boolean;
 }
 
-/** Hash algorithm matching useCommentOperations.ts — must stay in sync. */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return "path-" + (h >>> 0).toString(16);
-}
-
 function sidecarFilePath(notesRootPath: string, filePath: string): string {
-  return `${notesRootPath}/.notesage/comments/${hashPath(filePath)}.json`;
+  return commentSidecarPath(notesRootPath, filePath);
 }
 
 /** Migrate a single non-project file's path-keyed sidecar on rename. */

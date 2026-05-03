@@ -24,20 +24,13 @@ vi.mock('@/hooks/useFileOperations', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Test helpers — must mirror production algorithms exactly
+// Test helpers
 // ---------------------------------------------------------------------------
 
-/** Mirror of the hashPath in useCommentOperations.ts — do NOT change algorithm. */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return 'path-' + (h >>> 0).toString(16);
-}
+import { commentSidecarPath } from '@/lib/comment-storage';
 
 function sidecarPath(notesRoot: string, filePath: string): string {
-  return `${notesRoot}/.notesage/comments/${hashPath(filePath)}.json`;
+  return commentSidecarPath(notesRoot, filePath);
 }
 
 vi.mock('@/lib/logger', () => ({

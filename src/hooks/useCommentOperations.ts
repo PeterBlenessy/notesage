@@ -15,15 +15,7 @@ import {
   clearCommentDecorations,
   CommentMarkPluginKey,
 } from '@/components/editor/extensions';
-
-/** Simple deterministic hash of a string → hex string (for filename-safe comment keys). */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return 'path-' + (h >>> 0).toString(16);
-}
+import { hashPath } from '@/lib/comment-storage';
 
 /**
  * Orchestrates the full comment lifecycle: load, create, edit, delete, save.

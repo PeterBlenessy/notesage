@@ -37,6 +37,7 @@ import { setCommentDecorations } from '@/components/editor/extensions/comment-ma
 import { parseFrontmatter } from '@/lib/frontmatter';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
+import { hashPath } from '@/lib/comment-storage';
 
 interface PendingComment {
   anchor_text: string;
@@ -85,15 +86,6 @@ function stripMarkdownSyntax(text: string): string {
     // Image syntax: ![alt](url) → alt
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
     .trim();
-}
-
-/** Simple deterministic hash of a string → hex string (matches useCommentOperations). */
-function hashPath(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) {
-    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
-  }
-  return 'path-' + (h >>> 0).toString(16);
 }
 
 /**
