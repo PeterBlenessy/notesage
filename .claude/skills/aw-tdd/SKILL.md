@@ -96,18 +96,18 @@ When all gates pass:
 3. Push the branch.
 4. Open a **draft** PR via `gh pr create --draft --title "..." --body "..."`. Title pattern: same as commit subject. Body template below.
 
-   **Always attempt the PR creation.** Do NOT pre-emptively decide it will fail because the run is acting as `github-actions[bot]` — the workflow grants `pull-requests: write` to `GITHUB_TOKEN`. If `gh pr create` succeeds, capture the URL for the done comment.
+   The aw-tdd workflow uses the `WORKFLOW_PAT` fine-grained token (not `GITHUB_TOKEN`) for PR creation. The PAT has `pull-requests: write` and `workflows: write`, so `gh pr create` succeeds AND the resulting `pull_request: opened` event fires CI normally — the recursion guard does NOT apply to PAT-initiated events. See `docs/agentic-workflow.md` → "Choice: WORKFLOW_PAT for bot-PR CI gating" for the rationale.
+5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment.
 
-   **If `gh pr create` returns the error `GitHub Actions is not permitted to create or approve pull requests`** (a repo-level setting under Settings → Actions → General → "Workflow permissions"), the skill cannot create the PR but the work is done. Post the **PR creation blocked** comment template (below) including the exact branch name and the auto-close keyword line so a human can paste them into a manual `gh pr create` command. Still flip `tdd → review` so the queue advances; the human will create the PR.
-5. Update the subtask issue: add `review`, remove `tdd`. Post the done comment (or the **PR creation blocked** template if step 4 hit the repo-setting block).
+6. **Optional: explicitly dispatch `aw-review`.**
 
-6. **Dispatch `aw-review` on the new PR.** Run:
+   Since the PR was created via `WORKFLOW_PAT`, `aw-review.yml`'s `pull_request: opened` trigger fires automatically — no explicit dispatch is required. The dispatch step below is kept as a defence-in-depth safety net in case the `pull_request` event was somehow missed (e.g. CI was paused on the repo).
 
    ```
    gh workflow run aw-review.yml --field pr_number=<N>
    ```
 
-   This is required because the PR was created via `gh pr create` using `GITHUB_TOKEN`, and per GitHub's recursion guard, events triggered by `GITHUB_TOKEN` do NOT fire downstream workflows (only `workflow_dispatch` and `repository_dispatch` are exempt). Without this explicit dispatch, `aw-review` never runs on bot-authored PRs and the independent-review gate is silently bypassed. Skip this step ONLY when the **PR creation blocked** path was taken (step 4) — there's no PR to review.
+   If you ran step 4 successfully, you can skip step 6.
 
 ## On failure
 
@@ -131,40 +131,6 @@ Following red-green-refactor:
 4. Opening draft PR if all gates pass
 
 Will update this comment thread with progress.
-```
-
-**PR creation blocked (repo setting):**
-
-Use this template ONLY when `gh pr create` returned `GitHub Actions is not permitted to create or approve pull requests`. Tests, branch, and commit are all done — only the PR creation step was blocked by the repo-level "Allow GitHub Actions to create and approve pull requests" setting.
-
-```
-> *Implementation complete. Branch pushed, but PR creation is blocked by a repo setting.*
-
-All hard gates passed:
-- Red phase: <N> tests written, all initially failing ✓
-- Green phase: minimum implementation, all <N> tests passing ✓
-- Full test suite: passing ✓
-- Typecheck: clean ✓
-
-**To open the PR, a maintainer can either:**
-
-A. Enable the setting (one-time fix for future runs too) — Settings → Actions → General → "Workflow permissions" → check **"Allow GitHub Actions to create and approve pull requests"** → Save. Then re-run `aw-tdd` via `gh workflow run aw-tdd.yml --field issue_number=<N>`.
-
-B. Open the PR manually:
-\`\`\`
-gh pr create --draft \\
-  --base main \\
-  --head <branch-name> \\
-  --title "<commit subject>" \\
-  --body "<Fixes|Resolves> #<N>
-
-## Summary
-<one-paragraph summary>
-"
-\`\`\`
-
-Branch: \`<branch-name>\`
-Auto-close keyword: \`<Fixes|Resolves> #<N>\`
 ```
 
 **Done (PR opened):**
