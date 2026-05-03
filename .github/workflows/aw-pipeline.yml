@@ -32,6 +32,18 @@ permissions:
 
 jobs:
   triage:
+    # Author-association gate: only auto-process issues from trusted
+    # authors (OWNER / COLLABORATOR / MEMBER), OR issues the owner has
+    # explicitly opted-in by adding the `aw-approved` label. External
+    # issues sit in the queue until the owner reviews and approves them.
+    # See aw-mark-external.yml for the auto-labelling helper, and
+    # `Choice: author-association gate for external issues` in
+    # docs/agentic-workflow.md for the rationale.
+    if: |
+      github.event.issue.author_association == 'OWNER' ||
+      github.event.issue.author_association == 'COLLABORATOR' ||
+      github.event.issue.author_association == 'MEMBER' ||
+      contains(github.event.issue.labels.*.name, 'aw-approved')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:

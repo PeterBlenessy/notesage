@@ -120,6 +120,8 @@ Labels are the state of the system.
 
 **Escalation marker**: `needs-human` — set by `aw-review` when 2 retry cycles have already happened on an issue. Signals that `aw-tdd` has been unable to fully address the issue autonomously and a human reviewer must take over (merge as-is, land a fix on the branch, or comment new guidance and remove the label to allow another retry).
 
+**Author-association gate**: `external` (auto-set on `issues.opened` for non-trusted authors by `aw-mark-external.yml`) blocks the AW pipeline + sweep from auto-processing the issue. `aw-approved` (set manually by the owner after review) opts an external issue into the pipeline. Trusted authors (OWNER / COLLABORATOR / MEMBER) bypass the gate entirely. See "Choice: author-association gate for external issues" below for the rationale.
+
 ## Skills
 
 Each skill is a markdown file with action rules. Workflows just point the agent at it. SKILL.md is the source of truth for behavior.
@@ -149,7 +151,8 @@ Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *ret
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
-| `aw-pipeline.yml` | `issues.opened` / `issues.reopened` | Happy path: 4 jobs chained via `needs:` (triage → refine → slice → tdd). Single workflow run, stages back-to-back. Each job carries its own `aw-stage-{stage}-{issue}` concurrency group (#98) so it shares a queue with the sweep + standalone for the same issue+stage. |
+| `aw-pipeline.yml` | `issues.opened` / `issues.reopened` | Happy path: 4 jobs chained via `needs:` (triage → refine → slice → tdd). Single workflow run, stages back-to-back. The triage job carries an author-association `if:` gate so external issues don't auto-flow through the pipeline (see "Choice: author-association gate for external issues"). Each job carries its own `aw-stage-{stage}-{issue}` concurrency group (#98) so it shares a queue with the sweep + standalone for the same issue+stage. |
+| `aw-mark-external.yml` | `issues.opened` | Tiny no-LLM gatekeeper. Adds the `external` label + an explanatory comment to issues opened by non-trusted authors (anyone other than OWNER / COLLABORATOR / MEMBER). The pipeline + sweep prechecks then skip these issues until the owner adds `aw-approved`. |
 | `aw-sweep.yml` | cron `*/15`, `workflow_dispatch`, `issues.labeled` / `issues.unlabeled` | The single cron-driven backstop AND the auto-trigger for label edits. Eight parallel jobs — four `find_<stage>` precheck pairs (just `gh + jq`, output the candidate issue number) and four `<stage>` skill jobs gated on `needs.find_<stage>.outputs.candidate != ''`. The find/skill split makes the candidate available to the skill job's `aw-stage-{stage}-{candidate}` concurrency group at job-evaluation time (#98). Idle ticks finish in \~20s with no checkouts. |
 | `aw-triage.yml` | `workflow_dispatch` | Manual one-off re-triage entry point. Workflow-level `aw-stage-triage-{...}` concurrency, shared with pipeline + sweep. |
 | `aw-refine.yml` | `workflow_dispatch` | Manual one-off entry point. Also the dispatch target for `aw-feedback`'s "redo refined scope" action. Workflow-level `aw-stage-refine-{...}` concurrency, shared with pipeline + sweep. |
@@ -296,6 +299,37 @@ The other workflows (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-re
 **Why not `pull_request_target`.** Would solve the CI gap by running tests in the base-branch context with secrets available, but [GitHub Security Lab guidance](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) treats this pattern as dangerous because it exposes secrets to potentially-untrusted PR code. Bot PRs are trusted today, but the precedent leaks to any future contributor PRs.
 
 **Regression lock.** `src/lib/__tests__/aw-workflow-pat.test.ts` parses every `aw-*.yml` and asserts the PAT/GITHUB_TOKEN choice per workflow — catches drift if a future edit accidentally swaps the token in the wrong direction.
+
+### Choice: author-association gate for external issues
+
+**The risk.** This is a public repo with `issues.opened` triggers wired into a bot pipeline that opens PRs and (post-#118) can modify `.github/workflows/*.yml` via the `WORKFLOW_PAT`. A crafted issue from a random external account could ride the pipeline through triage → refine → slice → tdd, producing a malicious draft PR that touches workflow files. Even if the user catches it before merging, they've burned LLM tokens and the system has briefly trusted untrusted input. Spam issues are a smaller version of the same threat (token cost without the malicious payload).
+
+**The fix.** Two-layer gate:
+
+1. **Pipeline-level `if:` on the triage job** in `aw-pipeline.yml`. Cascades to all downstream stages via `needs:`. Lets through:
+   - `OWNER` author-association (the repo owner)
+   - `COLLABORATOR` (anyone with push access)
+   - `MEMBER` (org members — n/a for personal repo, kept for portability)
+   - OR any issue with the `aw-approved` label (manual owner opt-in)
+
+2. **Sweep precheck filters** in each `find_<stage>` job. The JQ expression now requires `NOT external OR aw-approved`. External-but-not-approved issues never become candidates, even after the next cron tick or label edit.
+
+3. **Auto-labelling helper** (`aw-mark-external.yml`). Tiny no-LLM workflow that fires on `issues.opened` for non-trusted authors and adds the `external` label + a comment explaining the gate. Cost: \~3s of runner time per external issue, zero LLM tokens.
+
+**Owner workflow for an external issue:**
+
+1. External issue arrives → `aw-mark-external` labels it `external` and posts a comment
+2. Owner reviews the body — for spam / malicious / off-topic, just close it
+3. For legitimate requests, owner adds `aw-approved` label (`gh issue edit N --add-label aw-approved`)
+4. Next sweep tick (\~15 min) picks it up and runs the normal pipeline. The pipeline workflow itself doesn't re-fire (the `issues.opened` event is one-shot), but the sweep cron is the always-on safety net.
+
+**Trusted-author flow is unchanged.** Owner-filed issues skip the gate entirely — `author_association == 'OWNER'` matches the pipeline `if:` clause and the sweep precheck (no `external` label means the precheck condition `NOT external OR aw-approved` is true).
+
+**Why not GitHub branch-protection rules.** Branch protection gates merge, not workflow execution. By the time the bot PR exists, LLM tokens have been spent and the issue's intent has been "trusted" by the agent. The author-association gate stops that earlier.
+
+**Why not just rely on aw-slice's hitl-vs-afk heuristic.** That decision is LLM-judged, not author-judged. A persuasive external issue could pass aw-slice as `afk` ("looks localized and well-tested") and reach aw-tdd before any human review. Author-based gating is structurally more reliable than content-based.
+
+**Operational implication for the queue.** External issues sit in your queue with the `external` label, untouched by AW until you act. Treat the `external` label as "needs my eyes" — same role as `needs-human` but applied at the entry point instead of the escalation point.
 
 ### Choice: claude-code-action with OAuth (not gh-aw, not API key)
 
