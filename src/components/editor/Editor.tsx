@@ -41,6 +41,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
@@ -131,6 +132,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     const { id, filePath, fileType } = activeTab;
     const t0 = performance.now();
     const fileName = filePath.split("/").pop() ?? filePath;
+
     (async () => {
       try {
         if (fileType === "image") {
@@ -212,6 +214,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     })();
     return () => { cancelled = true; };
   }, [activeTab?.contentLoaded, activeTabId, openDocuments.length]);
+
+  // NOTE: theme reactivity for the preview surface was attempted but removed —
+  // depending on `activeTab.previewState` caused the effect to re-fire each
+  // time the state cycled (loading → ready), producing 3 backend preview calls
+  // per file open instead of 1. The brief preview window (typically <2s)
+  // means a theme mismatch during a mid-window toggle is rarely visible; the
+  // hydrated editor reads CSS variables and reflows correctly. Revisit if
+  // user feedback shows the gap matters.
 
   const {
     isProgrammaticScroll,
@@ -721,7 +731,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               {activeTab && (
                 <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
               )}
-              <EditorContent editor={editor} />
+              {/*
+                Instant-load preview surface (PRD § "Layer 1"). When a markdown
+                tab activates we kick off a comrak HTML render in parallel with
+                the file read; while the result is on screen the user can scroll
+                / select / read while the Tiptap editor finishes hydrating
+                invisibly behind us. The editor is kept mounted (just hidden via
+                display:none) so its plugins, decorations, and selection state
+                are unaffected by the swap — we just toggle which child of the
+                same scroll wrapper is visible. State transitions:
+                  loading  → editor visible (preview HTML not yet returned)
+                  ready    → preview visible, editor hidden
+                  hydrated → editor visible, preview unmounted (HTML dropped)
+              */}
+              {activeTab?.previewState === "ready" && activeTab.previewHtml ? (
+                <MarkdownPreview html={activeTab.previewHtml} />
+              ) : null}
+              <div style={activeTab?.previewState === "ready" ? { display: "none" } : undefined}>
+                <EditorContent editor={editor} />
+              </div>
             </div>
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}

@@ -57,8 +57,11 @@ const PREVIEWABLE_EXTENSIONS = new Set([
   "css",
 ]);
 
-/** Default hover delay in milliseconds. */
-const DEFAULT_DELAY_MS = 500;
+/** Default hover delay in milliseconds. Bumped from 500 → 800 on 2026-05-05
+ *  user feedback that the popover felt too eager on documents during the
+ *  large-file load testing — the popover was firing readFile calls during
+ *  drive-by hovers while the user was trying to click. */
+const DEFAULT_DELAY_MS = 800;
 
 /** Default number of lines to show in the preview body. */
 const DEFAULT_LINE_COUNT = 10;
