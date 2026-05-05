@@ -449,6 +449,35 @@ Re-recorded with `coreExtensionOptions.delete.filterTransaction = (tr) => tr.get
 - 5 forced-layouts at +6.3 → +7.7 s, each ~190 ms (these are paint-driven, not the JS-triggered O(n²) walk from before).
 - Last large activity ends at +17.0 s (the fourth timer-150). Total click → settled = ~15.7 s.
 
+### 2026-05-05 — Phase 1 (Rust comrak HTML preview), Book 506 KB (84ea0561)
+
+Three live-tested recordings (~/Downloads/Screenshots/load-large-file-recording-phase-1{,-test2,-test3}.json) on Apple M3 / 24 GB / macOS 26.3.1 / `pnpm tauri dev`. Same methodology as previous baselines: a doc already open, click the book in the sidebar.
+
+| Test | Cache state | `read_file` | `render_markdown_preview` | Parse (rAF block) | Click → preview painted | Click → editable |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Cold (refresh + open) | 23 ms | **1,155 ms** | 5,141 ms | \~1.2 s | \~7.5 s |
+| 2 | Cold (refresh + open) | 25 ms | **1,136 ms** | 4,840 ms | \~1.2 s | \~7.0 s |
+| 3 | Warm (small file opened first) | 20 ms | **118 ms** | 4,483 ms | \~0.2 s | \~5.0 s |
+
+**Headline:** click → readable drops from \~6 s blank window (post-Delete-fix baseline) to **0.2–1.2 s** depending on iCloud cache state. The user can scroll, select, and read the document while the editor finishes hydrating in the background. Click → editable is roughly flat (still gated by the synchronous parse) — Phase 1's goal was instant first paint, not faster total hydration.
+
+**Composition (cold):** Click → `read_file` (\~25 ms) → `render_markdown_preview` (\~1.15 s, dominated by iCloud sync inside `fs::read_to_string`; comrak itself is ~150 ms once the file is OS-cached) → React commit + paint (\~50 ms) → preview visible. Then `deferPastPaint` (rAF×2) yields one paint cycle, then `loadRawMarkdownIntoEditor` runs as an `animation-frame-fired` task of 4.5–5.1 s (the remaining synchronous parse). Plugin init storm appears as a follow-on \~1.85 s `microtask-dispatched` task. Total click → editable = \~7 s.
+
+**Composition (warm — test 3 with small file opened first):** Same pipeline, but iCloud sync is skipped because the OS already has the file cached, so `render_markdown_preview` is 10× faster (118 ms instead of 1.15 s). Parse cost is unchanged. Total click → editable = \~5 s.
+
+**Phase 2 will attack:**
+
+1. **The 4.5–5.1 s `animation-frame-fired` parse block** — moves to a Web Worker. Main thread stays at 60 fps the entire time the editor hydrates. This is what makes the entire app freeze during large-file load today.
+2. The 1.85 s plugin init storm microtask — currently in scope of "Out of Scope: Plugin lazy-init" in the PRD; might revisit after Phase 2 if it remains the dominant blocker.
+
+**Phase 3 will attack:**
+
+3. The 1.15 s cold `render_markdown_preview` and 4.5+ s parse on every open — disk cache makes subsequent opens of the same file load in <100 ms.
+
+**Out of scope for Phase 1:** the 4.5–5.1 s parse blocking the main thread (Phase 2), iCloud sync variance (filesystem-side), and the plugin init storm.
+
+**Visual fidelity caveat (live-test feedback):** the preview's blockquote line-height and a few other typography details diverge subtly from the editor's render — comrak emits semantically-equivalent but structurally-different HTML than Tiptap's serialized output, so a few `editor.css` selectors fire differently between the two. Phase 1 ships with this gap acknowledged; tightening targeted selectors is a polish follow-up.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
