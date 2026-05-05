@@ -397,28 +397,57 @@ Recording: `~/Downloads/Screenshots/load-large-file-recording.json` (134 MB, Saf
 | Click | 0.0 s | sidebar item activated |
 | **Frozen window** | 0.0 → 6.0 s | Single 5,487 ms microtask + overlapping 5,498 ms layout. No paints emitted in this window. |
 | First content paint | **\~6.0 s** | First post-click paint at +5.97 s — the editor DOM appears |
-| Page-breaks layout storm | 6.0 → 12.5 s | 4 timer-fired tasks back-to-back: 3,370 + 1,198 + 1,136 + 1,056 = **6,760 ms** of page-breaks-plugin layout calculations |
+| Tiptap Delete-extension storm | 6.0 → ~14 s | 4 timer-fired tasks back-to-back: 3,370 + 1,198 + 1,136 + 1,056 = **6,760 ms** of `simplifyChangedRanges` / `nodesBetween` work from Tiptap's built-in `Delete` extension reacting to the bulk `setContent` transaction (verified via JavaScript & Events stack samples). |
 | Settled | **\~21 s** | Last large layout pass (+21.22 s, 207 ms); subsequent activity is mouse / scroll noise |
 
 **Aggregate layout work:** 2,183 layout records totalling **7,926 ms**. Of those: 9 `forced-layout` (208 + 197 ms top two), 27 regular `layout` (208 + 207 ms top two), 1,674 `paint`, 95 `invalidate-styles`, 97 `recalculate-styles`. Median layout is sub-millisecond — the cost is concentrated in a handful of giant passes.
 
 **Top single-task contributors:**
 
-| Rank | Type | Start (s after click) | Duration (ms) | Likely source |
+| Rank | Type | Start (s after click) | Duration (ms) | Source (verified) |
 | --- | --- | --- | --- | --- |
 | 1 | microtask | +0.04 | 5,487 | `loadRawMarkdownIntoEditor` — preprocessing + markdown-it parse + setContent |
-| 2 | timer-fired #311 | +6.08 | 3,370 | page-breaks plugin layout calculation pass |
-| 3 | timer-fired #312 | +9.45 | 1,198 | page-breaks plugin layout calculation pass |
-| 4 | timer-fired #365 | +15.44 | 1,136 | page-breaks plugin layout calculation pass |
-| 5 | timer-fired #372 | +16.85 | 1,056 | page-breaks plugin layout calculation pass |
+| 2 | timer-fired (timeout 0) | +6.08 | 3,370 | Tiptap `Delete` extension async callback — `simplifyChangedRanges.filter().filter().some()` (O(n²)) + `nodesBetween` walk (148/166 stack samples leaf at `Array.prototype.filter` inside the change-range simplifier) |
+| 3 | timer-fired (timeout 150) | +9.45 | 1,198 | Debounced `getMarkdownFromEditor` (`useEditor.ts:271`) — re-serializes 506 KB doc to markdown after Delete extension's transaction landed |
+| 4 | timer-fired (timeout 150) | +15.44 | 1,136 | Same as above — second post-load transaction triggers another debounced serialize |
+| 5 | timer-fired (timeout 150) | +16.85 | 1,056 | Same as above — third post-load transaction |
 
 **Identified hot paths (in priority order):**
 
-1. **Synchronous parse + initial layout** — Layers 1+2 directly attack this: Rust comrak preview unblocks first paint (target &lt;300 ms), worker hydration moves the parse off the main thread.
-2. **Page-breaks plugin layout calculation** — `src/components/editor/extensions/page-breaks.ts` reads `offsetHeight` + `getComputedStyle` per block in its `update` callback, scheduled via `setTimeout` per doc change. Triggers 6.7 s of layout work post-paint regardless of whether print-layout mode is on. Independent of the instant-load PRD; worth its own narrow fix.
-3. **Repeated post-parse layouts** — Even after page-breaks settles, additional 200 ms layouts at +21.2 s suggest a second decoration plugin (table-aggregation walking 952 rows is the leading suspect) doing the same offsetHeight pattern.
+1. **Synchronous parse + initial layout (5.5 s)** — Layers 1+2 directly attack this: Rust comrak preview unblocks first paint (target &lt;300 ms), worker hydration moves the parse off the main thread.
+2. **Tiptap `Delete` extension on bulk setContent (3.4 s)** — `@tiptap/core`'s built-in Delete extension fires `editor.emit("delete", ...)` after every transaction, but Notesage subscribes to none of them. On a bulk `setContent` the change-range simplifier and `nodesBetween` walk dominate. **Fix landed in this PR**: pass `coreExtensionOptions.delete.filterTransaction = (tr) => tr.getMeta("addToHistory") === false` so transactions tagged `addToHistory: false` (which is what `loadRawMarkdownIntoEditor` and `setContentWithoutHistory` already use) skip the extension's processing.
+3. **Repeated 506 KB markdown re-serialization (3 × ~1.1 s)** — `useEditor.ts:271` 150 ms-debounced `getMarkdownFromEditor` re-runs whenever any transaction fires `onUpdate`. Decoration-plugin `appendTransaction` calls (comment-mark, tag-highlight, table-aggregation, etc.) each trigger one. Fix path: suppress the serialize for transactions where nothing actually changed, or skip when the transaction is from setContent. Open follow-up.
+4. **Late layouts at +21 s (~210 ms)** — likely `table-aggregation` walking 952 rows on first `appendTransaction`. Open follow-up.
 
 **Regression-watch reference files (TBD — capture before Phase 1):** 10 KB and 100 KB synthetic samples, same recording method, to confirm Phase 1 doesn't regress small-file performance.
+
+### 2026-05-05 — Post-Delete-fix, Book 506 KB
+
+Re-recorded with `coreExtensionOptions.delete.filterTransaction = (tr) => tr.getMeta("addToHistory") === false` applied in `src/hooks/useEditor.ts`. Same methodology as baseline (a doc already open, click the book in the sidebar). Recording: `~/Downloads/Screenshots/load-large-file-recording-delete-fix.json`.
+
+| Metric | Pre-fix | Post-fix | Delta |
+| --- | --- | --- | --- |
+| Recording duration | 21.8 s | 20.1 s | −1.7 s |
+| **Click → settled** | **\~18.0 s** | **\~15.7 s** | **−2.3 s** |
+| Parse microtask | 5,487 ms | 5,357 ms | flat (variance — confirms parse path untouched) |
+| **Tiptap Delete extension (timer 0)** | **3,370 ms** | **gone** | **−3,370 ms** ✓ |
+| timer-150 #1 | 1,198 ms | 1,156 ms | −42 ms |
+| timer-150 #2 | 1,136 ms | 1,059 ms | −77 ms |
+| timer-150 #3 | 1,056 ms | 943 ms | −113 ms |
+| timer-150 #4 | — | 917 ms | new (see note) |
+| Sum of timer-150 tasks | 3,390 ms | 4,075 ms | +685 ms |
+| Layout records (count) | 2,183 | 3,182 | +999 |
+| Layout aggregate (ms) | 7,926 | 8,312 | +386 |
+
+**Headline:** the 3,370 ms `timer-fired (timeout 0)` Delete-extension task is fully eliminated. Net wall-clock improvement is **~2.3 s click-to-settled** on the 506 KB book. Click → first paint is unchanged (~6 s) because the synchronous parse is what gates that, and parse is untouched until Phase 1 (Rust comrak preview).
+
+**Why a fourth timer-150 appeared:** removing the Delete extension's transaction changed the order in which downstream decoration plugins (`comment-mark`, `tag-highlight`, `table-aggregation`, etc.) finish their `appendTransaction` work. One additional cascade now triggers the debounced `getMarkdownFromEditor` re-serialization. Per-task durations all dropped slightly, but total re-serialization time went up by ~685 ms because of the extra pass. This makes the open follow-up "skip serialize on programmatic-load transactions" more attractive — the next narrow fix worth landing before Phase 1 if we want to chase another ~2-4 s out of the post-paint freeze.
+
+**Verified by post-fix recording:**
+
+- No `timer-fired (timeout 0)` task &gt; 100 ms anywhere in the 20 s recording.
+- 5 forced-layouts at +6.3 → +7.7 s, each ~190 ms (these are paint-driven, not the JS-triggered O(n²) walk from before).
+- Last large activity ends at +17.0 s (the fourth timer-150). Total click → settled = ~15.7 s.
 
 ## Notes
 

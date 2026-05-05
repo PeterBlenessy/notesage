@@ -61,6 +61,17 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         }
       }
     },
+    coreExtensionOptions: {
+      // Skip Tiptap's built-in Delete extension for bulk-load transactions.
+      // Its O(n²) `simplifyChangedRanges` + `nodesBetween` walk dominated post-parse
+      // load time on large docs (~3.4s on the 506KB book). Notesage doesn't
+      // subscribe to the resulting `delete` editor event, so the work is pure overhead.
+      // `loadRawMarkdownIntoEditor` and `setContentWithoutHistory` both set
+      // `addToHistory: false`, so we use that as the bail signal.
+      delete: {
+        filterTransaction: (tr) => tr.getMeta("addToHistory") === false,
+      },
+    },
     extensions: [
       StarterKit.configure({
         codeBlock: false,
