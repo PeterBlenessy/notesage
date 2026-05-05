@@ -9,7 +9,7 @@
 | **Trigger** | A 506 KB / 6634-line / 396-heading / 952-table-row markdown book (`Svenska-Investmentbolag-v0.10.0.md`) takes &gt;30s to open with no visible progress, no spinner, no way to cancel. The main thread is fully blocked the entire time. |
 | **Related research** | [llm-wiki-data-transformation](../research/llm-wiki-data-transformation.md) — discovered the SQLite-index/parser pattern that this PRD reuses for the cache hash key |
 | **Related PRD** | [2026-04-14-markdown-preprocessing-hardening](2026-04-14-markdown-preprocessing-hardening.md) — replaces the 13 regex preprocessing passes with a single markdown-it plugin pass; complements this PRD by making the worker hydration faster |
-| **Tasks** | Phase task files are written before each phase ships. Phase 1 task file is the first to land. |
+| **Tasks** | Phase task files are written before each phase ships. Phase 1: [2026-05-03-large-file-instant-load-phase1-tasks](../tasks/2026-05-03-large-file-instant-load-phase1-tasks.md). |
 
 ## Problem
 
