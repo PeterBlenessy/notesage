@@ -374,6 +374,52 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.37.0:** phase1-ready 3,817→3,199ms (−16%). Skills total 4,434→3,217ms (−27%). Tree refresh 4,914→3,330ms (−32%). Startup ready 5,999/6,052→4,387/4,494ms (−27% / −26%). Tabs restored 5,706/5,802→4,100/4,131ms (−28% / −29%). Index init total 1,155/1,164→1,184/1,278ms (flat). v0.38.0 does not touch the startup hot path — the entire release is AI-scope / isolation work — so these consistent double-digit improvements are almost certainly iCloud sync noise (cold/warm-cache differences between runs). No regressions.
 
+## Load File Performance (real-world, dev mode)
+
+Per-phase before/after for the [large-file instant-load PRD](prds/2026-05-03-large-file-instant-load.md). Measured via DevTools Timeline (Safari Web Inspector) recordings on representative files. Covers all file sizes — small-file rows are regression-watch (must not get slower as we optimize the large-file path).
+
+Each entry records: commit SHA, file path/size, observed timings (click → first paint → editable), identified hot paths, and an actionable note. Raw `.json` recordings are NOT committed (size + personal paths) — they live under `~/Downloads` or `~/.notesage/perf/`.
+
+### Reference files
+
+| Label | Path | Size |
+| --- | --- | --- |
+| Book (large) | `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/Svenska Investmentbolag/Svenska-Investmentbolag-v0.10.0.md` | 506 KB |
+| _10 KB sample_ | _TBD_ | _\~10 KB_ |
+| _100 KB sample_ | _TBD_ | _\~100 KB_ |
+
+### 2026-05-05 — Pre-Phase-1 baseline, Book 506 KB (a2214ecd)
+
+Recording: `~/Downloads/Screenshots/load-large-file-recording.json` (134 MB, Safari Web Inspector, 21.8s window). Apple M3 / 24 GB / macOS 26.3.1 / `pnpm tauri dev`.
+
+| Phase | Time after click | Dominant cost |
+| --- | --- | --- |
+| Click | 0.0 s | sidebar item activated |
+| **Frozen window** | 0.0 → 6.0 s | Single 5,487 ms microtask + overlapping 5,498 ms layout. No paints emitted in this window. |
+| First content paint | **\~6.0 s** | First post-click paint at +5.97 s — the editor DOM appears |
+| Page-breaks layout storm | 6.0 → 12.5 s | 4 timer-fired tasks back-to-back: 3,370 + 1,198 + 1,136 + 1,056 = **6,760 ms** of page-breaks-plugin layout calculations |
+| Settled | **\~21 s** | Last large layout pass (+21.22 s, 207 ms); subsequent activity is mouse / scroll noise |
+
+**Aggregate layout work:** 2,183 layout records totalling **7,926 ms**. Of those: 9 `forced-layout` (208 + 197 ms top two), 27 regular `layout` (208 + 207 ms top two), 1,674 `paint`, 95 `invalidate-styles`, 97 `recalculate-styles`. Median layout is sub-millisecond — the cost is concentrated in a handful of giant passes.
+
+**Top single-task contributors:**
+
+| Rank | Type | Start (s after click) | Duration (ms) | Likely source |
+| --- | --- | --- | --- | --- |
+| 1 | microtask | +0.04 | 5,487 | `loadRawMarkdownIntoEditor` — preprocessing + markdown-it parse + setContent |
+| 2 | timer-fired #311 | +6.08 | 3,370 | page-breaks plugin layout calculation pass |
+| 3 | timer-fired #312 | +9.45 | 1,198 | page-breaks plugin layout calculation pass |
+| 4 | timer-fired #365 | +15.44 | 1,136 | page-breaks plugin layout calculation pass |
+| 5 | timer-fired #372 | +16.85 | 1,056 | page-breaks plugin layout calculation pass |
+
+**Identified hot paths (in priority order):**
+
+1. **Synchronous parse + initial layout** — Layers 1+2 directly attack this: Rust comrak preview unblocks first paint (target &lt;300 ms), worker hydration moves the parse off the main thread.
+2. **Page-breaks plugin layout calculation** — `src/components/editor/extensions/page-breaks.ts` reads `offsetHeight` + `getComputedStyle` per block in its `update` callback, scheduled via `setTimeout` per doc change. Triggers 6.7 s of layout work post-paint regardless of whether print-layout mode is on. Independent of the instant-load PRD; worth its own narrow fix.
+3. **Repeated post-parse layouts** — Even after page-breaks settles, additional 200 ms layouts at +21.2 s suggest a second decoration plugin (table-aggregation walking 952 rows is the leading suspect) doing the same offsetHeight pattern.
+
+**Regression-watch reference files (TBD — capture before Phase 1):** 10 KB and 100 KB synthetic samples, same recording method, to confirm Phase 1 doesn't regress small-file performance.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
