@@ -299,9 +299,9 @@ interface SettingsState {
 
 ### Functional
 
-- [ ] **Layer 1:** Opening any markdown file shows readable HTML preview within **300ms p95** on M3 dev hardware. Verified locally against the user's real 506 KB book via DevTools Timeline recording.
+- [~] **Layer 1:** Opening any markdown file shows readable HTML preview within **300ms p95** on M3 dev hardware. Verified locally against the user's real 506 KB book via DevTools Timeline recording. _Phase 1 landed 2026-05-05 (commit 84ea0561). Warm cache: 0.12 s — meets target. Cold cache (book on iCloud Drive, not OS-cached): 1.15 s — gated by iCloud sync inside `fs::read_to_string`, not by comrak. Comrak itself runs in 100-150 ms at 506 KB. The PRD target was set assuming local filesystem; iCloud variance is filesystem-side and not addressable in Phase 1._
 
-- [ ] **Layer 1 fidelity:** Screenshot diff between preview render and editor render of every test fixture shows &lt;2% pixel difference outside the cursor (run at both 1x and 2x DPR, light and dark mode).
+- [~] **Layer 1 fidelity:** Screenshot diff between preview render and editor render of every test fixture shows &lt;2% pixel difference outside the cursor (run at both 1x and 2x DPR, light and dark mode). _Infrastructure landed (`e2e/tests/preview-fidelity.spec.ts` with 3 behavioural tests + ±10 % scroll-height parity). Pixel-level goldens deferred — need human approval on first run. Live-test feedback (2026-05-05) flagged subtle blockquote line-height + syntax-highlighting drift between comrak and Tiptap output; targeted CSS tightening tracked as a Phase 1 polish follow-up._
 
 - [ ] **Layer 2:** Worker hydration of the 500 KB synthetic fixture completes within **10s** while the main thread maintains 60 fps (measured via DevTools Timeline frame chart during hydration). Local-only spot check against the real 506 KB book confirms parity.
 
@@ -346,13 +346,15 @@ This PRD ships in **strictly ordered phases**. No phase begins until the previou
 
 Each phase begins with a fresh DevTools Timeline recording on the 506 KB book to establish the pre-phase baseline, and ends with a second recording to confirm the win.
 
-### Phase 1 — Rust HTML preview (Layer 1)
+### Phase 1 — Rust HTML preview (Layer 1) ✅ landed 2026-05-05 (84ea0561)
 
 - New `render_markdown_preview` Tauri command (thin wrapper over existing `render_html`).
 - New preview wrapper component in `src/components/editor/`.
-- Preview shown immediately on tab activation; editor mount deferred.
-- Screenshot fidelity test infrastructure.
-- **Measurement gate:** baseline doc updated with "after Phase 1: first paint = X ms (was Y ms)" — verified by DevTools Timeline recording on the 506 KB book.
+- Preview shown immediately on tab activation; editor mount deferred via double `requestAnimationFrame` (rIC and `setTimeout(0)` both raced WebKit's paint cycle and made the preview undeterministic).
+- Screenshot fidelity test infrastructure (behavioural assertions + ±10 % scroll parity; pixel goldens deferred).
+- **Measurement gate landed:** see `docs/performance-baseline.md` § "2026-05-05 — Phase 1, Book 506 KB". Click → readable: 6 s blank window → 0.12 s warm / 1.15 s cold (iCloud-bound). Click → editable: 15.7 s → 7 s.
+
+**Open follow-up (Phase 1 polish, before Phase 2):** comrak↔Tiptap CSS divergence (blockquote line-height, syntect inline styles vs hljs class highlights). Tighten preview-only selectors based on concrete examples from live-test.
 
 ### Phase 2 — Web Worker hydration (Layer 2)
 

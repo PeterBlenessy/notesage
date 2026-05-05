@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-05 |
-| **Status** | Not started |
+| **Status** | Landed 2026-05-05 (commit 84ea0561). Open polish: comrak↔Tiptap CSS divergence (live-test feedback). |
 | **PRD** | [large-file-instant-load](../prds/2026-05-03-large-file-instant-load.md) |
 | **Phase** | 1 of 4 — Rust comrak HTML preview (Layer 1) |
 | **Total** | 19 tasks across 6 milestones |
