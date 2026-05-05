@@ -273,8 +273,13 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         return false;
       },
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
       if (onUpdate) {
+        // Skip serialization for bulk-load transactions tagged
+        // `addToHistory: false` (loadRawMarkdownIntoEditor / setContentWithoutHistory).
+        // On the 506KB book this saves ~1.1s of getMarkdownFromEditor work on
+        // every file open. User-typed transactions add to history and pass through.
+        if (transaction.getMeta("addToHistory") === false) return;
         // Debounce serialization — for large documents (3000+ nodes),
         // serializing on every keystroke is expensive. Mark dirty immediately
         // via a lightweight check, serialize after a brief pause.
