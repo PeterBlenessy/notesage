@@ -328,6 +328,104 @@
   margin-bottom: 0;
 }
 
+/* ============================================================================
+ * Instant-load preview parity (PRD § "Layer 1 fidelity")
+ * ----------------------------------------------------------------------------
+ * The MarkdownPreview surface (`<div class="ProseMirror" data-preview>`) shows
+ * comrak-rendered HTML during the brief window between click and editor
+ * hydration. Comrak emits structurally-valid HTML that doesn't always match
+ * Tiptap's serialized DOM byte-for-byte:
+ *
+ *   - Multi-line blockquotes become two `<p>` elements in comrak; Tiptap's
+ *     prosemirror-markdown parser collapses them into a single paragraph
+ *     when the `>` continuation has no blank line between, OR otherwise
+ *     keeps the spacing visually tight via runtime decoration. We collapse
+ *     paragraph margins inside preview blockquotes to match the editor's
+ *     compact look.
+ *
+ *   - Defensive font-family rules with the preview-only attribute selector
+ *     re-anchor typography CSS variables on the preview wrapper — in case
+ *     any deeper-nested editor rule (or a stale cascade) wins on the
+ *     editor side but not the preview side.
+ *
+ * These rules ONLY target `[data-preview]` so the live editor's behaviour
+ * is untouched.
+ * ========================================================================== */
+
+.ProseMirror[data-preview] blockquote > p {
+  /* Tighten spacing between paragraphs inside a multi-paragraph blockquote
+     (e.g. quoted line + attribution). Comrak emits each line as its own `<p>`;
+     the editor's render is visually tight. Match. */
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.ProseMirror[data-preview] blockquote > p + p {
+  /* Small breathing room between consecutive paragraphs in a quote — enough
+     to read separate lines but not the full paragraph spacing. */
+  margin-top: 0.4em;
+}
+
+/* Defensive typography variable anchors. These are functionally identical
+ * to `.ProseMirror h1 { font-family: var(--ns-h1-font-family) }` etc., but
+ * carry higher specificity (one extra attribute) so they win against any
+ * inadvertent override that targets only the preview surface. */
+.ProseMirror[data-preview] {
+  font-family: var(--ns-paragraph-font-family);
+  font-size: var(--ns-paragraph-font-size);
+  line-height: var(--ns-paragraph-line-height);
+}
+
+.ProseMirror[data-preview] h1 {
+  font-family: var(--ns-h1-font-family);
+  font-size: var(--ns-h1-font-size, 1.875em);
+  font-weight: var(--ns-h1-font-weight, 700);
+  line-height: var(--ns-h1-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] h2 {
+  font-family: var(--ns-h2-font-family);
+  font-size: var(--ns-h2-font-size, 1.4em);
+  font-weight: var(--ns-h2-font-weight, 600);
+  line-height: var(--ns-h2-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] h3 {
+  font-family: var(--ns-h3-font-family);
+  font-size: var(--ns-h3-font-size, 1.2em);
+  font-weight: var(--ns-h3-font-weight, 600);
+  line-height: var(--ns-h3-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] h4 {
+  font-family: var(--ns-h4-font-family);
+  font-size: var(--ns-h4-font-size, 1.05em);
+  font-weight: var(--ns-h4-font-weight, 600);
+  line-height: var(--ns-h4-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] h5 {
+  font-family: var(--ns-h5-font-family);
+  font-size: var(--ns-h5-font-size, 0.95em);
+  font-weight: var(--ns-h5-font-weight, 600);
+  line-height: var(--ns-h5-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] h6 {
+  font-family: var(--ns-h6-font-family);
+  font-size: var(--ns-h6-font-size, 0.875em);
+  font-weight: var(--ns-h6-font-weight, 600);
+  line-height: var(--ns-h6-line-height, 1.3);
+}
+
+.ProseMirror[data-preview] p {
+  font-family: var(--ns-paragraph-font-family);
+  font-size: var(--ns-paragraph-font-size);
+  font-weight: var(--ns-paragraph-font-weight, 400);
+  line-height: var(--ns-paragraph-line-height);
+  margin-bottom: var(--ns-paragraph-spacing-after, var(--editor-paragraph-spacing, 0.75em));
+}
+
 /* Callout blocks */
 .ProseMirror .callout {
   border-left: 3px solid var(--color-callout-note);
