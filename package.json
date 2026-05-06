@@ -96,6 +96,7 @@
     "docx-preview": "^0.3.7",
     "dompurify": "^3.4.0",
     "jszip": "^3.10.1",
+    "linkedom": "^0.18.12",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.8.0",
     "mammoth": "^1.12.0",

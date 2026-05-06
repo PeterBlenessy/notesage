@@ -20,6 +20,7 @@ import markdownit from "markdown-it";
 import markdownitSub from "markdown-it-sub";
 import markdownitSup from "markdown-it-sup";
 import taskListPlugin from "markdown-it-task-lists";
+import { parseHTML } from "linkedom";
 import type { JSONContent } from "@tiptap/core";
 import { workerExtensions } from "./worker-extensions";
 import { prepareMarkdownForParse } from "@/lib/markdown-preprocess-pure";
@@ -53,20 +54,8 @@ export interface ParsePipelineResult {
 }
 
 /**
- * Resolve a DOMParser implementation. In a Web Worker, `self.DOMParser` is
- * the global. In jsdom (vitest), it's `globalThis.DOMParser`. Both implement
- * the WHATWG DOMParser interface.
- */
-function resolveDOMParser(): typeof DOMParser {
-  if (typeof DOMParser !== "undefined") return DOMParser;
-  const g = globalThis as unknown as { DOMParser?: typeof DOMParser };
-  if (g.DOMParser) return g.DOMParser;
-  throw new Error("DOMParser is not available in this environment");
-}
-
-/**
  * Run the full parse pipeline: markdown → preprocessor chain → markdown-it →
- * DOMParser → ProseMirror Node → JSON. Returns the doc JSON plus the
+ * linkedom → ProseMirror Node → JSON. Returns the doc JSON plus the
  * side-channel maps (annotations, nodeIds, table metadata) the main thread
  * applies to the editor after `setContent`.
  *
@@ -74,6 +63,16 @@ function resolveDOMParser(): typeof DOMParser {
  * Round-trip safe: the JSON output is byte-identical to what the main-thread
  * editor would produce via `editor.commands.setContent(markdown)` modulo
  * UniqueID's randomly-generated UUIDs (test fixtures must mask those).
+ *
+ * Why linkedom instead of native DOMParser:
+ * WKWebView's dedicated worker scope doesn't expose `DOMParser` as a global
+ * (despite MDN's compat data suggesting it's available since Safari 10.5).
+ * Confirmed empirically 2026-05-06 — the worker-fallback path fired with
+ * "DOMParser is not available in this environment" and Phase 2's perf win
+ * never materialised. linkedom is a pure-JS DOM implementation that works
+ * identically in worker, jsdom (vitest), and main-thread environments, and
+ * its `parseHTML(html)` returns a Document that ProseMirror's DOMParser
+ * walks the same way it walks a native DOM tree.
  */
 export function parseMarkdownToProseMirrorJson(rawMarkdown: string): ParsePipelineResult {
   const totalStart = performance.now();
@@ -84,10 +83,19 @@ export function parseMarkdownToProseMirrorJson(rawMarkdown: string): ParsePipeli
 
   const parseStart = performance.now();
   const html = md.render(prepared);
-  const wrapped = `<body>${html}</body>`;
-  const Parser = resolveDOMParser();
-  const doc = new Parser().parseFromString(wrapped, "text/html");
-  const node = PMDOMParser.fromSchema(schema).parse(doc.body);
+  // linkedom requires a full HTML document structure to populate `body`
+  // correctly — passing a body fragment leaves `document.body` empty.
+  // (Confirmed empirically 2026-05-06: `parseHTML("<body>x</body>")` yields
+  // an empty body, while `parseHTML("<!DOCTYPE html><html><body>x</body></html>")`
+  // works.)
+  // ProseMirror's DOMParser uses standard DOM APIs (childNodes, tagName,
+  // getAttribute, etc.) — linkedom implements all of them. The cast goes
+  // through `unknown` because linkedom's Element type doesn't explicitly
+  // extend lib.dom's Element but is structurally compatible.
+  const fullHtml = `<!DOCTYPE html><html><body>${html}</body></html>`;
+  const { document } = parseHTML(fullHtml);
+  const body = document.body as unknown as HTMLElement;
+  const node = PMDOMParser.fromSchema(schema).parse(body);
   const parseMs = performance.now() - parseStart;
 
   return {
