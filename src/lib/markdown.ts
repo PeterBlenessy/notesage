@@ -29,7 +29,11 @@ const ANNOTATION_PREFIX_RE =
  *   - `cleaned`: markdown with all `{emoji}` prefixes removed
  *   - `annotations`: Map<itemIndex, emoji> (0-based, document order)
  */
-function stripAnnotationsFromMarkdown(markdown: string): {
+/**
+ * @workerSafe Pure regex transform — exported so the markdown-parse Web Worker
+ * (Phase 2) can extract annotations off the main thread.
+ */
+export function stripAnnotationsFromMarkdown(markdown: string): {
   cleaned: string;
   annotations: Map<number, string>;
 } {
@@ -160,7 +164,8 @@ export function injectAnnotationsIntoMarkdown(
  * This function ensures every checkbox bracket has at least one trailing
  * space so the parser always matches.
  */
-function normalizeEmptyTaskItems(markdown: string): string {
+/** @workerSafe Pure regex transform — exported for Phase 2 worker pipeline. */
+export function normalizeEmptyTaskItems(markdown: string): string {
   // Match task items where the checkbox bracket is the last thing on the line
   // (no content after it). Add a trailing space so markdown-it-task-lists matches.
   return markdown.replace(
