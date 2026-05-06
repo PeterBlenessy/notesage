@@ -31,9 +31,18 @@ import { handleLinkNavigation } from "@/lib/link-utils";
 interface MarkdownPreviewProps {
   /** comrak-rendered body fragment. Trusted: comrak is configured without `unsafe_`, so raw HTML in markdown is escaped. */
   html: string;
+  /**
+   * Fired the first time the user signals an intent to edit (keydown, paste,
+   * input, or non-link mousedown) on this preview surface — i.e. the editor
+   * isn't yet hydrated but the user wants to type. The parent (`Editor.tsx`)
+   * uses this to mount an "Editor loading…" overlay so the user gets visible
+   * feedback that their keystrokes aren't being lost; they're queued for the
+   * editor that's hydrating in the background. Phase 2 task #16.
+   */
+  onEditIntent?: () => void;
 }
 
-export function MarkdownPreview({ html }: MarkdownPreviewProps) {
+export function MarkdownPreview({ html, onEditIntent }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Click handler — route internal markdown links through the same resolver
@@ -87,6 +96,54 @@ export function MarkdownPreview({ html }: MarkdownPreviewProps) {
     node.addEventListener("click", onClick);
     return () => node.removeEventListener("click", onClick);
   }, []);
+
+  // Phase 2 #16 — capture edit-intent on the preview surface. Fires the
+  // first time the user keys/clicks/pastes outside a link; the parent uses
+  // it to mount the EditorHydratingOverlay. Capture-phase listeners so the
+  // signal fires even if a deeper element would otherwise consume the event.
+  useEffect(() => {
+    if (!onEditIntent) return;
+    const node = containerRef.current;
+    if (!node) return;
+
+    let dispatched = false;
+    const fire = () => {
+      if (dispatched) return;
+      dispatched = true;
+      onEditIntent();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Skip pure modifier presses + browser shortcuts (Cmd+C copy is fine
+      // during preview; we only care about typing intent).
+      if (event.key === "Meta" || event.key === "Control" || event.key === "Shift" || event.key === "Alt") return;
+      if (event.metaKey || event.ctrlKey) return;
+      fire();
+    };
+    const onPaste = () => fire();
+    const onInput = () => fire();
+    const onMouseDown = (event: MouseEvent) => {
+      // Click on a link is navigation, not editing intent.
+      const target = (event.target as HTMLElement | null)?.closest("a");
+      if (target && node.contains(target)) return;
+      fire();
+    };
+
+    // Attach to document because the preview surface itself isn't a
+    // text-input target — the user's keystrokes go to whatever has focus
+    // (typically nothing, since the preview is read-only). Listening
+    // globally during the preview window catches the intent reliably.
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    document.addEventListener("paste", onPaste, { capture: true });
+    document.addEventListener("input", onInput, { capture: true });
+    node.addEventListener("mousedown", onMouseDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+      document.removeEventListener("paste", onPaste, { capture: true });
+      document.removeEventListener("input", onInput, { capture: true });
+      node.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [onEditIntent]);
 
   return (
     <div
