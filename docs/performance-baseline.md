@@ -478,6 +478,39 @@ Three live-tested recordings (~/Downloads/Screenshots/load-large-file-recording-
 
 **Visual fidelity caveat (live-test feedback):** the preview's blockquote line-height and a few other typography details diverge subtly from the editor's render — comrak emits semantically-equivalent but structurally-different HTML than Tiptap's serialized output, so a few `editor.css` selectors fire differently between the two. Phase 1 ships with this gap acknowledged; tightening targeted selectors is a polish follow-up.
 
+### 2026-05-06 — Phase 2 (Web Worker hydration), Book 506 KB (19d1b00f)
+
+Live-tested recording at `~/Downloads/Screenshots/load-large-file-recording-phase-2.json`. Same methodology + machine as Phase 1.
+
+**Worker pipeline status:** running successfully. The IPC list shows `render_markdown_preview` (132 ms warm) and `read_file` (23–27 ms) — no `worker-fallback` warnings. Initial worker attempt fell through with "DOMParser is not available in this environment" because WKWebView's dedicated worker scope doesn't expose `DOMParser` as a global despite MDN's compat data; fix in `19d1b00f` swapped to `linkedom` (pure-JS DOM implementation, ~100 KB added to the worker bundle, runs identically in workers/jsdom/main thread).
+
+**Significant blocking events** (within the click → editable window):
+
+| Event | Duration | Composition |
+| --- | --- | --- |
+| microtask | 103 ms | Pre-paint setup |
+| **animation-frame-fired** | **4.44 s** | DOM materialization — `setContent(json)` walking 6634 lines into DOM elements |
+| microtask | 82 ms | Post-load tail |
+| event-dispatched | 77 ms | Final paint |
+
+**Compared to Phase 1 (worker-fallback) recordings:**
+
+| | Phase 1 / fallback | Phase 2 working | Δ |
+| --- | --- | --- | --- |
+| animation-frame-fired | 4.87 s | 4.44 s | −430 ms |
+| microtask plugin storm | 1.88 s | 0.10 s | **−1.78 s** |
+| Total blocking work | ~6.75 s | ~4.55 s | **−2.2 s** |
+
+**Headline:** Phase 2 delivered a real but partial win. The 1.88 s plugin-init microtask (table-aggregation walking 952 rows, decorations rebuilding, etc.) collapsed to 100 ms — the worker producing pre-parsed JSON dramatically reduces the cascade of post-`setContent` plugin transactions. Net ~2.2 s saved, click → editable dropped from ~7 s to ~5 s.
+
+**The remaining 4.44 s `animation-frame-fired` is NOT the parse** — that already happened in the worker. It's ProseMirror's `setContent(json)` materializing 6634 lines × node-types into actual DOM elements. The worker can't help with this; it's the DOM layer doing layout work for thousands of elements on the main thread. Solving this would need either virtual scrolling or streaming `setContent`, both significant Tiptap-side changes that don't belong in this PRD's scope.
+
+**PRD goal "main thread maintains 60 fps during hydration":** NOT MET for files of this size. The single 4.44 s blocking task is unbroken; user can't scroll the sidebar / interact with chrome during that window. Below ~100 KB this gap becomes negligible (the DOM render itself is small).
+
+**Phase 3 will attack:** the 4.44 s DOM materialization on **every** open. The parsed-state disk cache caches the final view state, so repeat opens of the same file skip both the worker parse AND the DOM materialization — target `<100 ms` p95 for cached opens. First opens still pay the cost.
+
+**Honest assessment:** Phase 2's worker pipeline is the right architecture (proves the parse can run off-thread, validated by parity tests). The user-visible improvement is modest (~2 s on a 506 KB file) because the dominant cost shifted from "parse + plugin storm" to "DOM materialization", and the DOM layer can't be moved off-thread. Phase 3 is now the more impactful win.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)

@@ -303,9 +303,9 @@ interface SettingsState {
 
 - [~] **Layer 1 fidelity:** Screenshot diff between preview render and editor render of every test fixture shows &lt;2% pixel difference outside the cursor (run at both 1x and 2x DPR, light and dark mode). _Infrastructure landed (`e2e/tests/preview-fidelity.spec.ts` with 3 behavioural tests + ±10 % scroll-height parity). Pixel-level goldens deferred — need human approval on first run. Live-test feedback (2026-05-05) flagged subtle blockquote line-height + syntax-highlighting drift between comrak and Tiptap output; targeted CSS tightening tracked as a Phase 1 polish follow-up._
 
-- [ ] **Layer 2:** Worker hydration of the 500 KB synthetic fixture completes within **10s** while the main thread maintains 60 fps (measured via DevTools Timeline frame chart during hydration). Local-only spot check against the real 506 KB book confirms parity.
+- [~] **Layer 2:** Worker hydration of the 500 KB synthetic fixture completes within **10s** while the main thread maintains 60 fps (measured via DevTools Timeline frame chart during hydration). Local-only spot check against the real 506 KB book confirms parity. _Phase 2 landed 2026-05-06 (commit 19d1b00f, after `markdown-parse.core.ts` + linkedom fix). The 10 s wall-clock is met (~5 s click → editable). The 60 fps gate is **NOT** met for files of this size — a single 4.44 s `animation-frame-fired` task remains, which is `setContent(json)` materializing 6634 lines into DOM elements. Worker did successfully move the parse + plugin storm off-thread (saved ~2.2 s), but the DOM layer can't be moved off-thread without virtual scrolling or streaming setContent (out of scope for this PRD). 60 fps gate is met for small files where the DOM render is trivial._
 
-- [ ] **Layer 2 swap:** No visible flicker, no scroll-position shift, no layout shift during preview→editor swap. Verified by frame-by-frame video capture of the swap moment.
+- [~] **Layer 2 swap:** No visible flicker, no scroll-position shift, no layout shift during preview→editor swap. Verified by frame-by-frame video capture of the swap moment. _Same `deferPastPaint` rAF×2 mechanism as Phase 1 — preview stays on screen until `setContent` lands, scroll position preserved via shared `scrollAreaRef`. Frame-by-frame video diff not formally captured; subjective live-test 2026-05-06 reports no flicker._
 
 - [ ] **Layer 3:** Repeat open of any cached file completes in **&lt;100ms p95**, verified across all fixture sizes; local-only spot check against the real 506 KB book confirms parity.
 
@@ -356,13 +356,16 @@ Each phase begins with a fresh DevTools Timeline recording on the 506 KB book to
 
 **Open follow-up (Phase 1 polish, before Phase 2):** comrak↔Tiptap CSS divergence (blockquote line-height, syntect inline styles vs hljs class highlights). Tighten preview-only selectors based on concrete examples from live-test.
 
-### Phase 2 — Web Worker hydration (Layer 2)
+### Phase 2 — Web Worker hydration (Layer 2) ✅ landed 2026-05-06 (19d1b00f)
 
 - Refactor `src/lib/markdown.ts` preprocessing helpers to be worker-safe (no DOM deps).
-- New worker `src/workers/markdown-parse.worker.ts`.
-- Main-thread coordination: kick off worker after preview, swap on result.
-- Edit-A path: brief overlay if user clicks before hydration.
-- **Measurement gate:** baseline doc updated with "after Phase 2: editable in X ms (was Y ms), main-thread frames-per-second during hydration = Z" — verified by DevTools Timeline frame chart on the 506 KB book.
+- New worker `src/workers/markdown-parse.worker.ts` + bridge `src/lib/markdown-worker.ts` + `worker-extensions.ts` shim list + `markdown-parse.core.ts` testable parse pipeline.
+- Main-thread coordination: kick off worker after preview, swap on result via the existing `deferPastPaint` rAF×2.
+- Edit-A path: deferred (M2.5 #16-18). The brief preview window + remaining 4.4 s DOM materialization make this a polish item — revisit if user feedback shows the gap matters.
+- **Used `linkedom` for HTML→DOM parsing** (WKWebView's worker scope doesn't expose `DOMParser` despite MDN compat data — confirmed empirically 2026-05-06).
+- **Measurement gate landed:** see `docs/performance-baseline.md` § "2026-05-06 — Phase 2, Book 506 KB". Plugin storm 1.88 s → 100 ms. Total click → editable ~7 s → ~5 s.
+
+**Honest outcome:** worker pipeline works correctly (parity tests pass, no fallback in production). Plugin storm fully eliminated. But the dominant remaining cost is `setContent(json)` materializing 6634 lines into DOM (4.44 s) — a main-thread DOM-layer cost the worker can't help with. The "60 fps during hydration" PRD goal is met for small files but NOT for the 506 KB book; solving that would need virtual scrolling or streaming setContent (significant Tiptap-side changes, out of this PRD's scope). Phase 3's disk cache is the more impactful next step — it skips both the worker parse AND the DOM materialization on repeat opens.
 
 ### Phase 3 — Parsed-state disk cache (Layer 3)
 

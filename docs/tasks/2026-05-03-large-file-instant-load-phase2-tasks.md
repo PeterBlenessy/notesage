@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-05 |
-| **Status** | Not started |
+| **Status** | Landed 2026-05-06 (commits c3d573e2 → 19d1b00f). Worker pipeline running, plugin storm eliminated. Partial win on the 60-fps-during-hydration goal — DOM materialization on the 506 KB book (4.4 s) is unaddressable without virtual scrolling. M2.5 (Edit-A overlay), M2.6 #20-22 (E2E + perf benchmark + small-file regression) deferred. |
 | **PRD** | [large-file-instant-load](../prds/2026-05-03-large-file-instant-load.md) |
 | **Phase** | 2 of 4 — Web Worker hydration (Layer 2) |
 | **Total** | 25 tasks across 6 milestones |
