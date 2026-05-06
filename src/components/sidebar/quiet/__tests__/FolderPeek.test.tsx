@@ -5,7 +5,7 @@
  * of a project's contents from the Projects section of the quiet sidebar.
  *
  * These tests verify:
- *  - lazy open (no popover until 220 ms hover)
+ *  - lazy open (no popover until 500 ms hover)
  *  - close on mouse-leave (after grace period)
  *  - one-level listing with folders-before-files, alphabetical sort
  *  - caps (+N more) for folders and files
@@ -102,7 +102,7 @@ describe("FolderPeek (#36)", () => {
     expect(screen.queryByTestId("folder-peek-content")).toBeNull();
   });
 
-  it("opens the popover after a 220 ms hover delay", () => {
+  it("opens the popover after a 500 ms hover delay", () => {
     renderWithProviders(
       <FolderPeek
         projectPath="/p/alpha"
@@ -115,15 +115,15 @@ describe("FolderPeek (#36)", () => {
     const trigger = screen.getByTestId("trigger").parentElement!;
     fireEvent.mouseEnter(trigger);
 
-    // Not yet opened — only 100 ms has passed.
+    // Not yet opened — only 100 ms has passed (under the 500 ms threshold).
     act(() => {
       vi.advanceTimersByTime(100);
     });
     expect(screen.queryByTestId("folder-peek-content")).toBeNull();
 
-    // Cross the 220 ms threshold.
+    // Cross the 500 ms threshold.
     act(() => {
-      vi.advanceTimersByTime(200);
+      vi.advanceTimersByTime(500);
     });
     expect(screen.getByTestId("folder-peek-content")).toBeTruthy();
   });
@@ -159,7 +159,7 @@ describe("FolderPeek (#36)", () => {
     expect(screen.queryByTestId("folder-peek-content")).toBeNull();
   });
 
-  const HOVER_DELAY = 220;
+  const HOVER_DELAY = 500;
 
   it("renders folders before files, both alphabetical and case-insensitive", () => {
     const tree: FileEntry[] = [
