@@ -59,13 +59,27 @@ export interface ParseTimings {
 /**
  * Successful parse result. The `doc` field is the ProseMirror JSON
  * representation that the main thread feeds to `editor.commands.setContent()`
- * via the `loadParsedJsonIntoEditor` helper (Phase 2 task #11).
+ * via the `loadParsedJsonIntoEditor` helper (Phase 2 task #11). The
+ * `annotations` / `nodeIds` / `tableMetadataEntries` fields are the
+ * side-channel maps that get re-applied to the editor after `setContent`.
+ *
+ * Note: maps are serialised as plain entries arrays for `postMessage`
+ * structured-clone safety. Maps clone fine but arrays are slightly cheaper
+ * and easier to type-assert.
  */
 export interface ParseResult {
   type: "result";
   id: string;
   /** ProseMirror doc JSON — `node.toJSON()` output from the worker side. */
   doc: JSONContent;
+  /** Annotation prefix map (list-item index → emoji). Empty if none. */
+  annotationsEntries: Array<[number, string]>;
+  /** Node ID map (block index → UUID). Empty if none. */
+  nodeIdsEntries: Array<[number, string]>;
+  /** Table column metadata. Outer key: table idx. Inner: col idx → metadata entries. */
+  tableMetadataEntries: Array<
+    [number, Array<[number, { colType?: string; colCurrency?: string; colAggregation?: string }]>]
+  >;
   /** Per-parse timings for the perf benchmark + `[perf:tab-load]` log. */
   timings: ParseTimings;
 }

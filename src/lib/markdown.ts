@@ -1108,6 +1108,56 @@ export function loadRawMarkdownIntoEditor(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Worker hydration path (Phase 2 — Layer 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Companion to `loadRawMarkdownIntoEditor` for the Phase 2 worker hydration
+ * path. The worker has already done the expensive markdown→HTML→ProseMirror
+ * parse off-thread; the main thread just feeds the JSON to setContent and
+ * applies the side-channel maps (annotations, nodeIds, table metadata) the
+ * same way the legacy synchronous path does.
+ *
+ * `setContent(json, false)` is dramatically cheaper than `setContent(html)`
+ * because the heavy schema-walk parse already happened in the worker.
+ * This is the critical hot path that takes the 4.5–5.1s `animation-frame-fired`
+ * block from "freezes the entire app" to "completes in milliseconds."
+ */
+export function loadParsedJsonIntoEditor(
+  editor: Editor,
+  /** ProseMirror JSON from the worker's `node.toJSON()`. */
+  doc: unknown,
+  side: {
+    annotations: Map<number, string>;
+    nodeIds: Map<number, string>;
+    tableMetadata: TableColumnMetadataMap;
+  },
+): void {
+  editor.chain().setMeta("addToHistory", false).setContent(doc as never).run();
+
+  // Same fresh-state pattern as `loadRawMarkdownIntoEditor` — clears undo
+  // history so stale entries from the previous document don't corrupt the
+  // user's first undo after open.
+  const freshState = EditorState.create({
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  });
+  editor.view.updateState(freshState);
+
+  if (side.tableMetadata.size > 0) {
+    applyTableColumnMetadata(editor, side.tableMetadata);
+  }
+  if (side.nodeIds.size > 0) {
+    applyNodeIdsToEditor(editor, side.nodeIds);
+  }
+  if (side.annotations.size > 0) {
+    requestAnimationFrame(() => {
+      applyAnnotationsToEditor(editor, side.annotations);
+    });
+  }
+}
+
 /**
  * Prepare raw markdown for use as Tiptap's initial `content` option.
  * Strips annotation prefixes and encodes image paths. Returns the cleaned

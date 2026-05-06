@@ -7,13 +7,37 @@ import {
   setSuggestion,
 } from "@/components/editor/extensions";
 import { findNthTagInDoc, scrollPosToCenter, scrollToTextInEditor, PX_PER_CM } from "@/components/editor/editor-utils";
-import { loadRawMarkdownIntoEditor } from "@/lib/markdown";
+import { loadRawMarkdownIntoEditor, loadParsedJsonIntoEditor, type TableColumnMetadataMap, type ColumnMetadata } from "@/lib/markdown";
+import { parseInWorker } from "@/lib/markdown-worker";
+import type { ParseResult } from "@/workers/markdown-parse.types";
 import { getDocumentDir } from "@/lib/image-utils";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 import { tauriApi } from "@/lib/tauri";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { toast } from "sonner";
 import { log } from "@/lib/logger";
+
+/**
+ * Reconstruct the side-channel Maps that the worker serialised as entries
+ * arrays. Cheaper to send across `postMessage` as arrays than as Maps.
+ */
+function deserializeSideMaps(result: ParseResult): {
+  annotations: Map<number, string>;
+  nodeIds: Map<number, string>;
+  tableMetadata: TableColumnMetadataMap;
+} {
+  const annotations = new Map<number, string>(result.annotationsEntries);
+  const nodeIds = new Map<number, string>(result.nodeIdsEntries);
+  const tableMetadata: TableColumnMetadataMap = new Map();
+  for (const [tableIdx, colEntries] of result.tableMetadataEntries) {
+    const colMap = new Map<number, ColumnMetadata>();
+    for (const [colIdx, meta] of colEntries) {
+      colMap.set(colIdx, meta);
+    }
+    tableMetadata.set(tableIdx, colMap);
+  }
+  return { annotations, nodeIds, tableMetadata };
+}
 
 /**
  * Schedule a callback strictly AFTER the browser has painted at least once.
@@ -264,20 +288,59 @@ export function useEditorTabSwitch({
             // Reveal scroll area now that preview is on screen.
             if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
 
-            // Defer the heavy setContent past the next paint so the preview frame lands first.
-            deferPastPaint(() => {
-              loadRawMarkdownIntoEditor(editor, tabContent);
-              useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
-              runPostLoad(false);
-              log.debug("perf:tab-switch", "Editor hydrated after preview", {
-                file: fileName,
-                sizeKB: contentSizeKB,
-                totalMs: +(performance.now() - switchT0).toFixed(1),
+            // Phase 2: kick off the worker parse in parallel with the preview
+            // paint frame. The worker chews through markdown→HTML→ProseMirror
+            // off the main thread; the main thread stays responsive (60fps
+            // animations, scrolling, sidebar interaction all work) the whole
+            // time. When the worker returns we feed the JSON straight to
+            // `setContent(json, false)` — much cheaper than re-parsing the
+            // markdown on the main thread.
+            //
+            // Worker errors fall through to the legacy main-thread parse via
+            // `loadRawMarkdownIntoEditor` (Phase 2 #15 — fallback path).
+            const workerStart = performance.now();
+            parseInWorker(tabContent, projectPath ?? undefined)
+              .then((parseResult) => {
+                // Bail if the user has switched away or external-change reload
+                // took over while the worker was running.
+                const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+                if (!current || current.previewState === "hydrated") return;
+
+                // Defer past paint — gives the preview at least one paint
+                // frame on screen even if the worker returns very fast.
+                deferPastPaint(() => {
+                  const sideMaps = deserializeSideMaps(parseResult);
+                  loadParsedJsonIntoEditor(editor, parseResult.doc, sideMaps);
+                  useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                  runPostLoad(false);
+                  log.debug("perf:tab-switch", "Editor hydrated after preview (worker)", {
+                    file: fileName,
+                    sizeKB: contentSizeKB,
+                    workerMs: +(performance.now() - workerStart).toFixed(1),
+                    workerPreprocess: parseResult.timings.preprocess,
+                    workerParse: parseResult.timings.parse,
+                    totalMs: +(performance.now() - switchT0).toFixed(1),
+                  });
+                });
+              })
+              .catch((err) => {
+                // Worker errored or aborted — fall back to legacy main-thread parse.
+                console.warn("Worker parse failed; falling back to main-thread parse:", activeTab.filePath, err);
+                deferPastPaint(() => {
+                  loadRawMarkdownIntoEditor(editor, tabContent);
+                  useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                  runPostLoad(false);
+                  log.debug("perf:tab-switch", "Editor hydrated after preview (worker-fallback)", {
+                    file: fileName,
+                    sizeKB: contentSizeKB,
+                    reason: err instanceof Error ? err.message : String(err),
+                    totalMs: +(performance.now() - switchT0).toFixed(1),
+                  });
+                });
               });
-            });
           })
           .catch((err) => {
-            // Preview failed — fall back to legacy synchronous path.
+            // Preview render failed — fall back to legacy synchronous path entirely.
             console.warn("Preview render failed:", activeTab.filePath, err);
             useEditorStore.getState().setPreviewState(tabIdOnEntry, "idle");
             loadRawMarkdownIntoEditor(editor, tabContent);

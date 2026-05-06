@@ -91,9 +91,6 @@ async function handleParse(req: ParseRequest): Promise<void> {
     progress(req.id, "preprocess", 0);
     const preprocessStart = performance.now();
     const { prepared, annotations, nodeIds, tableMetadata } = prepareMarkdownForParse(req.markdown);
-    void annotations; // forwarded back via ParseResult once schema for them is wired (M2.4)
-    void nodeIds;
-    void tableMetadata;
     const preprocessMs = performance.now() - preprocessStart;
     progress(req.id, "preprocess", 1);
 
@@ -121,10 +118,24 @@ async function handleParse(req: ParseRequest): Promise<void> {
     const docJson = node.toJSON();
     progress(req.id, "finalize", 1);
 
+    // Serialize the side-channel maps to entries arrays — easier to clone
+    // through postMessage and easier to type-assert on the receiving side.
+    const tableMetadataEntries: ParseResult["tableMetadataEntries"] = [];
+    for (const [tableIdx, colMap] of tableMetadata) {
+      const colEntries: Array<[number, { colType?: string; colCurrency?: string; colAggregation?: string }]> = [];
+      for (const [colIdx, meta] of colMap) {
+        colEntries.push([colIdx, meta]);
+      }
+      tableMetadataEntries.push([tableIdx, colEntries]);
+    }
+
     const result: ParseResult = {
       type: "result",
       id: req.id,
       doc: docJson,
+      annotationsEntries: Array.from(annotations.entries()),
+      nodeIdsEntries: Array.from(nodeIds.entries()),
+      tableMetadataEntries,
       timings: {
         preprocess: +preprocessMs.toFixed(1),
         parse: +parseMs.toFixed(1),
