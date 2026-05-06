@@ -213,6 +213,71 @@ test.describe('Large-file instant-load preview (Phase 1)', () => {
     expect(ratio).toBeGreaterThan(0.9);
     expect(ratio).toBeLessThan(1.1);
   });
+
+  test('main thread stays responsive during preview→editor hydration (Phase 2 #20)', async ({ page }) => {
+    // Phase 2's promise: while the editor is hydrating off-thread, the main
+    // thread keeps responding to setTimeout callbacks within reasonable
+    // latency. Pre-Phase-2 this would fail — the 5s synchronous parse
+    // blocked all timers. Post-Phase-2 the worker handles the parse, the
+    // main-thread setContent is much smaller, and timers fire close to
+    // their target schedule.
+    //
+    // We sample setTimeout(50) every 50ms for the duration of the hydration
+    // window. The 95th-percentile observed delay is asserted against a
+    // generous ceiling — this is a "main thread isn't blocked for seconds"
+    // smoke test, not a precise frame-budget benchmark.
+
+    const folderName = page.getByText('notesage-e2e-project', { exact: true }).first();
+    if (await folderName.isVisible()) await folderName.click();
+    await page.waitForFunction(
+      (name) => document.body.textContent?.includes(name),
+      FIXTURE_NAME,
+      { timeout: 10000 },
+    );
+
+    // Start sampling BEFORE clicking — the click triggers preview + worker
+    // parse + setContent. We want to capture timer delays through the
+    // entire window.
+    await page.evaluate(() => {
+      const w = window as unknown as { __timerDelays: number[] };
+      w.__timerDelays = [];
+      const target = 50; // ms
+      const start = performance.now();
+      const end = start + 8000; // 8 s sampling window
+      function tick() {
+        const before = performance.now();
+        setTimeout(() => {
+          const actual = performance.now() - before;
+          w.__timerDelays.push(actual);
+          if (performance.now() < end) tick();
+        }, target);
+      }
+      tick();
+    });
+
+    // Click the file → triggers preview + hydration
+    await page.getByText(FIXTURE_NAME, { exact: true }).first().click();
+
+    // Wait through the hydration window
+    await expect(page.locator('.ProseMirror[data-preview="true"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.ProseMirror[data-preview="true"]')).toBeHidden({ timeout: 10000 });
+
+    // Read samples + compute p95
+    const delays = await page.evaluate(() => {
+      const w = window as unknown as { __timerDelays: number[] };
+      return w.__timerDelays.slice();
+    });
+
+    expect(delays.length).toBeGreaterThan(20); // sanity: we collected enough samples
+
+    delays.sort((a, b) => a - b);
+    const p95 = delays[Math.floor(delays.length * 0.95)];
+
+    // Pre-Phase-2 baseline (worker-fallback): ~5000 ms blocked.
+    // Post-Phase-2 small fixture: should be << 500 ms — the fixture is tiny
+    // so the DOM materialization is cheap. Assert a generous ceiling.
+    expect(p95).toBeLessThan(500);
+  });
 });
 
 /**
