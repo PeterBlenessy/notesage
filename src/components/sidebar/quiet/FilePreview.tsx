@@ -69,6 +69,16 @@ const DEFAULT_LINE_COUNT = 10;
 /** Grace period (ms) before closing after mouse leaves; prevents flicker. */
 const CLOSE_GRACE_MS = 150;
 
+/**
+ * Hard ceiling on visible duration. Even if no mouseLeave event fires
+ * (main-thread freeze during large-file hydration, portal event-tree
+ * weirdness, browser hover-tracking bug, etc.), the popover auto-dismisses
+ * after this. User feedback 2026-05-06: hover popover got stuck visible
+ * after the cursor moved away. The grace-timer alone wasn't enough; this
+ * is the belt-and-braces.
+ */
+const MAX_OPEN_MS = 5000;
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -260,9 +270,11 @@ export function FilePreview({
 
   const reducedMotion = useReducedMotion();
 
-  // Timer handles for open-delay and close-grace.
+  // Timer handles for open-delay, close-grace, and the hard max-visible
+  // ceiling that auto-dismisses if no mouseLeave fires (see MAX_OPEN_MS).
   const openTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const maxOpenTimerRef = useRef<number | null>(null);
 
   // Per-mount cache: previously fetched previews keyed by absolute path.
   const cacheRef = useRef<Map<string, { body: string; title: string | null }>>(
@@ -286,8 +298,34 @@ export function FilePreview({
       if (closeTimerRef.current !== null) {
         window.clearTimeout(closeTimerRef.current);
       }
+      if (maxOpenTimerRef.current !== null) {
+        window.clearTimeout(maxOpenTimerRef.current);
+      }
     };
   }, []);
+
+  // Hard ceiling — when the popover opens, schedule a force-close after
+  // MAX_OPEN_MS. The user may have moved the cursor away during a
+  // main-thread freeze that swallowed the mouseLeave event; this fail-safe
+  // dismisses the popover regardless. Cleared on close.
+  useEffect(() => {
+    if (!open) return;
+    if (maxOpenTimerRef.current !== null) {
+      window.clearTimeout(maxOpenTimerRef.current);
+    }
+    maxOpenTimerRef.current = window.setTimeout(() => {
+      maxOpenTimerRef.current = null;
+      activePathRef.current = null;
+      setOpen(false);
+      setState({ status: "idle" });
+    }, MAX_OPEN_MS);
+    return () => {
+      if (maxOpenTimerRef.current !== null) {
+        window.clearTimeout(maxOpenTimerRef.current);
+        maxOpenTimerRef.current = null;
+      }
+    };
+  }, [open]);
 
   const loadPreview = useCallback(
     async (path: string) => {
@@ -482,6 +520,30 @@ export function FilePreview({
         // hover tooltip this would steal focus from the list row. Prevent it.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
+        // Belt-and-braces close paths (live-test 2026-05-06): pointerDown or
+        // Escape anywhere outside the popover dismisses it, even if the
+        // grace-timer mouseLeave path got swallowed (e.g. by a main-thread
+        // freeze during large-file hydration). Radix fires onInteractOutside
+        // BEFORE the click reaches the underlying element so this doesn't
+        // interfere with row-click-to-open.
+        onInteractOutside={() => {
+          if (closeTimerRef.current !== null) {
+            window.clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+          }
+          activePathRef.current = null;
+          setOpen(false);
+          setState({ status: "idle" });
+        }}
+        onEscapeKeyDown={() => {
+          if (closeTimerRef.current !== null) {
+            window.clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+          }
+          activePathRef.current = null;
+          setOpen(false);
+          setState({ status: "idle" });
+        }}
         // Honor prefers-reduced-motion. Expose a data attribute so the
         // render-time JS hook can be observed in tests / inspector; the
         // actual animation suppression is handled by Tailwind's
