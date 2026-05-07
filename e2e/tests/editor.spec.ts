@@ -65,9 +65,12 @@ async function openFileInEditor(
   // Wait for the file's actual content to land in the editor.
   // Without this, tests can interact with the empty editor before the
   // worker parse + streaming hydrate completes for the clicked file.
+  // 15 s timeout is generous — local Playwright runs land in ~150 ms,
+  // CI runners can be 10× slower with cold worker instantiation +
+  // dev-mode source maps + reduced CPU.
   if (expectedText) {
     await expect(page.locator('.ProseMirror[contenteditable="true"]'))
-      .toContainText(expectedText, { timeout: 5000 });
+      .toContainText(expectedText, { timeout: 15000 });
   }
 }
 
