@@ -50,6 +50,18 @@ class ParsedDocCache {
     return entry.result;
   }
 
+  /**
+   * Read WITHOUT refreshing LRU position. Useful for callers that need to
+   * inspect the cache without affecting eviction order — e.g. checking
+   * whether a parse result exists before deciding whether to re-parse,
+   * without "touching" the entry and inadvertently keeping it alive over
+   * a file that hasn't been revisited. Never use this as a replacement
+   * for `get` when the caller is about to hydrate the result.
+   */
+  peek(filePath: string): ParseResult | undefined {
+    return this.entries.get(filePath)?.result;
+  }
+
   has(filePath: string): boolean {
     return this.entries.has(filePath);
   }
