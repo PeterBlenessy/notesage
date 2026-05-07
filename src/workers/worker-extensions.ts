@@ -25,6 +25,14 @@
  * against the editor's own schema. A name mismatch silently strips the
  * node; an attribute mismatch silently strips the attribute. Both are
  * round-trip data loss.
+ *
+ * **Schema fingerprint discipline (Phase 3b — viewport cache).** The
+ * `CACHE_SCHEMA_VERSION` constant below is part of the IndexedDB viewport
+ * cache key. If you add, remove, rename, or re-attribute any extension in
+ * this file in a way that affects rendered HTML, **bump `CACHE_SCHEMA_VERSION`**
+ * so existing on-disk viewport cache entries auto-invalidate. The regression
+ * watch in `__tests__/worker-extensions.test.ts` snapshots the constant +
+ * sorted name list and fails on any drift, so you can't forget.
  */
 
 import StarterKit from "@tiptap/starter-kit";
@@ -47,6 +55,19 @@ import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 
 const lowlight = createLowlight(common);
+
+/**
+ * Schema fingerprint version for the Phase 3b IndexedDB viewport cache.
+ * Bump this whenever a worker extension's name, attribute schema, or
+ * parseHTML rule changes in a way that affects rendered HTML output.
+ *
+ * The cache key for each entry includes the SHA-256 of
+ * `${CACHE_SCHEMA_VERSION}|${sorted-extension-names}` — bumping the version
+ * forces every existing entry to invalidate on next read. The regression
+ * watch in `__tests__/worker-extensions.test.ts` snapshots the combined
+ * fingerprint and fails on any drift.
+ */
+export const CACHE_SCHEMA_VERSION = 1;
 
 // ---------------------------------------------------------------------------
 // Shims for heavy custom nodes
