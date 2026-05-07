@@ -28,9 +28,15 @@
  */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setupTauriMock } from '../fixtures/tauri-mock';
 import { SAMPLE_PROJECT_PATH } from '../fixtures/sample-data';
+
+// ESM equivalent of __dirname — preview-fidelity is run by Playwright under
+// the project's ESM toolchain, so the CommonJS `__dirname` global isn't
+// defined. `import.meta.url` + `fileURLToPath` is the standard substitute.
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const FIXTURE_PATH = resolve(__dirname, '../../tests/fixtures/preview-fidelity/mixed-small.md');
 const FIXTURE_NAME = 'mixed-small.md';
