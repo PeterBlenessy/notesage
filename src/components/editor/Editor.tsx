@@ -42,7 +42,6 @@ import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { EditorHydratingOverlay } from "./EditorHydratingOverlay";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
@@ -279,19 +278,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { reviewActive, compareBranch } = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
-
-  // Phase 2 #16-18 — edit-intent flag set by MarkdownPreview when the user
-  // tries to type/click during the brief preview window. Drives the
-  // EditorHydratingOverlay; cleared when the editor takes over (previewState
-  // → "hydrated") or when the user activates a different document.
-  const [previewEditIntent, setPreviewEditIntent] = useState(false);
-  useEffect(() => {
-    // Reset on document change OR when the preview is no longer on screen
-    // (state transitioned to "hydrated" / "idle" / something not "ready").
-    if (activeTab?.previewState !== "ready" && activeTab?.previewState !== "loading") {
-      setPreviewEditIntent(false);
-    }
-  }, [activeTab?.id, activeTab?.previewState]);
   const hfEditStateRef = useRef(hfEditState);
   hfEditStateRef.current = hfEditState;
   useFileWatcher();
@@ -759,22 +745,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                   hydrated → editor visible, preview unmounted (HTML dropped)
               */}
               {activeTab?.previewState === "ready" && activeTab.previewHtml ? (
-                <MarkdownPreview
-                  html={activeTab.previewHtml}
-                  onEditIntent={() => setPreviewEditIntent(true)}
-                />
+                <MarkdownPreview html={activeTab.previewHtml} />
               ) : null}
               <div style={activeTab?.previewState === "ready" ? { display: "none" } : undefined}>
                 <EditorContent editor={editor} />
               </div>
             </div>
           </div>
-          <EditorHydratingOverlay
-            open={
-              previewEditIntent &&
-              (activeTab?.previewState === "ready" || activeTab?.previewState === "loading")
-            }
-          />
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
           {editor && <TableHeaderMenu editor={editor} />}
           {hfEditState && createPortal(
