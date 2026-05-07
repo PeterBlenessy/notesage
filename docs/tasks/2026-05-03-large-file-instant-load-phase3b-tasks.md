@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-06 |
-| **Status** | Not started |
+| **Status** | In progress (M3b.1 landed 2026-05-07; M3b.2 next) |
 | **PRD** | [large-file-instant-load](../prds/2026-05-03-large-file-instant-load.md) |
 | **Phase** | 3b of 4 — Render-output cache + in-memory state cache (replaces reverted Phase 3) |
 | **Total** | 22 tasks across 6 milestones |
@@ -52,9 +52,9 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.1 Skip-preview rule for small files (1 task)
+## M3b.1 Skip-preview rule for small files (1 task) ✅
 
-### #1 — 50 KB skip-preview gate in `useEditorTabSwitch`
+### #1 — 50 KB skip-preview gate in `useEditorTabSwitch` ✅
 
 | Field | Value |
 | --- | --- |

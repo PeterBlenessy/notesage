@@ -62,6 +62,15 @@ function deferPastPaint(callback: () => void): void {
   });
 }
 
+/**
+ * Files under this byte threshold skip the comrak preview surface entirely
+ * and go straight to the worker parse. At this size the worker is fast
+ * enough (~50–250 ms) that mounting a preview adds visible flicker without
+ * buying useful time, and eliminates any comrak↔editor CSS divergence for
+ * small notes. PRD § "Layer 1b — Skip-preview rule" (Phase 3b).
+ */
+const SKIP_PREVIEW_THRESHOLD_BYTES = 50 * 1024;
+
 interface AISuggestion {
   from: number;
   to: number;
@@ -131,7 +140,8 @@ export function useEditorTabSwitch({
     if (activeTab.id === lastLoadedTabId.current) return;
       const switchT0 = performance.now();
       const fileName = activeTab.filePath.split("/").pop() ?? activeTab.filePath;
-      const contentSizeKB = activeTab.content ? +(new TextEncoder().encode(activeTab.content).length / 1024).toFixed(1) : 0;
+      const contentBytes = activeTab.content ? new TextEncoder().encode(activeTab.content).length : 0;
+      const contentSizeKB = +(contentBytes / 1024).toFixed(1);
 
       // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations)
       const prevTabId = lastLoadedTabId.current;
@@ -249,6 +259,53 @@ export function useEditorTabSwitch({
         cachedEditorStatesRef.current.delete(activeTab.id);
         useEditorStore.getState().setPreviewState(activeTab.id, "hydrated");
         runPostLoad(true);
+      } else if (isFreshMarkdownParse && contentBytes < SKIP_PREVIEW_THRESHOLD_BYTES) {
+        // SKIP-PREVIEW PATH (small file <50 KB) — go straight to the worker, no
+        // comrak preview surface mounted. PRD § "Layer 1b — Skip-preview rule"
+        // (Phase 3b). At this size the worker resolves in 50–250 ms; mounting
+        // a preview adds visible flicker without buying any user-visible time
+        // and reintroduces comrak↔editor CSS divergence on small notes.
+        const tabContent = activeTab.content;
+        log.debug("perf:tab-switch", "Skip-preview (small file)", {
+          file: fileName,
+          sizeKB: contentSizeKB,
+        });
+        useEditorStore.getState().setPreviewState(activeTab.id, "loading");
+        const workerStart = performance.now();
+        parseInWorker(tabContent, projectPath ?? undefined)
+          .then((parseResult) => {
+            const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+            if (!current || current.previewState === "hydrated") return;
+            deferPastPaint(() => {
+              const sideMaps = deserializeSideMaps(parseResult);
+              loadParsedJsonIntoEditor(editor, parseResult.doc, sideMaps);
+              useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+              runPostLoad(false);
+              log.debug("perf:tab-switch", "Editor hydrated (skip-preview)", {
+                file: fileName,
+                sizeKB: contentSizeKB,
+                workerMs: +(performance.now() - workerStart).toFixed(1),
+                workerPreprocess: parseResult.timings.preprocess,
+                workerParse: parseResult.timings.parse,
+                totalMs: +(performance.now() - switchT0).toFixed(1),
+              });
+            });
+          })
+          .catch((err) => {
+            // Worker errored — fall back to legacy main-thread parse.
+            console.warn("Worker parse failed (skip-preview); falling back:", activeTab.filePath, err);
+            deferPastPaint(() => {
+              loadRawMarkdownIntoEditor(editor, tabContent);
+              useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+              runPostLoad(false);
+              log.debug("perf:tab-switch", "Editor hydrated (skip-preview, worker-fallback)", {
+                file: fileName,
+                sizeKB: contentSizeKB,
+                reason: err instanceof Error ? err.message : String(err),
+                totalMs: +(performance.now() - switchT0).toFixed(1),
+              });
+            });
+          });
       } else if (isFreshMarkdownParse) {
         // PREVIEW PATH — fire renderMarkdownPreview, await, paint preview, defer
         // setContent past the next paint frame. Runs for click-from-sidebar AND
