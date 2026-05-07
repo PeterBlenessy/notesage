@@ -1274,18 +1274,12 @@ export async function streamingHydrate(
     return { aborted: true, chunkCount: 0, topLevelNodes: docContent.length, newDocSize: oldDocSize, oldDocSize, ms: performance.now() - t0 };
   }
 
-  // Reset the editor to an empty doc in a single transaction. Cheap
-  // (browsers tear down a 90 K-node subtree fast — the cost is in the
-  // BUILD, not the teardown — and this is one transaction, not N).
-  editor.chain().setMeta("addToHistory", false).setContent({ type: "doc", content: [] }).run();
-
-  if (signal.aborted) {
-    return { aborted: true, chunkCount: 0, topLevelNodes: docContent.length, newDocSize: editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
-  }
-
-  // Stream content in chunks, yielding between chunks so click events
-  // can fire and abort the loop. Single-chunk fast path for small docs
-  // (no yield overhead).
+  // Stream content in chunks. The FIRST chunk uses `setContent` so it
+  // replaces existing content in one transaction (matching the old
+  // `loadParsedJsonIntoEditor` behaviour for single-chunk small docs).
+  // Subsequent chunks use `insertContent` to append. Yielding via rAF
+  // between chunks so click events can fire and abort the loop —
+  // single-chunk fast path skips the yield, no overhead.
   let chunkCount = 0;
   for (let i = 0; i < docContent.length; i += HYDRATE_CHUNK_SIZE) {
     if (signal.aborted) {
@@ -1293,9 +1287,15 @@ export async function streamingHydrate(
     }
 
     const chunk = docContent.slice(i, i + HYDRATE_CHUNK_SIZE);
-    // `insertContent` accepts a JSON node OR an array of JSON nodes. For
-    // top-level chunks we pass the array directly.
-    editor.chain().setMeta("addToHistory", false).insertContent(chunk as never).run();
+    const isFirstChunk = i === 0;
+    if (isFirstChunk) {
+      // Single-shot replacement — same as legacy `loadParsedJsonIntoEditor`
+      // for small docs that fit in one chunk. Avoids the double-transaction
+      // (clear + insert) that detaches DOM Playwright is mid-clicking.
+      editor.chain().setMeta("addToHistory", false).setContent({ type: "doc", content: chunk } as never).run();
+    } else {
+      editor.chain().setMeta("addToHistory", false).insertContent(chunk as never).run();
+    }
     chunkCount++;
 
     // Yield between chunks via `requestAnimationFrame`. Why not

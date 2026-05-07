@@ -30,7 +30,19 @@ async function injectWorkspaceState(page: import('@playwright/test').Page): Prom
 /**
  * Expand the folder in sidebar and click a file to open it in the editor.
  */
-async function openFileInEditor(page: import('@playwright/test').Page, fileName: string) {
+async function openFileInEditor(
+  page: import('@playwright/test').Page,
+  fileName: string,
+  /**
+   * Optional text known to be present in the file's content. When provided,
+   * the helper waits for it to actually appear in the editor — guarding
+   * against the race where `.ProseMirror[contenteditable]` is visible
+   * from app start (empty editor) but the file's content hasn't streamed
+   * in yet. Phase 3b's parse cache + streaming hydrate is async, so this
+   * is more important than it used to be.
+   */
+  expectedText?: string,
+) {
   // Click the folder name to expand and load the file tree
   const folderName = page.getByText('notesage-e2e-project', { exact: true }).first();
   if (await folderName.isVisible()) {
@@ -49,6 +61,14 @@ async function openFileInEditor(page: import('@playwright/test').Page, fileName:
 
   // Wait for the ProseMirror editor to appear
   await expect(page.locator('.ProseMirror[contenteditable="true"]')).toBeVisible({ timeout: 5000 });
+
+  // Wait for the file's actual content to land in the editor.
+  // Without this, tests can interact with the empty editor before the
+  // worker parse + streaming hydrate completes for the clicked file.
+  if (expectedText) {
+    await expect(page.locator('.ProseMirror[contenteditable="true"]'))
+      .toContainText(expectedText, { timeout: 5000 });
+  }
 }
 
 test.describe('Editor', () => {
@@ -67,7 +87,7 @@ test.describe('Editor', () => {
   });
 
   test('type text in editor and content updates', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     const editor = page.locator('.ProseMirror[contenteditable="true"]');
 
@@ -86,7 +106,7 @@ test.describe('Editor', () => {
   });
 
   test('typing / triggers slash command menu', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     const editor = page.locator('.ProseMirror[contenteditable="true"]');
 
@@ -110,7 +130,7 @@ test.describe('Editor', () => {
   });
 
   test('select heading from slash command menu inserts heading', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     const editor = page.locator('.ProseMirror[contenteditable="true"]');
 
@@ -137,7 +157,7 @@ test.describe('Editor', () => {
   });
 
   test('Cmd+F opens the find bar', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     // Press Cmd+F to open the find bar
     await page.keyboard.press('Meta+f');
@@ -149,7 +169,7 @@ test.describe('Editor', () => {
   });
 
   test('typing search query highlights matches', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     // Open find bar
     await page.keyboard.press('Meta+f');
@@ -174,7 +194,7 @@ test.describe('Editor', () => {
   });
 
   test('Escape closes the find bar', async ({ page }) => {
-    await openFileInEditor(page, 'welcome.md');
+    await openFileInEditor(page, 'welcome.md', 'Welcome to Notesage');
 
     // Open find bar
     await page.keyboard.press('Meta+f');
