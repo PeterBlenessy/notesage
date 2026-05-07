@@ -1,0 +1,220 @@
+/**
+ * Styles for the CM6 Live Preview PoC.
+ *
+ * Uses Notesage's CSS variables (`--color-*`, `--color-accent-primary`) so the
+ * PoC respects the active theme + accent.
+ */
+
+.cm-poc-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family:
+    "SF Pro Text", "SF Pro Display", system-ui, -apple-system, sans-serif;
+}
+
+.cm-poc-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  background: var(--color-card);
+  flex-shrink: 0;
+}
+
+.cm-poc-banner-title {
+  font-weight: 600;
+}
+
+.cm-poc-banner-hint {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+
+.cm-poc-banner-exit {
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-foreground);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.cm-poc-banner-exit:hover {
+  background: var(--color-muted);
+}
+
+.cm-poc-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 0;
+}
+
+/* Center the editor like the real app does */
+.cm-poc-editor-host .cm-editor {
+  max-width: 720px;
+  margin: 0 auto;
+  font-family:
+    "Source Serif 4", "Source Serif Pro", "iA Writer Quattro", Charter,
+    "Iowan Old Style", "Apple Garamond", "Bitstream Charter", "Sitka Text",
+    Cambria, serif;
+  font-size: 17px;
+  line-height: 1.65;
+  background: transparent;
+}
+
+.cm-poc-editor-host .cm-content {
+  padding: 8px 24px;
+  caret-color: var(--color-accent-primary);
+}
+
+.cm-poc-editor-host .cm-line {
+  padding: 0 4px;
+}
+
+.cm-poc-editor-host .cm-focused {
+  outline: none;
+}
+
+.cm-poc-editor-host .cm-selectionBackground,
+.cm-poc-editor-host .cm-content ::selection {
+  background: var(--color-muted) !important;
+}
+
+/* ---- Heading styles (cursor off line) ---- */
+
+.cm-poc-editor-host .cm-md-heading {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.cm-poc-editor-host .cm-md-h1 {
+  font-size: 1.9em;
+  line-height: 1.25;
+}
+
+.cm-poc-editor-host .cm-md-h2 {
+  font-size: 1.55em;
+  line-height: 1.3;
+}
+
+.cm-poc-editor-host .cm-md-h3 {
+  font-size: 1.3em;
+  line-height: 1.35;
+}
+
+.cm-poc-editor-host .cm-md-h4 {
+  font-size: 1.15em;
+  line-height: 1.4;
+}
+
+.cm-poc-editor-host .cm-md-h5,
+.cm-poc-editor-host .cm-md-h6 {
+  font-size: 1em;
+  line-height: 1.45;
+}
+
+/* ---- Inline marks ---- */
+
+.cm-poc-editor-host .cm-md-strong {
+  font-weight: 700;
+}
+
+.cm-poc-editor-host .cm-md-em {
+  font-style: italic;
+}
+
+.cm-poc-editor-host .cm-md-inline-code {
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--color-muted);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.cm-poc-editor-host .cm-md-link {
+  color: var(--color-accent-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+
+/* ---- Markdown markers (visible on cursor line) ---- */
+
+.cm-poc-editor-host .cm-md-marker {
+  color: var(--color-muted-foreground);
+  opacity: 0.55;
+}
+
+/* ---- Blockquote (when cursor inside callout — shown as source) ---- */
+
+.cm-poc-editor-host .cm-md-blockquote {
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+/* ---- Callout block widget (cursor outside) ---- */
+
+.cm-poc-callout {
+  display: block;
+  margin: 14px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--color-accent-primary);
+  border-radius: 6px;
+  background: var(--color-muted);
+  font-style: normal;
+  font-family:
+    "Source Serif 4", "Source Serif Pro", "iA Writer Quattro", Charter, serif;
+}
+
+.cm-poc-callout-note {
+  border-left-color: var(--color-accent-primary);
+}
+.cm-poc-callout-tip {
+  border-left-color: oklch(58% 0.15 140);
+}
+.cm-poc-callout-warning {
+  border-left-color: oklch(70% 0.18 60);
+}
+.cm-poc-callout-important {
+  border-left-color: var(--color-destructive);
+}
+
+.cm-poc-callout-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-foreground);
+  margin-bottom: 6px;
+}
+
+.cm-poc-callout-icon {
+  font-size: 1.05em;
+}
+
+.cm-poc-callout-body {
+  white-space: pre-wrap;
+  font-size: 0.95em;
+  line-height: 1.55;
+  color: var(--color-foreground);
+}
+
+/* Reduced motion users: no transitions on cursor-line marker reveal */
+@media (prefers-reduced-motion: no-preference) {
+  .cm-poc-editor-host .cm-md-marker {
+    transition: opacity 100ms ease;
+  }
+}

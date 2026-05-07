@@ -99,7 +99,31 @@ function openSettingsAndCloseMenus(setOpen: (open: boolean) => void): void {
   requestAnimationFrame(() => setOpen(true));
 }
 
+// PoC: lazy-loaded only when ?poc=cm6 is present so the PoC chunk doesn't
+// land in the main bundle.
+const Cm6LivePreviewPoC = lazy(() =>
+  import("@/components/editor/poc/CM6LivePreviewPoC").then((m) => ({
+    default: m.CM6LivePreviewPoC,
+  })),
+);
+
 function App() {
+  // PoC short-circuit: ?poc=cm6 renders the CodeMirror 6 live-preview PoC
+  // and bypasses the rest of the Notesage shell. Reload without the query
+  // param to return to the normal app.
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("poc") === "cm6"
+  ) {
+    return (
+      <ThemeProvider>
+        <Suspense fallback={null}>
+          <Cm6LivePreviewPoC />
+        </Suspense>
+      </ThemeProvider>
+    );
+  }
+
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteInitialMode, setCommandPaletteInitialMode] = useState<PaletteMode>("default");
   const [commandPaletteDrilldown, setCommandPaletteDrilldown] = useState("");
