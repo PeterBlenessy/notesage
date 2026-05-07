@@ -17,6 +17,13 @@ export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
 export type UiPreview = "legacy" | "quiet-composer";
+/**
+ * Editor engine for the WYSIWYG view. "tiptap" is the production
+ * ProseMirror+Tiptap stack. "cm6-live-preview" is the experimental
+ * CodeMirror 6 live-preview PoC (research doc 2026-05-07). Source mode
+ * is independent of this setting — it always uses the CM6 source editor.
+ */
+export type EditorEngine = "tiptap" | "cm6-live-preview";
 interface SettingsStore {
   theme: Theme;
   /**
@@ -109,6 +116,13 @@ interface SettingsStore {
    * only when this is "quiet-composer".
    */
   uiPreview: UiPreview;
+  /**
+   * Editor engine for the WYSIWYG view (PoC, research doc 2026-05-07).
+   * "tiptap" is the production stack; "cm6-live-preview" routes the
+   * markdown WYSIWYG view through the CodeMirror 6 PoC. Toggleable from
+   * the StatusTray popover. Default "tiptap".
+   */
+  editorEngine: EditorEngine;
   /**
    * Quiet Composer pinned-panel mode (PRD 2026-04-21-ui-refresh, task #28).
    * When true the FloatingCommandBar renders as a right-edge side panel
@@ -260,6 +274,7 @@ interface SettingsStore {
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
   setUiPreview: (preview: UiPreview) => void;
+  setEditorEngine: (engine: EditorEngine) => void;
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
   setCmdBarExpandedWidth: (width: number) => void;
@@ -319,6 +334,7 @@ export const useSettingsStore = create<SettingsStore>()(
       showAgentModePicker: false,
       crossProjectMode: false,
       uiPreview: "legacy",
+      editorEngine: "tiptap",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
       cmdBarExpandedWidth: 640,
@@ -579,6 +595,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ uiPreview: preview });
       },
 
+      setEditorEngine: (engine: EditorEngine) => {
+        set({ editorEngine: engine });
+      },
+
       setCmdBarPinned: (pinned: boolean) => {
         set({ cmdBarPinned: pinned });
       },
@@ -689,7 +709,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 13,
+      version: 14,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -822,6 +842,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // previous hardcoded value) so existing users see zero visual change.
           if (typeof state.cmdBarExpandedHeight !== 'number') {
             state.cmdBarExpandedHeight = 480;
+          }
+        }
+        if (version < 14) {
+          // Editor engine PoC (research doc 2026-05-07). Existing users
+          // default to the production "tiptap" engine — no surprise.
+          if (state.editorEngine !== "cm6-live-preview") {
+            state.editorEngine = "tiptap";
           }
         }
         return state;

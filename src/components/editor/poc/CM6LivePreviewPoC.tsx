@@ -1,17 +1,23 @@
 /**
- * Standalone PoC: CodeMirror 6 + @lezer/markdown live-preview editor.
+ * CodeMirror 6 + @lezer/markdown live-preview editor PoC.
  *
- * Activated by appending `?poc=cm6` to the URL. Bypasses the rest of the
- * Notesage shell and renders a single full-screen editor with a baked-in
- * sample document so you can feel the live-preview UX (Obsidian-style):
+ * Two modes:
  *
+ *   - **Standalone** (`?poc=cm6` in URL): full-page takeover with banner,
+ *     baked-in sample document, exit button. Used for first-look feel-testing
+ *     without touching real files.
+ *
+ *   - **Embedded** (props provided): mounts inline inside the normal editor
+ *     layout, accepts the active tab's content and writes back through
+ *     `onChange`/`onSave`. Toggled via the StatusTray "WYSIWYG | Markdown"
+ *     segmented picker (settings.editorEngine === "cm6-live-preview").
+ *
+ * UX (Obsidian-style):
  *   - Cursor OFF a line → markdown markers (#, **, _, `, [, ](url)) hidden,
  *     headings/bold/italic/code/links rendered styled.
  *   - Cursor ON a line → markers reveal so you can edit them.
  *   - Callout blocks (`> [!note]`) render as cards when cursor is outside,
  *     swap to source view when cursor is inside.
- *
- * No file IO, no persistence, no AI integration. Reload the page to reset.
  */
 
 import { useEffect, useRef } from "react";
@@ -72,8 +78,8 @@ This is the exact decision point for the migration recommendation in the researc
 `;
 
 const cmHighlight = HighlightStyle.define([
-  // We mostly style via our live-preview plugin; this fallback covers
-  // anything we don't decorate (e.g. blockquote markers when cursor is inside).
+  // Fallback styling for nodes our live-preview plugin doesn't decorate
+  // (e.g. blockquote text when the cursor is inside the block).
   { tag: t.heading, fontWeight: "600" },
   { tag: t.strong, fontWeight: "700" },
   { tag: t.emphasis, fontStyle: "italic" },
@@ -82,27 +88,85 @@ const cmHighlight = HighlightStyle.define([
   { tag: t.monospace, fontFamily: "JetBrains Mono, SF Mono, Menlo, monospace" },
 ]);
 
-export function CM6LivePreviewPoC({ onExit }: { onExit?: () => void }) {
+interface CM6LivePreviewPoCProps {
+  /**
+   * Document content. When provided, embedded mode is active and the PoC
+   * mounts inline (no banner, no exit button). When omitted, standalone
+   * mode is active with the baked-in SAMPLE doc.
+   */
+  content?: string;
+  /** Called on every doc change in embedded mode. */
+  onChange?: (content: string) => void;
+  /** Cmd+S handler in embedded mode. */
+  onSave?: () => void;
+  /** Optional explicit exit handler for standalone mode. */
+  onExit?: () => void;
+}
+
+export function CM6LivePreviewPoC({
+  content,
+  onChange,
+  onSave,
+  onExit,
+}: CM6LivePreviewPoCProps = {}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(onChange);
+  const onSaveRef = useRef(onSave);
+  const isEmbedded = content !== undefined;
 
+  // Keep callback refs current without re-creating the editor on every prop
+  // change (the editor must stay stable so cursor / undo / scroll position
+  // survive parent re-renders).
+  onChangeRef.current = onChange;
+  onSaveRef.current = onSave;
+
+  // Track whether we're programmatically setting content (avoids feedback loops
+  // when the parent updates `content` after our own onChange).
+  const settingContent = useRef(false);
+
+  // -----------------------------------------------------------------
+  // Mount the editor exactly once. Subsequent `content` prop changes
+  // are reconciled via a separate effect below so the editor's local
+  // state (selection, undo, decorations) is preserved.
+  // -----------------------------------------------------------------
   useEffect(() => {
     if (!hostRef.current) return;
 
+    const initialDoc = content ?? SAMPLE;
+
+    const appKeymap = keymap.of([
+      {
+        key: "Mod-s",
+        run: () => {
+          onSaveRef.current?.();
+          return true;
+        },
+      },
+    ]);
+
+    const updateListener = EditorView.updateListener.of((update) => {
+      if (settingContent.current) return;
+      if (update.docChanged) {
+        const next = update.state.doc.toString();
+        onChangeRef.current?.(next);
+      }
+    });
+
     const state = EditorState.create({
-      doc: SAMPLE,
+      doc: initialDoc,
       extensions: [
         history(),
         drawSelection(),
         highlightActiveLine(),
         bracketMatching(),
+        appKeymap,
         keymap.of([...defaultKeymap, ...historyKeymap]),
         markdown(),
         syntaxHighlighting(cmHighlight),
         livePreviewPlugin,
         EditorView.lineWrapping,
-        // No line numbers in PoC — feels more like a writing surface.
-        // Uncomment to enable: lineNumbers(),
+        updateListener,
       ],
     });
 
@@ -116,20 +180,50 @@ export function CM6LivePreviewPoC({ onExit }: { onExit?: () => void }) {
       view.destroy();
       viewRef.current = null;
     };
-    // Intentionally empty deps — we want one editor for the lifetime of the PoC
+    // Mount-only: editor lifecycle is independent of prop changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // -----------------------------------------------------------------
+  // Reconcile content prop in embedded mode (e.g. tab switch).
+  // -----------------------------------------------------------------
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || content === undefined) return;
+    const current = view.state.doc.toString();
+    if (current === content) return;
+    settingContent.current = true;
+    try {
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: content },
+      });
+    } finally {
+      settingContent.current = false;
+    }
+  }, [content]);
 
   const handleExit = () => {
     if (onExit) {
       onExit();
       return;
     }
-    // Strip ?poc=cm6 from the URL and reload so the user lands back in the app
     const url = new URL(window.location.href);
     url.searchParams.delete("poc");
     window.history.replaceState({}, "", url.toString());
     window.location.reload();
   };
+
+  if (isEmbedded) {
+    // Embedded: render only the editor host. The surrounding shell (toolbar,
+    // status bar, sidebar) belongs to the rest of the app.
+    return (
+      <div
+        ref={hostRef}
+        className="cm-poc-editor-host cm-poc-editor-embedded"
+        data-poc="cm6-live-preview-embedded"
+      />
+    );
+  }
 
   return (
     <div className="cm-poc-page" data-poc="cm6-live-preview">

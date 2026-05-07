@@ -175,14 +175,24 @@ function EditorToolsGroup({
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
 }) {
+  const editorEngine = useSettingsStore((s) => s.editorEngine);
+  const setEditorEngine = useSettingsStore((s) => s.setEditorEngine);
   const showSourceToggle = Boolean(onToggleViewMode);
   const showMic = Boolean(editor);
-  if (!showMic && !showSourceToggle) return null;
+  // Engine picker is meaningful only when the active doc is a markdown WYSIWYG
+  // surface (i.e. the source toggle is wired up — same gate). Hidden in source
+  // mode because the engine choice is orthogonal there.
+  const showEnginePicker = showSourceToggle && viewMode !== "source";
+  if (!showMic && !showSourceToggle && !showEnginePicker) return null;
 
   const isSource = viewMode === "source";
+  const engineIsCm6 = editorEngine === "cm6-live-preview";
 
   return (
-    <section className="flex items-center gap-2" aria-label="Editor tools">
+    <section
+      className="flex items-center gap-2 flex-wrap"
+      aria-label="Editor tools"
+    >
       {showMic && (
         // Re-enable the MicButton's built-in Tooltip so it matches the
         // rest of the tray's chrome (consistent with source toggle,
@@ -190,6 +200,53 @@ function EditorToolsGroup({
         // suppressed it to avoid the focus-on-popover-open auto-show, but
         // the user explicitly wants tooltip parity here.
         <MicButton editor={editor ?? null} />
+      )}
+      {showEnginePicker && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className="ml-auto inline-flex items-center rounded-sm border border-border bg-background p-0.5"
+              role="radiogroup"
+              aria-label="Editor engine"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!engineIsCm6}
+                onClick={() => setEditorEngine("tiptap")}
+                className={cn(
+                  "inline-flex items-center h-6 px-2 rounded-sm text-[11px] transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  !engineIsCm6
+                    ? "bg-muted text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                WYSIWYG
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={engineIsCm6}
+                onClick={() => setEditorEngine("cm6-live-preview")}
+                className={cn(
+                  "inline-flex items-center h-6 px-2 rounded-sm text-[11px] transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  engineIsCm6
+                    ? "bg-muted text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Markdown
+              </button>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[260px]">
+            {engineIsCm6
+              ? "CodeMirror 6 live-preview engine (PoC). Markdown markers reveal on the cursor line."
+              : "Tiptap rich-text engine (production). Click Markdown to switch to the live-preview PoC."}
+          </TooltipContent>
+        </Tooltip>
       )}
       {showSourceToggle && (
         <Tooltip>

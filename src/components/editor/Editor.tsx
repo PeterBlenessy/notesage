@@ -42,6 +42,14 @@ import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
+
+// PoC: lazy-loaded only when settings.editorEngine === "cm6-live-preview".
+// Keeps the CM6 PoC chunk out of the main bundle for everyone using Tiptap.
+const Cm6LivePreviewPoC = lazy(() =>
+  import("./poc/CM6LivePreviewPoC").then((m) => ({
+    default: m.CM6LivePreviewPoC,
+  })),
+);
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
@@ -99,6 +107,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
   const uiPreview = useSettingsStore((s) => s.uiPreview);
+  const editorEngine = useSettingsStore((s) => s.editorEngine);
   const contentWidth = useSettingsStore((s) => s.contentWidth);
   const marginTop = useSettingsStore((s) => s.marginTop);
   const marginBottom = useSettingsStore((s) => s.marginBottom);
@@ -646,6 +655,36 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
           onCmViewChange={setCmView}
         />
+      ) : editorEngine === "cm6-live-preview" &&
+        activeTab?.fileType === "markdown" ? (
+        // Engine PoC (research doc 2026-05-07). Skips BubbleMenu / FindBar /
+        // FrontmatterBlock / TableHeaderMenu — none of them target CM6 — and
+        // routes the active tab's markdown through the live-preview editor.
+        // Toggle back via StatusTray "WYSIWYG | Markdown" picker.
+        <div className="flex-1 overflow-hidden relative">
+          <div className="h-full overflow-y-auto">
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Loading editor…
+                </div>
+              }
+            >
+              <Cm6LivePreviewPoC
+                content={activeTab?.content ?? ""}
+                onChange={(next) => {
+                  if (!activeTab) return;
+                  const isDirty = next !== activeTab.content || activeTab.isDirty;
+                  updateTabContent(activeTab.id, next, isDirty);
+                }}
+                onSave={() => {
+                  if (!activeTab) return;
+                  void saveFile(activeTab.filePath, activeTab.content, activeTab.id);
+                }}
+              />
+            </Suspense>
+          </div>
+        </div>
       ) : (
         <div className="flex-1 overflow-hidden relative">
           {/*
