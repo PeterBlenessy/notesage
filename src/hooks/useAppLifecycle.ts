@@ -16,6 +16,7 @@ import { log, setLogLevel } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { getPrewarmCandidates, prewarmParseCache } from "@/lib/prewarm-parse-cache";
 import { toast } from "sonner";
 import type { PaletteMode } from "@/lib/command-palette";
 
@@ -253,6 +254,10 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
     };
 
     startupWithTimeout();
+
+    // Fire-and-forget: pre-warm the parsed-doc cache in the background.
+    // Runs concurrently with tree validation; never blocks startupReady.
+    prewarmParseCache(getPrewarmCandidates());
   }, []);
 
   // Mid-session iCloud detection used to live here as a separate
