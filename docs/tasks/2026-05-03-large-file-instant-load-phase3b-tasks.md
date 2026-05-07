@@ -3,12 +3,53 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-06 |
-| **Status** | In progress (M3b.1 landed 2026-05-07; M3b.2 next) |
+| **Status** | **Pivoted and shipped 2026-05-07.** M3b.1 + new architecture (streaming hydrate + parse cache + abort propagation + two settings toggles) replaced milestones M3b.2–M3b.6. See PRD § "Phase 3b — As shipped" for the full story. Headline: 506 KB book click→editable went from ~22 s (M2.5 regression) → ~5 s first load → ~2.8 s cache-hit revisit. |
 | **PRD** | [large-file-instant-load](../prds/2026-05-03-large-file-instant-load.md) |
-| **Phase** | 3b of 4 — Render-output cache + in-memory state cache (replaces reverted Phase 3) |
-| **Total** | 22 tasks across 6 milestones |
+| **Phase** | 3b of 4 — pivoted from "5-layer viewport cache" to "streaming hydrate + parse cache" |
+| **Total** | 22 tasks across 6 milestones — original plan; ~70% superseded by the pivot |
 | **Complexity mix** | \~10 S, \~10 M, \~2 L |
-| **Suggested order** | M3b.1 Skip-preview rule (#1) → M3b.2 In-memory state cache + LRU (#2 → #3 → #4 → #5) → M3b.3 Pre-warm (#6 → #7 → #8) → M3b.4 IDB viewport cache foundation (#9 → #10 → #11 → #12) → M3b.5 Viewport cache integration + swap (#13 → #14 → #15 → #16) → M3b.6 Edit-A overlay (#17 → #18) → M3b.7 Settings + tests + measurement (#19 → #20 → #21 → #22) |
+| **Final shape** | M3b.1 (skip-preview, ✅) + new architecture (streaming hydrate, parse cache, abort propagation, settings toggles, ✅). M3b.2 / M3b.6 dropped, M3b.3 / M3b.4 / M3b.5 deferred — see § "Pivot inventory" below. |
+
+## Pivot inventory (2026-05-07)
+
+The original plan called for 5 layers (skip-preview, in-memory state cache, IDB viewport cache, pre-warm, Edit-A overlay). In implementation we shipped layer 1b as planned, then pivoted to a **simpler architecture** that hit the same outcome with less infrastructure:
+
+**What actually shipped:**
+
+| Item | Where | Commit |
+| --- | --- | --- |
+| M3b.1 — Skip-preview rule for files <50 KB | `useEditorTabSwitch.ts` | `350d817a` |
+| **Streaming hydrate** — chunked `insertContent` with rAF yields and abort gating | `lib/markdown.ts` `streamingHydrate()` | `2602a21f` |
+| **Parse-result cache** — singleton in-memory cache of worker output, keyed by file path | `lib/parsed-doc-cache.ts` (new) | `2602a21f` |
+| **AbortController propagation** — fresh controller per tab activation, threads through worker bridge + post-worker .then chain | `useEditorTabSwitch.ts` | `2602a21f` |
+| Cache invalidation hooks | `useFileWatcher.ts` (external change), edit-detection effect | `2602a21f` |
+| `MarkdownPreview key={activeTab.id}` for clean DOM remount | `Editor.tsx` | `2602a21f` |
+| `instantLoadPreview` toggle | System settings → Performance | `3b277b3c` |
+| `sidebarFilePreviewEnabled` toggle | System settings → Files | `3b277b3c` |
+| `perf:tab-*` → `perf:doc-*` rename | logger.ts + call sites | `7ec5140a` |
+
+**What of the original plan was dropped, deferred, or covered by the pivot:**
+
+| Original milestone | Status | Reasoning |
+| --- | --- | --- |
+| M3b.1 Skip-preview rule | ✅ Shipped | As planned |
+| M3b.2 (#2-#5) Path-keyed state cache + LRU | ❌ Dropped | Parse cache + streaming hydrate covers in-session revisits at ~2.8 s for the book. State cache via `view.updateState` would be theoretically faster but requires multiple `EditorState` refs in memory. Marginal win, real complexity. |
+| M3b.3 (#6-#8) Background pre-warm at app start | 🟡 Deferred | Could populate the parse cache during the existing 4–6 s tree-validation window for top-5 Recents + Pinned files. Saves ~300 ms on the first click of those files. Marginal — defer until measurement shows it matters. |
+| M3b.4 (#9-#12) IndexedDB viewport cache foundation | 🟡 Deferred | Would address cold-start (cross-session) — first paint &lt;50 ms on app restart by mounting cached HTML statically. Parse cache is in-memory only (lost on quit). Worth pursuing if cold-start latency becomes a complaint, but current ~5 s first-load is acceptable. |
+| M3b.5 (#13-#16) Viewport cache integration + swap | 🟡 Deferred | Same as M3b.4 — depends on the IDB cache layer existing. |
+| M3b.6 (#17-#18) Edit-A overlay | ❌ Dropped | Streaming hydrate makes the wait short enough (and progressively interactive) that a "loading" overlay is overkill. M2.5's original implementation regressed perf by 16 s and was reverted in `fae852de` — lesson learned. |
+| M3b.7 #19 — "Clear viewport cache" Settings button | ❌ N/A | No viewport cache built. Parse cache is in-memory only and clears on quit; no diagnostic button needed. |
+| M3b.7 #20 — Unit tests for cache + capture flow | 🟡 Open | Should write tests for `parsedDocCache` and `streamingHydrate`. Open follow-up. |
+| M3b.7 #21 — E2E test for cold-start cache hit | ❌ N/A | Depends on viewport cache (deferred). |
+| M3b.7 #22 — Measurement gate + PRD update | ✅ Done | Headline numbers captured in PRD § "Phase 3b — As shipped". Performance baseline doc entry is an open follow-up. |
+
+**Open follow-ups** (worth doing, but not gating):
+- Unit tests for `parsedDocCache` (LRU eviction, mtime invalidation behaviour, byte-cap behaviour)
+- Unit tests for `streamingHydrate` (chunk count, abort during stream, side-channel application order)
+- `docs/performance-baseline.md` entry for the post-pivot numbers
+- Possible follow-up PRD if cold-start latency on the book becomes a user complaint — viewport cache (Layer 3b) is the answer there
+
+---
 
 ## Scope
 
@@ -66,7 +107,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.2 In-memory state cache + LRU eviction (4 tasks)
+## M3b.2 In-memory state cache + LRU eviction (4 tasks) ❌ DROPPED — see "Pivot inventory" above
 
 ### #2 — Path-keyed state cache module
 
@@ -110,7 +151,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.3 Background pre-warm at app start (3 tasks)
+## M3b.3 Background pre-warm at app start (3 tasks) 🟡 DEFERRED — see "Pivot inventory" above
 
 ### #6 — Background worker pool for parsing
 
@@ -144,7 +185,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.4 IndexedDB viewport cache foundation (4 tasks)
+## M3b.4 IndexedDB viewport cache foundation (4 tasks) 🟡 DEFERRED — see "Pivot inventory" above
 
 ### #9 — IDB schema + access layer
 
@@ -188,7 +229,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.5 Viewport cache integration + swap (4 tasks)
+## M3b.5 Viewport cache integration + swap (4 tasks) 🟡 DEFERRED — see "Pivot inventory" above
 
 ### #13 — Cache lookup before preview path
 
@@ -232,7 +273,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.6 Edit-A overlay (2 tasks)
+## M3b.6 Edit-A overlay (2 tasks) ❌ DROPPED — see "Pivot inventory" above
 
 ### #17 — Overlay component
 
@@ -256,7 +297,7 @@ The 4.4 s background hydration is the same DOM materialize floor we hit in Phase
 
 ---
 
-## M3b.7 Settings + tests + measurement gate (4 tasks)
+## M3b.7 Settings + tests + measurement gate (4 tasks) 🟡 PARTIAL — measurement done, tests open
 
 ### #19 — "Clear viewport cache" Settings button
 

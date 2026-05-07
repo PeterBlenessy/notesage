@@ -3,9 +3,9 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-03 |
-| **Status** | Phase 1 + Phase 2 landed. Phase 3 explored and reverted (see post-mortem). Phase 3b in planning. |
+| **Status** | Phase 1 + Phase 2 + Phase 3b landed (2026-05-07). Phase 3 explored and reverted; Phase 3b PIVOTED from the original 5-layer plan to **streaming hydrate + parse cache + abort propagation**, which delivered the core wins without needing the IDB viewport cache (Layer 3b) or the in-memory state cache (Layer 2b). See § "Phase 3b — As shipped". |
 | **Priority** | High — current behavior on book-length markdown is a UX failure (&gt;30s frozen UI on a real user file) |
-| **Impact** | Opening any markdown file feels instant. First open paints content in &lt;300ms via Rust HTML preview (Layer 1), hydrates to a fully editable Tiptap editor invisibly in the background (Layer 2). **In-session repeat opens** restore in &lt;100ms via an in-memory state cache (Layer 2b). **Cold app starts on previously-edited files** mount cached viewport HTML in &lt;50ms via IndexedDB (Layer 3b). Frequently-opened docs are pre-warmed in the background during the existing tree-validation window (Layer 4b) so they're hot by the time the user clicks. The "is the app frozen?" failure mode becomes structurally impossible. |
+| **Impact** | Opening any markdown file feels instant. First open paints content in &lt;300ms via Rust HTML preview (Layer 1), hydrates via off-thread worker parse + chunked streaming insertion (Layer 2 + streaming hydrate). The streaming loop yields to a paint frame between chunks, so clicks during a load cleanly interrupt and the new doc's pipeline runs instead. **In-session repeat opens** skip the worker via the parse-result cache (~2.8 s click → editable on the 506 KB book vs. ~5 s first load and ~22 s pre-pivot). The "is the app frozen?" failure mode becomes structurally impossible because every chunk yields. |
 | **Trigger** | A 506 KB / 6634-line / 396-heading / 952-table-row markdown book (`Svenska-Investmentbolag-v0.10.0.md`) takes &gt;30s to open with no visible progress, no spinner, no way to cancel. The main thread is fully blocked the entire time. |
 | **Related research** | [llm-wiki-data-transformation](../research/llm-wiki-data-transformation.md) — discovered the SQLite-index/parser pattern. The parsed-state disk cache idea originated here; Phase 3 found this approach insufficient on its own (see post-mortem) and pivoted to the viewport-render cache architecture. |
 | **Related PRD** | [2026-04-14-markdown-preprocessing-hardening](2026-04-14-markdown-preprocessing-hardening.md) — replaces the 13 regex preprocessing passes with a single markdown-it plugin pass; complements this PRD by making the worker hydration faster |
@@ -466,6 +466,57 @@ Total RAM increase: ~150 MB peak. Total disk increase: ~3 MB IDB. Acceptable on 
 - No virtual scrolling (multi-month investment, not on the table).
 - No source-mode default for huge files (user pushed back; not coming back).
 - No new user-facing settings beyond the diagnostic clear-cache button.
+
+### Phase 3b — As shipped (pivoted from original plan, 2026-05-07)
+
+The original Phase 3b plan (above) was a 5-layer architecture targeting the 4.4 s `setContent` DOM-materialize floor via cached viewport HTML. **In implementation we pivoted to a different approach** that hit the same outcome with less moving infrastructure:
+
+**What actually shipped (commits `350d817a`, `2602a21f`, `3b277b3c`, `7ec5140a`):**
+
+1. **M3b.1 — Skip-preview rule for files <50 KB.** Shipped as planned. Skips the comrak preview surface entirely for small notes. (commit `350d817a`)
+
+2. **Streaming hydrate (replaces `loadParsedJsonIntoEditor`'s single-shot `setContent`).** New `streamingHydrate(editor, doc, side, signal)` in `src/lib/markdown.ts` inserts the parsed JSON in 1000-top-level-node chunks via `editor.chain().insertContent(chunk).run()`, yielding via `requestAnimationFrame` between chunks. Each chunk's start checks the abort signal — a click on a different tab during streaming cleanly cancels the loop. The book's previously-uninterruptible 4.4 s synchronous block is now ~90 yieldable chunks; cursor / hover / hit-tests stay responsive throughout.
+
+3. **Parse-result cache (`src/lib/parsed-doc-cache.ts`).** Singleton in-memory cache keyed by file path. The worker output is stored the moment it returns — so an aborted hydration mid-stream does NOT throw the parse work away. On the next click of the same file the worker is bypassed entirely; pipeline goes straight to streaming hydrate. Bounded by 100 MB LRU. Invalidated on user edit (`transaction.docChanged && !addToHistory`), external file change, or app quit.
+
+4. **AbortController per tab activation.** `useEditorTabSwitch` creates a fresh controller on every activation and aborts the previous one. Signal threads through the worker bridge (`parseInWorker(..., { signal })`) and through every `setContent` / `setPreview` callback. Clicks during the worker phase or pre-setContent paint window kill the previous tab's work.
+
+5. **Two user-facing settings** (`feat(settings)` commit `3b277b3c`):
+   - **System → Performance → "Instant-load preview"** — toggle the comrak preview entirely. When OFF, every doc takes the skip-preview path: editor mounts directly via streaming hydrate, no preview/editor visual swap.
+   - **System → Files → "File hover preview"** — toggle the sidebar file-content hover popover (`FilePreview`). FolderPeek (folder hover) is unaffected.
+
+**Headline numbers** (Apple M3 / 24 GB / `pnpm tauri dev` / 506 KB book):
+
+| State | Click → editable |
+| --- | --- |
+| Phase 2 baseline (pristine, single click) | ~5 s |
+| M2.5 in place (regression — reverted in `fae852de`) | ~22 s |
+| **Phase 3b shipped, first load** | **~5 s** |
+| **Phase 3b shipped, cache hit (revisit)** | **~2.8 s** |
+
+Smaller docs landed proportionally: 92 KB doc 660–840 ms cache hit (~1.5 s steady-state pre-pivot), 0.5 KB doc 130–200 ms.
+
+**Inventory — what of the original 5-layer plan was dropped, deferred, or covered:**
+
+| Original plan | Status | Notes |
+| --- | --- | --- |
+| Layer 1b — Skip-preview rule | ✅ Shipped | Commit `350d817a` |
+| Layer 2b — Path-keyed in-memory state cache (`view.updateState`) | ❌ Dropped | Parse cache + streaming hydrate covers in-session revisits at ~2.8 s for the book. State cache (`view.updateState`) would be theoretically faster but requires keeping multiple `EditorState` refs in memory and the marginal win doesn't justify the complexity. Reverted experiment captured in `editor-state-cache.ts` history. |
+| Layer 3b — IndexedDB viewport cache | 🟡 Deferred | Would address cold-start (cross-session) — first paint &lt;50 ms on app restart by mounting cached HTML statically. Parse cache is in-memory only (lost on quit). Worth pursuing if cold-start latency on the book becomes a complaint, but the current ~5 s first-load is acceptable. |
+| Layer 4b — Background pre-warm | 🟡 Deferred | Could populate the parse cache during the existing 4–6 s tree-validation startup window for top-5 Recents + Pinned. Would save ~300 ms on the first click of those files. Marginal. Defer until measurement shows it matters. |
+| Layer 5b — Edit-A overlay | ❌ Dropped | The streaming hydrate makes the wait short enough (and progressively interactive) that a "loading" overlay is overkill. M2.5's original implementation regressed perf by 16 s and was reverted in `fae852de`. |
+| M3b.7 #19 — "Clear viewport cache" Settings button | ❌ N/A | No viewport cache was built. The new parse cache is in-memory only and clears on quit; no diagnostic button needed. |
+| M3b.7 #20-#22 — Tests + measurement gate | 🟡 Partially done | Live measurements captured in this PRD's "Phase 3b — As shipped" headline numbers. Unit tests for `parsedDocCache` and `streamingHydrate` are an open follow-up. |
+
+**What stayed unchanged** from earlier phases:
+- Phase 1 comrak HTML preview — still fires for 50 KB+ files when `instantLoadPreview` is enabled
+- Phase 2 worker pipeline — still parses markdown off-thread; the parse cache stores the worker's output
+- Phase 3 (reverted) — `CACHE_SCHEMA_VERSION` constant kept as cheap regression-watch insurance
+
+**Open follow-ups:**
+- Unit tests for `parsedDocCache` and `streamingHydrate` (in the spirit of the original M3b.7 #20)
+- Performance baseline doc entry for the post-pivot numbers (M3b.7 #22)
+- Possible follow-up PRD if cold-start (cross-session) latency on the book becomes a complaint — viewport cache (Layer 3b) is the answer there
 
 ### Phase 4 — Empirical threshold tuning (the deferred Decision)
 
