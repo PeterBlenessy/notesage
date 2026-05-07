@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useSettingsStore } from "@/stores/settings-store";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/MarkdownContent";
@@ -265,6 +266,11 @@ export function FilePreview({
   lineCount = DEFAULT_LINE_COUNT,
   side = "right",
 }: FilePreviewProps) {
+  // User preference — when disabled, the popover is bypassed entirely;
+  // we just render the wrapped row and skip mouse-tracking + fetch.
+  // The folder-hover popover (FolderPeek) is a separate component and
+  // is unaffected by this setting.
+  const enabled = useSettingsStore((s) => s.sidebarFilePreviewEnabled);
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ status: "idle" });
 
@@ -482,6 +488,10 @@ export function FilePreview({
       closeTimerRef.current = null;
     }
   }, []);
+
+  // Disabled by user preference — render children straight through, no
+  // popover wrapper, no mouse listeners, no fetch.
+  if (!enabled) return <>{children}</>;
 
   const name = basename(filePath);
   const typeLabel = formatTypeLabel(filePath);
