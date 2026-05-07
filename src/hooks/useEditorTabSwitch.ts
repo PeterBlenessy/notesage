@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type MutableRefObject, type RefObject } fr
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { EditorState } from "@tiptap/pm/state";
 import { useEditorStore, type Tab } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import {
   AISuggestionPluginKey,
   setSuggestion,
 } from "@/components/editor/extensions";
 import { findNthTagInDoc, scrollPosToCenter, scrollToTextInEditor, PX_PER_CM } from "@/components/editor/editor-utils";
-import { loadRawMarkdownIntoEditor, loadParsedJsonIntoEditor, type TableColumnMetadataMap, type ColumnMetadata } from "@/lib/markdown";
+import { loadRawMarkdownIntoEditor, streamingHydrate, type TableColumnMetadataMap, type ColumnMetadata } from "@/lib/markdown";
 import { parseInWorker } from "@/lib/markdown-worker";
+import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import type { ParseResult } from "@/workers/markdown-parse.types";
 import { getDocumentDir } from "@/lib/image-utils";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
@@ -132,12 +134,29 @@ export function useEditorTabSwitch({
   // when the call resolves (success or failure).
   const previewInFlightRef = useRef<string | null>(null);
 
+  // AbortController for the in-flight worker parse + post-preview setContent
+  // chain. When a new tab is activated we abort the previous controller —
+  // the worker's eventual result is dropped and we never call `setContent`
+  // for a tab the user has already clicked away from. Without this guard,
+  // rapid clicks pile up worker parses + setContent operations and the
+  // editor flashes through every cancelled tab in sequence (the "queue
+  // flicker" UX). The worker bridge already supports `AbortSignal` (see
+  // `markdown-worker.ts`); we just have to plug it in.
+  const abortInFlightRef = useRef<AbortController | null>(null);
+
   const [pageInfo, setPageInfo] = useState<PageInfo | null>(null);
 
   // Update editor content when switching tabs or when placeholder content finishes loading.
   useEffect(() => {
     if (!editor || !activeTab || activeTab.contentLoaded === false) return;
     if (activeTab.id === lastLoadedTabId.current) return;
+      // Cancel anything in-flight from the previous activation BEFORE starting
+      // any new work. New controller per activation; the .then/.catch handlers
+      // close over `abortController` and bail if `signal.aborted`.
+      abortInFlightRef.current?.abort();
+      const abortController = new AbortController();
+      abortInFlightRef.current = abortController;
+
       const switchT0 = performance.now();
       const fileName = activeTab.filePath.split("/").pop() ?? activeTab.filePath;
       const contentBytes = activeTab.content ? new TextEncoder().encode(activeTab.content).length : 0;
@@ -210,7 +229,7 @@ export function useEditorTabSwitch({
         }
 
         const restoreMethod = restoredFromCache ? "cache" : "parse";
-        log.debug("perf:tab-switch", "Editor state restored", { file: fileName, sizeKB: contentSizeKB, restore: restoreMethod, setupMs: +(performance.now() - switchT0).toFixed(1) });
+        log.debug("perf:doc-switch", "Editor state restored", { file: fileName, sizeKB: contentSizeKB, restore: restoreMethod, setupMs: +(performance.now() - switchT0).toFixed(1) });
 
         if (activeTab.scrollToTag) {
           const { tag, occurrence } = activeTab.scrollToTag;
@@ -222,7 +241,7 @@ export function useEditorTabSwitch({
               scrollPosToCenter(editor, pos, scrollAreaRef.current, isProgrammaticScroll);
             }
             if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
-            log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "tag", totalMs: +(performance.now() - switchT0).toFixed(1) });
+            log.debug("perf:doc-switch", "Doc visible", { file: fileName, scroll: "tag", totalMs: +(performance.now() - switchT0).toFixed(1) });
           }); });
         } else if (activeTab.scrollToText) {
           const text = activeTab.scrollToText;
@@ -230,12 +249,12 @@ export function useEditorTabSwitch({
           requestAnimationFrame(() => { requestAnimationFrame(() => {
             scrollToTextInEditor(editor, text, scrollAreaRef.current, isProgrammaticScroll);
             if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
-            log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "text", totalMs: +(performance.now() - switchT0).toFixed(1) });
+            log.debug("perf:doc-switch", "Doc visible", { file: fileName, scroll: "text", totalMs: +(performance.now() - switchT0).toFixed(1) });
           }); });
         } else {
           restoreScrollRatio(activeTab.filePath, () => {
             if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
-            log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "position", totalMs: +(performance.now() - switchT0).toFixed(1) });
+            log.debug("perf:doc-switch", "Doc visible", { file: fileName, scroll: "position", totalMs: +(performance.now() - switchT0).toFixed(1) });
           });
         }
       };
@@ -259,46 +278,93 @@ export function useEditorTabSwitch({
         cachedEditorStatesRef.current.delete(activeTab.id);
         useEditorStore.getState().setPreviewState(activeTab.id, "hydrated");
         runPostLoad(true);
-      } else if (isFreshMarkdownParse && contentBytes < SKIP_PREVIEW_THRESHOLD_BYTES) {
-        // SKIP-PREVIEW PATH (small file <50 KB) — go straight to the worker, no
-        // comrak preview surface mounted. PRD § "Layer 1b — Skip-preview rule"
-        // (Phase 3b). At this size the worker resolves in 50–250 ms; mounting
-        // a preview adds visible flicker without buying any user-visible time
-        // and reintroduces comrak↔editor CSS divergence on small notes.
+      } else if (
+        isFreshMarkdownParse &&
+        (contentBytes < SKIP_PREVIEW_THRESHOLD_BYTES ||
+          !useSettingsStore.getState().instantLoadPreview)
+      ) {
+        // SKIP-PREVIEW PATH — fires for:
+        //   1. Small files (<50 KB) — preview render+swap adds latency
+        //      and CSS divergence without a user-visible win at this size.
+        //      PRD § "Layer 1b — Skip-preview rule" (Phase 3b).
+        //   2. ANY file when the user has disabled `instantLoadPreview`
+        //      in System settings — explicit preference to skip the
+        //      preview/editor visual swap during loads.
+        //
+        // In both cases the worker parses, then `streamingHydrate` mounts
+        // the editor in chunks. No comrak preview is ever rendered.
         const tabContent = activeTab.content;
-        log.debug("perf:tab-switch", "Skip-preview (small file)", {
+        const tabFilePath = activeTab.filePath;
+        log.debug("perf:doc-switch", "Skip-preview (small file)", {
           file: fileName,
           sizeKB: contentSizeKB,
         });
         useEditorStore.getState().setPreviewState(activeTab.id, "loading");
-        const workerStart = performance.now();
-        parseInWorker(tabContent, projectPath ?? undefined)
+        const pipelineStart = performance.now();
+
+        // Try the parsed-doc cache first — if a previous activation parsed
+        // this file (even if its hydration was aborted mid-stream), we can
+        // skip the worker round-trip entirely.
+        const cachedParse = parsedDocCache.get(tabFilePath);
+        const parsePromise = cachedParse
+          ? Promise.resolve(cachedParse)
+          : parseInWorker(tabContent, projectPath ?? undefined, { signal: abortController.signal });
+        const fromCache = cachedParse !== undefined;
+        if (fromCache) {
+          log.debug("perf:doc-switch", "Parse cache hit (skip-preview)", { file: fileName });
+        }
+
+        parsePromise
           .then((parseResult) => {
+            if (abortController.signal.aborted) return;
             const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
             if (!current || current.previewState === "hydrated") return;
+            // Cache the parse result for future revisits — even if the
+            // streaming hydrate below gets aborted mid-stream, the parsed
+            // ProseMirror JSON is still valid and worth keeping.
+            if (!fromCache) parsedDocCache.set(tabFilePath, parseResult);
+
             deferPastPaint(() => {
+              if (abortController.signal.aborted) return;
               const sideMaps = deserializeSideMaps(parseResult);
-              loadParsedJsonIntoEditor(editor, parseResult.doc, sideMaps);
-              useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
-              runPostLoad(false);
-              log.debug("perf:tab-switch", "Editor hydrated (skip-preview)", {
-                file: fileName,
-                sizeKB: contentSizeKB,
-                workerMs: +(performance.now() - workerStart).toFixed(1),
-                workerPreprocess: parseResult.timings.preprocess,
-                workerParse: parseResult.timings.parse,
-                totalMs: +(performance.now() - switchT0).toFixed(1),
-              });
+              streamingHydrate(editor, parseResult.doc, sideMaps, abortController.signal)
+                .then((streamResult) => {
+                  if (streamResult.aborted) {
+                    log.debug("perf:doc-switch", "Hydration aborted (skip-preview)", {
+                      file: fileName,
+                      chunkCount: streamResult.chunkCount,
+                      topLevelNodes: streamResult.topLevelNodes,
+                      streamMs: +streamResult.ms.toFixed(1),
+                    });
+                    return;
+                  }
+                  useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                  runPostLoad(false);
+                  log.debug("perf:doc-switch", "Editor hydrated (skip-preview)", {
+                    file: fileName,
+                    sizeKB: contentSizeKB,
+                    fromCache,
+                    pipelineMs: +(performance.now() - pipelineStart).toFixed(1),
+                    workerPreprocess: fromCache ? 0 : parseResult.timings.preprocess,
+                    workerParse: fromCache ? 0 : parseResult.timings.parse,
+                    chunkCount: streamResult.chunkCount,
+                    streamMs: +streamResult.ms.toFixed(1),
+                    totalMs: +(performance.now() - switchT0).toFixed(1),
+                  });
+                });
             });
           })
           .catch((err) => {
+            // Aborted parses are expected when the user switches away — silent.
+            if (err?.name === "AbortError") return;
             // Worker errored — fall back to legacy main-thread parse.
             console.warn("Worker parse failed (skip-preview); falling back:", activeTab.filePath, err);
             deferPastPaint(() => {
+              if (abortController.signal.aborted) return;
               loadRawMarkdownIntoEditor(editor, tabContent);
               useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
               runPostLoad(false);
-              log.debug("perf:tab-switch", "Editor hydrated (skip-preview, worker-fallback)", {
+              log.debug("perf:doc-switch", "Editor hydrated (skip-preview, worker-fallback)", {
                 file: fileName,
                 sizeKB: contentSizeKB,
                 reason: err instanceof Error ? err.message : String(err),
@@ -321,7 +387,7 @@ export function useEditorTabSwitch({
         // against StrictMode's double-mount and any spurious dependency-driven
         // re-fires. Cleared in `.finally`.
         if (previewInFlightRef.current === tabIdOnEntry) {
-          log.debug("perf:tab-switch", "Preview already in flight — skip duplicate fire", { file: fileName });
+          log.debug("perf:doc-switch", "Preview already in flight — skip duplicate fire", { file: fileName });
           return;
         }
         previewInFlightRef.current = tabIdOnEntry;
@@ -334,11 +400,12 @@ export function useEditorTabSwitch({
             theme: resolvedTheme,
           })
           .then((html) => {
-            // Bail if the user has switched to a different tab, or an external-change
-            // reload took over while preview was in flight.
+            // Bail if the user has switched to a different tab (abort fired),
+            // the tab was closed, or an external-change reload took over.
+            if (abortController.signal.aborted) return;
             const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
             if (!current || current.previewState === "hydrated") return;
-            log.debug("perf:tab-load", "Preview ready", { file: fileName, previewMs: +(performance.now() - previewT0).toFixed(1) });
+            log.debug("perf:doc-load", "Preview ready", { file: fileName, previewMs: +(performance.now() - previewT0).toFixed(1) });
 
             // Stash HTML — render branch swaps to <MarkdownPreview>.
             useEditorStore.getState().setPreview(tabIdOnEntry, html);
@@ -355,39 +422,69 @@ export function useEditorTabSwitch({
             //
             // Worker errors fall through to the legacy main-thread parse via
             // `loadRawMarkdownIntoEditor` (Phase 2 #15 — fallback path).
-            const workerStart = performance.now();
-            parseInWorker(tabContent, projectPath ?? undefined)
+            const pipelineStart = performance.now();
+            const tabFilePath = activeTab.filePath;
+            const cachedParse = parsedDocCache.get(tabFilePath);
+            const parsePromise = cachedParse
+              ? Promise.resolve(cachedParse)
+              : parseInWorker(tabContent, projectPath ?? undefined, { signal: abortController.signal });
+            const fromCache = cachedParse !== undefined;
+            if (fromCache) {
+              log.debug("perf:doc-switch", "Parse cache hit (preview)", { file: fileName });
+            }
+
+            parsePromise
               .then((parseResult) => {
+                if (abortController.signal.aborted) return;
                 // Bail if the user has switched away or external-change reload
                 // took over while the worker was running.
                 const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
                 if (!current || current.previewState === "hydrated") return;
+                // Cache the worker output so an aborted hydration doesn't
+                // throw away the ~300 ms parse work.
+                if (!fromCache) parsedDocCache.set(tabFilePath, parseResult);
 
-                // Defer past paint — gives the preview at least one paint
-                // frame on screen even if the worker returns very fast.
                 deferPastPaint(() => {
+                  if (abortController.signal.aborted) return;
                   const sideMaps = deserializeSideMaps(parseResult);
-                  loadParsedJsonIntoEditor(editor, parseResult.doc, sideMaps);
-                  useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
-                  runPostLoad(false);
-                  log.debug("perf:tab-switch", "Editor hydrated after preview (worker)", {
-                    file: fileName,
-                    sizeKB: contentSizeKB,
-                    workerMs: +(performance.now() - workerStart).toFixed(1),
-                    workerPreprocess: parseResult.timings.preprocess,
-                    workerParse: parseResult.timings.parse,
-                    totalMs: +(performance.now() - switchT0).toFixed(1),
-                  });
+                  streamingHydrate(editor, parseResult.doc, sideMaps, abortController.signal)
+                    .then((streamResult) => {
+                      if (streamResult.aborted) {
+                        log.debug("perf:doc-switch", "Hydration aborted (preview)", {
+                          file: fileName,
+                          chunkCount: streamResult.chunkCount,
+                          topLevelNodes: streamResult.topLevelNodes,
+                          streamMs: +streamResult.ms.toFixed(1),
+                        });
+                        return;
+                      }
+                      useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                      runPostLoad(false);
+                      log.debug("perf:doc-switch", "Editor hydrated after preview (worker)", {
+                        file: fileName,
+                        sizeKB: contentSizeKB,
+                        fromCache,
+                        pipelineMs: +(performance.now() - pipelineStart).toFixed(1),
+                        workerPreprocess: fromCache ? 0 : parseResult.timings.preprocess,
+                        workerParse: fromCache ? 0 : parseResult.timings.parse,
+                        chunkCount: streamResult.chunkCount,
+                        streamMs: +streamResult.ms.toFixed(1),
+                        totalMs: +(performance.now() - switchT0).toFixed(1),
+                      });
+                    });
                 });
               })
               .catch((err) => {
-                // Worker errored or aborted — fall back to legacy main-thread parse.
+                // Aborted parses are expected when the user switches away — silent.
+                if (err?.name === "AbortError") return;
+                // Worker errored — fall back to legacy main-thread parse.
                 console.warn("Worker parse failed; falling back to main-thread parse:", activeTab.filePath, err);
                 deferPastPaint(() => {
+                  if (abortController.signal.aborted) return;
                   loadRawMarkdownIntoEditor(editor, tabContent);
                   useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
                   runPostLoad(false);
-                  log.debug("perf:tab-switch", "Editor hydrated after preview (worker-fallback)", {
+                  log.debug("perf:doc-switch", "Editor hydrated after preview (worker-fallback)", {
                     file: fileName,
                     sizeKB: contentSizeKB,
                     reason: err instanceof Error ? err.message : String(err),
@@ -397,6 +494,8 @@ export function useEditorTabSwitch({
               });
           })
           .catch((err) => {
+            // Aborted preview = user switched away; silent bail.
+            if (abortController.signal.aborted) return;
             // Preview render failed — fall back to legacy synchronous path entirely.
             console.warn("Preview render failed:", activeTab.filePath, err);
             useEditorStore.getState().setPreviewState(tabIdOnEntry, "idle");
@@ -443,6 +542,24 @@ export function useEditorTabSwitch({
       scrollToTextInEditor(editor, text, scrollAreaRef.current, isProgrammaticScroll);
     });
   }, [editor, activeTab?.scrollToText, activeTab?.id, setScrollToText]);
+
+  // Invalidate the parsed-doc cache for the active file when the user
+  // makes a real edit (transaction.docChanged AND NOT a bulk-load
+  // transaction tagged `addToHistory: false`). Bulk loads come from
+  // `streamingHydrate` / `loadRawMarkdownIntoEditor` and we want to KEEP
+  // the cache entry we just populated. User edits change the on-disk
+  // intent, so future cache hits would be against stale source — drop it.
+  useEffect(() => {
+    if (!editor || !activeTab) return;
+    const filePath = activeTab.filePath;
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean; getMeta: (key: string) => unknown } }) => {
+      if (!transaction.docChanged) return;
+      if (transaction.getMeta("addToHistory") === false) return; // bulk load — keep cache
+      parsedDocCache.delete(filePath);
+    };
+    editor.on('transaction', onTransaction);
+    return () => { editor.off('transaction', onTransaction); };
+  }, [editor, activeTab?.filePath]);
 
   // When switching from Source → WYSIWYG, reload editor with current tab content
   const prevViewMode = useRef(activeTab?.viewMode);

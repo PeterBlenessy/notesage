@@ -137,7 +137,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       try {
         if (fileType === "image") {
           useEditorStore.getState().loadTabContent(id, "");
-          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB: 0, ms: +(performance.now() - t0).toFixed(1) });
+          log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB: 0, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         if (isBinaryFileType(fileType)) {
@@ -145,7 +145,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           const sizeKB = +(bytes.length / 1024).toFixed(1);
           setBinaryData(filePath, new Uint8Array(bytes));
           useEditorStore.getState().loadTabContent(id, "");
-          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
+          log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         const raw = await tauriApi.readFile(filePath);
@@ -156,7 +156,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         } else {
           useEditorStore.getState().loadTabContent(id, raw);
         }
-        log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
+        log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
       } catch (err) {
         console.warn("Failed to load tab content:", filePath, err);
         useEditorStore.getState().setTabLoadError(id, String(err));
@@ -745,7 +745,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                   hydrated → editor visible, preview unmounted (HTML dropped)
               */}
               {activeTab?.previewState === "ready" && activeTab.previewHtml ? (
-                <MarkdownPreview html={activeTab.previewHtml} />
+                <MarkdownPreview key={activeTab.id} html={activeTab.previewHtml} />
               ) : null}
               <div style={activeTab?.previewState === "ready" ? { display: "none" } : undefined}>
                 <EditorContent editor={editor} />
