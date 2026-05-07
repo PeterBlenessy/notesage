@@ -80,7 +80,7 @@ export interface ParseResult {
   tableMetadataEntries: Array<
     [number, Array<[number, { colType?: string; colCurrency?: string; colAggregation?: string }]>]
   >;
-  /** Per-parse timings for the perf benchmark + `[perf:tab-load]` log. */
+  /** Per-parse timings for the perf benchmark + `[perf:doc-load]` log. */
   timings: ParseTimings;
 }
 
