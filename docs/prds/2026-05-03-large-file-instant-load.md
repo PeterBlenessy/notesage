@@ -3,13 +3,13 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-03 |
-| **Status** | Draft |
+| **Status** | Phase 1 + Phase 2 landed. Phase 3 explored and reverted (see post-mortem). Phase 3b in planning. |
 | **Priority** | High — current behavior on book-length markdown is a UX failure (&gt;30s frozen UI on a real user file) |
-| **Impact** | Opening any markdown file feels instant. First open of a previously-unseen large file paints content in &lt;300ms via Rust HTML preview, hydrates to a fully editable Tiptap editor invisibly in the background. Every subsequent open of the same file (the common case for long-form writing) loads in &lt;100ms via a parsed-state disk cache. The "is the app frozen?" failure mode becomes structurally impossible. |
+| **Impact** | Opening any markdown file feels instant. First open paints content in &lt;300ms via Rust HTML preview (Layer 1), hydrates to a fully editable Tiptap editor invisibly in the background (Layer 2). **In-session repeat opens** restore in &lt;100ms via an in-memory state cache (Layer 2b). **Cold app starts on previously-edited files** mount cached viewport HTML in &lt;50ms via IndexedDB (Layer 3b). Frequently-opened docs are pre-warmed in the background during the existing tree-validation window (Layer 4b) so they're hot by the time the user clicks. The "is the app frozen?" failure mode becomes structurally impossible. |
 | **Trigger** | A 506 KB / 6634-line / 396-heading / 952-table-row markdown book (`Svenska-Investmentbolag-v0.10.0.md`) takes &gt;30s to open with no visible progress, no spinner, no way to cancel. The main thread is fully blocked the entire time. |
-| **Related research** | [llm-wiki-data-transformation](../research/llm-wiki-data-transformation.md) — discovered the SQLite-index/parser pattern that this PRD reuses for the cache hash key |
+| **Related research** | [llm-wiki-data-transformation](../research/llm-wiki-data-transformation.md) — discovered the SQLite-index/parser pattern. The parsed-state disk cache idea originated here; Phase 3 found this approach insufficient on its own (see post-mortem) and pivoted to the viewport-render cache architecture. |
 | **Related PRD** | [2026-04-14-markdown-preprocessing-hardening](2026-04-14-markdown-preprocessing-hardening.md) — replaces the 13 regex preprocessing passes with a single markdown-it plugin pass; complements this PRD by making the worker hydration faster |
-| **Tasks** | Phase task files are written before each phase ships. Phase 1: [2026-05-03-large-file-instant-load-phase1-tasks](../tasks/2026-05-03-large-file-instant-load-phase1-tasks.md). Phase 2: [2026-05-03-large-file-instant-load-phase2-tasks](../tasks/2026-05-03-large-file-instant-load-phase2-tasks.md). Phase 3: [2026-05-03-large-file-instant-load-phase3-tasks](../tasks/2026-05-03-large-file-instant-load-phase3-tasks.md). |
+| **Tasks** | Phase task files are written before each phase ships. Phase 1: [2026-05-03-large-file-instant-load-phase1-tasks](../tasks/2026-05-03-large-file-instant-load-phase1-tasks.md). Phase 2: [2026-05-03-large-file-instant-load-phase2-tasks](../tasks/2026-05-03-large-file-instant-load-phase2-tasks.md). Phase 3 (reverted): [2026-05-03-large-file-instant-load-phase3-tasks](../tasks/2026-05-03-large-file-instant-load-phase3-tasks.md). Phase 3b: [2026-05-03-large-file-instant-load-phase3b-tasks](../tasks/2026-05-03-large-file-instant-load-phase3b-tasks.md). |
 
 ## Problem
 
@@ -31,11 +31,12 @@ The frozen UI is the symptom; the structural cause is that the entire load pipel
 
 ### Goals
 
-1. **Instant first paint:** opening any markdown file shows readable, scrollable, selectable content in **&lt;300ms** regardless of file size.
-2. **Identical render:** the preview that paints in &lt;300ms is **visually indistinguishable** from the final editor view. The swap from preview to editor is invisible — no flicker, no layout shift, no visible mode change.
-3. **Background hydration:** the editable Tiptap editor finishes hydrating within \~5–10s of first paint for files up to 1 MB, all on a Web Worker — main thread stays at 60 fps the entire time.
-4. **Fast subsequent opens:** every open of a previously-loaded file completes in **&lt;100ms** via a parsed-state disk cache. Cache invalidates on file content hash change.
-5. **Empirical decisions:** every threshold (when to use the worker vs direct parse, when to cache, etc.) is determined from real measurements captured via browser DevTools Timeline profiling on representative files, not from guessed numbers.
+1. **Instant first paint:** opening any markdown file shows readable, scrollable, selectable content in **&lt;300ms** regardless of file size. Phase 1 ✅ for first-ever opens via comrak; Phase 3b extends this to **&lt;50ms** for previously-saved files via the IndexedDB viewport cache.
+2. **Identical render:** the preview that paints first is **visually indistinguishable** from the final editor view. Phase 1 (comrak) achieves \~80% parity (decorations and custom node-views diverge); Phase 3b achieves \~100% parity for previously-edited files because the cached HTML IS the editor's own render output.
+3. **Background hydration:** the editable Tiptap editor finishes hydrating within \~5–10s of first paint for files up to 1 MB, all on a Web Worker — main thread stays at 60 fps the entire time. Phase 2 ✅ moved parse + plugin storm off-thread; the residual 4.4s `setContent(json)` DOM materialize on the 506 KB book is acknowledged as the unaddressable floor and is **explicitly out of scope** for this PRD (would require streaming setContent or virtual scrolling).
+4. **Fast in-session repeat opens:** switching back to any previously-active document completes in **&lt;100ms** via an LRU in-memory `EditorState` cache (Layer 2b). Restores full undo/redo, selection, scroll, decorations.
+5. **Fast cold app start:** previously-edited documents mount cached viewport HTML in **&lt;50ms** via IndexedDB (Layer 3b). Frequently-opened files are eagerly pre-warmed (Layer 4b) into the in-memory cache during the existing tree-validation window so they're hot by the time the user clicks.
+6. **Empirical decisions:** every threshold (when to use the worker vs direct parse, when to cache, etc.) is determined from real measurements captured via browser DevTools Timeline profiling on representative files, not from guessed numbers.
 
 ### Non-Goals
 
@@ -307,11 +308,19 @@ interface SettingsState {
 
 - [~] **Layer 2 swap:** No visible flicker, no scroll-position shift, no layout shift during preview→editor swap. Verified by frame-by-frame video capture of the swap moment. _Same `deferPastPaint` rAF×2 mechanism as Phase 1 — preview stays on screen until `setContent` lands, scroll position preserved via shared `scrollAreaRef`. Frame-by-frame video diff not formally captured; subjective live-test 2026-05-06 reports no flicker._
 
-- [ ] **Layer 3:** Repeat open of any cached file completes in **&lt;100ms p95**, verified across all fixture sizes; local-only spot check against the real 506 KB book confirms parity.
+- [x] ~~**Layer 3:** Repeat open of any cached file completes in **&lt;100ms p95**~~ — **superseded by Layer 2b + Layer 3b in Phase 3b.** Phase 3 explored disk-cache approach, found it can't beat the 4.4s DOM materialize floor on the book. Reverted 2026-05-06.
 
-- [ ] **Layer 3 invalidation:** Editing the file (in Notesage or externally) invalidates the cache; next open uses Layer 1+2 path.
+- [ ] **Layer 1b (skip-preview <50 KB):** Files under 50 KB go straight to the worker — no preview surface mounted, no flicker. Verified by E2E test plus DevTools recording on a small fixture.
 
-- [ ] **Layer 3 schema invalidation:** Bumping a Tiptap extension's version invalidates all caches at once; verified by integration test.
+- [ ] **Layer 2b (in-memory state cache):** In-session switch back to any previously-active document completes in **&lt;100ms p95**, restoring full undo/redo + selection + scroll + decorations. Verified by unit test (state restored byte-equal to capture) plus DevTools recording on the 506 KB book within a session.
+
+- [ ] **Layer 3b (IDB viewport cache, cold start):** Cold app start of a previously-edited file paints content in **&lt;50ms p95** via static HTML mount; full editor hydrates in background. Verified by E2E test (clear app state, open file, measure first-paint) plus DevTools recording on the 506 KB book.
+
+- [ ] **Layer 3b invalidation:** mtime mismatch drops the cache entry; `CACHE_SCHEMA_VERSION` bump invalidates every entry at once. Verified by unit test.
+
+- [ ] **Layer 4b (pre-warm):** Top-5 Recents + all Pinned files are populated into Layer 2b during the existing tree-validation window. By the time `startupReady` flips, the in-memory cache is hot for the user's frequently-opened docs. Verified by perf log inspection — cache hit ratio on first interaction post-startup.
+
+- [ ] **Layer 5b (Edit-A overlay):** When the user clicks/types on a viewport-cached document before hydration, an unobtrusive "Editor loading…" badge appears; disappears when hydration completes; cursor lands where the user clicked. For hydration &lt;500ms the overlay must not appear. Verified by E2E test.
 
 - [ ] All existing markdown round-trip tests still pass (no regression in parse fidelity).
 
@@ -321,14 +330,14 @@ interface SettingsState {
 
 ### Performance Targets
 
-Captured before each phase via DevTools Timeline against the 506 KB book, recorded in `docs/performance-baseline.md`.
+Captured before each phase via DevTools Timeline against the 506 KB book, recorded in `docs/performance-baseline.md`. Targets revised after Phase 3 post-mortem to acknowledge the DOM materialize floor on large files and reframe what "fast" means per scenario.
 
-| File size | First open (p95) | Subsequent open (p95) |
-| --- | --- | --- |
-| 10 KB | ≤ pre-Phase-1 baseline (no regression) | ≤ pre-Phase-1 baseline |
-| 100 KB | &lt;500 ms first paint, &lt;2 s editable | &lt;100 ms |
-| 500 KB | &lt;300 ms first paint, &lt;10 s editable | &lt;100 ms |
-| 1 MB | &lt;500 ms first paint, &lt;20 s editable | &lt;200 ms |
+| File size | First-ever open (no cache) | Cold start (viewport cache hit) | In-session repeat | Notes |
+| --- | --- | --- | --- | --- |
+| 10 KB | &lt;200 ms editable (Layer 1b skip-preview) | &lt;200 ms editable | &lt;100 ms restore (Layer 2b) | Worker faster than preview at this size |
+| 100 KB | &lt;500 ms first paint, &lt;1 s editable | &lt;50 ms first paint, &lt;1 s editable | &lt;100 ms restore | |
+| 500 KB book | &lt;300 ms first paint (comrak), ~5 s editable | **&lt;50 ms first paint** (cached HTML), ~5 s editable in background | &lt;100 ms restore | DOM materialize floor accepted; viewport cache makes the wait invisible |
+| 1 MB | &lt;500 ms first paint, ~10 s editable | &lt;50 ms first paint, ~10 s editable in background | &lt;100 ms restore | |
 
 ### Design
 
@@ -338,7 +347,9 @@ Captured before each phase via DevTools Timeline against the 506 KB book, record
 
 - [ ] Loading overlay (only shown when user tries to edit before hydration completes) follows the existing design system: `Tooltip`/`Popover` styling, accent border, no chromatic colors except destructive on error.
 
-- [ ] Settings &gt; Advanced "Clear parse cache" button styled consistently with other destructive actions (uses `Button variant="destructive"`).
+- [ ] Settings &gt; Advanced "Clear viewport cache" button (Phase 3b — destructive variant, AlertDialog confirmation, deletes IndexedDB entries). Diagnostic-only; no kill-switch toggles in user-facing UI.
+
+- [ ] Edit-A overlay (Phase 3b Layer 5b) is unobtrusive: small badge near editor top, `--color-accent-primary` border, no chromatic colors, slides in only after &gt;500 ms hydration latency. Disappears immediately on hydration complete.
 
 ## Implementation Phases
 
@@ -367,31 +378,116 @@ Each phase begins with a fresh DevTools Timeline recording on the 506 KB book to
 
 **Honest outcome:** worker pipeline works correctly (parity tests pass, no fallback in production). Plugin storm fully eliminated. But the dominant remaining cost is `setContent(json)` materializing 6634 lines into DOM (4.44 s) — a main-thread DOM-layer cost the worker can't help with. The "60 fps during hydration" PRD goal is met for small files but NOT for the 506 KB book; solving that would need virtual scrolling or streaming setContent (significant Tiptap-side changes, out of this PRD's scope). Phase 3's disk cache is the more impactful next step — it skips both the worker parse AND the DOM materialization on repeat opens.
 
-### Phase 3 — Parsed-state disk cache (Layer 3)
+### Phase 3 — Parsed-state disk cache (Layer 3) ❌ explored and reverted 2026-05-06
 
-- Cache directory infrastructure (per-project + global).
-- `read_parsed_cache` / `write_parsed_cache` / `clear_parsed_cache` Tauri commands.
-- Tiptap schema hash computation (one helper that hashes the extension list).
-- Cache lookup integrated into the load path before Layer 1.
-- iCloud xattr exclusion + gitignore entry.
-- Settings &gt; Advanced "Clear parse cache" button.
-- **Measurement gate:** baseline doc updated with "after Phase 3: subsequent open = X ms (was Y ms)" — verified by DevTools Timeline recording on the 506 KB book.
+**What was built.** Full disk-cache implementation: `cache.rs` Tauri commands (read/write/clear), atomic writes, iCloud xattr exclusion, schema-version invalidation, frontend hashing helpers, kill-switch, Settings UI button, 8 unit tests + 11 cargo tests + E2E test. All code milestones M3.1–M3.5 landed in working tree, never committed.
+
+**What we measured.** First live-test against the 506 KB book showed cache HIT path took ~5.1s click-to-editable — the same wall clock as Phase 2's cache MISS path. Plus a UX regression: the cache-hit code path skipped the comrak preview entirely, replacing the Phase 1 "preview at 130ms" with a blank screen for the duration.
+
+**Why it didn't pay off.** The 4.4s `setContent(json)` DOM materialize identified in Phase 2 as unaddressable is also the floor for cache hits. Disk-cache only saves the worker parse (~200ms) and plugin storm (already 100ms post-Phase-2). For the user's actual file (the book), the cache saved ~600ms of work but lost ~1s of preview UX — net negative.
+
+**The thesis was wrong.** The PRD framed Phase 3 as "instant repeat opens via parsed-state cache." This implicitly assumed the parse was the bottleneck. Phase 2's data already showed the bottleneck had moved to DOM materialize, but the Phase 3 plan didn't update on that signal. Lesson: **caching at the parsed-state granularity can never beat the DOM materialize floor for any cache format that ends in `setContent(json)` or `setContent(html)`.**
+
+**What we kept from the work.**
+
+- `CACHE_SCHEMA_VERSION` constant + regression-watch test in `worker-extensions.ts`. Cheap infrastructure, useful for Phase 3b's viewport cache.
+- Confirmed empirically that disk-cache approaches are dead for the book's use case. Phase 3b moves to a different cache granularity.
+
+**Files reverted.** `src-tauri/src/commands/cache.rs`, `src/lib/cache-hash.ts`, `useEditorTabSwitch.ts` cache integration, settings store kill-switch, Settings UI button, all related tests. Working tree clean as of revert.
+
+### Phase 3b — Render-output cache + in-memory state cache (the actual fix)
+
+**Reframing.** Phase 3 cached at the wrong granularity (parsed state of the whole document) and through the wrong mechanism (`setContent`, which always rebuilds DOM). Phase 3b caches at viewport granularity (only the visible window's HTML) and mounts as static content (sidesteps `setContent` for first paint). The full editor still hydrates in the background via the existing Phase 1+2 path, but the user has been reading content from t&lt;50ms onward.
+
+**Five layers, each with a specific job.**
+
+#### Layer 1b — Skip-preview rule (file <50 KB)
+
+Files under 50 KB go straight to the worker parse path; no preview surface mounted. At this size the worker is fast enough (50–250ms) that preview adds visible flicker without buying useful time. Eliminates the comrak↔editor CSS divergence concern for small notes (the case where it was most jarring). Threshold may be empirically tuned in Phase 4.
+
+#### Layer 2b — Path-keyed in-memory state cache
+
+Extends today's `cachedEditorStatesRef` so it survives `closeTab`. Key by file path + mtime, LRU-bounded at ~200 MB total (~5–15 docs typical). On switch back: `editor.view.updateState(cachedState)` — full restore including undo/redo, selection, scroll, decorations. Sub-100ms. Lost on app quit. Solves the "feel weight when switching among Recent / Pinned" problem the user flagged after Phase 3.
+
+#### Layer 3b — IndexedDB viewport cache
+
+**Mechanism.** When the user saves a document OR has been idle for 5s with the editor focused, capture `editor.getHTML()` for the visible viewport ± 1 viewport above and below (~100 nodes typical, ~30 KB JSON). Store in IndexedDB keyed by `${filePath}|${mtime}|${cacheSchemaHash}`. On opening a document with a cache hit, **mount the cached HTML as static content inside a `<div>`** — NOT through `editor.commands.setContent`. ProseMirror is never asked to parse 6634 nodes for first paint, so the 4.4s DOM materialize floor is sidestepped for the initial view.
+
+**CSS parity is byte-identical** because the cached HTML literally was the editor's own render at save time. No comrak divergence, no chasing decoration styles in CSS — those decorations are baked into the captured HTML.
+
+**The full ProseMirror editor hydrates in the background** via the existing Phase 1+2 path (skipping comrak preview since the viewport HTML has already taken its place). When ready, a `deferPastPaint` swap replaces the static HTML with the live editor at the same scroll position.
+
+**Storage.** IndexedDB lives in WKWebView's data directory and persists across app restarts. ~30 KB × ~100 docs = ~3 MB. Hard cap at 50 MB with LRU eviction. No Tauri IPC overhead, no atomic-write file shuffling, no iCloud xattr (IDB is outside user notes), no schema versioning theatre — mtime + schema-hash key handles invalidation automatically.
+
+**Cache invalidation.** `mtime` mismatch → drop entry, fall through to Phase 1+2 path. `CACHE_SCHEMA_VERSION` bump → all entries auto-invalidate (existing keys won't match new fingerprint). External-change watcher already drops entries; piggyback on its hooks.
+
+#### Layer 4b — Background pre-warm at app start
+
+App start currently sits idle for ~4–6s during tree validation (per `project_startup_perf.md` — sequential `listDirectory` calls block `startupReady`). The renderer is doing nothing useful in that window. Phase 3b adds a background worker pool that, in parallel with tree validation, parses the **top-5 Recents + all Pinned files** and populates the in-memory state cache (Layer 2b). By the time the user looks at the editor, their frequently-opened docs are hot.
+
+**For the book specifically:** if it's a recent or pinned file (which it is for this user), it gets pre-parsed during the same 4–6s window the app is already waiting on iCloud. By the time the user clicks, in-memory cache hit → instant.
+
+**Investigation note (separate from Phase 3b implementation):** the 4–6s tree-validation window is itself slower than necessary. Spike whether tree validation can be moved to a Web Worker and parallelized to bring it under 1s. If feasible, the pre-warm window shrinks proportionally — but pre-warm still wins because it overlaps with whatever startup work remains.
+
+#### Layer 5b — Edit-A overlay (the loading UX)
+
+The deferred Phase 2 idea (M2.5 #16-#18) finally has a real use case. When viewport-cache HTML is mounted but the real ProseMirror editor hasn't hydrated yet, and the user clicks/types in the document, show a small badge: "Editor loading… (Xs)". When hydration completes, the overlay disappears, focus moves to the editor with the cursor positioned where the user tried to click. For files where hydration completes in &lt;500ms, the overlay never appears (no flicker).
+
+**Per-layer responsibility matrix.**
+
+| Scenario | Path taken | Comrak involved? | Time to first paint |
+| --- | --- | --- | --- |
+| Cold start, last-active 506 KB book | Layer 3b viewport cache hit | No | &lt;50 ms |
+| Cold start, top-5 recent / any pinned | Layer 3b OR Layer 4b pre-warm hot | No | &lt;50 ms |
+| In-session switch back to any previously-active doc | Layer 2b in-memory state cache | No | &lt;100 ms (full state restore) |
+| Open small file (&lt;50 KB) ever | Layer 1b skip-preview, worker direct | No | ~200 ms (editor mount) |
+| Open file edited externally (mtime mismatch) | Layer 3b invalidated → Phase 1+2 fall through | Yes (50 KB+) | Phase 1 numbers |
+| First-ever open of a 50 KB+ file | No cache exists → Phase 1+2 fall through | Yes | Phase 1 numbers |
+
+**Comrak's narrowed role.** Comrak (`render_markdown_preview`) is kept as a fallback for the bottom two rows: external-change reload and first-ever opens of files we've never seen. Daily workflow (book + recents + pinned) never invokes it. Maintenance cost stays low because we're not adding to it, just keeping the existing path.
+
+**Storage and memory footprint.**
+
+| Layer | Storage | Typical | Cap |
+| --- | --- | --- | --- |
+| Layer 2b (state cache) | RAM | 50–150 MB across 5–15 docs | 200 MB |
+| Layer 3b (viewport cache) | IndexedDB | 30 KB × ~100 docs = 3 MB | 50 MB hard limit |
+| Layer 4b (pre-warm) | RAM (feeds Layer 2b) | Bounded by Layer 2b | — |
+| Layer 5b (overlay) | DOM | One element while shown | — |
+
+Total RAM increase: ~150 MB peak. Total disk increase: ~3 MB IDB. Acceptable on M3 / 24 GB target hardware.
+
+**Settings surface.** One diagnostic-only addition: a "Clear viewport cache" button under Settings &gt; Advanced. No user-facing toggles for skip-preview threshold, cache enable/disable, pre-warm scope, or overlay behaviour — every threshold is internal, picked once based on data, and changeable in code if wrong.
+
+**What Phase 3b explicitly does NOT include.**
+
+- No persistence of full ProseMirror state (Phase 3 — already reverted; lesson learned).
+- No streaming `setContent` (separate PRD if pursued; Phase 3b makes it less necessary by sidestepping the first-paint problem).
+- No virtual scrolling (multi-month investment, not on the table).
+- No source-mode default for huge files (user pushed back; not coming back).
+- No new user-facing settings beyond the diagnostic clear-cache button.
 
 ### Phase 4 — Empirical threshold tuning (the deferred Decision)
 
-- Using the 3 phases of baseline data, decide:
+- Using the data from Phases 1, 2, and 3b, decide:
   - **File size cutoff for the worker path** — below this size, do direct main-thread parse (avoids worker round-trip overhead).
-  - **File size cutoff for the preview path** — below this, skip preview (parse is faster than the preview render+swap).
-  - **Cache write threshold** — below this size, don't write to cache (parsing is fast enough that the I/O isn't worth it).
+  - **File size cutoff for the preview path (`50 KB` initial pick)** — below this, skip preview (parse is faster than the preview render+swap). May tune up or down based on Phase 3b live data.
+  - **Pre-warm scope** — initial pick is top-5 Recents + all Pinned. Tune based on observed memory pressure and user behaviour.
+  - **Viewport cache size** — initial pick is viewport ± 1 viewport. Tune based on observed scroll-out-of-cached-window frequency.
 - Document the chosen thresholds in `docs/performance-baseline.md` with the data that justified them.
 - Land the conditionals as small gating PRs.
 
 ## Out of Scope
 
-- **Plugin lazy-init** — `tag-highlight`, `comment-mark`, etc. could lazy-build decorations on first interaction instead of on init. Real win on table-heavy files but adds complexity to plugin contracts. Defer until we have data showing plugin init is the dominant remaining cost after Phase 3.
-- **Table virtualization** — `table-aggregation` walking 952 rows is real, but addressing it requires a custom node view for tables. Out of scope for this PRD; if the data shows it's the bottleneck after Phase 3, file a follow-up PRD.
+- **Persisted full ProseMirror state** — Phase 3 explored this approach (parsed-state disk cache, JSON serialization, atomic writes); reverted 2026-05-06 after live data showed it can't beat the 4.4s DOM materialize floor on large files. Phase 3b moves to viewport-render caching which sidesteps the floor instead.
+- **Streaming `setContent`** — incrementally chunk the DOM materialize across `setTimeout(0)` boundaries to keep the main thread at 60fps during hydration. Multi-week Tiptap-side engineering. Phase 3b's viewport cache makes the loading window invisible without needing this; deferred to its own PRD if first-paint isn't enough.
+- **Plugin lazy-init** — `tag-highlight`, `comment-mark`, etc. could lazy-build decorations on first interaction instead of on init. Phase 2 already eliminated most of this cost (1.88 s → 100 ms). Defer until data shows plugin init is the dominant remaining cost.
+- **Table virtualization** — `table-aggregation` walking 952 rows is real, but addressing it requires a custom node view for tables. Out of scope; if data shows it's the bottleneck, file a follow-up PRD.
 - **Section-based loading** — opening only the visible H1/H2 section of a book. A different paradigm; would be its own PRD ("book mode") if pursued.
-- **Source-mode default for huge files** — pragmatic escape hatch but represents giving up on the rich-edit experience. Not pursued unless Layer 1+2+3 fail to hit targets.
-- **Streaming editor construction** — incrementally inserting nodes as parsing progresses (Notion-style). Architecturally interesting but multi-month engineering for an experienced editor team. Cache + preview pattern delivers most of the benefit at a fraction of the cost.
+- **Source-mode default for huge files** — pragmatic escape hatch but represents giving up on the rich-edit experience. User explicitly pushed back on this option.
 - **Embeddings or semantic chunking** — orthogonal to load performance.
-- **Cache sync across devices** — caches are device-local by design (mirrors the SQLite index pattern). Each device rebuilds from the markdown source.
+- **Cache sync across devices** — Layer 3b's IndexedDB cache is device-local by design (mirrors the SQLite index pattern). Each device rebuilds from the markdown source.
+
+## Adjacent Investigation (NOT part of this PRD)
+
+- **Tree validation in a Worker.** App startup currently spends 4–6 s on sequential `listDirectory` calls during tree validation (per `project_startup_perf.md`). Phase 3b's pre-warm strategy depends on this window being available, but if tree validation can be moved to a Web Worker and parallelized to bring it under 1 s, the user-perceived startup time drops independently. Spike worth doing alongside Phase 3b but architecturally separate; track as a follow-up PRD if findings warrant it.
