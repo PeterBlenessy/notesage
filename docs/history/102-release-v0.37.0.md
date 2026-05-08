@@ -3,42 +3,48 @@
 **Date:** 2026-04-18
 **Previous version:** 0.36.0
 
+Closes the remaining ACP-protocol gaps from the previous release: comment-delegated agent tasks now restore their conversation context after a restart, agents that authenticate with environment-variable credentials get a generic credentials form, and links from AI messages are now clickable. Plus a security-update wave (3 npm + 2 Rust advisories closed) and dependency cleanup.
+
 ## Changes
 
 ### Features
 
-**ACP Protocol Tail (Batch C-bis + D)**
-Closes the remaining ACP protocol gaps after Batches B (v0.36.0) and C (v0.36.0). See `docs/prds/2026-04-18-acp-protocol-tail.md`.
-
-- **Task agent session parity.** Comment-delegated tasks (via `useAgentTaskOperations`) now use the same restoration chain as the main chat (resume → load → list → new). Reopening a delegated thread after an app restart restores the agent's prior context instead of starting fresh. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.
-- **EnvVar auth flow.** Enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` now drive a generic credential form — one password-style input per advertised variable, with the agent-provided "Get yours at" link as helper text. Replaces the hardcoded Gemini API-key panel.
-- **`resource_link` content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.
-- **`messageId` propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage).
+- **Comments delegated to AI agents now restore their context after a restart.** Reopening a delegated comment thread after restarting Notesage continues where you left off instead of starting fresh — the agent remembers the prior turn. When a delegated task finishes (completed, failed, or cancelled) Notesage cleanly closes the agent's session so resources don't leak.
+- **AI agents that authenticate with credentials** (API keys, tokens, environment variables) now drive a generic credentials form provided by the agent itself. The form fields adapt to whatever each agent advertises, with the agent's own "Get yours at" link as helper text. Replaces the Gemini-specific API-key panel — works for any agent that advertises this auth mode. Existing Gemini connections continue working without re-entering credentials.
+- **AI messages can now include clickable file references.** When an agent sends a link to a file inside your project, clicking it opens the file as a tab. Links to external URLs open in your browser. Optional descriptions render as a second line of text under the link.
 
 ### Improvements
-- `user_message_chunk` events are now recognized as a silent no-op instead of logging "Unknown ACP session update type" on every agent echo. No state mutation; we already have the user message locally.
-- Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines).
-- `credentials.envVars` retained as the storage layer for EnvVar auth (populated by the generic form, read at spawn time). Gemini connections with existing stored vars continue working without migration.
+
+- **AI agent authentication is more reliable.** Auth state is now driven by the agent itself rather than by Notesage probing each provider's CLI separately. Fewer false alarms, fewer brittle edge cases on non-standard installs.
+- **Cleaner dev-console output.** Agent message echoes no longer log "Unknown ACP session update type" warnings on every chunk.
 
 ### Security
-- **npm advisories closed (3):**
-  - `dompurify` ^3.3.3 → ^3.4.0 — closes GHSA-39q2-94rc-95cp (`ADD_TAGS` bypasses `FORBID_TAGS`).
-  - `basic-ftp` pnpm override `>=5.2.2` → `>=5.3.0` — closes GHSA-rp42-5vxx-qpwr (DoS). Dev-only chain via WDIO > puppeteer.
-  - Added `hono >=4.12.14` pnpm override — closes GHSA-458j-xx4x-4375 (JSX SSR HTML injection). Transitive via the ACP SDK chain.
-- **Rust advisories closed (2):** `rustls-webpki` 0.103.10 → 0.103.12 closes RUSTSEC-2026-0098 (URI name-constraint bypass) and RUSTSEC-2026-0099 (wildcard name-constraint bypass), both fixed in the same patch. Transitive via `reqwest` / `rustls`.
-- `pnpm audit` now reports 0 vulnerabilities.
 
-### Housekeeping
-- Removed unused `@tippyjs/react` — 0 imports in source. The four Tiptap suggestion extensions use `tippy.js` directly.
-- Removed unused `@agentclientprotocol/claude-agent-acp` — only referenced as a string literal in install-instruction UI. The real ACP agent binary is downloaded from GitHub Releases at runtime via `agent_manager.rs`. Side effect: transitive LGPL-3.0 `@img/sharp-libvips-darwin-arm64` and proprietary `@anthropic-ai/claude-agent-sdk` dropped from the dev tree (−898 lines from `pnpm-lock.yaml`).
-- Full dependency audit saved at `docs/audits/2026-04-18-dependencies.md` with follow-up section documenting what was actioned vs deferred.
+- **DOCX viewer's "Convert to Markdown" path is safer.** Underlying XML library updated to close four advisories around how XML metadata (DocumentType nodes, processing instructions, comments) was serialised — relevant when opening DOCX files from untrusted sources.
+- **Inline Excalidraw drawings updated** to close a cross-site-scripting advisory in the math-label rendering for Mermaid sequence diagrams.
+- **Dev-tooling chain updated** to close a denial-of-service advisory in an FTP library used only during E2E test setup, and a server-side rendering injection advisory in a JSX library pulled in transitively. Neither was reachable in shipped paths but the audit is now clean.
+- **Rust TLS stack patched** to close two name-constraint bypass advisories. Transitive via the HTTP client used for AI provider calls.
 
-### Developer Experience
-- **Skills retro batch** from the ACP Protocol Tail:
-  - `implement-tasks` now requires worktree-isolated sub-agents to commit inside the worktree before returning — "leave changes staged" causes the runtime to clean up the worktree and lose the work.
-  - `implement-tasks` treats "deferred / documented only / v1 fallback" acceptance criteria as NOT done until the user explicitly approves reduced scope.
-  - `plan-tasks` now updates the PRD header with a `Tasks` row when creating a tasks file — establishes bidirectional PRD ↔ tasks navigation the project relies on.
-  - `prd` template reserves a `Tasks` row placeholder in the header for `plan-tasks` to fill in.
+## Under the hood
+
+PRD: `docs/prds/2026-04-18-acp-protocol-tail.md`. Full dependency audit at `docs/audits/2026-04-18-dependencies.md`.
+
+- **Task agent session parity** — comment-delegated tasks (via `useAgentTaskOperations`) now use the same `restoreOrCreateAcpSession` chain as the main chat: `session/resume` → `session/load` → `session/list` → `session/new`. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.
+- **EnvVar auth flow** — enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` drive a generic credential form; submitted values are stored in `credentials.envVars` (keychain) and passed to the child process as environment variables on spawn. `credentials.envVars` retained as the storage layer; Gemini connections with existing stored vars continue working without migration.
+- **`resource_link` content blocks** — `acp-utils.ts`'s `normalizeToolCallContent` extended to handle `resource_link` blocks alongside `Diff` / `Content` / `Terminal`. `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open via `openExternal`.
+- **`messageId` propagation** — enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. Forward-compatibility plumbing — no user-visible change yet, but unblocks features that need stable protocol IDs (next-edit-suggestions, richer plan linkage).
+- **`user_message_chunk` events** recognised as a silent no-op — agent echoes no longer log "Unknown ACP session update type" on every chunk. No state mutation; we already have the user message locally.
+- Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines). Auth state now comes from the ACP `authenticate` response.
+- **Dependency cleanup:** removed unused `@tippyjs/react` (0 source imports — the four Tiptap suggestion extensions use `tippy.js` directly) and `@agentclientprotocol/claude-agent-acp` (only referenced as a string literal in install-instruction UI; the real ACP agent binary is downloaded from GitHub Releases at runtime via `agent_manager.rs`). Side effect: transitive LGPL-3.0 `@img/sharp-libvips-darwin-arm64` and proprietary `@anthropic-ai/claude-agent-sdk` dropped from the dev tree (−898 lines from `pnpm-lock.yaml`).
+- **Skills retro batch** from this cycle: `implement-tasks` now requires worktree-isolated sub-agents to commit inside the worktree before returning, and treats "deferred / documented-only / v1 fallback" acceptance criteria as NOT done until the user explicitly approves reduced scope. `plan-tasks` updates the PRD header with a `Tasks` row when creating a tasks file. `prd` template reserves a `Tasks` row placeholder.
+
+### Security advisory IDs
+
+For the security-conscious user looking up specific CVEs:
+
+- npm: GHSA-39q2-94rc-95cp (`dompurify` 3.3.3 → 3.4.0), GHSA-rp42-5vxx-qpwr (`basic-ftp` ≥5.3.0 — dev-only via WDIO > puppeteer), GHSA-458j-xx4x-4375 (`hono` ≥4.12.14 — transitive via ACP SDK)
+- Rust: RUSTSEC-2026-0098 + RUSTSEC-2026-0099 (`rustls-webpki` 0.103.10 → 0.103.12 — transitive via `reqwest` / `rustls`)
+- `pnpm audit` reports 0 vulnerabilities.
 
 ## Files Changed
 

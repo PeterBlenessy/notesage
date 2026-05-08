@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.42.0",
+      "date": "2026-05-08",
+      "previousVersion": "0.41.0",
+      "sections": {
+        "improvements": [
+          "**Large markdown files load substantially faster.** A 500 KB book that previously took ~15 seconds to become editable now lands in around 5 seconds on first open and around 3 seconds when you revisit the same doc later in the session. Smaller docs (50–100 KB) finish in under a second on first open and under 800 ms on revisit.",
+          "**Clicking a different document while one is loading now interrupts cleanly.** The previous document's load is cancelled — its content doesn't flash through on the way to the one you actually want. Mouse hover and click hit-tests stay responsive throughout, so you can keep clicking to find the right file without waiting for the wrong one to finish.",
+          "**Recently-viewed documents reopen quickly.** Notesage now keeps the parsed result of recently-opened documents in memory. Switching back to a file you opened earlier in the session skips the parse step entirely and goes straight to displaying the content."
+        ]
+      }
+    },
+    {
       "version": "0.41.0",
       "date": "2026-05-03",
       "previousVersion": "0.40.1",
@@ -84,8 +96,8 @@
       "previousVersion": "0.39.0",
       "sections": {
         "fixes": [
-          "DOCX viewer's \"Convert to Markdown\" path now uses `@xmldom/xmldom` 0.9.10+ — closes four advisories (XML injection through DocumentType / processing-instruction / comment serialization, plus uncontrolled recursion) flagged when opening hostile DOCX content",
-          "Inline Excalidraw drawings bumped to `@excalidraw/excalidraw` 0.18.1, closing the Mermaid sequence-diagram XSS via KaTeX label rendering"
+          "**DOCX viewer is safer when reading content from untrusted sources.** The XML library used to convert .docx files to markdown was patched to close four advisories around how XML metadata gets serialised. If you open or convert a malicious .docx, the path is no longer exploitable.",
+          "**Inline Excalidraw drawings are safer.** The drawing component was patched to close a cross-site-scripting issue in how math labels render inside Mermaid sequence diagrams."
         ]
       }
     },
@@ -174,15 +186,13 @@
       "previousVersion": "0.36.0",
       "sections": {
         "features": [
-          "**Task agent session parity.** Comment-delegated tasks (via `useAgentTaskOperations`) now use the same restoration chain as the main chat (resume → load → list → new). Reopening a delegated thread after an app restart restores the agent's prior context instead of starting fresh. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.",
-          "**EnvVar auth flow.** Enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` now drive a generic credential form — one password-style input per advertised variable, with the agent-provided \"Get yours at\" link as helper text. Replaces the hardcoded Gemini API-key panel.",
-          "**`resource_link` content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.",
-          "**`messageId` propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage)."
+          "**Comments delegated to AI agents now restore their context after a restart.** Reopening a delegated comment thread after restarting Notesage continues where you left off instead of starting fresh — the agent remembers the prior turn. When a delegated task finishes (completed, failed, or cancelled) Notesage cleanly closes the agent's session so resources don't leak.",
+          "**AI agents that authenticate with credentials** (API keys, tokens, environment variables) now drive a generic credentials form provided by the agent itself. The form fields adapt to whatever each agent advertises, with the agent's own \"Get yours at\" link as helper text. Replaces the Gemini-specific API-key panel — works for any agent that advertises this auth mode. Existing Gemini connections continue working without re-entering credentials.",
+          "**AI messages can now include clickable file references.** When an agent sends a link to a file inside your project, clicking it opens the file as a tab. Links to external URLs open in your browser. Optional descriptions render as a second line of text under the link."
         ],
         "improvements": [
-          "`user_message_chunk` events are now recognized as a silent no-op instead of logging \"Unknown ACP session update type\" on every agent echo. No state mutation; we already have the user message locally.",
-          "Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines).",
-          "`credentials.envVars` retained as the storage layer for EnvVar auth (populated by the generic form, read at spawn time). Gemini connections with existing stored vars continue working without migration."
+          "**AI agent authentication is more reliable.** Auth state is now driven by the agent itself rather than by Notesage probing each provider's CLI separately. Fewer false alarms, fewer brittle edge cases on non-standard installs.",
+          "**Cleaner dev-console output.** Agent message echoes no longer log \"Unknown ACP session update type\" warnings on every chunk."
         ]
       }
     },
