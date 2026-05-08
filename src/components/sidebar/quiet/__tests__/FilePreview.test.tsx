@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * Unit tests for FilePreview — the 500ms hover popover that shows the first
+ * Unit tests for FilePreview — the 800ms hover popover that shows the first
  * ~10 lines of a file.
  *
  * Test strategy:
@@ -276,7 +276,7 @@ describe("FilePreview — hover behavior", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("opens the popover and fetches the file after a 500ms hover", async () => {
+  it("opens the popover and fetches the file after a 800ms hover", async () => {
     renderWithProviders(
       <FilePreview filePath="/docs/notes.md">
         <button>Trigger</button>
@@ -287,7 +287,7 @@ describe("FilePreview — hover behavior", () => {
     // Not yet open.
     expect(screen.queryByRole("tooltip")).toBeNull();
 
-    await advance(500);
+    await advance(800);
 
     expect(screen.getByRole("tooltip")).toBeTruthy();
     expect(readFileSpy).toHaveBeenCalledWith("/docs/notes.md");
@@ -304,7 +304,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.textContent).toContain("L1");
@@ -323,7 +323,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.textContent).toContain("first");
@@ -338,7 +338,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     expect(screen.getByRole("tooltip").textContent).toContain(
       "No preview available",
@@ -358,7 +358,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     expect(screen.getByRole("tooltip").textContent).toContain(
       "Preview unavailable",
@@ -374,7 +374,7 @@ describe("FilePreview — hover behavior", () => {
 
     // First hover → fetch.
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
     expect(screen.getByRole("tooltip")).toBeTruthy();
     expect(readFileSpy).toHaveBeenCalledTimes(1);
 
@@ -384,7 +384,7 @@ describe("FilePreview — hover behavior", () => {
 
     // Second hover → cache hit, no new fetch.
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
     expect(screen.getByRole("tooltip")).toBeTruthy();
     expect(readFileSpy).toHaveBeenCalledTimes(1);
   });
@@ -415,7 +415,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.getAttribute("data-reduced-motion")).toBe("true");
@@ -437,7 +437,7 @@ describe("FilePreview — hover behavior", () => {
     );
 
     fireEvent.mouseEnter(getTrigger());
-    await advance(500);
+    await advance(800);
 
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.getAttribute("data-reduced-motion")).toBeNull();

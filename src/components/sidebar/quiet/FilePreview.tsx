@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useSettingsStore } from "@/stores/settings-store";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/MarkdownContent";
@@ -57,14 +58,27 @@ const PREVIEWABLE_EXTENSIONS = new Set([
   "css",
 ]);
 
-/** Default hover delay in milliseconds. */
-const DEFAULT_DELAY_MS = 500;
+/** Default hover delay in milliseconds. Bumped from 500 → 800 on 2026-05-05
+ *  user feedback that the popover felt too eager on documents during the
+ *  large-file load testing — the popover was firing readFile calls during
+ *  drive-by hovers while the user was trying to click. */
+const DEFAULT_DELAY_MS = 800;
 
 /** Default number of lines to show in the preview body. */
 const DEFAULT_LINE_COUNT = 10;
 
 /** Grace period (ms) before closing after mouse leaves; prevents flicker. */
 const CLOSE_GRACE_MS = 150;
+
+/**
+ * Hard ceiling on visible duration. Even if no mouseLeave event fires
+ * (main-thread freeze during large-file hydration, portal event-tree
+ * weirdness, browser hover-tracking bug, etc.), the popover auto-dismisses
+ * after this. User feedback 2026-05-06: hover popover got stuck visible
+ * after the cursor moved away. The grace-timer alone wasn't enough; this
+ * is the belt-and-braces.
+ */
+const MAX_OPEN_MS = 5000;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -252,14 +266,21 @@ export function FilePreview({
   lineCount = DEFAULT_LINE_COUNT,
   side = "right",
 }: FilePreviewProps) {
+  // User preference — when disabled, the popover is bypassed entirely;
+  // we just render the wrapped row and skip mouse-tracking + fetch.
+  // The folder-hover popover (FolderPeek) is a separate component and
+  // is unaffected by this setting.
+  const enabled = useSettingsStore((s) => s.sidebarFilePreviewEnabled);
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ status: "idle" });
 
   const reducedMotion = useReducedMotion();
 
-  // Timer handles for open-delay and close-grace.
+  // Timer handles for open-delay, close-grace, and the hard max-visible
+  // ceiling that auto-dismisses if no mouseLeave fires (see MAX_OPEN_MS).
   const openTimerRef = useRef<number | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const maxOpenTimerRef = useRef<number | null>(null);
 
   // Per-mount cache: previously fetched previews keyed by absolute path.
   const cacheRef = useRef<Map<string, { body: string; title: string | null }>>(
@@ -283,8 +304,34 @@ export function FilePreview({
       if (closeTimerRef.current !== null) {
         window.clearTimeout(closeTimerRef.current);
       }
+      if (maxOpenTimerRef.current !== null) {
+        window.clearTimeout(maxOpenTimerRef.current);
+      }
     };
   }, []);
+
+  // Hard ceiling — when the popover opens, schedule a force-close after
+  // MAX_OPEN_MS. The user may have moved the cursor away during a
+  // main-thread freeze that swallowed the mouseLeave event; this fail-safe
+  // dismisses the popover regardless. Cleared on close.
+  useEffect(() => {
+    if (!open) return;
+    if (maxOpenTimerRef.current !== null) {
+      window.clearTimeout(maxOpenTimerRef.current);
+    }
+    maxOpenTimerRef.current = window.setTimeout(() => {
+      maxOpenTimerRef.current = null;
+      activePathRef.current = null;
+      setOpen(false);
+      setState({ status: "idle" });
+    }, MAX_OPEN_MS);
+    return () => {
+      if (maxOpenTimerRef.current !== null) {
+        window.clearTimeout(maxOpenTimerRef.current);
+        maxOpenTimerRef.current = null;
+      }
+    };
+  }, [open]);
 
   const loadPreview = useCallback(
     async (path: string) => {
@@ -442,6 +489,10 @@ export function FilePreview({
     }
   }, []);
 
+  // Disabled by user preference — render children straight through, no
+  // popover wrapper, no mouse listeners, no fetch.
+  if (!enabled) return <>{children}</>;
+
   const name = basename(filePath);
   const typeLabel = formatTypeLabel(filePath);
 
@@ -479,6 +530,30 @@ export function FilePreview({
         // hover tooltip this would steal focus from the list row. Prevent it.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
+        // Belt-and-braces close paths (live-test 2026-05-06): pointerDown or
+        // Escape anywhere outside the popover dismisses it, even if the
+        // grace-timer mouseLeave path got swallowed (e.g. by a main-thread
+        // freeze during large-file hydration). Radix fires onInteractOutside
+        // BEFORE the click reaches the underlying element so this doesn't
+        // interfere with row-click-to-open.
+        onInteractOutside={() => {
+          if (closeTimerRef.current !== null) {
+            window.clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+          }
+          activePathRef.current = null;
+          setOpen(false);
+          setState({ status: "idle" });
+        }}
+        onEscapeKeyDown={() => {
+          if (closeTimerRef.current !== null) {
+            window.clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+          }
+          activePathRef.current = null;
+          setOpen(false);
+          setState({ status: "idle" });
+        }}
         // Honor prefers-reduced-motion. Expose a data attribute so the
         // render-time JS hook can be observed in tests / inspector; the
         // actual animation suppression is handled by Tailwind's

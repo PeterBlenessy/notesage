@@ -659,6 +659,20 @@ export const tauriApi = {
     return await invoke<string>("render_html", options);
   },
 
+  /**
+   * Render a markdown file to an HTML body fragment for the instant-load
+   * preview surface. Reads the file, strips YAML frontmatter, runs comrak
+   * via the existing render_html infrastructure. See
+   * docs/prds/2026-05-03-large-file-instant-load.md (Phase 1, Layer 1).
+   */
+  async renderMarkdownPreview(options: {
+    path: string;
+    projectRoot?: string;
+    theme: "light" | "dark";
+  }): Promise<string> {
+    return await invoke<string>("render_markdown_preview", options);
+  },
+
   async importPptxTemplate(options: {
     sourcePath: string;
     scope: string;

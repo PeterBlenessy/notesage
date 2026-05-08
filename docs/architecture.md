@@ -324,7 +324,9 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:find]` | `search-highlight.ts` | Query, match count, doc node size, elapsed time |
 | `[perf:typing]` | `tag-highlight.ts`, `search-highlight.ts`, `comment-mark.ts` | Decoration rebuild per keystroke (sampled every 10th keystroke) |
 | `[perf:palette]` | `CommandPalette.tsx`, `SymbolSearchResults.tsx` | Mode, query, result count, IPC timing for index-backed modes |
-| `[perf:tab-load]` | `Editor.tsx` | File type, size, load elapsed time |
+| `[perf:doc-load]` | `Editor.tsx` | File type, size, load elapsed time on first read from disk |
+| `[perf:doc-switch]` | `useEditorTabSwitch.ts` | Per-stage timing of a doc activation: preview-ready, parse-cache hit/miss, hydration aborted, editor restored, doc visible. Includes `pipelineMs` (parse-promise dispatch → editor hydrated, the full async pipeline), `workerParse` / `workerPreprocess` (worker-thread JS time, both 0 on cache hit), streaming-hydrate timings (`chunkCount`, `streamMs`), and total click-to-visible (`totalMs`). |
+| `[perf:setContent]` | `markdown.ts` (`loadParsedJsonIntoEditor`, `loadRawMarkdownIntoEditor`) | DOM materialize cost — `setContentMs`, `freshStateMs`, `sideMapsMs`, plus `oldDocSize` and `newDocSize` in ProseMirror coords. Sibling to streaming hydrate's `streamMs`. |
 | `[perf:skills]` | `useSkillOperations.ts` | Skill/agent/instruction discovery timing |
 | `[perf:ai-chat]` | `useDirectApiChat.ts` | First token latency, stream complete (provider, total tokens, elapsed) |
 | `[perf:index]` | `src-tauri/src/index/mod.rs` | Index build (project, files, changed, ms), query timing per type |

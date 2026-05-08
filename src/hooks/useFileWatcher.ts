@@ -10,6 +10,7 @@ import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { processPendingCommentFile } from "@/lib/pending-comments";
+import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
@@ -77,6 +78,10 @@ export function useFileWatcher() {
   useEffect(() => {
     /** Shared handler for processing a single file-changed event. */
     function handleEvent(path: string, kind: FileChangedPayload["kind"]) {
+      // Drop any cached worker-parse for this path — content has diverged.
+      // The next click on this file will re-dispatch the worker.
+      parsedDocCache.delete(path);
+
       // For create/delete events, debounce file tree refresh.
       // Pass the parent directory so only the affected section is refreshed
       // (not all 10 sections which takes ~2s on iCloud paths).

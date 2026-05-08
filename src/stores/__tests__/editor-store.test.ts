@@ -1212,3 +1212,50 @@ describe('scroll-to targets', () => {
     expect(getTabById(tabId)!.scrollToText).toBeUndefined();
   });
 });
+
+describe('preview state (large-file instant-load Phase 1)', () => {
+  it('setPreview stashes html and flips state to ready', () => {
+    useEditorStore.getState().openTab('/big.md', 'big.md', 'body');
+    const tabId = getTab('/big.md')!.id;
+
+    useEditorStore.getState().setPreview(tabId, '<h1>preview</h1>');
+    const tab = getTabById(tabId)!;
+    expect(tab.previewHtml).toBe('<h1>preview</h1>');
+    expect(tab.previewState).toBe('ready');
+  });
+
+  it('setPreviewState("hydrated") drops previewHtml from memory', () => {
+    useEditorStore.getState().openTab('/big.md', 'big.md', 'body');
+    const tabId = getTab('/big.md')!.id;
+
+    useEditorStore.getState().setPreview(tabId, '<h1>preview</h1>');
+    expect(getTabById(tabId)!.previewHtml).toBe('<h1>preview</h1>');
+
+    useEditorStore.getState().setPreviewState(tabId, 'hydrated');
+    const tab = getTabById(tabId)!;
+    // HTML must be discarded — large preview blobs would otherwise hang around for the
+    // life of the tab. See PRD § "Layer 1 — Discard preview on tab close" (#13).
+    expect(tab.previewHtml).toBeUndefined();
+    expect(tab.previewState).toBe('hydrated');
+  });
+
+  it('setPreviewState("loading") preserves previewHtml', () => {
+    useEditorStore.getState().openTab('/big.md', 'big.md', 'body');
+    const tabId = getTab('/big.md')!.id;
+
+    useEditorStore.getState().setPreview(tabId, '<h1>preview</h1>');
+    useEditorStore.getState().setPreviewState(tabId, 'loading');
+    const tab = getTabById(tabId)!;
+    expect(tab.previewHtml).toBe('<h1>preview</h1>');
+    expect(tab.previewState).toBe('loading');
+  });
+
+  it('closeTab discards previewHtml with the tab', () => {
+    useEditorStore.getState().openTab('/big.md', 'big.md', 'body');
+    const tabId = getTab('/big.md')!.id;
+
+    useEditorStore.getState().setPreview(tabId, '<h1>preview</h1>');
+    useEditorStore.getState().closeTab(tabId);
+    expect(useEditorStore.getState().openDocuments.find((t) => t.id === tabId)).toBeUndefined();
+  });
+});

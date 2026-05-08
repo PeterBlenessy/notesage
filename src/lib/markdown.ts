@@ -29,7 +29,11 @@ const ANNOTATION_PREFIX_RE =
  *   - `cleaned`: markdown with all `{emoji}` prefixes removed
  *   - `annotations`: Map<itemIndex, emoji> (0-based, document order)
  */
-function stripAnnotationsFromMarkdown(markdown: string): {
+/**
+ * @workerSafe Pure regex transform — exported so the markdown-parse Web Worker
+ * (Phase 2) can extract annotations off the main thread.
+ */
+export function stripAnnotationsFromMarkdown(markdown: string): {
   cleaned: string;
   annotations: Map<number, string>;
 } {
@@ -160,7 +164,8 @@ export function injectAnnotationsIntoMarkdown(
  * This function ensures every checkbox bracket has at least one trailing
  * space so the parser always matches.
  */
-function normalizeEmptyTaskItems(markdown: string): string {
+/** @workerSafe Pure regex transform — exported for Phase 2 worker pipeline. */
+export function normalizeEmptyTaskItems(markdown: string): string {
   // Match task items where the checkbox bracket is the last thing on the line
   // (no content after it). Add a trailing space so markdown-it-task-lists matches.
   return markdown.replace(
@@ -1078,29 +1083,270 @@ export function loadRawMarkdownIntoEditor(
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
+
+  // [perf:setContent] instrumentation — measures main-thread cost of the
+  // DOM teardown + rebuild. The "old" doc size is what we're throwing away;
+  // the "new" doc size is what we're building. Both contribute to the cost.
+  const oldDocSize = editor.state.doc.nodeSize;
+  const t0 = performance.now();
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
+  const setContentMs = performance.now() - t0;
+  const newDocSize = editor.state.doc.nodeSize;
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
   // Without this, stale history entries from the previous document cause
   // silent no-op undos and unexpected cursor jumps after tab switches.
+  const t1 = performance.now();
   const freshState = EditorState.create({
     doc: editor.state.doc,
     plugins: editor.state.plugins,
   });
   editor.view.updateState(freshState);
+  const freshStateMs = performance.now() - t1;
 
+  const t2 = performance.now();
   if (metadata.size > 0) {
     applyTableColumnMetadata(editor, metadata);
   }
   if (nodeIds.size > 0) {
     applyNodeIdsToEditor(editor, nodeIds);
   }
+  const sideMapsMs = performance.now() - t2;
+
+  console.log("[perf:setContent]", {
+    path: "raw-markdown",
+    oldDocSize,
+    newDocSize,
+    setContentMs: +setContentMs.toFixed(1),
+    freshStateMs: +freshStateMs.toFixed(1),
+    sideMapsMs: +sideMapsMs.toFixed(1),
+    totalMs: +(setContentMs + freshStateMs + sideMapsMs).toFixed(1),
+  });
 
   if (annotations.size > 0) {
     requestAnimationFrame(() => {
       applyAnnotationsToEditor(editor, annotations);
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Worker hydration path (Phase 2 — Layer 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Companion to `loadRawMarkdownIntoEditor` for the Phase 2 worker hydration
+ * path. The worker has already done the expensive markdown→HTML→ProseMirror
+ * parse off-thread; the main thread just feeds the JSON to setContent and
+ * applies the side-channel maps (annotations, nodeIds, table metadata) the
+ * same way the legacy synchronous path does.
+ *
+ * `setContent(json, false)` is dramatically cheaper than `setContent(html)`
+ * because the heavy schema-walk parse already happened in the worker.
+ * This is the critical hot path that takes the 4.5–5.1s `animation-frame-fired`
+ * block from "freezes the entire app" to "completes in milliseconds."
+ */
+export function loadParsedJsonIntoEditor(
+  editor: Editor,
+  /** ProseMirror JSON from the worker's `node.toJSON()`. */
+  doc: unknown,
+  side: {
+    annotations: Map<number, string>;
+    nodeIds: Map<number, string>;
+    tableMetadata: TableColumnMetadataMap;
+  },
+): void {
+  // [perf:setContent] instrumentation — see `loadRawMarkdownIntoEditor`
+  // for rationale. This is the worker-hydration path; setContent here
+  // accepts pre-parsed ProseMirror JSON which is dramatically cheaper
+  // than parsing markdown, but the DOM materialize cost is the same.
+  const oldDocSize = editor.state.doc.nodeSize;
+  const t0 = performance.now();
+  editor.chain().setMeta("addToHistory", false).setContent(doc as never).run();
+  const setContentMs = performance.now() - t0;
+  const newDocSize = editor.state.doc.nodeSize;
+
+  // Same fresh-state pattern as `loadRawMarkdownIntoEditor` — clears undo
+  // history so stale entries from the previous document don't corrupt the
+  // user's first undo after open.
+  const t1 = performance.now();
+  const freshState = EditorState.create({
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  });
+  editor.view.updateState(freshState);
+  const freshStateMs = performance.now() - t1;
+
+  const t2 = performance.now();
+  if (side.tableMetadata.size > 0) {
+    applyTableColumnMetadata(editor, side.tableMetadata);
+  }
+  if (side.nodeIds.size > 0) {
+    applyNodeIdsToEditor(editor, side.nodeIds);
+  }
+  const sideMapsMs = performance.now() - t2;
+
+  console.log("[perf:setContent]", {
+    path: "parsed-json",
+    oldDocSize,
+    newDocSize,
+    setContentMs: +setContentMs.toFixed(1),
+    freshStateMs: +freshStateMs.toFixed(1),
+    sideMapsMs: +sideMapsMs.toFixed(1),
+    totalMs: +(setContentMs + freshStateMs + sideMapsMs).toFixed(1),
+  });
+
+  if (side.annotations.size > 0) {
+    requestAnimationFrame(() => {
+      applyAnnotationsToEditor(editor, side.annotations);
+    });
+  }
+}
+
+/**
+ * Default chunk size for streaming hydration. ~1000 top-level nodes per
+ * chunk lands at roughly 30–60 ms of synchronous JS per chunk in dev mode
+ * — short enough that yielding between chunks keeps clicks responsive,
+ * large enough that the per-chunk transaction overhead doesn't dominate.
+ *
+ * Tuneable: smaller = more responsive, longer total time. Larger = closer
+ * to single-shot setContent, less interruptible.
+ */
+const HYDRATE_CHUNK_SIZE = 1000;
+
+/**
+ * Streaming version of `loadParsedJsonIntoEditor` — inserts the parsed
+ * doc in chunks with `setTimeout(0)` yields between chunks, gated on an
+ * abort signal. Designed so that a click on a different tab during
+ * hydration cleanly interrupts the in-flight load (next chunk's abort
+ * check bails) instead of running the full ~4 s synchronous setContent
+ * that ProseMirror does in one shot.
+ *
+ * Returns a structured result so the caller can log timings and decide
+ * what to do on abort. The editor is left in a partially-hydrated state
+ * on abort — the next call to `streamingHydrate` will replace its
+ * content via the leading `setContent({content: []})` reset.
+ *
+ * The side-channel maps (table metadata, nodeIds, annotations) are
+ * applied at the END after streaming completes. Applying them per-chunk
+ * would double the transaction count.
+ */
+export async function streamingHydrate(
+  editor: Editor,
+  /** ProseMirror JSON from the worker's `node.toJSON()`. */
+  doc: unknown,
+  side: {
+    annotations: Map<number, string>;
+    nodeIds: Map<number, string>;
+    tableMetadata: TableColumnMetadataMap;
+  },
+  signal: AbortSignal,
+): Promise<{
+  aborted: boolean;
+  chunkCount: number;
+  topLevelNodes: number;
+  newDocSize: number;
+  oldDocSize: number;
+  ms: number;
+}> {
+  const t0 = performance.now();
+  const oldDocSize = editor.state.doc.nodeSize;
+
+  const docContent = (doc as { content?: unknown[] } | null)?.content;
+
+  // Empty / malformed doc — fast path. Just clear the editor.
+  if (!Array.isArray(docContent) || docContent.length === 0) {
+    if (signal.aborted) {
+      return { aborted: true, chunkCount: 0, topLevelNodes: 0, newDocSize: 0, oldDocSize, ms: performance.now() - t0 };
+    }
+    editor.chain().setMeta("addToHistory", false).setContent({ type: "doc", content: [] }).run();
+    return {
+      aborted: false,
+      chunkCount: 0,
+      topLevelNodes: 0,
+      newDocSize: editor.state.doc.nodeSize,
+      oldDocSize,
+      ms: performance.now() - t0,
+    };
+  }
+
+  if (signal.aborted) {
+    return { aborted: true, chunkCount: 0, topLevelNodes: docContent.length, newDocSize: oldDocSize, oldDocSize, ms: performance.now() - t0 };
+  }
+
+  // Stream content in chunks. The FIRST chunk uses `setContent` so it
+  // replaces existing content in one transaction (matching the old
+  // `loadParsedJsonIntoEditor` behaviour for single-chunk small docs).
+  // Subsequent chunks use `insertContent` to append. Yielding via rAF
+  // between chunks so click events can fire and abort the loop —
+  // single-chunk fast path skips the yield, no overhead.
+  let chunkCount = 0;
+  for (let i = 0; i < docContent.length; i += HYDRATE_CHUNK_SIZE) {
+    if (signal.aborted) {
+      return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
+    }
+
+    const chunk = docContent.slice(i, i + HYDRATE_CHUNK_SIZE);
+    const isFirstChunk = i === 0;
+    if (isFirstChunk) {
+      // Single-shot replacement — same as legacy `loadParsedJsonIntoEditor`
+      // for small docs that fit in one chunk. Avoids the double-transaction
+      // (clear + insert) that detaches DOM Playwright is mid-clicking.
+      editor.chain().setMeta("addToHistory", false).setContent({ type: "doc", content: chunk } as never).run();
+    } else {
+      editor.chain().setMeta("addToHistory", false).insertContent(chunk as never).run();
+    }
+    chunkCount++;
+
+    // Yield between chunks via `requestAnimationFrame`. Why not
+    // `setTimeout(0)`? setTimeout fires the next chunk before the
+    // browser has a chance to paint or run hover/cursor hit-tests, so
+    // sidebar items don't show the pointer cursor during streaming.
+    // rAF guarantees one paint frame between chunks (~16 ms on 60 Hz),
+    // which is enough for cursor + hover styles + click events to fire
+    // cleanly. Costs ~16 ms × N chunks of total time vs 1–4 ms × N for
+    // setTimeout — worth it for the responsiveness win. Skip the yield
+    // on the last chunk — no point waiting for nothing.
+    if (i + HYDRATE_CHUNK_SIZE < docContent.length) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }
+  }
+
+  if (signal.aborted) {
+    return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
+  }
+
+  // Same fresh-state pattern as `loadParsedJsonIntoEditor` — clears undo
+  // history so stale entries from the previous document don't corrupt
+  // the user's first undo after open.
+  const freshState = EditorState.create({
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  });
+  editor.view.updateState(freshState);
+
+  // Side-channel maps applied AFTER streaming. Each is a single
+  // transaction; doing them per-chunk would multiply overhead.
+  if (side.tableMetadata.size > 0) {
+    applyTableColumnMetadata(editor, side.tableMetadata);
+  }
+  if (side.nodeIds.size > 0) {
+    applyNodeIdsToEditor(editor, side.nodeIds);
+  }
+  if (side.annotations.size > 0) {
+    requestAnimationFrame(() => {
+      applyAnnotationsToEditor(editor, side.annotations);
+    });
+  }
+
+  return {
+    aborted: false,
+    chunkCount,
+    topLevelNodes: docContent.length,
+    newDocSize: editor.state.doc.nodeSize,
+    oldDocSize,
+    ms: performance.now() - t0,
+  };
 }
 
 /**

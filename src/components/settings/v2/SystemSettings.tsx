@@ -132,6 +132,16 @@ export function SystemSettings({
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
+  const sidebarFilePreviewEnabled = useSettingsStore(
+    (s) => s.sidebarFilePreviewEnabled,
+  );
+  const setSidebarFilePreviewEnabled = useSettingsStore(
+    (s) => s.setSidebarFilePreviewEnabled,
+  );
+
+  // Performance
+  const instantLoadPreview = useSettingsStore((s) => s.instantLoadPreview);
+  const setInstantLoadPreview = useSettingsStore((s) => s.setInstantLoadPreview);
 
   // Diagnostics
   const logLevel = useSettingsStore((s) => s.logLevel);
@@ -346,7 +356,7 @@ export function SystemSettings({
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Files" description="File visibility in the sidebar.">
+      <SettingsGroup label="Files" description="File visibility and hover behaviour in the sidebar.">
         <SettingsRow
           label="Show hidden files"
           description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
@@ -356,6 +366,36 @@ export function SystemSettings({
               id="show-hidden-files"
               checked={showHiddenFiles}
               onCheckedChange={setShowHiddenFiles}
+            />
+          }
+        />
+        <SettingsRow
+          label="File hover preview"
+          description="Show a small popover with the first lines of a file when hovering its row in the sidebar. Folder hover previews are unaffected."
+          htmlFor="sidebar-file-preview"
+          control={
+            <Switch
+              id="sidebar-file-preview"
+              checked={sidebarFilePreviewEnabled}
+              onCheckedChange={setSidebarFilePreviewEnabled}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Performance"
+        description="Document loading behaviour."
+      >
+        <SettingsRow
+          label="Instant-load preview"
+          description="Show a quick HTML preview of the document while the editor hydrates in the background. Disable to mount the editor directly — slightly slower first paint on large docs but no preview/editor swap."
+          htmlFor="instant-load-preview"
+          control={
+            <Switch
+              id="instant-load-preview"
+              checked={instantLoadPreview}
+              onCheckedChange={setInstantLoadPreview}
             />
           }
         />

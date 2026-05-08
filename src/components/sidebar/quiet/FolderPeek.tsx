@@ -63,7 +63,11 @@ export interface FolderPeekProps {
   // (handled by ProjectsSection). TreeOverlay deletion lands in #20.
 }
 
-const HOVER_DELAY_MS = 220;
+// Bumped from 220 → 500ms on 2026-05-05 user feedback that the folder-peek
+// popover felt too eager during sidebar navigation, particularly while the
+// large-file editor was hydrating. 500ms aligns with FilePreview's earlier
+// default and is a comfortable threshold for "deliberate hover" vs "drive-by".
+const HOVER_DELAY_MS = 500;
 const CLOSE_GRACE_MS = 150;
 
 const MAX_FOLDERS = 8;

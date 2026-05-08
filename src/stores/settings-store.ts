@@ -93,6 +93,23 @@ interface SettingsStore {
   chatHintsShown: boolean;
   /** Show dotfiles and dot-directories in the sidebar file tree */
   showHiddenFiles: boolean;
+  /**
+   * Show the comrak HTML preview while the editor hydrates in the
+   * background (Phase 1 / Phase 3b instant-load). When false, the
+   * editor mounts directly via streaming hydrate — no preview surface,
+   * no preview/editor visual swap. Default true. Diagnostic / preference
+   * toggle: previewing is the right default for large docs (instant
+   * first paint), but some users find the visual swap distracting.
+   */
+  instantLoadPreview: boolean;
+  /**
+   * Show the file-content hover popover that previews the first ~12 lines
+   * of a file when hovering its row in the Quiet Composer sidebar's
+   * Recent / Pinned / Tags / Mentions sections. Default true. The folder
+   * hover popover (`FolderPeek`) is a separate surface and is NOT gated
+   * by this setting.
+   */
+  sidebarFilePreviewEnabled: boolean;
   /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
   showAgentModePicker: boolean;
   /**
@@ -257,6 +274,8 @@ interface SettingsStore {
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
+  setInstantLoadPreview: (enabled: boolean) => void;
+  setSidebarFilePreviewEnabled: (enabled: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
   setUiPreview: (preview: UiPreview) => void;
@@ -316,6 +335,8 @@ export const useSettingsStore = create<SettingsStore>()(
       bundledAgentsCleaned: false,
       chatHintsShown: false,
       showHiddenFiles: false,
+      instantLoadPreview: true,
+      sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
       crossProjectMode: false,
       uiPreview: "legacy",
@@ -565,6 +586,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowHiddenFiles: (show: boolean) => {
         set({ showHiddenFiles: show });
+      },
+
+      setInstantLoadPreview: (enabled: boolean) => {
+        set({ instantLoadPreview: enabled });
+      },
+
+      setSidebarFilePreviewEnabled: (enabled: boolean) => {
+        set({ sidebarFilePreviewEnabled: enabled });
       },
 
       setShowAgentModePicker: (show: boolean) => {

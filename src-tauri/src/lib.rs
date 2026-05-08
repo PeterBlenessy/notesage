@@ -128,6 +128,7 @@ pub fn run() {
             export_pptx,
             export_docx,
             render_html,
+            render_markdown_preview,
             save_binary_file,
             import_pptx_template,
             list_pptx_templates,
