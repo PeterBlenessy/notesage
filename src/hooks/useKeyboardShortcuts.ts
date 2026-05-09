@@ -4,7 +4,7 @@
  *
  * Batch G12 · task #76 — consolidated the scattered if/else soup of the
  * legacy hook into a declarative SHORTCUT table, added `uiPreview` awareness
- * so ⌘K / ⌢1–4 / ⌘⇧P route to the FloatingCommandBar under the Quiet
+ * so ⌘K / ⌘1–4 / ⌘⇧P route to the FloatingCommandBar under the Quiet
  * Composer preview, and pulled `useCommandBarShortcuts` into this hook
  * (composition) so App.tsx only has to mount one keyboard hook.
  *
