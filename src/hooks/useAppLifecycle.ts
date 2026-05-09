@@ -10,6 +10,7 @@ import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
+import { recoverIncompleteTransactions } from "@/lib/rename-transaction";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
@@ -484,6 +485,22 @@ export async function reloadTrees() {
         (p) => p.endsWith(".md") && !Array.from(projectRoots).some((pr) => p.startsWith(pr + "/")),
       );
       void backfillSidecarOriginalPaths(notesRoot!, mdFilePaths).catch(() => {});
+    }
+  }
+
+  // Recover any incomplete rename transactions left by a previous crash.
+  // Must run after the notes root is validated and the notes tree is loaded,
+  // but before setting startupReady (so the watcher does not start emitting
+  // events for staging files that are still being cleaned up).
+  {
+    const notesRoot = useSettingsStore.getState().notesRootPath;
+    const isValidNotesRoot = notesRoot != null && notesRoot.length > 0 && !notesRoot.startsWith("~");
+    if (isValidNotesRoot) {
+      try {
+        await recoverIncompleteTransactions(notesRoot!);
+      } catch (err) {
+        log.warn("startup", `rename transaction recovery failed: ${err}`);
+      }
     }
   }
 

@@ -6,9 +6,10 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
-import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
-import { commentSidecarPath, parseSidecar, serializeSidecar } from "@/lib/comment-storage";
+import { commentSidecarPath, parseSidecar } from "@/lib/comment-storage";
+import { executeRenameTransaction, type SidecarMigrationInput } from "@/lib/rename-transaction";
+import { tauriApi } from "@/lib/tauri";
 
 interface FileRenamedPayload {
   old_path: string;
@@ -16,45 +17,32 @@ interface FileRenamedPayload {
   is_directory: boolean;
 }
 
-/** Migrate a single non-project file's path-keyed sidecar on rename. */
-async function migrateFileSidecar(
-  oldFilePath: string,
-  newFilePath: string,
-  notesRootPath: string
-): Promise<void> {
-  const oldSidecar = commentSidecarPath(notesRootPath, oldFilePath);
-  const newSidecar = commentSidecarPath(notesRootPath, newFilePath);
-  try {
-    const exists = await tauriApi.pathExists(oldSidecar);
-    if (!exists) return;
-    const content = await tauriApi.readFile(oldSidecar);
-    await tauriApi.writeFile(newSidecar, content);
-    await tauriApi.deletePath(oldSidecar);
-  } catch (err) {
-    log.warn("useFileRenameSync", `sidecar migration failed ${oldSidecar} → ${newSidecar}: ${err}`);
-  }
-}
-
 /**
  * Reverse-lookup pass for closed-tab non-project files on folder rename.
  *
- * Lists all path-keyed sidecars in the comments directory and migrates any
- * whose `originalPath` falls inside the renamed folder. Sidecars already
- * migrated by the open-tab pass are skipped (their new hash path exists).
+ * Lists all path-keyed sidecars in the comments directory and collects
+ * migration inputs for any whose `originalPath` falls inside the renamed
+ * folder. Returns the inputs so the caller can run them through
+ * `executeRenameTransaction` as part of a single crash-safe transaction.
+ *
+ * Sidecars already migrated by the open-tab pass (new hash path exists) are
+ * skipped.
  */
-async function migrateClosedTabSidecars(
+async function collectClosedTabMigrationInputs(
   oldFolderPath: string,
   newFolderPath: string,
   notesRootPath: string,
   projectRoots: string[],
-): Promise<void> {
+): Promise<SidecarMigrationInput[]> {
   const commentsDir = `${notesRootPath}/.notesage/comments`;
   let entries: Awaited<ReturnType<typeof tauriApi.listDirectory>>;
   try {
     entries = await tauriApi.listDirectory(commentsDir);
   } catch {
-    return; // comments directory does not exist yet
+    return []; // comments directory does not exist yet
   }
+
+  const inputs: SidecarMigrationInput[] = [];
 
   for (const entry of entries) {
     if (entry.is_directory || !entry.name.endsWith(".json") || !entry.name.startsWith("path-")) {
@@ -89,13 +77,10 @@ async function migrateClosedTabSidecars(
       // proceed
     }
 
-    try {
-      await tauriApi.writeFile(newSidecar, serializeSidecar(data.comments, newFilePath));
-      await tauriApi.deletePath(entry.path);
-    } catch (err) {
-      log.warn("useFileRenameSync", `closed-tab sidecar migration failed ${entry.path}: ${err}`);
-    }
+    inputs.push({ oldSidecar: entry.path, newSidecar, newFilePath });
   }
+
+  return inputs;
 }
 
 /**
@@ -164,30 +149,51 @@ export function useFileRenameSync(): void {
           // Single file rename: migrate sidecar if not inside a project.
           const isProjectFile = projects.some((p) => old_path.startsWith(p.path + "/"));
           if (!isProjectFile) {
-            void migrateFileSidecar(old_path, new_path, notesRootPath!).catch(() => {});
+            const oldSidecar = commentSidecarPath(notesRootPath!, old_path);
+            const newSidecar = commentSidecarPath(notesRootPath!, new_path);
+            void executeRenameTransaction(notesRootPath!, [
+              { oldSidecar, newSidecar, newFilePath: new_path },
+            ]).catch(() => {});
           }
         } else {
-          // Folder rename: fast path for open tabs (synchronous iteration),
-          // then reverse-lookup pass for closed-tab files via originalPath.
+          // Folder rename: collect all migration inputs (open-tab fast path +
+          // closed-tab reverse-lookup pass), then run them through a single
+          // crash-safe transaction.
           const descendantTabs = openDocs.filter((tab) =>
             tab.filePath.startsWith(new_path + "/")
           );
+          const openTabInputs: SidecarMigrationInput[] = [];
           for (const tab of descendantTabs) {
             const isProjectFile = projects.some((p) => tab.filePath.startsWith(p.path + "/"));
             if (!isProjectFile) {
-              // Reconstruct the old file path: replace the new prefix with the old one.
               const oldFilePath = old_path + tab.filePath.slice(new_path.length);
-              void migrateFileSidecar(oldFilePath, tab.filePath, notesRootPath!).catch(() => {});
+              openTabInputs.push({
+                oldSidecar: commentSidecarPath(notesRootPath!, oldFilePath),
+                newSidecar: commentSidecarPath(notesRootPath!, tab.filePath),
+                newFilePath: tab.filePath,
+              });
             }
           }
+
+          // Run open-tab migrations first in their own transaction so they are
+          // available to the closed-tab dedup check (alreadyMigrated check uses
+          // pathExists on the new sidecar path).
+          if (openTabInputs.length > 0) {
+            void executeRenameTransaction(notesRootPath!, openTabInputs).catch(() => {});
+          }
+
           // Reverse-lookup: migrate sidecars for closed-tab files whose
           // originalPath was inside the renamed folder.
-          void migrateClosedTabSidecars(
+          void collectClosedTabMigrationInputs(
             old_path,
             new_path,
             notesRootPath!,
             projects.map((p) => p.path),
-          ).catch(() => {});
+          ).then((closedInputs) => {
+            if (closedInputs.length > 0) {
+              return executeRenameTransaction(notesRootPath!, closedInputs);
+            }
+          }).catch(() => {});
         }
       }
 
