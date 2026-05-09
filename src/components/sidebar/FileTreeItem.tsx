@@ -465,7 +465,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
-                    Locked to a single AI provider — Project Settings to unlock
+                    Locked to a single AI provider — Folder Settings to unlock
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

@@ -6,7 +6,8 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Folder, FolderOpen, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
+import { resolveFolderIcon } from "@/lib/folder-icon";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type ExplorerFolder } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -493,7 +494,7 @@ function FolderRow({
   onActivate,
 }: FolderRowProps) {
   const name = folderBasename(folder.path);
-  const Icon = isExpanded ? FolderOpen : Folder;
+  const { icon: Icon, ariaLabel: folderAriaLabel } = resolveFolderIcon({ type: 'external', expanded: isExpanded, name });
   // Roving tabindex with a "no row focused yet" fallback. When the
   // user hasn't tabbed into the section, the first FolderRow (which
   // is the only one mounted with `hasFocusWithin === false`)
@@ -507,7 +508,7 @@ function FolderRow({
       aria-level={1}
       aria-expanded={isExpanded}
       aria-selected={isFocused ? "true" : undefined}
-      aria-label={`Open folder ${name}`}
+      aria-label={folderAriaLabel}
       data-row-type="folder"
       tabIndex={tabIndex}
       onClick={onActivate}
@@ -612,10 +613,9 @@ function ChildRow({
   onActivate,
 }: ChildRowProps) {
   if (!row.entry) return null;
-  const Icon = row.entry.is_directory ? Folder : FileText;
-  const ariaLabel = row.entry.is_directory
-    ? `Open folder ${row.entry.name}`
-    : `Open file ${row.entry.name}`;
+  const { icon: Icon, ariaLabel } = row.entry.is_directory
+    ? resolveFolderIcon({ type: 'external', name: row.entry.name })
+    : { icon: FileText, ariaLabel: `Open file ${row.entry.name}` };
   // ChildRow only renders inside an expanded FolderRow, so it sits
   // BELOW the parent in tab order. The same fallback applies:
   // expose `tabIndex=0` when no row is focused yet so external Tab

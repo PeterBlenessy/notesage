@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Folder, FolderOpen, Lock, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
+import { ChevronRight, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
+import { resolveFolderIcon } from "@/lib/folder-icon";
 import { parseNotesageDrop } from "@/lib/drag-utils";
 import { SyncedIcon } from "./SyncedIcon";
 import { tauriApi } from "@/lib/tauri";
@@ -160,29 +161,30 @@ export function ProjectItem({
               )}
               aria-hidden="true"
             />
-            {aiLock ? (
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      data-testid="project-lock-badge"
-                      className="relative shrink-0 h-3.5 w-3.5"
-                      aria-label={lockTooltip ?? 'Locked project'}
-                    >
-                      <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
-                      <span className="absolute -right-[3px] -bottom-[1px] flex items-center justify-center h-[11px] w-[11px] rounded-full bg-background">
-                        <Lock className="h-[8px] w-[8px] text-muted-foreground" strokeWidth={2} aria-hidden="true" />
+            {aiLock ? (() => {
+              const { icon: FolderIcon, ariaLabel: folderAriaLabel } = resolveFolderIcon({ type: 'locked', name: displayName });
+              return (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        data-testid="project-lock-badge"
+                        className="relative shrink-0 h-3.5 w-3.5"
+                        aria-label={lockTooltip ?? folderAriaLabel}
+                      >
+                        <SyncedIcon icon={FolderIcon} synced={isSynced} folder />
                       </span>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    {lockTooltip}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
-              <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
-            )}
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      {lockTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })() : (() => {
+              const { icon: FolderIcon } = resolveFolderIcon({ type: 'standard', expanded, name: displayName });
+              return <SyncedIcon icon={FolderIcon} synced={isSynced} folder />;
+            })()}
             <span className="truncate flex-1">{displayName}</span>
             <button
               onClick={(e) => {
@@ -190,7 +192,7 @@ export function ProjectItem({
                 onOpenProjectSettings?.(projectPath);
               }}
               className="h-6 w-6 inline-flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-all text-muted-foreground hover:text-foreground hover:bg-foreground/10"
-              title="Project Settings"
+              title="Folder Settings"
             >
               <Settings className="h-3.5 w-3.5" />
             </button>
@@ -199,7 +201,7 @@ export function ProjectItem({
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onOpenProjectSettings?.(projectPath)}>
           <Settings className="mr-2 h-4 w-4" aria-hidden="true" />
-          Project Settings
+          Folder Settings
         </ContextMenuItem>
         <ContextMenuItem onClick={() => setGoalsDialogOpen(true)}>
           <Target className="mr-2 h-4 w-4" aria-hidden="true" />
