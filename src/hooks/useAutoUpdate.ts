@@ -4,6 +4,9 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
 
+export const ALPHA_UPDATE_ENDPOINT =
+  "https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json";
+
 export interface UpdateInfo {
   version: string;
   currentVersion: string;
@@ -37,50 +40,96 @@ export function useAutoUpdate() {
   const updateRef = useRef<Update | null>(null);
   const checkedRef = useRef(false);
 
-  const {
-    autoCheckUpdates,
-    dismissedVersion,
-    setLastUpdateCheck,
-    setDismissedVersion,
-  } = useSettingsStore();
+  const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
+  const dismissedVersion = useSettingsStore((s) => s.dismissedVersion);
+  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
+  const setLastUpdateCheck = useSettingsStore((s) => s.setLastUpdateCheck);
+  const setDismissedVersion = useSettingsStore((s) => s.setDismissedVersion);
 
   const checkForUpdate = useCallback(async () => {
     setState((s) => ({ ...s, status: "checking", error: null }));
 
     try {
-      const update = await check();
-
-      if (update) {
-        const currentVersion = await getVersion();
-        updateRef.current = update;
-
-        const info: UpdateInfo = {
-          version: update.version,
-          currentVersion,
-          notes: update.body ?? null,
-          date: update.date ?? null,
-        };
-
-        if (dismissedVersion === update.version) {
-          // User dismissed this version — keep state idle but store info
-          setState({ status: "idle", updateInfo: info, progress: null, error: null });
-        } else {
-          setState({ status: "available", updateInfo: info, progress: null, error: null });
-        }
+      if (releaseChannel === "alpha") {
+        await checkAlphaChannel();
       } else {
-        updateRef.current = null;
-        setState({ status: "idle", updateInfo: null, progress: null, error: null });
+        await checkStableChannel();
       }
-    } catch (err) {
-      setState((s) => ({
-        ...s,
-        status: "error",
-        error: err instanceof Error ? err.message : String(err),
-      }));
     } finally {
       setLastUpdateCheck(new Date().toISOString());
     }
-  }, [dismissedVersion, setLastUpdateCheck]);
+
+    async function checkStableChannel() {
+      try {
+        const update = await check();
+
+        if (update) {
+          const currentVersion = await getVersion();
+          updateRef.current = update;
+
+          const info: UpdateInfo = {
+            version: update.version,
+            currentVersion,
+            notes: update.body ?? null,
+            date: update.date ?? null,
+          };
+
+          if (dismissedVersion === update.version) {
+            setState({ status: "idle", updateInfo: info, progress: null, error: null });
+          } else {
+            setState({ status: "available", updateInfo: info, progress: null, error: null });
+          }
+        } else {
+          updateRef.current = null;
+          setState({ status: "idle", updateInfo: null, progress: null, error: null });
+        }
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    }
+
+    async function checkAlphaChannel() {
+      try {
+        const response = await fetch(ALPHA_UPDATE_ENDPOINT);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const manifest = await response.json() as {
+          version: string;
+          notes?: string;
+          pub_date?: string;
+        };
+
+        const currentVersion = await getVersion();
+        const manifestVersion = manifest.version;
+
+        if (manifestVersion === currentVersion) {
+          setState({ status: "idle", updateInfo: null, progress: null, error: null });
+          return;
+        }
+
+        const info: UpdateInfo = {
+          version: manifestVersion,
+          currentVersion,
+          notes: manifest.notes ?? null,
+          date: manifest.pub_date ?? null,
+        };
+
+        setState({ status: "available", updateInfo: info, progress: null, error: null });
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    }
+  }, [dismissedVersion, releaseChannel, setLastUpdateCheck]);
 
   const downloadAndInstall = useCallback(async () => {
     const update = updateRef.current;
