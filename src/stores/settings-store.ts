@@ -17,6 +17,7 @@ export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
 export type UiPreview = "legacy" | "quiet-composer";
+export type ReleaseChannel = "stable" | "alpha";
 interface SettingsStore {
   theme: Theme;
   /**
@@ -78,6 +79,8 @@ interface SettingsStore {
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
+  /** Update release channel: "stable" (default GitHub releases) or "alpha" (pre-release builds) */
+  releaseChannel: ReleaseChannel;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
@@ -258,6 +261,7 @@ interface SettingsStore {
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
+  setReleaseChannel: (channel: ReleaseChannel) => void;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
@@ -381,6 +385,7 @@ export const useSettingsStore = create<SettingsStore>()(
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
+      releaseChannel: 'stable' as const,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -526,6 +531,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setDismissedVersion: (version: string | null) => {
         set({ dismissedVersion: version });
+      },
+
+      setReleaseChannel: (channel: ReleaseChannel) => {
+        set({ releaseChannel: channel });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {
@@ -718,7 +727,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 13,
+      version: 14,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -851,6 +860,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // previous hardcoded value) so existing users see zero visual change.
           if (typeof state.cmdBarExpandedHeight !== 'number') {
             state.cmdBarExpandedHeight = 480;
+          }
+        }
+        if (version < 14) {
+          // Issue #143 — alpha release channel. Existing users default to
+          // "stable" so upgrading does not change update behaviour.
+          if (typeof state.releaseChannel !== 'string') {
+            state.releaseChannel = 'stable';
           }
         }
         return state;

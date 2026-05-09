@@ -4,6 +4,10 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
 
+/** URL of the JSON update manifest for alpha (pre-release) builds. */
+export const ALPHA_UPDATE_ENDPOINT =
+  "https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json";
+
 export interface UpdateInfo {
   version: string;
   currentVersion: string;
@@ -40,6 +44,7 @@ export function useAutoUpdate() {
   const {
     autoCheckUpdates,
     dismissedVersion,
+    releaseChannel,
     setLastUpdateCheck,
     setDismissedVersion,
   } = useSettingsStore();
@@ -48,28 +53,10 @@ export function useAutoUpdate() {
     setState((s) => ({ ...s, status: "checking", error: null }));
 
     try {
-      const update = await check();
-
-      if (update) {
-        const currentVersion = await getVersion();
-        updateRef.current = update;
-
-        const info: UpdateInfo = {
-          version: update.version,
-          currentVersion,
-          notes: update.body ?? null,
-          date: update.date ?? null,
-        };
-
-        if (dismissedVersion === update.version) {
-          // User dismissed this version — keep state idle but store info
-          setState({ status: "idle", updateInfo: info, progress: null, error: null });
-        } else {
-          setState({ status: "available", updateInfo: info, progress: null, error: null });
-        }
+      if (releaseChannel === "alpha") {
+        await checkAlphaUpdate();
       } else {
-        updateRef.current = null;
-        setState({ status: "idle", updateInfo: null, progress: null, error: null });
+        await checkStableUpdate();
       }
     } catch (err) {
       setState((s) => ({
@@ -80,7 +67,65 @@ export function useAutoUpdate() {
     } finally {
       setLastUpdateCheck(new Date().toISOString());
     }
-  }, [dismissedVersion, setLastUpdateCheck]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [releaseChannel, dismissedVersion, setLastUpdateCheck]);
+
+  const checkStableUpdate = useCallback(async () => {
+    const update = await check();
+
+    if (update) {
+      const currentVersion = await getVersion();
+      updateRef.current = update;
+
+      const info: UpdateInfo = {
+        version: update.version,
+        currentVersion,
+        notes: update.body ?? null,
+        date: update.date ?? null,
+      };
+
+      if (dismissedVersion === update.version) {
+        setState({ status: "idle", updateInfo: info, progress: null, error: null });
+      } else {
+        setState({ status: "available", updateInfo: info, progress: null, error: null });
+      }
+    } else {
+      updateRef.current = null;
+      setState({ status: "idle", updateInfo: null, progress: null, error: null });
+    }
+  }, [dismissedVersion]);
+
+  const checkAlphaUpdate = useCallback(async () => {
+    const response = await fetch(ALPHA_UPDATE_ENDPOINT);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch alpha manifest: ${response.status}`);
+    }
+    const manifest = await response.json() as {
+      version: string;
+      notes?: string;
+      pub_date?: string;
+    };
+
+    const currentVersion = await getVersion();
+
+    if (manifest.version === currentVersion) {
+      setState({ status: "idle", updateInfo: null, progress: null, error: null });
+      return;
+    }
+
+    const info: UpdateInfo = {
+      version: manifest.version,
+      currentVersion,
+      notes: manifest.notes ?? null,
+      date: manifest.pub_date ?? null,
+    };
+
+    if (dismissedVersion === manifest.version) {
+      setState({ status: "idle", updateInfo: info, progress: null, error: null });
+    } else {
+      setState({ status: "available", updateInfo: info, progress: null, error: null });
+    }
+  }, [dismissedVersion]);
 
   const downloadAndInstall = useCallback(async () => {
     const update = updateRef.current;

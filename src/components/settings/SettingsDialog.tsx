@@ -174,6 +174,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     logLevel, setLogLevel,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
+    releaseChannel, setReleaseChannel,
     showInTray, setShowInTray,
     closeToTray, setCloseToTray,
     startAtLogin, setStartAtLogin,
@@ -1525,6 +1526,30 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Check for new versions when the app starts
+                      </p>
+                    </div>
+
+                    {/* Release channel */}
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="release-channel" className="text-sm font-medium cursor-pointer">
+                          Release Channel
+                        </Label>
+                        <Select
+                          value={releaseChannel}
+                          onValueChange={(v) => setReleaseChannel(v as 'stable' | 'alpha')}
+                        >
+                          <SelectTrigger id="release-channel" className="w-28 h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="stable">Stable</SelectItem>
+                            <SelectItem value="alpha">Alpha</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Stable receives tested releases. Alpha gets pre-release builds with new features.
                       </p>
                     </div>
                   </div>

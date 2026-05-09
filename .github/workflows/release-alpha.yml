@@ -1,0 +1,257 @@
+name: Release Alpha Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'v*-alpha.*' # Trigger on alpha tags like v0.42.1-alpha.1
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    name: Run Tests
+    uses: ./.github/workflows/test.yml
+
+  create-release:
+    needs: tests
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create-release
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: `Notesage ${context.ref.replace('refs/tags/', '')} (Alpha)`,
+              body: `Pre-release alpha build. Install at your own risk — may contain bugs.\n\nVersion: ${process.env.VERSION}`,
+              draft: true,
+              prerelease: true
+            })
+            return data.id
+
+  build-tauri:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build llama-server from source (static)
+        run: |
+          LLAMA_VERSION=$(cat src-tauri/binaries/LLAMA_CPP_VERSION | tr -d '[:space:]')
+          echo "Building llama.cpp $LLAMA_VERSION"
+
+          git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+
+          cmake -B /tmp/llama.cpp/build -S /tmp/llama.cpp \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGGML_STATIC=ON \
+            -DGGML_METAL=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_CURL=OFF \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON \
+            -DLLAMA_BUILD_SERVER=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+
+          cmake --build /tmp/llama.cpp/build --config Release --target llama-server -j $(sysctl -n hw.logicalcpu)
+
+          cp /tmp/llama.cpp/build/bin/llama-server src-tauri/binaries/llama-server-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
+
+          echo "Dependencies:"
+          otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin
+          echo "Binary size: $(du -h src-tauri/binaries/llama-server-aarch64-apple-darwin | cut -f1)"
+
+          if otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin | grep -q -E "homebrew|@rpath"; then
+            echo "::error::llama-server has non-system dynamic dependencies that will break code signing"
+            otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin | grep -E "homebrew|@rpath"
+            exit 1
+          fi
+          echo "✓ No problematic dependencies found"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Update version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Building version $VERSION from tag $GITHUB_REF"
+
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          sed "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml > src-tauri/Cargo.toml.tmp && mv src-tauri/Cargo.toml.tmp src-tauri/Cargo.toml
+
+          echo "Updated config files to version $VERSION"
+          cat package.json | grep version
+          cat src-tauri/Cargo.toml | grep version
+
+      - name: Set whisper.cpp build flags
+        run: |
+          echo "WHISPER_NATIVE=OFF" >> $GITHUB_ENV
+          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16 -mmacosx-version-min=14.0" >> $GITHUB_ENV
+          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16 -mmacosx-version-min=14.0" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+          echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          releaseName: "Notesage v__VERSION__ (Alpha)"
+          args: --target aarch64-apple-darwin
+
+  publish-release:
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish Release
+        id: publish
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false
+            })
+
+      - name: Update latest-alpha rolling release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find latest.json from the just-published versioned release
+            const assets = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+            });
+            const manifestAsset = assets.data.find(a => a.name === 'latest.json');
+            if (!manifestAsset) {
+              core.warning('latest.json not found in versioned release — skipping latest-alpha update');
+              return;
+            }
+
+            // Download the manifest
+            const manifestResponse = await fetch(manifestAsset.browser_download_url);
+            const manifestContent = await manifestResponse.text();
+
+            // Delete existing latest-alpha release if it exists
+            try {
+              const { data: existing } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: 'latest-alpha',
+              });
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: existing.id,
+              });
+            } catch {
+              // No existing release — that's fine
+            }
+
+            // Recreate the tag pointing to the current commit
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: 'tags/latest-alpha',
+              });
+            } catch {
+              // Tag may not exist yet
+            }
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/latest-alpha',
+              sha: context.sha,
+            });
+
+            // Create new latest-alpha release
+            const { data: newRelease } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: 'latest-alpha',
+              name: `Latest Alpha (${context.ref.replace('refs/tags/', '')})`,
+              body: `Rolling alpha channel release. Always points to the most recent alpha build.\n\nCurrent version: ${context.ref.replace('refs/tags/v', '')}`,
+              draft: false,
+              prerelease: true,
+            });
+
+            // Upload latest.json to the rolling release
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: newRelease.id,
+              name: 'latest.json',
+              data: manifestContent,
+              headers: { 'content-type': 'application/json' },
+            });
+
+            core.info(`Updated latest-alpha release with manifest from ${context.ref}`);
