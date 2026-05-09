@@ -1,6 +1,6 @@
 use super::markdown_to_pptx::markdown_to_pptx;
 use super::markdown_to_typst::markdown_to_typst;
-use super::templates::{apply_template, PageSize, PptxTemplate, Template, TemplateOptions};
+use super::templates::{apply_template, PageSize, Template, TemplateOptions};
 use super::typst_world::NotesageWorld;
 use std::time::Instant;
 
