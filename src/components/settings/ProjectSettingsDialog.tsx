@@ -26,7 +26,7 @@ export function ProjectSettingsDialog({ open, onOpenChange, projectPath, onPathC
           <div className="flex items-center gap-3">
             <FolderCog className="h-8 w-8 shrink-0 text-foreground" strokeWidth={1.5} />
             <div>
-              <DialogTitle className="text-lg">Project Settings</DialogTitle>
+              <DialogTitle className="text-lg">Folder Settings</DialogTitle>
               <DialogDescription className="text-xs">
                 {folderName}
               </DialogDescription>

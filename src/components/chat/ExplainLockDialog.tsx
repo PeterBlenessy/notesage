@@ -102,7 +102,7 @@ export function ExplainLockDialog({ open, onOpenChange, lockedProjectPaths }: Ex
               }}
               className="font-medium text-[var(--color-accent-primary)] underline-offset-2 hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              Project Settings &gt; AI Provider Lock
+              Folder Settings &gt; AI Provider Lock
             </button>
             .
           </p>

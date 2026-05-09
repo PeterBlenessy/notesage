@@ -84,10 +84,10 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
 
     expect(screen.getByText("Folders")).toBeTruthy();
     expect(
-      screen.getByRole("treeitem", { name: /open folder alpha/i }),
+      screen.getByRole("treeitem", { name: /external folder.*alpha/i }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("treeitem", { name: /open folder beta/i }),
+      screen.getByRole("treeitem", { name: /external folder.*beta/i }),
     ).toBeTruthy();
   });
 
@@ -100,10 +100,10 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     renderWithProviders(<FoldersSection filter="alp" />);
 
     expect(
-      screen.getByRole("treeitem", { name: /open folder alpha/i }),
+      screen.getByRole("treeitem", { name: /external folder.*alpha/i }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("treeitem", { name: /open folder beta/i }),
+      screen.queryByRole("treeitem", { name: /external folder.*beta/i }),
     ).toBeNull();
   });
 
@@ -120,18 +120,18 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     renderWithProviders(<FoldersSection />);
 
     const row = screen.getByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     }) as HTMLElement;
     expect(row.getAttribute("aria-expanded")).toBe("false");
 
     fireEvent.keyDown(row, { key: "ArrowRight" });
 
     const expanded = screen.getByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     });
     expect(expanded.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByRole("treeitem", { name: /open folder docs/i }),
+      screen.getByRole("treeitem", { name: /external folder.*docs/i }),
     ).toBeTruthy();
     expect(
       screen.getByRole("treeitem", { name: /open file README\.md/i }),
@@ -143,7 +143,7 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     renderWithProviders(<FoldersSection />);
 
     const row = screen.getByRole("treeitem", {
-      name: /open folder empty/i,
+      name: /external folder.*empty/i,
     }) as HTMLElement;
     fireEvent.keyDown(row, { key: "ArrowRight" });
 
@@ -160,17 +160,17 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     renderWithProviders(<FoldersSection />);
 
     const row = screen.getByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     }) as HTMLElement;
     fireEvent.keyDown(row, { key: "ArrowRight" });
     expect(
-      screen.getByRole("treeitem", { name: /open folder alpha/i })
+      screen.getByRole("treeitem", { name: /external folder.*alpha/i })
         .getAttribute("aria-expanded"),
     ).toBe("true");
 
     fireEvent.keyDown(row, { key: "ArrowLeft" });
     expect(
-      screen.getByRole("treeitem", { name: /open folder alpha/i })
+      screen.getByRole("treeitem", { name: /external folder.*alpha/i })
         .getAttribute("aria-expanded"),
     ).toBe("false");
   });
@@ -185,7 +185,7 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     renderWithProviders(<FoldersSection />);
 
     const folderRow = screen.getByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     });
     fireEvent.keyDown(folderRow, { key: "ArrowRight" }); // expand
     const fileRow = screen.getByRole("treeitem", {
@@ -218,7 +218,7 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     // The state update is synchronous; child row should appear after
     // the next render flush.
     const expanded = await screen.findByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     });
     expect(expanded.getAttribute("aria-expanded")).toBe("true");
   });
@@ -240,7 +240,7 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     });
 
     const row = screen.getByRole("treeitem", {
-      name: /open folder alpha/i,
+      name: /external folder.*alpha/i,
     });
     expect(row.getAttribute("aria-expanded")).toBe("false");
   });
