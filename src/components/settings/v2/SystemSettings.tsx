@@ -151,6 +151,8 @@ export function SystemSettings({
   const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
   const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates);
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
+  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
+  const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -259,6 +261,24 @@ export function SystemSettings({
               checked={autoCheckUpdates}
               onCheckedChange={setAutoCheckUpdates}
             />
+          }
+        />
+        <SettingsRow
+          label="Release channel"
+          description="Stable receives tested releases. Alpha receives pre-release builds."
+          control={
+            <Select
+              value={releaseChannel ?? 'stable'}
+              onValueChange={(v) => setReleaseChannel(v as 'stable' | 'alpha')}
+            >
+              <SelectTrigger className="w-[120px] h-7 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="stable">Stable</SelectItem>
+                <SelectItem value="alpha">Alpha</SelectItem>
+              </SelectContent>
+            </Select>
           }
         />
       </SettingsGroup>
