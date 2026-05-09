@@ -324,11 +324,12 @@ pub(crate) fn process_watcher_events(
         };
 
         for path in &event.paths {
-            // Skip .git/ internals and .DS_Store.
+            // Skip .git/ internals, .DS_Store, and rename-txn/ staging directories.
             let path_str = path.to_string_lossy();
             if path_str.contains("/.git/")
                 || path_str.ends_with("/.git")
                 || path_str.ends_with("/.DS_Store")
+                || path_str.contains("/.notesage/rename-txn/")
             {
                 continue;
             }
@@ -514,5 +515,60 @@ mod tests {
             result.file_changes.is_empty(),
             "file-changed batch must be empty when all events are rename-both"
         );
+    }
+
+    #[test]
+    fn process_watcher_events_excludes_rename_txn_staging_paths() {
+        // Simulate a modify event for a file inside the rename-txn staging dir.
+        // It must be silently dropped from both file_changes and not interfere with
+        // the reindex entries intended for the frontend batch.
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let staging_path = PathBuf::from(
+            "/Users/test/Notesage/.notesage/rename-txn/txn-123/entry-0.json",
+        );
+        let normal_path = PathBuf::from("/Users/test/Notesage/doc.md");
+
+        let events = vec![
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![staging_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![normal_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+        ];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // Only the normal path should appear in file_changes; the staging path must be excluded.
+        let staging_str = staging_path.to_string_lossy();
+        let staging_in_changes = result.file_changes.iter().any(|e| e.path == staging_str);
+        assert!(
+            !staging_in_changes,
+            "rename-txn staging files must not appear in file-changed-batch"
+        );
+
+        // The normal doc.md event must still pass through.
+        let normal_str = normal_path.to_string_lossy();
+        // On systems where the file doesn't exist the effective_kind becomes Delete;
+        // we just check the path appears in either reindex_entries (always) or file_changes.
+        let in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == normal_str.as_ref());
+        assert!(in_reindex, "normal file must appear in reindex entries");
     }
 }
