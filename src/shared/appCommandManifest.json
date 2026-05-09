@@ -1,0 +1,241 @@
+{
+  "version": "1",
+  "commands": [
+    {
+      "id": "open-command-palette",
+      "label": "Open command palette",
+      "display": "⌘K",
+      "chords": [
+        { "key": "k", "code": "KeyK", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-tasks",
+      "label": "Open tasks",
+      "display": "⌘!",
+      "chords": [
+        { "key": "1", "code": "Digit1", "mod": true, "shiftKey": false, "altKey": false },
+        { "key": "!", "code": "Digit1", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-mentions",
+      "label": "Open mentions / references",
+      "display": "⌘@",
+      "chords": [
+        { "key": "2", "code": "Digit2", "mod": true, "shiftKey": false, "altKey": false },
+        { "key": "@", "code": "Digit2", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-tags",
+      "label": "Open tags",
+      "display": "⌘#",
+      "chords": [
+        { "key": "3", "code": "Digit3", "mod": true, "shiftKey": false, "altKey": false },
+        { "key": "#", "code": "Digit3", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-research",
+      "label": "Open research",
+      "display": "⌘?",
+      "chords": [
+        { "key": "4", "code": "Digit4", "mod": true, "shiftKey": false, "altKey": false },
+        { "key": "?", "code": "Digit4", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-commands-palette",
+      "label": "Open commands palette",
+      "display": "⌘⇧P",
+      "chords": [
+        { "key": "p", "code": "KeyP", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "find-replace",
+      "label": "Find and replace",
+      "display": "⌘⇧H",
+      "chords": [
+        { "key": "h", "code": "KeyH", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "find-files",
+      "label": "Find files",
+      "display": "⌘⇧F",
+      "chords": [
+        { "key": "f", "code": "KeyF", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "find-in-document",
+      "label": "Find in document",
+      "display": "⌘F",
+      "chords": [
+        { "key": "f", "code": "KeyF", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "close-active-document",
+      "label": "Close active document",
+      "display": "⌘W",
+      "chords": [
+        { "key": "w", "code": "KeyW", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-focus-mode",
+      "label": "Toggle focus mode",
+      "display": "⌘.",
+      "chords": [
+        { "key": ".", "code": "Period", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "export-document",
+      "label": "Export document",
+      "display": "⌘⇧E",
+      "chords": [
+        { "key": "e", "code": "KeyE", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-document-outline",
+      "label": "Open document outline",
+      "display": "⌘⇧O",
+      "chords": [
+        { "key": "o", "code": "KeyO", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-sidebar",
+      "label": "Toggle sidebar",
+      "display": "⌘⇧L",
+      "chords": [
+        { "key": "l", "code": "KeyL", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-activity-agent",
+      "label": "Toggle activity / agent panel",
+      "display": "⌘⇧A",
+      "chords": [
+        { "key": "a", "code": "KeyA", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-chat-panel",
+      "label": "Toggle chat panel",
+      "display": "⌘⇧C",
+      "chords": [
+        { "key": "c", "code": "KeyC", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-recording",
+      "label": "Toggle recording",
+      "display": "⌘⇧R",
+      "chords": [
+        { "key": "r", "code": "KeyR", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "keyboard-shortcuts",
+      "label": "Show keyboard shortcuts",
+      "display": "⌘⇧K",
+      "chords": [
+        { "key": "k", "code": "KeyK", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-settings",
+      "label": "Open settings",
+      "display": "⌘,",
+      "chords": [
+        { "key": ",", "code": "Comma", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "toggle-theme",
+      "label": "Toggle theme",
+      "display": "⌘T",
+      "chords": [
+        { "key": "t", "code": "KeyT", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "new-note",
+      "label": "New note",
+      "display": "⌘N",
+      "chords": [
+        { "key": "n", "code": "KeyN", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "new-project",
+      "label": "New project",
+      "display": "⌘⇧N",
+      "chords": [
+        { "key": "n", "code": "KeyN", "mod": true, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "open-folder",
+      "label": "Open folder",
+      "display": "⌘O",
+      "chords": [
+        { "key": "o", "code": "KeyO", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "cycle-recent-next",
+      "label": "Next recent document",
+      "display": "⌃Tab",
+      "chords": [
+        { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "cycle-recent-previous",
+      "label": "Previous recent document",
+      "display": "⌃⇧Tab",
+      "chords": [
+        { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "copy-document-path",
+      "label": "Copy document path",
+      "display": "⌘⌥C",
+      "chords": [
+        { "code": "KeyC", "mod": true, "altKey": true, "shiftKey": false }
+      ]
+    },
+    {
+      "id": "reveal-in-finder",
+      "label": "Reveal in Finder",
+      "display": "⌘⌥R",
+      "chords": [
+        { "code": "KeyR", "mod": true, "altKey": true, "shiftKey": false }
+      ]
+    },
+    {
+      "id": "exit-focus-mode",
+      "label": "Exit focus mode",
+      "display": "Esc",
+      "chords": [
+        { "key": "Escape", "code": "Escape" }
+      ]
+    },
+    {
+      "id": "open-devtools",
+      "label": "Open Tauri devtools",
+      "display": "⌘⌥I",
+      "chords": [
+        { "code": "KeyI", "mod": true, "altKey": true, "shiftKey": false }
+      ]
+    }
+  ]
+}
