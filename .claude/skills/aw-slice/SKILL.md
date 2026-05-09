@@ -74,25 +74,36 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 
     Post a comment on the original (template below). Stop.
 
-## HITL vs AFK heuristics
+## HITL vs AFK — default `afk`
 
-Mark a subtask `hitl` (human approves before coder runs) when:
-- It changes a public API or breaks compatibility
-- It modifies the database schema or migrations
-- It touches authentication, sandboxing, or security policy
-- It removes or replaces a major dependency
-- It rewrites a file that has more than ~10 callers
-- The acceptance criteria reference design judgment (visual polish, UX feel)
-- It's a `Research:` subtask (research findings always get human review)
+PR review is the human checkpoint. Mark `hitl` ONLY when one of these four narrow criteria applies:
 
-Mark `afk` (coder may pick autonomously) when:
-- The change is localized (one or two files in one package)
-- The red-test list is fully observable (no "looks right" criteria)
-- The component is well-tested already
-- It's a doc-only or comment-only update
-- It's a clear bug fix with a known repro
+1. **Destructive migration** to existing user data the user can't undo from the UI
+2. **Security policy relaxation** (loosening — tightening is fine without `hitl`)
+3. **Breaking change to a documented external API** (extension API, MCP, ACP, public Rust types — internal refactors don't count)
+4. **Explicit human request** ("ask me first" in body or comment)
 
-When uncertain, default to `hitl`. The user can flip to `afk` later.
+Design judgment, "many callers", "touches both shells", "I'm uncertain" — none of these are `hitl` triggers. Uncertainty routes to propose-answers or prototype-peers (below), not `hitl`. `Research:` peers are the one exception — they stay `hitl` because their output is a recommendation that needs sign-off before becoming acceptance criteria.
+
+## Propose-don't-punt
+
+For every open question in the refined body OR decision slicing surfaces, do exactly ONE:
+
+(a) **Default — pick a defensible answer.** Update the body's `## Open questions` inline to resolve each. Record chosen answers + one-line reasoning each in slice rationale's `## Proposed answers` section. Mark `tdd + afk`. `aw-tdd` implements against the answers; humans override by comment (`aw-feedback` routes back here).
+
+(b) **Prototype peers** — when N≥2 alternatives are defensibly different and only empirical comparison can pick. See below. Reserve for genuine empirical questions (perf trade-offs, motion-dependent UX feel, API ergonomics) — not "I can't decide between X and Y on paper."
+
+(c) **`hitl`** — ONLY if no defensible answer exists AND prototyping isn't viable (e.g., a legal call). Rare.
+
+Never mark `tdd + afk` with unanswered open questions in the body. Resolve inline, prototype, or `hitl` — never silent.
+
+## Prototype peers mode
+
+When (b) above triggers:
+
+1. **Original becomes a tracking issue.** Body: one-paragraph summary + the N prototype hypotheses + how the user picks. Labels: remove `slice`, add `awaiting-prototypes` (no auto-action).
+2. **Create N peer issues**, titled `Prototype <A|B|...>: <approach>`. Body: shared user-value goal + `Hypothesis: <what's distinct>` + acceptance criteria + `Tracking: #<original>`. Labels: category + `refined` + `tdd` + `afk` + `prototype`.
+3. Each ships as its own draft PR in parallel. User picks the winner, merges, closes losing peers; tracking issue stays open until manually closed.
 
 ## Peer issue references
 
@@ -177,8 +188,9 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 - **Idempotent:** if the issue has `sliced` or `awaiting-research` or `tdd`, exit silently.
 - **No body modification** when NOT slicing (the don't-slice path). When slicing, the original's body IS rewritten as slice 1 — that's the canonical path for the FIRST peer.
 - **Peers inherit category** (`bug`/`enhancement`/`chore`) from the original. They get `refined` + `tdd` + `hitl|afk`. They do NOT get `feature`.
-- **Each peer gets `hitl` or `afk`**, exactly one each.
-- **Every `hitl` marking MUST come with a "Why hitl" rationale** in the comment — specific files, acceptance criteria, or risks the human should review before flipping to `afk`. A bare "Marked: tdd + hitl" without rationale is incomplete and forces the human to re-derive what's risky.
+- **Each peer gets `hitl` or `afk`**, exactly one each. **Default is `afk`** (see "HITL vs AFK heuristics" — the four narrow `hitl` criteria are exhaustive).
+- **Every `hitl` marking MUST cite which of the four narrow criteria applies** with one-line justification. A bare "Marked: tdd + hitl" without citing destructive-migration / security-relaxation / public-API-break / explicit-human-request is incomplete and incorrect — flip to `afk` instead.
+- **Open questions get proposed answers**, never get punted. See "Propose-don't-punt". If empirical comparison genuinely beats reasoning, use prototype peers instead of `hitl`.
 
 ## Comment templates
 
@@ -189,7 +201,16 @@ Post findings as a comment on this issue, then close as completed. Flip the pare
 
 **User value:** <one-sentence "User can …" statement>
 
-**Marked:** `tdd + <afk|hitl>` — <REQUIRED if hitl: which files / acceptance criteria / risks warrant human eyes; OPTIONAL but encouraged if afk: brief why-this-is-safe-to-automate>
+**Marked:** `tdd + <afk|hitl>` — <REQUIRED if hitl: which of the four narrow criteria applies, with one-line justification; OPTIONAL but encouraged if afk: brief why-this-is-safe-to-automate>
+
+<IF the issue body had `## Open questions` OR slicing surfaced decisions>
+## Proposed answers
+
+- **<question 1>** — <chosen answer>. <one-paragraph reasoning, including alternatives considered>
+- **<question 2>** — <chosen answer>. <reasoning>
+
+The issue body's `## Open questions` section has been updated inline to mark each question resolved. `aw-tdd` will implement against the chosen answers. To override an answer, comment "wrong assumption — use X instead" and `aw-feedback` will route the comment back here.
+</IF>
 ```
 
 **Slice path (multiple independent values):**
@@ -216,6 +237,21 @@ Not enough is known to identify the user values confidently. Created research su
 When the research subtask closes, flip this parent's labels: remove `awaiting-research`, add `slice` to re-trigger.
 ```
 
+**Prototype peers path:**
+
+```
+> *Sliced by the `aw-slice` skill — split into N prototype peers for empirical comparison.*
+
+Identified N defensibly-different approaches that need to be tried before one can be picked:
+
+- #<A> — **Prototype A: <approach>**. Hypothesis: <what makes A distinct>. Trade-off: <upside / downside vs B>.
+- #<B> — **Prototype B: <approach>**. Hypothesis: <what makes B distinct>. Trade-off: <upside / downside vs A>.
+
+Each prototype lands as its own draft PR. Try the live builds, merge the winner, close the losing peers (their PRs auto-close them; this tracking issue stays open until you close it).
+
+This issue is now `awaiting-prototypes`. No further automation will run on it until you act.
+```
+
 **No-user-value path:**
 
 ```
@@ -226,7 +262,8 @@ This issue describes internal work without a user-observable result. Could you c
 
 ## Constraints from the dev process
 
-- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path).
+- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path), or `slice` → `awaiting-prototypes` (prototype-peers path).
 - Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
+- Prototype-peers parent stays `awaiting-prototypes` until the user closes it manually after picking a winner. No auto-action.
 - The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it was the original or a peer split off from a multi-value parent.
 - One PR = one user value. If a PR delivers two unrelated values, it was sliced wrong — split into two PRs.
