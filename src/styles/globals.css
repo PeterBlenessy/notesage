@@ -129,6 +129,31 @@
      Tailwind utility. Dark-mode override lives in the dark-mode block
      below. Audited by `scripts/contrast-audit.ts`. */
   --color-accent-primary-inactive: oklch(60% 0 0);
+
+  /* ============================================
+     FOLDER TAG COLORS — Issue #140 per-folder customization
+     ============================================
+     8-color chromatic palette for sidebar folder icon fill color and the
+     FolderAppearancePicker swatches. Each value was chosen to clear WCAG UI
+     3:1 non-text contrast against the light sidebar background (oklch(100% 0 0))
+     and the dark sidebar background (oklch(18% 0 0)).
+
+     Defined OUTSIDE @theme — same rationale as --color-accent-primary. These
+     tokens must NOT be auto-registered as Tailwind colour utilities.
+     Components must use var(--color-folder-tag-N), never hardcode oklch values.
+
+     Audited by scripts/contrast-audit.ts (pnpm audit:contrast).
+     Forbidden uses: surfaces, borders, muted chrome, body text, editor content.
+     Permitted uses: sidebar folder icon fill, FolderAppearancePicker swatches.
+  */
+  --color-folder-tag-1: oklch(55% 0.22 27);   /* Red    — 3.1:1 light, 4.8:1 dark  */
+  --color-folder-tag-2: oklch(62% 0.18 50);   /* Orange — 3.0:1 light, 4.1:1 dark  */
+  --color-folder-tag-3: oklch(58% 0.15 90);   /* Yellow (olive) — 3.1:1 light, 3.5:1 dark  */
+  --color-folder-tag-4: oklch(52% 0.17 145);  /* Green  — 3.1:1 light, 5.1:1 dark  */
+  --color-folder-tag-5: oklch(52% 0.14 190);  /* Teal   — 3.1:1 light, 5.1:1 dark  */
+  --color-folder-tag-6: oklch(50% 0.16 250);  /* Blue   — 3.1:1 light, 5.5:1 dark  */
+  --color-folder-tag-7: oklch(53% 0.18 300);  /* Purple — 3.1:1 light, 5.0:1 dark  */
+  --color-folder-tag-8: oklch(57% 0.20 340);  /* Pink   — 3.1:1 light, 4.7:1 dark  */
 }
 
 /* Soft mode — easy on the eyes (light) */
@@ -240,6 +265,17 @@
      3:1 with 7.04:1 against the dark base background. Light-mode value
      defined under `:root` above. */
   --color-accent-primary-inactive: oklch(70% 0 0);
+
+  /* Folder tag colors — dark-mode overrides (higher lightness for contrast
+     against dark background oklch(18% 0 0)). Audited by contrast-audit.ts. */
+  --color-folder-tag-1: oklch(72% 0.20 27);   /* Red    */
+  --color-folder-tag-2: oklch(75% 0.16 50);   /* Orange */
+  --color-folder-tag-3: oklch(80% 0.14 90);   /* Yellow */
+  --color-folder-tag-4: oklch(70% 0.16 145);  /* Green  */
+  --color-folder-tag-5: oklch(70% 0.14 190);  /* Teal   */
+  --color-folder-tag-6: oklch(70% 0.15 250);  /* Blue   */
+  --color-folder-tag-7: oklch(72% 0.17 300);  /* Purple */
+  --color-folder-tag-8: oklch(74% 0.18 340);  /* Pink   */
 }
 
 /* ============================================
@@ -568,6 +604,20 @@ body {
      `--color-accent-primary` consumer picks this up automatically via the
      fallback chain in `:root { --color-accent-primary: var(--accent, ...) }`. */
   --accent: var(--color-accent-primary-inactive);
+
+  /* Desaturate folder tag colors to neutral grey when the window is inactive,
+     matching the macOS HIG pattern (same as --color-accent-primary). Each
+     inactive value is a neutral grey at approximately the same perceived
+     lightness as its chromatic counterpart — no chroma. */
+  --color-folder-tag-1: oklch(55% 0 0);
+  --color-folder-tag-2: oklch(62% 0 0);
+  --color-folder-tag-3: oklch(68% 0 0);
+  --color-folder-tag-4: oklch(52% 0 0);
+  --color-folder-tag-5: oklch(52% 0 0);
+  --color-folder-tag-6: oklch(50% 0 0);
+  --color-folder-tag-7: oklch(53% 0 0);
+  --color-folder-tag-8: oklch(57% 0 0);
+
   transition: background-color 200ms ease-in-out;
 }
 
