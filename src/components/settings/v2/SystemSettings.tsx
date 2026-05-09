@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { clearAllViewports } from '@/lib/viewport-cache';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ArrowUpCircle,
@@ -397,6 +398,41 @@ export function SystemSettings({
               checked={instantLoadPreview}
               onCheckedChange={setInstantLoadPreview}
             />
+          }
+        />
+        <SettingsRow
+          label="Viewport cache"
+          description="Previously viewed large documents are cached to IndexedDB for instant first paint on cold start. Clear this cache to free disk space or force a fresh load."
+          control={
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  Clear viewport cache
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear viewport cache?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes all cached viewport snapshots from IndexedDB. The next cold open of each file will rebuild the cache automatically.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      clearAllViewports().then(() => {
+                        toast.success('Viewport cache cleared');
+                      });
+                    }}
+                  >
+                    Clear cache
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           }
         />
       </SettingsGroup>

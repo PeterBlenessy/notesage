@@ -11,6 +11,7 @@ import { findNthTagInDoc, scrollPosToCenter, scrollToTextInEditor, PX_PER_CM } f
 import { loadRawMarkdownIntoEditor, streamingHydrate, type TableColumnMetadataMap, type ColumnMetadata } from "@/lib/markdown";
 import { parseInWorker } from "@/lib/markdown-worker";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
+import { getCachedViewport, setCachedViewport, contentFingerprint } from "@/lib/viewport-cache";
 import type { ParseResult } from "@/workers/markdown-parse.types";
 import { getDocumentDir } from "@/lib/image-utils";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
@@ -278,6 +279,176 @@ export function useEditorTabSwitch({
         cachedEditorStatesRef.current.delete(activeTab.id);
         useEditorStore.getState().setPreviewState(activeTab.id, "hydrated");
         runPostLoad(true);
+      } else if (isFreshMarkdownParse && contentBytes >= SKIP_PREVIEW_THRESHOLD_BYTES && useSettingsStore.getState().instantLoadPreview) {
+        // IDB VIEWPORT CACHE PATH — large-file cold start only.
+        // Check IDB for a cached viewport snapshot from a previous session.
+        // On hit: show the cached HTML immediately (<50 ms) as a static preview,
+        // then hydrate in background. On miss: fall through to normal preview path.
+        const tabContent = activeTab.content;
+        const tabFilePath = activeTab.filePath;
+        const fp = contentFingerprint(tabContent);
+
+        getCachedViewport(tabFilePath, fp).then((cached) => {
+          if (abortController.signal.aborted) return;
+          const current = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+          if (!current || current.previewState === "hydrated") return;
+
+          if (!cached) {
+            // Cache miss — run the normal preview path inline.
+            const resolvedTheme: "light" | "dark" =
+              document.documentElement.classList.contains("dark") ? "dark" : "light";
+            if (previewInFlightRef.current === tabIdOnEntry) return;
+            previewInFlightRef.current = tabIdOnEntry;
+            useEditorStore.getState().setPreviewState(activeTab.id, "loading");
+
+            tauriApi
+              .renderMarkdownPreview({
+                path: tabFilePath,
+                projectRoot: projectPath ?? undefined,
+                theme: resolvedTheme,
+              })
+              .then((html) => {
+                if (abortController.signal.aborted) return;
+                const cur = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+                if (!cur || cur.previewState === "hydrated") return;
+                useEditorStore.getState().setPreview(tabIdOnEntry, html);
+                if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
+                const pipelineStart = performance.now();
+                const cachedParse = parsedDocCache.get(tabFilePath);
+                const parsePromise = cachedParse
+                  ? Promise.resolve(cachedParse)
+                  : parseInWorker(tabContent, projectPath ?? undefined, { signal: abortController.signal });
+                const fromCache = cachedParse !== undefined;
+                parsePromise
+                  .then((parseResult) => {
+                    if (abortController.signal.aborted) return;
+                    const c2 = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+                    if (!c2 || c2.previewState === "hydrated") return;
+                    if (!fromCache) parsedDocCache.set(tabFilePath, parseResult);
+                    deferPastPaint(() => {
+                      if (abortController.signal.aborted) return;
+                      const sideMaps = deserializeSideMaps(parseResult);
+                      streamingHydrate(editor, parseResult.doc, sideMaps, abortController.signal)
+                        .then((streamResult) => {
+                          if (streamResult.aborted) return;
+                          useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                          runPostLoad(false);
+                          log.debug("perf:doc-switch", "Editor hydrated (idb-miss → preview)", {
+                            file: fileName,
+                            sizeKB: contentSizeKB,
+                            pipelineMs: +(performance.now() - pipelineStart).toFixed(1),
+                            chunkCount: streamResult.chunkCount,
+                            streamMs: +streamResult.ms.toFixed(1),
+                            totalMs: +(performance.now() - switchT0).toFixed(1),
+                          });
+                        });
+                    });
+                  })
+                  .catch((err) => {
+                    if (err?.name === "AbortError") return;
+                    deferPastPaint(() => {
+                      if (abortController.signal.aborted) return;
+                      loadRawMarkdownIntoEditor(editor, tabContent);
+                      useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                      runPostLoad(false);
+                    });
+                  });
+              })
+              .catch((err) => {
+                if (abortController.signal.aborted) return;
+                console.warn("Preview render failed (idb-miss path):", tabFilePath, err);
+                useEditorStore.getState().setPreviewState(tabIdOnEntry, "idle");
+                loadRawMarkdownIntoEditor(editor, tabContent);
+                runPostLoad(false);
+              })
+              .finally(() => {
+                if (previewInFlightRef.current === tabIdOnEntry) {
+                  previewInFlightRef.current = null;
+                }
+              });
+            return;
+          }
+
+          // Cache HIT — show cached HTML immediately as static preview.
+          const paintT0 = performance.now();
+          useEditorStore.getState().setPreview(tabIdOnEntry, cached.html);
+          // Restore scroll position from the cached snapshot.
+          requestAnimationFrame(() => {
+            if (scrollAreaRef.current) {
+              scrollAreaRef.current.scrollTop = cached.scrollY;
+              scrollAreaRef.current.style.opacity = '1';
+            }
+            log.debug("perf:doc-switch", "Viewport cache hit — first paint", {
+              file: fileName,
+              sizeKB: contentSizeKB,
+              paintMs: +(performance.now() - paintT0).toFixed(1),
+              totalMs: +(performance.now() - switchT0).toFixed(1),
+            });
+          });
+
+          // Background hydration: parse + streaming hydrate while the cached
+          // HTML is visible. When done, swap in the live editor via deferPastPaint.
+          const pipelineStart = performance.now();
+          const cachedParse = parsedDocCache.get(tabFilePath);
+          const parsePromise = cachedParse
+            ? Promise.resolve(cachedParse)
+            : parseInWorker(tabContent, projectPath ?? undefined, { signal: abortController.signal });
+          const fromCache = cachedParse !== undefined;
+          if (fromCache) {
+            log.debug("perf:doc-switch", "Parse cache hit (idb-viewport)", { file: fileName });
+          }
+
+          parsePromise
+            .then((parseResult) => {
+              if (abortController.signal.aborted) return;
+              const cur = useEditorStore.getState().openDocuments.find((t) => t.id === tabIdOnEntry);
+              if (!cur || cur.previewState === "hydrated") return;
+              if (!fromCache) parsedDocCache.set(tabFilePath, parseResult);
+              deferPastPaint(() => {
+                if (abortController.signal.aborted) return;
+                const sideMaps = deserializeSideMaps(parseResult);
+                streamingHydrate(editor, parseResult.doc, sideMaps, abortController.signal)
+                  .then((streamResult) => {
+                    if (streamResult.aborted) {
+                      log.debug("perf:doc-switch", "Hydration aborted (idb-viewport)", {
+                        file: fileName,
+                        chunkCount: streamResult.chunkCount,
+                        streamMs: +streamResult.ms.toFixed(1),
+                      });
+                      return;
+                    }
+                    useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                    runPostLoad(false);
+                    log.debug("perf:doc-switch", "Editor hydrated after idb-viewport cache hit", {
+                      file: fileName,
+                      sizeKB: contentSizeKB,
+                      fromCache,
+                      pipelineMs: +(performance.now() - pipelineStart).toFixed(1),
+                      workerPreprocess: fromCache ? 0 : parseResult.timings.preprocess,
+                      workerParse: fromCache ? 0 : parseResult.timings.parse,
+                      chunkCount: streamResult.chunkCount,
+                      streamMs: +streamResult.ms.toFixed(1),
+                      totalMs: +(performance.now() - switchT0).toFixed(1),
+                    });
+                  });
+              });
+            })
+            .catch((err) => {
+              if (err?.name === "AbortError") return;
+              console.warn("Worker parse failed (idb-viewport); falling back:", tabFilePath, err);
+              deferPastPaint(() => {
+                if (abortController.signal.aborted) return;
+                loadRawMarkdownIntoEditor(editor, tabContent);
+                useEditorStore.getState().setPreviewState(tabIdOnEntry, "hydrated");
+                runPostLoad(false);
+              });
+            });
+        }).catch(() => {
+          // IDB unavailable — fall through to the legacy synchronous path.
+          loadRawMarkdownIntoEditor(editor, activeTab.content);
+          useEditorStore.getState().setPreviewState(activeTab.id, "hydrated");
+          runPostLoad(false);
+        });
       } else if (
         isFreshMarkdownParse &&
         (contentBytes < SKIP_PREVIEW_THRESHOLD_BYTES ||
@@ -543,23 +714,51 @@ export function useEditorTabSwitch({
     });
   }, [editor, activeTab?.scrollToText, activeTab?.id, setScrollToText]);
 
-  // Invalidate the parsed-doc cache for the active file when the user
-  // makes a real edit (transaction.docChanged AND NOT a bulk-load
+  // Invalidate the parsed-doc cache (and schedule a viewport capture) when the
+  // user makes a real edit (transaction.docChanged AND NOT a bulk-load
   // transaction tagged `addToHistory: false`). Bulk loads come from
   // `streamingHydrate` / `loadRawMarkdownIntoEditor` and we want to KEEP
-  // the cache entry we just populated. User edits change the on-disk
-  // intent, so future cache hits would be against stale source — drop it.
+  // the cache entries we just populated. User edits change the on-disk
+  // intent, so future cache hits would be against stale source — drop parsedDocCache.
+  // Schedule a viewport capture 5s after the last edit (idle trigger).
   useEffect(() => {
     if (!editor || !activeTab) return;
     const filePath = activeTab.filePath;
+    let captureTimeout: ReturnType<typeof setTimeout> | undefined;
+
     const onTransaction = ({ transaction }: { transaction: { docChanged: boolean; getMeta: (key: string) => unknown } }) => {
       if (!transaction.docChanged) return;
       if (transaction.getMeta("addToHistory") === false) return; // bulk load — keep cache
+
+      // Invalidate in-memory parse cache — content has diverged.
       parsedDocCache.delete(filePath);
+
+      // Debounce viewport capture: 5 s after last user edit.
+      clearTimeout(captureTimeout);
+      captureTimeout = setTimeout(() => {
+        // Capture only when the editor is fully hydrated (not during streaming).
+        const tab = useEditorStore.getState().openDocuments.find((t) => t.filePath === filePath);
+        if (!tab || tab.previewState !== "hydrated") return;
+        const html = editor.getHTML();
+        const el = scrollAreaRef.current;
+        const scrollY = el ? el.scrollTop : 0;
+        const byteSize = new TextEncoder().encode(html).length;
+        const fp = contentFingerprint(tab.content ?? '');
+        setCachedViewport(filePath, fp, {
+          html,
+          scrollY,
+          capturedAt: Date.now(),
+          byteSize,
+        });
+      }, 5000);
     };
+
     editor.on('transaction', onTransaction);
-    return () => { editor.off('transaction', onTransaction); };
-  }, [editor, activeTab?.filePath]);
+    return () => {
+      editor.off('transaction', onTransaction);
+      clearTimeout(captureTimeout);
+    };
+  }, [editor, activeTab?.filePath, scrollAreaRef]);
 
   // When switching from Source → WYSIWYG, reload editor with current tab content
   const prevViewMode = useRef(activeTab?.viewMode);
