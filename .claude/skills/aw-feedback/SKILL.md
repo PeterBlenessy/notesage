@@ -84,6 +84,12 @@ How to recognize: the comment maps cleanly onto a question in the body (e.g. "Sh
 
 When in doubt — if the comment introduces ANY new requirement, raises a NEW question, or only partially answers the open questions — fall through to "Specific code/file guidance" or "Question / chat" instead of soft-approving.
 
+### Override an assumption / proposed answer ("wrong assumption", "use X instead")
+
+The comment overrides an entry in the issue body's `## Assumptions` (set by `aw-refine`), a slice rationale's `## Proposed answers` (set by `aw-slice`), or a PR body's `## Decisions made` (set by `aw-tdd`).
+
+**Action:** route to the same path as the matching reset above — refine override → "Redo refined scope"; slice override → "Redo slicing"; tdd-PR override → "Specific change requested" (dispatches `aw-iterate`). The triggering comment is already the new context for the redispatched stage. Use the matching template (re-refining / re-slicing / iteration dispatched).
+
 ### Specific code/file guidance ("do it this way")
 
 Phrases like "use library X", "change the approach to Y", "extract this into a helper", "use the existing utility".
@@ -205,6 +211,22 @@ Resetting to `slice`. `aw-slice` will re-evaluate with your feedback in mind.
 > *Read by `aw-feedback`. Interpreted as: clarification resolves the open questions in the issue body.*
 
 Updated the issue body to reflect: <one-sentence paraphrase of the resolution>. All open questions are now resolved with no new concerns raised, so flipping `hitl → afk` and dispatching `aw-tdd` to proceed.
+```
+
+### Issue HITL — Assumption override — re-refining
+
+```
+> *Read by `aw-feedback`. Interpreted as: override an assumption recorded by `aw-refine`.*
+
+Resetting to `refine` so the assumption is rewritten with your override folded in. The refine pass will pick up your comment as new context and update the issue body's `## Assumptions` section accordingly.
+```
+
+### Issue HITL — Assumption override — re-slicing
+
+```
+> *Read by `aw-feedback`. Interpreted as: override a proposed answer recorded by `aw-slice`.*
+
+Resetting to `slice` so the answer is reconsidered with your override. The slice pass will use your comment as new context and update the `## Proposed answers` section accordingly.
 ```
 
 ### Issue HITL — Code guidance noted

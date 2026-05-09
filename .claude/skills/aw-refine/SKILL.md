@@ -21,16 +21,11 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 2. **Pick the matching template** (see Templates below) based on the category.
 
-3. **Rewrite the body.** Preserve verbatim:
-   - Reproduction steps, error messages, code blocks
-   - Environment / version / hardware details
-   - User-provided technical context
-   - Original outcome statement if it's already clear
+3. **Rewrite the body.** Default is assumption-and-proceed. Only bounce back (post a comment, leave `refine` in place) if the input is unintelligible — empty body, single-character title, no recoverable signal. "Vague but intelligible" is the common case; make defensible assumptions and proceed.
 
-   Improve:
-   - Outcome focus — what observable behavior does the user want?
-   - Scope clarity — what's in, what's out, what are non-goals?
-   - Acceptance criteria — testable, observable outcomes (NOT implementation details)
+   Preserve verbatim: reproduction steps, error messages, code blocks, environment / version, user-provided technical context, original outcome if already clear.
+
+   Improve: outcome focus, scope (in / out / non-goals), acceptance criteria (testable, observable). When you make assumptions because the original was silent or ambiguous, record them under `## Assumptions` in the rewritten body — they're override-able by comment.
 
 4. **Update the body** via `gh issue edit $ISSUE_NUMBER --body-file <(...)`.
 
@@ -51,6 +46,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 ## Outcome
 
 <one-sentence description of the broken behavior the user wants fixed>
+
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
 
 ## Reproduction
 
@@ -87,6 +86,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 <the user need or pain point this addresses; quote the original report where helpful>
 
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
+
 ## Scope
 
 ### In scope
@@ -118,6 +121,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 <why now? what does this enable or unblock?>
 
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
+
 ## Scope
 
 ### In scope
@@ -139,14 +146,32 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 - **Never** modify the title unless it is genuinely not outcome-shaped — most titles are fine.
 - **Preserve** all technical details from the original report verbatim. Quote in code blocks if needed.
 - **`refined` is the state marker; `slice` is the action label** that triggers `aw-slice`. Both must be set after a successful run.
-- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `refine` in place, do NOT add `refined` or `slice`.
+- **Assumption-and-proceed is the default**; bounce back with `refine` left in place only when the input is unintelligible. Humans override assumptions by comment; `aw-feedback` routes back here.
 
 ## Comment template
+
+**Default (assumptions-and-proceed):**
 
 ```
 > *Refined automatically by the `aw-refine` skill. Reply with corrections or additional context.*
 
 Restructured the body into the outcome-oriented `<category>` template. Reproduction steps and technical details preserved verbatim.
+
+<IF assumptions were made>
+Recorded the following assumptions in the issue body to fill silence in the original report:
+- <assumption 1>
+- <assumption 2>
+
+Comment to override any assumption — `aw-feedback` will route the comment back here.
+</IF>
+```
+
+**Bounce-back (rare — unintelligible only):**
+
+```
+> *Read by the `aw-refine` skill — could not extract a recoverable outcome.*
+
+The original report is missing enough context that I can't form a defensible interpretation. Could you say what user behaviour this should change? A one-sentence "User should be able to X" or "X is broken: Y happens instead of Z" is enough.
 ```
 
 ## Constraints from the dev process

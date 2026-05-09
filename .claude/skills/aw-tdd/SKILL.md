@@ -42,6 +42,14 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 
 4. **Read the relevant files.** The subtask body lists `Files likely to change:` — read each, plus their tests, plus 1–2 levels of imports/callers.
 
+4.5. **Apply propose-don't-punt.** Look for prior agent guidance:
+
+   - Issue body's `## Assumptions` section (set by `aw-refine`) — these are committed assumptions; honour them unless overridden by a comment.
+   - Issue body's `## Open questions` section — if any are still unresolved (rare — slice should have resolved them), pick a defensible answer for each.
+   - Slice rationale comment's `## Proposed answers` section (set by `aw-slice`) — these are authoritative; implement against them.
+
+   Carry every assumption, proposed answer, or implementation-time decision forward into the PR body's `## Decisions made` section so reviewers see what was chosen and can override at PR review (or by comment, which `aw-feedback` routes back). Never block waiting for human input mid-implementation; pick a defensible choice and document it.
+
 ## Lifecycle labels
 
 Update the subtask issue's labels at three points:
@@ -192,6 +200,10 @@ The first line MUST be a GitHub auto-close line — `Fixes #<issue-number>` for 
 ## Refactor
 
 <note any cleanup, or "skipped">
+
+## Decisions made
+
+<one bullet per assumption (from the issue body's `## Assumptions`), proposed answer (from slice's `## Proposed answers`), or implementation-time decision the agent made because the spec was silent. Each bullet: question | chosen answer | one-line reasoning. Use "—" if no decisions were made beyond following the spec verbatim. Reviewers can comment "wrong assumption — use X" to override; `aw-feedback` routes that back to the appropriate stage.>
 
 ## Verification
 
