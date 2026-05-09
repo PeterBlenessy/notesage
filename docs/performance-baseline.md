@@ -511,6 +511,58 @@ Live-tested recording at `~/Downloads/Screenshots/load-large-file-recording-phas
 
 **Honest assessment:** Phase 2's worker pipeline is the right architecture (proves the parse can run off-thread, validated by parity tests). The user-visible improvement is modest (~2 s on a 506 KB file) because the dominant cost shifted from "parse + plugin storm" to "DOM materialization", and the DOM layer can't be moved off-thread. Phase 3 is now the more impactful win.
 
+### 2026-05-07 — Phase 3b (streaming hydrate + parse cache), Book 506 KB
+
+**Machine:** Apple M3 / 24 GB RAM / macOS — same hardware as the startup benchmarks above.
+
+**Commits:** `2602a21f` (streaming hydrate + parse cache + AbortController), `3b277b3c` (settings toggles), `7ec5140a` (perf log rename). Latest: `a28af3a4` (docs).
+
+**Methodology:** Click the 506 KB book in the sidebar, note `[perf:doc-tab-load]` output. "First load" = file not yet in parse cache (worker runs). "Cache hit" = same file clicked again within the same app session (worker bypassed, parse result reused).
+
+**Headline numbers:**
+
+| State | Click → editable |
+| --- | --- |
+| Phase 2 baseline (`19d1b00f`, pristine) | ~5 s |
+| prod 0.40.0 (same code as Phase 2 baseline) | ~5 s |
+| M2.5 regression (in-place during dev, reverted `fae852de`) | ~22 s |
+| **Phase 3b — first load (cold, worker runs)** | **~5 s** |
+| **Phase 3b — cache hit (revisit, worker bypassed)** | **~2.8 s** |
+
+Streaming does not make the *total* first-load time faster — it makes the work **yieldable**. Clicks, hovers, and cursor movement stay responsive throughout the ~5 s window because the hydration loop yields to a paint frame via `requestAnimationFrame` between 1000-node chunks. The dominant win is the cache hit (revisit) path: ~2.8 s vs. ~5 s, because the worker parse is skipped entirely.
+
+**Per-component breakdown (first load, ~5 s total):**
+
+| Component | Approx. time | Notes |
+| --- | --- | --- |
+| `previewMs` | ~300 ms | Rust comrak HTML preview (Layer 1, unchanged from Phase 1) |
+| `pipelineMs` | ~2,100 ms | Off-thread worker parse pipeline (markdown → ProseMirror JSON) |
+| `setContentMs` | ~2,600 ms | `streamingHydrate` — 90 RAF-yielding 1000-node chunks (`chunkCount` ≈ 90) |
+
+**Cache-hit breakdown (revisit, ~2.8 s total):**
+
+| Component | Approx. time | Notes |
+| --- | --- | --- |
+| `previewMs` | ~300 ms | comrak preview still fires (shows instantly from cache) |
+| `pipelineMs` | ~0 ms | Worker bypassed — parse result served from `parsedDocCache` |
+| `setContentMs` | ~2,500 ms | `streamingHydrate` from cached JSON; same chunk count |
+| `chunkCount` | ~90 | Consistent across first load and cache hit |
+
+Smaller files land proportionally: 92 KB doc ~660–840 ms cache hit; 0.5 KB doc ~130–200 ms.
+
+**Comparison vs prior states:**
+
+| Baseline | First-load | Cache-hit | Notes |
+| --- | --- | --- | --- |
+| Phase 2 (`19d1b00f`) | ~5 s | n/a (no cache) | Single-shot `setContent` (4.4 s synchronous block) |
+| prod 0.40.0 | ~5 s | n/a | Same code as Phase 2 baseline |
+| M2.5 regression state | ~22 s | n/a | Edit-A overlay + state-cache experiment; reverted `fae852de` |
+| **Phase 3b (this entry)** | **~5 s** | **~2.8 s** | Streaming + parse cache; same first-load as Phase 2 but yieldable |
+
+**Open follow-ups (not gating this entry):**
+- Issue #131: background pre-warm — populate parse cache during tree-validation window for top-5 Recents + Pinned (~300 ms win on first click)
+- Issue #132: IndexedDB viewport cache — would cut cross-session cold-start from ~5 s to <50 ms by persisting cached HTML across app restarts (parse cache is in-memory only, lost on quit)
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
