@@ -26,6 +26,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { tauriApi } from "@/lib/tauri";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -35,6 +40,7 @@ import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { FileEntry } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
+import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
 
 /**
  * SidebarContextMenu — shared right-click menu for sidebar file rows (task #45).
@@ -136,6 +142,7 @@ export function SidebarContextMenu({
   onOpen,
 }: SidebarContextMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const { openFile, deletePath, refreshFileTree, renamePath } = useFileOperations();
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
@@ -516,6 +523,28 @@ export function SidebarContextMenu({
             </>
           )}
 
+          {/* #140 — Customize folder appearance (icon + color). Shown for
+             *  folder and project rows only. Standard folders only — the
+             *  structural locked/external types are not customizable because
+             *  their icons convey security/permission state. */}
+          {isContainer && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                className={ITEM_DENSITY}
+                onSelect={(e) => {
+                  // Prevent the context menu from closing before the popover
+                  // has a chance to open (context menu close unmounts its
+                  // content, which would kill the popover before it renders).
+                  e.preventDefault();
+                  setCustomizeOpen(true);
+                }}
+              >
+                Customize…
+              </ContextMenuItem>
+            </>
+          )}
+
           <ContextMenuSeparator />
 
           {/* Live-test 2026-04-25 — Duplicate and Pin only render for
@@ -750,6 +779,31 @@ export function SidebarContextMenu({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* #140 — FolderAppearancePicker popover, opened by the "Customize…"
+          context menu item. Uses a zero-size trigger so the popover floats
+          at the folder row rather than being anchored to another element. */}
+      {isContainer && (
+        <Popover open={customizeOpen} onOpenChange={setCustomizeOpen}>
+          {/* Hidden trigger — we programmatically control open via state */}
+          <PopoverTrigger asChild>
+            <span className="sr-only" aria-hidden="true" />
+          </PopoverTrigger>
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={4}
+            className="p-0 w-auto"
+          >
+            <FolderAppearancePicker
+              folderPath={filePath}
+              folderType="standard"
+              isProject={isProject}
+              onClose={() => setCustomizeOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
+      )}
     </>
   );
 }

@@ -95,6 +95,19 @@ const PAIRS: Pair[] = [
     kind: 'ui',
     label: 'accent-primary-inactive / background',
   },
+
+  // Issue #140 — Folder tag color palette (8 colors).
+  // Each color is used as a folder icon fill color in the sidebar.
+  // Must clear WCAG UI 3:1 non-text contrast against `--color-background`
+  // in both light and dark themes. Regression lock for future palette tweaks.
+  { fgVar: '--color-folder-tag-1', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-1 (Red) / background' },
+  { fgVar: '--color-folder-tag-2', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-2 (Orange) / background' },
+  { fgVar: '--color-folder-tag-3', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-3 (Yellow) / background' },
+  { fgVar: '--color-folder-tag-4', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-4 (Green) / background' },
+  { fgVar: '--color-folder-tag-5', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-5 (Teal) / background' },
+  { fgVar: '--color-folder-tag-6', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-6 (Blue) / background' },
+  { fgVar: '--color-folder-tag-7', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-7 (Purple) / background' },
+  { fgVar: '--color-folder-tag-8', bgVar: '--color-background', kind: 'ui', label: 'folder-tag-8 (Pink) / background' },
 ];
 
 /**
