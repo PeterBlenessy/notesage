@@ -11,6 +11,7 @@ import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations"
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { processPendingCommentFile } from "@/lib/pending-comments";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
+import { deleteCachedViewport } from "@/lib/viewport-cache";
 import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
@@ -81,6 +82,8 @@ export function useFileWatcher() {
       // Drop any cached worker-parse for this path — content has diverged.
       // The next click on this file will re-dispatch the worker.
       parsedDocCache.delete(path);
+      // Drop the IDB viewport snapshot — cached HTML would be stale.
+      deleteCachedViewport(path);
 
       // For create/delete events, debounce file tree refresh.
       // Pass the parent directory so only the affected section is refreshed
