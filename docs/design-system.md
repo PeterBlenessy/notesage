@@ -47,6 +47,55 @@ pnpm dlx shadcn@latest add button dropdown-menu context-menu dialog alert-dialog
 4. Use shadcn/ui's `cn()` utility for conditional classnames — don't install `clsx` separately.
 5. If you need a component shadcn/ui doesn't have, check Radix UI primitives first before building from scratch.
 
+### Radix Tooltip — `<TooltipProvider>` is mandatory
+
+**RULE: every `<Tooltip>` MUST live inside a `<TooltipProvider>` ancestor.** Radix `Tooltip` reads its config from the provider's React context — without it, the component throws `Tooltip must be used within TooltipProvider` at render time and the editor's ErrorBoundary catches the crash.
+
+This rule has been violated multiple times (e.g. PR #173's `BlockSizeToolbar` shipped without a provider, crashing the editor on any chart/drawing/link-preview render). Treat the rule as load-bearing, not stylistic.
+
+**The pattern:**
+
+```tsx
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+return (
+  <TooltipProvider delayDuration={300}>
+    <div className="…">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button>…</Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Label</TooltipContent>
+      </Tooltip>
+    </div>
+  </TooltipProvider>
+);
+```
+
+**Where to put the provider:**
+
+- For a self-contained component (toolbar, popover content, isolated widget) — wrap the component's outer element in `<TooltipProvider>`. Don't rely on a parent providing one.
+- For a tree of components that all use tooltips — put a single provider near the layout root and let the descendants share it.
+- When testing a tooltip-bearing component in isolation, add `<TooltipProvider>` to the test render OR wrap inside the component itself. Don't ship a component that crashes when rendered without an ambient provider.
+
+**Reference implementations** (all wrap their own provider, copy this shape):
+
+- `src/components/activity/ActivityStrip.tsx`
+- `src/components/chat/ChatPanel.tsx`
+- `src/components/CommitDialog.tsx`
+- `src/components/editor/BlockSizeToolbar.tsx`
+
+**Anti-patterns:**
+
+- ❌ Importing `Tooltip` without `TooltipProvider` from `@/components/ui/tooltip`
+- ❌ Assuming "the parent layout has a provider" — verify by reading the call sites, or add your own
+- ❌ Adding a regression test that mocks the Tooltip away instead of catching the crash
+
 ## Design Philosophy
 
 Notesage should feel like a premium native macOS application. Think: Linear, Raycast, Things 3, Bear, Craft. Not: generic Electron app with default HTML buttons.

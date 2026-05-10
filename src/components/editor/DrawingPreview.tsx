@@ -8,6 +8,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
 import { DrawingEditor } from "./DrawingEditor";
+import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -277,9 +278,26 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
                 </div>
               )}
               {isHovered && (
-                <div className="drawing-edit-overlay">
-                  <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  <span className="text-xs">Edit</span>
+                /* Bottom-right hover row — width/align controls + Edit pill,
+                   matching the chart node's layout for consistency. */
+                <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5">
+                  {(() => {
+                    const pos = getPos();
+                    if (typeof pos !== "number") return null;
+                    return (
+                      <BlockSizeControls
+                        editor={editor}
+                        pos={pos}
+                        node={node}
+                        blockWidth={blockWidth}
+                        align={align}
+                      />
+                    );
+                  })()}
+                  <div className="flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm">
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    <span>Edit</span>
+                  </div>
                 </div>
               )}
             </div>

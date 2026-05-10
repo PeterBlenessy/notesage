@@ -25,6 +25,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 - **Files:** One component per file. Filename = component name.
 - **Types:** Prefer interfaces. No `any` (use `unknown`).
 - **Errors:** Tauri returns `Result<T, String>`. Show toast for user errors.
+- **Radix Tooltip:** Every `<Tooltip>` MUST be wrapped in `<TooltipProvider>`. Radix throws at render time without it (see `docs/design-system.md` §"Radix Tooltip — `<TooltipProvider>` is mandatory").
 
 ## Documentation
 

@@ -234,11 +234,22 @@ export const Chart = Node.create({
             return;
           }
 
-          // Legacy fallback: sidecar image syntax
+          // Legacy fallback: sidecar image syntax. Width/align metadata are
+          // appended as a trailing HTML comment so the configuration survives
+          // even before the auto-migration to inline JSON has run.
           const chartId = n.attrs.chartId;
           if (!chartId) return;
 
-          s.write(`![chart](/.notesage/charts/${chartId}.json)\n\n`);
+          const metaParts: string[] = [];
+          if (n.attrs.blockWidth != null)
+            metaParts.push(`blockWidth:${n.attrs.blockWidth}`);
+          if (n.attrs.align != null) metaParts.push(`align:${n.attrs.align}`);
+          const metaSuffix =
+            metaParts.length > 0 ? ` <!--${metaParts.join(",")}-->` : "";
+
+          s.write(
+            `![chart](/.notesage/charts/${chartId}.json)${metaSuffix}\n\n`,
+          );
         },
         parse: {
           // Parsing is handled by the preprocessor in markdown.ts

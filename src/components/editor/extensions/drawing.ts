@@ -247,12 +247,21 @@ export const Drawing = Node.create({
             return;
           }
 
-          // Legacy fallback: sidecar image syntax
+          // Legacy fallback: sidecar image syntax. Width/align metadata are
+          // appended as a trailing HTML comment so the configuration survives
+          // even before the auto-migration to inline JSON has run.
           const drawingId = n.attrs.drawingId;
           if (!drawingId) return;
 
+          const metaParts: string[] = [];
+          if (n.attrs.blockWidth != null)
+            metaParts.push(`blockWidth:${n.attrs.blockWidth}`);
+          if (n.attrs.align != null) metaParts.push(`align:${n.attrs.align}`);
+          const metaSuffix =
+            metaParts.length > 0 ? ` <!--${metaParts.join(",")}-->` : "";
+
           s.write(
-            `![drawing](/.notesage/drawings/${drawingId}.excalidraw)\n\n`
+            `![drawing](/.notesage/drawings/${drawingId}.excalidraw)${metaSuffix}\n\n`
           );
         },
         parse: {

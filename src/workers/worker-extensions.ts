@@ -107,6 +107,27 @@ const Drawing = Node.create({
         default: null as string | null,
         parseHTML: (el: HTMLElement) => el.getAttribute("data-drawing-json") || null,
       },
+      // Block-level width/align controls (BlockSizeControls). Must mirror the
+      // production extension's schema or the worker silently drops the attrs
+      // when parsing — the production-shim divergence cost #173-follow-up the
+      // user a full debug cycle.
+      blockWidth: {
+        default: null as number | null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute("data-block-width");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.blockWidth == null
+            ? {}
+            : { "data-block-width": String(attrs.blockWidth) },
+      },
+      align: {
+        default: null as string | null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.align == null ? {} : { "data-align": attrs.align as string },
+      },
     };
   },
   parseHTML() {
@@ -148,6 +169,23 @@ const Chart = Node.create({
       chartJson: {
         default: null as string | null,
         parseHTML: (el: HTMLElement) => el.getAttribute("data-chart-json") || null,
+      },
+      blockWidth: {
+        default: null as number | null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute("data-block-width");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.blockWidth == null
+            ? {}
+            : { "data-block-width": String(attrs.blockWidth) },
+      },
+      align: {
+        default: null as string | null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.align == null ? {} : { "data-align": attrs.align as string },
       },
     };
   },
@@ -198,20 +236,27 @@ const LinkPreview = Node.create({
       siteName: { default: null },
       imageUrl: { default: null },
       faviconUrl: { default: null },
+      blockWidth: { default: null as number | null },
+      align: { default: null as string | null },
     };
   },
   parseHTML() {
     return [
       {
         tag: "div[data-link-preview]",
-        getAttrs: (element: HTMLElement) => ({
-          url: element.getAttribute("data-link-preview") || "",
-          title: element.getAttribute("data-title") || null,
-          description: element.getAttribute("data-description") || null,
-          siteName: element.getAttribute("data-site-name") || null,
-          imageUrl: element.getAttribute("data-image-url") || null,
-          faviconUrl: element.getAttribute("data-favicon-url") || null,
-        }),
+        getAttrs: (element: HTMLElement) => {
+          const bw = element.getAttribute("data-block-width");
+          return {
+            url: element.getAttribute("data-link-preview") || "",
+            title: element.getAttribute("data-title") || null,
+            description: element.getAttribute("data-description") || null,
+            siteName: element.getAttribute("data-site-name") || null,
+            imageUrl: element.getAttribute("data-image-url") || null,
+            faviconUrl: element.getAttribute("data-favicon-url") || null,
+            blockWidth: bw ? Number(bw) : null,
+            align: element.getAttribute("data-align") || null,
+          };
+        },
       },
     ];
   },

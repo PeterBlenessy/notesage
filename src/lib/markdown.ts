@@ -453,12 +453,19 @@ export function convertLinkPreviewsToHtml(markdown: string): string {
  */
 export function convertDrawingsToHtml(markdown: string): string {
   return markdown.replace(
-    /!\[([^\]]*)\]\(([^)]+\.excalidraw)\)/g,
-    (_match, _alt: string, src: string) => {
-      // Extract drawingId from path: /.notesage/drawings/abc123.excalidraw → abc123
+    // Optional trailing `<!--blockWidth:N,align:X-->` carries width/align metadata
+    // for sidecar drawings that haven't been auto-migrated to inline form.
+    /!\[([^\]]*)\]\(([^)]+\.excalidraw)\)(?:\s*<!--((?:blockWidth:\d+|align:(?:left|center|right))(?:,(?:blockWidth:\d+|align:(?:left|center|right)))?)-->)?/g,
+    (_match, _alt: string, src: string, meta?: string) => {
       const filename = src.split("/").pop() || "";
       const drawingId = filename.replace(".excalidraw", "");
-      return `<div data-drawing-id="${drawingId}" data-type="drawing" class="drawing-block"></div>`;
+      const blockWidth = meta?.match(/blockWidth:(\d+)/)?.[1];
+      const align = meta?.match(/align:(left|center|right)/)?.[1];
+      const blockWidthAttr = blockWidth
+        ? ` data-block-width="${blockWidth}"`
+        : "";
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-drawing-id="${drawingId}" data-type="drawing" class="drawing-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -474,11 +481,19 @@ export function convertDrawingsToHtml(markdown: string): string {
  */
 export function convertChartsToHtml(markdown: string): string {
   return markdown.replace(
-    /!\[([^\]]*)\]\(([^)]*\/\.notesage\/charts\/[^)]+\.json)\)/g,
-    (_match, _alt: string, src: string) => {
+    // Optional trailing `<!--blockWidth:N,align:X-->` carries width/align metadata
+    // for sidecar charts that haven't been auto-migrated to inline form.
+    /!\[([^\]]*)\]\(([^)]*\/\.notesage\/charts\/[^)]+\.json)\)(?:\s*<!--((?:blockWidth:\d+|align:(?:left|center|right))(?:,(?:blockWidth:\d+|align:(?:left|center|right)))?)-->)?/g,
+    (_match, _alt: string, src: string, meta?: string) => {
       const filename = src.split("/").pop() || "";
       const chartId = filename.replace(".json", "");
-      return `<div data-chart-id="${chartId}" data-type="chart" class="chart-block"></div>`;
+      const blockWidth = meta?.match(/blockWidth:(\d+)/)?.[1];
+      const align = meta?.match(/align:(left|center|right)/)?.[1];
+      const blockWidthAttr = blockWidth
+        ? ` data-block-width="${blockWidth}"`
+        : "";
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-chart-id="${chartId}" data-type="chart" class="chart-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
