@@ -133,6 +133,10 @@ export function SystemSettings({
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
+
+  // HTML viewer
+  const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
+  const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
   const sidebarFilePreviewEnabled = useSettingsStore(
     (s) => s.sidebarFilePreviewEnabled,
   );
@@ -399,6 +403,24 @@ export function SystemSettings({
               id="sidebar-file-preview"
               checked={sidebarFilePreviewEnabled}
               onCheckedChange={setSidebarFilePreviewEnabled}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="HTML viewer"
+        description="Controls how local HTML files are rendered."
+      >
+        <SettingsRow
+          label="Run scripts in HTML files"
+          description="Allow inline <script> blocks to execute. Scripts are isolated from the host app — they cannot access Tauri or host localStorage. Applies on next file open."
+          htmlFor="html-viewer-allow-scripts"
+          control={
+            <Switch
+              id="html-viewer-allow-scripts"
+              checked={htmlViewerAllowScripts}
+              onCheckedChange={setHtmlViewerAllowScripts}
             />
           }
         />

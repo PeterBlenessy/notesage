@@ -96,6 +96,14 @@ interface SettingsStore {
   /** Show dotfiles and dot-directories in the sidebar file tree */
   showHiddenFiles: boolean;
   /**
+   * When true, the HTML viewer iframe sandbox gains `allow-scripts` so that
+   * inline `<script>` blocks and same-directory scripts execute. `allow-same-origin`
+   * is intentionally DROPPED when this is on — keeping both would allow iframe JS
+   * to reach `window.parent.__TAURI_INVOKE__` and host-scope state.
+   * Default false. Applies on next file open, no hot-reload.
+   */
+  htmlViewerAllowScripts: boolean;
+  /**
    * Show the comrak HTML preview while the editor hydrates in the
    * background (Phase 1 / Phase 3b instant-load). When false, the
    * editor mounts directly via streaming hydrate — no preview surface,
@@ -277,6 +285,7 @@ interface SettingsStore {
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
+  setHtmlViewerAllowScripts: (enabled: boolean) => void;
   setInstantLoadPreview: (enabled: boolean) => void;
   setSidebarFilePreviewEnabled: (enabled: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
@@ -338,6 +347,7 @@ export const useSettingsStore = create<SettingsStore>()(
       bundledAgentsCleaned: false,
       chatHintsShown: false,
       showHiddenFiles: false,
+      htmlViewerAllowScripts: false,
       instantLoadPreview: true,
       sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
@@ -594,6 +604,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowHiddenFiles: (show: boolean) => {
         set({ showHiddenFiles: show });
+      },
+
+      setHtmlViewerAllowScripts: (enabled: boolean) => {
+        set({ htmlViewerAllowScripts: enabled });
       },
 
       setInstantLoadPreview: (enabled: boolean) => {

@@ -3,6 +3,7 @@ import { Code } from "lucide-react";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
 import { CodeEditor } from "./CodeEditor";
+import { useSettingsStore } from "@/stores/settings-store";
 
 interface HtmlViewerProps {
   content: string;
@@ -25,6 +26,7 @@ export function HtmlViewer({
 }: HtmlViewerProps) {
   const [sourceMode, setSourceMode] = useState(false);
   const [findBarOpen, setFindBarOpen] = useState(false);
+  const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
 
@@ -198,11 +200,11 @@ export function HtmlViewer({
           replaceExpanded={false}
           onReplaceExpandedChange={() => {}}
         />
-        {/* Sandboxed iframe — allow-same-origin for local asset loading, no allow-scripts */}
+        {/* Sandboxed iframe — allow-scripts drops allow-same-origin to prevent Tauri IPC access */}
         <iframe
           ref={iframeRef}
           title={fileName}
-          sandbox="allow-same-origin"
+          sandbox={htmlViewerAllowScripts ? "allow-scripts" : "allow-same-origin"}
           className="w-full h-full border-0 bg-white"
           aria-label={`Rendered HTML: ${fileName}`}
         />

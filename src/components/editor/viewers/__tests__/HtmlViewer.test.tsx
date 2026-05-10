@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
+import { useSettingsStore } from "@/stores/settings-store";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -113,6 +114,52 @@ describe("HtmlViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
     expect(screen.queryByTestId("code-editor")).toBeNull();
     expect(document.querySelector("iframe")).not.toBeNull();
+  });
+
+  describe("htmlViewerAllowScripts setting", () => {
+    beforeEach(() => {
+      useSettingsStore.setState({ htmlViewerAllowScripts: false });
+    });
+
+    it("when htmlViewerAllowScripts is false (default), sandbox has allow-same-origin and no allow-scripts", () => {
+      useSettingsStore.setState({ htmlViewerAllowScripts: false });
+      render(
+        <HtmlViewer
+          content={htmlContent}
+          fileName={fileName}
+          filePath={filePath}
+          tabId="tab-scripts-off"
+          isDirty={false}
+          updateTabContent={vi.fn()}
+          saveFileWithContent={vi.fn()}
+        />
+      );
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      const sandbox = iframe!.getAttribute("sandbox");
+      expect(sandbox).toContain("allow-same-origin");
+      expect(sandbox).not.toContain("allow-scripts");
+    });
+
+    it("when htmlViewerAllowScripts is true, sandbox is allow-scripts without allow-same-origin", () => {
+      useSettingsStore.setState({ htmlViewerAllowScripts: true });
+      render(
+        <HtmlViewer
+          content={htmlContent}
+          fileName={fileName}
+          filePath={filePath}
+          tabId="tab-scripts-on"
+          isDirty={false}
+          updateTabContent={vi.fn()}
+          saveFileWithContent={vi.fn()}
+        />
+      );
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      const sandbox = iframe!.getAttribute("sandbox");
+      expect(sandbox).toContain("allow-scripts");
+      expect(sandbox).not.toContain("allow-same-origin");
+    });
   });
 });
 

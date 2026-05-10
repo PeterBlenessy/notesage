@@ -142,4 +142,10 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Version Control')).toBeTruthy();
     expect(screen.getByText('Enable git')).toBeTruthy();
   });
+
+  it('SystemSettings renders HTML viewer group with script toggle', () => {
+    renderWithProviders(<SystemSettings />);
+    expect(screen.getByText('HTML viewer')).toBeTruthy();
+    expect(screen.getByText('Run scripts in HTML files')).toBeTruthy();
+  });
 });
