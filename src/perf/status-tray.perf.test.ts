@@ -50,10 +50,9 @@ import { StatusTray } from "@/components/editor/StatusTray";
 import type { Comment } from "@/stores/comment-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useRoutingStore } from "@/stores/routing-store";
-import { useConnectionsStore } from "@/stores/connections-store";
+import { useConnectionsStore } from "@/stores/connections-store"; // kept for `connections: []` reset
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useRecordingStore } from "@/stores/recording-store";
-import type { Connection } from "@/lib/ai/connections";
 
 // ---------------------------------------------------------------------------
 // Test harness — mirrors the patterns in StatusTray.test.tsx
@@ -83,20 +82,8 @@ function resetStores() {
   });
 }
 
-function addConnection(
-  partial: Partial<Connection> &
-    Pick<Connection, "id" | "provider" | "authMethod" | "label">,
-): Connection {
-  const conn: Connection = {
-    status: "connected",
-    credentials: { type: "local_bundled" } as Connection["credentials"],
-    capabilities: ["inline_completion"],
-    createdAt: Date.now(),
-    ...partial,
-  } as Connection;
-  useConnectionsStore.setState((s) => ({ connections: [...s.connections, conn] }));
-  return conn;
-}
+// `addConnection` was used by the now-removed segmented-picker perf test.
+// Kept the type import out so the import block stays small.
 
 /**
  * Stateful host: provides a real DOM anchor element so Radix Popover can
@@ -270,80 +257,11 @@ describe("status-tray comments list expand", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (c) Segmented picker click — clicking a radio in the completion picker.
-//     Routes inline_completion to that connection and re-renders the picker.
+// (c) Segmented picker click — REMOVED. The segmented `role="radio"` picker
+// was replaced with a Radix `Select` dropdown in #181 (commit 799582ae).
+// The dropdown is portal-mounted and its click profile is fundamentally
+// different from the segmented buttons, so this benchmark no longer maps.
+// If a Select-click benchmark is needed in the future, add a fresh case
+// rather than retro-fitting this one. Behavioural coverage for the picker
+// lives in `src/components/editor/__tests__/StatusTray.test.tsx`.
 // ---------------------------------------------------------------------------
-
-describe("status-tray segmented picker click", () => {
-  it("picker click handles within 50 ms budget", async () => {
-    // Seed a routable Ollama connection so the "Ollama" radio is enabled.
-    const ollama = addConnection({
-      id: "c-ollama",
-      provider: "ollama",
-      authMethod: "local",
-      label: "Ollama",
-    });
-
-    const setterRef: { current: ((n: boolean) => void) | null } = {
-      current: null,
-    };
-    const view = renderWithProviders(
-      makeControlledHost({}, setterRef),
-    );
-
-    await act(async () => {
-      setterRef.current?.(true);
-      await Promise.resolve();
-    });
-
-    // We toggle between "Off" and "Ollama" each iteration so the picker
-    // actually changes state on every click — otherwise the second click
-    // would be a no-op since the radio is already active.
-    let toggle = false;
-
-    const result = await benchmark(
-      "status-tray segmented picker click",
-      async () => {
-        const wantedLabel = toggle ? "Off" : "Ollama";
-        toggle = !toggle;
-
-        const btn = Array.from(
-          document.querySelectorAll('[role="radio"]'),
-        ).find(
-          (b) => b.getAttribute("aria-label") === wantedLabel,
-        ) as HTMLButtonElement | undefined;
-
-        if (!btn) {
-          throw new Error(`radio "${wantedLabel}" not found`);
-        }
-
-        await act(async () => {
-          fireEvent.click(btn);
-          await Promise.resolve();
-        });
-
-        // Sanity check — the click actually flipped the routing/disable
-        // flag, so we know the re-render path was exercised.
-        const state = useSettingsStore.getState();
-        const routing = useRoutingStore.getState().routing;
-        if (wantedLabel === "Off") {
-          if (!state.inlineCompletionsDisabled) {
-            throw new Error("Off click did not disable completions");
-          }
-        } else {
-          if (
-            state.inlineCompletionsDisabled ||
-            routing.inline_completion.connectionId !== ollama.id
-          ) {
-            throw new Error("Ollama click did not route to Ollama");
-          }
-        }
-      },
-      50,
-      10,
-    );
-
-    view.unmount();
-    expect(result.passed).toBe(true);
-  });
-});
