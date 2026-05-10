@@ -61,6 +61,15 @@ export function fontFamilyCSS(key: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Font-size keyboard shortcut constants
+// ---------------------------------------------------------------------------
+
+/** Minimum editor font size (pt), enforced by the keyboard shortcuts. */
+export const FONT_SIZE_MIN = 10;
+/** Maximum editor font size (pt), enforced by the keyboard shortcuts. */
+export const FONT_SIZE_MAX = 24;
+
+// ---------------------------------------------------------------------------
 // Legacy flat interface (kept for backwards compatibility)
 // ---------------------------------------------------------------------------
 
@@ -115,6 +124,10 @@ interface EditorStylesStore extends EditorStyles {
   setLineHeight: (height: number) => void;
   setParagraphSpacing: (spacing: number) => void;
   resetToDefaults: () => void;
+  /** Increase or decrease the paragraph font size by `delta` pt, clamped to [FONT_SIZE_MIN, FONT_SIZE_MAX]. */
+  adjustFontSize: (delta: number) => void;
+  /** Reset the paragraph font size to the application default. */
+  resetFontSize: () => void;
 }
 
 /** Derive legacy flat fields from presets for backwards compatibility. */
@@ -255,5 +268,15 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
 
   resetToDefaults: () => {
     set({ presets: { ...DEFAULT_PRESETS }, ...EDITOR_STYLES_DEFAULTS });
+  },
+
+  adjustFontSize: (delta) => {
+    const current = get().fontSize;
+    const next = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, current + delta));
+    get().setFontSize(next);
+  },
+
+  resetFontSize: () => {
+    get().setFontSize(EDITOR_STYLES_DEFAULTS.fontSize);
   },
 }));

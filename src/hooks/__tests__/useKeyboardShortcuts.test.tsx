@@ -91,6 +91,28 @@ vi.mock("@/stores/editor-store", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Editor-styles-store mock. Exposes adjustFontSize and resetFontSize so the
+// keyboard shortcut wiring tests can verify the font-size chords call through
+// without actually running the store logic.
+// ---------------------------------------------------------------------------
+
+const mockEditorStylesState: {
+  adjustFontSize: ReturnType<typeof vi.fn>;
+  resetFontSize: ReturnType<typeof vi.fn>;
+} = {
+  adjustFontSize: vi.fn(),
+  resetFontSize: vi.fn(),
+};
+
+vi.mock("@/stores/editor-styles-store", () => {
+  const useEditorStylesStore = Object.assign(
+    vi.fn(() => mockEditorStylesState),
+    { getState: () => mockEditorStylesState },
+  );
+  return { useEditorStylesStore };
+});
+
+// ---------------------------------------------------------------------------
 // Import the hook AFTER the mocks above.
 // ---------------------------------------------------------------------------
 
@@ -169,6 +191,10 @@ beforeEach(() => {
   mockEditorState.activeTabId = null;
   mockEditorState.closeTab.mockReset();
   mockEditorState.setPendingCloseTabId.mockReset();
+
+  // Reset editor-styles-store state.
+  mockEditorStylesState.adjustFontSize.mockReset();
+  mockEditorStylesState.resetFontSize.mockReset();
 
   capturedBarEvents = [];
   unsubscribeBar = subscribeToCmdBarEvents((e) => {
@@ -553,6 +579,75 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     } finally {
       window.removeEventListener(REVEAL_IN_FINDER_EVENT, listener);
     }
+  });
+});
+
+// ===========================================================================
+// Font-size keyboard shortcuts — ⌘+ / ⌘- / ⌘0
+// ===========================================================================
+
+describe("useKeyboardShortcuts (font-size chords)", () => {
+  it.each<UiPreview>(["legacy", "quiet-composer"])(
+    "⌘= (Cmd-Equal) increases font size by 1pt under uiPreview=%s",
+    (preview) => {
+      mockSettings.uiPreview = preview;
+      const callbacks = makeCallbacks();
+      renderHook(() => useKeyboardShortcuts(callbacks));
+
+      // US layout: Cmd+= (no shift) — both key and code
+      dispatchKey("=", { code: "Equal", metaKey: true });
+
+      expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(1);
+    },
+  );
+
+  it.each<UiPreview>(["legacy", "quiet-composer"])(
+    "⌘+ (Cmd-Shift-Equal) increases font size by 1pt under uiPreview=%s",
+    (preview) => {
+      mockSettings.uiPreview = preview;
+      const callbacks = makeCallbacks();
+      renderHook(() => useKeyboardShortcuts(callbacks));
+
+      // US layout: Cmd+Shift+= produces "+"
+      dispatchKey("+", { code: "Equal", metaKey: true, shiftKey: true });
+
+      expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(1);
+    },
+  );
+
+  it.each<UiPreview>(["legacy", "quiet-composer"])(
+    "⌘- (Cmd-Minus) decreases font size by 1pt under uiPreview=%s",
+    (preview) => {
+      mockSettings.uiPreview = preview;
+      const callbacks = makeCallbacks();
+      renderHook(() => useKeyboardShortcuts(callbacks));
+
+      dispatchKey("-", { code: "Minus", metaKey: true });
+
+      expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(-1);
+    },
+  );
+
+  it.each<UiPreview>(["legacy", "quiet-composer"])(
+    "⌘0 (Cmd-Zero) resets font size to default under uiPreview=%s",
+    (preview) => {
+      mockSettings.uiPreview = preview;
+      const callbacks = makeCallbacks();
+      renderHook(() => useKeyboardShortcuts(callbacks));
+
+      dispatchKey("0", { code: "Digit0", metaKey: true });
+
+      expect(mockEditorStylesState.resetFontSize).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("⌘= does NOT open the legacy palette (font-size chord takes priority)", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("=", { code: "Equal", metaKey: true });
+
+    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
   });
 });
 

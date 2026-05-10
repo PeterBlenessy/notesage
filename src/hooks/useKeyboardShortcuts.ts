@@ -33,6 +33,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
@@ -235,6 +236,40 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         e.preventDefault();
         const settings = useSettingsStore.getState();
         settings.setTheme(settings.theme === "dark" ? "light" : "dark");
+        return;
+      }
+
+      // ------------------------------------------------------------------
+      // Font-size keyboard shortcuts: ⌘+ / ⌘= (increase), ⌘- (decrease),
+      // ⌘0 (reset to default).
+      //
+      // Cross-keyboard-layout safety:
+      //   ⌘+  — US: Cmd+Shift+Equal (key "+" or "="); non-US layouts fire
+      //         via event.code === "Equal" regardless of shift/modifier.
+      //   ⌘-  — US: Cmd+Minus (key "-"); non-US via code === "Minus".
+      //   ⌘0  — universal; code === "Digit0" for defence in depth.
+      //
+      // No altKey guard needed — alt is never involved for these chords.
+      // ------------------------------------------------------------------
+
+      // ⌘= or ⌘+ (Cmd-Equal or Cmd-Shift-Equal) — increase font size
+      if (isMod && !e.altKey && (key === "=" || key === "+" || e.code === "Equal")) {
+        e.preventDefault();
+        useEditorStylesStore.getState().adjustFontSize(1);
+        return;
+      }
+
+      // ⌘- — decrease font size
+      if (isMod && !e.shiftKey && !e.altKey && (key === "-" || e.code === "Minus")) {
+        e.preventDefault();
+        useEditorStylesStore.getState().adjustFontSize(-1);
+        return;
+      }
+
+      // ⌘0 — reset font size to default
+      if (isMod && !e.shiftKey && !e.altKey && (key === "0" || e.code === "Digit0")) {
+        e.preventDefault();
+        useEditorStylesStore.getState().resetFontSize();
         return;
       }
 

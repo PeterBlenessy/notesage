@@ -379,3 +379,65 @@ describe('resetToDefaults', () => {
     expect(state.presets.heading1).toEqual(DEFAULT_PRESETS.heading1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Font-size keyboard shortcut helpers — adjustFontSize / resetFontSize
+// ---------------------------------------------------------------------------
+
+describe('adjustFontSize', () => {
+  it('increases font size by 1pt', () => {
+    useEditorStylesStore.getState().setFontSize(16);
+    useEditorStylesStore.getState().adjustFontSize(1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(17);
+  });
+
+  it('decreases font size by 1pt', () => {
+    useEditorStylesStore.getState().setFontSize(16);
+    useEditorStylesStore.getState().adjustFontSize(-1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(15);
+  });
+
+  it('clamps at max 24pt', () => {
+    useEditorStylesStore.getState().setFontSize(24);
+    useEditorStylesStore.getState().adjustFontSize(1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(24);
+  });
+
+  it('clamps at min 10pt', () => {
+    useEditorStylesStore.getState().setFontSize(10);
+    useEditorStylesStore.getState().adjustFontSize(-1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(10);
+  });
+
+  it('does not go below 10pt from an already-low value', () => {
+    useEditorStylesStore.getState().setFontSize(11);
+    useEditorStylesStore.getState().adjustFontSize(-5);
+    expect(useEditorStylesStore.getState().fontSize).toBe(10);
+  });
+
+  it('does not go above 24pt from an already-high value', () => {
+    useEditorStylesStore.getState().setFontSize(22);
+    useEditorStylesStore.getState().adjustFontSize(5);
+    expect(useEditorStylesStore.getState().fontSize).toBe(24);
+  });
+
+  it('keeps paragraph preset in sync', () => {
+    useEditorStylesStore.getState().setFontSize(16);
+    useEditorStylesStore.getState().adjustFontSize(2);
+    expect(useEditorStylesStore.getState().presets.paragraph.fontSize).toBe(18);
+  });
+});
+
+describe('resetFontSize', () => {
+  it('resets font size to the application default (16pt)', () => {
+    useEditorStylesStore.getState().setFontSize(22);
+    useEditorStylesStore.getState().resetFontSize();
+    expect(useEditorStylesStore.getState().fontSize).toBe(EDITOR_STYLES_DEFAULTS.fontSize);
+  });
+
+  it('keeps paragraph preset in sync after reset', () => {
+    useEditorStylesStore.getState().setFontSize(22);
+    useEditorStylesStore.getState().resetFontSize();
+    expect(useEditorStylesStore.getState().presets.paragraph.fontSize).toBe(EDITOR_STYLES_DEFAULTS.fontSize);
+  });
+});
