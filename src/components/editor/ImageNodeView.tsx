@@ -38,21 +38,29 @@ export function ImageNodeView({
     setResolvedSrc(resolveImageSrc(src, docDir));
   }, [src, editor.storage]);
 
-  // Width/align are persisted in `node.attrs` and applied via inline CSS so
-  // the rendered image visibly reflects the user's choice. The same attrs
-  // round-trip through markdown via the LocalImage serializer.
-  const wrapperStyle: React.CSSProperties = {
-    width: blockWidth != null ? `${blockWidth}%` : undefined,
-    marginLeft:
-      align === "center" || align === "right" ? "auto" : undefined,
-    marginRight: align === "center" ? "auto" : undefined,
-  };
+  // Width + align rendering — same pattern ChartNodeView uses (block-level
+  // wrapper, auto-margins for center/right alignment, only meaningful when a
+  // width is set since a full-width image fills the column already).
+  const wrapperStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    wrapperStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      wrapperStyle.marginLeft = "auto";
+      wrapperStyle.marginRight = "auto";
+    } else if (align === "right") {
+      wrapperStyle.marginLeft = "auto";
+      wrapperStyle.marginRight = "0";
+    } else {
+      // left or null → anchor at the left edge.
+      wrapperStyle.marginRight = "auto";
+    }
+  }
 
   return (
     <NodeViewWrapper
       as="div"
       className={cn(
-        "relative group inline-block max-w-full",
+        "relative group block max-w-full",
         selected && "ring-2 ring-primary/40 rounded-lg",
       )}
       style={wrapperStyle}
