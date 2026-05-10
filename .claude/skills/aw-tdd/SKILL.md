@@ -20,9 +20,21 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 
 0. **Check for a PR already in flight.** Before anything else: `gh pr list --search "resolves #$ISSUE_NUMBER OR fixes #$ISSUE_NUMBER OR closes #$ISSUE_NUMBER" --state open --json number,url`. If any open PR referencing this issue is found, exit silently — a concurrent run has already claimed the issue. Do not rely solely on the `review` label: GitHub label writes have latency, and two concurrent triggers can both pass the label check before either has written to the API.
 
-1. **Read the issue.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number`.
+1. **Read the issue, including comments.** `gh issue view $ISSUE_NUMBER --json title,body,labels,number,comments`.
    - Verify it has `tdd` AND `afk` AND `refined` AND exactly one of `bug` / `enhancement` / `chore`. If not, exit silently.
    - Verify it does NOT have `review` or be closed.
+
+1.4. **Read human comments since the latest `refined` marker** — authoritative override material.
+
+   When the user resets an issue back to `tdd` (manually, or via `aw-feedback`'s "Redo implementation" path), they typically leave a comment explaining what was wrong with the previous attempt or what the implementation must do differently. **Comments posted between the most recent `refined` event and now are authoritative input to this run.** Without folding them in, the same wrong implementation will ship again.
+
+   - Filter the `comments` array to skip bot comments (any comment whose author is `github-actions[bot]`, `claude[bot]`, `app/claude`, or whose body opens with a `> *Refined automatically` / `> *Sliced by` / `> *Reviewed by` / `> *Read by` / `> *Implemented by` marker).
+   - Of the remaining human comments, focus on those posted after the issue's most recent `refined` event. As a fallback heuristic: any human comment whose timestamp is after the latest bot `Refined automatically` marker comment, or after the latest bot `Reviewed by aw-review` comment if that came later.
+   - Treat each such human comment as **authoritative**. What the human explicitly stated outweighs any conflicting interpretation of the body alone. In particular:
+     - "Wrong path" / "Files explicitly NOT touched" / "DO NOT" → those files are forbidden in this run, regardless of what `Files likely to change` in the body says.
+     - "It should be transient, not persistent" / "session-only, not stored" → semantic overrides on storage / persistence shape.
+     - "The previous PR did X but should have done Y" → Y is the requirement; write a red test that asserts Y, not X.
+   - **Combine with retry gaps from step 1.5.** If both override comments AND aw-review rejections exist, treat them as one merged list of red tests — every override-comment requirement gets its own failing test, alongside every `✗ Missing` / regression from the prior PR.
 
 1.5. **Check for prior `aw-review` rejections (retry detection).** Find any closed bot-authored PRs for this issue:
    ```
