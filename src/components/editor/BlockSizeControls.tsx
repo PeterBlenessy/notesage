@@ -53,7 +53,18 @@ export function BlockSizeControls({
   };
 
   const setBlockWidth = (width: number | null) => updateAttrs({ blockWidth: width });
-  const setAlign = (next: string | null) => updateAttrs({ align: next });
+
+  // Aligning a full-width block is a no-op visually (the block already fills
+  // the column). When the user clicks center / right without first picking a
+  // width, default to 75% so the alignment is immediately visible — common
+  // pattern in Notion / Google Docs.
+  const setAlign = (next: string | null) => {
+    const patch: Record<string, unknown> = { align: next };
+    if (next != null && blockWidth == null) {
+      patch.blockWidth = 75;
+    }
+    updateAttrs(patch);
+  };
 
   return (
     <div

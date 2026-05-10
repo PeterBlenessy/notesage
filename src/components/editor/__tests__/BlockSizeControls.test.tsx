@@ -88,4 +88,31 @@ describe("BlockSizeControls (#173 follow-up)", () => {
     );
     expect(run).toHaveBeenCalledTimes(1);
   });
+
+  it("clicking align with no width set auto-applies blockWidth=75 (UX default)", () => {
+    // A full-width block can't visually align (it already fills the column).
+    // Default to 75% so the user sees an immediate effect from the click.
+    const { editor, setNodeMarkup } = makeEditor();
+    const { getByLabelText } = render(
+      <BlockSizeControls editor={editor} pos={1} node={fakeNode} blockWidth={null} align={null} />,
+    );
+    fireEvent.click(getByLabelText("Align center"));
+    expect(setNodeMarkup).toHaveBeenCalledWith(
+      1,
+      undefined,
+      expect.objectContaining({ align: "center", blockWidth: 75 }),
+    );
+  });
+
+  it("clicking align with an existing width preserves the width", () => {
+    const { editor, setNodeMarkup } = makeEditor();
+    const { getByLabelText } = render(
+      <BlockSizeControls editor={editor} pos={1} node={fakeNode} blockWidth={50} align={null} />,
+    );
+    fireEvent.click(getByLabelText("Align right"));
+    const call = setNodeMarkup.mock.calls[0][2] as Record<string, unknown>;
+    expect(call.align).toBe("right");
+    // No auto-default — user already had 50%.
+    expect(call.blockWidth).toBeUndefined();
+  });
 });
