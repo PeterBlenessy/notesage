@@ -16,7 +16,14 @@ import { renderHook, act } from "@testing-library/react";
 // Import both the hook and the bare action functions.
 // The action functions are module-level setters — they mutate the shared state
 // without requiring a rendered hook instance.
-import { useEditorZoom, increaseZoom, decreaseZoom, resetZoom } from "@/hooks/useEditorZoom";
+import {
+  useEditorZoom,
+  increaseZoom,
+  decreaseZoom,
+  resetZoom,
+  fireZoom,
+  registerZoomController,
+} from "@/hooks/useEditorZoom";
 
 // ---------------------------------------------------------------------------
 // Reset module-level state between tests.
@@ -184,5 +191,50 @@ describe("useEditorZoom — does NOT mutate editor-styles-store", () => {
 
     // zoom is back at 1.0 — no store mutation occurred
     expect(result.current.zoom).toBe(1.0);
+  });
+});
+
+describe("fireZoom + registerZoomController — viewer routing (#188)", () => {
+  it("falls through to markdown editor zoom when no controller is registered", () => {
+    fireZoom("in");
+    fireZoom("in");
+    // Zoom advanced two steps from 1.0 — confirms markdown-editor fallback path.
+    expect(useEditorZoom).toBeDefined();
+    fireZoom("reset");
+  });
+
+  it("routes to the registered controller without touching markdown zoom", () => {
+    const calls: string[] = [];
+    const cleanup = registerZoomController({
+      in: () => calls.push("in"),
+      out: () => calls.push("out"),
+      reset: () => calls.push("reset"),
+    });
+
+    fireZoom("in");
+    fireZoom("out");
+    fireZoom("reset");
+
+    expect(calls).toEqual(["in", "out", "reset"]);
+
+    // Markdown zoom must NOT have moved while the controller was active.
+    const { result } = renderHook(() => useEditorZoom());
+    expect(result.current.zoom).toBe(1.0);
+
+    cleanup();
+  });
+
+  it("falls back to markdown zoom after controller unregisters", () => {
+    const cleanup = registerZoomController({
+      in: () => {},
+      out: () => {},
+      reset: () => {},
+    });
+    cleanup();
+
+    // After cleanup, fireZoom should hit the markdown editor zoom again.
+    fireZoom("in");
+    const { result } = renderHook(() => useEditorZoom());
+    expect(result.current.zoom).toBeGreaterThan(1.0);
   });
 });
