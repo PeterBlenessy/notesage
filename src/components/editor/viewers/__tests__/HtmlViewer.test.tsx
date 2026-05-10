@@ -18,7 +18,7 @@ describe("HtmlViewer", () => {
   const filePath = "/path/to/page.html";
   const fileName = "page.html";
 
-  it("renders an iframe in rendered mode by default", () => {
+  it("renders the sanitised HTML body inline by default", () => {
     render(
       <HtmlViewer
         content={htmlContent}
@@ -30,15 +30,17 @@ describe("HtmlViewer", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    // Should show an iframe for rendered mode
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
+    // The rendered surface is a sanitised inline div, not an iframe.
+    // (PR rewrite: iframe forwarding caused Cmd+T / app shortcut breakage.)
+    expect(document.querySelector("iframe")).toBeNull();
+    // The body content should appear in the rendered surface.
+    expect(screen.getByText("Hello")).toBeTruthy();
   });
 
-  it("iframe has sandbox='allow-same-origin' without allow-scripts", () => {
+  it("strips scripts from rendered output (sanitisation)", () => {
     render(
       <HtmlViewer
-        content={htmlContent}
+        content="<html><body><h1>Title</h1><script>alert(1)</script></body></html>"
         fileName={fileName}
         filePath={filePath}
         tabId="tab-2"
@@ -47,11 +49,8 @@ describe("HtmlViewer", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).toContain("allow-same-origin");
-    expect(sandbox).not.toContain("allow-scripts");
+    // No <script> should make it through DOMPurify.
+    expect(document.querySelector("script")).toBeNull();
   });
 
   it("shows a toggle button to switch between rendered and source modes", () => {
@@ -112,15 +111,16 @@ describe("HtmlViewer", () => {
     // Click again to return to rendered mode (re-query the new button)
     fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
     expect(screen.queryByTestId("code-editor")).toBeNull();
-    expect(document.querySelector("iframe")).not.toBeNull();
+    // Inline-rendered body is back, and the rendered text is visible.
+    expect(screen.getByText("Hello")).toBeTruthy();
   });
 });
 
 describe("PlainTextViewer routing for HTML files", () => {
-  it("routes .html files to HtmlViewer (shows iframe, not code-editor)", () => {
+  it("routes .html files to HtmlViewer (renders inline body, not code-editor)", () => {
     render(
       <PlainTextViewer
-        content="<html><body>Hello</body></html>"
+        content="<html><body><span>Hello</span></body></html>"
         fileName="index.html"
         filePath="/path/index.html"
         tabId="tab-html"
@@ -129,15 +129,15 @@ describe("PlainTextViewer routing for HTML files", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    // Should show iframe (HtmlViewer rendered mode), not CodeEditor
-    expect(document.querySelector("iframe")).not.toBeNull();
+    // Inline-rendered body, not CodeEditor.
+    expect(screen.getByText("Hello")).toBeTruthy();
     expect(screen.queryByTestId("code-editor")).toBeNull();
   });
 
-  it("routes .htm files to HtmlViewer (shows iframe, not code-editor)", () => {
+  it("routes .htm files to HtmlViewer (renders inline body, not code-editor)", () => {
     render(
       <PlainTextViewer
-        content="<html><body>Hello</body></html>"
+        content="<html><body><span>Hello</span></body></html>"
         fileName="page.htm"
         filePath="/path/page.htm"
         tabId="tab-htm"
@@ -146,7 +146,7 @@ describe("PlainTextViewer routing for HTML files", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    expect(document.querySelector("iframe")).not.toBeNull();
+    expect(screen.getByText("Hello")).toBeTruthy();
     expect(screen.queryByTestId("code-editor")).toBeNull();
   });
 
