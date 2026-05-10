@@ -78,7 +78,12 @@ export const LocalImage = Image.extend({
           const metaSuffix =
             meta.length > 0 ? ` <!--${meta.join(",")}-->` : "";
 
-          state.write(`![${safeAlt}](${src}${titlePart})${metaSuffix}`);
+          // Trailing `\n\n` closes the block — without it, the next
+          // top-level node (heading, paragraph) gets concatenated to the
+          // same line and the `#` of a following heading gets backslash-
+          // escaped, corrupting the markdown. Matches the pattern in the
+          // chart and drawing serializers.
+          state.write(`![${safeAlt}](${src}${titlePart})${metaSuffix}\n\n`);
         },
         parse: {
           // Parsing is handled by the preprocessor in markdown.ts
