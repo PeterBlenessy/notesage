@@ -1,20 +1,22 @@
 import Image from "@tiptap/extension-image";
-import { ReactNodeViewRenderer } from "@tiptap/react";
-import { ImageNodeView } from "@/components/editor/ImageNodeView";
+import { resolveImageSrc } from "@/lib/image-utils";
 
 /**
  * Extends the Tiptap Image extension with:
- *  - `documentDir` storage (used by `ImageNodeView` to resolve relative
- *    paths via the Tauri asset protocol).
- *  - `blockWidth` and `align` attributes so the user can size + align an
- *    image inline (consistent with chart / drawing / link-preview blocks
- *    — same `BlockSizeControls` hover overlay).
- *  - A React NodeView (`ImageNodeView`) — replaces the prior vanilla DOM
- *    NodeView so the hover overlay can use React state.
- *  - A markdown serializer that appends a trailing
- *    `<!--blockWidth:N,align:X-->` HTML comment when those attrs are set,
- *    mirroring the chart and drawing sidecar metadata pattern. The
- *    matching parser lives in `markdown.ts` (`convertImagesToHtml`).
+ *  - `documentDir` storage (used for resolving relative paths via the Tauri
+ *    asset protocol).
+ *  - `blockWidth` attribute for sizing the image.
+ *  - `textAlign` is provided globally by the TextAlign extension (configured
+ *    in `useEditor.ts` to cover this node type) — toolbar align button writes
+ *    the same attribute that gets serialised to markdown.
+ *  - A vanilla DOM NodeView. We tried a React NodeView (with hover-revealed
+ *    BlockSizeControls) but the per-image React-mount cost made large
+ *    image-heavy markdown files 2–3x slower to open. Hover controls for image
+ *    are deferred to a follow-up; sizing/aligning still works via the
+ *    toolbar's TextAlign command.
+ *  - A markdown serializer that writes `<!--blockWidth:N,align:X-->` after
+ *    the image when those attrs are set. Matching parser lives in
+ *    `markdown.ts` (`convertImagesWithMetaToHtml`).
  *
  * Set the document directory on the editor after creation or on tab switch:
  *   editor.storage.image.documentDir = getDocumentDir(filePath)
@@ -34,9 +36,6 @@ export const LocalImage = Image.extend({
           return { "data-block-width": String(attributes.blockWidth) };
         },
       },
-      // `textAlign` is provided globally by the TextAlign extension
-      // (useEditor.ts) — toolbar align button writes to it, and so does
-      // BlockSizeControls via `editor.commands.setTextAlign`.
     };
   },
 
@@ -45,10 +44,6 @@ export const LocalImage = Image.extend({
       documentDir: "",
       /** Callback set by Editor.tsx — opens the image insert dialog. */
       openInsertDialog: null as (() => void) | null,
-      // Markdown serializer override — tiptap-markdown reads `storage.markdown`
-      // for per-node serialization. Default would emit `![alt](src "title")`
-      // and drop blockWidth/align; we extend it to append a trailing
-      // `<!--blockWidth:N,align:X-->` HTML comment when those attrs are set.
       markdown: {
         serialize(
           state: { write: (text: string) => void },
@@ -85,6 +80,68 @@ export const LocalImage = Image.extend({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ImageNodeView);
+    return ({ node, editor }) => {
+      // Vanilla DOM NodeView — much cheaper than React per-image mount on
+      // image-heavy documents (revert from React NodeView in 408f1894 after
+      // it caused a 2-3x slowdown on the user's 494 KB book).
+      const dom = document.createElement("img");
+      dom.className = "rounded-lg max-w-full block";
+
+      const getDocDir = () =>
+        (
+          editor.storage as unknown as Record<
+            string,
+            { documentDir?: string } | undefined
+          >
+        ).image?.documentDir;
+      const resolve = (src: string) => resolveImageSrc(src, getDocDir());
+
+      const applyAttrs = (attrs: Record<string, unknown>) => {
+        dom.src = resolve(attrs.src as string);
+        if (attrs.alt) dom.alt = attrs.alt as string;
+        else dom.removeAttribute("alt");
+        if (attrs.title) dom.title = attrs.title as string;
+        else dom.removeAttribute("title");
+
+        const blockWidth = attrs.blockWidth as number | null;
+        const textAlign = attrs.textAlign as string | null;
+
+        // Width + alignment via inline style on the img element so the
+        // change is visible without React. Auto-margins follow the same
+        // pattern as ChartNodeView / DrawingPreview.
+        if (blockWidth != null) {
+          dom.style.width = `${blockWidth}%`;
+          dom.style.height = "auto";
+          if (textAlign === "center") {
+            dom.style.marginLeft = "auto";
+            dom.style.marginRight = "auto";
+            dom.style.display = "block";
+          } else if (textAlign === "right") {
+            dom.style.marginLeft = "auto";
+            dom.style.marginRight = "0";
+            dom.style.display = "block";
+          } else {
+            dom.style.marginLeft = "0";
+            dom.style.marginRight = "auto";
+            dom.style.display = "block";
+          }
+        } else {
+          dom.style.removeProperty("width");
+          dom.style.removeProperty("margin-left");
+          dom.style.removeProperty("margin-right");
+        }
+      };
+
+      applyAttrs(node.attrs);
+
+      return {
+        dom,
+        update: (updatedNode) => {
+          if (updatedNode.type.name !== "image") return false;
+          applyAttrs(updatedNode.attrs);
+          return true;
+        },
+      };
+    };
   },
 });
