@@ -21,7 +21,13 @@ export const notesageTheme = EditorView.theme(
     ".cm-content": {
       caretColor: "var(--color-foreground)",
       lineHeight: "1.7",
-      padding: "16px 0 0 0",
+      // Top 16px: breathing room at the top of the document.
+      // Bottom 24px: ensures the last line is reachable when fixed-position
+      // chrome (StatusBar) overlaps the CodeMirror scroller. Without this
+      // the scroll range ends at the final line of text, which the StatusBar
+      // then hides — the user cannot see or position the cursor at the end
+      // of the document (issue #166).
+      padding: "16px 0 24px 0",
     },
     ".cm-cursor, .cm-dropCursor": {
       borderLeftColor: "var(--color-foreground)",
