@@ -39,6 +39,7 @@ import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
+import { useEditorStylesStore, EDITOR_STYLES_DEFAULTS } from "@/stores/editor-styles-store";
 import type { PaletteMode } from "@/lib/command-palette";
 
 /**
@@ -235,6 +236,29 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         e.preventDefault();
         const settings = useSettingsStore.getState();
         settings.setTheme(settings.theme === "dark" ? "light" : "dark");
+        return;
+      }
+
+      // ⌘++ / ⌘+= — increase editor font size (cross-layout: key "+" or "="
+      // both use code "Equal", with or without Shift depending on layout).
+      if (isMod && !e.altKey && (e.key === "+" || e.key === "=" || e.code === "Equal")) {
+        e.preventDefault();
+        useEditorStylesStore.getState().adjustFontSize(1);
+        return;
+      }
+
+      // ⌘+- — decrease editor font size.
+      // Guard !shiftKey so ⌘+_ (Shift+Minus) does not fire.
+      if (isMod && !e.shiftKey && !e.altKey && (e.key === "-" || e.code === "Minus")) {
+        e.preventDefault();
+        useEditorStylesStore.getState().adjustFontSize(-1);
+        return;
+      }
+
+      // ⌘+0 — reset editor font size to application default.
+      if (isMod && !e.shiftKey && !e.altKey && e.key === "0") {
+        e.preventDefault();
+        useEditorStylesStore.getState().setFontSize(EDITOR_STYLES_DEFAULTS.fontSize);
         return;
       }
 

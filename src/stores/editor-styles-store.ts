@@ -61,6 +61,13 @@ export function fontFamilyCSS(key: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Font size bounds for keyboard shortcuts (Cmd++ / Cmd+- / Cmd+0)
+// ---------------------------------------------------------------------------
+
+export const FONT_SIZE_MIN = 10;
+export const FONT_SIZE_MAX = 24;
+
+// ---------------------------------------------------------------------------
 // Legacy flat interface (kept for backwards compatibility)
 // ---------------------------------------------------------------------------
 
@@ -105,6 +112,9 @@ interface EditorStylesStore extends EditorStyles {
   setDocumentPresets: (presets: TypographyPresets | null) => void;
   /** Get the effective presets (documentPresets if set, otherwise global presets). */
   getEffectivePresets: () => TypographyPresets;
+
+  /** Adjust font size by delta, clamped to [FONT_SIZE_MIN, FONT_SIZE_MAX]. */
+  adjustFontSize: (delta: number) => void;
 
   // Legacy API (delegates to presets.paragraph)
   loadSettings: (notesagePath: string) => Promise<void>;
@@ -243,6 +253,12 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
 
   setFontSize: (size) => {
     get().updatePreset("paragraph", { fontSize: size });
+  },
+
+  adjustFontSize: (delta) => {
+    const current = get().fontSize;
+    const next = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, current + delta));
+    get().updatePreset("paragraph", { fontSize: next });
   },
 
   setLineHeight: (height) => {

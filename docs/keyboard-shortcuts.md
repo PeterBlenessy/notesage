@@ -54,6 +54,9 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | --- | --- | --- |
 | Toggle theme | `⌘T` | Switch between light and dark mode |
 | Open settings | `⌘,` | Open settings dialog |
+| Increase font size | `⌘+` / `⌘=` | Increase editor font size by 1pt (clamped to 24pt). Both `⌘+` (Shift+Equal on US) and `⌘=` (Equal without Shift) work; cross-layout safe via `event.code === "Equal"`. |
+| Decrease font size | `⌘-` | Decrease editor font size by 1pt (clamped to 10pt). Cross-layout safe via `event.code === "Minus"`. |
+| Reset font size | `⌘0` | Reset editor font size to application default (16pt). |
 
 ## AI Features
 

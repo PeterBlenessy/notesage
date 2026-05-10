@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { setMockInvokeHandler } from '@/test/tauri-mock';
-import { useEditorStylesStore, fontFamilyCSS, EDITOR_STYLES_DEFAULTS, FONT_PRESETS } from '../editor-styles-store';
+import { useEditorStylesStore, fontFamilyCSS, EDITOR_STYLES_DEFAULTS, FONT_PRESETS, FONT_SIZE_MIN, FONT_SIZE_MAX } from '../editor-styles-store';
 import { DEFAULT_PRESETS, TYPOGRAPHY_VERSION } from '@/lib/typography-presets';
 
 beforeEach(() => {
@@ -360,6 +360,40 @@ describe('system font persistence', () => {
     expect(fontFamilyCSS('system')).toContain('SF Pro');
     expect(fontFamilyCSS('georgia')).toContain('Georgia');
     expect(fontFamilyCSS('jetbrains-mono')).toContain('JetBrains Mono');
+  });
+});
+
+describe('adjustFontSize', () => {
+  it('increases font size by 1pt', () => {
+    useEditorStylesStore.getState().setFontSize(16);
+    useEditorStylesStore.getState().adjustFontSize(1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(17);
+  });
+
+  it('decreases font size by 1pt', () => {
+    useEditorStylesStore.getState().setFontSize(16);
+    useEditorStylesStore.getState().adjustFontSize(-1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(15);
+  });
+
+  it('clamps at FONT_SIZE_MAX (24pt) — does not exceed maximum', () => {
+    useEditorStylesStore.getState().setFontSize(FONT_SIZE_MAX);
+    useEditorStylesStore.getState().adjustFontSize(1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(FONT_SIZE_MAX);
+  });
+
+  it('clamps at FONT_SIZE_MIN (10pt) — does not go below minimum', () => {
+    useEditorStylesStore.getState().setFontSize(FONT_SIZE_MIN);
+    useEditorStylesStore.getState().adjustFontSize(-1);
+    expect(useEditorStylesStore.getState().fontSize).toBe(FONT_SIZE_MIN);
+  });
+
+  it('FONT_SIZE_MIN is 10', () => {
+    expect(FONT_SIZE_MIN).toBe(10);
+  });
+
+  it('FONT_SIZE_MAX is 24', () => {
+    expect(FONT_SIZE_MAX).toBe(24);
   });
 });
 

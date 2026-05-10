@@ -91,6 +91,33 @@ vi.mock("@/stores/editor-store", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Editor-styles-store mock.
+// ---------------------------------------------------------------------------
+
+const mockEditorStylesState: {
+  fontSize: number;
+  adjustFontSize: ReturnType<typeof vi.fn>;
+  setFontSize: ReturnType<typeof vi.fn>;
+} = {
+  fontSize: 16,
+  adjustFontSize: vi.fn(),
+  setFontSize: vi.fn(),
+};
+
+vi.mock("@/stores/editor-styles-store", () => {
+  const useEditorStylesStore = Object.assign(
+    vi.fn(() => mockEditorStylesState),
+    { getState: () => mockEditorStylesState },
+  );
+  return {
+    useEditorStylesStore,
+    EDITOR_STYLES_DEFAULTS: { fontSize: 16 },
+    FONT_SIZE_MIN: 10,
+    FONT_SIZE_MAX: 24,
+  };
+});
+
+// ---------------------------------------------------------------------------
 // Import the hook AFTER the mocks above.
 // ---------------------------------------------------------------------------
 
@@ -169,6 +196,11 @@ beforeEach(() => {
   mockEditorState.activeTabId = null;
   mockEditorState.closeTab.mockReset();
   mockEditorState.setPendingCloseTabId.mockReset();
+
+  // Reset editor styles state.
+  mockEditorStylesState.fontSize = 16;
+  mockEditorStylesState.adjustFontSize.mockReset();
+  mockEditorStylesState.setFontSize.mockReset();
 
   capturedBarEvents = [];
   unsubscribeBar = subscribeToCmdBarEvents((e) => {
@@ -554,6 +586,65 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
       window.removeEventListener(REVEAL_IN_FINDER_EVENT, listener);
     }
   });
+});
+
+// ===========================================================================
+// Font size chords — Cmd++ / Cmd+= / Cmd+- / Cmd+0
+// ===========================================================================
+
+describe("useKeyboardShortcuts (font size chords)", () => {
+  it("Cmd++ (Shift+Equal) increases font size by 1pt", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("+", { metaKey: true, shiftKey: true, code: "Equal" });
+
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(1);
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cmd+= (Equal without shift) also increases font size by 1pt", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("=", { metaKey: true, code: "Equal" });
+
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(1);
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cmd+- (Minus) decreases font size by 1pt", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("-", { metaKey: true, code: "Minus" });
+
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(-1);
+    expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledTimes(1);
+  });
+
+  it("Cmd+0 resets font size to the application default (16pt)", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("0", { metaKey: true });
+
+    expect(mockEditorStylesState.setFontSize).toHaveBeenCalledWith(16);
+    expect(mockEditorStylesState.setFontSize).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<UiPreview>(["legacy", "quiet-composer"])(
+    "font size chords work under uiPreview=%s",
+    (preview) => {
+      mockSettings.uiPreview = preview;
+      const callbacks = makeCallbacks();
+      renderHook(() => useKeyboardShortcuts(callbacks));
+
+      dispatchKey("+", { metaKey: true, shiftKey: true, code: "Equal" });
+
+      expect(mockEditorStylesState.adjustFontSize).toHaveBeenCalledWith(1);
+    },
+  );
 });
 
 // ===========================================================================
