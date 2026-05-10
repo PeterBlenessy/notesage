@@ -133,6 +133,8 @@ export function SystemSettings({
   // HTML viewer
   const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
+  const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
+  const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
 
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -394,6 +396,18 @@ export function SystemSettings({
               id="html-viewer-allow-forms"
               checked={htmlViewerAllowForms}
               onCheckedChange={setHtmlViewerAllowForms}
+            />
+          }
+        />
+        <SettingsRow
+          label="Block external resources"
+          description="When on, a Content-Security-Policy is injected that prevents remote images, stylesheets, and fonts from loading. Inline styles and same-origin resources still work. Takes effect on the next file open or switch."
+          htmlFor="html-viewer-block-external"
+          control={
+            <Switch
+              id="html-viewer-block-external"
+              checked={htmlViewerBlockExternalResources}
+              onCheckedChange={setHtmlViewerBlockExternalResources}
             />
           }
         />

@@ -5,6 +5,26 @@ import { FindBar } from "@/components/editor/FindBar";
 import { CodeEditor } from "./CodeEditor";
 import { useSettingsStore } from "@/stores/settings-store";
 
+/**
+ * CSP value used when "Block external resources" is enabled.
+ * Allows inline styles/scripts (needed for many self-contained HTML files),
+ * same-origin, data: URIs, and blob: URIs — but blocks all external http/https
+ * origins for images, stylesheets, fonts, and other resources.
+ */
+const BLOCK_EXTERNAL_CSP =
+  "default-src 'self' 'unsafe-inline' data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' data:; font-src 'self' data: blob:;";
+
+/**
+ * Pure helper — prepends a Content-Security-Policy `<meta>` tag to `content`
+ * when `blockExternalResources` is true. When false, returns `content`
+ * unchanged. Exported for unit testing.
+ */
+export function buildHtmlViewerContent(content: string, blockExternalResources: boolean): string {
+  if (!blockExternalResources) return content;
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${BLOCK_EXTERNAL_CSP}">`;
+  return cspMeta + content;
+}
+
 interface HtmlViewerProps {
   content: string;
   fileName: string;
@@ -25,6 +45,7 @@ export function HtmlViewer({
   saveFileWithContent,
 }: HtmlViewerProps) {
   const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
+  const blockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const [sourceMode, setSourceMode] = useState(false);
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
@@ -34,7 +55,9 @@ export function HtmlViewer({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
 
-  // Write HTML into the sandboxed iframe when content or mode changes
+  // Write HTML into the sandboxed iframe when content or mode changes.
+  // When blockExternalResources is on, prepend a CSP meta tag so the browser
+  // refuses to load images, stylesheets, and fonts from external origins.
   useEffect(() => {
     if (sourceMode) return;
     const iframe = iframeRef.current;
@@ -42,9 +65,9 @@ export function HtmlViewer({
     const doc = iframe.contentDocument;
     if (!doc) return;
     doc.open();
-    doc.write(content);
+    doc.write(buildHtmlViewerContent(content, blockExternalResources));
     doc.close();
-  }, [content, sourceMode]);
+  }, [content, sourceMode, blockExternalResources]);
 
   // Reset search state when switching modes or content changes
   useEffect(() => {

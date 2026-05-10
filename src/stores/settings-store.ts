@@ -317,6 +317,16 @@ interface SettingsStore {
    */
   htmlViewerAllowForms: boolean;
   setHtmlViewerAllowForms: (enabled: boolean) => void;
+  /**
+   * When true, a Content-Security-Policy meta tag is injected into the HTML
+   * viewer iframe's content before it is written, blocking external network
+   * requests for images, stylesheets, and fonts. Inline styles/scripts and
+   * same-origin (data:, blob:) resources are still allowed. Default false.
+   * Takes effect on the next file open or file switch — not retroactively
+   * for an already-rendered document.
+   */
+  htmlViewerBlockExternalResources: boolean;
+  setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -736,10 +746,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setHtmlViewerAllowForms: (enabled: boolean) => {
         set({ htmlViewerAllowForms: enabled });
       },
+
+      htmlViewerBlockExternalResources: false,
+
+      setHtmlViewerBlockExternalResources: (enabled: boolean) => {
+        set({ htmlViewerBlockExternalResources: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 15,
+      version: 16,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -886,6 +902,14 @@ export const useSettingsStore = create<SettingsStore>()(
           // so existing users see no behaviour change after upgrade.
           if (typeof state.htmlViewerAllowForms !== 'boolean') {
             state.htmlViewerAllowForms = false;
+          }
+        }
+        if (version < 16) {
+          // Issue #183 — HTML viewer block external resources. Default false
+          // (external resources allowed) so existing users see no behaviour
+          // change after upgrade.
+          if (typeof state.htmlViewerBlockExternalResources !== 'boolean') {
+            state.htmlViewerBlockExternalResources = false;
           }
         }
         return state;

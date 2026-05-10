@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { HtmlViewer } from "../HtmlViewer";
+import { HtmlViewer, buildHtmlViewerContent } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
 import { useSettingsStore } from "@/stores/settings-store";
 
@@ -199,6 +199,94 @@ describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
     );
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).toContain("allow-same-origin");
+  });
+});
+
+describe("HtmlViewer — buildHtmlViewerContent CSP injection", () => {
+  it("returns content unchanged when blockExternalResources is false", () => {
+    const content = "<html><body><img src='https://example.com/img.png'/></body></html>";
+    const result = buildHtmlViewerContent(content, false);
+    expect(result).toBe(content);
+  });
+
+  it("prepends a CSP meta tag when blockExternalResources is true", () => {
+    const content = "<html><body><img src='https://example.com/img.png'/></body></html>";
+    const result = buildHtmlViewerContent(content, true);
+    expect(result).toContain("Content-Security-Policy");
+    expect(result).toContain("http-equiv");
+  });
+
+  it("CSP meta tag comes before the original content when blocking", () => {
+    const content = "<html><body>hello</body></html>";
+    const result = buildHtmlViewerContent(content, true);
+    const cspIndex = result.indexOf("Content-Security-Policy");
+    const htmlIndex = result.indexOf("<html>");
+    expect(cspIndex).toBeGreaterThanOrEqual(0);
+    // CSP meta should appear before the original html tag OR be embedded inside it
+    // (either prepended before, or injected into the <head>)
+    expect(cspIndex).toBeLessThan(htmlIndex + result.indexOf("hello"));
+  });
+
+  it("CSP blocks external images, stylesheets, and fonts but allows inline and data URIs", () => {
+    const content = "<html><body>test</body></html>";
+    const result = buildHtmlViewerContent(content, true);
+    // Should allow 'self', 'unsafe-inline', and data: while blocking external http
+    const cspTagMatch = result.match(/content="([^"]+)"/i);
+    expect(cspTagMatch).not.toBeNull();
+    const cspValue = cspTagMatch![1];
+    // Must not allow general https? origins
+    expect(cspValue).not.toContain("https:");
+    // Must allow same-origin or 'self' and inline
+    expect(cspValue).toMatch(/'self'|data:/);
+  });
+});
+
+describe("HtmlViewer — htmlViewerBlockExternalResources setting integration", () => {
+  const htmlContent = "<html><body><img src='https://example.com/img.png'/></body></html>";
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("renders the iframe normally when blockExternalResources is false (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-off"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    // Sandbox stays the same — allow-same-origin, no allow-scripts
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).toContain("allow-same-origin");
+  });
+
+  it("renders the iframe with sandbox when blockExternalResources is true", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-on"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    // Sandbox still has allow-same-origin; CSP is in the written content, not the attribute
     const sandbox = iframe!.getAttribute("sandbox");
     expect(sandbox).toContain("allow-same-origin");
   });

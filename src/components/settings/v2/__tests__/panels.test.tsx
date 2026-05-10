@@ -68,6 +68,11 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Allow form submissions')).toBeTruthy();
   });
 
+  it('SystemSettings renders "Block external resources" toggle in the HTML viewer group', () => {
+    renderWithProviders(<SystemSettings />);
+    expect(screen.getByText('Block external resources')).toBeTruthy();
+  });
+
   it('SystemSettings renders "View update" affordance when an update is available', () => {
     renderWithProviders(
       <SystemSettings
