@@ -379,6 +379,9 @@ export function convertLinkPreviewsToHtml(markdown: string): string {
         i++;
       }
 
+      let blockWidth: string | null = null;
+      let align: string | null = null;
+
       // Parse body lines: extract metadata comments, **bold** = title, rest = description/siteName
       for (const line of bodyLines) {
         // Hidden metadata: <!--image:url--> and <!--favicon:url-->
@@ -386,6 +389,17 @@ export function convertLinkPreviewsToHtml(markdown: string): string {
         if (imageMatch) { imageUrl = imageMatch[1]; continue; }
         const faviconMatch = line.match(/^<!--favicon:(.+)-->$/);
         if (faviconMatch) { faviconUrl = faviconMatch[1]; continue; }
+
+        // Hidden metadata: <!--blockWidth:N--> <!--align:X--> <!--blockWidth:N,align:X-->
+        const blockMeta = line.match(/^<!--(blockWidth:\d+|align:(?:left|center|right)|blockWidth:\d+,align:(?:left|center|right)|align:(?:left|center|right),blockWidth:\d+)-->$/);
+        if (blockMeta) {
+          const meta = blockMeta[1];
+          const bwMatch = meta.match(/blockWidth:(\d+)/);
+          if (bwMatch) blockWidth = bwMatch[1];
+          const alMatch = meta.match(/align:(left|center|right)/);
+          if (alMatch) align = alMatch[1];
+          continue;
+        }
 
         const boldMatch = line.match(/^\*\*(.+)\*\*$/);
         if (boldMatch && !title) {
@@ -409,6 +423,8 @@ export function convertLinkPreviewsToHtml(markdown: string): string {
         siteName ? `data-site-name="${escapeHtml(siteName)}"` : "",
         imageUrl ? `data-image-url="${escapeHtml(imageUrl)}"` : "",
         faviconUrl ? `data-favicon-url="${escapeHtml(faviconUrl)}"` : "",
+        blockWidth ? `data-block-width="${blockWidth}"` : "",
+        align ? `data-align="${align}"` : "",
       ].filter(Boolean).join(" ");
 
       result.push(`<div ${attrs}></div>`, "");
@@ -502,21 +518,25 @@ export function convertMermaidToHtml(markdown: string): string {
  * Convert fenced ```chart code blocks to Chart node HTML elements
  * before tiptap-markdown parses the content.
  *
- * Matches: ```chart\n{...json...}\n```
+ * Matches: ```chart\n{...json...}\n``` or ```chart {width=N align=X}\n{...json...}\n```
  * Outputs: <div data-chart-json="..." data-type="chart" class="chart-block"></div>
  *
  * The JSON content is HTML-attribute-escaped. Regular code blocks are unchanged.
  */
 export function convertInlineChartsToHtml(markdown: string): string {
   return markdown.replace(
-    /```chart\n([\s\S]*?)```/g,
-    (_match, json: string) => {
+    /```chart(?:[ \t]+\{([^}]*)\})?\n([\s\S]*?)```/g,
+    (_match, attrs: string | undefined, json: string) => {
       const escaped = json.trimEnd()
         .replace(/&/g, "&amp;")
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-      return `<div data-chart-json="${escaped}" data-type="chart" class="chart-block"></div>`;
+      const blockWidth = attrs?.match(/width=(\d+)/)?.[1];
+      const align = attrs?.match(/align=(left|center|right)/)?.[1];
+      const blockWidthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-chart-json="${escaped}" data-type="chart" class="chart-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -525,21 +545,25 @@ export function convertInlineChartsToHtml(markdown: string): string {
  * Convert fenced ```excalidraw code blocks to Drawing node HTML elements
  * before tiptap-markdown parses the content.
  *
- * Matches: ```excalidraw\n{...json...}\n```
+ * Matches: ```excalidraw\n{...json...}\n``` or ```excalidraw {width=N align=X}\n{...json...}\n```
  * Outputs: <div data-drawing-json="..." data-type="drawing" class="drawing-block"></div>
  *
  * The JSON content is HTML-attribute-escaped. Regular code blocks are unchanged.
  */
 export function convertInlineDrawingsToHtml(markdown: string): string {
   return markdown.replace(
-    /```excalidraw\n([\s\S]*?)```/g,
-    (_match, json: string) => {
+    /```excalidraw(?:[ \t]+\{([^}]*)\})?\n([\s\S]*?)```/g,
+    (_match, attrs: string | undefined, json: string) => {
       const escaped = json.trimEnd()
         .replace(/&/g, "&amp;")
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-      return `<div data-drawing-json="${escaped}" data-type="drawing" class="drawing-block"></div>`;
+      const blockWidth = attrs?.match(/width=(\d+)/)?.[1];
+      const align = attrs?.match(/align=(left|center|right)/)?.[1];
+      const blockWidthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-drawing-json="${escaped}" data-type="drawing" class="drawing-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }

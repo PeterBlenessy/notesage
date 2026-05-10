@@ -1,5 +1,5 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Globe, ExternalLink } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,8 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const siteName = node.attrs.siteName as string | null;
   const imageUrl = node.attrs.imageUrl as string | null;
   const faviconUrl = node.attrs.faviconUrl as string | null;
+  const blockWidth = node.attrs.blockWidth as number | null;
+  const align = node.attrs.align as string | null;
 
   const initialState: CardState = !url ? "input" : title ? "loaded" : "loading";
   const [state, setState] = useState<CardState>(initialState);
@@ -99,8 +101,23 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const displaySiteName = siteName || (url ? extractDomain(url) : "");
   const showImage = imageUrl && !imgError;
 
+  const blockStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    blockStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "auto";
+    } else if (align === "right") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "0";
+    } else {
+      blockStyle.marginRight = "auto";
+    }
+  }
+
   return (
     <NodeViewWrapper
+      style={blockStyle}
       className={cn(
         "link-preview-wrapper my-2 rounded-lg",
         selected && "ring-1 ring-ring"

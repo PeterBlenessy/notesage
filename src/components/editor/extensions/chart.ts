@@ -15,6 +15,8 @@ declare module "@tiptap/core" {
         chartJson?: string;
         width?: number | null;
         height?: number;
+        blockWidth?: number | null;
+        align?: string | null;
       }) => ReturnType;
       deleteChart: () => ReturnType;
     };
@@ -111,6 +113,26 @@ export const Chart = Node.create({
           return { "data-chart-json": attributes.chartJson as string };
         },
       },
+      blockWidth: {
+        default: null as number | null,
+        parseHTML: (element: HTMLElement) => {
+          const v = element.getAttribute("data-block-width");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (attributes.blockWidth == null) return {};
+          return { "data-block-width": String(attributes.blockWidth) };
+        },
+      },
+      align: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-align") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.align) return {};
+          return { "data-align": attributes.align as string };
+        },
+      },
     };
   },
 
@@ -162,6 +184,8 @@ export const Chart = Node.create({
               chartJson: attrs?.chartJson ?? null,
               width: attrs?.width ?? null,
               height: attrs?.height ?? 300,
+              blockWidth: attrs?.blockWidth ?? null,
+              align: attrs?.align ?? null,
             },
           });
         },
@@ -186,18 +210,26 @@ export const Chart = Node.create({
               chartJson: string | null;
               width: number | null;
               height: number;
+              blockWidth: number | null;
+              align: string | null;
             };
           };
 
           if (n.attrs.chartJson) {
+            // Build optional {width=N align=X} suffix
+            const parts: string[] = [];
+            if (n.attrs.blockWidth != null) parts.push(`width=${n.attrs.blockWidth}`);
+            if (n.attrs.align != null) parts.push(`align=${n.attrs.align}`);
+            const suffix = parts.length > 0 ? ` {${parts.join(" ")}}` : "";
+
             // Inline format: fenced code block with pretty-printed JSON
             try {
               const parsed = JSON.parse(n.attrs.chartJson);
               const prettyJson = JSON.stringify(parsed, null, 2);
-              s.write("```chart\n" + prettyJson + "\n```\n\n");
+              s.write("```chart" + suffix + "\n" + prettyJson + "\n```\n\n");
             } catch {
               // If JSON is invalid, write raw
-              s.write("```chart\n" + n.attrs.chartJson + "\n```\n\n");
+              s.write("```chart" + suffix + "\n" + n.attrs.chartJson + "\n```\n\n");
             }
             return;
           }
