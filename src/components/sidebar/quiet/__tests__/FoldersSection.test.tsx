@@ -250,6 +250,96 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     expect(row.getAttribute("aria-expanded")).toBe("false");
   });
 
+  // ── Multi-level inline expand (issue #158) ────────────────────────────────
+
+  it('clicking a subfolder row expands it inline, revealing its children (#158)', () => {
+    setExplorerFolders([
+      {
+        path: '/Users/me/code/alpha',
+        fileTree: [
+          makeDir('src', '/Users/me/code/alpha/src', [
+            makeFile('index.ts', '/Users/me/code/alpha/src/index.ts'),
+          ]),
+        ],
+      },
+    ]);
+    renderWithProviders(<FoldersSection />);
+
+    // Expand the top-level explorer folder first.
+    const folderRow = screen.getByRole('treeitem', { name: /external folder.*alpha/i });
+    fireEvent.keyDown(folderRow, { key: 'ArrowRight' });
+
+    // The `src` subfolder is now visible but not expanded.
+    const srcRow = screen.getByRole('treeitem', { name: /^Folder: src/i }) as HTMLElement;
+    expect(srcRow.getAttribute('aria-expanded')).toBe('false');
+
+    // Click the subfolder row — should expand it inline.
+    fireEvent.click(srcRow);
+
+    expect(
+      screen.getByRole('treeitem', { name: /^Folder: src/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('treeitem', { name: /open file index\.ts/i }),
+    ).toBeTruthy();
+  });
+
+  it('clicking an already-expanded subfolder collapses it (#158)', () => {
+    setExplorerFolders([
+      {
+        path: '/Users/me/code/alpha',
+        fileTree: [
+          makeDir('src', '/Users/me/code/alpha/src', [
+            makeFile('index.ts', '/Users/me/code/alpha/src/index.ts'),
+          ]),
+        ],
+      },
+    ]);
+    renderWithProviders(<FoldersSection />);
+
+    const folderRow = screen.getByRole('treeitem', { name: /external folder.*alpha/i });
+    fireEvent.keyDown(folderRow, { key: 'ArrowRight' });
+
+    const srcRow = screen.getByRole('treeitem', { name: /^Folder: src/i });
+    fireEvent.click(srcRow);
+    expect(screen.getByRole('treeitem', { name: /open file index\.ts/i })).toBeTruthy();
+
+    // Collapse by clicking again.
+    fireEvent.click(screen.getByRole('treeitem', { name: /^Folder: src/i }));
+    expect(screen.queryByRole('treeitem', { name: /open file index\.ts/i })).toBeNull();
+  });
+
+  it('ArrowRight on a focused subfolder expands it; ArrowLeft collapses it (#158)', () => {
+    setExplorerFolders([
+      {
+        path: '/Users/me/code/alpha',
+        fileTree: [
+          makeDir('src', '/Users/me/code/alpha/src', [
+            makeFile('index.ts', '/Users/me/code/alpha/src/index.ts'),
+          ]),
+        ],
+      },
+    ]);
+    renderWithProviders(<FoldersSection />);
+
+    const folderRow = screen.getByRole('treeitem', { name: /external folder.*alpha/i });
+    fireEvent.keyDown(folderRow, { key: 'ArrowRight' }); // expand top-level
+
+    const srcRow = screen.getByRole('treeitem', { name: /^Folder: src/i }) as HTMLElement;
+
+    fireEvent.keyDown(srcRow, { key: 'ArrowRight' });
+    expect(
+      screen.getByRole('treeitem', { name: /^Folder: src/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(screen.getByRole('treeitem', { name: /open file index\.ts/i })).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole('treeitem', { name: /^Folder: src/i }), { key: 'ArrowLeft' });
+    expect(
+      screen.getByRole('treeitem', { name: /^Folder: src/i }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.queryByRole('treeitem', { name: /open file index\.ts/i })).toBeNull();
+  });
+
   // Regression for keyboard-only walkthrough finding #5 (2026-04-28).
   // Roving-tabindex sections with `tabIndex={isFocused ? 0 : -1}`
   // are invisible to Tab when no row is focused yet — the entire
