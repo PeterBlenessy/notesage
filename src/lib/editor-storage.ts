@@ -8,6 +8,14 @@ import type { Editor } from "@tiptap/core";
 /** Storage shape for the LocalImage / Image extension. */
 export interface EditorStorageImage {
   documentDir?: string;
+  /**
+   * Absolute project root for the currently open document.
+   * Set by `useEditorTabSwitch` on every tab switch.
+   * For non-project files, this is the `~/.notesage` base directory
+   * (the same root used for global sidecar files).
+   * Used by the image paste handler to resolve the correct sidecar directory.
+   */
+  projectRoot?: string;
   openInsertDialog?: () => void;
 }
 

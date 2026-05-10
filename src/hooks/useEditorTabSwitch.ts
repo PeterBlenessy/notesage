@@ -201,10 +201,14 @@ export function useEditorTabSwitch({
       lastLoadedTabId.current = activeTab.id;
       const tabIdOnEntry = activeTab.id;
 
-      // Set document directory BEFORE setContent so image nodes resolve paths correctly
+      // Set document directory BEFORE setContent so image nodes resolve paths correctly.
+      // Also set projectRoot so the paste handler writes image sidecars to the correct
+      // <project>/.notesage/images/ directory (or ~/.notesage/images/ for non-project files).
       const imageStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
       if (imageStorage) {
         imageStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imageStorage.projectRoot =
+          projectPath ?? useSettingsStore.getState().homeDir ?? undefined;
         imageStorage.openInsertDialog = () => setImageDialogOpen(true);
       }
 
@@ -775,6 +779,8 @@ export function useEditorTabSwitch({
       const imgStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
       if (imgStorage) {
         imgStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imgStorage.projectRoot =
+          projectPath ?? useSettingsStore.getState().homeDir ?? undefined;
         imgStorage.openInsertDialog = () => setImageDialogOpen(true);
       }
     }

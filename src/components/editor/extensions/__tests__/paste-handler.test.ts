@@ -17,7 +17,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 
-import { PasteHandler, pasteAsPlainText } from "../paste-handler";
+import { PasteHandler, pasteAsPlainText, extractImageFromDataTransfer } from "../paste-handler";
 
 const editors: Editor[] = [];
 
@@ -164,3 +164,120 @@ describe("Mod-Shift-v keyboard shortcut wiring", () => {
     expect(shortcuts).toHaveProperty("Mod-Shift-v");
   });
 });
+
+// ---------------------------------------------------------------------------
+// extractImageFromDataTransfer — issue #164 image paste persistence
+// ---------------------------------------------------------------------------
+
+describe("extractImageFromDataTransfer", () => {
+  it("returns null when no image data is present", () => {
+    const dt = makeDataTransfer({ files: [], items: [] });
+    expect(extractImageFromDataTransfer(dt)).toBeNull();
+  });
+
+  it("detects image/png from files list", () => {
+    const blob = new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" });
+    const file = new File([blob], "screenshot.png", { type: "image/png" });
+    const dt = makeDataTransfer({ files: [file], items: [] });
+    const result = extractImageFromDataTransfer(dt);
+    expect(result).not.toBeNull();
+    expect(result!.mimeType).toBe("image/png");
+    expect(result!.file).toBe(file);
+  });
+
+  it("detects image/jpeg from files list", () => {
+    const file = new File([], "photo.jpg", { type: "image/jpeg" });
+    const dt = makeDataTransfer({ files: [file], items: [] });
+    const result = extractImageFromDataTransfer(dt);
+    expect(result).not.toBeNull();
+    expect(result!.mimeType).toBe("image/jpeg");
+  });
+
+  it("detects image from items when files list is empty (clipboard screenshot)", () => {
+    const blob = new Blob([new Uint8Array([0, 1, 2])], { type: "image/png" });
+    const item: Partial<DataTransferItem> = {
+      kind: "file",
+      type: "image/png",
+      getAsFile: () => blob as unknown as File,
+    };
+    const dt = makeDataTransfer({ files: [], items: [item as DataTransferItem] });
+    const result = extractImageFromDataTransfer(dt);
+    expect(result).not.toBeNull();
+    expect(result!.mimeType).toBe("image/png");
+  });
+
+  it("skips non-image items", () => {
+    const item: Partial<DataTransferItem> = {
+      kind: "string",
+      type: "text/plain",
+      getAsFile: () => null,
+    };
+    const dt = makeDataTransfer({ files: [], items: [item as DataTransferItem] });
+    expect(extractImageFromDataTransfer(dt)).toBeNull();
+  });
+
+  it("returns null when getAsFile returns null for image item", () => {
+    const item: Partial<DataTransferItem> = {
+      kind: "file",
+      type: "image/png",
+      getAsFile: () => null,
+    };
+    const dt = makeDataTransfer({ files: [], items: [item as DataTransferItem] });
+    // item has kind=file + supported type but getAsFile returns null
+    expect(extractImageFromDataTransfer(dt)).toBeNull();
+  });
+
+  it("skips unsupported image/* types (e.g. image/tiff)", () => {
+    const file = new File([], "scan.tiff", { type: "image/tiff" });
+    const dt = makeDataTransfer({ files: [file], items: [] });
+    expect(extractImageFromDataTransfer(dt)).toBeNull();
+  });
+
+  it("detects image/gif", () => {
+    const file = new File([], "anim.gif", { type: "image/gif" });
+    const dt = makeDataTransfer({ files: [file], items: [] });
+    expect(extractImageFromDataTransfer(dt)?.mimeType).toBe("image/gif");
+  });
+
+  it("detects image/webp", () => {
+    const file = new File([], "photo.webp", { type: "image/webp" });
+    const dt = makeDataTransfer({ files: [file], items: [] });
+    expect(extractImageFromDataTransfer(dt)?.mimeType).toBe("image/webp");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeDataTransfer({
+  files,
+  items,
+}: {
+  files: File[];
+  items: DataTransferItem[];
+}): DataTransfer {
+  // Build indexed FileList-like without spreading `length` (which causes
+  // TS2783 duplicate property error when spreading an array into an object).
+  const fileListLike: Record<string | number, unknown> = {
+    length: files.length,
+    item: (i: number) => files[i] ?? null,
+  };
+  files.forEach((f, i) => { fileListLike[i] = f; });
+
+  const itemListLike: Record<string | number, unknown> = {
+    length: items.length,
+  };
+  items.forEach((it, i) => { itemListLike[i] = it; });
+
+  return {
+    files: fileListLike as unknown as FileList,
+    items: itemListLike as unknown as DataTransferItemList,
+    getData: (_type: string) => "",
+    setData: () => {},
+    clearData: () => {},
+    types: [],
+    dropEffect: "none",
+    effectAllowed: "none",
+  } as unknown as DataTransfer;
+}
