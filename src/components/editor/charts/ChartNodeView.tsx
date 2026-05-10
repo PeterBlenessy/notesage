@@ -40,7 +40,9 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const chartId = node.attrs.chartId as string | null;
   const height = (node.attrs.height as number) ?? 300;
   const blockWidth = node.attrs.blockWidth as number | null;
-  const align = node.attrs.align as string | null;
+  // `textAlign` is provided by the TextAlign global extension; toolbar AND
+  // BlockSizeControls both write the same attribute.
+  const align = (node.attrs.textAlign as string | null) ?? null;
   const projectRoot = useActiveProjectPath();
 
   // Inline charts: parse directly from attribute (synchronous, no loading state)

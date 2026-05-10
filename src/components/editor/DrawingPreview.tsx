@@ -21,7 +21,8 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
   const drawingId = node.attrs.drawingId as string | null;
   const height = (node.attrs.height as number) || 600;
   const blockWidth = node.attrs.blockWidth as number | null;
-  const align = node.attrs.align as string | null;
+  // `textAlign` is provided by the TextAlign global extension.
+  const align = (node.attrs.textAlign as string | null) ?? null;
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

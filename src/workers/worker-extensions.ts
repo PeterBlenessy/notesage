@@ -67,7 +67,7 @@ const lowlight = createLowlight(common);
  * watch in `__tests__/worker-extensions.test.ts` snapshots the combined
  * fingerprint and fails on any drift.
  */
-export const CACHE_SCHEMA_VERSION = 1;
+export const CACHE_SCHEMA_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Shims for heavy custom nodes
@@ -107,10 +107,8 @@ const Drawing = Node.create({
         default: null as string | null,
         parseHTML: (el: HTMLElement) => el.getAttribute("data-drawing-json") || null,
       },
-      // Block-level width/align controls (BlockSizeControls). Must mirror the
-      // production extension's schema or the worker silently drops the attrs
-      // when parsing — the production-shim divergence cost #173-follow-up the
-      // user a full debug cycle.
+      // Block-width is local; alignment is provided globally by TextAlign
+      // (configured to include `drawing` in its types).
       blockWidth: {
         default: null as number | null,
         parseHTML: (el: HTMLElement) => {
@@ -121,12 +119,6 @@ const Drawing = Node.create({
           attrs.blockWidth == null
             ? {}
             : { "data-block-width": String(attrs.blockWidth) },
-      },
-      align: {
-        default: null as string | null,
-        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
-        renderHTML: (attrs: Record<string, unknown>) =>
-          attrs.align == null ? {} : { "data-align": attrs.align as string },
       },
     };
   },
@@ -181,12 +173,7 @@ const Chart = Node.create({
             ? {}
             : { "data-block-width": String(attrs.blockWidth) },
       },
-      align: {
-        default: null as string | null,
-        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
-        renderHTML: (attrs: Record<string, unknown>) =>
-          attrs.align == null ? {} : { "data-align": attrs.align as string },
-      },
+      // alignment provided globally by TextAlign (chart added to types).
     };
   },
   parseHTML() {
@@ -237,7 +224,7 @@ const LinkPreview = Node.create({
       imageUrl: { default: null },
       faviconUrl: { default: null },
       blockWidth: { default: null as number | null },
-      align: { default: null as string | null },
+      // alignment provided globally by TextAlign (linkPreview added to types).
     };
   },
   parseHTML() {
@@ -254,7 +241,6 @@ const LinkPreview = Node.create({
             imageUrl: element.getAttribute("data-image-url") || null,
             faviconUrl: element.getAttribute("data-favicon-url") || null,
             blockWidth: bw ? Number(bw) : null,
-            align: element.getAttribute("data-align") || null,
           };
         },
       },
@@ -352,10 +338,8 @@ const ThemedHighlight = Highlight.extend({
  * Shim for `src/components/editor/extensions/local-image.ts`. The original
  * imports `resolveImageSrc` for Tauri asset-protocol URL conversion; for
  * parse-only purposes we just need Image with the same configuration —
- * plus the same `blockWidth` / `align` attributes the production extension
- * declares, otherwise the worker silently drops `data-block-width="50"` /
- * `data-align="center"` from the parsed div (same trap that bit
- * chart/drawing/link-preview in #173 follow-up).
+ * plus the `blockWidth` attribute. Alignment (`textAlign`) is provided by
+ * the TextAlign global extension (`image` is in its `types` config).
  */
 const LocalImage = Image.configure({ allowBase64: true }).extend({
   addAttributes() {
@@ -371,12 +355,6 @@ const LocalImage = Image.configure({ allowBase64: true }).extend({
           attrs.blockWidth == null
             ? {}
             : { "data-block-width": String(attrs.blockWidth) },
-      },
-      align: {
-        default: null as string | null,
-        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
-        renderHTML: (attrs: Record<string, unknown>) =>
-          attrs.align == null ? {} : { "data-align": attrs.align as string },
       },
     };
   },
@@ -491,7 +469,7 @@ export const workerExtensions = [
   }),
   HeadingWithOverrides.configure({ levels: [1, 2, 3, 4, 5, 6] }),
   ParagraphWithOverrides,
-  TextAlign.configure({ types: ["heading", "paragraph"] }),
+  TextAlign.configure({ types: ["heading", "paragraph", "image", "chart", "drawing", "linkPreview"] }),
   TextStyle,
   Color,
   ThemedHighlight.configure({ multicolor: true }),

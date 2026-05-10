@@ -15,7 +15,8 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const imageUrl = node.attrs.imageUrl as string | null;
   const faviconUrl = node.attrs.faviconUrl as string | null;
   const blockWidth = node.attrs.blockWidth as number | null;
-  const align = node.attrs.align as string | null;
+  // `textAlign` is provided by the TextAlign global extension.
+  const align = (node.attrs.textAlign as string | null) ?? null;
 
   const initialState: CardState = !url ? "input" : title ? "loaded" : "loading";
   const [state, setState] = useState<CardState>(initialState);

@@ -26,7 +26,9 @@ export function ImageNodeView({
   const alt = (node.attrs.alt as string | null) ?? "";
   const title = (node.attrs.title as string | null) ?? "";
   const blockWidth = (node.attrs.blockWidth as number | null) ?? null;
-  const align = (node.attrs.align as string | null) ?? null;
+  // `textAlign` is provided by the TextAlign global extension; toolbar AND
+  // BlockSizeControls both write the same attribute.
+  const align = (node.attrs.textAlign as string | null) ?? null;
 
   const [isHovered, setIsHovered] = useState(false);
   const [resolvedSrc, setResolvedSrc] = useState(src);
