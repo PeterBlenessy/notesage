@@ -220,6 +220,42 @@ export function buildProjectNameValidator(
 }
 
 /**
+ * Recursively inserts child entry rows beneath an already-expanded subfolder
+ * row. Dirs-before-files ordering mirrors derivePeekChildren. Used by the
+ * `rows` useMemo to support multi-level inline expand (#158).
+ */
+function insertChildRows(
+  list: RowDescriptor[],
+  entries: FileEntry[],
+  project: WorkspaceProject,
+  expandedChildPaths: Set<string>,
+  showHiddenFiles: boolean,
+): void {
+  const visible = entries.filter((e) => showHiddenFiles || !e.hidden);
+  const dirs = visible.filter((e) => e.is_directory);
+  const files = visible.filter((e) => !e.is_directory);
+  for (const dir of dirs) {
+    list.push({
+      id: `${project.path}::${dir.path}`,
+      kind: "child",
+      project,
+      entry: dir,
+    });
+    if (expandedChildPaths.has(dir.path)) {
+      insertChildRows(list, dir.children ?? [], project, expandedChildPaths, showHiddenFiles);
+    }
+  }
+  for (const file of files) {
+    list.push({
+      id: `${project.path}::${file.path}`,
+      kind: "child",
+      project,
+      entry: file,
+    });
+  }
+}
+
+/**
  * Flat row representation used by the keyboard navigator. Each rendered
  * row — project or expanded child — corresponds to one `RowDescriptor`,
  * letting ArrowUp / ArrowDown walk the visible sequence without caring
@@ -325,6 +361,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // sibling sections. Ephemeral — resets on full unmount, same as
   // expandedPaths.
   const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
+  // Multi-level inline expand (#158) — tracks which child subfolder paths are
+  // expanded. Ephemeral, resets on unmount alongside expandedPaths.
+  const [expandedChildPaths, setExpandedChildPaths] = useState<Set<string>>(new Set());
 
   // Task #40 — inline rename for child rows (files + folders after #62).
   // Issue #89 extends this to project roots via a separate state slot.
@@ -559,6 +598,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             project,
             entry: folder,
           });
+          // Multi-level inline expand (#158): if this child dir is expanded,
+          // recursively insert its children beneath it.
+          if (expandedChildPaths.has(folder.path)) {
+            insertChildRows(list, folder.children ?? [], project, expandedChildPaths, showHiddenFiles);
+          }
         }
         if (children.folderOverflow > 0) {
           list.push({
@@ -587,7 +631,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       }
     }
     return list;
-  }, [projects, expandedPaths, showAllPaths, showHiddenFiles]);
+  }, [projects, expandedPaths, expandedChildPaths, showAllPaths, showHiddenFiles]);
 
   const focusRow = useCallback((rowId: string) => {
     const el = rowRefs.current.get(rowId);
@@ -807,9 +851,30 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         if (el) openContextMenuOnElement(el);
         return;
       }
+      // ArrowRight on a child directory: expand it (#158).
+      if (event.key === "ArrowRight" && row.entry?.is_directory) {
+        event.preventDefault();
+        if (!expandedChildPaths.has(row.entry.path)) {
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            next.add(row.entry!.path);
+            return next;
+          });
+        }
+        return;
+      }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        focusRow(row.project.path);
+        // If this is an expanded child directory, collapse it (#158).
+        if (row.entry?.is_directory && expandedChildPaths.has(row.entry.path)) {
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            next.delete(row.entry!.path);
+            return next;
+          });
+        } else {
+          focusRow(row.project.path);
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -830,15 +895,19 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         event.preventDefault();
         if (!row.entry) return;
         if (row.entry.is_directory) {
-          // Multi-level inline expand for child folders is a future
-          // enhancement (sidebar #20 follow-up). Today: silent no-op
-          // matching FoldersSection's child-folder behaviour.
+          // Toggle inline expand for child directories (#158).
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
+            else next.add(row.entry!.path);
+            return next;
+          });
           return;
         }
         void openFileEntry(row.entry);
       }
     },
-    [rows, focusRow],
+    [rows, focusRow, expandedChildPaths],
   );
 
   // openTreeOverlayForProject was removed by sidebar-simplification
@@ -1026,6 +1095,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                             isRenaming={
                               !!row.entry && renamingPath === row.entry.path
                             }
+                            isExpanded={
+                              row.entry?.is_directory
+                                ? expandedChildPaths.has(row.entry.path)
+                                : undefined
+                            }
                             onActivate={() => {
                               // Live-test 2026-04-28 finding #2 —
                               // overflow rows ("+N more…") flip the
@@ -1043,9 +1117,13 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                               }
                               if (!row.entry) return;
                               if (row.entry.is_directory) {
-                                // Sidebar #20 — child-folder click no
-                                // longer opens TreeOverlay. Multi-level
-                                // inline expand is a future follow-up.
+                                // Toggle inline expand for child directories (#158).
+                                setExpandedChildPaths((prev) => {
+                                  const next = new Set(prev);
+                                  if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
+                                  else next.add(row.entry!.path);
+                                  return next;
+                                });
                                 return;
                               }
                               void openFileEntry(row.entry);
@@ -1353,6 +1431,8 @@ interface ChildRowProps {
   row: RowDescriptor;
   isFocused: boolean;
   hasFocusWithin: boolean;
+  /** Whether this child directory is currently expanded inline (#158). */
+  isExpanded?: boolean;
   isRenaming: boolean;
   onActivate: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -1367,6 +1447,7 @@ function ChildRow({
   row,
   isFocused,
   hasFocusWithin,
+  isExpanded,
   isRenaming,
   onActivate,
   onKeyDown,
@@ -1486,6 +1567,7 @@ function ChildRow({
       ref={setRef}
       role="treeitem"
       aria-level={2}
+      aria-expanded={entry.is_directory ? (isExpanded ?? false) : undefined}
       aria-selected={isFocused ? "true" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"
