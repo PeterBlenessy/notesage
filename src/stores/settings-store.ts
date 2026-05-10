@@ -310,6 +310,13 @@ interface SettingsStore {
   setStartAtLogin: (start: boolean) => void;
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
+  /**
+   * When true, the HTML viewer iframe includes `allow-forms` and
+   * `allow-top-navigation-by-user-activation` in its sandbox attribute so
+   * HTML forms can be submitted. Default false (forms are blocked).
+   */
+  htmlViewerAllowForms: boolean;
+  setHtmlViewerAllowForms: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -723,10 +730,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setNotifyExternalChanges: (notify: boolean) => {
         set({ notifyExternalChanges: notify });
       },
+
+      htmlViewerAllowForms: false,
+
+      setHtmlViewerAllowForms: (enabled: boolean) => {
+        set({ htmlViewerAllowForms: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 14,
+      version: 15,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -866,6 +879,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // 'stable' so upgrading does not silently opt anyone into alpha.
           if (typeof state.releaseChannel !== 'string') {
             state.releaseChannel = 'stable';
+          }
+        }
+        if (version < 15) {
+          // Issue #186 — HTML viewer allow-forms. Default false (forms blocked)
+          // so existing users see no behaviour change after upgrade.
+          if (typeof state.htmlViewerAllowForms !== 'boolean') {
+            state.htmlViewerAllowForms = false;
           }
         }
         return state;

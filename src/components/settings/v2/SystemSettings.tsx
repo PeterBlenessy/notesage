@@ -130,6 +130,10 @@ export function SystemSettings({
     (s) => s.setNotifyExternalChanges,
   );
 
+  // HTML viewer
+  const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
+  const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
+
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
@@ -372,6 +376,24 @@ export function SystemSettings({
               id="notify-external"
               checked={notifyExternalChanges}
               onCheckedChange={setNotifyExternalChanges}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="HTML viewer"
+        description="Configure sandboxing behaviour when rendering .html and .htm files."
+      >
+        <SettingsRow
+          label="Allow form submissions"
+          description="When on, HTML forms can be submitted inside the viewer iframe. Off by default — only enable if you trust the HTML files you open."
+          htmlFor="html-viewer-allow-forms"
+          control={
+            <Switch
+              id="html-viewer-allow-forms"
+              checked={htmlViewerAllowForms}
+              onCheckedChange={setHtmlViewerAllowForms}
             />
           }
         />
