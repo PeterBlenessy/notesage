@@ -37,7 +37,7 @@ import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
-import { increaseZoom, decreaseZoom, resetZoom } from "@/hooks/useEditorZoom";
+import { fireZoom } from "@/hooks/useEditorZoom";
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import type { PaletteMode } from "@/lib/command-palette";
@@ -484,19 +484,19 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // ------------------------------------------------------------------
       if (isMod && !e.altKey && (e.key === "+" || e.key === "=")) {
         e.preventDefault();
-        increaseZoom();
+        fireZoom("in");
         return;
       }
 
       if (isMod && !e.altKey && !e.shiftKey && e.key === "-") {
         e.preventDefault();
-        decreaseZoom();
+        fireZoom("out");
         return;
       }
 
       if (isMod && !e.altKey && !e.shiftKey && e.key === "0") {
         e.preventDefault();
-        resetZoom();
+        fireZoom("reset");
         return;
       }
 

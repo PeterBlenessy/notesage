@@ -108,6 +108,16 @@ vi.mock("@/hooks/useEditorZoom", () => ({
   increaseZoom: mockIncreaseZoom,
   decreaseZoom: mockDecreaseZoom,
   resetZoom: mockResetZoom,
+  // After #188, the keyboard hook calls `fireZoom` instead of the bare action
+  // functions so viewers (PDF / EPUB / HTML) can register their own zoom
+  // controllers. The default fallback is the markdown editor zoom — the test
+  // mock routes `fireZoom` straight to the action mocks to preserve assertions.
+  fireZoom: (action: "in" | "out" | "reset") => {
+    if (action === "in") mockIncreaseZoom();
+    else if (action === "out") mockDecreaseZoom();
+    else mockResetZoom();
+  },
+  registerZoomController: () => () => {},
   useEditorZoom: () => ({
     zoom: 1.0,
     increaseZoom: mockIncreaseZoom,
