@@ -1,5 +1,5 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Pencil, Copy, Image as ImageIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
@@ -19,6 +19,8 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
   const drawingJson = node.attrs.drawingJson as string | null;
   const drawingId = node.attrs.drawingId as string | null;
   const height = (node.attrs.height as number) || 600;
+  const blockWidth = node.attrs.blockWidth as number | null;
+  const align = node.attrs.align as string | null;
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -213,8 +215,22 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
 
   if (!drawingId && !drawingJson) return null;
 
+  const blockStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    blockStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "auto";
+    } else if (align === "right") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "0";
+    } else {
+      blockStyle.marginRight = "auto";
+    }
+  }
+
   return (
-    <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId} contentEditable={false}>
+    <NodeViewWrapper className="drawing-node-view" style={blockStyle} data-drawing-id={drawingId} contentEditable={false}>
       {isEditing && (drawingJson || (drawingId && projectPath)) ? (
         <DrawingEditor
           drawingId={drawingId ?? "inline"}

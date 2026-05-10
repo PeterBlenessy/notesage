@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { Pencil, Copy, Download } from "lucide-react";
@@ -38,6 +38,8 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const chartJson = node.attrs.chartJson as string | null;
   const chartId = node.attrs.chartId as string | null;
   const height = (node.attrs.height as number) ?? 300;
+  const blockWidth = node.attrs.blockWidth as number | null;
+  const align = node.attrs.align as string | null;
   const projectRoot = useActiveProjectPath();
 
   // Inline charts: parse directly from attribute (synchronous, no loading state)
@@ -276,10 +278,25 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const isEmpty = isReady && !finalData;
   const displayHeight = dragHeight ?? height;
 
+  const blockStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    blockStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "auto";
+    } else if (align === "right") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "0";
+    } else {
+      blockStyle.marginRight = "auto";
+    }
+  }
+
   return (
     <NodeViewWrapper
       ref={wrapperRef}
       data-chart-id={chartId ?? undefined}
+      style={blockStyle}
       className={cn(
         "chart-block my-4 rounded-lg border transition-colors cursor-pointer relative",
         selected
