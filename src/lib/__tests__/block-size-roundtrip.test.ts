@@ -26,7 +26,7 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertDrawingsToHtml(md);
       expect(html).toContain('data-drawing-id="abc"');
       expect(html).not.toContain("data-block-width");
-      expect(html).not.toContain("text-align");
+      expect(html).not.toContain("data-align");
     });
 
     it("parses sidecar reference with blockWidth+align metadata", () => {
@@ -35,7 +35,7 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertDrawingsToHtml(md);
       expect(html).toContain('data-drawing-id="abc"');
       expect(html).toContain('data-block-width="75"');
-      expect(html).toContain('style="text-align: center"');
+      expect(html).toContain('data-align="center"');
     });
 
     it("parses metadata in either order (align first)", () => {
@@ -43,7 +43,7 @@ describe("Sidecar block metadata round-trip", () => {
         "![drawing](/.notesage/drawings/abc.excalidraw) <!--align:right,blockWidth:50-->";
       const html = convertDrawingsToHtml(md);
       expect(html).toContain('data-block-width="50"');
-      expect(html).toContain('style="text-align: right"');
+      expect(html).toContain('data-align="right"');
     });
 
     it("parses metadata with only blockWidth", () => {
@@ -51,7 +51,7 @@ describe("Sidecar block metadata round-trip", () => {
         "![drawing](/.notesage/drawings/abc.excalidraw) <!--blockWidth:100-->";
       const html = convertDrawingsToHtml(md);
       expect(html).toContain('data-block-width="100"');
-      expect(html).not.toContain("text-align");
+      expect(html).not.toContain("data-align");
     });
 
     it("parses metadata with only align", () => {
@@ -59,7 +59,7 @@ describe("Sidecar block metadata round-trip", () => {
         "![drawing](/.notesage/drawings/abc.excalidraw) <!--align:left-->";
       const html = convertDrawingsToHtml(md);
       expect(html).not.toContain("data-block-width");
-      expect(html).toContain('style="text-align: left"');
+      expect(html).toContain('data-align="left"');
     });
   });
 
@@ -69,7 +69,7 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertChartsToHtml(md);
       expect(html).toContain('data-chart-id="abc"');
       expect(html).not.toContain("data-block-width");
-      expect(html).not.toContain("text-align");
+      expect(html).not.toContain("data-align");
     });
 
     it("parses sidecar reference with blockWidth+align metadata", () => {
@@ -78,7 +78,7 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertChartsToHtml(md);
       expect(html).toContain('data-chart-id="abc"');
       expect(html).toContain('data-block-width="50"');
-      expect(html).toContain('style="text-align: right"');
+      expect(html).toContain('data-align="right"');
     });
 
     it("does not match comments on later, unrelated images", () => {
@@ -97,7 +97,7 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertInlineChartsToHtml(md);
       expect(html).toContain("data-chart-json");
       expect(html).not.toContain("data-block-width");
-      expect(html).not.toContain("text-align");
+      expect(html).not.toContain("data-align");
     });
 
     it("parses inline chart with width suffix", () => {
@@ -110,14 +110,14 @@ describe("Sidecar block metadata round-trip", () => {
       const md = "```chart {width=75 align=right}\n{\"type\":\"bar\"}\n```";
       const html = convertInlineChartsToHtml(md);
       expect(html).toContain('data-block-width="75"');
-      expect(html).toContain('style="text-align: right"');
+      expect(html).toContain('data-align="right"');
     });
 
     it("parses inline chart with align-only suffix", () => {
       const md = "```chart {align=center}\n{\"type\":\"bar\"}\n```";
       const html = convertInlineChartsToHtml(md);
       expect(html).not.toContain("data-block-width");
-      expect(html).toContain('style="text-align: center"');
+      expect(html).toContain('data-align="center"');
     });
 
     it("survives realistic multiline JSON body", () => {
@@ -132,7 +132,7 @@ describe("Sidecar block metadata round-trip", () => {
       const md = "```excalidraw {width=100 align=center}\n{\"elements\":[]}\n```";
       const html = convertInlineDrawingsToHtml(md);
       expect(html).toContain('data-block-width="100"');
-      expect(html).toContain('style="text-align: center"');
+      expect(html).toContain('data-align="center"');
     });
   });
 
@@ -148,7 +148,7 @@ describe("Sidecar block metadata round-trip", () => {
       expect(html).toContain('<img src="photo.png"');
       expect(html).toContain('alt="photo"');
       expect(html).toContain('data-block-width="50"');
-      expect(html).toContain('style="text-align: center"');
+      expect(html).toContain('data-align="center"');
       expect(html).not.toContain("![photo]");
     });
 
@@ -162,7 +162,7 @@ describe("Sidecar block metadata round-trip", () => {
     it("handles align-only metadata", () => {
       const md = "![photo](photo.png) <!--align:right-->";
       const html = convertImagesWithMetaToHtml(md);
-      expect(html).toContain('style="text-align: right"');
+      expect(html).toContain('data-align="right"');
       expect(html).not.toContain("data-block-width");
     });
 

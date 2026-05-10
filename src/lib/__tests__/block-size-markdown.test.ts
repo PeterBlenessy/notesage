@@ -28,21 +28,21 @@ describe("convertInlineChartsToHtml — block width and alignment", () => {
   it("parses align=center from fence line attributes", () => {
     const input = '```chart {align=center}\n{"type":"bar"}\n```';
     const result = convertInlineChartsToHtml(input);
-    expect(result).toContain('style="text-align: center"');
+    expect(result).toContain('data-align="center"');
   });
 
   it("parses both width and align from fence line", () => {
     const input = '```chart {width=75 align=right}\n{"type":"bar"}\n```';
     const result = convertInlineChartsToHtml(input);
     expect(result).toContain('data-block-width="75"');
-    expect(result).toContain('style="text-align: right"');
+    expect(result).toContain('data-align="right"');
   });
 
   it("emits no block-width or align attributes when absent", () => {
     const input = '```chart\n{"type":"bar"}\n```';
     const result = convertInlineChartsToHtml(input);
     expect(result).not.toContain("data-block-width");
-    expect(result).not.toContain("text-align");
+    expect(result).not.toContain("data-align");
   });
 
   it("still parses JSON content with attributes present", () => {
@@ -64,7 +64,7 @@ describe("convertInlineChartsToHtml — block width and alignment", () => {
     for (const align of ["left", "center", "right"]) {
       const input = `\`\`\`chart {align=${align}}\n{"type":"bar"}\n\`\`\``;
       const result = convertInlineChartsToHtml(input);
-      expect(result).toContain(`style="text-align: ${align}"`);
+      expect(result).toContain(`data-align="${align}"`);
     }
   });
 });
@@ -83,21 +83,21 @@ describe("convertInlineDrawingsToHtml — block width and alignment", () => {
   it("parses align=right from fence line attributes", () => {
     const input = '```excalidraw {align=right}\n{"elements":[]}\n```';
     const result = convertInlineDrawingsToHtml(input);
-    expect(result).toContain('style="text-align: right"');
+    expect(result).toContain('data-align="right"');
   });
 
   it("parses both width and align from fence line", () => {
     const input = '```excalidraw {width=25 align=left}\n{"elements":[]}\n```';
     const result = convertInlineDrawingsToHtml(input);
     expect(result).toContain('data-block-width="25"');
-    expect(result).toContain('style="text-align: left"');
+    expect(result).toContain('data-align="left"');
   });
 
   it("emits no block-width or align attributes when absent", () => {
     const input = '```excalidraw\n{"elements":[]}\n```';
     const result = convertInlineDrawingsToHtml(input);
     expect(result).not.toContain("data-block-width");
-    expect(result).not.toContain("text-align");
+    expect(result).not.toContain("data-align");
   });
 
   it("still parses drawing JSON with attributes present", () => {
@@ -129,7 +129,7 @@ describe("convertLinkPreviewsToHtml — block width and alignment", () => {
       "> <!--align:center-->",
     ].join("\n");
     const result = convertLinkPreviewsToHtml(input);
-    expect(result).toContain('style="text-align: center"');
+    expect(result).toContain('data-align="center"');
   });
 
   it("parses combined <!--blockWidth:75,align:right--> metadata line", () => {
@@ -139,7 +139,7 @@ describe("convertLinkPreviewsToHtml — block width and alignment", () => {
     ].join("\n");
     const result = convertLinkPreviewsToHtml(input);
     expect(result).toContain('data-block-width="75"');
-    expect(result).toContain('style="text-align: right"');
+    expect(result).toContain('data-align="right"');
   });
 
   it("emits no block-width or align attributes when absent", () => {
@@ -149,7 +149,7 @@ describe("convertLinkPreviewsToHtml — block width and alignment", () => {
     ].join("\n");
     const result = convertLinkPreviewsToHtml(input);
     expect(result).not.toContain("data-block-width");
-    expect(result).not.toContain("text-align");
+    expect(result).not.toContain("data-align");
   });
 
   it("preserves existing metadata (image, favicon) alongside blockWidth/align", () => {
@@ -161,7 +161,7 @@ describe("convertLinkPreviewsToHtml — block width and alignment", () => {
     ].join("\n");
     const result = convertLinkPreviewsToHtml(input);
     expect(result).toContain('data-block-width="50"');
-    expect(result).toContain('style="text-align: center"');
+    expect(result).toContain('data-align="center"');
     expect(result).toContain('data-image-url="https://example.com/og.jpg"');
   });
 });

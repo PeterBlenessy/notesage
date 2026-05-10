@@ -36,6 +36,15 @@ export const LocalImage = Image.extend({
           return { "data-block-width": String(attributes.blockWidth) };
         },
       },
+      align: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-align") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.align) return {};
+          return { "data-align": attributes.align as string };
+        },
+      },
     };
   },
 
@@ -53,11 +62,11 @@ export const LocalImage = Image.extend({
               alt: string | null;
               title: string | null;
               blockWidth: number | null;
-              textAlign: string | null;
+              align: string | null;
             };
           },
         ) {
-          const { src, alt, title, blockWidth, textAlign } = node.attrs;
+          const { src, alt, title, blockWidth, align } = node.attrs;
           if (!src) return;
 
           const safeAlt = (alt ?? "").replace(/[\[\]]/g, "\\$&");
@@ -65,7 +74,7 @@ export const LocalImage = Image.extend({
 
           const meta: string[] = [];
           if (blockWidth != null) meta.push(`blockWidth:${blockWidth}`);
-          if (textAlign != null) meta.push(`align:${textAlign}`);
+          if (align != null) meta.push(`align:${align}`);
           const metaSuffix =
             meta.length > 0 ? ` <!--${meta.join(",")}-->` : "";
 
@@ -104,7 +113,7 @@ export const LocalImage = Image.extend({
         else dom.removeAttribute("title");
 
         const blockWidth = attrs.blockWidth as number | null;
-        const textAlign = attrs.textAlign as string | null;
+        const align = attrs.align as string | null;
 
         // Width + alignment via inline style on the img element so the
         // change is visible without React. Auto-margins follow the same
@@ -112,11 +121,11 @@ export const LocalImage = Image.extend({
         if (blockWidth != null) {
           dom.style.width = `${blockWidth}%`;
           dom.style.height = "auto";
-          if (textAlign === "center") {
+          if (align === "center") {
             dom.style.marginLeft = "auto";
             dom.style.marginRight = "auto";
             dom.style.display = "block";
-          } else if (textAlign === "right") {
+          } else if (align === "right") {
             dom.style.marginLeft = "auto";
             dom.style.marginRight = "0";
             dom.style.display = "block";

@@ -424,9 +424,7 @@ export function convertLinkPreviewsToHtml(markdown: string): string {
         imageUrl ? `data-image-url="${escapeHtml(imageUrl)}"` : "",
         faviconUrl ? `data-favicon-url="${escapeHtml(faviconUrl)}"` : "",
         blockWidth ? `data-block-width="${blockWidth}"` : "",
-        // Emit `style="text-align: X"` so TextAlign extension's default
-        // parseHTML reads it into `node.attrs.textAlign`.
-        align ? `style="text-align: ${align}"` : "",
+        align ? `data-align="${align}"` : "",
       ].filter(Boolean).join(" ");
 
       result.push(`<div ${attrs}></div>`, "");
@@ -466,11 +464,8 @@ export function convertDrawingsToHtml(markdown: string): string {
       const blockWidthAttr = blockWidth
         ? ` data-block-width="${blockWidth}"`
         : "";
-      // Emit `style="text-align: X"` — TextAlign extension's default parseHTML
-      // reads `element.style.textAlign`, so the attr round-trips into
-      // `node.attrs.textAlign` without needing a per-extension parseHTML rule.
-      const styleAttr = align ? ` style="text-align: ${align}"` : "";
-      return `<div data-drawing-id="${drawingId}" data-type="drawing" class="drawing-block"${blockWidthAttr}${styleAttr}></div>`;
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-drawing-id="${drawingId}" data-type="drawing" class="drawing-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -495,8 +490,8 @@ export function convertChartsToHtml(markdown: string): string {
       const blockWidthAttr = blockWidth
         ? ` data-block-width="${blockWidth}"`
         : "";
-      const styleAttr = align ? ` style="text-align: ${align}"` : "";
-      return `<div data-chart-id="${chartId}" data-type="chart" class="chart-block"${blockWidthAttr}${styleAttr}></div>`;
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-chart-id="${chartId}" data-type="chart" class="chart-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -553,8 +548,8 @@ export function convertInlineChartsToHtml(markdown: string): string {
       const blockWidth = attrs?.match(/width=(\d+)/)?.[1];
       const align = attrs?.match(/align=(left|center|right)/)?.[1];
       const blockWidthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
-      const styleAttr = align ? ` style="text-align: ${align}"` : "";
-      return `<div data-chart-json="${escaped}" data-type="chart" class="chart-block"${blockWidthAttr}${styleAttr}></div>`;
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-chart-json="${escaped}" data-type="chart" class="chart-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -580,8 +575,8 @@ export function convertInlineDrawingsToHtml(markdown: string): string {
       const blockWidth = attrs?.match(/width=(\d+)/)?.[1];
       const align = attrs?.match(/align=(left|center|right)/)?.[1];
       const blockWidthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
-      const styleAttr = align ? ` style="text-align: ${align}"` : "";
-      return `<div data-drawing-json="${escaped}" data-type="drawing" class="drawing-block"${blockWidthAttr}${styleAttr}></div>`;
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<div data-drawing-json="${escaped}" data-type="drawing" class="drawing-block"${blockWidthAttr}${alignAttr}></div>`;
     },
   );
 }
@@ -638,10 +633,8 @@ export function convertImagesWithMetaToHtml(markdown: string): string {
       const altAttr = alt ? ` alt="${escAttr(alt)}"` : "";
       const titleAttr = title ? ` title="${escAttr(title)}"` : "";
       const widthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
-      // Emit `style="text-align: X"` so TextAlign extension's default
-      // parseHTML (`element.style.textAlign`) reads it into node.attrs.textAlign.
-      const styleAttr = align ? ` style="text-align: ${align}"` : "";
-      return `<img src="${escAttr(src)}"${altAttr}${titleAttr}${widthAttr}${styleAttr}>`;
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<img src="${escAttr(src)}"${altAttr}${titleAttr}${widthAttr}${alignAttr}>`;
     },
   );
 }

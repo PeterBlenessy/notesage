@@ -95,14 +95,8 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),
-      // TextAlign covers prose AND embedded media blocks so the toolbar's
-      // align button can target whatever's selected. The extension stores
-      // the value as `node.attrs.textAlign`; for prose it renders as a
-      // CSS `text-align` style on the wrapper, for embedded blocks the
-      // node view applies auto-margins instead (see ChartNodeView /
-      // DrawingPreview / ImageNodeView / LinkPreviewCard).
       TextAlign.configure({
-        types: ["heading", "paragraph", "image", "chart", "drawing", "linkPreview"],
+        types: ["heading", "paragraph"],
       }),
       TextStyle,
       Color,
