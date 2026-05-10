@@ -730,11 +730,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 '--editor-padding-left': paddingLeft,
                 '--editor-padding-right': paddingRight,
                 '--editor-zoom-multiplier': String(editorZoom),
-                // CSS `zoom` (Chrome/WebKit-supported) scales the entire
-                // editor surface — font-size, line-height, images, padding —
-                // proportionally. Mirrors browser-level Cmd+= zoom. The CSS
-                // variable above is kept for any rules that still consume it.
-                zoom: editorZoom,
+                // CSS `zoom` only when actually zoomed — applying `zoom: 1`
+                // unconditionally triggers WebKit layout containment for
+                // every descendant and slows file-load 2-3x on large docs.
+                ...(editorZoom !== 1 ? { zoom: editorZoom } : {}),
                 ...typographyCssVars,
                 ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
               } as React.CSSProperties & Record<`--${string}`, string | undefined>}
