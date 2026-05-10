@@ -253,72 +253,57 @@ function CompletionsGroup() {
     setRouting("inline_completion", connId);
   };
 
+  // Sentinel value used by the Select to mean "no provider / disabled".
+  // Mirrors the `NONE` constant in `UseCaseRoutingSettings` so the two
+  // surfaces speak the same vocabulary.
+  const OFF = "__off__";
+  const selectValue = isOff ? OFF : (currentConnectionId ?? OFF);
+
   return (
     <section className="space-y-2" aria-label="Completions">
       <div className="flex items-center gap-2">
         <InlineCompletionIcon className="h-3.5 w-3.5 shrink-0" />
         <span className="text-xs font-medium">Completions</span>
       </div>
-      <div
-        role="radiogroup"
-        aria-label="Completion provider"
-        className="flex items-center gap-1 rounded-md border border-border p-0.5 bg-muted/30"
-      >
-        {/* Always-present Off option */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={isOff}
-              aria-label="Off"
-              onClick={handleSelectOff}
-              className={cn(
-                "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                isOff
-                  ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              Off
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs max-w-[220px]">
-            Off
-          </TooltipContent>
-        </Tooltip>
 
-        {/* One button per configured inline_completion-capable connection */}
-        {compatibleConnections.map((conn) => {
-          const active = !isOff && conn.id === currentConnectionId;
-          return (
-            <Tooltip key={conn.id}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  aria-label={conn.label}
-                  onClick={() => handleSelectConnection(conn.id)}
+      {/* Dropdown picker (replaces the segmented Off/Provider/Provider toggle).
+          Matches the Settings > Inline Completion picker so users see one UI. */}
+      <Select
+        value={selectValue}
+        onValueChange={(val) => {
+          if (val === OFF) handleSelectOff();
+          else handleSelectConnection(val);
+        }}
+      >
+        <SelectTrigger
+          aria-label="Completion provider"
+          className="w-full h-8 text-xs"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={OFF}>
+            <span className="text-muted-foreground">Off</span>
+          </SelectItem>
+          {compatibleConnections.map((conn) => (
+            <SelectItem key={conn.id} value={conn.id}>
+              <span className="flex items-center gap-1.5">
+                <span
                   className={cn(
-                    "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                    active
-                      ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "h-1.5 w-1.5 rounded-full shrink-0",
+                    conn.status === "connected"
+                      ? "bg-green-500"
+                      : conn.status === "error"
+                        ? "bg-destructive"
+                        : "bg-muted-foreground",
                   )}
-                >
-                  {conn.label}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                />
                 {conn.label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </div>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Empty state: no compatible connections configured */}
       {compatibleConnections.length === 0 && (
