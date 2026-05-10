@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState, useMemo, lazy, Suspense } fro
 import { createPortal } from "react-dom";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
+import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
 import { EditorContent } from "@tiptap/react";
 import type { EditorState } from "@tiptap/pm/state";
 import { useEditorStore } from "@/stores/editor-store";
@@ -234,6 +235,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     activeTabId,
     activeTabFilePath: activeTab?.filePath,
   });
+
+  useCursorScrollGuard(scrollAreaRef);
 
   const { renderedWidth } = useEditorResize({
     contentRef,
