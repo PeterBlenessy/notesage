@@ -969,7 +969,7 @@ mod tests {
     #[test]
     fn parse_usage_real_save_research() {
         let script = "#!/usr/bin/env node\n// save.mjs — Save research\n// Usage: node save.mjs <content_or_path> <output_dir> [--title \"...\"] [--tags \"tag1,tag2\"] [--url \"...\"] [--author \"...\"] [--force]\n";
-        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let (schema, _mappings) = parse_usage_comment(script).unwrap();
         let props = schema["properties"].as_object().unwrap();
         assert_eq!(props.len(), 7);
         assert_eq!(props["content_or_path"]["type"], "string");
