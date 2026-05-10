@@ -186,7 +186,7 @@ Export notes to presentation slides using the ppt-rs crate.
 **User-uploaded templates:**
 
 - Import `.pptx`/`.potx` files via "Add Template" button in export dialog
-- Templates stored in `~/.notesage/pptx-templates/` (global) and `<project>/.notesage/pptx-templates/` (project)
+- Templates stored in `~/Notesage/templates/` (global) and `<project>/templates/` (project)
 - Per-project templates override global templates with the same name
 - Delete on hover in template picker
 

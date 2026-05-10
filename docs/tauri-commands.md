@@ -1096,7 +1096,7 @@ pub async fn search_research(
 
 **Parameters:**
 
-- `dirs`: Array of directory paths to search (e.g., project `.notesage/research/` paths)
+- `dirs`: Array of directory paths to search (e.g., project `research/` paths)
 - `query`: Optional case-insensitive substring to match against title, body, source URL, and tags
 - `tag`: Optional exact tag match (case-insensitive) against the tags array
 - `limit`: Maximum results to return (default 50)
@@ -1133,7 +1133,7 @@ pub struct ResearchSearchResult {
 
 ```typescript
 const results = await tauriApi.searchResearch(
-  ['/path/to/project/.notesage/research', '/Users/me/Notesage/.notesage/research'],
+  ['/path/to/project/research', '/Users/me/Notesage/research'],
   'climate policy',  // query
   'climate',         // tag
   20                 // limit

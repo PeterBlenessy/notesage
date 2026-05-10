@@ -11,6 +11,7 @@ import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
 import { recoverIncompleteTransactions } from "@/lib/rename-transaction";
+import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-paths";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
@@ -533,6 +534,20 @@ export async function reloadTrees() {
   log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
   console.log('[perf:startup] ready', { totalMs: Math.round(performance.now() - t0) });
+
+  // One-time migration: move user content out of hidden .notesage/ subdirectories
+  // into user-visible sibling folders (issue #172). Fire-and-forget — must not
+  // block the startup path or prevent tab restoration.
+  {
+    const { projects, explorerFolders } = useWorkspaceStore.getState();
+    const notesRoot = useSettingsStore.getState().notesRootPath;
+    const allFolders = [
+      ...projects.map((p) => p.path),
+      ...explorerFolders,
+      ...(notesRoot && !notesRoot.startsWith("~") ? [notesRoot] : []),
+    ].filter(Boolean) as string[];
+    void migrateUserContentPathsForFolders(allFolders).catch(() => {});
+  }
 
   // Wait for tab restoration (started earlier, runs concurrently with above)
   await tabRestorePromise;

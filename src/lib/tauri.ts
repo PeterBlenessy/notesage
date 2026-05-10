@@ -718,6 +718,22 @@ export const tauriApi = {
     return await invoke<number>("migrate_quick_notes", { fromPath, toPath });
   },
 
+  /**
+   * Migrate user-supplied content out of `.notesage/` hidden folders.
+   *
+   * Moves `.notesage/research/` → `research/` and
+   * `.notesage/pptx-templates/` → `templates/` within the given folder.
+   *
+   * Returns the number of migrated items and any collision sub-directory
+   * names (where the destination already had existing content).
+   */
+  async migrateUserContentPaths(folderPath: string): Promise<{ migrated: number; collisions: string[] }> {
+    return await invoke<{ migrated: number; collisions: string[] }>(
+      "migrate_user_content_paths",
+      { folderPath },
+    );
+  },
+
   // ACP (Agent Client Protocol) operations
   async acpAgentSpawn(
     agentBinary: string,

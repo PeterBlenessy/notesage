@@ -20,8 +20,8 @@ Create professional PowerPoint presentations from any source material — struct
    - **Report** — formal with dark title slides, serif headings, slide numbers
 
    Also check for **custom branded templates** (`.pptx` files) in:
-   - `~/.notesage/pptx-templates/` (global)
-   - `<project>/.notesage/pptx-templates/` (project-specific)
+   - `~/Notesage/templates/` (global)
+   - `<project>/templates/` (project-specific)
 
    List any custom templates you find as options.
 

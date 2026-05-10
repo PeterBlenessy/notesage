@@ -100,8 +100,8 @@ Users can provide their own branded `.pptx` or `.potx` template via the `--templ
 These are applied to all generated slides, preserving the brand's visual identity.
 
 **Template locations:**
-- **Global:** `~/.notesage/pptx-templates/`
-- **Project:** `<project>/.notesage/pptx-templates/`
+- **Global:** `~/Notesage/templates/`
+- **Project:** `<project>/templates/`
 
 Templates can be added by placing `.pptx`/`.potx` files in these directories.
 

@@ -189,7 +189,7 @@ Research workflow built on the Skills & Agents Platform.
 | `synthesize-sources` | Read multiple sources, generate cross-source synthesis |
 | `insert-citation` | Insert formatted citations into documents |
 
-**Research file format:** Standard markdown with YAML frontmatter (`source_url`, `title`, `author`, `date_saved`, `tags`, `word_count`). Stored in `.notesage/research/` (project) or `~/Notesage/.notesage/research/` (global).
+**Research file format:** Standard markdown with YAML frontmatter (`source_url`, `title`, `author`, `date_saved`, `tags`, `word_count`). Stored in `research/` (project) or `~/Notesage/research/` (global).
 
 **Searching:** `Cmd+4` (or type `?` in command palette) opens research search mode. Real-time filtering via native Rust `search_research` command.
 
