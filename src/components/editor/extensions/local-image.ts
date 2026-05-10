@@ -34,15 +34,9 @@ export const LocalImage = Image.extend({
           return { "data-block-width": String(attributes.blockWidth) };
         },
       },
-      align: {
-        default: null as string | null,
-        parseHTML: (element: HTMLElement) =>
-          element.getAttribute("data-align") || null,
-        renderHTML: (attributes: Record<string, unknown>) => {
-          if (!attributes.align) return {};
-          return { "data-align": attributes.align as string };
-        },
-      },
+      // `textAlign` is provided globally by the TextAlign extension
+      // (useEditor.ts) — toolbar align button writes to it, and so does
+      // BlockSizeControls via `editor.commands.setTextAlign`.
     };
   },
 
@@ -64,20 +58,19 @@ export const LocalImage = Image.extend({
               alt: string | null;
               title: string | null;
               blockWidth: number | null;
-              align: string | null;
+              textAlign: string | null;
             };
           },
         ) {
-          const { src, alt, title, blockWidth, align } = node.attrs;
+          const { src, alt, title, blockWidth, textAlign } = node.attrs;
           if (!src) return;
 
-          // Escape `[` `]` in alt text; backslash-escape any embedded `"` in title.
           const safeAlt = (alt ?? "").replace(/[\[\]]/g, "\\$&");
           const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : "";
 
           const meta: string[] = [];
           if (blockWidth != null) meta.push(`blockWidth:${blockWidth}`);
-          if (align != null) meta.push(`align:${align}`);
+          if (textAlign != null) meta.push(`align:${textAlign}`);
           const metaSuffix =
             meta.length > 0 ? ` <!--${meta.join(",")}-->` : "";
 
@@ -85,7 +78,7 @@ export const LocalImage = Image.extend({
         },
         parse: {
           // Parsing is handled by the preprocessor in markdown.ts
-          // (`convertImagesToHtml`).
+          // (`convertImagesWithMetaToHtml`).
         },
       },
     };

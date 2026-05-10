@@ -124,15 +124,11 @@ export const Chart = Node.create({
           return { "data-block-width": String(attributes.blockWidth) };
         },
       },
-      align: {
-        default: null as string | null,
-        parseHTML: (element: HTMLElement) =>
-          element.getAttribute("data-align") || null,
-        renderHTML: (attributes: Record<string, unknown>) => {
-          if (!attributes.align) return {};
-          return { "data-align": attributes.align as string };
-        },
-      },
+      // `textAlign` attribute is provided globally by the TextAlign
+      // extension (configured in useEditor.ts to cover this node type), so
+      // the toolbar's align button writes the same attribute. No local
+      // attribute needed — but we DO need a parseHTML rule for the legacy
+      // `data-align` attribute that older saved files still carry.
     };
   },
 
@@ -211,7 +207,10 @@ export const Chart = Node.create({
               width: number | null;
               height: number;
               blockWidth: number | null;
-              align: string | null;
+              // `textAlign` provided by the TextAlign global extension; we
+              // read it here for serialization. Stored as `align=...` in the
+              // markdown for human readability and back-compat.
+              textAlign: string | null;
             };
           };
 
@@ -219,7 +218,7 @@ export const Chart = Node.create({
             // Build optional {width=N align=X} suffix
             const parts: string[] = [];
             if (n.attrs.blockWidth != null) parts.push(`width=${n.attrs.blockWidth}`);
-            if (n.attrs.align != null) parts.push(`align=${n.attrs.align}`);
+            if (n.attrs.textAlign != null) parts.push(`align=${n.attrs.textAlign}`);
             const suffix = parts.length > 0 ? ` {${parts.join(" ")}}` : "";
 
             // Inline format: fenced code block with pretty-printed JSON
@@ -243,7 +242,8 @@ export const Chart = Node.create({
           const metaParts: string[] = [];
           if (n.attrs.blockWidth != null)
             metaParts.push(`blockWidth:${n.attrs.blockWidth}`);
-          if (n.attrs.align != null) metaParts.push(`align:${n.attrs.align}`);
+          if (n.attrs.textAlign != null)
+            metaParts.push(`align:${n.attrs.textAlign}`);
           const metaSuffix =
             metaParts.length > 0 ? ` <!--${metaParts.join(",")}-->` : "";
 

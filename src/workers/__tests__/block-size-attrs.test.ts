@@ -21,33 +21,32 @@
 import { describe, it, expect } from "vitest";
 import { parseMarkdownToProseMirrorJson } from "@/workers/markdown-parse.core";
 
-describe("worker schema preserves blockWidth + align (#173 follow-up)", () => {
-  it("inline chart with {width=50 align=right} round-trips into doc.attrs", () => {
+describe("worker schema preserves blockWidth + textAlign (#173 follow-up)", () => {
+  it("inline chart with {width=50 align=right} round-trips into doc.attrs.textAlign", () => {
     const md = '```chart {width=50 align=right}\n{"type":"bar"}\n```';
     const { doc } = parseMarkdownToProseMirrorJson(md);
-    // Find the chart node anywhere in the doc tree.
     const chart = findFirstNode(doc, "chart");
     expect(chart).toBeTruthy();
     expect(chart?.attrs?.blockWidth).toBe(50);
-    expect(chart?.attrs?.align).toBe("right");
+    expect(chart?.attrs?.textAlign).toBe("right");
   });
 
-  it("inline drawing with {width=75 align=center} round-trips into doc.attrs", () => {
+  it("inline drawing with {width=75 align=center} round-trips into doc.attrs.textAlign", () => {
     const md = '```excalidraw {width=75 align=center}\n{"elements":[]}\n```';
     const { doc } = parseMarkdownToProseMirrorJson(md);
     const drawing = findFirstNode(doc, "drawing");
     expect(drawing).toBeTruthy();
     expect(drawing?.attrs?.blockWidth).toBe(75);
-    expect(drawing?.attrs?.align).toBe("center");
+    expect(drawing?.attrs?.textAlign).toBe("center");
   });
 
-  it("sidecar chart with `<!--blockWidth:50,align:left-->` round-trips into doc.attrs", () => {
+  it("sidecar chart with `<!--blockWidth:50,align:left-->` round-trips", () => {
     const md = "![chart](/.notesage/charts/abc.json) <!--blockWidth:50,align:left-->";
     const { doc } = parseMarkdownToProseMirrorJson(md);
     const chart = findFirstNode(doc, "chart");
     expect(chart).toBeTruthy();
     expect(chart?.attrs?.blockWidth).toBe(50);
-    expect(chart?.attrs?.align).toBe("left");
+    expect(chart?.attrs?.textAlign).toBe("left");
   });
 
   it("sidecar drawing with `<!--blockWidth:100-->` round-trips blockWidth only", () => {
@@ -57,25 +56,27 @@ describe("worker schema preserves blockWidth + align (#173 follow-up)", () => {
     const drawing = findFirstNode(doc, "drawing");
     expect(drawing).toBeTruthy();
     expect(drawing?.attrs?.blockWidth).toBe(100);
-    expect(drawing?.attrs?.align).toBeNull();
+    // TextAlign default value is empty string (not null), since the extension
+    // uses `defaultAlignment` which is empty by default.
+    expect(drawing?.attrs?.textAlign ?? "").toBe("");
   });
 
-  it("image with `<!--blockWidth:50,align:center-->` round-trips into doc.attrs", () => {
+  it("image with `<!--blockWidth:50,align:center-->` round-trips into doc.attrs.textAlign", () => {
     const md = "![photo](photo.png) <!--blockWidth:50,align:center-->";
     const { doc } = parseMarkdownToProseMirrorJson(md);
     const image = findFirstNode(doc, "image");
     expect(image).toBeTruthy();
     expect(image?.attrs?.blockWidth).toBe(50);
-    expect(image?.attrs?.align).toBe("center");
+    expect(image?.attrs?.textAlign).toBe("center");
   });
 
-  it("image without metadata comment retains null attrs (no false positives)", () => {
+  it("image without metadata comment retains default attrs (no false positives)", () => {
     const md = "![photo](photo.png)";
     const { doc } = parseMarkdownToProseMirrorJson(md);
     const image = findFirstNode(doc, "image");
     expect(image).toBeTruthy();
     expect(image?.attrs?.blockWidth).toBeNull();
-    expect(image?.attrs?.align).toBeNull();
+    expect(image?.attrs?.textAlign ?? "").toBe("");
   });
 });
 

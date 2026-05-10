@@ -84,7 +84,7 @@ describe("BlockSizeControls (#173 follow-up)", () => {
     expect(setNodeMarkup).toHaveBeenCalledWith(
       5,
       undefined,
-      expect.objectContaining({ align: "right" }),
+      expect.objectContaining({ textAlign: "right" }),
     );
     expect(run).toHaveBeenCalledTimes(1);
   });
@@ -100,7 +100,7 @@ describe("BlockSizeControls (#173 follow-up)", () => {
     expect(setNodeMarkup).toHaveBeenCalledWith(
       1,
       undefined,
-      expect.objectContaining({ align: "center", blockWidth: 75 }),
+      expect.objectContaining({ textAlign: "center", blockWidth: 75 }),
     );
   });
 
@@ -111,7 +111,7 @@ describe("BlockSizeControls (#173 follow-up)", () => {
     );
     fireEvent.click(getByLabelText("Align right"));
     const call = setNodeMarkup.mock.calls[0][2] as Record<string, unknown>;
-    expect(call.align).toBe("right");
+    expect(call.textAlign).toBe("right");
     // No auto-default — user already had 50%.
     expect(call.blockWidth).toBeUndefined();
   });

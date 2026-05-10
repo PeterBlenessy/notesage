@@ -118,7 +118,7 @@ export const LinkPreview = Node.create({
       imageUrl: { default: null },
       faviconUrl: { default: null },
       blockWidth: { default: null as number | null },
-      align: { default: null as string | null },
+      // `textAlign` provided globally by TextAlign extension (useEditor.ts).
     };
   },
 
@@ -136,7 +136,6 @@ export const LinkPreview = Node.create({
             imageUrl: element.getAttribute("data-image-url") || null,
             faviconUrl: element.getAttribute("data-favicon-url") || null,
             blockWidth: bw ? Number(bw) : null,
-            align: element.getAttribute("data-align") || null,
           };
         },
       },
@@ -175,11 +174,11 @@ export const LinkPreview = Node.create({
               imageUrl: string | null;
               faviconUrl: string | null;
               blockWidth: number | null;
-              align: string | null;
+              textAlign: string | null;
             };
           };
 
-          const { url, title, description, siteName, imageUrl, faviconUrl, blockWidth, align } = n.attrs;
+          const { url, title, description, siteName, imageUrl, faviconUrl, blockWidth, textAlign } = n.attrs;
           const lines: string[] = [`> [!link](${url})`];
           if (title) lines.push(`> **${title}**`);
           if (description) lines.push(`> ${description}`);
@@ -188,10 +187,10 @@ export const LinkPreview = Node.create({
           if (imageUrl) lines.push(`> <!--image:${imageUrl}-->`);
           if (faviconUrl) lines.push(`> <!--favicon:${faviconUrl}-->`);
           // Persist block width/alignment as hidden metadata
-          if (blockWidth != null || align != null) {
+          if (blockWidth != null || textAlign != null) {
             const parts: string[] = [];
             if (blockWidth != null) parts.push(`blockWidth:${blockWidth}`);
-            if (align != null) parts.push(`align:${align}`);
+            if (textAlign != null) parts.push(`align:${textAlign}`);
             lines.push(`> <!--${parts.join(",")}-->`);
           }
 

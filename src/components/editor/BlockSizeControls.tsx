@@ -58,8 +58,13 @@ export function BlockSizeControls({
   // the column). When the user clicks center / right without first picking a
   // width, default to 75% so the alignment is immediately visible — common
   // pattern in Notion / Google Docs.
+  //
+  // `textAlign` is the canonical attribute name (provided by the TextAlign
+  // extension globally for chart / drawing / image / linkPreview). Writing it
+  // here means the toolbar's `Cmd+Shift+L/E/R` and the hover controls share
+  // one source of truth.
   const setAlign = (next: string | null) => {
-    const patch: Record<string, unknown> = { align: next };
+    const patch: Record<string, unknown> = { textAlign: next };
     if (next != null && blockWidth == null) {
       patch.blockWidth = 75;
     }
