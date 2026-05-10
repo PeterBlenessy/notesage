@@ -13,7 +13,7 @@
   white-space: pre-wrap;
   /* Base font from paragraph preset (legacy vars kept for backwards compat) */
   font-family: var(--ns-paragraph-font-family, var(--editor-font-family));
-  font-size: var(--ns-paragraph-font-size, var(--editor-font-size, 16px));
+  font-size: calc(var(--ns-paragraph-font-size, var(--editor-font-size, 16px)) * var(--editor-zoom-multiplier, 1));
   line-height: var(--ns-paragraph-line-height, var(--editor-line-height, 1.7));
   letter-spacing: -0.01em;
   caret-color: var(--color-primary);

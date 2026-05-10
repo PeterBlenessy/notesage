@@ -47,6 +47,9 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Find in document | `⌘F` | Open find bar (WYSIWYG) or CodeMirror search panel (source mode) |
 | Find and replace | `⌘⇧H` | Open find bar with replace row expanded |
 | Paste as plain text | `⌘⇧V` | Insert clipboard text literally — bypasses markdown parser and paste rules. Useful for prose containing `~text~`, `*foo*`, `_bar_`, or backticks that should NOT be parsed. |
+| Increase text zoom | `⌘+` (`⌘=`) | Increase the editor's transient view-zoom by 10% per press (max 2×). Session-only — does NOT change the persisted font-size preference. |
+| Decrease text zoom | `⌘-` | Decrease the editor's view-zoom by 10% per press (min 0.5×). |
+| Reset text zoom | `⌘0` | Reset the editor's view-zoom to 1.0 (no zoom). |
 
 ## App Settings
 

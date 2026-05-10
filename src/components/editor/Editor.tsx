@@ -9,6 +9,7 @@ import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
+import { useEditorZoom } from "@/hooks/useEditorZoom";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
@@ -113,6 +114,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const editorStylesPresets = useEditorStylesStore((s) => s.presets);
   const editorStylesDocPresets = useEditorStylesStore((s) => s.documentPresets);
   const editorStylesSetDocPresets = useEditorStylesStore((s) => s.setDocumentPresets);
+  const { zoom: editorZoom } = useEditorZoom();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
@@ -724,6 +726,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 '--editor-padding-bottom': paddingBottom,
                 '--editor-padding-left': paddingLeft,
                 '--editor-padding-right': paddingRight,
+                '--editor-zoom-multiplier': String(editorZoom),
                 ...typographyCssVars,
                 ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
               } as React.CSSProperties & Record<`--${string}`, string | undefined>}

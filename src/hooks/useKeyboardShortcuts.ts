@@ -37,6 +37,7 @@ import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
+import { increaseZoom, decreaseZoom, resetZoom } from "@/hooks/useEditorZoom";
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import type { PaletteMode } from "@/lib/command-palette";
@@ -462,6 +463,40 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         import("@tauri-apps/api/core").then(({ invoke }) => {
           invoke("open_devtools").catch(console.error);
         });
+        return;
+      }
+
+      // ------------------------------------------------------------------
+      // ⌘+ / ⌘= — increase editor view-zoom (issue #162).
+      // ⌘-   — decrease editor view-zoom.
+      // ⌘0   — reset editor view-zoom to 1.0.
+      //
+      // These are transient: they layer a multiplier on top of the persisted
+      // font size without touching editor-styles-store. The zoom resets to
+      // 1.0 on app restart.
+      //
+      // Key notes:
+      //  - `+` requires Shift on US keyboards (Shift+=), so we match both
+      //    `key === "+"` and `key === "="` (the unshifted physical key).
+      //  - `-` and `0` have no layout ambiguity on any supported keyboard.
+      //  - No `!e.shiftKey` guard on `=` because Shift+= is how you type `+`
+      //    on US; we accept either with or without Shift when key is `+`/`=`.
+      // ------------------------------------------------------------------
+      if (isMod && !e.altKey && (e.key === "+" || e.key === "=")) {
+        e.preventDefault();
+        increaseZoom();
+        return;
+      }
+
+      if (isMod && !e.altKey && !e.shiftKey && e.key === "-") {
+        e.preventDefault();
+        decreaseZoom();
+        return;
+      }
+
+      if (isMod && !e.altKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        resetZoom();
         return;
       }
 
