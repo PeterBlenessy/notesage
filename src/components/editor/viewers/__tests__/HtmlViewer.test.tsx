@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
+import { useSettingsStore } from "@/stores/settings-store";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -113,6 +114,93 @@ describe("HtmlViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
     expect(screen.queryByTestId("code-editor")).toBeNull();
     expect(document.querySelector("iframe")).not.toBeNull();
+  });
+});
+
+describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
+  const htmlContent = "<html><body><form action='/submit'><input type='submit'/></form></body></html>";
+  const filePath = "/path/to/form.html";
+  const fileName = "form.html";
+
+  afterEach(() => {
+    // Reset to default after each test so other tests are not affected
+    useSettingsStore.setState({ htmlViewerAllowForms: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("excludes allow-forms and allow-top-navigation-by-user-activation by default (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-forms-default"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).not.toContain("allow-forms");
+    expect(sandbox).not.toContain("allow-top-navigation-by-user-activation");
+  });
+
+  it("includes allow-forms in sandbox when htmlViewerAllowForms is true", () => {
+    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-forms-on"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).toContain("allow-forms");
+  });
+
+  it("includes allow-top-navigation-by-user-activation in sandbox when htmlViewerAllowForms is true", () => {
+    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-forms-nav"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).toContain("allow-top-navigation-by-user-activation");
+  });
+
+  it("still includes allow-same-origin when htmlViewerAllowForms is true (regression guard)", () => {
+    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content={htmlContent}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-forms-same-origin"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const sandbox = iframe!.getAttribute("sandbox");
+    expect(sandbox).toContain("allow-same-origin");
   });
 });
 

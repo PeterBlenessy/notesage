@@ -3,6 +3,7 @@ import { Code } from "lucide-react";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
 import { CodeEditor } from "./CodeEditor";
+import { useSettingsStore } from "@/stores/settings-store";
 
 interface HtmlViewerProps {
   content: string;
@@ -23,6 +24,7 @@ export function HtmlViewer({
   updateTabContent,
   saveFileWithContent,
 }: HtmlViewerProps) {
+  const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const [sourceMode, setSourceMode] = useState(false);
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
@@ -198,11 +200,14 @@ export function HtmlViewer({
           replaceExpanded={false}
           onReplaceExpandedChange={() => {}}
         />
-        {/* Sandboxed iframe — allow-same-origin for local asset loading, no allow-scripts */}
+        {/* Sandboxed iframe — allow-same-origin for local asset loading, no allow-scripts.
+            allow-forms and allow-top-navigation-by-user-activation are opt-in via settings. */}
         <iframe
           ref={iframeRef}
           title={fileName}
-          sandbox="allow-same-origin"
+          sandbox={allowForms
+            ? "allow-same-origin allow-forms allow-top-navigation-by-user-activation"
+            : "allow-same-origin"}
           className="w-full h-full border-0 bg-white"
           aria-label={`Rendered HTML: ${fileName}`}
         />
