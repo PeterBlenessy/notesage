@@ -128,9 +128,15 @@ export const Drawing = Node.create({
           return { "data-block-width": String(attributes.blockWidth) };
         },
       },
-      // `textAlign` is provided globally by the TextAlign extension (see
-      // useEditor.ts) — toolbar align button writes the same attribute as
-      // BlockSizeControls.
+      align: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-align") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.align) return {};
+          return { "data-align": attributes.align as string };
+        },
+      },
     };
   },
 
@@ -202,15 +208,14 @@ export const Drawing = Node.create({
               width: number | null;
               height: number;
               blockWidth: number | null;
-              textAlign: string | null;
+              align: string | null;
             };
           };
 
           if (n.attrs.drawingJson) {
-            // Build optional {width=N align=X} suffix
             const parts: string[] = [];
             if (n.attrs.blockWidth != null) parts.push(`width=${n.attrs.blockWidth}`);
-            if (n.attrs.textAlign != null) parts.push(`align=${n.attrs.textAlign}`);
+            if (n.attrs.align != null) parts.push(`align=${n.attrs.align}`);
             const suffix = parts.length > 0 ? ` {${parts.join(" ")}}` : "";
 
             // Strip volatile appState fields to prevent dirty-on-open
@@ -250,8 +255,7 @@ export const Drawing = Node.create({
           const metaParts: string[] = [];
           if (n.attrs.blockWidth != null)
             metaParts.push(`blockWidth:${n.attrs.blockWidth}`);
-          if (n.attrs.textAlign != null)
-            metaParts.push(`align:${n.attrs.textAlign}`);
+          if (n.attrs.align != null) metaParts.push(`align:${n.attrs.align}`);
           const metaSuffix =
             metaParts.length > 0 ? ` <!--${metaParts.join(",")}-->` : "";
 
