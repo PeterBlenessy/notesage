@@ -25,6 +25,16 @@
       }
     },
     {
+      "version": "0.44.0-alpha.1",
+      "date": "2026-05-10",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "fixes": [
+          "**Release pipeline unblocked.** Removed the obsolete"
+        ]
+      }
+    },
+    {
       "version": "0.43.0",
       "date": "2026-05-10",
       "previousVersion": "0.42.0",
