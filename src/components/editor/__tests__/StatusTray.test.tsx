@@ -120,28 +120,28 @@ describe('StatusTray — task #53', () => {
     expect(text).not.toContain('Session');
   });
 
-  it('renders the completion picker with all four options', () => {
+  it('renders the completion picker with only "Off" when no inline_completion connections exist', () => {
+    // With no connections seeded, the picker shows only the static "Off" option
+    // and the empty-state hint. Previously this test expected 4 hardcoded options
+    // (Off, Copilot, Local AI, Ollama); after #179 the list is dynamic.
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
     const group = document.querySelector('[role="radiogroup"]');
     expect(group).toBeTruthy();
     const options = group?.querySelectorAll('[role="radio"]');
-    expect(options?.length).toBe(4);
+    expect(options?.length).toBe(1);
     const labels = Array.from(options ?? []).map((b) => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Off', 'Copilot', 'Local AI', 'Ollama']);
+    expect(labels).toEqual(['Off']);
   });
 
-  it('disables options whose connections are not configured', () => {
+  it('shows only "Off" (active) and no other radio buttons when no connections are configured', () => {
+    // After #179: absent connections are simply absent from the picker — there are
+    // no disabled placeholder buttons for Copilot / Local AI / Ollama.
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
     const radios = document.querySelectorAll('[role="radio"]');
-    const byLabel: Record<string, HTMLElement> = {};
-    radios.forEach((r) => {
-      byLabel[r.getAttribute('aria-label') ?? ''] = r as HTMLElement;
-    });
-    // With no connections, Off is enabled, others are disabled.
-    expect((byLabel['Off'] as HTMLButtonElement).disabled).toBe(false);
-    expect((byLabel['Copilot'] as HTMLButtonElement).disabled).toBe(true);
-    expect((byLabel['Local AI'] as HTMLButtonElement).disabled).toBe(true);
-    expect((byLabel['Ollama'] as HTMLButtonElement).disabled).toBe(true);
+    expect(radios.length).toBe(1);
+    const offButton = radios[0] as HTMLButtonElement;
+    expect(offButton.getAttribute('aria-label')).toBe('Off');
+    expect(offButton.getAttribute('aria-checked')).toBe('true');
   });
 
   it('marks "Off" as active when completions are disabled globally', () => {
@@ -846,6 +846,143 @@ describe('StatusTray — task #53', () => {
       expect(button).toBeTruthy();
       // Without `onOpenActions` threaded in, the button shouldn't fire.
       expect(button!.hasAttribute('disabled')).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // CompletionsGroup — issue #179: dynamic picker from connections-store
+  // -------------------------------------------------------------------------
+
+  describe('CompletionsGroup — dynamic connections (issue #179)', () => {
+    it('shows only inline_completion-capable connections, not hardcoded options', () => {
+      // Add one Anthropic connection with inline_completion capability.
+      addConnection({
+        id: 'c-anthropic',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'My Claude',
+        capabilities: ['interactive', 'inline_completion'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const group = document.querySelector('[role="radiogroup"]');
+      const options = group?.querySelectorAll('[role="radio"]');
+      const labels = Array.from(options ?? []).map((b) => b.getAttribute('aria-label'));
+      // Should show Off + connection label, NOT hardcoded provider names.
+      expect(labels).toContain('Off');
+      expect(labels).toContain('My Claude');
+      expect(labels).not.toContain('Copilot');
+      expect(labels).not.toContain('Local AI');
+      expect(labels).not.toContain('Ollama');
+    });
+
+    it('omits connections that lack inline_completion capability', () => {
+      // Add a connection that only has interactive capability.
+      addConnection({
+        id: 'c-interactive-only',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'Chat Only',
+        capabilities: ['interactive'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const group = document.querySelector('[role="radiogroup"]');
+      const options = group?.querySelectorAll('[role="radio"]');
+      const labels = Array.from(options ?? []).map((b) => b.getAttribute('aria-label'));
+      // Connection without inline_completion must not appear.
+      expect(labels).not.toContain('Chat Only');
+      // Only "Off" visible.
+      expect(labels).toEqual(['Off']);
+    });
+
+    it('shows "Configure in Settings" empty-state when no inline_completion connections exist', () => {
+      // No connections added — default from resetStores().
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Configure in Settings');
+    });
+
+    it('does not show hardcoded Copilot/Local AI/Ollama when no matching connections', () => {
+      // With no connections the old code showed three disabled hardcoded buttons.
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).not.toContain('Copilot');
+      expect(text).not.toContain('Local AI');
+      expect(text).not.toContain('Ollama');
+    });
+
+    it('picking a connection writes its ID to routing-store inline_completion', () => {
+      addConnection({
+        id: 'c-custom-123',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'My Ollama',
+        capabilities: ['inline_completion'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const button = Array.from(document.querySelectorAll('[role="radio"]')).find(
+        (b) => b.getAttribute('aria-label') === 'My Ollama',
+      ) as HTMLButtonElement;
+      expect(button).toBeTruthy();
+      fireEvent.click(button);
+      expect(useRoutingStore.getState().routing.inline_completion.connectionId).toBe('c-custom-123');
+      expect(useSettingsStore.getState().inlineCompletionsDisabled).toBe(false);
+    });
+
+    it('active state reflects the routing-store inline_completion connection ID', () => {
+      addConnection({
+        id: 'c-1',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+        capabilities: ['inline_completion'],
+      });
+      addConnection({
+        id: 'c-2',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'Claude',
+        capabilities: ['inline_completion'],
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: 'c-2' },
+        },
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const byLabel: Record<string, Element> = {};
+      document.querySelectorAll('[role="radio"]').forEach((b) => {
+        byLabel[b.getAttribute('aria-label') ?? ''] = b;
+      });
+      expect(byLabel['Claude']?.getAttribute('aria-checked')).toBe('true');
+      expect(byLabel['Ollama']?.getAttribute('aria-checked')).toBe('false');
+      expect(byLabel['Off']?.getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('Off is active when inlineCompletionsDisabled=true regardless of routing', () => {
+      addConnection({
+        id: 'c-oll',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+        capabilities: ['inline_completion'],
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: 'c-oll' },
+        },
+      });
+      useSettingsStore.setState({ inlineCompletionsDisabled: true });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const byLabel: Record<string, Element> = {};
+      document.querySelectorAll('[role="radio"]').forEach((b) => {
+        byLabel[b.getAttribute('aria-label') ?? ''] = b;
+      });
+      expect(byLabel['Off']?.getAttribute('aria-checked')).toBe('true');
+      expect(byLabel['Ollama']?.getAttribute('aria-checked')).toBe('false');
     });
   });
 });

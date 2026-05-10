@@ -60,20 +60,6 @@ function InlineCompletionIcon({ className }: { className?: string }) {
 // Completion provider picker
 // ---------------------------------------------------------------------------
 
-type CompletionOption = "off" | "copilot" | "local_ai" | "ollama";
-
-interface CompletionOptionMeta {
-  value: CompletionOption;
-  label: string;
-}
-
-const COMPLETION_OPTIONS: CompletionOptionMeta[] = [
-  { value: "off", label: "Off" },
-  { value: "copilot", label: "Copilot" },
-  { value: "local_ai", label: "Local AI" },
-  { value: "ollama", label: "Ollama" },
-];
-
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -244,53 +230,27 @@ function CompletionsGroup() {
   const setRouting = useRoutingStore((s) => s.setRouting);
   const connections = useConnectionsStore((s) => s.connections);
 
-  // Look up completion-capable connections by provider/flavor.
-  const copilotConn = useMemo(
-    () =>
-      connections.find(
-        (c) => c.provider === "github" && c.authMethod === "agent_managed",
-      ),
-    [connections],
-  );
-  const localAiConn = useMemo(
-    () => connections.find((c) => c.authMethod === "local_bundled"),
-    [connections],
-  );
-  const ollamaConn = useMemo(
-    () => connections.find((c) => c.provider === "ollama"),
+  // Only show connections that advertise the inline_completion capability —
+  // mirrors the filter in UseCaseRoutingSettings so the two surfaces stay consistent.
+  const compatibleConnections = useMemo(
+    () => connections.filter((c) => c.capabilities.includes("inline_completion")),
     [connections],
   );
 
   const currentConnectionId = routing.inline_completion?.connectionId ?? null;
 
-  const activeOption: CompletionOption = (() => {
-    if (inlineCompletionsDisabled) return "off";
-    if (!currentConnectionId) return "off";
-    if (copilotConn && currentConnectionId === copilotConn.id) return "copilot";
-    if (localAiConn && currentConnectionId === localAiConn.id) return "local_ai";
-    if (ollamaConn && currentConnectionId === ollamaConn.id) return "ollama";
-    return "off";
-  })();
+  const isOff =
+    inlineCompletionsDisabled ||
+    !currentConnectionId ||
+    !compatibleConnections.some((c) => c.id === currentConnectionId);
 
-  const isDisabled = (opt: CompletionOption) => {
-    if (opt === "off") return false;
-    if (opt === "copilot") return !copilotConn;
-    if (opt === "local_ai") return !localAiConn;
-    if (opt === "ollama") return !ollamaConn;
-    return true;
+  const handleSelectOff = () => {
+    setInlineCompletionsDisabled(true);
   };
 
-  const handleSelect = (opt: CompletionOption) => {
-    if (isDisabled(opt)) return;
-    if (opt === "off") {
-      setInlineCompletionsDisabled(true);
-      return;
-    }
-    const conn =
-      opt === "copilot" ? copilotConn : opt === "local_ai" ? localAiConn : ollamaConn;
-    if (!conn) return;
+  const handleSelectConnection = (connId: string) => {
     setInlineCompletionsDisabled(false);
-    setRouting("inline_completion", conn.id);
+    setRouting("inline_completion", connId);
   };
 
   return (
@@ -304,38 +264,77 @@ function CompletionsGroup() {
         aria-label="Completion provider"
         className="flex items-center gap-1 rounded-md border border-border p-0.5 bg-muted/30"
       >
-        {COMPLETION_OPTIONS.map((opt) => {
-          const active = opt.value === activeOption;
-          const disabled = isDisabled(opt.value);
+        {/* Always-present Off option */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={isOff}
+              aria-label="Off"
+              onClick={handleSelectOff}
+              className={cn(
+                "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                isOff
+                  ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Off
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs max-w-[220px]">
+            Off
+          </TooltipContent>
+        </Tooltip>
+
+        {/* One button per configured inline_completion-capable connection */}
+        {compatibleConnections.map((conn) => {
+          const active = !isOff && conn.id === currentConnectionId;
           return (
-            <Tooltip key={opt.value}>
+            <Tooltip key={conn.id}>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  aria-label={opt.label}
-                  disabled={disabled}
-                  onClick={() => handleSelect(opt.value)}
+                  aria-label={conn.label}
+                  onClick={() => handleSelectConnection(conn.id)}
                   className={cn(
                     "flex-1 text-[10px] h-6 px-2 rounded-sm transition-colors",
                     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                     active
                       ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)] shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
-                    disabled && "opacity-40 cursor-not-allowed hover:text-muted-foreground",
                   )}
                 >
-                  {opt.label}
+                  {conn.label}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs max-w-[220px]">
-                {disabled ? `${opt.label} — not configured` : opt.label}
+                {conn.label}
               </TooltipContent>
             </Tooltip>
           );
         })}
       </div>
+
+      {/* Empty state: no compatible connections configured */}
+      {compatibleConnections.length === 0 && (
+        <p className="text-[10px] text-muted-foreground/60 leading-tight px-2">
+          No inline completion provider configured.{" "}
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("notesage:open-settings"))
+            }
+            className="underline hover:text-foreground transition-colors"
+          >
+            Configure in Settings…
+          </button>
+        </p>
+      )}
     </section>
   );
 }
