@@ -6,6 +6,7 @@ import {
   convertDrawingsToHtml,
   convertInlineChartsToHtml,
   convertInlineDrawingsToHtml,
+  convertImagesWithMetaToHtml,
 } from "@/lib/markdown";
 
 // Round-trip test for #173 follow-up: width/align settings on chart and
@@ -134,6 +135,48 @@ describe("Sidecar block metadata round-trip", () => {
       const html = convertInlineDrawingsToHtml(md);
       expect(html).toContain('data-block-width="100"');
       expect(html).toContain('data-align="center"');
+    });
+  });
+
+  describe("convertImagesWithMetaToHtml", () => {
+    it("leaves a plain image alone (no metadata comment)", () => {
+      const md = "![photo](photo.png)";
+      // No metadata → no rewrite, markdown-it parses natively.
+      expect(convertImagesWithMetaToHtml(md)).toBe(md);
+    });
+
+    it("converts an image with blockWidth+align metadata to an HTML <img>", () => {
+      const md = "![photo](photo.png) <!--blockWidth:50,align:center-->";
+      const html = convertImagesWithMetaToHtml(md);
+      expect(html).toContain('<img src="photo.png"');
+      expect(html).toContain('alt="photo"');
+      expect(html).toContain('data-block-width="50"');
+      expect(html).toContain('data-align="center"');
+      expect(html).not.toContain("![photo]");
+    });
+
+    it("preserves the title attribute when present", () => {
+      const md = '![photo](photo.png "Caption") <!--blockWidth:75-->';
+      const html = convertImagesWithMetaToHtml(md);
+      expect(html).toContain('title="Caption"');
+      expect(html).toContain('data-block-width="75"');
+    });
+
+    it("handles align-only metadata", () => {
+      const md = "![photo](photo.png) <!--align:right-->";
+      const html = convertImagesWithMetaToHtml(md);
+      expect(html).toContain('data-align="right"');
+      expect(html).not.toContain("data-block-width");
+    });
+
+    it("does not consume comments separated by blank lines", () => {
+      const md = `![photo](photo.png)
+
+<!--blockWidth:50-->`;
+      // Blank line between image and comment → comment belongs to nothing.
+      const html = convertImagesWithMetaToHtml(md);
+      expect(html).toContain("![photo]"); // markdown left intact
+      expect(html).not.toContain('data-block-width');
     });
   });
 });
