@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "version": "0.44.0-alpha.0",
+      "date": "2026-05-10",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "features": [
+          "**Width + alignment now persist on charts, drawings, and link-previews.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. Saved as a small metadata comment at the end of the markdown line so you can edit the value by hand if you want to.",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF zoom share the same shortcut."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** Notesage no longer wraps `.html` files in an isolated iframe — the body renders inline, the toolbar is always visible with a Source / Rendered toggle, `Cmd+T` theme toggling and `Cmd+F` find work straight away. `<script>` and other risky tags are stripped before rendering.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below so they don't visually crowd the surrounding text.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control — a dropdown with a status dot per provider — instead of a segmented toggle.",
+          "**The 494 KB book opens in ~3 seconds again.** A regression introduced during this branch (the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path) is fixed. The conditional zoom only applies when actually zoomed."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch and file-load was missing the `blockWidth` / `align` attribute slots on its chart, drawing, and link-preview shims, so ProseMirror's DOMParser silently dropped those attributes during reload. Schemas now mirror the production extensions; new regression test catches future drift.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** PR #173 shipped a `<Tooltip>` outside any `<TooltipProvider>` — the editor's error boundary caught it on every block render. New design-system rule documents that every `<Tooltip>` must be inside a `<TooltipProvider>`, with a regression test that covers the four reference implementations.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** The viewport cache only captured `scrollY` 5 seconds after an *edit*, so if you scrolled to the top without editing, the cache restored the old pre-scroll position on reopen. Now restores from the live saved ratio (tracked on every scroll, debounced 150 ms).",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character; Nordic `Shift+7` fallback for true `Cmd+/` preserved.",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n`, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file."
+        ]
+      }
+    },
+    {
       "version": "0.43.0",
       "date": "2026-05-10",
       "previousVersion": "0.42.0",
