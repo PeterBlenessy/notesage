@@ -47,7 +47,6 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
-import { ImageHoverControls } from "./ImageHoverControls";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
@@ -765,7 +764,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
           {editor && <TableHeaderMenu editor={editor} />}
-          {editor && <ImageHoverControls editor={editor} />}
           {hfEditState && createPortal(
             <PageHeaderFooterEditor
               type={hfEditState.type}
