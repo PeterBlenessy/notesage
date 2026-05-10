@@ -60,6 +60,10 @@ export {
   // Data-URI images (`![alt](data:image/png;base64,...)` → `<img>`)
   convertDataUriImagesToHtml,
 
+  // Images with block-size metadata (`![alt](src) <!--blockWidth:N,align:X-->`
+  //  → `<img data-block-width data-align>`)
+  convertImagesWithMetaToHtml,
+
   // Table column metadata extraction (HTML comments in header cells)
   extractTableColumnMetadata,
 
@@ -88,6 +92,7 @@ import {
   convertInlineChartsToHtml,
   encodeImagePathSpaces,
   convertDataUriImagesToHtml,
+  convertImagesWithMetaToHtml,
   type TableColumnMetadataMap,
 } from "@/lib/markdown";
 
@@ -124,6 +129,7 @@ export function prepareMarkdownForParse(rawMarkdown: string): PrepareForParseRes
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   // Innermost-first; matches `loadRawMarkdownIntoEditor` exactly.
   const prepared = convertDataUriImagesToHtml(
+    convertImagesWithMetaToHtml(
     encodeImagePathSpaces(
       convertInlineChartsToHtml(
         convertInlineDrawingsToHtml(
@@ -144,6 +150,7 @@ export function prepareMarkdownForParse(rawMarkdown: string): PrepareForParseRes
           ),
         ),
       ),
+    ),
     ),
   );
   return { prepared, annotations, nodeIds, tableMetadata: metadata };

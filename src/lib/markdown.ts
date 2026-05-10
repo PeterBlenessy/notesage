@@ -609,6 +609,39 @@ export function convertDataUriImagesToHtml(markdown: string): string {
 }
 
 /**
+ * Convert image references that carry block-level metadata into HTML so the
+ * `data-block-width` / `data-align` attributes survive the markdown-it parse
+ * step. Plain images (no metadata comment) are left alone — markdown-it
+ * handles them natively.
+ *
+ * Matches: `![alt](src "optional title") <!--blockWidth:N,align:X-->`
+ * Outputs: `<img src="..." alt="..." title="..." data-block-width="N" data-align="X">`
+ *
+ * The metadata comment is only attached to the image immediately preceding
+ * it (regex enforces a single space between the `)` and `<!--`). This must
+ * run AFTER `convertChartsToHtml` / `convertDrawingsToHtml` so chart/drawing
+ * sidecars consume their dedicated patterns first.
+ */
+export function convertImagesWithMetaToHtml(markdown: string): string {
+  return markdown.replace(
+    // ![alt](src) optionally followed by ` "title"` then `[ \t]*<!--metadata-->`
+    // — the comment must sit on the SAME line as the image, otherwise it
+    // belongs to whatever block follows the blank line.
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)[ \t]*<!--((?:blockWidth:\d+|align:(?:left|center|right))(?:,(?:blockWidth:\d+|align:(?:left|center|right)))?)-->/g,
+    (_match, alt: string, src: string, title: string | undefined, meta: string) => {
+      const blockWidth = meta.match(/blockWidth:(\d+)/)?.[1];
+      const align = meta.match(/align:(left|center|right)/)?.[1];
+      const escAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+      const altAttr = alt ? ` alt="${escAttr(alt)}"` : "";
+      const titleAttr = title ? ` title="${escAttr(title)}"` : "";
+      const widthAttr = blockWidth ? ` data-block-width="${blockWidth}"` : "";
+      const alignAttr = align ? ` data-align="${align}"` : "";
+      return `<img src="${escAttr(src)}"${altAttr}${titleAttr}${widthAttr}${alignAttr}>`;
+    },
+  );
+}
+
+/**
  * Encode spaces in local image paths so markdown-it can parse them.
  * CommonMark doesn't allow spaces in bare link/image destinations.
  * We encode them as %20 before parsing and decode on serialization
@@ -1081,7 +1114,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(markdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
-  const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
+  const encoded = convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -1121,7 +1154,7 @@ export function loadRawMarkdownIntoEditor(
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
-  const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
+  const encoded = convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))));
 
   // [perf:setContent] instrumentation — measures main-thread cost of the
   // DOM teardown + rebuild. The "old" doc size is what we're throwing away;
@@ -1404,7 +1437,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   return {
-    content: convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))),
+    content: convertDataUriImagesToHtml(convertImagesWithMetaToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))))),
     annotations,
     tableMetadata: metadata,
     nodeIds,

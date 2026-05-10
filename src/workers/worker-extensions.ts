@@ -351,9 +351,36 @@ const ThemedHighlight = Highlight.extend({
 /**
  * Shim for `src/components/editor/extensions/local-image.ts`. The original
  * imports `resolveImageSrc` for Tauri asset-protocol URL conversion; for
- * parse-only purposes we just need Image with the same configuration.
+ * parse-only purposes we just need Image with the same configuration —
+ * plus the same `blockWidth` / `align` attributes the production extension
+ * declares, otherwise the worker silently drops `data-block-width="50"` /
+ * `data-align="center"` from the parsed div (same trap that bit
+ * chart/drawing/link-preview in #173 follow-up).
  */
-const LocalImage = Image.configure({ allowBase64: true });
+const LocalImage = Image.configure({ allowBase64: true }).extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      blockWidth: {
+        default: null as number | null,
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute("data-block-width");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.blockWidth == null
+            ? {}
+            : { "data-block-width": String(attrs.blockWidth) },
+      },
+      align: {
+        default: null as string | null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-align") || null,
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.align == null ? {} : { "data-align": attrs.align as string },
+      },
+    };
+  },
+});
 
 /**
  * Shim for `src/components/editor/extensions/table-header-attrs.ts`. Adds the

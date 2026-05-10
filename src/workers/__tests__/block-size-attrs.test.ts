@@ -59,6 +59,24 @@ describe("worker schema preserves blockWidth + align (#173 follow-up)", () => {
     expect(drawing?.attrs?.blockWidth).toBe(100);
     expect(drawing?.attrs?.align).toBeNull();
   });
+
+  it("image with `<!--blockWidth:50,align:center-->` round-trips into doc.attrs", () => {
+    const md = "![photo](photo.png) <!--blockWidth:50,align:center-->";
+    const { doc } = parseMarkdownToProseMirrorJson(md);
+    const image = findFirstNode(doc, "image");
+    expect(image).toBeTruthy();
+    expect(image?.attrs?.blockWidth).toBe(50);
+    expect(image?.attrs?.align).toBe("center");
+  });
+
+  it("image without metadata comment retains null attrs (no false positives)", () => {
+    const md = "![photo](photo.png)";
+    const { doc } = parseMarkdownToProseMirrorJson(md);
+    const image = findFirstNode(doc, "image");
+    expect(image).toBeTruthy();
+    expect(image?.attrs?.blockWidth).toBeNull();
+    expect(image?.attrs?.align).toBeNull();
+  });
 });
 
 interface DocNode {
