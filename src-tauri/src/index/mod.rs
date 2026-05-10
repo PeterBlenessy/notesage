@@ -15,7 +15,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
-use file_scanner::{is_indexable, scan_files};
+use file_scanner::{has_dotfolder_component, is_indexable, scan_files};
 use reindex_queue::ReindexEntry;
 pub use reindex_queue::process_reindex_queue;
 
@@ -153,6 +153,14 @@ pub(super) fn reindex_file_in_db(
 
     // Skip non-indexable files (binary, non-text extensions)
     if !is_indexable(file_path) {
+        return Ok(false);
+    }
+
+    // Skip files inside any dotfolder (e.g. .git/, .ssh/, .config/).
+    // scan_files() already skips these for bulk indexing; this guard closes the same
+    // gap for the watcher-triggered single-file path that bypasses scan_files.
+    // .notesage is excluded from this check so .notesage/research/ files remain indexable.
+    if has_dotfolder_component(file_path) {
         return Ok(false);
     }
 
@@ -895,5 +903,65 @@ pub async fn index_stats(
             return queries::query_stats(conn);
         }
         Err("Global index not initialized".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RED test: files inside dotfolders (e.g. .git/) must be skipped by the
+    /// watcher-triggered reindex path, just as scan_files skips them during
+    /// bulk indexing. Before the fix, reindex_file_in_db only skips
+    /// .notesage/ non-research files — not arbitrary dotfolders.
+    #[test]
+    fn reindex_file_in_db_skips_dotfolder_paths() {
+        // Use a non-dot prefix so the tempdir path itself has no dotfolder
+        // components (on Linux, tempfile::tempdir() creates /tmp/.tmpXXX).
+        let tmp = tempfile::Builder::new()
+            .prefix("notesage_test_")
+            .tempdir()
+            .unwrap();
+        let db_path = tmp.path().join("test.db");
+        let conn = db::open_or_create(&db_path).unwrap();
+        let git_dir = tmp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        let md_file = git_dir.join("notes.md");
+        std::fs::write(&md_file, "# Git notes\n#secret-tag @secret-mention").unwrap();
+        let path_str = md_file.to_string_lossy().to_string();
+        let result = reindex_file_in_db(&conn, &path_str, None).unwrap();
+        assert!(
+            !result,
+            "reindex_file_in_db must return false (skipped) for dotfolder paths"
+        );
+        let file_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            file_count, 0,
+            "Files under dotfolders must not be inserted into the index"
+        );
+    }
+
+    /// Regression guard: normal paths must still be indexed after the fix.
+    #[test]
+    fn reindex_file_in_db_indexes_normal_paths() {
+        let tmp = tempfile::Builder::new()
+            .prefix("notesage_test_")
+            .tempdir()
+            .unwrap();
+        let db_path = tmp.path().join("test.db");
+        let conn = db::open_or_create(&db_path).unwrap();
+        let notes_dir = tmp.path().join("notes");
+        std::fs::create_dir_all(&notes_dir).unwrap();
+        let md_file = notes_dir.join("my_note.md");
+        std::fs::write(&md_file, "# My Note\nSome content").unwrap();
+        let path_str = md_file.to_string_lossy().to_string();
+        let result = reindex_file_in_db(&conn, &path_str, None).unwrap();
+        assert!(result, "reindex_file_in_db must return true for normal paths");
+        let file_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(file_count, 1, "Normal path files must be indexed");
     }
 }
