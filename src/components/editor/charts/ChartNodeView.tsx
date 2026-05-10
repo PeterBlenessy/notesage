@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChartRenderer } from "./ChartRenderer";
 import { ChartEditorPanel } from "./ChartEditorPanel";
+import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 import { loadChart } from "@/lib/chart-storage";
 import type { ChartData } from "@/lib/chart-types";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -331,6 +332,21 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
           {/* Hover overlay with actions */}
           {isHovered && (
             <div className="absolute bottom-2 right-3 flex items-center gap-1">
+              {/* Width + alignment controls (#173 follow-up) */}
+              {(() => {
+                const pos = getPos();
+                if (typeof pos !== "number") return null;
+                return (
+                  <BlockSizeControls
+                    editor={editor}
+                    pos={pos}
+                    node={node}
+                    blockWidth={blockWidth}
+                    align={align}
+                  />
+                );
+              })()}
+
               {/* Download dropdown */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
