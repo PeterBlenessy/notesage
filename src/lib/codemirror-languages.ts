@@ -91,13 +91,24 @@ const LANGUAGE_NAMES: Record<string, string> = {
   php: "PHP",
 };
 
+/** Extensions that open in the HTML rendered viewer instead of CodeEditor. */
+const HTML_VIEWER_EXTENSIONS = new Set(["html", "htm"]);
+
+/**
+ * Check if a filename should open in the HtmlViewer (rendered iframe mode).
+ */
+export function isHtmlViewerFile(fileName: string): boolean {
+  return HTML_VIEWER_EXTENSIONS.has(getExtension(fileName));
+}
+
 /**
  * Check if a filename has a known code file extension.
  * Returns `true` for files that should open in the CodeEditor.
+ * Note: .html/.htm files are excluded — they open in HtmlViewer instead.
  */
 export function isCodeFile(fileName: string): boolean {
   const ext = getExtension(fileName);
-  return ext !== "" && ext in LANGUAGE_MAP;
+  return ext !== "" && ext in LANGUAGE_MAP && !HTML_VIEWER_EXTENSIONS.has(ext);
 }
 
 /**

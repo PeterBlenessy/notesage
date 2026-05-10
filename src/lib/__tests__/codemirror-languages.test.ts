@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isCodeFile, getLanguageName, loadLanguage } from "../codemirror-languages";
+import { isCodeFile, isHtmlViewerFile, getLanguageName, loadLanguage } from "../codemirror-languages";
 
 describe("isCodeFile", () => {
   const supportedFiles = [
     "main.js", "app.jsx", "index.mjs", "main.ts", "App.tsx",
     "script.py", "lib.rs", "main.go", "App.java",
     "main.c", "utils.h", "main.cpp", "utils.hpp",
-    "index.html", "styles.css", "config.json",
+    "styles.css", "config.json",
     "config.yaml", "config.yml", "config.toml",
     "README.md", "script.sh", "script.bash", "script.zsh",
     "query.sql", "data.xml", "main.swift", "Main.kt",
@@ -26,6 +26,15 @@ describe("isCodeFile", () => {
     expect(isCodeFile(fileName)).toBe(false);
   });
 
+  it("returns false for .html files (routed to HtmlViewer)", () => {
+    expect(isCodeFile("index.html")).toBe(false);
+    expect(isCodeFile("page.HTML")).toBe(false);
+  });
+
+  it("returns false for .htm files (routed to HtmlViewer)", () => {
+    expect(isCodeFile("page.htm")).toBe(false);
+  });
+
   it("returns false for files with no extension", () => {
     expect(isCodeFile("Makefile")).toBe(false);
     expect(isCodeFile("LICENSE")).toBe(false);
@@ -35,6 +44,25 @@ describe("isCodeFile", () => {
     expect(isCodeFile("main.JS")).toBe(true);
     expect(isCodeFile("main.TS")).toBe(true);
     expect(isCodeFile("main.PY")).toBe(true);
+  });
+});
+
+describe("isHtmlViewerFile", () => {
+  it("returns true for .html files", () => {
+    expect(isHtmlViewerFile("index.html")).toBe(true);
+    expect(isHtmlViewerFile("page.HTML")).toBe(true);
+  });
+
+  it("returns true for .htm files", () => {
+    expect(isHtmlViewerFile("page.htm")).toBe(true);
+    expect(isHtmlViewerFile("old.HTM")).toBe(true);
+  });
+
+  it("returns false for non-HTML files", () => {
+    expect(isHtmlViewerFile("main.ts")).toBe(false);
+    expect(isHtmlViewerFile("styles.css")).toBe(false);
+    expect(isHtmlViewerFile("readme.txt")).toBe(false);
+    expect(isHtmlViewerFile("Makefile")).toBe(false);
   });
 });
 

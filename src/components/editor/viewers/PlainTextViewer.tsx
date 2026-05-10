@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
-import { isCodeFile } from "@/lib/codemirror-languages";
+import { isCodeFile, isHtmlViewerFile } from "@/lib/codemirror-languages";
 import { CodeEditor } from "./CodeEditor";
+import { HtmlViewer } from "./HtmlViewer";
 
 interface PlainTextViewerProps {
   content: string;
@@ -24,6 +25,21 @@ export function PlainTextViewer({
   updateTabContent,
   saveFileWithContent,
 }: PlainTextViewerProps) {
+  // Route .html/.htm files to the HTML rendered viewer
+  if (isHtmlViewerFile(fileName) && filePath && tabId && updateTabContent && saveFileWithContent) {
+    return (
+      <HtmlViewer
+        content={content}
+        fileName={fileName}
+        filePath={filePath}
+        tabId={tabId}
+        isDirty={isDirty ?? false}
+        updateTabContent={updateTabContent}
+        saveFileWithContent={saveFileWithContent}
+      />
+    );
+  }
+
   // Route code files to the CodeEditor
   if (isCodeFile(fileName) && filePath && tabId && updateTabContent && saveFileWithContent) {
     return (
