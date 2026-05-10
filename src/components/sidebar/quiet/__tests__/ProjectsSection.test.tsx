@@ -340,24 +340,11 @@ describe('ProjectsSection (quiet variant)', () => {
     ).toBe('false');
   });
 
-  it.skip('is a no-op when the project has no markdown files', async () => {
-    const readFile = vi.fn(() => '');
-    setMockInvokeHandler('read_file', readFile as (args?: Record<string, unknown>) => unknown);
-
-    setProjects([
-      {
-        path: '/Users/me/Notesage/empty',
-        fileTree: [makeFile('image.png', '/Users/me/Notesage/empty/image.png')],
-      },
-    ]);
-
-    renderWithProviders(<ProjectsSection />);
-    fireEvent.click(screen.getByRole('treeitem', { name: /open project empty/i }));
-
-    // No read_file invocation, no tab opened.
-    expect(readFile).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
-  });
+  // Removed: it.skip('is a no-op when the project has no markdown files'…)
+  // — the behaviour it was asserting (click row → attempt to read README)
+  // was replaced by inline-expand on click (live-test 2026-04-28 #1). The
+  // test had been skipped since that change; deleting rather than carrying
+  // dead code.
 });
 
 // ----------------------------------------------------------------------------

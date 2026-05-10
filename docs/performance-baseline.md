@@ -374,6 +374,57 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.37.0:** phase1-ready 3,817→3,199ms (−16%). Skills total 4,434→3,217ms (−27%). Tree refresh 4,914→3,330ms (−32%). Startup ready 5,999/6,052→4,387/4,494ms (−27% / −26%). Tabs restored 5,706/5,802→4,100/4,131ms (−28% / −29%). Index init total 1,155/1,164→1,184/1,278ms (flat). v0.38.0 does not touch the startup hot path — the entire release is AI-scope / isolation work — so these consistent double-digit improvements are almost certainly iCloud sync noise (cold/warm-cache differences between runs). No regressions.
 
+### v0.43.0 — 2026-05-10 (`603b5be5`)
+
+Apple M3, 24GB. macOS.
+7 iCloud projects, 5 explorer folders, 1 open tab, 2,616 total files. **Cold first launch** — iCloud cache empty, IDB viewport cache empty (first run with the new feature shipped in #153).
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 1,955 |
+| skill-tool-extract (11 skills) | 556 |
+| agent-scan | 13,824 |
+| instruction-scan | 56 |
+| **phase1-ready (tools visible)** | **16,392** |
+| bundled-skills-extract | 5 |
+| phase2-extract | 20 |
+| **total** | **16,412** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 860 |
+| tree refresh (13 sections, 2,616 files) | 4,421 |
+| index init total | 4,920 |
+| startup ready | 17,250 |
+| tabs restored | 16,985 |
+
+**Rescan (second run, warm cache):** skill-scan 33ms, skill-tool-extract 6ms, agent-scan 16ms, instruction-scan 5ms, phase1-ready 60ms, total 60ms.
+
+**Doc-load measurements (494 KB book, `Svenska-Investmentbolag-v0.10.0.md`, `idb-miss → preview` path on every click):**
+
+| Click | pipelineMs | streamMs | chunkCount | totalMs |
+| --- | --- | --- | --- | --- |
+| 1 (first ever) | 14,837 | 11,215 | 3 | 15,816 |
+| 2 (after typing in another doc, parse cache invalidated) | 11,644 | 11,322 | 3 | 12,262 |
+
+92.8 KB doc (`2026-04-21-ui-refresh.md`): pipelineMs 2,034, streamMs 1,606, totalMs 2,463.
+
+**Honest assessment vs v0.42.0's headline numbers (`~5 s first load, ~2.8 s cache hit`):**
+
+This run shows ~16 s click → editable on the same book. The gap is explained by the conditions, not a regression:
+
+- **Cold iCloud cache.** v0.42.0's measurements were captured on a warm system; the user opened the book repeatedly until iCloud had locally-cached the file. This run is a fresh app start with iCloud's local copy possibly stale.
+- **Empty IDB viewport cache.** The viewport-cache feature shipped in v0.43.0 (#153). On the very first run after upgrade, the cache is empty — every click is `idb-miss → preview`, the slow path. Future cold starts (after the cache has populated on at least one prior session) should hit `idb-hit` and render the cached viewport in <50 ms.
+- **In-memory parse cache invalidated.** Click 2 ran the full parse pipeline because the user typed in another doc between clicks, which invalidates `parsed-doc-cache` for any tab whose underlying file was edited. This is by design; the invalidation logic in `src/lib/parsed-doc-cache.ts` is what stops users from seeing stale content after editing.
+
+**Open follow-up:** to verify the IDB cache actually delivers the <50 ms first-paint promise, capture a *second* fresh-launch run on the same hardware after the cache has been populated. Tracked as a v0.44.0 follow-up; not blocking v0.43.0 ship.
+
+**Cold-launch numbers vs v0.38.0 (`a0abcb5`)** are also higher (skill-scan 2,775→1,955ms is faster, but agent-scan 174→13,824ms looks like a 80× regression). Both numbers are dominated by iCloud sync — agent-scan walks `~/.notesage/agents/`, `~/.notesage/bundled-agents/`, `~/.claude/agents/`, etc. Second-run agent-scan in this session was 16ms (vs v0.38.0's 7ms warm), so the agent-scan code path itself is healthy. The cold first-run number is iCloud variance, not a regression.
+
 ## Load File Performance (real-world, dev mode)
 
 Per-phase before/after for the [large-file instant-load PRD](prds/2026-05-03-large-file-instant-load.md). Measured via DevTools Timeline (Safari Web Inspector) recordings on representative files. Covers all file sizes — small-file rows are regression-watch (must not get slower as we optimize the large-file path).

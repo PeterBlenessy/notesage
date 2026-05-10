@@ -312,18 +312,14 @@ describe("cmdbar prefix morph", () => {
 });
 
 // ---------------------------------------------------------------------------
-// (4) cmdbar attachment-chip add ≤ 30 ms
-// ---------------------------------------------------------------------------
-
-// Live-test 2026-04-26 — the "attachment-chip add via @ picker" benchmark
-// has been removed. Picker selection no longer adds attachment chips
+// (4) cmdbar attachment-chip add — REMOVED
+//
+// Live-test 2026-04-26 — picker selection no longer adds attachment chips
 // (slice 1 redesign — selection is a navigation intent now: file →
 // `notesage:open-file`, person → drilldown to occurrences). Image
 // attachments still populate chips via paste/drag-drop but those flows
-// are exercised at the integration tier, not micro-bench.
-describe.skip("cmdbar attachment-chip add (removed)", () => {
-  it.skip("adds a chip within budget", () => {});
-});
+// are exercised at the integration tier, not micro-bench. The benchmark
+// was kept as `describe.skip` for a while as a marker; deleted now.
 
 // ---------------------------------------------------------------------------
 // (5) Context row initial render with 3 projects ≤ 20 ms

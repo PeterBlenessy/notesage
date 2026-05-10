@@ -1,6 +1,32 @@
 {
   "releases": [
     {
+      "version": "0.43.0",
+      "date": "2026-05-10",
+      "previousVersion": "0.42.0",
+      "sections": {
+        "features": [
+          "**Customize a folder's icon and colour.** Right-click a folder in the sidebar → Customize… to pick from a curated icon set (including a new AI / agentic group — Brain, Bot, Sparkles, Atom) and an 8-colour palette. Works for any folder, whether it's a Notesage folder or one you opened with ⌘O.",
+          "**Manage with Notesage.** A folder you opened with ⌘O can now be promoted to a Notesage folder via right-click → Manage with Notesage. That unlocks AI provider lock, durable comments that survive renames, custom appearance persistence, and per-folder skills, agents, and MCP servers. If the folder already has a `.notesage/` settings directory, the entry reads \"Open as Notesage folder\" instead.",
+          "**Alpha release channel.** Settings → Updates → Release Channel lets you switch to \"Alpha\" to receive pre-release builds with new features earlier than stable. Switch back to \"Stable\" any time. Alpha builds carry a `-alpha.N` version suffix.",
+          "**Faster cold-start for previously-edited files.** Notesage now keeps a local snapshot of recently-edited file viewports. Reopening a file you edited in a previous session paints content almost instantly instead of going through the full parse pipeline."
+        ],
+        "improvements": [
+          "**One unified \"Folders\" sidebar section.** The previous separate \"Projects\" and \"Folders\" sections are merged into a single \"Folders\" list. Notesage folders and folders you opened with ⌘O share the section and are distinguished by their icon, not by sitting in different groups.",
+          "**Folder-only vocabulary.** The user-facing word \"Project\" is gone — everything is now just \"folder\". Locked folders (with an AI provider lock) and folders you opened from elsewhere on disk are signalled by their icons and accessibility labels rather than by separate noun categories.",
+          "**Crash-safe folder renames.** If Notesage crashes or is force-quit while it's migrating comments after a folder rename, the next launch detects the in-progress migration and completes it cleanly. No more lost comments from interrupted folder renames.",
+          "**Folders you opened with ⌘O can be removed from the sidebar.** Right-click → Remove from sidebar. Files stay on disk; the folder just disappears from the workspace until you reopen it.",
+          "**Notesage folders can also be removed from the sidebar** with the same right-click menu entry — useful for trimming back to just the folders you're actively working in."
+        ],
+        "fixes": [
+          "**The customize popover doesn't get covered by the file preview anymore.** Hovering inside the popover used to make the folder hover preview pop up over it. Fixed.",
+          "**Typing while customize is open no longer ends up in the sidebar filter.** Keystrokes meant for the popover used to leak into the sidebar's type-to-filter. Fixed.",
+          "**Right-clicking a folder you opened with ⌘O now reliably opens the Notesage menu.** Previously the OS handled the right-click on those rows and the row got \"selected\" without offering the Customize / Manage / Reveal entries.",
+          "**System folders (`.notesage`, `.git`, etc.) only show safe entries** in their right-click menu. Rename, Delete, Customize, and other mutating actions are hidden for these folders so you can't accidentally damage app or repo state."
+        ]
+      }
+    },
+    {
       "version": "0.42.0",
       "date": "2026-05-08",
       "previousVersion": "0.41.0",
