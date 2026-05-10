@@ -28,7 +28,9 @@ import { FileIcon } from "@/components/sidebar/FileIcon";
 import { formatSavedShort } from "@/lib/saved-ago";
 import {
   isAnyContextMenuOpen,
+  isAnyCustomizePopoverOpen,
   subscribeToOpenContextMenus,
+  subscribeToForceCloseAllPeeks,
 } from "@/lib/sidebar-context-menu-state";
 
 /**
@@ -252,6 +254,10 @@ export function FolderPeek({
   const cursorInsideRef = useRef(false);
 
   const handleMouseEnter = useCallback(() => {
+    // Hard guard: while any Customize folder appearance popover is up,
+    // the peek must not engage at all. Receiver bails regardless of how
+    // the event arrived (React tree bubble, DOM tree, Radix internals).
+    if (isAnyCustomizePopoverOpen()) return;
     cursorInsideRef.current = true;
     clearCloseTimer();
     if (isOpen) return;
@@ -261,8 +267,9 @@ export function FolderPeek({
     if (isAnyContextMenuOpen()) return;
     clearOpenTimer();
     openTimerRef.current = setTimeout(() => {
-      // Re-check at fire time — a menu may have opened during the delay.
+      // Re-check at fire time — a menu / popover may have opened during the delay.
       if (isAnyContextMenuOpen()) return;
+      if (isAnyCustomizePopoverOpen()) return;
       const next = computePosition();
       if (next) setPosition(next);
       setIsOpen(true);
@@ -271,6 +278,9 @@ export function FolderPeek({
   }, [clearCloseTimer, clearOpenTimer, computePosition, isOpen, projectPath]);
 
   const handleMouseLeave = useCallback(() => {
+    // Same hard guard as handleMouseEnter — while customize is up, the
+    // peek doesn't engage in any direction.
+    if (isAnyCustomizePopoverOpen()) return;
     cursorInsideRef.current = false;
     clearOpenTimer();
     if (!isOpen) return;
@@ -299,6 +309,19 @@ export function FolderPeek({
       }, CLOSE_GRACE_MS);
     });
   }, [clearCloseTimer, isOpen, projectPath]);
+
+  // Force-close on demand. Used by overlays (Customize folder appearance)
+  // that need the peek out of the way regardless of cursor position. The
+  // peek's existing pause-flag prevents NEW opens; this closes the
+  // already-open one. See `sidebar-context-menu-state` for context.
+  useEffect(() => {
+    return subscribeToForceCloseAllPeeks(() => {
+      clearOpenTimer();
+      clearCloseTimer();
+      cursorInsideRef.current = false;
+      setIsOpen(false);
+    });
+  }, [clearCloseTimer, clearOpenTimer]);
 
   // Live-test 2026-04-25 (#140 — final). Three earlier approaches all
   // lost:

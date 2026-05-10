@@ -583,11 +583,12 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <>
               <ContextMenuSeparator />
               <ContextMenuItem
-                onClick={(e) => {
-                  // Prevent the context menu from closing before the popover
-                  // opens — context menu close would unmount the popover.
-                  e.preventDefault();
-                  setCustomizeOpen(true);
+                onSelect={() => {
+                  // Let the context menu close as normal. The popover is a
+                  // sibling (rendered outside <ContextMenu>) so its content
+                  // survives the menu's unmount. Defer one frame so the menu
+                  // close animation completes before the popover paints.
+                  requestAnimationFrame(() => setCustomizeOpen(true));
                 }}
               >
                 Customize…

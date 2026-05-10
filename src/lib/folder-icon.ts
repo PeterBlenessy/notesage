@@ -9,10 +9,9 @@
  *   1. A distinct icon component from lucide-react.
  *   2. An aria-label modifier ("Locked folder: …", "External folder: …").
  *
- * Custom appearance (icon + color) is a user-opt-in layer on top of the
- * structural icon for `standard` folders only. Locked and external folder
- * icons are structural chrome — they convey security/permission state and
- * cannot be overridden.
+ * Custom appearance (icon + color) is a user-opt-in layer that overrides
+ * the structural default for `standard` and `external` folders. Locked
+ * folders ignore appearance — security state cannot be skinned away.
  *
  * This module is the single source of truth consumed by both Classic
  * Layout sidebar (FileTreeItem, ProjectItem) and Quiet Composer sidebar
@@ -21,8 +20,8 @@
  */
 
 import {
-  Folder, FolderOpen, FolderLock, FolderInput,
-  // Curated icon set (44 icons, issue #140)
+  Folder, FolderOpen, FolderLock, FolderSymlink,
+  // Curated icon set
   Star, Heart, Zap, Moon, Sun, Cloud, Coffee, Music,
   Book, BookOpen, Camera, Video, Code, Terminal, Cpu, Database,
   Globe, Map, Navigation, Compass,
@@ -32,6 +31,8 @@ import {
   ShoppingCart, Tag, Gift, Package,
   Puzzle, Lightbulb, Rocket, Shield,
   Mail, Phone,
+  // AI / agentic group
+  Brain, Bot, Sparkles, Atom,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -45,9 +46,10 @@ export interface CuratedFolderIcon {
 }
 
 /**
- * The curated 44-icon set available in the FolderAppearancePicker.
- * Groups: personal, productivity, nature, finance/charts, shopping/misc.
- * Icon names match the lucide-react export names exactly.
+ * The curated icon set available in the FolderAppearancePicker.
+ * Groups: personal, productivity, nature, finance/charts, shopping/misc,
+ * communication, AI/agentic. Icon names match the lucide-react export names
+ * exactly so the picker can round-trip selections through `iconName`.
  */
 export const CURATED_FOLDER_ICONS: CuratedFolderIcon[] = [
   // Personal / lifestyle
@@ -102,7 +104,12 @@ export const CURATED_FOLDER_ICONS: CuratedFolderIcon[] = [
   // Communication
   { name: 'Mail', icon: Mail },
   { name: 'Phone', icon: Phone },
-  // Extra (to reach 44)
+  // AI / agentic
+  { name: 'Brain', icon: Brain },
+  { name: 'Bot', icon: Bot },
+  { name: 'Sparkles', icon: Sparkles },
+  { name: 'Atom', icon: Atom },
+  // Default folder shapes
   { name: 'Folder', icon: Folder },
   { name: 'FolderOpen', icon: FolderOpen },
 ];
@@ -201,9 +208,9 @@ export interface FolderIconResult {
 /**
  * Resolves the icon component, aria-label, and optional color for a folder row.
  *
- * Custom appearance (iconName + colorIndex) is applied only to `standard`
- * folders. Locked and external folders use fixed structural icons regardless
- * of any `appearance` option.
+ * Custom appearance (iconName + colorIndex) overrides the structural default
+ * for `standard` and `external` folders. `locked` folders use the fixed
+ * `FolderLock` icon regardless of any `appearance` option.
  *
  * @example
  * ```tsx
@@ -231,22 +238,21 @@ export function resolveFolderIcon(options: FolderIconOptions): FolderIconResult 
       return { icon: FolderLock, ariaLabel: label };
     }
 
-    case 'external': {
-      const label = name
-        ? `External folder: ${name}`
-        : 'External folder';
-      // Structural icon — appearance is intentionally ignored.
-      return { icon: FolderInput, ariaLabel: label };
-    }
-
+    case 'external':
     case 'standard':
     default: {
+      const isExternal = type === 'external';
       const label = name
-        ? `Folder: ${name}`
-        : 'Folder';
+        ? `${isExternal ? 'External folder' : 'Folder'}: ${name}`
+        : isExternal ? 'External folder' : 'Folder';
 
-      // Resolve custom icon, if any.
-      let icon: LucideIcon = expanded ? FolderOpen : Folder;
+      // Resolve custom icon, if any. External folders default to FolderSymlink
+      // (linked-from-elsewhere semantics); standard folders default to the
+      // open/closed Folder pair. Custom appearance overrides either.
+      const defaultIcon: LucideIcon = isExternal
+        ? FolderSymlink
+        : expanded ? FolderOpen : Folder;
+      let icon = defaultIcon;
       if (appearance?.iconName) {
         const found = CURATED_FOLDER_ICONS.find((c) => c.name === appearance.iconName);
         if (found) icon = found.icon;

@@ -75,14 +75,16 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     expect(screen.queryByText(/^Folders$/)).toBeNull();
   });
 
-  it("renders the section header + one row per explorer folder when non-empty", () => {
+  it("renders one row per explorer folder when non-empty", () => {
     setExplorerFolders([
       { path: "/Users/me/code/alpha", fileTree: [] },
       { path: "/Users/me/code/beta", fileTree: [] },
     ]);
     renderWithProviders(<FoldersSection />);
 
-    expect(screen.getByText("Folders")).toBeTruthy();
+    // Folder-merge fix: FoldersSection no longer renders its own "Folders"
+    // header — the header is rendered by ProjectsSection (renamed) above
+    // so projects + external folders share one section visually.
     expect(
       screen.getByRole("treeitem", { name: /external folder.*alpha/i }),
     ).toBeTruthy();
@@ -130,8 +132,11 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
       name: /external folder.*alpha/i,
     });
     expect(expanded.getAttribute("aria-expanded")).toBe("true");
+    // Folder-merge fix: child sub-directories inside an explorer folder
+    // are NOT external themselves — they're just folders within. The
+    // resolver labels them with the standard `Folder:` prefix now.
     expect(
-      screen.getByRole("treeitem", { name: /external folder.*docs/i }),
+      screen.getByRole("treeitem", { name: /^Folder: docs/i }),
     ).toBeTruthy();
     expect(
       screen.getByRole("treeitem", { name: /open file README\.md/i }),

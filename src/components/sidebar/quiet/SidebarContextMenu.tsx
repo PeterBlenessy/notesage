@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  decrementCustomizePopoverOpen,
   decrementOpenContextMenus,
+  forceCloseAllPeeks,
+  incrementCustomizePopoverOpen,
   incrementOpenContextMenus,
 } from "@/lib/sidebar-context-menu-state";
 import {
@@ -28,8 +31,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover";
 import { tauriApi } from "@/lib/tauri";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -41,6 +44,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import type { FileEntry } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
+import { isSystemFolderName } from "@/components/sidebar/quiet/ProjectsSection";
 
 /**
  * SidebarContextMenu — shared right-click menu for sidebar file rows (task #45).
@@ -148,6 +152,7 @@ export function SidebarContextMenu({
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const unpinFile = useWorkspaceStore((s) => s.unpinFile);
   const projects = useWorkspaceStore((s) => s.projects);
+  const removeProject = useWorkspaceStore((s) => s.removeProject);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const notesTree = useWorkspaceStore((s) => s.notesTree);
   const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
@@ -162,6 +167,12 @@ export function SidebarContextMenu({
   const isContainer = isFolder || isProject;
   const isImage = isFile && isImageFilename(name);
   const isMarkdown = isFile && isMarkdownFilename(name);
+  // System folders (`.notesage`, `.git`, `.config`, etc.) shouldn't be
+  // renamed, deleted, customized, or moved from inside the sidebar — they
+  // carry app or repo state. Hide the mutating menu items so the user
+  // can't accidentally break a project. Read-only items (Open / Reveal
+  // in Finder / Copy path / Copy filename) stay available.
+  const isSystemFolder = isFolder && isSystemFolderName(name);
 
   // Owning project is used for git-status gating + export working dir.
   // Projects themselves own themselves; files walk up to find their project.
@@ -382,15 +393,12 @@ export function SidebarContextMenu({
     }
   };
 
-  // #128 — Make Project / Open as Project. Folder rows only. Dispatches
-  // to App.tsx via CustomEvent so we don't have to prop-drill through
-  // QuietSidebar → sections → this component.
-  const handleMakeProject = () => {
-    if (!isFolder) return;
-    window.dispatchEvent(
-      new CustomEvent(SIDEBAR_MAKE_PROJECT_EVENT, { detail: { path: filePath } }),
-    );
-  };
+  // "Make Project" / "Manage with Notesage" used to live here for sub-folder
+  // rows. The action was removed from sub-folder rows in favour of putting
+  // it only on TOP-LEVEL external folder rows (FoldersSection's inline menu)
+  // — sub-folders inside an already-managed folder shouldn't be promoted
+  // separately. The `SIDEBAR_MAKE_PROJECT_EVENT` constant stays exported
+  // because FoldersSection dispatches it.
 
   // #128 — Add to chat. Image files only. Compresses the bytes
   // client-side and hands off to the vision event bus so the chat panel
@@ -477,11 +485,14 @@ export function SidebarContextMenu({
     }
   }, []);
 
-  return (
-    <>
-      <ContextMenu onOpenChange={handleOpenChange}>
-        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent className="min-w-[14rem]">
+  // The customize popover is anchored to the row itself via <PopoverAnchor>,
+  // so the picker floats next to the right-clicked folder. The previous
+  // sr-only PopoverTrigger placed the anchor at an unpredictable 1×1 box in
+  // the document tree — leaving the popover off-screen for some users.
+  const contextMenuTree = (
+    <ContextMenu onOpenChange={handleOpenChange}>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[14rem]">
           {/* Live-test 2026-04-25 — `Open` only renders for files /
               folders. Projects already open by clicking the row;
               `Open` in the context menu was confusing because it
@@ -492,52 +503,57 @@ export function SidebarContextMenu({
               Open
             </ContextMenuItem>
           )}
-          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleRename}>
-            Rename
-            <ContextMenuShortcut>F2</ContextMenuShortcut>
-          </ContextMenuItem>
-
-          {/* #128 — New File / New Folder for container rows. Files get the
-             *  New-File-in-parent-dir convenience too so the menu reaches
-             *  parity with the legacy FileTreeItem. */}
-          <ContextMenuSeparator />
-          <ContextMenuItem className={ITEM_DENSITY} onSelect={handleNewFile}>
-            New File
-          </ContextMenuItem>
-          {isContainer && (
-            <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleNewFolder()}>
-              New Folder
+          {!isSystemFolder && (
+            <ContextMenuItem className={ITEM_DENSITY} onSelect={handleRename}>
+              Rename
+              <ContextMenuShortcut>F2</ContextMenuShortcut>
             </ContextMenuItem>
           )}
 
-          {/* #128 — Make Project / Open as Project. Folder rows only. The
-             *  `isProject` kind is already a project, so this never renders
-             *  for that kind. App.tsx decides between the two labels via
-             *  its own state. */}
-          {isFolder && (
+          {/* #128 — New File / New Folder for container rows. Files get the
+             *  New-File-in-parent-dir convenience too so the menu reaches
+             *  parity with the legacy FileTreeItem.
+             *  System folders (`.notesage`, `.git`, etc.) hide both — users
+             *  shouldn't be creating files inside app/repo state directories.
+             */}
+          {!isSystemFolder && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem className={ITEM_DENSITY} onSelect={handleMakeProject}>
-                Make Project
+              <ContextMenuItem className={ITEM_DENSITY} onSelect={handleNewFile}>
+                New File
               </ContextMenuItem>
+              {isContainer && (
+                <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleNewFolder()}>
+                  New Folder
+                </ContextMenuItem>
+              )}
             </>
           )}
+
+          {/* "Manage with Notesage" was previously offered on sub-folder
+             *  rows here too. Removed: promoting a sub-folder inside an
+             *  already-managed folder creates a confusing nested entry
+             *  in the sidebar and overlapping content scope. The action
+             *  now lives only on TOP-LEVEL folder rows in FoldersSection. */}
 
           {/* #140 — Customize folder appearance (icon + color). Shown for
              *  folder and project rows only. Standard folders only — the
              *  structural locked/external types are not customizable because
-             *  their icons convey security/permission state. */}
-          {isContainer && (
+             *  their icons convey security/permission state. System folders
+             *  hide too — their icons represent app/repo state, not user choice. */}
+          {isContainer && !isSystemFolder && (
             <>
               <ContextMenuSeparator />
               <ContextMenuItem
                 className={ITEM_DENSITY}
-                onSelect={(e) => {
-                  // Prevent the context menu from closing before the popover
-                  // has a chance to open (context menu close unmounts its
-                  // content, which would kill the popover before it renders).
-                  e.preventDefault();
-                  setCustomizeOpen(true);
+                onSelect={() => {
+                  // Let the context menu close as normal. The popover is a
+                  // sibling (rendered outside <ContextMenu>) so its content
+                  // survives the menu's unmount. Defer one frame so the menu
+                  // close animation completes before the popover paints —
+                  // otherwise the popover's overlay can race the menu and the
+                  // menu briefly stacks on top.
+                  requestAnimationFrame(() => setCustomizeOpen(true));
                 }}
               >
                 Customize…
@@ -636,7 +652,10 @@ export function SidebarContextMenu({
             </>
           )}
 
-          <ContextMenuSeparator />
+          {/* Skip the separator + Move-to… / Move-to-trash / Remove block
+              entirely for system folders — every item below this point is
+              gated on `!isSystemFolder`, so the separator would orphan. */}
+          {!isSystemFolder && <ContextMenuSeparator />}
 
           {/* #135 — Move to… submenu. Pulls every workspace root +
              *  explorer folder from the stores and offers them as
@@ -647,7 +666,7 @@ export function SidebarContextMenu({
              *
              *  Live-test 2026-04-25 — projects cannot be moved through
              *  this menu; hide the submenu for `kind === "project"`. */}
-          {!isProject && hasMoveDestinations ? (
+          {!isProject && !isSystemFolder && hasMoveDestinations ? (
             <ContextMenuSub>
               <ContextMenuSubTrigger className={ITEM_DENSITY}>Move to…</ContextMenuSubTrigger>
               <ContextMenuSubContent>
@@ -745,19 +764,99 @@ export function SidebarContextMenu({
                 )}
               </ContextMenuSubContent>
             </ContextMenuSub>
-          ) : (
+          ) : !isSystemFolder ? (
             <ContextMenuItem className={ITEM_DENSITY} disabled>Move to…</ContextMenuItem>
+          ) : null}
+          {!isSystemFolder && !isProject && (
+            <ContextMenuItem
+              className={ITEM_DENSITY}
+              variant="destructive"
+              onSelect={() => setConfirmOpen(true)}
+            >
+              Move to trash
+              <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
+            </ContextMenuItem>
           )}
-          <ContextMenuItem
-            className={ITEM_DENSITY}
-            variant="destructive"
-            onSelect={() => setConfirmOpen(true)}
-          >
-            Move to trash
-            <ContextMenuShortcut>⌘⌫</ContextMenuShortcut>
-          </ContextMenuItem>
+          {/* Notesage project rows get a "Remove from sidebar" entry instead
+              of "Move to trash". The action is non-destructive — files stay
+              on disk; the project is just unregistered from the workspace.
+              Same outcome as the explorer-folder menu's Remove entry, so
+              the user only keeps the projects they actively work on open. */}
+          {isProject && (
+            <ContextMenuItem
+              className={ITEM_DENSITY}
+              onSelect={() => {
+                const meta =
+                  useProjectMetadataStore.getState().getMetadata(filePath);
+                const projectName =
+                  meta?.name || filePath.split("/").filter(Boolean).pop() || filePath;
+                removeProject(filePath, projectName);
+              }}
+            >
+              Remove from sidebar
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
+  );
+
+  // While the customize popover is open, set the shared flags so
+  // FolderPeek hover-handlers and the QuietSidebar type-to-filter bail.
+  //
+  // Driven by `customizeOpen` (state) instead of Radix's `onOpenChange`.
+  // Radix's controlled Popover does NOT fire `onOpenChange` when the
+  // parent flips the `open` prop externally — only on user-initiated
+  // dismissals (Esc, click outside). Our menu-item `onSelect` flips
+  // customizeOpen via setState, so a callback hooked to onOpenChange
+  // would silently miss the open transition. The useEffect on
+  // customizeOpen catches every transition (open and close) regardless
+  // of cause.
+  useEffect(() => {
+    if (!customizeOpen) return;
+    forceCloseAllPeeks();
+    incrementOpenContextMenus();
+    incrementCustomizePopoverOpen();
+    return () => {
+      decrementOpenContextMenus();
+      decrementCustomizePopoverOpen();
+    };
+  }, [customizeOpen]);
+
+  return (
+    <>
+      {isContainer ? (
+        <Popover open={customizeOpen} onOpenChange={setCustomizeOpen}>
+          <PopoverAnchor asChild>
+            <span className="block">{contextMenuTree}</span>
+          </PopoverAnchor>
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={4}
+            className="p-0 w-auto"
+            // React synthetic events bubble through the REACT tree, even
+            // across portals. PopoverContent is React-tree-inside `<Popover>`,
+            // which is inside the QuietSidebar `<nav>`'s onKeyDown / inside
+            // FolderPeek's onMouseEnter. Without these stoppers, typing in
+            // the popover lands in the sidebar's type-to-filter, and
+            // mouse-over the popover fires FolderPeek's hover-open. Stop
+            // propagation at the popover boundary.
+            onKeyDown={(e) => e.stopPropagation()}
+            onMouseEnter={(e) => e.stopPropagation()}
+            onMouseLeave={(e) => e.stopPropagation()}
+            onMouseOver={(e) => e.stopPropagation()}
+          >
+            <FolderAppearancePicker
+              folderPath={filePath}
+              folderType="standard"
+              isProject={isProject}
+              onClose={() => setCustomizeOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
+      ) : (
+        contextMenuTree
+      )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
@@ -779,31 +878,6 @@ export function SidebarContextMenu({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* #140 — FolderAppearancePicker popover, opened by the "Customize…"
-          context menu item. Uses a zero-size trigger so the popover floats
-          at the folder row rather than being anchored to another element. */}
-      {isContainer && (
-        <Popover open={customizeOpen} onOpenChange={setCustomizeOpen}>
-          {/* Hidden trigger — we programmatically control open via state */}
-          <PopoverTrigger asChild>
-            <span className="sr-only" aria-hidden="true" />
-          </PopoverTrigger>
-          <PopoverContent
-            side="right"
-            align="start"
-            sideOffset={4}
-            className="p-0 w-auto"
-          >
-            <FolderAppearancePicker
-              folderPath={filePath}
-              folderType="standard"
-              isProject={isProject}
-              onClose={() => setCustomizeOpen(false)}
-            />
-          </PopoverContent>
-        </Popover>
-      )}
     </>
   );
 }

@@ -32,10 +32,10 @@ export interface FolderAppearancePickerProps {
   /** Absolute path of the folder being customized. */
   folderPath: string;
   /**
-   * Structural type of the folder. Only `standard` folders may have custom
-   * appearance. Locked and external structural types are not offered a picker —
-   * their icons convey security/permission state and cannot be overridden.
-   * Callers should not render this component for non-standard folder types.
+   * Structural type of the folder. `standard` and `external` folders may
+   * have custom appearance; the resolver applies the override on top of
+   * the structural default. `locked` folders cannot be customized — security
+   * state is not skinnable.
    */
   folderType?: FolderType;
   /**
@@ -115,13 +115,15 @@ export function FolderAppearancePicker({
     }
   }, [isProject, folderPath, clearProjectAppearance, clearGlobalAppearance]);
 
-  // Locked/external folders show a brief informational note instead of the
-  // picker, since their structural icons cannot be overridden.
-  if (folderType === 'locked' || folderType === 'external') {
+  // Locked folders show a brief informational note instead of the picker —
+  // their FolderLock icon conveys security state and must not be skinned.
+  // External folders DO allow customization (their structural FolderSymlink
+  // is a default, not a lock-in).
+  if (folderType === 'locked') {
     return (
       <div className="p-3 text-sm text-muted-foreground max-w-[260px]">
-        Locked and external folders use fixed structural icons that convey
-        security or permission state and cannot be customized.
+        Locked folders use a fixed icon that conveys security state and
+        cannot be customized.
       </div>
     );
   }
@@ -157,7 +159,8 @@ export function FolderAppearancePicker({
         </div>
       </div>
 
-      {/* Icon grid — 44 icons in 8 columns */}
+      {/* Icon grid — curated set rendered in 8 columns; rows wrap as the
+         *  set grows (AI/agentic group added, etc.). */}
       <div>
         <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
           Icon

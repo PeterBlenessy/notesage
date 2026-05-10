@@ -7,13 +7,15 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Folder, FolderOpen, FileText, Plus } from "lucide-react";
+import { Folder, FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { resolveFolderIcon } from "@/lib/folder-icon";
 // useTreeOverlayStore was removed by sidebar-simplification task #20.
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -845,12 +847,12 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   return (
     <section
-      aria-label="Projects"
+      aria-label="Folders"
       className="group/section flex flex-col gap-1"
     >
       <header className="flex items-center justify-between gap-2 px-2 h-6">
         <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
-          Projects
+          Folders
         </h2>
         {/*
           `tabIndex={-1}` excludes the `+` from the natural Tab order
@@ -867,7 +869,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="Add project"
+          aria-label="Add folder"
           tabIndex={-1}
           onClick={onAdd}
           className="opacity-0 group-hover/section:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
@@ -1193,6 +1195,19 @@ function ProjectRow({
       ? `Open project ${name}`
       : `Open project ${name} (${fileCount} file${fileCount === 1 ? "" : "s"})`;
 
+  // Read custom appearance (icon + color) from project metadata so the
+  // user-picked customization actually surfaces on the row. Without this
+  // the FolderAppearancePicker stores values that nothing reads.
+  const appearance = useProjectMetadataStore(
+    (s) => s.getMetadata(project.path)?.appearance,
+  );
+  const { icon: ProjectIcon, color: projectIconColor } = resolveFolderIcon({
+    type: 'standard',
+    expanded: isExpanded,
+    name,
+    appearance,
+  });
+
   // Roving tabindex — before any focus lands in the tree, the first item
   // should still be reachable via Tab, so default to tabIndex 0 when the
   // section has no focused row yet.
@@ -1243,25 +1258,22 @@ function ProjectRow({
         `→` or click the row. `aria-expanded` already tells screen
         readers; this is the visual mirror.
       */}
-      {isExpanded ? (
-        <FolderOpen
-          className={cn(
-            "h-3.5 w-3.5 shrink-0",
-            isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
-          )}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      ) : (
-        <Folder
-          className={cn(
-            "h-3.5 w-3.5 shrink-0",
-            isActive ? "text-[var(--color-accent-primary)]" : "text-muted-foreground/70",
-          )}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      )}
+      <ProjectIcon
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          // When a custom color is applied, drop the muted greyscale class
+          // so the user-picked color isn't overridden by the muted fill.
+          projectIconColor
+            ? undefined
+            : isActive
+              ? "text-[var(--color-accent-primary)]"
+              : "text-muted-foreground/70",
+        )}
+        style={projectIconColor ? { color: projectIconColor } : undefined}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+
       {isRenaming ? (
         <SidebarInlineEdit
           mode="rename"

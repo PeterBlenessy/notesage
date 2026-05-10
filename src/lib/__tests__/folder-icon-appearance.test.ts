@@ -59,14 +59,18 @@ describe('resolveFolderIcon — custom appearance', () => {
       expect(withCustom.icon).toBe(withoutCustom.icon);
     });
 
-    it('preserves the external-folder icon even when a custom iconName is provided', () => {
+    it('overrides the external-folder default icon when a custom iconName is provided', () => {
       const firstIcon = CURATED_FOLDER_ICONS[0];
       const withCustom = resolveFolderIcon({
         type: 'external',
         appearance: { iconName: firstIcon.name, colorIndex: null },
       });
       const withoutCustom = resolveFolderIcon({ type: 'external' });
-      expect(withCustom.icon).toBe(withoutCustom.icon);
+      // Folder-merge fix: external folders now accept appearance overrides
+      // so the user can pick custom icons. Only `locked` folders remain
+      // structurally fixed.
+      expect(withCustom.icon).not.toBe(withoutCustom.icon);
+      expect(withCustom.icon).toBe(firstIcon.icon);
     });
   });
 
@@ -146,8 +150,10 @@ describe('FOLDER_TAG_COLORS', () => {
 });
 
 describe('CURATED_FOLDER_ICONS', () => {
-  it('exports exactly 44 icons', () => {
-    expect(CURATED_FOLDER_ICONS).toHaveLength(44);
+  it('exports at least 44 icons', () => {
+    // Originally locked at 44 (issue #140). The set may grow as new groups
+    // are added (e.g. AI/agentic icons). Growth is fine; loss isn't.
+    expect(CURATED_FOLDER_ICONS.length).toBeGreaterThanOrEqual(44);
   });
 
   it('each icon entry has a non-empty name', () => {
@@ -164,6 +170,6 @@ describe('CURATED_FOLDER_ICONS', () => {
 
   it('all icon names are unique', () => {
     const names = CURATED_FOLDER_ICONS.map((e) => e.name);
-    expect(new Set(names).size).toBe(44);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

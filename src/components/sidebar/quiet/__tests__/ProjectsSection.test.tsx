@@ -174,23 +174,23 @@ describe('countMarkdownFiles', () => {
 // ----------------------------------------------------------------------------
 
 describe('ProjectsSection (quiet variant)', () => {
-  it('renders the uppercase "Projects" heading', () => {
+  it('renders the uppercase "Folders" heading', () => {
     renderWithProviders(<ProjectsSection />);
-    const heading = screen.getByRole('heading', { level: 2, name: /projects/i });
-    expect(heading.textContent).toBe('Projects');
+    const heading = screen.getByRole('heading', { level: 2, name: /folders/i });
+    expect(heading.textContent).toBe('Folders');
     expect(heading.className).toMatch(/uppercase/);
   });
 
   it('renders an accessible add-button', () => {
     renderWithProviders(<ProjectsSection onAdd={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /add project/i });
+    const btn = screen.getByRole('button', { name: /add folder/i });
     expect(btn).toBeTruthy();
   });
 
   it('calls onAdd when the add-button is clicked', () => {
     const onAdd = vi.fn();
     renderWithProviders(<ProjectsSection onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add folder/i }));
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
@@ -205,7 +205,7 @@ describe('ProjectsSection (quiet variant)', () => {
   // create new projects via ⌘⇧N.
   it('excludes the add-button from the Tab order (tabIndex=-1)', () => {
     renderWithProviders(<ProjectsSection onAdd={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /add project/i });
+    const btn = screen.getByRole('button', { name: /add folder/i });
     expect(btn.getAttribute('tabindex')).toBe('-1');
   });
 
@@ -1308,7 +1308,7 @@ describe('ProjectsSection — inline create project (#42)', () => {
       useQuietSidebarStore.getState().setPendingCreateProject(true);
     });
     renderWithProviders(<ProjectsSection onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add folder/i }));
     expect(onAdd).toHaveBeenCalledTimes(1);
     expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
   });
