@@ -13,7 +13,7 @@
  *  - hidden / .DS_Store filtering
  *  - file-click opens a tab via `read_file`
  *  - folder-row click dispatches `expand-path` with the folder's path
- *  - footer "Expand in sidebar" button dispatches with project root
+ *  - footer "Expand in sidebar" button is absent (removed — inline row-click supersedes it)
  *  - reduced motion: animation classes omitted
  */
 
@@ -184,12 +184,8 @@ describe("FolderPeek (#36)", () => {
       (el) => el.textContent?.trim()
     );
     // Folders first: alpha-dir, Beta. Files second: alpha.md, zeta.md.
-    // Footer "Expand in sidebar" is last (renamed from "See full tree"
-    // by sidebar-simplification task #6).
-    const folderAndFileItems = items.filter(
-      (t) => t && !t.startsWith("Expand in sidebar")
-    );
-    expect(folderAndFileItems).toEqual([
+    // No footer button — "Expand in sidebar" was removed (issue #157).
+    expect(items).toEqual([
       "alpha-dir",
       "Beta",
       "alpha.md",
@@ -352,15 +348,7 @@ describe("FolderPeek (#36)", () => {
     unsub();
   });
 
-  it("'Expand in sidebar' footer button dispatches expand-path with project root as target", async () => {
-    const { subscribeToSidebarEvents } = await import("@/lib/sidebar-events");
-    const events: Array<{
-      type: string;
-      projectPath: string;
-      targetPath: string;
-    }> = [];
-    const unsub = subscribeToSidebarEvents((ev) => events.push(ev));
-
+  it("does NOT render an 'Expand in sidebar' button in the popover (removed — inline row-click supersedes it)", () => {
     renderWithProviders(
       <FolderPeek
         projectPath="/p/alpha"
@@ -374,19 +362,11 @@ describe("FolderPeek (#36)", () => {
       vi.advanceTimersByTime(HOVER_DELAY + 1);
     });
 
-    const footerBtn = screen.getByRole("button", { name: /expand in sidebar/i });
-    expect(footerBtn.hasAttribute("disabled")).toBe(false); // never disabled now
-    fireEvent.click(footerBtn);
-
-    expect(events).toEqual([
-      {
-        type: "expand-path",
-        projectPath: "/p/alpha",
-        targetPath: "/p/alpha", // project root, no specific child
-      },
-    ]);
-
-    unsub();
+    // The "Expand in sidebar" button must be absent now that inline
+    // folder expansion via row-click covers the same affordance.
+    expect(
+      screen.queryByRole("button", { name: /expand in sidebar/i })
+    ).toBeNull();
   });
 
   it("omits animation classes when reduced motion is preferred", () => {
