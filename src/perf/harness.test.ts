@@ -32,7 +32,7 @@ describe("benchmark()", () => {
     const result = await benchmark("fast-op", () => {}, 1000);
     expect(result.passed).toBe(true);
     expect(result.name).toBe("fast-op");
-    expect(result.elapsed).toBeLessThan(1000);
+    expect(result.elapsed).toBeLessThan(1000 * (Number(process.env.PERF_BUDGET_MULTIPLIER) || 1));
     expect(result.budget).toBe(1000);
   });
 
@@ -48,7 +48,7 @@ describe("benchmark()", () => {
       1 // 1ms budget
     );
     expect(result.passed).toBe(false);
-    expect(result.elapsed).toBeGreaterThan(1);
+    expect(result.elapsed).toBeGreaterThan(1 * (Number(process.env.PERF_BUDGET_MULTIPLIER) || 1));
   });
 
   it("uses median of multiple iterations", async () => {

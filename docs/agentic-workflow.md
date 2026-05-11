@@ -142,6 +142,7 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | `aw-feedback` | Interpret human comment on hitl issue or bot PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on bot-authored PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
 | `aw-iterate` | Push small follow-up commit on existing draft PR | `workflow_dispatch` from aw-feedback | new commit on PR branch (or deflection comment if change is too big) |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
+| `aw-ci-repair` | Auto-repair recurring perf-budget CI flakes on bot-authored draft PRs — wraps bare numeric literals with `PERF_BUDGET_MULTIPLIER` (Pattern A) and adds the env var to the workflow (Pattern B); posts a comment for all other failure patterns (C–E) | `workflow_run.completed` (failure on `claude/*` branch) or `workflow_dispatch` | ≤1 repair commit per PR + comment, OR comment-only for C/D/E patterns |
 
 **The slice decision** is the most important skill rule. aw-slice asks: "what user values does this issue deliver?" Each value is a sentence "User can \[observable behaviour\]." Then:
 
@@ -153,7 +154,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review*.
+Eleven workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -168,10 +169,11 @@ Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *ret
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
+| `aw-ci-repair.yml` | `workflow_run.completed` (Tests workflow, failure), `workflow_dispatch` | Narrow CI auto-repair: detects recurring perf-budget flake patterns on bot-authored `claude/*` draft PRs and applies one-line fixes (Patterns A+B). Posts a comment for C/D/E. One-attempt cap per PR. |
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
-**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
+**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, `aw-ci-repair.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
 
 ## Lifecycle (worked example, default path — owner-filed issue)
 
@@ -451,6 +453,23 @@ This closes the conversation loop. The agent can be redirected from ANY pause po
 ### Choice: aw-retrospect on every merge
 
 Self-improvement loop. On claude\[bot\] PR merge, look for divergence between the originating skill's rules and what shipped (extra files touched, manual fixes after merge, review pushback, test changes, retries). Propose a SKILL.md patch as a draft PR. Always reviewed, never auto-merged. Inspired by rmstdope/my-copilot's `self-learning-skills` pattern.
+
+### Choice: narrow-pattern CI repair instead of broad auto-fix (#195)
+
+**The problem.** Bot-authored PRs from `aw-tdd` repeatedly failed CI because perf budget assertions used bare numeric literals (`toBeLessThan(500)`) that don't account for the CI macOS runner pacing ~3× slower than the dev machine. The fix is mechanical — wrap with `N * (Number(process.env.PERF_BUDGET_MULTIPLIER) || 1)` — but `aw-tdd` kept re-introducing the pattern on every retry because the skill instructions didn't explicitly prohibit it.
+
+**The temptation.** One option is to have `aw-retrospect` patch `aw-tdd`'s SKILL.md to forbid bare literals. That's correct and was also done (see `aw-tdd` SKILL.md). But it doesn't help the dozens of existing bot PRs already in the queue with the wrong pattern, nor the edge case where a future bot PR slips through before the retro patch is applied.
+
+**The fix.** A narrow CI repair skill (`aw-ci-repair`) that fires on `workflow_run.completed` with `conclusion == 'failure'` AND `head_branch` matching `claude/*`. It reads the CI failure log, applies a one-line mechanical fix when the failure is Pattern A (bare literal) or B (missing env var), and posts a comment for all other failure patterns. Hard constraints:
+
+- **≤1 attempt per PR.** Checks for prior `fix(ci):` commits AND prior repair comments before doing anything.
+- **≤2 files.** Refuses to repair if more than 2 files would be touched.
+- **Patterns A + B only auto-fix.** Patterns C (snapshot drift), D (DOM-changed assertion), and E (catch-all) get a comment explaining what was found, with no code changes.
+- **`WORKFLOW_PAT` throughout.** The push must fire `pull_request: synchronize` so CI re-runs on the repaired PR — same rationale as `aw-tdd` and `aw-iterate`.
+
+**Why not just fix it in `aw-tdd`.** `aw-tdd` now explicitly prohibits bare literals (retro-patched). But CI auto-repair adds defense-in-depth: when a bot PR slips through anyway (race, regression, new bot PR format), the repair runs automatically rather than requiring a human to notice, diagnose, and re-trigger. The two mechanisms are complementary, not redundant.
+
+**Scope discipline.** The skill is deliberately narrow. The `if:` guard (`conclusion == 'failure'` AND `startsWith(head_branch, 'claude/')`) prevents it from touching human PRs. The one-attempt cap prevents repair loops. The ≤2-file limit prevents it from accumulating scope over time.
 
 ## Working with the system
 
