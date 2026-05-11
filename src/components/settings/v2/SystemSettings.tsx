@@ -133,6 +133,8 @@ export function SystemSettings({
   // HTML viewer
   const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
+  const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
+  const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
 
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -394,6 +396,18 @@ export function SystemSettings({
               id="html-viewer-allow-forms"
               checked={htmlViewerAllowForms}
               onCheckedChange={setHtmlViewerAllowForms}
+            />
+          }
+        />
+        <SettingsRow
+          label="Allow scripts (unsafe)"
+          description="When on, inline and same-directory scripts execute in an isolated iframe. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
+          htmlFor="html-viewer-allow-scripts"
+          control={
+            <Switch
+              id="html-viewer-allow-scripts"
+              checked={htmlViewerAllowScripts}
+              onCheckedChange={setHtmlViewerAllowScripts}
             />
           }
         />

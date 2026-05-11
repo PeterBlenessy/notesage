@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Code, Eye } from "lucide-react";
 import DOMPurify from "dompurify";
+import { invoke } from "@tauri-apps/api/core";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
 import { CodeEditor } from "./CodeEditor";
@@ -55,7 +56,9 @@ export function HtmlViewer({
   saveFileWithContent,
 }: HtmlViewerProps) {
   const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
+  const allowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const [sourceMode, setSourceMode] = useState(false);
+  const [unsafeHtml, setUnsafeHtml] = useState<string | null>(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
@@ -80,6 +83,38 @@ export function HtmlViewer({
       ADD_ATTR: allowForms ? FORM_ATTRS : [],
     });
   }, [content, allowForms]);
+
+  // When allow-scripts is ON, pre-process the raw HTML: read same-directory
+  // <script src="./..."> files via Tauri read_file and rewrite them as inline
+  // <script> blocks so the iframe (which has a null/opaque origin — no
+  // allow-same-origin) can execute them without a cross-origin fetch.
+  useEffect(() => {
+    if (!allowScripts) {
+      setUnsafeHtml(null);
+      return;
+    }
+    let cancelled = false;
+    async function process() {
+      const dir = filePath.substring(0, filePath.lastIndexOf("/"));
+      // Match <script src="./relative/path.js"> patterns (single or double quotes)
+      const srcPattern = /<script\s[^>]*src=["'](\.\/[^"']+)["'][^>]*><\/script>/gi;
+      let processed = content;
+      const matches = [...content.matchAll(srcPattern)];
+      for (const match of matches) {
+        const relPath = match[1];
+        const absPath = `${dir}/${relPath.replace(/^\.\//, "")}`;
+        try {
+          const fileContent = await invoke<string>("read_file", { path: absPath });
+          processed = processed.replace(match[0], `<script>${fileContent}</script>`);
+        } catch {
+          // If file can't be read, leave the original tag in place
+        }
+      }
+      if (!cancelled) setUnsafeHtml(processed);
+    }
+    process();
+    return () => { cancelled = true; };
+  }, [allowScripts, content, filePath]);
 
   // Reset search state when switching modes or content changes
   useEffect(() => {
@@ -243,8 +278,10 @@ export function HtmlViewer({
         </div>
       </div>
 
-      {/* Content area — sanitised inline render. Padded shell + rounded card
-          give the rendered page the same treatment as the markdown editor. */}
+      {/* Content area. When allow-scripts is ON and the pre-processed HTML is
+          ready, render in an isolated null-origin iframe (sandbox="allow-scripts",
+          no allow-same-origin). Otherwise use the default DOMPurify sanitised
+          inline path. */}
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-auto relative p-3"
@@ -261,13 +298,24 @@ export function HtmlViewer({
           replaceExpanded={false}
           onReplaceExpandedChange={() => {}}
         />
-        <div
-          ref={renderRef}
-          className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
-          style={{ zoom }}
-          aria-label={`Rendered HTML: ${fileName}`}
-          dangerouslySetInnerHTML={{ __html: sanitisedBody }}
-        />
+        {allowScripts && unsafeHtml !== null ? (
+          <iframe
+            sandbox="allow-scripts"
+            srcDoc={unsafeHtml}
+            title={`Rendered HTML (scripts enabled): ${fileName}`}
+            aria-label={`Rendered HTML: ${fileName}`}
+            className="w-full h-full rounded-lg border border-border shadow-sm bg-white"
+            style={{ minHeight: "60vh", zoom }}
+          />
+        ) : (
+          <div
+            ref={renderRef}
+            className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
+            style={{ zoom }}
+            aria-label={`Rendered HTML: ${fileName}`}
+            dangerouslySetInnerHTML={{ __html: sanitisedBody }}
+          />
+        )}
       </div>
     </div>
   );

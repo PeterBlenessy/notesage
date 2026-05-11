@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
 import { useSettingsStore } from "@/stores/settings-store";
+import { setMockInvokeHandler } from "@/test/tauri-mock";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -237,5 +238,116 @@ describe("PlainTextViewer routing for HTML files", () => {
     );
     expect(screen.getByTestId("code-editor")).toBeTruthy();
     expect(document.querySelector("iframe")).toBeNull();
+  });
+});
+
+describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("when OFF (default): no iframe in the DOM (regression guard)", async () => {
+    render(
+      <HtmlViewer
+        content="<html><body><h1>Safe</h1></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-scripts-off"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // Default path: DOMPurify inline div, never an iframe.
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByText("Safe")).toBeTruthy();
+  });
+
+  it("when ON: renders an iframe instead of the DOMPurify inline div", async () => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><h1>Unsafe</h1></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-scripts-on"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      expect(document.querySelector("iframe")).not.toBeNull();
+    });
+  });
+
+  it("when ON: iframe sandbox includes allow-scripts", async () => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>Scripts on</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-scripts-sandbox"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("sandbox")).toContain("allow-scripts");
+    });
+  });
+
+  it("when ON: iframe sandbox does NOT include allow-same-origin (null-origin isolation)", async () => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>Isolated</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-scripts-isolation"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    });
+  });
+
+  it("when ON: same-directory <script src='./local.js'> is inlined via read_file", async () => {
+    setMockInvokeHandler("read_file", (args) => {
+      if ((args?.path as string | undefined)?.endsWith("local.js")) {
+        return "console.log('local-script-executed');";
+      }
+      throw new Error("unexpected read_file call");
+    });
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><h1>Page</h1><script src="./local.js"></script></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-scripts-inline-src"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+      expect(srcdoc).toContain("console.log('local-script-executed')");
+    });
   });
 });

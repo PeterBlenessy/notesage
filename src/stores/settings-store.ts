@@ -317,6 +317,14 @@ interface SettingsStore {
    */
   htmlViewerAllowForms: boolean;
   setHtmlViewerAllowForms: (enabled: boolean) => void;
+  /**
+   * When true, the HTML viewer bypasses DOMPurify and renders content in an
+   * isolated iframe with `sandbox="allow-scripts"` (no `allow-same-origin`).
+   * Inline `<script>` blocks execute; same-directory `<script src="./local.js">`
+   * is pre-processed via read_file and inlined. Default false (scripts stripped).
+   */
+  htmlViewerAllowScripts: boolean;
+  setHtmlViewerAllowScripts: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -736,10 +744,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setHtmlViewerAllowForms: (enabled: boolean) => {
         set({ htmlViewerAllowForms: enabled });
       },
+
+      htmlViewerAllowScripts: false,
+
+      setHtmlViewerAllowScripts: (enabled: boolean) => {
+        set({ htmlViewerAllowScripts: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 15,
+      version: 16,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -886,6 +900,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // so existing users see no behaviour change after upgrade.
           if (typeof state.htmlViewerAllowForms !== 'boolean') {
             state.htmlViewerAllowForms = false;
+          }
+        }
+        if (version < 16) {
+          // Issue #184 — HTML viewer allow-scripts. Default false (scripts stripped)
+          // so existing users see no behaviour change after upgrade.
+          if (typeof state.htmlViewerAllowScripts !== 'boolean') {
+            state.htmlViewerAllowScripts = false;
           }
         }
         return state;
