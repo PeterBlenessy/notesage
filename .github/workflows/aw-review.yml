@@ -34,15 +34,19 @@ concurrency:
 
 jobs:
   review:
-    # Only on bot-authored draft PRs (workflow_dispatch always passes since
-    # it explicitly targets a PR). The pre-flight inside the skill double-
-    # checks; this `if:` saves a runner spin-up on human-authored PRs.
+    # Only on bot-authored draft PRs. Match by BRANCH PREFIX (`claude/*`),
+    # not by PR author. After the WORKFLOW_PAT switch (commit #118),
+    # `aw-tdd`-created PRs are authored by the human PAT owner, not by
+    # `github-actions[bot]`, so the old author-based filter rejected
+    # every bot PR and aw-review silently skipped them. `claude-code-action`
+    # uses the `claude/` branch prefix unconditionally for bot pipelines,
+    # so the prefix is the reliable bot-PR marker. workflow_dispatch always
+    # passes since it explicitly targets a PR. The pre-flight inside the
+    # skill double-checks the branch / event shape.
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.draft == true &&
-       (github.event.pull_request.user.login == 'github-actions[bot]' ||
-        github.event.pull_request.user.login == 'claude[bot]' ||
-        github.event.pull_request.user.login == 'app/claude'))
+       startsWith(github.event.pull_request.head.ref, 'claude/'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
