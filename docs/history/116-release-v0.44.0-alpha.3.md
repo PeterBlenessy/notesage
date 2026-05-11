@@ -4,29 +4,29 @@
 **Previous version:** 0.44.0-alpha.2
 **Channel:** Alpha
 
-The first alpha that actually honors the v0.43.0 promise that you can leave the alpha channel and the Stable channel will never push you onto alpha by mistake. Also the first alpha that can receive updates via the in-app updater — alpha.0/.1/.2 are stranded by a CORS bug in the manifest fetch and need manual reinstall.
+First alpha that fully delivers on the promise that you can switch between Stable and Alpha channels cleanly. Plus all the post-v0.43.0 alpha content (HTML viewer security toggles, etc.) — see alpha.2's notes for that feature list.
+
+> ⚠️ If you're on alpha.0, alpha.1 or alpha.2, the in-app updater can't bring you to alpha.3 — those builds have a bug that breaks the alpha-channel fetch. Grab the alpha.3 DMG from the release page once and you're back on the auto-update train.
 
 ## Changes
 
 ### Features
 
-- **Leave-alpha works properly now.** Switching from Alpha to Stable in Settings → Updates → Release Channel runs an immediate update check. If the latest stable is older than your current alpha (which it usually will be while alpha is ahead), a dedicated dialog asks "Switch back to Stable?" and explains the downgrade clearly — settings introduced in alpha may not carry over. Decline and you stay on the alpha; the app will auto-update you to stable once a stable release exceeds your alpha version. Previously, switching to Stable silently did nothing because Tauri's update check refuses downgrades by default.
+- **Switching back from Alpha to Stable now works.** Pick Stable in Settings → Updates → Release Channel and a clear "Switch back to Stable?" dialog appears, showing exactly which version you're moving to. It also warns you up front that settings introduced by alpha versions may not carry over — and gives you the choice to stay on the alpha and wait for stable to catch up. Before, switching to Stable on an alpha build silently did nothing.
 
 ### Improvements
 
-- **Stable users can't be auto-upgraded to alpha builds anymore.** Defense in depth: (a) the release workflow auto-detects `-alpha`/`-beta`/`-rc` tags and flags them as prereleases — no more hardcoded `prerelease: false` shipping alphas as stable, AND (b) the in-app updater on Stable channel refuses any prerelease version regardless of what the server says. Either layer would have prevented the v0.43.0 → v0.44.0-alpha.1 mis-upgrade; both running means a single mistake can't break the guarantee. (This was the headline fix in v0.43.1; bringing it forward into the alpha track so it never regresses.)
+- **The Stable channel really won't push you to alpha builds.** Belt-and-braces on top of the v0.43.1 fix: even if a release ever gets mis-flagged again on the server side, the app itself now refuses to install anything alpha-flavoured while you're on the Stable channel.
 
-- **Alpha channel actually receives updates now.** The manifest fetch on Alpha was silently failing on a cross-origin redirect (`github.com/.../latest.json` → `release-assets.githubusercontent.com`) — WKWebView's CORS rejected the second hop. Routing the fetch through Tauri's HTTP plugin (Rust-side, no CORS) fixes the chain. Anyone on alpha.0/.1/.2 is still stranded — those binaries shipped before this fix — but from alpha.3 forward, alpha → alpha updates work via the in-app updater.
+- **Checking for updates fires automatically when you switch channel.** No more manual "Check for updates" click after toggling between Stable and Alpha.
 
-- **Auto-update check fires when you change channel.** Previously you had to click "Check for updates" manually after switching channel. Now it fires automatically so the leave-alpha dialog (or any new-channel update) appears immediately.
+- **The "(Alpha)" suffix is gone from release names.** GitHub already shows a "Pre-release" badge on alpha builds; the redundant suffix was clutter.
 
 ### Fixes
 
-- **Stable users on v0.43.0 mis-pushed to v0.44.0-alpha.1.** Root cause: alpha.0 and alpha.1 were published with `prerelease: false` (workflow bug). GitHub's `releases/latest` pointer resolved to the latest alpha and the in-app updater obediently offered it. Fixed in v0.43.1 (workflow auto-flags prereleases) and re-locked here.
+- **Alpha-channel update check actually works on this build.** Forward-port of the v0.43.1 fix. Anyone installing alpha.3 will get clean alpha → alpha auto-updates from here on.
 
-- **Alpha channel showed "Up to date" even when a new alpha existed.** Same CORS bug as above; same fix.
-
-- **Release workflow no longer leaves orphan draft releases.** alpha.2's release run created a stale draft alongside the published prerelease — `tauri-action` was creating a duplicate release entry because it got both `releaseId` AND `tagName`. Removing the duplicate args means a single release entry per tag, no manual cleanup needed.
+- **Release pipeline no longer leaves orphan draft entries.** A duplicate workflow file was creating a second release alongside the real one on every alpha tag, leaving behind a stale draft that had to be cleaned up by hand. Removed; one release per tag from now on.
 
 ## Known issues — still deferred
 

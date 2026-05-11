@@ -4,15 +4,15 @@
 **Previous version:** 0.43.0
 **Channel:** Stable
 
-Stable patch fixing two related auto-updater bugs that landed v0.43.0 users on alpha builds against their will.
+A small patch fixing two bugs in how the app handles release channels.
 
 ## Changes
 
 ### Fixes
 
-- **Stable users are no longer auto-upgraded to alpha builds.** Before this fix, the in-app updater on the Stable channel could offer an alpha build as an "update" — without the user ever switching to the Alpha channel. The cause was a workflow that published alpha tags without the prerelease flag set, so GitHub's "latest release" pointer resolved to an alpha. Now: (a) the release workflow auto-detects `-alpha`/`-beta`/`-rc` tag suffixes and flags them as prereleases, AND (b) the in-app updater on Stable refuses any version that looks like a prerelease, regardless of what the server says. Defense in depth — both layers have to fail for the bug to recur.
+- **You won't be offered an alpha build on the Stable channel.** A handful of recent v0.44.0 alpha builds were mistakenly shown as available stable updates — they shouldn't have been. From now on, the Stable channel only ever offers stable releases. If something alpha-flavoured ever sneaks through again, the app refuses it.
 
-- **Alpha channel actually receives updates now.** When the Alpha channel was selected, the in-app updater silently failed (spinner spun, no toast). The cause was a cross-origin redirect when fetching the alpha manifest — GitHub redirects release-asset URLs to a different host, and the renderer's `fetch()` was rejected by CORS on that hop. Now the alpha-channel manifest fetch goes through Tauri's HTTP plugin (Rust-side, no CORS) and the update offer appears as expected. For now, installing an alpha update opens the tagged release in the system browser for a manual download — full in-app install for alpha is tracked separately.
+- **The Alpha channel actually finds alpha builds now.** If you switched to the Alpha channel in Settings → Updates and clicked "Check for updates", it would spin briefly and then quietly find nothing — even when an alpha was available. That's fixed; alpha updates appear as expected.
 
 ## Under the hood
 
