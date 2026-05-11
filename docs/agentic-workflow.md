@@ -142,6 +142,7 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | `aw-feedback` | Interpret human comment on hitl issue or bot PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on bot-authored PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
 | `aw-iterate` | Push small follow-up commit on existing draft PR | `workflow_dispatch` from aw-feedback | new commit on PR branch (or deflection comment if change is too big) |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
+| `aw-ci-repair` | Auto-fix recoverable CI failures on bot-authored draft PRs (Pattern A: missing `PERF_BUDGET_MULTIPLIER` wrap; Pattern B: missing env var in workflow). Comment-only for snapshot drift (C), DOM-changed assertions (D), and unrecognised failures (E). One repair attempt per PR. | `workflow_run.completed: failure` on `claude/*` branches | fix commit pushed + repair comment (A/B), OR diagnosis comment only (C/D/E) |
 
 **The slice decision** is the most important skill rule. aw-slice asks: "what user values does this issue deliver?" Each value is a sentence "User can \[observable behaviour\]." Then:
 
@@ -168,10 +169,11 @@ Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *ret
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
+| `aw-ci-repair.yml` | `workflow_run.completed: failure` for "Test & Type Check" runs on `claude/*` branches | Auto-repair recoverable CI failures on bot-authored draft PRs. Concurrency group `aw-stage-ci-repair-{branch}`. One attempt per PR. |
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
-**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
+**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, `aw-ci-repair.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
 
 ## Lifecycle (worked example, default path — owner-filed issue)
 

@@ -196,6 +196,26 @@ describe('AW workflow concurrency convention (#98)', () => {
     }
   });
 
+  describe('aw-ci-repair.yml — workflow-level concurrency on aw-stage-ci-repair-{branch}', () => {
+    const wf = loadWorkflow('aw-ci-repair');
+
+    it('has workflow-level concurrency block', () => {
+      expect(wf.concurrency).toBeDefined();
+    });
+
+    it('uses the aw-stage-ci-repair- prefix', () => {
+      expect(wf.concurrency!.group).toMatch(/^aw-stage-ci-repair-/);
+    });
+
+    it('uses cancel-in-progress: false (queue, do not cancel in-flight repairs)', () => {
+      expect(wf.concurrency!['cancel-in-progress']).toBe(false);
+    });
+
+    it('falls back to github.run_id when no branch is available', () => {
+      expect(wf.concurrency!.group).toContain('github.run_id');
+    });
+  });
+
   describe('Cross-workflow consistency — same stage uses the same key prefix everywhere', () => {
     // The whole point of the convention: pipeline.slice + sweep.slice +
     // standalone slice all need a key starting with `aw-stage-slice-` so

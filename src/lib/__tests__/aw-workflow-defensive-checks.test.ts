@@ -170,6 +170,27 @@ describe('AW workflow turn budget (#101 — max-turns >= 50 for triage and refin
   });
 });
 
+// ── aw-ci-repair workflow shape ───────────────────────────────────────────────
+
+describe('aw-ci-repair.yml workflow shape', () => {
+  const wf = loadWorkflow('aw-ci-repair');
+
+  it('the ci_repair job has a step that finds the PR for the branch', () => {
+    const ciRepairJob = wf.jobs.ci_repair;
+    expect(ciRepairJob).toBeDefined();
+    const hasFind = ciRepairJob.steps?.some(
+      (s) => typeof s.run === 'string' && s.run.includes('gh pr list'),
+    );
+    expect(hasFind).toBe(true);
+  });
+
+  it('the ci_repair job has a PERF_BUDGET_MULTIPLIER env var', () => {
+    const ciRepairJob = wf.jobs.ci_repair;
+    const env = ciRepairJob.env as Record<string, string> | undefined;
+    expect(env?.PERF_BUDGET_MULTIPLIER).toBeDefined();
+  });
+});
+
 // ── Standalone workflows are workflow_dispatch-only ──────────────────────────
 
 describe('Standalone workflows are workflow_dispatch-only (#101)', () => {

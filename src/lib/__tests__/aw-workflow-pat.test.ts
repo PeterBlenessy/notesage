@@ -203,4 +203,16 @@ describe('AW workflow token convention (#118 — bot-PR CI gating)', () => {
       expect(getClaudeTokenInJob(wf.jobs[jobName])).toBe(GH_TOKEN);
     });
   });
+
+  describe('aw-ci-repair.yml — pushes fix commits to PR branches', () => {
+    const wf = loadWorkflow('aw-ci-repair');
+
+    it('the ci_repair job uses WORKFLOW_PAT for the claude-code-action github_token', () => {
+      expect(getClaudeTokenInJob(wf.jobs.ci_repair)).toBe(PAT);
+    });
+
+    it('the ci_repair job uses WORKFLOW_PAT for actions/checkout token (so push triggers pull_request:synchronize)', () => {
+      expect(getCheckoutTokenInJob(wf.jobs.ci_repair)).toBe(PAT);
+    });
+  });
 });

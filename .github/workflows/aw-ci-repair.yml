@@ -1,0 +1,147 @@
+name: AW — CI Repair
+
+# Auto-repair a bot-authored draft PR that has a recoverable CI failure
+# shape (missing PERF_BUDGET_MULTIPLIER wrap in a perf test, missing env
+# var in a workflow yml). Pushes a one-line fix commit on the same branch,
+# re-runs CI, and posts a structured comment. One repair attempt per PR.
+#
+# See .claude/skills/aw-ci-repair/SKILL.md for the full repair logic and
+# docs/agentic-workflow.md "Choice: aw-ci-repair narrow scope" for the
+# rationale behind limiting this skill to pattern A/B only.
+
+on:
+  workflow_run:
+    workflows: ["Test & Type Check"]
+    types: [completed]
+
+permissions:
+  contents: write        # push fix commit
+  pull-requests: write   # post PR comment, read PR metadata
+  issues: write          # post comments on linked issues
+  actions: read          # read workflow run logs
+  id-token: write        # claude-code-action OIDC
+
+concurrency:
+  # Shared key with pipeline + sweep + standalone for the same PR branch so
+  # only one repair runs at a time per branch. Falls back to run_id for
+  # non-PR-linked triggers. See "Choice: shared aw-stage-{stage}-{issue}
+  # concurrency group" in docs/agentic-workflow.md.
+  group: aw-stage-ci-repair-${{ github.event.workflow_run.head_branch || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  ci_repair:
+    # Only fire when:
+    # 1. The triggering workflow run failed
+    # 2. The head branch starts with 'claude/' (bot PR branch prefix)
+    # 3. The run was on a pull_request event (not a push to main)
+    # The aw-ci-repair skill itself does a second-level pre-flight check
+    # (bot-authored, draft, one-attempt cap) before making any changes.
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      startsWith(github.event.workflow_run.head_branch, 'claude/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PERF_BUDGET_MULTIPLIER: "1.5"
+    steps:
+      - name: Find PR for this branch
+        id: find_pr
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open PR found for branch $BRANCH — skipping"
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found PR #$PR for branch $BRANCH"
+            echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if no PR found
+        if: steps.find_pr.outputs.pr_number == ''
+        run: |
+          echo "No open PR for this branch — nothing to repair."
+          exit 0
+
+      # Checkout the PR's head branch (not main) so the skill can edit and push.
+      # Uses WORKFLOW_PAT so the follow-up commit push fires
+      # `pull_request: synchronize` and re-runs CI on the PR.
+      - name: Checkout PR branch
+        if: steps.find_pr.outputs.pr_number != ''
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.WORKFLOW_PAT }}
+
+      - name: Switch to PR head branch
+        if: steps.find_pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.find_pr.outputs.pr_number != ''
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v5
+        if: steps.find_pr.outputs.pr_number != ''
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        if: steps.find_pr.outputs.pr_number != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Run aw-ci-repair skill
+        if: steps.find_pr.outputs.pr_number != ''
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # WORKFLOW_PAT (not GITHUB_TOKEN) so the fix commit push triggers
+          # `pull_request: synchronize` and CI re-runs on the PR. See
+          # "Choice: WORKFLOW_PAT for bot-PR CI gating" in
+          # docs/agentic-workflow.md.
+          github_token: ${{ secrets.WORKFLOW_PAT }}
+          allowed_bots: "github-actions[bot]"
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-ci-repair` skill at `.claude/skills/aw-ci-repair/SKILL.md`
+            on PR #${{ steps.find_pr.outputs.pr_number }} in this repository
+            (PeterBlenessy/notesage).
+
+            **Failed workflow run:** ${{ github.event.workflow_run.id }}
+            **Head branch:** ${{ github.event.workflow_run.head_branch }}
+
+            The PR's branch is already checked out and dependencies are installed.
+
+            **Hard constraints:**
+            - Pre-flight first: verify the PR is a bot-authored draft with no prior
+              repair attempt (check BOTH prior repair comments AND `fix(ci):` commits).
+              If the pre-flight fails for any reason, exit silently — do NOT post a
+              comment or modify any file.
+            - Pattern A/B only: only auto-fix missing PERF_BUDGET_MULTIPLIER wraps in
+              `src/perf/**/*.ts` / `e2e/**/*.spec.ts` (Pattern A) and missing
+              PERF_BUDGET_MULTIPLIER env var in workflow YAMLs (Pattern B).
+            - For Patterns C/D/E: post a comment-only diagnosis — make zero file changes.
+            - Hard gates before pushing: ≤2 source files modified, `pnpm vitest run
+              src/lib/__tests__/no-bare-perf-budget.test.ts` passes, `pnpm typecheck`
+              passes.
+            - One commit with message:
+              `fix(ci): honour PERF_BUDGET_MULTIPLIER in <filename> (auto-repair PR #N)`
+            - On any gate failure: `git checkout -- .` and post a failure comment.
+            - NEVER push to `main`. NEVER force-push.
