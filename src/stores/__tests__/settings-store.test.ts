@@ -1113,7 +1113,7 @@ describe('uiPreview flag', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.uiPreview).toBe('legacy');
     expect(parsed.state.accent).toBe('default');
   });
@@ -1255,7 +1255,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1401,7 +1401,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1720,7 +1720,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1975,7 +1975,7 @@ describe('v8 → v9 migration (preview invitation timestamps)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.previewInvitationShownAt).toBeNull();
     expect(parsed.state.previewInvitationDismissedAt).toBeNull();
   });
@@ -2077,7 +2077,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -2148,7 +2148,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2270,7 +2270,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2292,7 +2292,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2318,7 +2318,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2460,7 +2460,7 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
   });
 });
 
@@ -2506,7 +2506,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
   });
 });
 
@@ -2553,6 +2553,54 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(16);
+    expect(parsed.version).toBe(17);
+  });
+});
+
+// ===========================================================================
+// v17 migration — htmlViewerBlockExternalResources defaults to false on upgrade
+// ===========================================================================
+
+describe('v17 migration: htmlViewerBlockExternalResources', () => {
+  function buildV16State(overrides: Record<string, unknown> = {}): string {
+    const state = {
+      theme: 'system',
+      logLevel: 'warn',
+      autoCheckUpdates: true,
+      releaseChannel: 'stable',
+      htmlViewerAllowForms: false,
+      htmlViewerAllowScripts: false,
+      ...overrides,
+    };
+    return JSON.stringify({ state, version: 16 });
+  }
+
+  it('migrates v16 state without htmlViewerBlockExternalResources to false', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV16State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(false);
+  });
+
+  it('preserves existing htmlViewerBlockExternalResources when already present', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV16State({ htmlViewerBlockExternalResources: true }));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(true);
+  });
+
+  it('bumps persisted version to 17 after migration', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV16State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(17);
   });
 });

@@ -67,6 +67,7 @@ export function HtmlViewer({
 }: HtmlViewerProps) {
   const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const allowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
+  const blockExternal = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const [sourceMode, setSourceMode] = useState(false);
   const [unsafeHtml, setUnsafeHtml] = useState<string | null>(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -89,12 +90,29 @@ export function HtmlViewer({
     const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     const fragment = bodyMatch ? bodyMatch[1] : content;
     const baseForbidTags = ["script", "iframe", "object", "embed"];
-    return DOMPurify.sanitize(fragment, {
+    // When blockExternal is ON, add a DOMPurify attribute hook that strips any
+    // attribute value pointing to an http:// or https:// URL. This prevents
+    // <img src="https://…">, <a href="https://…">, etc. from triggering
+    // outbound network requests when the sanitised HTML is rendered. Inline
+    // data: URIs and relative paths are preserved. The hook is removed
+    // immediately after sanitise() to avoid side-effects on other callers.
+    if (blockExternal) {
+      DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+        if (/^https?:\/\//i.test(data.attrValue)) {
+          data.keepAttr = false;
+        }
+      });
+    }
+    const result = DOMPurify.sanitize(fragment, {
       ALLOW_DATA_ATTR: false,
       FORBID_TAGS: allowForms ? baseForbidTags : [...baseForbidTags, ...FORM_TAGS],
       ADD_ATTR: allowForms ? FORM_ATTRS : [],
     });
-  }, [content, allowForms]);
+    if (blockExternal) {
+      DOMPurify.removeHook("uponSanitizeAttribute");
+    }
+    return result;
+  }, [content, allowForms, blockExternal]);
 
   // When allow-scripts is ON, pre-process the raw HTML: read same-directory
   // <script src="./..."> files via Tauri read_file and rewrite them as inline

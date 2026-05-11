@@ -325,6 +325,14 @@ interface SettingsStore {
    */
   htmlViewerAllowScripts: boolean;
   setHtmlViewerAllowScripts: (enabled: boolean) => void;
+  /**
+   * When true, the HTML viewer strips external resource attributes (src/href
+   * pointing to http:// or https:// URLs) via a DOMPurify hook so no network
+   * requests are made when rendering untrusted HTML. Inline data: URIs and
+   * relative paths are preserved. Default false.
+   */
+  htmlViewerBlockExternalResources: boolean;
+  setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -750,10 +758,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setHtmlViewerAllowScripts: (enabled: boolean) => {
         set({ htmlViewerAllowScripts: enabled });
       },
+
+      htmlViewerBlockExternalResources: false,
+
+      setHtmlViewerBlockExternalResources: (enabled: boolean) => {
+        set({ htmlViewerBlockExternalResources: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 16,
+      version: 17,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -907,6 +921,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // so existing users see no behaviour change after upgrade.
           if (typeof state.htmlViewerAllowScripts !== 'boolean') {
             state.htmlViewerAllowScripts = false;
+          }
+        }
+        if (version < 17) {
+          // Issue #183 — HTML viewer block external resources. Default false
+          // so existing users see no behaviour change after upgrade.
+          if (typeof state.htmlViewerBlockExternalResources !== 'boolean') {
+            state.htmlViewerBlockExternalResources = false;
           }
         }
         return state;

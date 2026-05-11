@@ -135,6 +135,8 @@ export function SystemSettings({
   const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
   const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
+  const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
+  const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
 
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -408,6 +410,18 @@ export function SystemSettings({
               id="html-viewer-allow-scripts"
               checked={htmlViewerAllowScripts}
               onCheckedChange={setHtmlViewerAllowScripts}
+            />
+          }
+        />
+        <SettingsRow
+          label="Block external resources"
+          description="When on, attributes pointing to external URLs (http:// or https://) are stripped before rendering so no outbound network requests are made. Inline data: URIs and relative paths are preserved. Off by default."
+          htmlFor="html-viewer-block-external"
+          control={
+            <Switch
+              id="html-viewer-block-external"
+              checked={htmlViewerBlockExternalResources}
+              onCheckedChange={setHtmlViewerBlockExternalResources}
             />
           }
         />

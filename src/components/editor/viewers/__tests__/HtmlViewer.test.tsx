@@ -457,3 +457,104 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe!.getAttribute("srcdoc")).toContain("window._test = 42");
   });
 });
+
+describe("HtmlViewer block-external-resources — htmlViewerBlockExternalResources", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("when OFF (default): external img src is preserved in sanitised output (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://example.com/img.png" alt="ext"/></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-off"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("https://example.com/img.png");
+  });
+
+  it("when ON: external https src on <img> is stripped (no network fetch)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://example.com/img.png" alt="ext"/></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-img"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    // The <img> element may survive (alt text etc.) but its src must be stripped
+    if (img) {
+      expect(img.getAttribute("src")).toBeNull();
+    }
+  });
+
+  it("when ON: http src on <img> is also stripped (http, not just https)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="http://example.com/img.png" alt="http"/></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-http"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    if (img) {
+      expect(img.getAttribute("src")).toBeNull();
+    }
+  });
+
+  it("when ON: data: URI img src is preserved (inline resource, not external)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="data:image/png;base64,abc123" alt="inline"/></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-data-uri"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toContain("data:");
+  });
+
+  it("when ON: relative-path img src is preserved (local resource)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="./local.png" alt="local"/></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-relative-img"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("./local.png");
+  });
+});
