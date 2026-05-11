@@ -100,6 +100,13 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        env:
+          # Honour the same perf-budget multiplier the Vitest perf harness uses
+          # (`pnpm test:perf`). CI macOS runners pace setTimeout callbacks
+          # ~1.5x slower than local AND share the runner with other jobs;
+          # without the bump, `preview-fidelity.spec.ts`'s p95 timer-delay
+          # assertion flakes in the 500–800 ms range against a 500 ms budget.
+          PERF_BUDGET_MULTIPLIER: "3"
         run: pnpm test:e2e
 
       - name: Upload Playwright report
