@@ -64,6 +64,37 @@
       }
     },
     {
+      "version": "0.44.0-alpha.3",
+      "date": "2026-05-11",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "features": [
+          "**Leave-alpha works properly now.** Switching from Alpha to Stable in Settings → Updates → Release Channel runs an immediate update check. If the latest stable is older than your current alpha (which it usually will be while alpha is ahead), a dedicated dialog asks \"Switch back to Stable?\" and explains the downgrade clearly — settings introduced in alpha may not carry over. Decline and you stay on the alpha; the app will auto-update you to stable once a stable release exceeds your alpha version. Previously, switching to Stable silently did nothing because Tauri's update check refuses downgrades by default."
+        ],
+        "improvements": [
+          "**Stable users can't be auto-upgraded to alpha builds anymore.** Defense in depth: (a) the release workflow auto-detects `-alpha`/`-beta`/`-rc` tags and flags them as prereleases — no more hardcoded `prerelease: false` shipping alphas as stable, AND (b) the in-app updater on Stable channel refuses any prerelease version regardless of what the server says. Either layer would have prevented the v0.43.0 → v0.44.0-alpha.1 mis-upgrade; both running means a single mistake can't break the guarantee. (This was the headline fix in v0.43.1; bringing it forward into the alpha track so it never regresses.)",
+          "**Alpha channel actually receives updates now.** The manifest fetch on Alpha was silently failing on a cross-origin redirect (`github.com/.../latest.json` → `release-assets.githubusercontent.com`) — WKWebView's CORS rejected the second hop. Routing the fetch through Tauri's HTTP plugin (Rust-side, no CORS) fixes the chain. Anyone on alpha.0/.1/.2 is still stranded — those binaries shipped before this fix — but from alpha.3 forward, alpha → alpha updates work via the in-app updater.",
+          "**Auto-update check fires when you change channel.** Previously you had to click \"Check for updates\" manually after switching channel. Now it fires automatically so the leave-alpha dialog (or any new-channel update) appears immediately."
+        ],
+        "fixes": [
+          "**Stable users on v0.43.0 mis-pushed to v0.44.0-alpha.1.** Root cause: alpha.0 and alpha.1 were published with `prerelease: false` (workflow bug). GitHub's `releases/latest` pointer resolved to the latest alpha and the in-app updater obediently offered it. Fixed in v0.43.1 (workflow auto-flags prereleases) and re-locked here.",
+          "**Alpha channel showed \"Up to date\" even when a new alpha existed.** Same CORS bug as above; same fix.",
+          "**Release workflow no longer leaves orphan draft releases.** alpha.2's release run created a stale draft alongside the published prerelease — `tauri-action` was creating a duplicate release entry because it got both `releaseId` AND `tagName`. Removing the duplicate args means a single release entry per tag, no manual cleanup needed."
+        ]
+      }
+    },
+    {
+      "version": "0.43.1",
+      "date": "2026-05-11",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "fixes": [
+          "**Stable users are no longer auto-upgraded to alpha builds.** Before this fix, the in-app updater on the Stable channel could offer an alpha build as an \"update\" — without the user ever switching to the Alpha channel. The cause was a workflow that published alpha tags without the prerelease flag set, so GitHub's \"latest release\" pointer resolved to an alpha. Now: (a) the release workflow auto-detects `-alpha`/`-beta`/`-rc` tag suffixes and flags them as prereleases, AND (b) the in-app updater on Stable refuses any version that looks like a prerelease, regardless of what the server says. Defense in depth — both layers have to fail for the bug to recur.",
+          "**Alpha channel actually receives updates now.** When the Alpha channel was selected, the in-app updater silently failed (spinner spun, no toast). The cause was a cross-origin redirect when fetching the alpha manifest — GitHub redirects release-asset URLs to a different host, and the renderer's `fetch()` was rejected by CORS on that hop. Now the alpha-channel manifest fetch goes through Tauri's HTTP plugin (Rust-side, no CORS) and the update offer appears as expected. For now, installing an alpha update opens the tagged release in the system browser for a manual download — full in-app install for alpha is tracked separately."
+        ]
+      }
+    },
+    {
       "version": "0.43.0",
       "date": "2026-05-10",
       "previousVersion": "0.42.0",

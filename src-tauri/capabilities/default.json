@@ -13,7 +13,8 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://github.com/PeterBlenessy/notesage/**" }
+        { "url": "https://github.com/PeterBlenessy/notesage/**" },
+        { "url": "https://release-assets.githubusercontent.com/**" }
       ]
     },
     "notification:default",

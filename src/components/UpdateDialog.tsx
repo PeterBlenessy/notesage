@@ -120,6 +120,12 @@ export function UpdateDialog({
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
 
+  // "Leave alpha" downgrade — different copy / different confirmation. The
+  // user is on a prerelease binary, switched to Stable, and the latest stable
+  // is older than their current alpha. Treat this as an explicit channel
+  // exit, not as a normal update offer.
+  const isLeaveAlphaDowngrade = updateInfo.isLeaveAlphaDowngrade === true;
+
   const releases = getChangesBetween(
     updateInfo.currentVersion,
     updateInfo.version
@@ -136,14 +142,34 @@ export function UpdateDialog({
             />
             <div>
               <DialogTitle>
-                {isDownloaded ? "Ready to Restart" : "Update Available"}
+                {isDownloaded
+                  ? "Ready to Restart"
+                  : isLeaveAlphaDowngrade
+                    ? "Switch back to Stable?"
+                    : "Update Available"}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 v{updateInfo.currentVersion} → v{updateInfo.version}
+                {isLeaveAlphaDowngrade && " (downgrade)"}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
+
+        {isLeaveAlphaDowngrade && !isDownloading && !isDownloaded ? (
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
+            <p>
+              You're running an alpha build on the Stable channel. Switching
+              back to Stable will install <strong>v{updateInfo.version}</strong>,
+              which is older than your current build.
+            </p>
+            <p>
+              Settings or data added by alpha versions may not carry over.
+              You can also stay on the alpha and wait for a stable release
+              newer than yours — Notesage will offer that automatically.
+            </p>
+          </div>
+        ) : null}
 
         <ScrollArea className="max-h-96 rounded-md border border-border p-3">
           {releases.length > 0 ? (
@@ -158,7 +184,9 @@ export function UpdateDialog({
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              A new version is available.
+              {isLeaveAlphaDowngrade
+                ? `Release notes for v${updateInfo.version}.`
+                : "A new version is available."}
             </p>
           )}
         </ScrollArea>
@@ -166,7 +194,9 @@ export function UpdateDialog({
         {isDownloading ? (
           <div className="space-y-2 py-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Downloading update...</span>
+              <span>
+                {isLeaveAlphaDowngrade ? "Switching to Stable..." : "Downloading update..."}
+              </span>
               {progress !== null && <span>{progress}%</span>}
             </div>
             <Progress value={progress ?? 0} className="h-1.5" />
@@ -193,9 +223,11 @@ export function UpdateDialog({
                 onOpenChange(false);
               }}
             >
-              Later
+              {isLeaveAlphaDowngrade ? "Stay on Alpha" : "Later"}
             </Button>
-            <Button onClick={onInstall}>Install & Restart</Button>
+            <Button onClick={onInstall}>
+              {isLeaveAlphaDowngrade ? "Switch to Stable" : "Install & Restart"}
+            </Button>
           </DialogFooter>
         )}
       </DialogContent>
