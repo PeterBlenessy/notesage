@@ -135,6 +135,8 @@ export function SystemSettings({
   const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
   const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
+  const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
+  const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
 
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -408,6 +410,18 @@ export function SystemSettings({
               id="html-viewer-allow-scripts"
               checked={htmlViewerAllowScripts}
               onCheckedChange={setHtmlViewerAllowScripts}
+            />
+          }
+        />
+        <SettingsRow
+          label="Block external resources"
+          description="When on, remote images, stylesheets, and fonts are stripped before rendering. Inline styles, data: URIs, and relative-path resources still work. Off by default."
+          htmlFor="html-viewer-block-external"
+          control={
+            <Switch
+              id="html-viewer-block-external"
+              checked={htmlViewerBlockExternalResources}
+              onCheckedChange={setHtmlViewerBlockExternalResources}
             />
           }
         />

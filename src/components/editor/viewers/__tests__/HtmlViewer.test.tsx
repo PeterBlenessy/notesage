@@ -457,3 +457,120 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe!.getAttribute("srcdoc")).toContain("window._test = 42");
   });
 });
+
+describe("HtmlViewer — block external resources — htmlViewerBlockExternalResources", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  const defaultProps = {
+    fileName,
+    filePath,
+    tabId: "tab-block-ext",
+    isDirty: false,
+    updateTabContent: vi.fn(),
+    saveFileWithContent: vi.fn(),
+  };
+
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("when OFF (default): remote https:// img src passes through sanitisation unchanged", () => {
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content='<html><body><img src="https://example.com/img.png" alt="test"/></body></html>'
+        tabId="tab-block-off"
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("https://example.com/img.png");
+  });
+
+  it("when ON: remote https:// img src is stripped before render", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content='<html><body><img src="https://example.com/img.png" alt="test"/></body></html>'
+        tabId="tab-block-https"
+      />
+    );
+    const img = document.querySelector("img");
+    // img element may still be in DOM but src attribute must be gone
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBeFalsy();
+  });
+
+  it("when ON: remote http:// img src is also stripped", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content='<html><body><img src="http://example.com/img.png" alt="test"/></body></html>'
+        tabId="tab-block-http"
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBeFalsy();
+  });
+
+  it("when ON: data: URI img src is preserved (not an external resource)", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    const dataUri = "data:image/png;base64,iVBORw0KGgo=";
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content={`<html><body><img src="${dataUri}" alt="test"/></body></html>`}
+        tabId="tab-block-data"
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe(dataUri);
+  });
+
+  it("when ON: relative path img src is preserved (not an external resource)", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content='<html><body><img src="./images/photo.jpg" alt="test"/></body></html>'
+        tabId="tab-block-rel"
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("./images/photo.jpg");
+  });
+
+  it("when ON: inline style attribute is preserved (not an external resource)", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        {...defaultProps}
+        content='<html><body><p style="color:red">Hello</p></body></html>'
+        tabId="tab-block-inline-style"
+      />
+    );
+    const p = document.querySelector("p");
+    expect(p).not.toBeNull();
+    // inline style attribute must survive (it's not an external resource)
+    expect(p!.getAttribute("style")).toContain("color");
+    expect(screen.getByText("Hello")).toBeTruthy();
+  });
+});
