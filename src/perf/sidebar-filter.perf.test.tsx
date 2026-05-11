@@ -245,8 +245,14 @@ const ITERATIONS = 5;
  * Per-test timeout. The N=2000 first-keystroke run mounts QuietSidebar 5
  * times (~1s each in jsdom) → ~5s of mount cost outside the timing window
  * + the iterations themselves. Vitest's default 5000ms is just under that.
+ *
+ * CI macos-latest under shared load runs each mount ~3–5x slower than a
+ * fresh local jsdom, so we scale by `BUDGET_MULTIPLIER` (which CI sets to
+ * 3+) — same env var the budget assertions already honor. With multiplier
+ * 3 the test-level timeout becomes 90s, which absorbs a 5x runner slowdown
+ * comfortably without slowing local runs.
  */
-const TEST_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 30_000 * BUDGET_MULTIPLIER;
 
 // ---------------------------------------------------------------------------
 // Benchmarks

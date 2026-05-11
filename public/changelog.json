@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.43.1",
+      "date": "2026-05-11",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "fixes": [
+          "**Stable users are no longer auto-upgraded to alpha builds.** Before this fix, the in-app updater on the Stable channel could offer an alpha build as an \"update\" — without the user ever switching to the Alpha channel. The cause was a workflow that published alpha tags without the prerelease flag set, so GitHub's \"latest release\" pointer resolved to an alpha. Now: (a) the release workflow auto-detects `-alpha`/`-beta`/`-rc` tag suffixes and flags them as prereleases, AND (b) the in-app updater on Stable refuses any version that looks like a prerelease, regardless of what the server says. Defense in depth — both layers have to fail for the bug to recur.",
+          "**Alpha channel actually receives updates now.** When the Alpha channel was selected, the in-app updater silently failed (spinner spun, no toast). The cause was a cross-origin redirect when fetching the alpha manifest — GitHub redirects release-asset URLs to a different host, and the renderer's `fetch()` was rejected by CORS on that hop. Now the alpha-channel manifest fetch goes through Tauri's HTTP plugin (Rust-side, no CORS) and the update offer appears as expected. For now, installing an alpha update opens the tagged release in the system browser for a manual download — full in-app install for alpha is tracked separately."
+        ]
+      }
+    },
+    {
       "version": "0.43.0",
       "date": "2026-05-10",
       "previousVersion": "0.42.0",

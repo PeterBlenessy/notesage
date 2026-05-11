@@ -71,14 +71,29 @@ jobs:
           RELEASE_NOTES: ${{ steps.release_notes.outputs.notes }}
         with:
           script: |
+            const tag = context.ref.replace('refs/tags/', '');
+
+            // HARD GUARANTEE: stable users must never be auto-pushed to a
+            // prerelease. The prerelease flag is the load-bearing signal —
+            // GitHub's `releases/latest` resolver skips prereleases, so an
+            // alpha/beta/rc tag MUST be flagged `prerelease: true` here.
+            //
+            // Before this auto-detection, the hardcoded `prerelease: false`
+            // shipped alpha.0 + alpha.1 as non-prerelease releases and stable
+            // users got auto-upgraded to alpha. See feedback_channel_isolation_hard_guarantee.md.
+            //
+            // Auto-detect from the tag suffix. Matches the semver prerelease
+            // grammar: any `-` segment after the version triple.
+            const isPrerelease = /-(alpha|beta|rc)(\.|$)/.test(tag);
+
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: `Notesage ${context.ref.replace('refs/tags/', '')}`,
+              tag_name: tag,
+              name: `Notesage ${tag}`,
               body: process.env.RELEASE_NOTES,
               draft: true,
-              prerelease: false
+              prerelease: isPrerelease
             })
             return data.id
 

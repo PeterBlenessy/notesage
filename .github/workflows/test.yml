@@ -45,7 +45,14 @@ jobs:
 
       - name: Performance benchmarks
         env:
-          PERF_BUDGET_MULTIPLIER: "3"
+          # Multiplier scales the per-test base budgets to absorb runner
+          # variance. macos-latest under shared load consistently lands
+          # 3.3-3.5x the local baseline on the markdown-parse 50KB case
+          # (873-903ms observed vs 276ms local baseline = ~3.3x), so 3x
+          # leaves no headroom and tests flake even without regressions.
+          # 4x is the documented CI maximum and absorbs current runner
+          # variance without hiding ≥25% real regressions.
+          PERF_BUDGET_MULTIPLIER: "4"
         run: pnpm test:perf
 
       - name: Upload benchmark results
