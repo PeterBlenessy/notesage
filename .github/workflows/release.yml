@@ -241,3 +241,64 @@ jobs:
               release_id: ${{ needs.create-release.outputs.release_id }},
               draft: false
             })
+
+  # Rolling pointer for the in-app alpha-channel auto-updater. The app
+  # (`src/hooks/useAutoUpdate.ts`) hits a static URL for the alpha channel:
+  # https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json
+  # — that resolves only if a release with tag `latest-alpha` exists and
+  # carries the freshest alpha's assets. This job re-creates that release
+  # on every alpha tag so the URL keeps resolving to the latest manifest.
+  #
+  # Stable releases skip this — the stable channel uses
+  # `releases/latest/download/latest.json` which GitHub resolves
+  # automatically (latest non-prerelease release).
+  update-latest-alpha:
+    needs: [create-release, build-tauri, publish-release]
+    if: contains(github.ref_name, '-alpha')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download alpha release assets
+        run: |
+          mkdir -p /tmp/alpha-assets
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir /tmp/alpha-assets
+          ls -la /tmp/alpha-assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Replace latest-alpha rolling release
+        run: |
+          # Delete the previous rolling release if it exists (best-effort —
+          # first alpha after this workflow lands will skip the delete cleanly).
+          gh release delete latest-alpha \
+            --repo "${GITHUB_REPOSITORY}" \
+            --yes \
+            --cleanup-tag || true
+
+          # Re-create pointing at this alpha tag's commit. MUST be flagged
+          # as prerelease — otherwise GitHub's `releases/latest` resolver
+          # would pick this up as "latest stable" (it sorts by published_at
+          # date, ignoring tag-name conventions) and stable-channel users
+          # would silently receive alpha builds. The alpha-channel URL is
+          # a direct asset path (`releases/download/latest-alpha/latest.json`)
+          # which works regardless of the prerelease flag.
+          gh release create latest-alpha \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "Latest Alpha (rolling pointer)" \
+            --prerelease \
+            --notes "Rolling release used by the Notesage alpha-channel auto-updater. Always points at the most recent alpha build.
+
+          **Currently points at:** [${GITHUB_REF_NAME}](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME})
+
+          Do not delete. This release's assets are overwritten by the release workflow on every alpha tag." \
+            /tmp/alpha-assets/*
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
