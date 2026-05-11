@@ -133,6 +133,7 @@ pub fn run() {
             import_pptx_template,
             list_pptx_templates,
             delete_pptx_template,
+            migrate_user_content_paths,
             watch_directory,
             unwatch_directory,
             mark_self_write,

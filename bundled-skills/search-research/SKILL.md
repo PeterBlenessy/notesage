@@ -13,8 +13,8 @@ Search through saved research files to find articles, notes, and sources by topi
 1. **Get the search query.** Ask the user what they're looking for — a topic, tag name, keyword, or phrase.
 
 2. **Determine search directories.** Gather all research directories to search:
-   - For each open project in the workspace: `<project_path>/.notesage/research/`
-   - Global research directory: `~/Notesage/.notesage/research/`
+   - For each open project in the workspace: `<project_path>/research/`
+   - Global research directory: `~/Notesage/research/`
    - Only include directories that exist.
 
 3. **Run the search script:**

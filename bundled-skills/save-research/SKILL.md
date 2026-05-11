@@ -20,7 +20,7 @@ Save and organize research content with structured metadata — pasted text, URL
    - **Title** (optional) — a descriptive title. If not provided, the script will try to extract one from existing frontmatter or use "untitled-research"
    - **Author** (optional) — the content author
 
-3. **Determine the output directory.** Default to `.notesage/research/` in the current project. If no project is open, use `~/Notesage/.notesage/research/`. Always confirm the output directory with the user before proceeding.
+3. **Determine the output directory.** Default to `research/` in the current project (e.g. `<project>/research/`). If no project is open, use `~/Notesage/research/`. Always confirm the output directory with the user before proceeding.
 
 4. **If the input is a URL**, run the `download-webpage` skill first:
    ```
