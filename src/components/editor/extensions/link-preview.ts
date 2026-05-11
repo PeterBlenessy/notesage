@@ -184,10 +184,8 @@ export const LinkPreview = Node.create({
           if (title) lines.push(`> **${title}**`);
           if (description) lines.push(`> ${description}`);
           if (siteName) lines.push(`> ${siteName}`);
-          // Persist image/favicon URLs as hidden metadata lines
           if (imageUrl) lines.push(`> <!--image:${imageUrl}-->`);
           if (faviconUrl) lines.push(`> <!--favicon:${faviconUrl}-->`);
-          // Persist block width/alignment as hidden metadata
           if (blockWidth != null || align != null) {
             const parts: string[] = [];
             if (blockWidth != null) parts.push(`blockWidth:${blockWidth}`);

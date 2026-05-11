@@ -46,6 +46,44 @@ export function resetZoom(): void {
 }
 
 /**
+ * A "zoom controller" lets non-markdown viewers (PDF, EPUB, HTML, …) take
+ * over the ⌘+ / ⌘- / ⌘0 chords while the user is looking at their content.
+ *
+ * Each viewer calls `registerZoomController({ in, out, reset })` on mount and
+ * the returned cleanup on unmount. While a controller is registered,
+ * `fireZoom('in' | 'out' | 'reset')` routes to it. When nothing is
+ * registered, the chords fall through to the markdown editor zoom (the three
+ * module-level helpers above).
+ *
+ * Only one viewer is mounted per active tab at any moment, so the simple
+ * single-slot pattern is enough — no priority queue needed.
+ */
+export interface ZoomController {
+  in: () => void;
+  out: () => void;
+  reset: () => void;
+}
+
+let activeController: ZoomController | null = null;
+
+export function registerZoomController(c: ZoomController): () => void {
+  activeController = c;
+  return () => {
+    if (activeController === c) activeController = null;
+  };
+}
+
+export function fireZoom(action: "in" | "out" | "reset"): void {
+  if (activeController) {
+    activeController[action]();
+    return;
+  }
+  if (action === "in") increaseZoom();
+  else if (action === "out") decreaseZoom();
+  else resetZoom();
+}
+
+/**
  * React hook that exposes the current zoom value and the three action
  * functions. Re-renders whenever zoom changes.
  *

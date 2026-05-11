@@ -13,7 +13,9 @@
   white-space: pre-wrap;
   /* Base font from paragraph preset (legacy vars kept for backwards compat) */
   font-family: var(--ns-paragraph-font-family, var(--editor-font-family));
-  font-size: calc(var(--ns-paragraph-font-size, var(--editor-font-size, 16px)) * var(--editor-zoom-multiplier, 1));
+  /* Base font size — view-zoom is applied via CSS `zoom` on the editor
+     wrapper, so we don't need to multiply here (would compound the scale). */
+  font-size: var(--ns-paragraph-font-size, var(--editor-font-size, 16px));
   line-height: var(--ns-paragraph-line-height, var(--editor-line-height, 1.7));
   letter-spacing: -0.01em;
   caret-color: var(--color-primary);
@@ -583,6 +585,37 @@
   height: auto;
   border-radius: 8px;
   box-shadow: 0 1px 3px 0 var(--color-shadow), 0 1px 2px -1px var(--color-shadow);
+}
+
+/* ----------------------------------------------------------------
+   Embedded media blocks — consistent breathing room
+   ----------------------------------------------------------------
+   Images, charts, drawings, and link-preview cards all sit between
+   paragraphs of text. Default paragraph spacing (~1 em) makes them feel
+   crowded against the surrounding prose; bumping their vertical margin
+   to 1.75em gives the blocks visual presence. Single source of truth so
+   the four surfaces stay aligned — do NOT add per-component Tailwind
+   `my-*` utilities on top of this. */
+.ProseMirror img,
+.ProseMirror .chart-block,
+.ProseMirror .drawing-node-view,
+.ProseMirror .link-preview-wrapper {
+  margin-top: 1.75em;
+  margin-bottom: 1.75em;
+}
+
+/* First / last child shouldn't push extra space against the document edge. */
+.ProseMirror > img:first-child,
+.ProseMirror > .chart-block:first-child,
+.ProseMirror > .drawing-node-view:first-child,
+.ProseMirror > .link-preview-wrapper:first-child {
+  margin-top: 0;
+}
+.ProseMirror > img:last-child,
+.ProseMirror > .chart-block:last-child,
+.ProseMirror > .drawing-node-view:last-child,
+.ProseMirror > .link-preview-wrapper:last-child {
+  margin-bottom: 0;
 }
 
 /* Tables */

@@ -21,7 +21,8 @@ const OUTPUT_DIR = join(import.meta.dirname, '..', 'public');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
 
 function parseVersion(filename: string): string | null {
-  const match = filename.match(/release-v([\d.]+)\.md$/);
+  // Accepts stable (`0.43.0`) and pre-release (`0.44.0-alpha.0`) suffixes.
+  const match = filename.match(/release-v([\d.]+(?:-[\w.]+)?)\.md$/);
   return match ? match[1] : null;
 }
 
@@ -84,7 +85,7 @@ function compareVersions(a: string, b: string): number {
 
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
-    (f) => f.match(/^\d+-release-v[\d.]+\.md$/)
+    (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
   );
 
   const releases: ReleaseEntry[] = [];

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "@/test/tauri-mock";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
@@ -19,7 +20,7 @@ describe("HtmlViewer", () => {
   const filePath = "/path/to/page.html";
   const fileName = "page.html";
 
-  it("renders an iframe in rendered mode by default", () => {
+  it("renders the sanitised HTML body inline by default", () => {
     render(
       <HtmlViewer
         content={htmlContent}
@@ -31,15 +32,17 @@ describe("HtmlViewer", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    // Should show an iframe for rendered mode
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
+    // The rendered surface is a sanitised inline div, not an iframe.
+    // (PR rewrite: iframe forwarding caused Cmd+T / app shortcut breakage.)
+    expect(document.querySelector("iframe")).toBeNull();
+    // The body content should appear in the rendered surface.
+    expect(screen.getByText("Hello")).toBeTruthy();
   });
 
-  it("iframe has sandbox='allow-same-origin' without allow-scripts", () => {
+  it("strips scripts from rendered output (sanitisation)", () => {
     render(
       <HtmlViewer
-        content={htmlContent}
+        content="<html><body><h1>Title</h1><script>alert(1)</script></body></html>"
         fileName={fileName}
         filePath={filePath}
         tabId="tab-2"
@@ -48,11 +51,8 @@ describe("HtmlViewer", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).toContain("allow-same-origin");
-    expect(sandbox).not.toContain("allow-scripts");
+    // No <script> should make it through DOMPurify.
+    expect(document.querySelector("script")).toBeNull();
   });
 
   it("shows a toggle button to switch between rendered and source modes", () => {
@@ -113,12 +113,14 @@ describe("HtmlViewer", () => {
     // Click again to return to rendered mode (re-query the new button)
     fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
     expect(screen.queryByTestId("code-editor")).toBeNull();
-    expect(document.querySelector("iframe")).not.toBeNull();
+    // Inline-rendered body is back, and the rendered text is visible.
+    expect(screen.getByText("Hello")).toBeTruthy();
   });
 });
 
-describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
-  const htmlContent = "<html><body><form action='/submit'><input type='submit'/></form></body></html>";
+describe("HtmlViewer form sanitisation — htmlViewerAllowForms", () => {
+  const htmlContent =
+    "<html><body><h1>Page</h1><form action='/submit'><input type='text' name='q'/><button type='submit'>Go</button></form></body></html>";
   const filePath = "/path/to/form.html";
   const fileName = "form.html";
 
@@ -127,7 +129,7 @@ describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
     useSettingsStore.setState({ htmlViewerAllowForms: false } as Parameters<typeof useSettingsStore.setState>[0]);
   });
 
-  it("excludes allow-forms and allow-top-navigation-by-user-activation by default (regression guard)", () => {
+  it("strips <form> + form controls by default (regression guard)", () => {
     render(
       <HtmlViewer
         content={htmlContent}
@@ -139,14 +141,14 @@ describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).not.toContain("allow-forms");
-    expect(sandbox).not.toContain("allow-top-navigation-by-user-activation");
+    // Surrounding markup still renders — only the form subtree is gone.
+    expect(screen.getByText("Page")).toBeTruthy();
+    expect(document.querySelector("form")).toBeNull();
+    expect(document.querySelector("input")).toBeNull();
+    expect(document.querySelector("button[type='submit']")).toBeNull();
   });
 
-  it("includes allow-forms in sandbox when htmlViewerAllowForms is true", () => {
+  it("preserves <form> + form controls when htmlViewerAllowForms is true", () => {
     useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
     render(
       <HtmlViewer
@@ -159,56 +161,39 @@ describe("HtmlViewer sandbox attribute — htmlViewerAllowForms", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).toContain("allow-forms");
+    const form = document.querySelector("form");
+    expect(form).not.toBeNull();
+    // The action attribute must round-trip — that's the actual submit target.
+    expect(form!.getAttribute("action")).toBe("/submit");
+    const input = document.querySelector("input");
+    expect(input).not.toBeNull();
+    expect(input!.getAttribute("name")).toBe("q");
+    expect(document.querySelector("button[type='submit']")).not.toBeNull();
   });
 
-  it("includes allow-top-navigation-by-user-activation in sandbox when htmlViewerAllowForms is true", () => {
+  it("still strips <script> when htmlViewerAllowForms is true (regression guard)", () => {
     useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
     render(
       <HtmlViewer
-        content={htmlContent}
+        content="<html><body><form><input/></form><script>alert(1)</script></body></html>"
         fileName={fileName}
         filePath={filePath}
-        tabId="tab-forms-nav"
+        tabId="tab-forms-script"
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
       />
     );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).toContain("allow-top-navigation-by-user-activation");
-  });
-
-  it("still includes allow-same-origin when htmlViewerAllowForms is true (regression guard)", () => {
-    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
-    render(
-      <HtmlViewer
-        content={htmlContent}
-        fileName={fileName}
-        filePath={filePath}
-        tabId="tab-forms-same-origin"
-        isDirty={false}
-        updateTabContent={vi.fn()}
-        saveFileWithContent={vi.fn()}
-      />
-    );
-    const iframe = document.querySelector("iframe");
-    expect(iframe).not.toBeNull();
-    const sandbox = iframe!.getAttribute("sandbox");
-    expect(sandbox).toContain("allow-same-origin");
+    expect(document.querySelector("script")).toBeNull();
+    expect(document.querySelector("form")).not.toBeNull();
   });
 });
 
 describe("PlainTextViewer routing for HTML files", () => {
-  it("routes .html files to HtmlViewer (shows iframe, not code-editor)", () => {
+  it("routes .html files to HtmlViewer (renders inline body, not code-editor)", () => {
     render(
       <PlainTextViewer
-        content="<html><body>Hello</body></html>"
+        content="<html><body><span>Hello</span></body></html>"
         fileName="index.html"
         filePath="/path/index.html"
         tabId="tab-html"
@@ -217,15 +202,15 @@ describe("PlainTextViewer routing for HTML files", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    // Should show iframe (HtmlViewer rendered mode), not CodeEditor
-    expect(document.querySelector("iframe")).not.toBeNull();
+    // Inline-rendered body, not CodeEditor.
+    expect(screen.getByText("Hello")).toBeTruthy();
     expect(screen.queryByTestId("code-editor")).toBeNull();
   });
 
-  it("routes .htm files to HtmlViewer (shows iframe, not code-editor)", () => {
+  it("routes .htm files to HtmlViewer (renders inline body, not code-editor)", () => {
     render(
       <PlainTextViewer
-        content="<html><body>Hello</body></html>"
+        content="<html><body><span>Hello</span></body></html>"
         fileName="page.htm"
         filePath="/path/page.htm"
         tabId="tab-htm"
@@ -234,7 +219,7 @@ describe("PlainTextViewer routing for HTML files", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    expect(document.querySelector("iframe")).not.toBeNull();
+    expect(screen.getByText("Hello")).toBeTruthy();
     expect(screen.queryByTestId("code-editor")).toBeNull();
   });
 

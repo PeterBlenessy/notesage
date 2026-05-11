@@ -326,9 +326,15 @@ test.describe('Large-file instant-load preview (Phase 1)', () => {
     const p95 = delays[Math.floor(delays.length * 0.95)];
 
     // Pre-Phase-2 baseline (worker-fallback): ~5000 ms blocked.
-    // Post-Phase-2 small fixture: should be << 500 ms — the fixture is tiny
-    // so the DOM materialization is cheap. Assert a generous ceiling.
-    expect(p95).toBeLessThan(500);
+    // Post-Phase-2 small fixture: should be << 500 ms locally — the fixture
+    // is tiny so the DOM materialization is cheap. CI macOS runners pace
+    // timers ~1.5x slower than local (see sample-count tuning comment above)
+    // AND share the runner with other jobs, so the same p95 lands in the
+    // 500–800 ms range. Honour `PERF_BUDGET_MULTIPLIER` the same way the
+    // Vitest perf harness does so CI can relax the budget without changing
+    // local behaviour.
+    const multiplier = Number(process.env.PERF_BUDGET_MULTIPLIER) || 1;
+    expect(p95).toBeLessThan(500 * multiplier);
   });
 });
 

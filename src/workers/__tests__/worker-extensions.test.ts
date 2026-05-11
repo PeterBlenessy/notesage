@@ -36,7 +36,7 @@ describe("worker-extensions schema fingerprint", () => {
     const fingerprint = `${CACHE_SCHEMA_VERSION}|${names.join("|")}`;
 
     expect(fingerprint).toMatchInlineSnapshot(
-      `"1|callout|chart|codeBlock|color|drawing|heading|highlight|image|linkPreview|mermaidBlock|pageBreak|paragraph|starterKit|subscript|superscript|table|tableCell|tableHeader|tableOfContents|tableRow|taskItem|taskList|textAlign|textStyle|uniqueID"`,
+      `"3|callout|chart|codeBlock|color|drawing|heading|highlight|image|linkPreview|mermaidBlock|pageBreak|paragraph|starterKit|subscript|superscript|table|tableCell|tableHeader|tableOfContents|tableRow|taskItem|taskList|textAlign|textStyle|uniqueID"`,
     );
   });
 });

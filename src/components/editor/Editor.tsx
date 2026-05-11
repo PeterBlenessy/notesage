@@ -47,7 +47,6 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
-import { BlockSizeToolbar } from "./BlockSizeToolbar";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
@@ -731,6 +730,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 '--editor-padding-left': paddingLeft,
                 '--editor-padding-right': paddingRight,
                 '--editor-zoom-multiplier': String(editorZoom),
+                // CSS `zoom` only when actually zoomed — applying `zoom: 1`
+                // unconditionally triggers WebKit layout containment for
+                // every descendant and slows file-load 2-3x on large docs.
+                ...(editorZoom !== 1 ? { zoom: editorZoom } : {}),
                 ...typographyCssVars,
                 ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
               } as React.CSSProperties & Record<`--${string}`, string | undefined>}
@@ -761,7 +764,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
           {editor && <TableHeaderMenu editor={editor} />}
-          {editor && <BlockSizeToolbar editor={editor} />}
           {hfEditState && createPortal(
             <PageHeaderFooterEditor
               type={hfEditState.type}

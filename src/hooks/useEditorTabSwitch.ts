@@ -376,11 +376,25 @@ export function useEditorTabSwitch({
           // Cache HIT — show cached HTML immediately as static preview.
           const paintT0 = performance.now();
           useEditorStore.getState().setPreview(tabIdOnEntry, cached.html);
-          // Restore scroll position from the cached snapshot.
+          // Restore scroll position. Prefer the live saved RATIO (tracked on
+          // every scroll, debounced 150 ms in `useScrollPersistence`) over
+          // `cached.scrollY` which is only captured 5 s after an EDIT and
+          // goes stale if the user scrolled to a new position without
+          // editing — that staleness was the "opens some paragraphs down"
+          // bug. Fallback to the cached pixel position only if no ratio is
+          // saved yet.
+          const savedRatio =
+            useEditorStore.getState().scrollPositions[activeTab.filePath];
           requestAnimationFrame(() => {
-            if (scrollAreaRef.current) {
-              scrollAreaRef.current.scrollTop = cached.scrollY;
-              scrollAreaRef.current.style.opacity = '1';
+            const el = scrollAreaRef.current;
+            if (el) {
+              if (savedRatio !== undefined) {
+                const maxScroll = el.scrollHeight - el.clientHeight;
+                el.scrollTop = savedRatio * Math.max(0, maxScroll);
+              } else {
+                el.scrollTop = cached.scrollY;
+              }
+              el.style.opacity = '1';
             }
             log.debug("perf:doc-switch", "Viewport cache hit — first paint", {
               file: fileName,

@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Globe, ExternalLink } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 
 type CardState = "input" | "loading" | "loaded" | "error";
 
@@ -165,9 +166,26 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
       {/* Loaded card */}
       {state === "loaded" && (
         <div
-          className="border border-border rounded-lg p-4 cursor-pointer transition-colors duration-150 hover:bg-muted/50 group"
+          className="relative border border-border rounded-lg p-4 cursor-pointer transition-colors duration-150 hover:bg-muted/50 group"
           onClick={handleClick}
         >
+          {/* Width + alignment controls — bottom-right hover overlay,
+              consistent with chart and drawing nodes. */}
+          {(() => {
+            const pos = getPos();
+            if (typeof pos !== "number") return null;
+            return (
+              <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                <BlockSizeControls
+                  editor={editor}
+                  pos={pos}
+                  node={node}
+                  blockWidth={blockWidth}
+                  align={align}
+                />
+              </div>
+            );
+          })()}
           {/* Site name + favicon */}
           <div className="flex items-center gap-1.5 mb-2">
             {faviconUrl && !faviconError ? (

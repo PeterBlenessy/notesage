@@ -13,6 +13,7 @@ import { getBinaryData } from "@/lib/binary-cache";
 import { FindBar } from "@/components/editor/FindBar";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { usePdfStore } from "@/stores/pdf-store";
+import { registerZoomController } from "@/hooks/useEditorZoom";
 import { cn } from "@/lib/utils";
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
@@ -628,6 +629,23 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     setZoomIndex(DEFAULT_ZOOM_INDEX);
     pdfStore.setZoomIndex(DEFAULT_ZOOM_INDEX);
   };
+
+  const resetZoom = () => {
+    setFitMode(null);
+    pdfStore.setFitMode(null);
+    setZoomIndex(DEFAULT_ZOOM_INDEX);
+    pdfStore.setZoomIndex(DEFAULT_ZOOM_INDEX);
+  };
+
+  // ⌘+ / ⌘- / ⌘0 — route the global zoom chord to this viewer's zoom while
+  // a PDF tab is open. Cleanup on unmount restores the markdown editor zoom.
+  useEffect(() => {
+    return registerZoomController({
+      in: zoomIn,
+      out: zoomOut,
+      reset: resetZoom,
+    });
+  }, []);
 
   // Compute display zoom percentage
   const getDisplayZoom = useCallback(() => {
