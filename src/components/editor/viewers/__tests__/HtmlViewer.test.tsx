@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
@@ -68,8 +68,8 @@ describe("HtmlViewer", () => {
         saveFileWithContent={vi.fn()}
       />
     );
-    // There should be a toggle button
-    const toggleButton = screen.getByRole("button", { name: /source|rendered|code|preview/i });
+    // There should be a source-view toggle button in rendered mode
+    const toggleButton = screen.getByRole("button", { name: /switch to source view/i });
     expect(toggleButton).toBeTruthy();
   });
 
@@ -88,8 +88,8 @@ describe("HtmlViewer", () => {
     // Initially in rendered mode — no code editor
     expect(screen.queryByTestId("code-editor")).toBeNull();
 
-    // Click toggle to source mode
-    const toggleButton = screen.getByRole("button", { name: /source|rendered|code|preview/i });
+    // Click source toggle
+    const toggleButton = screen.getByRole("button", { name: /switch to source view/i });
     fireEvent.click(toggleButton);
 
     // Should now show CodeEditor
@@ -109,10 +109,10 @@ describe("HtmlViewer", () => {
       />
     );
     // Click to enter source mode
-    fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /switch to source view/i }));
     expect(screen.getByTestId("code-editor")).toBeTruthy();
-    // Click again to return to rendered mode (re-query the new button)
-    fireEvent.click(screen.getByRole("button", { name: /source|rendered|code|preview/i }));
+    // Click the rendered-view button to return
+    fireEvent.click(screen.getByRole("button", { name: /switch to rendered view/i }));
     expect(screen.queryByTestId("code-editor")).toBeNull();
     // Inline-rendered body is back, and the rendered text is visible.
     expect(screen.getByText("Hello")).toBeTruthy();
@@ -349,5 +349,111 @@ describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
       const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
       expect(srcdoc).toContain("console.log('local-script-executed')");
     });
+  });
+});
+
+describe("HtmlViewer — Unsafe preview mode", () => {
+  const htmlWithScript =
+    '<html><body><h1>CDN App</h1><script src="https://cdn.example.com/lib.js"></script></body></html>';
+  const fileName = "app.html";
+  const filePath = "/path/to/app.html";
+
+  // Unsafe-mode tests must run with the `htmlViewerAllowScripts` setting OFF
+  // so the setting-driven iframe path doesn't preempt the toolbar-toggle path.
+  // The setting is a sticky persisted value; reset before AND after each test.
+  beforeEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  const defaultProps = {
+    content: htmlWithScript,
+    fileName,
+    filePath,
+    tabId: "tab-unsafe-1",
+    isDirty: false,
+    updateTabContent: vi.fn(),
+    saveFileWithContent: vi.fn(),
+  };
+
+  it("renders an 'Unsafe preview mode' toggle button in the toolbar (default OFF)", () => {
+    render(<HtmlViewer {...defaultProps} />);
+    // The toggle must exist in the rendered-mode toolbar
+    const toggle = screen.getByRole("button", { name: /unsafe preview/i });
+    expect(toggle).toBeTruthy();
+    // No iframe by default — DOMPurify safe mode is active
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("clicking the Unsafe preview toggle shows a security acknowledgment dialog", () => {
+    render(<HtmlViewer {...defaultProps} />);
+    const toggle = screen.getByRole("button", { name: /unsafe preview/i });
+    fireEvent.click(toggle);
+    // AlertDialog must appear with a recognisable warning
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    // Dialog must offer Accept and Cancel actions
+    expect(screen.getByRole("button", { name: /accept|enable|confirm/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
+  });
+
+  it("accepting the dialog renders raw HTML in a sandboxed iframe (allow-scripts)", () => {
+    render(<HtmlViewer {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    // An iframe must replace the dangerouslySetInnerHTML div
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    // sandbox must be exactly allow-scripts (no allow-same-origin)
+    expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
+    // The raw HTML (including the CDN script tag) must be in srcdoc — not stripped
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("cdn.example.com");
+    expect(srcdoc).toContain("CDN App");
+  });
+
+  it("cancelling the dialog keeps DOMPurify safe mode active — no iframe", () => {
+    render(<HtmlViewer {...defaultProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    // No iframe — DOMPurify path remains
+    expect(document.querySelector("iframe")).toBeNull();
+    // Scripts are still stripped
+    expect(document.querySelector("script")).toBeNull();
+  });
+
+  it("unsafe mode resets to OFF when tabId changes (session-only)", () => {
+    const { rerender } = render(<HtmlViewer {...defaultProps} tabId="tab-a" />);
+    // Activate unsafe mode
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    expect(document.querySelector("iframe")).not.toBeNull();
+
+    // Simulate tab switch by changing tabId
+    rerender(<HtmlViewer {...defaultProps} tabId="tab-b" />);
+    // Unsafe mode must reset — no iframe
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("DOMPurify path unchanged — script tags stripped when unsafe mode is OFF (regression guard)", () => {
+    render(<HtmlViewer {...defaultProps} />);
+    // No unsafe mode activation — safe path only
+    expect(document.querySelector("script")).toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+    // The non-script content is still rendered
+    expect(screen.getByText("CDN App")).toBeTruthy();
+  });
+
+  it("unsafe mode iframe passes the full raw HTML content through without sanitisation", () => {
+    const inlineScript =
+      '<html><body><h1>Inline</h1><script>window._test = 42;</script></body></html>';
+    render(<HtmlViewer {...defaultProps} content={inlineScript} />);
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    // Raw inline script is preserved in srcdoc
+    expect(iframe!.getAttribute("srcdoc")).toContain("window._test = 42");
   });
 });
