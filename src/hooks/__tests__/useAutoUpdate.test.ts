@@ -20,8 +20,8 @@ const {
   mockRelaunch,
   mockSetLastUpdateCheck,
   mockSetDismissedVersion,
-  mockTauriFetch,
-  mockOpenUrl,
+  mockInvoke,
+  StubUpdate,
   channelRef,
   autoCheckRef,
 } = vi.hoisted(() => {
@@ -30,13 +30,39 @@ const {
   const mockRelaunch = vi.fn();
   const mockSetLastUpdateCheck = vi.fn();
   const mockSetDismissedVersion = vi.fn();
-  // `tauriFetch` from `@tauri-apps/plugin-http` — used by the alpha-channel
-  // manifest fetch (routes through Rust to bypass WKWebView CORS on the
-  // cross-origin redirect from github.com → release-assets.githubusercontent.com).
-  const mockTauriFetch = vi.fn();
-  // `openUrl` from `@tauri-apps/plugin-opener` — used when the alpha-channel
-  // install path opens the tagged release in the system browser.
-  const mockOpenUrl = vi.fn();
+  // `invoke` from `@tauri-apps/api/core` — the alpha-channel check now
+  // calls our custom Rust command `alpha_check(url)` which drives
+  // plugin-updater's `UpdaterBuilder` with the alpha rolling-pointer URL
+  // and returns `Option<UpdateMetadata>` (same shape plugin-updater's
+  // own `check()` returns).
+  const mockInvoke = vi.fn();
+  // Stub for `Update` (the real class extends Resource and has a private
+  // rid; we just need a constructor + downloadAndInstall on the JS side).
+  class StubUpdate {
+    rid: number;
+    currentVersion: string;
+    version: string;
+    date?: string;
+    body?: string;
+    rawJson: Record<string, unknown>;
+    downloadAndInstall: ReturnType<typeof vi.fn>;
+    constructor(metadata: {
+      rid: number;
+      currentVersion: string;
+      version: string;
+      date?: string;
+      body?: string;
+      rawJson: Record<string, unknown>;
+    }) {
+      this.rid = metadata.rid;
+      this.currentVersion = metadata.currentVersion;
+      this.version = metadata.version;
+      this.date = metadata.date;
+      this.body = metadata.body;
+      this.rawJson = metadata.rawJson;
+      this.downloadAndInstall = vi.fn().mockResolvedValue(undefined);
+    }
+  }
   // Writable refs so individual tests can change channel/autoCheck
   const channelRef = { value: 'stable' as 'stable' | 'alpha' };
   const autoCheckRef = { value: false };
@@ -46,8 +72,8 @@ const {
     mockRelaunch,
     mockSetLastUpdateCheck,
     mockSetDismissedVersion,
-    mockTauriFetch,
-    mockOpenUrl,
+    mockInvoke,
+    StubUpdate,
     channelRef,
     autoCheckRef,
   };
@@ -59,22 +85,19 @@ const {
 
 vi.mock('@tauri-apps/plugin-updater', () => ({
   check: mockCheck,
+  Update: StubUpdate,
 }));
 
 vi.mock('@tauri-apps/api/app', () => ({
   getVersion: mockGetVersion,
 }));
 
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: mockInvoke,
+}));
+
 vi.mock('@tauri-apps/plugin-process', () => ({
   relaunch: mockRelaunch,
-}));
-
-vi.mock('@tauri-apps/plugin-http', () => ({
-  fetch: mockTauriFetch,
-}));
-
-vi.mock('@tauri-apps/plugin-opener', () => ({
-  openUrl: mockOpenUrl,
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -121,16 +144,6 @@ function buildTauriUpdate(version: string) {
   };
 }
 
-function buildAlphaManifest(version: string, url = 'https://example.com/app.tar.gz') {
-  return {
-    version,
-    notes: `Alpha release notes for ${version}`,
-    pub_date: '2026-05-09T00:00:00Z',
-    platforms: {
-      'darwin-aarch64': { signature: 'fakesig', url },
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -142,9 +155,24 @@ beforeEach(() => {
   autoCheckRef.value = false;
   mockCheck.mockResolvedValue(null);
   mockGetVersion.mockResolvedValue('0.42.0');
-  mockTauriFetch.mockReset();
-  mockOpenUrl.mockReset();
+  mockInvoke.mockReset();
 });
+
+/**
+ * Build a stub `AlphaUpdateMetadata` payload matching the shape our Rust
+ * `alpha_check` command returns. Used by alpha-channel tests to mock the
+ * invoke result.
+ */
+function buildAlphaMetadata(version: string, currentVersion = '0.42.0') {
+  return {
+    rid: 1,
+    currentVersion,
+    version,
+    date: '2026-05-09T00:00:00Z',
+    body: `Alpha release notes for ${version}`,
+    rawJson: { version },
+  };
+}
 
 // ===========================================================================
 // ALPHA_UPDATE_ENDPOINT constant
@@ -179,7 +207,7 @@ describe('stable channel (regression guard)', () => {
     expect(mockCheck).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT call the alpha-channel HTTP fetch when channel is stable', async () => {
+  it('does NOT invoke alpha_check when channel is stable', async () => {
     channelRef.value = 'stable';
     mockCheck.mockResolvedValue(null);
 
@@ -188,7 +216,7 @@ describe('stable channel (regression guard)', () => {
       await result.current.checkForUpdate();
     });
 
-    expect(mockTauriFetch).not.toHaveBeenCalled();
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 
   it('returns available status when Tauri check returns update', async () => {
@@ -210,31 +238,28 @@ describe('stable channel (regression guard)', () => {
 // ===========================================================================
 
 describe('alpha channel', () => {
-  function mockAlphaFetchOk(version: string) {
-    mockTauriFetch.mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue(buildAlphaManifest(version)),
-    });
-  }
-
-  it('fetches from ALPHA_UPDATE_ENDPOINT via the Tauri HTTP plugin', async () => {
+  it('invokes alpha_check with ALPHA_UPDATE_ENDPOINT', async () => {
     channelRef.value = 'alpha';
-    mockAlphaFetchOk('0.43.0-alpha.1');
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
       await result.current.checkForUpdate();
     });
 
-    // Tauri plugin-http fetch — Rust-routed, bypasses WKWebView CORS on the
-    // cross-origin redirect from github.com → release-assets.githubusercontent.com.
-    expect(mockTauriFetch).toHaveBeenCalledTimes(1);
-    expect(mockTauriFetch).toHaveBeenCalledWith(ALPHA_UPDATE_ENDPOINT);
+    // Custom Rust command — wraps plugin-updater's UpdaterBuilder with the
+    // alpha rolling-pointer URL and returns a `Resource` rid that maps back
+    // to a real Update inside Tauri's resources_table. Lets us reuse the
+    // same install pipeline as the stable channel.
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith('alpha_check', {
+      url: ALPHA_UPDATE_ENDPOINT,
+    });
   });
 
   it('does NOT call Tauri check() when channel is alpha', async () => {
     channelRef.value = 'alpha';
-    mockAlphaFetchOk('0.43.0-alpha.1');
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -244,10 +269,9 @@ describe('alpha channel', () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  it('sets status available when alpha manifest has newer version', async () => {
+  it('sets status available when alpha_check returns metadata', async () => {
     channelRef.value = 'alpha';
-    mockGetVersion.mockResolvedValue('0.42.0');
-    mockAlphaFetchOk('0.43.0-alpha.1');
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1', '0.42.0'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -256,12 +280,12 @@ describe('alpha channel', () => {
 
     expect(result.current.state.status).toBe('available');
     expect(result.current.state.updateInfo?.version).toBe('0.43.0-alpha.1');
+    expect(result.current.state.updateInfo?.currentVersion).toBe('0.42.0');
   });
 
-  it('sets status idle when alpha manifest version matches current', async () => {
+  it('sets status idle when alpha_check returns null (no update)', async () => {
     channelRef.value = 'alpha';
-    mockGetVersion.mockResolvedValue('0.43.0-alpha.1');
-    mockAlphaFetchOk('0.43.0-alpha.1');
+    mockInvoke.mockResolvedValue(null);
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -272,26 +296,9 @@ describe('alpha channel', () => {
     expect(result.current.state.updateInfo).toBeNull();
   });
 
-  it('sets status error when alpha endpoint returns non-ok response', async () => {
+  it('sets status error when alpha_check throws', async () => {
     channelRef.value = 'alpha';
-    mockTauriFetch.mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
-    });
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(result.current.state.status).toBe('error');
-    expect(result.current.state.error).toBeTruthy();
-  });
-
-  it('sets status error when alpha endpoint fetch throws', async () => {
-    channelRef.value = 'alpha';
-    mockTauriFetch.mockRejectedValue(new Error('Network failure'));
+    mockInvoke.mockRejectedValue(new Error('Network failure'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -304,7 +311,7 @@ describe('alpha channel', () => {
 
   it('calls setLastUpdateCheck after alpha check completes', async () => {
     channelRef.value = 'alpha';
-    mockAlphaFetchOk('0.43.0-alpha.1');
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -367,11 +374,7 @@ describe('stable channel — prerelease guard (HARD GUARANTEE)', () => {
 
   it('alpha channel is UNAFFECTED by the prerelease guard (alphas are expected there)', async () => {
     channelRef.value = 'alpha';
-    mockGetVersion.mockResolvedValue('0.42.0');
-    mockTauriFetch.mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue(buildAlphaManifest('0.44.0-alpha.3')),
-    });
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.44.0-alpha.3', '0.42.0'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -385,18 +388,13 @@ describe('stable channel — prerelease guard (HARD GUARANTEE)', () => {
 });
 
 // ===========================================================================
-// Alpha install flow — opens GitHub release in browser (no plugin-updater path)
+// Alpha install flow — real in-app install via plugin-updater (no browser open)
 // ===========================================================================
 
 describe('alpha channel install flow', () => {
-  it('downloadAndInstall on alpha opens the tagged release in the browser', async () => {
+  it('downloadAndInstall on alpha drives the Update returned by alpha_check', async () => {
     channelRef.value = 'alpha';
-    mockGetVersion.mockResolvedValue('0.44.0-alpha.1');
-    mockTauriFetch.mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue(buildAlphaManifest('0.44.0-alpha.2')),
-    });
-    mockOpenUrl.mockResolvedValue(undefined);
+    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.44.0-alpha.2', '0.44.0-alpha.1'));
 
     const { result } = renderHook(() => useAutoUpdate());
     await act(async () => {
@@ -408,10 +406,10 @@ describe('alpha channel install flow', () => {
       await result.current.downloadAndInstall();
     });
 
-    expect(mockOpenUrl).toHaveBeenCalledTimes(1);
-    expect(mockOpenUrl).toHaveBeenCalledWith(
-      'https://github.com/PeterBlenessy/notesage/releases/tag/v0.44.0-alpha.2',
-    );
+    // The Update instance constructed from alpha_check's metadata receives
+    // the downloadAndInstall call — same path as stable. No browser open.
+    // After install completes, status flips to 'downloaded' waiting for restart.
+    expect(result.current.state.status).toBe('downloaded');
   });
 });
 

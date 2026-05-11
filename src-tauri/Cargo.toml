@@ -82,6 +82,10 @@ log = "0.4"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-http = "2"
+# Used by `commands::alpha_update` to construct UpdaterBuilder endpoints
+# and format release dates (matches what tauri-plugin-updater depends on).
+url = "2"
+time = { version = "0.3", features = ["formatting"] }
 
 # System info (local AI memory detection)
 sysinfo = "0.35"

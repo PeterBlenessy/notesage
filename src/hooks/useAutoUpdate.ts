@@ -1,10 +1,29 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
+
+/**
+ * Metadata returned by our custom `alpha_check` Tauri command. Shape matches
+ * `@tauri-apps/plugin-updater`'s `UpdateMetadata` exactly (camelCased on the
+ * wire by serde rename_all). Wrapping in `new Update(metadata)` gives us a
+ * plugin-updater `Update` instance backed by the rid we returned from Rust;
+ * `update.downloadAndInstall()` then routes through plugin-updater's own
+ * `download` + `install` IPC handlers, which resolve the rid in the same
+ * resources_table our Rust command inserted into. Signature verification
+ * against the bundled `pubkey` in `tauri.conf.json` happens regardless of
+ * which endpoint produced the manifest — same install pipeline as stable.
+ */
+interface AlphaUpdateMetadata {
+  rid: number;
+  currentVersion: string;
+  version: string;
+  date?: string;
+  body?: string;
+  rawJson: Record<string, unknown>;
+}
 
 export const ALPHA_UPDATE_ENDPOINT =
   "https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json";
@@ -132,56 +151,44 @@ export function useAutoUpdate() {
 
     async function checkAlphaChannel() {
       try {
-        // Use Tauri's `@tauri-apps/plugin-http` fetch — routed through Rust —
-        // instead of the renderer's `fetch()`. The renderer fetch trips over
-        // CORS on the 302 from `github.com/.../latest.json` →
-        // `release-assets.githubusercontent.com/...` (the redirect target
-        // doesn't include `Access-Control-Allow-Origin: tauri://localhost`).
-        // Rust-side fetch isn't subject to WKWebView's CORS check.
+        // Drive plugin-updater against the alpha rolling-pointer URL via our
+        // custom Rust command. Returns the same metadata shape the plugin's
+        // own `check()` produces; wrapping in `new Update(metadata)` gives us
+        // a plugin-updater Update instance whose `downloadAndInstall()` is
+        // the SAME pipeline stable users get (signature verify, download,
+        // bundle replace, restart). See `src-tauri/src/commands/alpha_update.rs`
+        // for the Rust side and the long-form rationale.
         //
-        // Tauri 2.10's plugin-updater `check()` has no runtime URL override
-        // (CheckOptions doesn't have a `url` field), so we can't reuse the
-        // plugin's signature/install path for alpha. Detection works via the
-        // manifest; alpha install opens the tagged GitHub release in the
-        // browser for manual download. A real alpha-channel install path
-        // would need a custom Tauri command around `UpdaterBuilder` — tracked
-        // separately.
-        const response = await tauriFetch(ALPHA_UPDATE_ENDPOINT);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+        // Earlier we tried (a) renderer `fetch()` — CORS-blocked on
+        // GitHub's cross-origin redirect to release-assets.githubusercontent.com,
+        // (b) Tauri's HTTP plugin fetch + manual `openUrl` to the release page
+        // for manual DMG install — worked but high-friction. The Rust-side
+        // UpdaterBuilder.endpoints() path is the supported in-app install
+        // for runtime-URL switching; the plugin's own `check` command uses
+        // the same pattern, just without the runtime URL.
+        const metadata = await invoke<AlphaUpdateMetadata | null>("alpha_check", {
+          url: ALPHA_UPDATE_ENDPOINT,
+        });
 
-        const manifest = await response.json() as {
-          version: string;
-          notes?: string;
-          pub_date?: string;
-        };
+        if (metadata) {
+          const update = new Update(metadata);
+          updateRef.current = update;
 
-        const currentVersion = await getVersion();
-        const manifestVersion = manifest.version;
+          const info: UpdateInfo = {
+            version: update.version,
+            currentVersion: update.currentVersion,
+            notes: update.body ?? null,
+            date: update.date ?? null,
+          };
 
-        if (manifestVersion === currentVersion) {
+          if (dismissedVersion === update.version) {
+            setState({ status: "idle", updateInfo: info, progress: null, error: null });
+          } else {
+            setState({ status: "available", updateInfo: info, progress: null, error: null });
+          }
+        } else {
           updateRef.current = null;
           setState({ status: "idle", updateInfo: null, progress: null, error: null });
-          return;
-        }
-
-        // Alpha channel can't reuse plugin-updater's `Update` instance — clear
-        // updateRef so `downloadAndInstall()` doesn't try to drive a stale one
-        // from a previous stable check.
-        updateRef.current = null;
-
-        const info: UpdateInfo = {
-          version: manifestVersion,
-          currentVersion,
-          notes: manifest.notes ?? null,
-          date: manifest.pub_date ?? null,
-        };
-
-        if (dismissedVersion === manifestVersion) {
-          setState({ status: "idle", updateInfo: info, progress: null, error: null });
-        } else {
-          setState({ status: "available", updateInfo: info, progress: null, error: null });
         }
       } catch (err) {
         setState((s) => ({
@@ -195,27 +202,7 @@ export function useAutoUpdate() {
 
   const downloadAndInstall = useCallback(async () => {
     const update = updateRef.current;
-
-    // Alpha-channel path: no `Update` instance (plugin-updater can't accept a
-    // runtime URL override in Tauri 2.10). Open the tagged release page in the
-    // system browser so the user can grab the DMG manually. A real in-app
-    // install for alpha would need a custom Rust command — tracked separately.
-    if (!update) {
-      const version = state.updateInfo?.version;
-      if (!version) return;
-      try {
-        await openUrl(
-          `https://github.com/PeterBlenessy/notesage/releases/tag/v${version}`,
-        );
-      } catch (err) {
-        setState((s) => ({
-          ...s,
-          status: "error",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      }
-      return;
-    }
+    if (!update) return;
 
     setState((s) => ({ ...s, status: "downloading", progress: 0, error: null }));
 
@@ -250,7 +237,7 @@ export function useAutoUpdate() {
         error: err instanceof Error ? err.message : String(err),
       }));
     }
-  }, [state.updateInfo]);
+  }, []);
 
   const restartNow = useCallback(async () => {
     await relaunch();
