@@ -67,6 +67,7 @@ export function HtmlViewer({
 }: HtmlViewerProps) {
   const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const allowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
+  const blockExternal = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const [sourceMode, setSourceMode] = useState(false);
   const [unsafeHtml, setUnsafeHtml] = useState<string | null>(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -89,12 +90,30 @@ export function HtmlViewer({
     const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     const fragment = bodyMatch ? bodyMatch[1] : content;
     const baseForbidTags = ["script", "iframe", "object", "embed"];
-    return DOMPurify.sanitize(fragment, {
+
+    // When block-external-resources is ON, add a hook that strips attribute
+    // values starting with `https?:` from `src`, `href`, and `srcset`.
+    // The hook is added immediately before sanitise() and removed after so it
+    // does not leak into other DOMPurify consumers (ai-suggestion.ts, etc.).
+    if (blockExternal) {
+      DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+        if (!["src", "href", "srcset"].includes(data.attrName)) return;
+        if (/^https?:/i.test(data.attrValue)) data.keepAttr = false;
+      });
+    }
+
+    const result = DOMPurify.sanitize(fragment, {
       ALLOW_DATA_ATTR: false,
       FORBID_TAGS: allowForms ? baseForbidTags : [...baseForbidTags, ...FORM_TAGS],
       ADD_ATTR: allowForms ? FORM_ATTRS : [],
     });
-  }, [content, allowForms]);
+
+    if (blockExternal) {
+      DOMPurify.removeHook("uponSanitizeAttribute");
+    }
+
+    return result;
+  }, [content, allowForms, blockExternal]);
 
   // When allow-scripts is ON, pre-process the raw HTML: read same-directory
   // <script src="./..."> files via Tauri read_file and rewrite them as inline

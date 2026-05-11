@@ -352,6 +352,149 @@ describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
   });
 });
 
+describe("HtmlViewer — block external resources — htmlViewerBlockExternalResources", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("when OFF (default): remote https:// img src passes through (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://example.com/photo.jpg" alt="remote"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-off"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("https://example.com/photo.jpg");
+  });
+
+  it("when ON: remote https:// img src is stripped before render", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://example.com/photo.jpg" alt="remote"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-on-https"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    // src must be stripped (falsy or absent) — no remote fetch
+    expect(img!.getAttribute("src")).toBeFalsy();
+  });
+
+  it("when ON: remote http:// img src is also stripped", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="http://example.com/photo.jpg" alt="remote http"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-on-http"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBeFalsy();
+  });
+
+  it("when ON: relative-path img src is preserved (only remote URIs stripped)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="./images/photo.jpg" alt="local"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-rel-img"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    const img = document.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src")).toBe("./images/photo.jpg");
+  });
+
+  it("when ON: inline <style> blocks — DOMPurify strips <style> elements from body fragments by default (pre-existing behaviour, not our hook)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><style>body { color: red; }</style><p>Styled</p></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-style"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // Note: DOMPurify strips <style> elements from body fragments by default
+    // (they are not in DOMPurify's safe-element list for fragment mode).
+    // This is pre-existing behaviour introduced BEFORE this PR — the
+    // `uponSanitizeAttribute` hook only processes attributes on elements that
+    // survive the element-filter pass, so it does not change <style> handling.
+    // The surrounding paragraph still renders correctly.
+    expect(document.querySelector("style")).toBeNull();
+    expect(screen.getByText("Styled")).toBeTruthy();
+  });
+
+  it("when ON: <link href=\"https://...\"> is absent — DOMPurify strips <link> elements by default (pre-existing behaviour, not our hook)", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><link href="https://cdn.example.com/style.css" rel="stylesheet"><p>No external CSS</p></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-link-https"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // DOMPurify strips <link> elements entirely (not in the safe-by-default allowlist).
+    // Our hook would strip the href if <link> were allowed — but the element never reaches it.
+    // Either way the remote stylesheet is NOT applied, which is the acceptance criterion.
+    expect(document.querySelector("link")).toBeNull();
+  });
+
+  it("when ON: <link href=\"./styles.css\"> (relative path) is also absent — DOMPurify strips <link> by default", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><link href="./styles.css" rel="stylesheet"><p>Local CSS</p></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-ext-link-rel"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // DOMPurify strips <link> regardless of toggle state — the hook targets src/href/srcset
+    // attribute values that begin with https?:, so a relative-path <link> href is NOT
+    // affected by our hook even if the element were allowed. Both ON and OFF produce
+    // no <link> element in the sanitised output (pre-existing DOMPurify behaviour).
+    expect(document.querySelector("link")).toBeNull();
+  });
+});
+
 describe("HtmlViewer — Unsafe preview mode", () => {
   const htmlWithScript =
     '<html><body><h1>CDN App</h1><script src="https://cdn.example.com/lib.js"></script></body></html>';
