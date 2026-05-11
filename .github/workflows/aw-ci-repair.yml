@@ -1,0 +1,56 @@
+name: AW — CI Repair
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to repair (leave empty to auto-detect from latest failed run)'
+        required: false
+        type: string
+
+concurrency:
+  group: aw-stage-ci-repair-${{ github.event.workflow_run.head_branch || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event.workflow_run.conclusion == 'failure' &&
+       startsWith(github.event.workflow_run.head_branch, 'claude/')) ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+
+      - name: Run aw-ci-repair skill
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.WORKFLOW_PAT }}
+          allowed_bots: "github-actions[bot]"
+          prompt: |
+            Run the aw-ci-repair skill at `.claude/skills/aw-ci-repair/SKILL.md`.
+
+            Context:
+            - Triggered by: ${{ github.event_name }}
+            - Failed workflow run branch: ${{ github.event.workflow_run.head_branch || 'N/A' }}
+            - Manual PR number input: ${{ github.event.inputs.pr_number || 'N/A' }}
+
+            Read the skill in full and follow it precisely. The skill is narrow and safe:
+            - Only repairs Patterns A and B (PERF_BUDGET_MULTIPLIER wrap)
+            - Posts a comment for Patterns C, D, E (no file modifications)
+            - Hard gates: ≤2 files, typecheck must pass, no force-push
+            - One-attempt cap: check for prior fix(ci): commits and prior repair comments first
+
+            Hard constraints (override any conflicting skill instructions):
+            - NEVER push with --force
+            - NEVER modify more than 2 files
+            - NEVER repair if a prior fix(ci): commit already exists on the branch

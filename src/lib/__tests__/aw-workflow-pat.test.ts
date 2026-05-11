@@ -203,4 +203,24 @@ describe('AW workflow token convention (#118 — bot-PR CI gating)', () => {
       expect(getClaudeTokenInJob(wf.jobs[jobName])).toBe(GH_TOKEN);
     });
   });
+
+  // ── aw-ci-repair.yml uses WORKFLOW_PAT ─────────────────────────────────────
+  // aw-ci-repair pushes follow-up commits to PR branches. The push must
+  // use WORKFLOW_PAT (not GITHUB_TOKEN) so the `pull_request: synchronize`
+  // event fires and CI re-runs on the repaired PR. Same rationale as
+  // aw-iterate and aw-tdd.
+
+  describe('aw-ci-repair.yml — pushes commits to PR branches → must use WORKFLOW_PAT', () => {
+    const wf = loadWorkflow('aw-ci-repair');
+
+    it('the repair job uses WORKFLOW_PAT for the claude-code-action github_token', () => {
+      const jobName = Object.keys(wf.jobs)[0];
+      expect(getClaudeTokenInJob(wf.jobs[jobName])).toBe(PAT);
+    });
+
+    it('the repair job uses WORKFLOW_PAT for actions/checkout token (so commit push fires CI)', () => {
+      const jobName = Object.keys(wf.jobs)[0];
+      expect(getCheckoutTokenInJob(wf.jobs[jobName])).toBe(PAT);
+    });
+  });
 });
