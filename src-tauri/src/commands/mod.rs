@@ -1,3 +1,4 @@
+pub mod alpha_update;
 pub mod file;
 pub mod dialog;
 pub mod ai;
@@ -41,6 +42,7 @@ pub mod fonts;
 pub mod link_preview;
 pub mod theme;
 
+pub use alpha_update::*;
 pub use file::*;
 pub use dialog::*;
 pub use ai::*;
