@@ -72,15 +72,62 @@ function parseReleaseFile(filepath: string): ReleaseEntry | null {
   return { version, date, previousVersion, sections };
 }
 
+/**
+ * SemVer comparator (DESCENDING — newest first).
+ *
+ * Returns positive when b is newer, negative when a is newer, 0 when equal.
+ * Compatible with `Array.sort((a, b) => compareVersions(a, b))` to get
+ * newest-first order.
+ *
+ * Handles prerelease suffixes correctly:
+ *   - "0.44.0" is NEWER than "0.44.0-alpha.3" (stable > prerelease of same triple)
+ *   - "0.44.0-alpha.3" is NEWER than "0.44.0-alpha.0" (higher prerelease ordinal)
+ *   - "0.44.0-beta.0" is NEWER than "0.44.0-alpha.0" (lexical compare on first part)
+ *
+ * Why this is here: the previous implementation did `a.split('.').map(Number)`
+ * which produced NaN for the "0-alpha" segment of "0.44.0-alpha.3", and
+ * NaN-NaN=NaN as a sort comparator is undefined behaviour — V8 happened to
+ * leave alphas in their input order, which surfaced as "newest alpha last"
+ * in the in-app changelog.
+ */
 function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] ?? 0;
-    const nb = pb[i] ?? 0;
-    if (na !== nb) return nb - na; // Descending (newest first)
+  const [aTriple, aPre] = splitSemver(a);
+  const [bTriple, bPre] = splitSemver(b);
+
+  // Compare X.Y.Z triple first.
+  for (let i = 0; i < 3; i++) {
+    if (aTriple[i] !== bTriple[i]) return bTriple[i] - aTriple[i];
+  }
+
+  // Triples equal. Stable beats prerelease.
+  if (!aPre && !bPre) return 0;
+  if (!aPre) return -1; // a is stable, b is prerelease → a is newer
+  if (!bPre) return 1;  // b is stable, a is prerelease → b is newer
+
+  // Both are prereleases. Compare identifiers lexically with numeric awareness
+  // ("alpha.10" > "alpha.2", not "alpha.10" < "alpha.2").
+  const aParts = aPre.split('.');
+  const bParts = bPre.split('.');
+  for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+    const ap = aParts[i] ?? '';
+    const bp = bParts[i] ?? '';
+    if (ap === bp) continue;
+    const aN = Number(ap);
+    const bN = Number(bp);
+    const aIsNum = ap !== '' && !Number.isNaN(aN);
+    const bIsNum = bp !== '' && !Number.isNaN(bN);
+    if (aIsNum && bIsNum) return bN - aN;
+    return ap < bp ? 1 : -1;
   }
   return 0;
+}
+
+function splitSemver(v: string): [[number, number, number], string | null] {
+  const dashIdx = v.indexOf('-');
+  const triple = dashIdx === -1 ? v : v.slice(0, dashIdx);
+  const pre = dashIdx === -1 ? null : v.slice(dashIdx + 1);
+  const parts = triple.split('.').map((p) => Number(p) || 0);
+  return [[parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0], pre];
 }
 
 function main() {
