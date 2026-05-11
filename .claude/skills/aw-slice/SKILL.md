@@ -14,12 +14,24 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 
 ## Process
 
-1. **Read the issue.**
+1. **Read the issue, including comments.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
    - Verify it has `refined` AND `slice` AND one of `bug` / `enhancement` / `chore`.
    - Verify it does NOT have `sliced` or `awaiting-research`. If it does, exit silently (idempotent).
    - The `slice` action label is the explicit gate. Set by `aw-refine` after a successful clarification, or by a human after a research peer closes (`awaiting-research` → `slice`). Bare `refined` alone is NOT a trigger.
    - The `feature` label is **deprecated**. Don't check for it; don't add it. It was a parent marker from the original sub-issue model that we pivoted away from in favor of peer-issue splits.
+
+1.5. **Read human comments since the latest `refined` marker** — authoritative override material.
+
+   When the user resets an issue back to `slice` (after research, after a feedback cycle, or via `aw-feedback`'s "Redo slicing" path), they typically leave a comment explaining what should change. Comments posted between the most recent `refined` marker and now are authoritative input to this run.
+
+   - Filter the `comments` array to skip bot comments (skip any comment whose author is `github-actions[bot]`, `claude[bot]`, `app/claude`, or whose body opens with a `> *Reviewed by` / `> *Sliced by` / `> *Refined automatically` marker).
+   - Of the remaining human comments, focus on those posted after the issue's most recent `refined` event. Use the comment timestamp; if needed, fall back to: any human comment whose timestamp is after the latest bot `Refined automatically by the aw-refine skill` marker comment.
+   - Treat each such human comment as **authoritative**. What the human explicitly stated outweighs any conflicting interpretation of the body alone. Fold the corrections into:
+     - The slice rationale's `## Proposed answers` (when the comment answers an open question or overrides one of slice's would-be assumptions)
+     - The peer-issue bodies, if slicing produces them (when the comment changes how values should split)
+     - The `## Why hitl` section (when the comment reveals a security / data-loss concern that elevates from `afk` to `hitl`)
+   - If the human comment includes "DO NOT" / "Wrong path" / "Files explicitly NOT touched" sections, mirror them in the slice rationale or the peer-issue bodies so `aw-tdd` can't miss them.
 
 2. **First branch — research vs value-listing.**
 

@@ -417,6 +417,25 @@ A `hitl` label without a feedback handler is a one-way pause signal — the huma
 
 This closes the conversation loop. The agent can be redirected from ANY pause point to ANY earlier pipeline stage based on the human's natural-language comment — no slash commands, no manual label edits.
 
+### Choice: every stage reads human comments since its trigger marker
+
+**The pivot.** `aw-feedback`'s reset paths (refine → slice → tdd) all rely on the human's comment carrying the new intent. The original assumption was: "the comment is recorded on the issue, the next stage will see it." That assumption was false. Issue #162 (font-size shortcuts) was reset to `refine` twice with explicit override comments ("transient zoom, not persistent font-size change"); both times `aw-refine` faithfully re-refined the same body and produced the same wrong output, because the skill instructions didn't say "read the comments." Only `aw-review` read comments after the trigger marker — every other stage was working off the body alone.
+
+**The fix.** Every stage skill (`aw-refine`, `aw-slice`, `aw-tdd`) now has an explicit "read human comments since the latest `refined` marker" step. The recipe:
+
+1. `gh issue view` includes `comments` in the JSON fields.
+2. Filter out bot comments (`github-actions[bot]`, `claude[bot]`, marker lines like `> *Refined automatically by`).
+3. Of the remaining human comments, focus on those posted after the most recent `refined` event (or the most recent stage marker, depending on which stage is running).
+4. Treat each such human comment as **authoritative** — it overrides the body when the two conflict.
+5. Fold the corrections into the durable spec the next stage sees:
+   - `aw-refine` rewrites the body so the override is impossible to re-derive wrong.
+   - `aw-slice` folds the override into the slice rationale and (if applicable) into peer-issue bodies.
+   - `aw-tdd` writes a red test for each override-comment requirement, alongside any aw-review gap-list.
+
+**Why this works.** The previous loop only had one read-the-comments stage (`aw-review`), too late in the pipeline — by the time aw-review caught the gap, a wrong PR was already open and the user was already frustrated. Reading comments at every stage means the override propagates through the durable artifacts (refined body, slice rationale, peer-issue bodies, red tests) so each downstream stage sees the corrected intent in its primary input, not as a side note to remember.
+
+**Anti-pattern this fixes.** "I refined the body, the comment is on the issue, surely the next agent will see it" — no, the next agent reads what its skill tells it to read. If the skill doesn't say "read comments," the agent doesn't, and the override is invisible.
+
 ### Choice: aw-review as an independent gate before "ready for review"
 
 **The pivot.** Originally `aw-tdd` opened a draft PR and immediately flipped the issue to `review`, expecting the human to be the next gate. Two PRs (#85 and #86) merged through that gate looked clean on paper (tests green, code reads well) but **didn't actually fix the user's problem**. PR #86 changed 7 pickers in `cmd/modes/` while the user's issue actually pointed at chat-footer pickers — the agent took "command bar pickers" too literally. PR #85 implemented `criterion 4` of issue #62 verbatim while the user had commented THREE times asking for criterion 4 to be flipped — `aw-refine` re-ran but didn't fold the comments into the body, and `aw-tdd` faithfully implemented the stale criterion. Neither the implementer nor the post-merge audit caught it. The user was the reviewer, and the user was angry.

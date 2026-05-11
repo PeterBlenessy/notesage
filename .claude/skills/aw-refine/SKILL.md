@@ -14,10 +14,19 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 ## Process
 
-1. **Read the issue.**
-   - `gh issue view $ISSUE_NUMBER --json title,body,labels`
+1. **Read the issue, including comments.**
+   - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
    - Verify exactly one of `bug` / `enhancement` / `chore` is present AND `refine` is present. If not, post a clarification comment and stop.
    - If `refined` is already present, exit silently (idempotent).
+
+1.5. **Read human comments since the trigger marker** — authoritative override material.
+
+   When the user resets a refined issue to `refine` (via `aw-feedback`'s "Redo refined scope" / assumption-override path, or by manual label flip), they almost always leave a comment explaining what was wrong with the previous refine. **That comment is the most important input to this run.** Without reading it, this skill re-runs against the same body and predictably re-produces the same wrong refinement.
+
+   - Filter the `comments` array to skip bot comments (any comment whose author is `github-actions[bot]`, `claude[bot]`, `app/claude`, or contains a `> *Refined automatically by the` / `> *Read by` marker line at the start).
+   - Of the remaining human comments, focus on those posted after the issue's most recent state-change event. If the issue currently carries `refine` (was reset from `refined`), the relevant comments are everything posted after the most recent `refined` label was added to the issue (use `gh issue view` event history if needed, or simply: any human comment posted after the latest bot `Refined automatically` marker).
+   - Treat each such human comment as **authoritative**. What the human explicitly stated outweighs any conflicting interpretation you would otherwise derive from the issue body alone. Fold the corrections into the rewritten body's `## Assumptions` section AND into the outcome / acceptance-criteria sections as needed — not just a passing mention, but a structural rewrite that makes the corrected scope impossible to re-derive wrong.
+   - If a human comment includes "Files explicitly NOT touched" / "DO NOT" / "Wrong path" sections, mirror them in the rewritten body so `aw-tdd` can't miss them.
 
 2. **Pick the matching template** (see Templates below) based on the category.
 
@@ -26,6 +35,8 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
    Preserve verbatim: reproduction steps, error messages, code blocks, environment / version, user-provided technical context, original outcome if already clear.
 
    Improve: outcome focus, scope (in / out / non-goals), acceptance criteria (testable, observable). When you make assumptions because the original was silent or ambiguous, record them under `## Assumptions` in the rewritten body — they're override-able by comment.
+
+   **When step 1.5 found human override comments**, the rewritten body is structurally different from the previous body, not a near-copy. Test: read the new body cold without seeing the comment, and ask "could I derive the override from this alone?" If no, expand the body until yes. The comment was a one-time correction; the body is the durable spec.
 
 4. **Update the body** via `gh issue edit $ISSUE_NUMBER --body-file <(...)`.
 
