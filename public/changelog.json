@@ -35,6 +35,35 @@
       }
     },
     {
+      "version": "0.44.0-alpha.2",
+      "date": "2026-05-11",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`, and similar attributes before render. Local relative paths and same-directory files still load. Default OFF.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts`-only iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included (separate toggle below). Default OFF.",
+          "**Unsafe preview mode (per-tab, session-only).** A new toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders in `allow-scripts`-only iframe with raw HTML — CDN scripts and inline `<script>` blocks all execute. Switching tabs resets the toggle. For \"I trust this single file\" workflows that don't warrant flipping the persistent allow-scripts setting on.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — toggle ON to keep `<form>`, `<input>`, `<button>`, `<select>`, and form-submission attributes (action / method) in the sanitised tree. Useful for local docs that legitimately contain forms. Default OFF.",
+          "**Width + alignment now persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. *(Originally in alpha.0; first time effectively shipping.)*",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF share the same shortcut. *(Originally in alpha.0.)*"
+        ],
+        "improvements": [
+          "**Research and templates folders are now visible in the workspace.** They used to live under `.notesage/` (hidden) and were only reachable through the AI chat. Notesage now creates `research/` and `templates/` at the project root the first time you save research or open a template picker. Existing hidden content is migrated on next launch.",
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer. Dangerous tags (`<script>`, `<iframe>`, `<object>`, `<embed>`) are stripped before rendering. *(Originally in alpha.0; the four security toggles above are layered on top of this rewrite.)*",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below. *(Originally in alpha.0.)*",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control. *(Originally in alpha.0.)*",
+          "**The 494 KB book opens in ~3 seconds again.** Fixes a regression introduced during the alpha.0 branch where the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path. *(Originally in alpha.0.)*"
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** Schemas in the markdown-parse worker now mirror the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload. *(Originally in alpha.0.)*",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** `<Tooltip>` outside any `<TooltipProvider>` caught by the error boundary; now all four reference implementations are regression-tested. *(Originally in alpha.0.)*",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio (tracked on every scroll, debounced 150 ms) instead of the stale viewport-cache value. *(Originally in alpha.0.)*",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character. *(Originally in alpha.0.)*",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n` separator, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file. *(Originally in alpha.0.)*"
+        ]
+      }
+    },
+    {
       "version": "0.43.0",
       "date": "2026-05-10",
       "previousVersion": "0.42.0",
