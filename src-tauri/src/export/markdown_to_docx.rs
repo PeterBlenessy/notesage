@@ -529,9 +529,17 @@ impl<'a> DocxConverter<'a> {
                 self.cell_runs = Some(Vec::new());
             }
             NodeValue::HtmlInline(ref html) => {
-                // Pass HTML comments through for table metadata
-                if html.trim().starts_with("<!--") {
+                let trimmed = html.trim();
+                if trimmed.starts_with("<!--") {
+                    // Pass HTML comments through for table metadata
                     self.add_text(html);
+                } else if trimmed == "<br>" || trimmed == "<br/>" || trimmed == "<br />" {
+                    // The Notesage editor serializes multi-block table-cell content
+                    // using <br> separators. Emit a text-wrapping break so both
+                    // lines appear on separate lines in the exported DOCX,
+                    // consistent with NodeValue::LineBreak handling.
+                    let run = self.style_run(Run::new().add_break(BreakType::TextWrapping));
+                    self.push_run(run);
                 }
             }
             NodeValue::HtmlBlock(ref hb) => {
@@ -2051,5 +2059,110 @@ mod tests {
         let bytes = result.unwrap();
         assert!(!bytes.is_empty());
         assert_eq!(&bytes[0..4], b"PK\x03\x04");
+    }
+
+    // --- Multi-line table cell (<br> separator) ---
+    // The Notesage editor serializes multi-block cell content as a single GFM row
+    // with <br>-separated text. Both parts must survive into the DOCX XML so the
+    // exported document shows the content on separate visual lines.
+
+    #[test]
+    fn test_table_multiline_cell_br_produces_valid_docx() {
+        // Verify that <br> in a table cell does not break DOCX generation
+        let md = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let result = markdown_to_docx(
+            md,
+            "Test",
+            "clean",
+            &DocxOptions {
+                include_toc: false,
+                include_page_numbers: false,
+                page_size: "a4".to_string(),
+                project_root: None,
+            },
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_ok(), "DOCX with multi-line table cell failed: {:?}", result.err());
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[0..4], b"PK\x03\x04");
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_both_lines_in_docx_xml() {
+        // Unzip the DOCX and verify the document.xml contains both cell text fragments.
+        use std::io::{Cursor, Read};
+        let md = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let result = markdown_to_docx(
+            md,
+            "Test",
+            "clean",
+            &DocxOptions {
+                include_toc: false,
+                include_page_numbers: false,
+                page_size: "a4".to_string(),
+                project_root: None,
+            },
+            None,
+            None,
+            None,
+        );
+        let bytes = result.unwrap();
+        let cursor = Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .expect("DOCX should be a valid zip archive");
+        let mut doc_xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .expect("word/document.xml should exist")
+            .read_to_string(&mut doc_xml)
+            .expect("should read document.xml");
+
+        assert!(
+            doc_xml.contains("Line1"),
+            "first line of multi-line cell missing from document.xml: {}",
+            &doc_xml[..doc_xml.len().min(2000)]
+        );
+        assert!(
+            doc_xml.contains("Line2"),
+            "second line of multi-line cell missing from document.xml: {}",
+            &doc_xml[..doc_xml.len().min(2000)]
+        );
+        // A text-wrapping break (<w:br w:type="textWrapping"/>) must appear
+        assert!(
+            doc_xml.contains("textWrapping"),
+            "text-wrapping break missing from document.xml: {}",
+            &doc_xml[..doc_xml.len().min(2000)]
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_self_closing_variants_docx() {
+        // All three <br> variants must produce a valid DOCX
+        for br in &["<br>", "<br/>", "<br />"] {
+            let md = format!("| A | B |\n|---|---|\n| x | Part1{}Part2 |\n", br);
+            let result = markdown_to_docx(
+                &md,
+                "Test",
+                "clean",
+                &DocxOptions {
+                    include_toc: false,
+                    include_page_numbers: false,
+                    page_size: "a4".to_string(),
+                    project_root: None,
+                },
+                None,
+                None,
+                None,
+            );
+            assert!(
+                result.is_ok(),
+                "DOCX with br variant '{}' failed: {:?}",
+                br,
+                result.err()
+            );
+        }
     }
 }

@@ -262,10 +262,16 @@ impl<'s> Converter<'s> {
                 self.write("\\\n");
             }
             NodeValue::HtmlInline(ref html) => {
-                // When inside a table cell, pass HTML comments through to the cell buffer
-                // so column metadata can be extracted by parse_column_metadata.
-                if self.cell_buffer.is_some() && html.trim().starts_with("<!--") {
+                let trimmed = html.trim();
+                if self.cell_buffer.is_some() && trimmed.starts_with("<!--") {
+                    // Pass HTML comments through to the cell buffer so column
+                    // metadata can be extracted by parse_column_metadata.
                     self.write(html);
+                } else if trimmed == "<br>" || trimmed == "<br/>" || trimmed == "<br />" {
+                    // The Notesage editor serializes multi-block table-cell content
+                    // using <br> separators. Treat these as Typst line breaks,
+                    // consistent with NodeValue::LineBreak.
+                    self.write("\\\n");
                 }
                 // Otherwise skip raw HTML — not representable in Typst
             }
@@ -1357,5 +1363,77 @@ fn main() {}
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
         assert!(result.is_ok(), "PDF export with sub/sup failed: {:?}", result.err());
+    }
+
+    // --- Multi-line table cell (<br> separator) ---
+    // The Notesage editor serializes multi-block cell content as a single GFM row
+    // with <br>-separated text (e.g. "Line1<br>Line2"). Both parts must reach the
+    // Typst output so they appear in the exported PDF.
+
+    #[test]
+    fn test_table_multiline_cell_br_both_lines_present() {
+        // Notesage editor output for a cell with two paragraphs
+        let input = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let output = markdown_to_typst(input, None);
+        assert!(
+            output.contains("Line1"),
+            "first line of multi-line cell missing from Typst output: {}",
+            output
+        );
+        assert!(
+            output.contains("Line2"),
+            "second line of multi-line cell missing from Typst output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_has_line_break() {
+        // The two lines must be separated by a Typst line break (backslash-newline),
+        // not run together as one continuous string.
+        let input = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let output = markdown_to_typst(input, None);
+        // Typst line break syntax is `\` followed by newline.
+        assert!(
+            output.contains("Line1\\\n") || output.contains("Line1\\"),
+            "Typst line break after first line missing: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Meeting\n\n| Name | Notes |\n|---|---|\n| Alice | Arrived early<br>Took minutes |\n| Bob | Remote<br>Joined late |\n";
+        let typst = markdown_to_typst(markdown, None);
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(
+            result.is_ok(),
+            "PDF export with multi-line table cells failed: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_self_closing_variants() {
+        // Editor may emit <br>, <br/>, or <br /> — all must be treated as line breaks
+        for br in &["<br>", "<br/>", "<br />"] {
+            let input = format!("| A | B |\n|---|---|\n| x | Part1{}Part2 |\n", br);
+            let output = markdown_to_typst(&input, None);
+            assert!(
+                output.contains("Part1"),
+                "first part missing for br variant '{}': {}",
+                br,
+                output
+            );
+            assert!(
+                output.contains("Part2"),
+                "second part missing for br variant '{}': {}",
+                br,
+                output
+            );
+        }
     }
 }
