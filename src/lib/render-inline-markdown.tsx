@@ -1,19 +1,20 @@
 import type { ReactNode } from 'react';
 
+// Group 2: **bold**, Group 3: `code`, Groups 4+5: [text](url), Group 6: _italic_, Group 7: *italic*
+const INLINE_MD_REGEX = /(\*\*(.+?)\*\*|`([^`]+)`|\[(.+?)\]\(([^)]+)\)|_(.+?)_|\*(?!\*)([^*]+)\*)/g;
+
 /**
- * Renders inline markdown (bold, inline code) as React elements.
- * Supports: **bold**, `code`
+ * Renders inline markdown as React elements.
+ * Supports: **bold**, `code`, [text](url), _italic_, *italic*
  */
 export function renderInlineMarkdown(text: string): ReactNode {
-  // Match **bold** and `code` patterns
   const parts: ReactNode[] = [];
-  const regex = /(\*\*(.+?)\*\*|`([^`]+)`)/g;
+  const regex = new RegExp(INLINE_MD_REGEX.source, 'g');
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let key = 0;
 
   while ((match = regex.exec(text)) !== null) {
-    // Add text before the match
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
@@ -35,17 +36,28 @@ export function renderInlineMarkdown(text: string): ReactNode {
           {match[3]}
         </code>
       );
+    } else if (match[4]) {
+      // [text](url)
+      parts.push(
+        <a key={key++} href={match[5]}>
+          {match[4]}
+        </a>
+      );
+    } else if (match[6]) {
+      // _italic_
+      parts.push(<em key={key++}>{match[6]}</em>);
+    } else if (match[7]) {
+      // *italic*
+      parts.push(<em key={key++}>{match[7]}</em>);
     }
 
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex));
   }
 
-  // If no markdown was found, return the original string
   if (parts.length === 0) return text;
 
   return <>{parts}</>;

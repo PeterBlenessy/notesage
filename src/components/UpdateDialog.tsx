@@ -1,4 +1,7 @@
 import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { renderInlineMarkdown } from "@/lib/render-inline-markdown";
 import {
   Dialog,
@@ -15,6 +18,11 @@ import { useChangelog, type Release } from "@/hooks/useChangelog";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import type { UpdateInfo, UpdateStatus } from "@/hooks/useAutoUpdate";
+
+function isAllowedUrl(url: string): boolean {
+  const lower = url.toLowerCase().trimStart();
+  return !lower.startsWith('javascript:') && !lower.startsWith('data:');
+}
 
 interface UpdateDialogProps {
   open: boolean;
@@ -179,9 +187,30 @@ export function UpdateDialog({
               ))}
             </div>
           ) : updateInfo.notes ? (
-            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-              {updateInfo.notes}
-            </p>
+            <div className="text-xs text-muted-foreground leading-relaxed [&>*:last-child]:mb-0 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:mb-2">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => {
+                    const url = href ?? '';
+                    return (
+                      <a
+                        href={url}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (isAllowedUrl(url)) void openUrl(url);
+                        }}
+                        className="underline hover:opacity-80"
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                }}
+              >
+                {updateInfo.notes}
+              </ReactMarkdown>
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">
               {isLeaveAlphaDowngrade
