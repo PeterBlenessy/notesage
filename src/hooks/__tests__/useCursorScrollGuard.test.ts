@@ -94,6 +94,35 @@ function mockCursorAt(cursorBottom: number): void {
   vi.spyOn(window, 'getSelection').mockReturnValue(selection as unknown as Selection);
 }
 
+/**
+ * Mock a collapsed (zero-height) cursor at a given y-position.
+ *
+ * This simulates a cursor at an empty line: the range reports height=0
+ * because there are no characters on the line, but top/bottom still
+ * reflect the cursor's real screen position.
+ */
+function mockCollapsedCursorAt(cursorY: number): void {
+  const range = {
+    collapse: vi.fn(),
+    getBoundingClientRect: vi.fn(() => ({
+      top: cursorY,
+      bottom: cursorY, // height === 0: top === bottom
+      height: 0,
+      width: 0,
+      left: 100,
+      right: 100,
+      x: 100,
+      y: cursorY,
+      toJSON: () => ({}),
+    })),
+  };
+  const selection = {
+    rangeCount: 1,
+    getRangeAt: vi.fn(() => range),
+  };
+  vi.spyOn(window, 'getSelection').mockReturnValue(selection as unknown as Selection);
+}
+
 /** Mock window.getSelection to return no selection. */
 function mockNoSelection(): void {
   vi.spyOn(window, 'getSelection').mockReturnValue(null);
@@ -167,6 +196,56 @@ describe('useCursorScrollGuard', () => {
     const scrollContainerRef = { current: el };
     renderHook(() => useCursorScrollGuard(scrollContainerRef));
 
+    act(() => { fireKeydown(); });
+
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Regression: zero-height (collapsed) cursor — issue #210
+  //
+  // When the cursor is on an empty line the browser may report a range rect
+  // with height === 0.  The previous guard `if (cursorRect.height === 0) return`
+  // caused the hook to bail out even when the cursor y-position was behind the
+  // cmd bar, re-introducing the bug fixed by PR #182.
+  // -------------------------------------------------------------------------
+
+  it('scrolls when cursor rect has zero height but is below the safe zone (regression #210)', () => {
+    const { el, scrollBy } = mountScrollContainer();
+    const cmdBarTopEdge = 500;
+    mountCmdBar(cmdBarTopEdge);
+    // Collapsed cursor at y=480 — safeBottom = 500-60 = 440, overlap = 40
+    mockCollapsedCursorAt(480);
+
+    renderHook(() => useCursorScrollGuard({ current: el }));
+    act(() => { fireKeydown(); });
+
+    expect(scrollBy).toHaveBeenCalledTimes(1);
+    expect(scrollBy).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 40 }),
+    );
+  });
+
+  it('does not scroll when cursor rect is fully degenerate (all zeros)', () => {
+    const { el, scrollBy } = mountScrollContainer();
+    mountCmdBar(500);
+    // Degenerate rect: all zeros — no valid screen position
+    mockCollapsedCursorAt(0);
+
+    renderHook(() => useCursorScrollGuard({ current: el }));
+    act(() => { fireKeydown(); });
+
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll when zero-height cursor is above the safe zone', () => {
+    const { el, scrollBy } = mountScrollContainer();
+    const cmdBarTopEdge = 600;
+    mountCmdBar(cmdBarTopEdge);
+    // Collapsed cursor at y=400 — safeBottom = 600-60 = 540, no overlap
+    mockCollapsedCursorAt(400);
+
+    renderHook(() => useCursorScrollGuard({ current: el }));
     act(() => { fireKeydown(); });
 
     expect(scrollBy).not.toHaveBeenCalled();
