@@ -40,7 +40,11 @@ export function useCursorScrollGuard(
 
     const range = selection.getRangeAt(0);
     const cursorRect = range.getBoundingClientRect();
-    if (!cursorRect || cursorRect.height === 0) return;
+    // Guard against a fully degenerate rect (browser returned all-zero values,
+    // meaning the range has no screen position — e.g. selection outside the
+    // rendered viewport).  A collapsed cursor on an empty line is NOT degenerate:
+    // it has height === 0 but valid top/bottom reflecting its real y position.
+    if (!cursorRect || (cursorRect.top === 0 && cursorRect.bottom === 0)) return;
 
     const safeBottom = cmdBar.getBoundingClientRect().top - BREATHING_ROOM_PX;
 
