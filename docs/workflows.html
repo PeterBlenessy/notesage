@@ -1,0 +1,2026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Notesage Workflows</title>
+  <style>
+    :root {
+      --bg: oklch(98% 0 0);
+      --surface: oklch(100% 0 0);
+      --surface-2: oklch(96% 0 0);
+      --fg: oklch(18% 0 0);
+      --fg-muted: oklch(45% 0 0);
+      --fg-subtle: oklch(60% 0 0);
+      --border: oklch(90% 0 0);
+      --border-strong: oklch(80% 0 0);
+      --accent: oklch(56% 0.16 253);
+      --accent-soft: oklch(56% 0.16 253 / 0.12);
+      --shadow: 0 1px 2px oklch(0% 0 0 / 0.04), 0 4px 12px oklch(0% 0 0 / 0.04);
+    }
+    html.dark {
+      --bg: oklch(15% 0 0);
+      --surface: oklch(20% 0 0);
+      --surface-2: oklch(24% 0 0);
+      --fg: oklch(96% 0 0);
+      --fg-muted: oklch(70% 0 0);
+      --fg-subtle: oklch(55% 0 0);
+      --border: oklch(28% 0 0);
+      --border-strong: oklch(38% 0 0);
+      --accent: oklch(70% 0.14 253);
+      --accent-soft: oklch(70% 0.14 253 / 0.18);
+      --shadow: 0 1px 2px oklch(0% 0 0 / 0.3), 0 4px 12px oklch(0% 0 0 / 0.3);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      flex: 0 0 auto;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    header .meta {
+      font-size: 11px;
+      color: var(--fg-muted);
+      margin-left: 12px;
+    }
+    header .actions { display: flex; gap: 8px; align-items: center; }
+    button.tool-btn {
+      font: inherit;
+      font-size: 11px;
+      padding: 4px 10px;
+      background: var(--surface-2);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    button.tool-btn:hover { background: var(--border); }
+
+    main {
+      flex: 1 1 auto;
+      display: flex;
+      min-height: 0;
+    }
+    aside#flow-list {
+      flex: 0 0 280px;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      background: var(--surface);
+      padding: 12px 0;
+    }
+    aside#flow-list h2 {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-subtle);
+      font-weight: 600;
+      margin: 8px 16px 4px;
+    }
+    .flow-item {
+      display: block;
+      padding: 8px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 80ms ease, border-color 80ms ease;
+      user-select: none;
+    }
+    .flow-item:hover { background: var(--surface-2); }
+    .flow-item.active {
+      background: var(--accent-soft);
+      border-left-color: var(--accent);
+    }
+    .flow-item .flow-title {
+      font-weight: 500;
+      font-size: 12.5px;
+      color: var(--fg);
+      margin-bottom: 2px;
+    }
+    .flow-item .flow-step-count {
+      font-size: 10.5px;
+      color: var(--fg-subtle);
+    }
+
+    section#diagram-area {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #flow-header {
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #flow-header h2 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    #flow-header p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--fg-muted);
+      max-width: 1200px;
+    }
+
+    #diagram-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      background: var(--bg);
+    }
+    #diagram {
+      display: block;
+      width: 100%;
+      min-width: 1280px;
+    }
+    #diagram .node-box {
+      transition: opacity 180ms ease, filter 180ms ease;
+    }
+    #diagram .node-box.dimmed { opacity: 0.22; }
+    #diagram .node-box.in-flow .node-rect { stroke-width: 2.5; }
+    #diagram .node-box .node-label {
+      font-size: 12px;
+      font-weight: 600;
+      fill: var(--fg);
+      pointer-events: none;
+    }
+    #diagram .node-box .node-subtitle {
+      font-size: 9.5px;
+      fill: var(--fg-muted);
+      pointer-events: none;
+    }
+    html.dark #diagram .node-box .node-label,
+    html.dark #diagram .node-box .node-subtitle {
+      /* fill above gives correct light/dark via CSS vars */
+    }
+    #diagram .edge {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 1.6;
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+    }
+    #diagram .edge.visible { opacity: 1; }
+    #diagram .edge.hover { stroke-width: 2.6; }
+    #diagram .edge-num-bg {
+      fill: var(--accent);
+      stroke: var(--surface);
+      stroke-width: 1.5;
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+    #diagram .edge-num-bg.visible { opacity: 1; }
+    #diagram .edge-num {
+      font-size: 9.5px;
+      font-weight: 700;
+      fill: white;
+      text-anchor: middle;
+      dominant-baseline: central;
+      opacity: 0;
+      transition: opacity 220ms ease;
+      pointer-events: none;
+      user-select: none;
+    }
+    #diagram .edge-num.visible { opacity: 1; }
+
+    #steps {
+      flex: 0 0 auto;
+      max-height: 280px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      padding: 12px 20px 16px;
+    }
+    #steps h3 {
+      margin: 0 0 8px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--fg-subtle);
+      font-weight: 600;
+    }
+    .step {
+      display: flex;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: default;
+      transition: background 80ms ease;
+    }
+    .step:hover { background: var(--surface-2); }
+    .step.active { background: var(--accent-soft); }
+    .step .step-num {
+      flex: 0 0 22px;
+      height: 22px;
+      border-radius: 11px;
+      background: var(--accent);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step .step-body { flex: 1 1 auto; min-width: 0; }
+    .step .step-route {
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .step .step-route .arrow {
+      color: var(--fg-subtle);
+      margin: 0 6px;
+    }
+    .step .step-route .label {
+      color: var(--accent);
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .step .step-detail {
+      font-size: 11.5px;
+      color: var(--fg-muted);
+      margin-top: 2px;
+    }
+
+    #legend {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 14px;
+      padding: 8px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    #legend .swatch {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    #legend .swatch-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid var(--border-strong);
+    }
+
+    .empty-state {
+      padding: 40px;
+      text-align: center;
+      color: var(--fg-muted);
+    }
+    code {
+      font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      background: var(--surface-2);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex;align-items:baseline;">
+      <h1>Notesage Workflows</h1>
+      <span class="meta">Click a flow to highlight the path · Hover a step to focus a single edge</span>
+    </div>
+    <div class="actions">
+      <button class="tool-btn" id="theme-toggle">Toggle theme</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="flow-list">
+      <h2>Flows</h2>
+      <div id="flow-list-items"></div>
+    </aside>
+
+    <section id="diagram-area">
+      <div id="flow-header">
+        <h2 id="flow-title">Loading…</h2>
+        <p id="flow-summary"></p>
+      </div>
+
+      <div id="diagram-wrap">
+        <svg id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <div id="steps">
+        <h3>Steps</h3>
+        <div id="steps-list"></div>
+      </div>
+
+      <div id="legend"></div>
+    </section>
+  </main>
+
+  <!--
+    Inline copy of workflows.json so this page works when opened directly via file://
+    (browsers block fetch() on file://). When served over HTTP, fetch('./workflows.json')
+    is preferred so edits to the JSON file take effect without touching this HTML.
+    Keep both in sync; workflows.json is the canonical source.
+  -->
+  <script type="application/json" id="workflows-data-fallback">
+{
+  "$schema": "Notesage workflow viewer data \u2014 see docs/workflows.html",
+  "canvas": {
+    "width": 1380,
+    "height": 900
+  },
+  "categories": {
+    "frontend": {
+      "label": "Frontend UI",
+      "fill": "#e6f0ff",
+      "darkFill": "#1a2742",
+      "stroke": "#5b8def"
+    },
+    "state": {
+      "label": "State / Hooks",
+      "fill": "#f0e6ff",
+      "darkFill": "#2a1f42",
+      "stroke": "#8d5bef"
+    },
+    "ipc": {
+      "label": "IPC Boundary",
+      "fill": "#fff4e0",
+      "darkFill": "#3a2c12",
+      "stroke": "#d49434"
+    },
+    "rust-io": {
+      "label": "Rust \u2014 I/O & State",
+      "fill": "#e6ffea",
+      "darkFill": "#152a1a",
+      "stroke": "#4eaf63"
+    },
+    "rust-ai": {
+      "label": "Rust \u2014 AI / Agents",
+      "fill": "#e0f7ff",
+      "darkFill": "#0f2c3a",
+      "stroke": "#3aa8d4"
+    },
+    "security": {
+      "label": "Security",
+      "fill": "#ffe6e6",
+      "darkFill": "#3a1515",
+      "stroke": "#d44848"
+    },
+    "external": {
+      "label": "External",
+      "fill": "#f0f0f0",
+      "darkFill": "#2a2a2a",
+      "stroke": "#888888"
+    }
+  },
+  "nodes": [
+    {
+      "id": "editor",
+      "label": "Editor (Tiptap)",
+      "category": "frontend",
+      "x": 30,
+      "y": 60,
+      "subtitle": "src/components/editor/"
+    },
+    {
+      "id": "chat-cmdbar",
+      "label": "Chat / Command Bar",
+      "category": "frontend",
+      "x": 30,
+      "y": 140,
+      "subtitle": "ChatPanel \u00b7 FloatingCommandBar"
+    },
+    {
+      "id": "sidebar",
+      "label": "Sidebar",
+      "category": "frontend",
+      "x": 30,
+      "y": 220,
+      "subtitle": "FileTree \u00b7 QuietSidebar"
+    },
+    {
+      "id": "activity",
+      "label": "Activity / Agent Orb",
+      "category": "frontend",
+      "x": 30,
+      "y": 300,
+      "subtitle": "AgentPanel \u00b7 ActivityStrip"
+    },
+    {
+      "id": "shell",
+      "label": "Shell / Layout",
+      "category": "frontend",
+      "x": 30,
+      "y": 380,
+      "subtitle": "App.tsx \u00b7 QuietLayout \u00b7 Dialogs"
+    },
+    {
+      "id": "stores",
+      "label": "Zustand Stores",
+      "category": "state",
+      "x": 230,
+      "y": 100,
+      "subtitle": "editor \u00b7 workspace \u00b7 chat \u00b7 ai \u00b7 \u2026"
+    },
+    {
+      "id": "hooks",
+      "label": "React Hooks",
+      "category": "state",
+      "x": 230,
+      "y": 220,
+      "subtitle": "useFileOperations \u00b7 useAcpLifecycle \u00b7 \u2026"
+    },
+    {
+      "id": "editor-ext",
+      "label": "Editor Extensions",
+      "category": "state",
+      "x": 230,
+      "y": 340,
+      "subtitle": "ProseMirror plugins \u00b7 markdown.ts"
+    },
+    {
+      "id": "tauri-ipc",
+      "label": "Tauri IPC",
+      "category": "ipc",
+      "x": 430,
+      "y": 240,
+      "subtitle": "invoke() \u00b7 events"
+    },
+    {
+      "id": "file-cmds",
+      "label": "File Commands",
+      "category": "rust-io",
+      "x": 620,
+      "y": 30,
+      "subtitle": "commands/file.rs \u00b7 dialog.rs"
+    },
+    {
+      "id": "watcher",
+      "label": "Filesystem Watcher",
+      "category": "rust-io",
+      "x": 620,
+      "y": 100,
+      "subtitle": "commands/watcher.rs \u00b7 notify crate"
+    },
+    {
+      "id": "sqlite-index",
+      "label": "SQLite Index",
+      "category": "rust-io",
+      "x": 620,
+      "y": 170,
+      "subtitle": "src/index/ \u00b7 rusqlite + comrak + FTS5"
+    },
+    {
+      "id": "skills",
+      "label": "Skills / Agents",
+      "category": "rust-io",
+      "x": 620,
+      "y": 240,
+      "subtitle": "skills.rs \u00b7 agents.rs \u00b7 script_exec.rs"
+    },
+    {
+      "id": "export-engine",
+      "label": "Export Engines",
+      "category": "rust-io",
+      "x": 620,
+      "y": 310,
+      "subtitle": "export.rs \u00b7 Typst \u00b7 docx-rs \u00b7 ppt-rs"
+    },
+    {
+      "id": "transcription",
+      "label": "Transcription",
+      "category": "rust-io",
+      "x": 620,
+      "y": 380,
+      "subtitle": "transcription.rs \u00b7 whisper-rs"
+    },
+    {
+      "id": "agent-manager",
+      "label": "Agent Binary Manager",
+      "category": "rust-io",
+      "x": 620,
+      "y": 450,
+      "subtitle": "agent_manager.rs \u00b7 acp_binary.rs"
+    },
+    {
+      "id": "ai-streaming",
+      "label": "AI Streaming",
+      "category": "rust-ai",
+      "x": 820,
+      "y": 30,
+      "subtitle": "ai_streaming.rs \u00b7 tool_execution.rs"
+    },
+    {
+      "id": "acp-layer",
+      "label": "ACP Layer",
+      "category": "rust-ai",
+      "x": 820,
+      "y": 100,
+      "subtitle": "acp.rs \u00b7 acp_client.rs \u00b7 agent-client-protocol"
+    },
+    {
+      "id": "copilot-lsp",
+      "label": "Copilot LSP",
+      "category": "rust-ai",
+      "x": 820,
+      "y": 170,
+      "subtitle": "copilot_lsp.rs \u00b7 copilot_protocol.rs \u00b7 JSON-RPC"
+    },
+    {
+      "id": "local-ai-server",
+      "label": "Local AI Server",
+      "category": "rust-ai",
+      "x": 820,
+      "y": 240,
+      "subtitle": "local_inference.rs \u00b7 llama-server sidecar"
+    },
+    {
+      "id": "sandbox",
+      "label": "Seatbelt Sandbox",
+      "category": "security",
+      "x": 1020,
+      "y": 100,
+      "subtitle": "sandbox.rs \u00b7 sandbox_monitor.rs"
+    },
+    {
+      "id": "network-proxy",
+      "label": "Network Proxy",
+      "category": "security",
+      "x": 1020,
+      "y": 180,
+      "subtitle": "network_proxy.rs \u00b7 domain allowlists"
+    },
+    {
+      "id": "credentials",
+      "label": "OS Keychain",
+      "category": "security",
+      "x": 1020,
+      "y": 260,
+      "subtitle": "credentials.rs \u00b7 keyring crate"
+    },
+    {
+      "id": "filesystem",
+      "label": "Filesystem",
+      "category": "external",
+      "x": 1210,
+      "y": 30,
+      "subtitle": "Local \u00b7 iCloud \u00b7 git working tree"
+    },
+    {
+      "id": "ai-apis",
+      "label": "AI Provider APIs",
+      "category": "external",
+      "x": 1210,
+      "y": 100,
+      "subtitle": "Anthropic \u00b7 OpenAI \u00b7 Ollama \u00b7 DuckDuckGo"
+    },
+    {
+      "id": "agent-subprocess",
+      "label": "Agent Subprocesses",
+      "category": "external",
+      "x": 1210,
+      "y": 170,
+      "subtitle": "claude-agent-acp \u00b7 codex \u00b7 copilot \u00b7 gemini"
+    },
+    {
+      "id": "model-hub",
+      "label": "Model Hub / Releases",
+      "category": "external",
+      "x": 1210,
+      "y": 240,
+      "subtitle": "Hugging Face \u00b7 GitHub Releases"
+    }
+  ],
+  "flows": [
+    {
+      "id": "save-file",
+      "title": "Save a file (Cmd+S)",
+      "summary": "Persists the active document to disk, suppresses the resulting watcher event, and triggers a SQLite reindex of the changed file.",
+      "steps": [
+        {
+          "from": "editor",
+          "to": "editor-ext",
+          "label": "serialize doc",
+          "detail": "ProseMirror doc \u2192 markdown via prosemirror-markdown serializer in src/lib/markdown.ts"
+        },
+        {
+          "from": "editor-ext",
+          "to": "hooks",
+          "label": "saveFile(path, text)",
+          "detail": "useFileOperations.saveFile() called from editor's Cmd+S handler"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('mark_self_write')",
+          "detail": "Records the path in WatcherState.self_writes with a 5s TTL so the upcoming watcher event is suppressed"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('write_file')",
+          "detail": "After mark_self_write resolves; writes UTF-8 bytes"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "file-cmds",
+          "label": "write_file(path, content)",
+          "detail": "commands/file.rs writes the file via std::fs"
+        },
+        {
+          "from": "file-cmds",
+          "to": "filesystem",
+          "label": "fs::write",
+          "detail": "Real disk write; macOS FSEvents queues a Modify event"
+        },
+        {
+          "from": "filesystem",
+          "to": "watcher",
+          "label": "FSEvents \u2192 notify",
+          "detail": "notify_debouncer_full coalesces within 500ms; classified as Modify"
+        },
+        {
+          "from": "watcher",
+          "to": "sqlite-index",
+          "label": "queue reindex",
+          "detail": "Self-writes are still indexed (only the frontend file-changed-batch event is suppressed)"
+        },
+        {
+          "from": "watcher",
+          "to": "tauri-ipc",
+          "label": "(suppressed)",
+          "detail": "is_self_write() returns true so no file-changed-batch event fires for this path"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "mark tab clean",
+          "detail": "editor-store.markClean(tabId); savedAt timestamp updated, 'saved Xs ago' chrome refreshes"
+        }
+      ]
+    },
+    {
+      "id": "open-file",
+      "title": "Open a file from the sidebar",
+      "summary": "Loads file contents from disk, parses markdown into a ProseMirror doc, and either creates or activates a tab.",
+      "steps": [
+        {
+          "from": "sidebar",
+          "to": "hooks",
+          "label": "click row",
+          "detail": "FileTreeItem onActivate \u2192 useFileOperations.openFile(path)"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "lookup tab",
+          "detail": "editor-store.openDocuments scanned for existing tab; if found, just activate"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('read_file')",
+          "detail": "Only invoked on cache miss; routes by extension (markdown vs binary viewer)"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "file-cmds",
+          "label": "read_file(path)",
+          "detail": "commands/file.rs returns Ok(String) for UTF-8, Err otherwise"
+        },
+        {
+          "from": "file-cmds",
+          "to": "filesystem",
+          "label": "fs::read_to_string",
+          "detail": "Reads bytes; cloud paths gated by 10s per-step timeout in startup wrapper"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "addTab + setActive",
+          "detail": "editor-store.openDocuments updated with new entry; activeTabId set"
+        },
+        {
+          "from": "stores",
+          "to": "editor",
+          "label": "render active tab",
+          "detail": "Editor.tsx subscribes to activeTabId; effect triggers content load"
+        },
+        {
+          "from": "editor",
+          "to": "editor-ext",
+          "label": "loadRawMarkdownIntoEditor",
+          "detail": "Parses markdown \u2192 ProseMirror doc; logs [perf:doc-load] and [perf:setContent]"
+        }
+      ]
+    },
+    {
+      "id": "startup-restore",
+      "title": "Open project + restore tabs (startup)",
+      "summary": "App boot flow: validates persisted workspace state, refreshes file trees, restores open tabs, initializes the SQLite index, and starts watchers.",
+      "steps": [
+        {
+          "from": "shell",
+          "to": "hooks",
+          "label": "App mount \u2192 useAppLifecycle",
+          "detail": "Single 30s global timeout + 10s per-step timeouts so cloud paths can't hang startup"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "rehydrate Zustand",
+          "detail": "workspace \u00b7 editor \u00b7 settings \u00b7 ai \u00b7 routing \u00b7 permission stores load from localStorage"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "list_directory(project)",
+          "detail": "One call per project root; show_hidden honoured by settings.showHiddenFiles"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "file-cmds",
+          "label": "list_directory recursive",
+          "detail": "Returns FileEntry[] with hidden flag; .DS_Store and .git internals always excluded"
+        },
+        {
+          "from": "file-cmds",
+          "to": "filesystem",
+          "label": "scan dir tree",
+          "detail": "Walks the workspace; ancestor stat needed for fs.watch parent traversal"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "init_index(project)",
+          "detail": "src/index/mod.rs ensures index.db exists; iCloud-excluded via xattr"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "sqlite-index",
+          "label": "open / migrate db",
+          "detail": "Per-project ~/.notesage/index.db schema check + comrak walk for changed files"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "watch_directory(...)",
+          "detail": "Once per project root; deduped against WatcherState.watched_paths"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "watcher",
+          "label": "notify watcher start",
+          "detail": "Lazy-init RecommendedWatcher with 500ms debounce"
+        },
+        {
+          "from": "hooks",
+          "to": "editor",
+          "label": "restore active tab",
+          "detail": "editor-store.activeTabId reapplied; loadRawMarkdownIntoEditor for first paint"
+        },
+        {
+          "from": "stores",
+          "to": "shell",
+          "label": "set startupReady",
+          "detail": "settings.startupReady=true releases the watcher gate; tray sync begins"
+        }
+      ]
+    },
+    {
+      "id": "external-change",
+      "title": "External file change \u2192 diff review",
+      "summary": "A file changes outside Notesage (other editor, AI agent, terminal). Watcher fires, the frontend either silently reloads or surfaces an inline diff for review.",
+      "steps": [
+        {
+          "from": "filesystem",
+          "to": "watcher",
+          "label": "FSEvents change",
+          "detail": "Real change hits notify; not in self_writes set"
+        },
+        {
+          "from": "watcher",
+          "to": "sqlite-index",
+          "label": "queue reindex",
+          "detail": "All real changes feed the reindex queue regardless of frontend gating"
+        },
+        {
+          "from": "watcher",
+          "to": "tauri-ipc",
+          "label": "emit file-changed-batch",
+          "detail": "Batched per debounce window: [{ path, kind: 'create'|'modify'|'delete' }]"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "hooks",
+          "label": "useFileWatcher event",
+          "detail": "Reads file, compares to in-memory tab; bails if identical (content guard)"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "branch on setting",
+          "detail": "settings.externalChangeDiffReview decides: silent reload (off) vs review (on)"
+        },
+        {
+          "from": "stores",
+          "to": "editor",
+          "label": "OFF: setContent",
+          "detail": "Auto-reload via editor.commands.setContent + 3s info toast (toastExternalReload)"
+        },
+        {
+          "from": "stores",
+          "to": "editor-ext",
+          "label": "ON: inline diff",
+          "detail": "external-change-store.addChange() drives the InlineDiff plugin; per-hunk accept/reject"
+        },
+        {
+          "from": "editor-ext",
+          "to": "chat-cmdbar",
+          "label": "sticky action toast",
+          "detail": "toastExternalChange with Accept / Reject / Dismiss; Reject re-saves to avoid re-detection loop"
+        }
+      ]
+    },
+    {
+      "id": "send-direct-api",
+      "title": "Send a chat message (direct API: Anthropic / OpenAI / Ollama)",
+      "summary": "Streaming SSE chat to a hosted or local API. Tokens flow back as Tauri events; segments dual-write into the chat store.",
+      "steps": [
+        {
+          "from": "chat-cmdbar",
+          "to": "hooks",
+          "label": "send + attachments",
+          "detail": "ChatInput \u2192 useDirectApiChat.send(); images compressed via image-compress.ts"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "addMessage(user)",
+          "detail": "chat-store appends user message; tool definitions resolved from skill-store.getToolDefinitions()"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('ai_chat_stream')",
+          "detail": "Args include connection_id (NOT the API key) + tools array + scope"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "credentials",
+          "label": "resolve key by id",
+          "detail": "ai_streaming.rs reads the API key from OS keychain via keyring crate"
+        },
+        {
+          "from": "credentials",
+          "to": "ai-streaming",
+          "label": "secret string",
+          "detail": "Key never returns to the frontend"
+        },
+        {
+          "from": "ai-streaming",
+          "to": "ai-apis",
+          "label": "POST stream",
+          "detail": "Anthropic /v1/messages, OpenAI /v1/responses, or Ollama /api/chat (with runtime thinking detection via /api/show)"
+        },
+        {
+          "from": "ai-apis",
+          "to": "ai-streaming",
+          "label": "SSE chunks",
+          "detail": "Provider-specific framing parsed; thinking, text, tool_use, image blocks"
+        },
+        {
+          "from": "ai-streaming",
+          "to": "tauri-ipc",
+          "label": "emit ai-stream-*",
+          "detail": "ai-stream-chunk \u00b7 ai-stream-thinking-chunk \u00b7 ai-tool-call \u00b7 ai-stream-image \u00b7 ai-stream-done"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "hooks",
+          "label": "stream listeners",
+          "detail": "useDirectApiChat throttles to 50ms flushes; appends segments + content (dual write)"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "appendTextSegment / pushSegment",
+          "detail": "chat-store actions; conv.updatedAt bumped to invalidate selectors"
+        },
+        {
+          "from": "stores",
+          "to": "chat-cmdbar",
+          "label": "render segments",
+          "detail": "SegmentRenderer \u2192 Text/Thinking/ToolCall/ToolResult/Image segment views"
+        }
+      ]
+    },
+    {
+      "id": "send-acp",
+      "title": "Send a chat message (ACP agent: Claude Code / Codex / Copilot CLI / Gemini)",
+      "summary": "JSON-RPC over stdio to a managed agent subprocess running under Seatbelt. Tool calls require permission cards; updates stream as session events.",
+      "steps": [
+        {
+          "from": "chat-cmdbar",
+          "to": "hooks",
+          "label": "send",
+          "detail": "useAcpLifecycle ensures a session via restoreOrCreateAcpSession (resume \u2192 load \u2192 list \u2192 new)"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('acp_session_prompt')",
+          "detail": "Includes session_id, content blocks (text + image), and any locked project paths"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "acp-layer",
+          "label": "session/prompt",
+          "detail": "agent-client-protocol crate marshals to JSON-RPC; writes to subprocess stdin"
+        },
+        {
+          "from": "acp-layer",
+          "to": "sandbox",
+          "label": "(spawn-time gate)",
+          "detail": "First spawn loaded a Seatbelt profile from getChatSandboxScope: writable=selected projects, deny default network"
+        },
+        {
+          "from": "acp-layer",
+          "to": "agent-subprocess",
+          "label": "stdin write",
+          "detail": "Agent runs inside Seatbelt; only allowed network is localhost:proxy_port"
+        },
+        {
+          "from": "agent-subprocess",
+          "to": "network-proxy",
+          "label": "HTTP via proxy",
+          "detail": "All outbound HTTP forced through the localhost proxy by HTTP_PROXY env + kernel deny-default"
+        },
+        {
+          "from": "network-proxy",
+          "to": "ai-apis",
+          "label": "allowlisted domain",
+          "detail": "Built-in defaults per provider + user-configurable additions; unknown domains trigger approval card"
+        },
+        {
+          "from": "agent-subprocess",
+          "to": "acp-layer",
+          "label": "session/update",
+          "detail": "agent_message_chunk \u00b7 agent_thought_chunk \u00b7 tool_call \u00b7 tool_call_update \u00b7 plan \u00b7 usage_update"
+        },
+        {
+          "from": "acp-layer",
+          "to": "tauri-ipc",
+          "label": "emit acp-session-update",
+          "detail": "AcpClient impl forwards every notification to the frontend"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "hooks",
+          "label": "useAcpSessionListeners",
+          "detail": "Normalizes ToolCallContent (Diff/Content/Terminal) via acp-utils.normalizeToolCallContent"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "dual-write segments",
+          "detail": "chat-store + activity-store updated; tool calls become ToolCallSegment + AgentActivity"
+        },
+        {
+          "from": "stores",
+          "to": "activity",
+          "label": "task pulse / orb",
+          "detail": "AgentOrb count badge + CSS keyframe pulse; click opens AgentPanel popover"
+        }
+      ]
+    },
+    {
+      "id": "ai-tool-call",
+      "title": "AI tool call execution (e.g., write_file)",
+      "summary": "Mid-stream the model requests a tool. Permission card surfaces for write/execute tools, then the executor runs the tool, scope-gates the path, and feeds the result back into the next API turn.",
+      "steps": [
+        {
+          "from": "ai-streaming",
+          "to": "tauri-ipc",
+          "label": "emit ai-tool-call",
+          "detail": "Payload: { id, name, arguments } parsed from provider-specific tool_use blocks"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "hooks",
+          "label": "useDirectApiChat hears event",
+          "detail": "Routes to tool-executor.ts for client-side execution"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "permission check",
+          "detail": "Auto-allow for read tools; permission-store.toolCallAlways scoped by (toolName, connectionId, projectRoot)"
+        },
+        {
+          "from": "stores",
+          "to": "chat-cmdbar",
+          "label": "render permission card",
+          "detail": "ToolCallPermissionCard for non-auto tools; tiered allow once/session/always; 30s auto-deny"
+        },
+        {
+          "from": "hooks",
+          "to": "hooks",
+          "label": "isToolCallAllowed",
+          "detail": "src/lib/tool-executor.ts gates FS tools on path scope (selectProjectPaths(chat-store))"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('write_file')",
+          "detail": "Or read_file / list_directory / web_search / execute_skill_script depending on tool"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "file-cmds",
+          "label": "execute",
+          "detail": "Backend command runs; result string returned"
+        },
+        {
+          "from": "file-cmds",
+          "to": "filesystem",
+          "label": "fs op",
+          "detail": "Real disk write; will trigger save-file flow's watcher path next"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "push ToolResultSegment",
+          "detail": "chat-store appends the result; activity-store records approvalMode (auto/user/denied)"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "ai_chat_stream (continue)",
+          "detail": "Result fed back as role:'tool' message; loop caps at 20 calls per turn"
+        }
+      ]
+    },
+    {
+      "id": "inline-completion",
+      "title": "Inline completion (Copilot LSP ghost text)",
+      "summary": "Editor changes are mirrored to the Copilot Language Server over JSON-RPC; suggestions render as ghost-text widget decorations.",
+      "steps": [
+        {
+          "from": "editor",
+          "to": "editor-ext",
+          "label": "doc transaction",
+          "detail": "Tiptap update event fires on every edit"
+        },
+        {
+          "from": "editor-ext",
+          "to": "hooks",
+          "label": "useCopilotCompletion debounce",
+          "detail": "150ms debounce; uses ProseMirror plain-text projection of the doc"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "isUriInScope check",
+          "detail": "src/lib/ai/uri-scope.ts gates on chat-footer-selected project roots; out-of-scope tabs skipped"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke copilot/textDocument/didChange",
+          "detail": "Full content replacement; followed by textDocument/inlineCompletion at cursor"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "copilot-lsp",
+          "label": "JSON-RPC request",
+          "detail": "copilot_protocol.rs handles Content-Length framing + pending request map"
+        },
+        {
+          "from": "copilot-lsp",
+          "to": "agent-subprocess",
+          "label": "stdin \u2192 copilot-language-server",
+          "detail": "Spawned from agent-manager; subscription auth via OAuth device flow"
+        },
+        {
+          "from": "agent-subprocess",
+          "to": "ai-apis",
+          "label": "Copilot completion API",
+          "detail": "Provider-side completion call; response returned to LSP"
+        },
+        {
+          "from": "agent-subprocess",
+          "to": "copilot-lsp",
+          "label": "JSON-RPC response",
+          "detail": "Reader loop matches request id \u2192 resolves pending promise"
+        },
+        {
+          "from": "copilot-lsp",
+          "to": "tauri-ipc",
+          "label": "completion text",
+          "detail": "Returned as Tauri command result"
+        },
+        {
+          "from": "hooks",
+          "to": "editor-ext",
+          "label": "setGhostText",
+          "detail": "GhostText extension dispatches a transaction with widget decoration at cursor"
+        },
+        {
+          "from": "editor-ext",
+          "to": "editor",
+          "label": "render ghost",
+          "detail": "Tab to accept \u00b7 Esc to dismiss \u00b7 any keystroke auto-clears"
+        }
+      ]
+    },
+    {
+      "id": "comment-delegation",
+      "title": "Comment delegation to AI agent",
+      "summary": "User creates a comment with text selected, then delegates to the agent_tasks-routed connection. Agent reply renders inside the comment thread with optional 'Apply' inline diff.",
+      "steps": [
+        {
+          "from": "editor",
+          "to": "editor-ext",
+          "label": "Cmd+Shift+M",
+          "detail": "CommentMark extension applied to selection; anchor positions persisted via PM mapping"
+        },
+        {
+          "from": "editor-ext",
+          "to": "stores",
+          "label": "comment-store.add",
+          "detail": "Project files: keyed by frontmatter UUID. Non-project: path-hashed sidecar in ~/.notesage/comments/"
+        },
+        {
+          "from": "stores",
+          "to": "tauri-ipc",
+          "label": "write comment sidecar",
+          "detail": "JSON file in .notesage/comments/{uuid}.json or path-{hash}.json"
+        },
+        {
+          "from": "chat-cmdbar",
+          "to": "hooks",
+          "label": "Delegate clicked",
+          "detail": "useCommentDelegation \u2192 useAgentTaskOperations.startTask() with anchor text + prompt"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "activity-store.start",
+          "detail": "AgentActivity recorded with kind:'task'; orb pulses, panel shows running entry"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('acp_session_prompt')",
+          "detail": "Routed via routing-store.agent_tasks slot; restoreOrCreateAcpSession used"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "acp-layer",
+          "label": "session/prompt",
+          "detail": "Same path as send-acp; session resilience via acp_is_agent_alive timer (5min)"
+        },
+        {
+          "from": "acp-layer",
+          "to": "agent-subprocess",
+          "label": "agent runs",
+          "detail": "Tool calls scope-gated via path-filter.ts (auto-allow AND user-approve paths)"
+        },
+        {
+          "from": "agent-subprocess",
+          "to": "tauri-ipc",
+          "label": "session updates",
+          "detail": "Reply text accumulates as a threaded reply on the comment"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "hooks",
+          "label": "useAcpSessionListeners",
+          "detail": "Updates threaded reply on the comment; existingTaskId reused for multi-turn"
+        },
+        {
+          "from": "hooks",
+          "to": "editor-ext",
+          "label": "Apply \u2192 AISuggestion",
+          "detail": "Applies inline diff to anchor text; preamble stripped; Cmd+Enter accept / Cmd+Backspace reject"
+        }
+      ]
+    },
+    {
+      "id": "skill-execution",
+      "title": "Skill discovery + script execution",
+      "summary": "Skills are discovered from on-disk SKILL.md files, surfaced to the model as tool definitions, and (when called) executed as sandboxed scripts.",
+      "steps": [
+        {
+          "from": "shell",
+          "to": "hooks",
+          "label": "useSkillOperations",
+          "detail": "Runs at startup AND on watcher event; logs [perf:skills]"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('discover_skills')",
+          "detail": "Scope: ~/.notesage/skills/ (global) + selected projects' .notesage/skills/"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "skills",
+          "label": "scan + parse",
+          "detail": "skills.rs walks dirs; skills_frontmatter.rs parses YAML; skills_tool_parser.rs extracts tool defs"
+        },
+        {
+          "from": "skills",
+          "to": "filesystem",
+          "label": "read SKILL.md",
+          "detail": "Project skills override global; auto-extracts bundled skills on first run"
+        },
+        {
+          "from": "skills",
+          "to": "tauri-ipc",
+          "label": "Skill[]",
+          "detail": "Returned to frontend with byProject + global registry shape"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "skill-store update",
+          "detail": "{ global, byProject } merged at send time by selectedProjectPaths"
+        },
+        {
+          "from": "stores",
+          "to": "ai-streaming",
+          "label": "tools[] in prompt",
+          "detail": "skill-store.getToolDefinitions() called; agent's allowed-tools filters the set"
+        },
+        {
+          "from": "ai-streaming",
+          "to": "tauri-ipc",
+          "label": "emit ai-tool-call",
+          "detail": "Tool name follows skill__{skill}__{script} convention"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "permission card",
+          "detail": "permission-store.skillScriptAlways scoped by (toolName, connectionId, projectRoot)"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('execute_skill_script')",
+          "detail": "Args resolved from ArgMapping (frontmatter or Usage: comment fallback)"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "skills",
+          "label": "spawn interpreter",
+          "detail": "script_exec.rs resolves bash/python/node via shell_path.rs PATH; runs under Seatbelt scope"
+        },
+        {
+          "from": "skills",
+          "to": "agent-subprocess",
+          "label": "subprocess",
+          "detail": "Sandbox writable = chat scope; network = proxy-only"
+        }
+      ]
+    },
+    {
+      "id": "export-pdf",
+      "title": "Export PDF",
+      "summary": "Markdown \u2192 Typst markup \u2192 embedded Typst compiler \u2192 PDF bytes \u2192 native save dialog \u2192 disk write.",
+      "steps": [
+        {
+          "from": "shell",
+          "to": "hooks",
+          "label": "ExportDialog confirm",
+          "detail": "Cmd+Shift+E or sidebar 'Export as PDF'; useExportOperations.exportPdf()"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "read settings",
+          "detail": "Template (clean/academic/report), TOC, page numbers, page size persisted"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('export_pdf')",
+          "detail": "Args include the in-memory markdown (NOT just the path) so unsaved edits export"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "export-engine",
+          "label": "markdown_to_typst",
+          "detail": "comrak GFM walk \u2192 Typst markup; tables, drawings, link previews handled"
+        },
+        {
+          "from": "export-engine",
+          "to": "filesystem",
+          "label": "resolve drawing svgs",
+          "detail": "project_root used to find .excalidraw \u2192 .svg sidecars"
+        },
+        {
+          "from": "export-engine",
+          "to": "export-engine",
+          "label": "Typst compile",
+          "detail": "NotesageWorld trait impl + bundled fonts (Inter/Source Serif 4/JetBrains Mono); typst_pdf::pdf()"
+        },
+        {
+          "from": "export-engine",
+          "to": "tauri-ipc",
+          "label": "Vec<u8> bytes",
+          "detail": "PDF bytes returned to the frontend"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "open save dialog",
+          "detail": "tauri-plugin-dialog save; default filename from doc title"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "file-cmds",
+          "label": "save_binary_file",
+          "detail": "Writes raw bytes (write_file is UTF-8 only); offers 'Reveal in Finder' toast action"
+        },
+        {
+          "from": "file-cmds",
+          "to": "filesystem",
+          "label": "fs::write bytes",
+          "detail": "PDF lands at the chosen path"
+        }
+      ]
+    },
+    {
+      "id": "voice-transcription",
+      "title": "Voice transcription (record \u2192 Whisper \u2192 insert)",
+      "summary": "cpal captures audio, resamples to 16kHz mono, whisper-rs runs locally, and segments are inserted at the cursor.",
+      "steps": [
+        {
+          "from": "editor",
+          "to": "hooks",
+          "label": "Cmd+Shift+R",
+          "detail": "useRecording.toggle(); shows recording indicator"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('start_recording')",
+          "detail": "Source: 'microphone'; spawns dedicated thread (cpal Stream is !Send)"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "transcription",
+          "label": "cpal stream start",
+          "detail": "Captures at device-native sample rate / channel count"
+        },
+        {
+          "from": "editor",
+          "to": "hooks",
+          "label": "Cmd+Shift+R again",
+          "detail": "User stops recording"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('stop_recording')",
+          "detail": "Returns AudioBufferInfo (duration, samples, rate)"
+        },
+        {
+          "from": "transcription",
+          "to": "tauri-ipc",
+          "label": "buffer ready",
+          "detail": "Resamples to 16kHz mono in transcription state"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('transcribe', model)",
+          "detail": "Auto-downloads base model if none present"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "transcription",
+          "label": "whisper-rs run",
+          "detail": "Metal GPU acceleration on macOS; emits transcription-progress events"
+        },
+        {
+          "from": "transcription",
+          "to": "tauri-ipc",
+          "label": "TranscriptionResult",
+          "detail": "Segments with start/end timestamps + detected language"
+        },
+        {
+          "from": "hooks",
+          "to": "editor-ext",
+          "label": "insert segments",
+          "detail": "Concatenated text inserted at cursor via PM transaction"
+        }
+      ]
+    },
+    {
+      "id": "domain-approval",
+      "title": "Domain approval (sandbox + proxy + user)",
+      "summary": "An ACP agent makes an HTTP request to a domain not on the allowlist. The proxy queues it and asks the user via a chat card; the kernel sandbox guarantees the agent can't bypass the proxy.",
+      "steps": [
+        {
+          "from": "agent-subprocess",
+          "to": "sandbox",
+          "label": "outbound TCP",
+          "detail": "Seatbelt: (deny default) for network; only localhost:proxy_port allowed"
+        },
+        {
+          "from": "sandbox",
+          "to": "network-proxy",
+          "label": "kernel-routed",
+          "detail": "Agent literally cannot reach anywhere else; HTTP_PROXY env points at the localhost port"
+        },
+        {
+          "from": "network-proxy",
+          "to": "stores",
+          "label": "domain check",
+          "detail": "permission-store.alwaysAllowedDomains scoped by (connectionId, projectRoot|'global')"
+        },
+        {
+          "from": "network-proxy",
+          "to": "tauri-ipc",
+          "label": "emit domain-approval-request",
+          "detail": "Sent on cache miss; carries instance_id + domain"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "chat-cmdbar",
+          "label": "DomainApprovalCard",
+          "detail": "Allow once / for session / always \u00b7 Deny \u00b7 30s auto-deny timeout"
+        },
+        {
+          "from": "chat-cmdbar",
+          "to": "stores",
+          "label": "store decision",
+          "detail": "Always-allow persisted; session-allow held in memory; once-allow consumed"
+        },
+        {
+          "from": "stores",
+          "to": "tauri-ipc",
+          "label": "approve / deny",
+          "detail": "invoke('approve_domain' / 'deny_domain') with the request id"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "network-proxy",
+          "label": "release / drop",
+          "detail": "Approved: proxies to ai-apis. Denied/timeout: 403 to agent + chat message"
+        },
+        {
+          "from": "sandbox",
+          "to": "activity",
+          "label": "violation entries",
+          "detail": "sandbox_monitor.rs streams `log stream` for Seatbelt deny lines; rendered in Activity panel"
+        }
+      ]
+    },
+    {
+      "id": "image-attachment",
+      "title": "Image attachment in chat (paste \u2192 compress \u2192 vision)",
+      "summary": "Image enters via paste, drag, file picker, or 'Add to chat' from the editor. Client-side compression keeps payload small; vision capability is checked per provider.",
+      "steps": [
+        {
+          "from": "editor-ext",
+          "to": "chat-cmdbar",
+          "label": "vision event bus",
+          "detail": "Right-click 'Add to chat' on editor image / drawing \u2192 src/lib/ai/vision.ts dispatches event"
+        },
+        {
+          "from": "sidebar",
+          "to": "chat-cmdbar",
+          "label": "drag image file",
+          "detail": "Or 'Add to chat' from sidebar context menu on image files"
+        },
+        {
+          "from": "chat-cmdbar",
+          "to": "hooks",
+          "label": "addAttachment(file)",
+          "detail": "Up to 5 attachments per message; AttachmentStrip thumbnails appear"
+        },
+        {
+          "from": "hooks",
+          "to": "hooks",
+          "label": "image-compress.ts",
+          "detail": "Canvas API: resize to 1568px max, PNG\u2192JPEG, 5MB cap"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "vision capability",
+          "detail": "Anthropic/OpenAI: always. Ollama: /api/show probe. Local: catalog supports_vision. ACP: promptCapabilities.images"
+        },
+        {
+          "from": "stores",
+          "to": "chat-cmdbar",
+          "label": "(switch model?)",
+          "detail": "Switching to a non-vision model clears pending attachments"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "ai_chat_stream + images",
+          "detail": "Per-provider serialization \u2014 Anthropic base64 blocks, OpenAI image_url, Ollama images[] field"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "ai-streaming",
+          "label": "format payload",
+          "detail": "ai_streaming.rs picks the right shape per provider"
+        },
+        {
+          "from": "ai-streaming",
+          "to": "ai-apis",
+          "label": "POST with images",
+          "detail": "Stream resumes as in send-direct-api flow"
+        }
+      ]
+    },
+    {
+      "id": "agent-install",
+      "title": "Agent binary install (managed install wizard)",
+      "summary": "On first connection, the agent binary is downloaded from GitHub Releases into ~/.notesage/agents/bin/. Updates ride the same path.",
+      "steps": [
+        {
+          "from": "shell",
+          "to": "hooks",
+          "label": "Add Connection",
+          "detail": "Settings \u2192 Connections \u2192 agent-managed provider; install wizard opens"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('install_agent')",
+          "detail": "agent_manager.rs picks the right asset for the current platform"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "agent-manager",
+          "label": "begin install",
+          "detail": "Looks up version manifest; deduplicates against current installed version"
+        },
+        {
+          "from": "agent-manager",
+          "to": "model-hub",
+          "label": "download asset",
+          "detail": "GitHub Releases zip/tar; chunked download with progress events"
+        },
+        {
+          "from": "agent-manager",
+          "to": "tauri-ipc",
+          "label": "emit install-progress",
+          "detail": "Frontend shows progress bar in the wizard"
+        },
+        {
+          "from": "agent-manager",
+          "to": "filesystem",
+          "label": "extract to bin",
+          "detail": "~/.notesage/agents/bin/<agent>; chmod +x; symlink-resolution friendly"
+        },
+        {
+          "from": "hooks",
+          "to": "tauri-ipc",
+          "label": "invoke('acp_register_connection')",
+          "detail": "Capability probe spawns the agent briefly to discover modes / config / capabilities"
+        },
+        {
+          "from": "tauri-ipc",
+          "to": "acp-layer",
+          "label": "spawn \u2192 initialize",
+          "detail": "ACP initialize handshake; AuthMethod list returned"
+        },
+        {
+          "from": "acp-layer",
+          "to": "agent-subprocess",
+          "label": "stdio JSON-RPC",
+          "detail": "If EnvVar auth: surface generic credential form. If OAuth: open browser via run_in_terminal"
+        },
+        {
+          "from": "acp-layer",
+          "to": "tauri-ipc",
+          "label": "capabilities",
+          "detail": "Stored on connection; auto-refreshed when stale (>24h)"
+        },
+        {
+          "from": "hooks",
+          "to": "stores",
+          "label": "connections-store",
+          "detail": "Connection added; routing-store auto-fills compatible use-case slots"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+
+  <script>
+    (function () {
+      const NODE_W = 180;
+      const NODE_H = 58;
+
+      const themeToggle = document.getElementById("theme-toggle");
+      const flowListEl = document.getElementById("flow-list-items");
+      const flowTitle = document.getElementById("flow-title");
+      const flowSummary = document.getElementById("flow-summary");
+      const stepsList = document.getElementById("steps-list");
+      const legendEl = document.getElementById("legend");
+      const svg = document.getElementById("diagram");
+
+      // Theme
+      const stored = localStorage.getItem("notesage-workflows-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (stored === "dark" || (!stored && prefersDark)) {
+        document.documentElement.classList.add("dark");
+      }
+      themeToggle.addEventListener("click", () => {
+        document.documentElement.classList.toggle("dark");
+        localStorage.setItem(
+          "notesage-workflows-theme",
+          document.documentElement.classList.contains("dark") ? "dark" : "light"
+        );
+      });
+
+      function loadData() {
+        return fetch("./workflows.json", { cache: "no-store" })
+          .then((r) => {
+            if (!r.ok) throw new Error("fetch failed: " + r.status);
+            return r.json();
+          })
+          .catch(() => {
+            const raw = document.getElementById("workflows-data-fallback").textContent;
+            try {
+              return JSON.parse(raw);
+            } catch (e) {
+              throw new Error("Inline fallback JSON is malformed: " + e.message);
+            }
+          });
+      }
+
+      function init(data) {
+        const nodesById = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
+        const categories = data.categories || {};
+        const canvas = data.canvas || { width: 1380, height: 900 };
+
+        // Compute SVG height from node positions (with bottom padding)
+        const maxY = Math.max(...data.nodes.map((n) => n.y + NODE_H)) + 30;
+        const height = Math.max(canvas.height, maxY);
+        svg.setAttribute("viewBox", `0 0 ${canvas.width} ${height}`);
+        svg.setAttribute("height", height);
+
+        // <defs> for arrowhead marker
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        defs.innerHTML = `
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        `;
+        svg.appendChild(defs);
+
+        // Render nodes
+        const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        nodeLayer.setAttribute("id", "node-layer");
+        svg.appendChild(nodeLayer);
+
+        const nodeEls = {};
+        for (const node of data.nodes) {
+          const cat = categories[node.category] || {};
+          const isDark = document.documentElement.classList.contains("dark");
+          const fill = cat.fill || "#eee";
+          const darkFill = cat.darkFill || "#333";
+          const stroke = cat.stroke || "#888";
+
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          g.setAttribute("class", "node-box");
+          g.setAttribute("data-node-id", node.id);
+          g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("class", "node-rect");
+          rect.setAttribute("width", NODE_W);
+          rect.setAttribute("height", NODE_H);
+          rect.setAttribute("rx", 8);
+          rect.setAttribute("ry", 8);
+          rect.setAttribute("fill", fill);
+          rect.setAttribute("data-light-fill", fill);
+          rect.setAttribute("data-dark-fill", darkFill);
+          rect.setAttribute("stroke", stroke);
+          rect.setAttribute("stroke-width", 1);
+          g.appendChild(rect);
+
+          const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          label.setAttribute("class", "node-label");
+          label.setAttribute("x", 12);
+          label.setAttribute("y", 22);
+          label.textContent = node.label;
+          g.appendChild(label);
+
+          if (node.subtitle) {
+            const sub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            sub.setAttribute("class", "node-subtitle");
+            sub.setAttribute("x", 12);
+            sub.setAttribute("y", 40);
+            sub.textContent = node.subtitle.length > 36 ? node.subtitle.slice(0, 35) + "…" : node.subtitle;
+            const titleEl = document.createElementNS("http://www.w3.org/2000/svg", "title");
+            titleEl.textContent = node.subtitle;
+            g.appendChild(titleEl);
+            g.appendChild(sub);
+          }
+
+          nodeLayer.appendChild(g);
+          nodeEls[node.id] = g;
+        }
+
+        // Apply dark fills if needed
+        applyThemeFills();
+
+        // Edge layer (above nodes so arrows are visible)
+        const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        edgeLayer.setAttribute("id", "edge-layer");
+        svg.appendChild(edgeLayer);
+
+        // Edge labels layer
+        const labelLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        labelLayer.setAttribute("id", "label-layer");
+        svg.appendChild(labelLayer);
+
+        // Render flow list
+        for (const flow of data.flows) {
+          const item = document.createElement("div");
+          item.className = "flow-item";
+          item.dataset.flowId = flow.id;
+          item.innerHTML = `
+            <div class="flow-title"></div>
+            <div class="flow-step-count"></div>
+          `;
+          item.querySelector(".flow-title").textContent = flow.title;
+          item.querySelector(".flow-step-count").textContent = `${flow.steps.length} steps`;
+          item.addEventListener("click", () => selectFlow(flow.id));
+          flowListEl.appendChild(item);
+        }
+
+        // Render legend
+        for (const [key, cat] of Object.entries(categories)) {
+          const sw = document.createElement("span");
+          sw.className = "swatch";
+          sw.innerHTML = `<span class="swatch-color" data-cat="${key}"></span>${cat.label}`;
+          legendEl.appendChild(sw);
+        }
+        applyLegendFills();
+
+        // Reactive theme application
+        const observer = new MutationObserver(() => {
+          applyThemeFills();
+          applyLegendFills();
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
+        // Auto-select first flow
+        if (data.flows.length) selectFlow(data.flows[0].id);
+
+        // ---------- Helpers ----------
+
+        function applyThemeFills() {
+          const isDark = document.documentElement.classList.contains("dark");
+          for (const rect of svg.querySelectorAll(".node-rect")) {
+            rect.setAttribute("fill", isDark ? rect.dataset.darkFill : rect.dataset.lightFill);
+          }
+        }
+
+        function applyLegendFills() {
+          const isDark = document.documentElement.classList.contains("dark");
+          for (const el of legendEl.querySelectorAll(".swatch-color")) {
+            const cat = categories[el.dataset.cat];
+            if (cat) el.style.background = isDark ? cat.darkFill : cat.fill;
+          }
+        }
+
+        function nodeAnchor(node, otherCenterX, otherCenterY) {
+          const cx = node.x + NODE_W / 2;
+          const cy = node.y + NODE_H / 2;
+          const dx = otherCenterX - cx;
+          const dy = otherCenterY - cy;
+          // Pick the side closest to other node center; favour horizontal connections
+          if (Math.abs(dx) * 0.7 > Math.abs(dy)) {
+            return dx >= 0
+              ? { x: node.x + NODE_W, y: cy, side: "right" }
+              : { x: node.x,           y: cy, side: "left" };
+          }
+          return dy >= 0
+            ? { x: cx, y: node.y + NODE_H, side: "bottom" }
+            : { x: cx, y: node.y,           side: "top" };
+        }
+
+        function bezierPath(s, t) {
+          // Self-loop
+          if (s.x === t.x && s.y === t.y) {
+            const r = 22;
+            return `M ${s.x} ${s.y} c ${r} ${-r}, ${r * 2} ${-r}, ${r * 2} 0 c 0 ${r}, ${-r} ${r}, ${-r * 2} 0 z`;
+          }
+          const dx = t.x - s.x;
+          const dy = t.y - s.y;
+          // Control offset based on side
+          const sOff = s.side === "right" ? 1 : s.side === "left" ? -1 : 0;
+          const tOff = t.side === "right" ? 1 : t.side === "left" ? -1 : 0;
+          const sVOff = s.side === "bottom" ? 1 : s.side === "top" ? -1 : 0;
+          const tVOff = t.side === "bottom" ? 1 : t.side === "top" ? -1 : 0;
+          const mag = Math.max(40, Math.min(200, Math.abs(dx) * 0.45 + Math.abs(dy) * 0.25));
+          const c1x = s.x + sOff * mag + sVOff * 0;
+          const c1y = s.y + sVOff * mag;
+          const c2x = t.x + tOff * mag;
+          const c2y = t.y + tVOff * mag;
+          return `M ${s.x} ${s.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${t.x} ${t.y}`;
+        }
+
+        function bezierMidpoint(s, t) {
+          // Approximate midpoint of cubic curve (t = 0.5)
+          const dx = t.x - s.x;
+          const dy = t.y - s.y;
+          const sOff = s.side === "right" ? 1 : s.side === "left" ? -1 : 0;
+          const tOff = t.side === "right" ? 1 : t.side === "left" ? -1 : 0;
+          const sVOff = s.side === "bottom" ? 1 : s.side === "top" ? -1 : 0;
+          const tVOff = t.side === "bottom" ? 1 : t.side === "top" ? -1 : 0;
+          const mag = Math.max(40, Math.min(200, Math.abs(dx) * 0.45 + Math.abs(dy) * 0.25));
+          const c1x = s.x + sOff * mag;
+          const c1y = s.y + sVOff * mag;
+          const c2x = t.x + tOff * mag;
+          const c2y = t.y + tVOff * mag;
+          // Cubic Bezier B(0.5)
+          const t05 = 0.5;
+          const omt = 1 - t05;
+          const x = omt ** 3 * s.x + 3 * omt ** 2 * t05 * c1x + 3 * omt * t05 ** 2 * c2x + t05 ** 3 * t.x;
+          const y = omt ** 3 * s.y + 3 * omt ** 2 * t05 * c1y + 3 * omt * t05 ** 2 * c2y + t05 ** 3 * t.y;
+          return { x, y };
+        }
+
+        let activeFlowId = null;
+        let edgeEls = []; // [{ pathEl, numBg, numText, stepIdx }]
+
+        function clearEdges() {
+          while (edgeLayer.firstChild) edgeLayer.removeChild(edgeLayer.firstChild);
+          while (labelLayer.firstChild) labelLayer.removeChild(labelLayer.firstChild);
+          edgeEls = [];
+        }
+
+        function selectFlow(flowId) {
+          const flow = data.flows.find((f) => f.id === flowId);
+          if (!flow) return;
+          activeFlowId = flowId;
+
+          // Update sidebar selection
+          for (const el of flowListEl.querySelectorAll(".flow-item")) {
+            el.classList.toggle("active", el.dataset.flowId === flowId);
+          }
+
+          // Update header
+          flowTitle.textContent = flow.title;
+          flowSummary.textContent = flow.summary || "";
+
+          // Determine which nodes are in this flow
+          const flowNodeIds = new Set();
+          for (const step of flow.steps) {
+            flowNodeIds.add(step.from);
+            flowNodeIds.add(step.to);
+          }
+
+          // Dim non-flow nodes
+          for (const [id, el] of Object.entries(nodeEls)) {
+            el.classList.toggle("dimmed", !flowNodeIds.has(id));
+            el.classList.toggle("in-flow", flowNodeIds.has(id));
+          }
+
+          // Render edges
+          clearEdges();
+          flow.steps.forEach((step, idx) => {
+            const sNode = nodesById[step.from];
+            const tNode = nodesById[step.to];
+            if (!sNode || !tNode) {
+              console.warn(`Flow ${flow.id} step ${idx + 1}: unknown node`, step);
+              return;
+            }
+            const sCenter = { x: sNode.x + NODE_W / 2, y: sNode.y + NODE_H / 2 };
+            const tCenter = { x: tNode.x + NODE_W / 2, y: tNode.y + NODE_H / 2 };
+            const sAnchor = nodeAnchor(sNode, tCenter.x, tCenter.y);
+            const tAnchor = nodeAnchor(tNode, sCenter.x, sCenter.y);
+
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("class", "edge");
+            path.setAttribute("d", bezierPath(sAnchor, tAnchor));
+            path.setAttribute("marker-end", "url(#arrowhead)");
+            path.setAttribute("color", "var(--accent)"); // for marker currentColor
+            path.style.color = "var(--accent)";
+            edgeLayer.appendChild(path);
+
+            const mid = bezierMidpoint(sAnchor, tAnchor);
+            const numBg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            numBg.setAttribute("class", "edge-num-bg");
+            numBg.setAttribute("cx", mid.x);
+            numBg.setAttribute("cy", mid.y);
+            numBg.setAttribute("r", 11);
+            labelLayer.appendChild(numBg);
+
+            const numText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            numText.setAttribute("class", "edge-num");
+            numText.setAttribute("x", mid.x);
+            numText.setAttribute("y", mid.y);
+            numText.textContent = String(idx + 1);
+            labelLayer.appendChild(numText);
+
+            edgeEls.push({ pathEl: path, numBg, numText, stepIdx: idx });
+
+            // Stagger reveal slightly so the path animates in order
+            setTimeout(() => {
+              path.classList.add("visible");
+              numBg.classList.add("visible");
+              numText.classList.add("visible");
+            }, 30 * idx);
+          });
+
+          // Render steps panel
+          stepsList.innerHTML = "";
+          flow.steps.forEach((step, idx) => {
+            const sNode = nodesById[step.from];
+            const tNode = nodesById[step.to];
+            const stepEl = document.createElement("div");
+            stepEl.className = "step";
+            stepEl.dataset.stepIdx = String(idx);
+            stepEl.innerHTML = `
+              <div class="step-num">${idx + 1}</div>
+              <div class="step-body">
+                <div class="step-route">
+                  <span class="from"></span>
+                  <span class="arrow">→</span>
+                  <span class="to"></span>
+                  <span class="label"></span>
+                </div>
+                <div class="step-detail"></div>
+              </div>
+            `;
+            stepEl.querySelector(".from").textContent = sNode ? sNode.label : step.from;
+            stepEl.querySelector(".to").textContent = tNode ? tNode.label : step.to;
+            stepEl.querySelector(".label").textContent = step.label || "";
+            stepEl.querySelector(".step-detail").textContent = step.detail || "";
+            stepEl.addEventListener("mouseenter", () => focusStep(idx));
+            stepEl.addEventListener("mouseleave", () => focusStep(null));
+            stepsList.appendChild(stepEl);
+          });
+        }
+
+        function focusStep(idx) {
+          for (const el of stepsList.querySelectorAll(".step")) {
+            el.classList.toggle("active", Number(el.dataset.stepIdx) === idx);
+          }
+          for (const e of edgeEls) {
+            const isHover = idx === null ? false : e.stepIdx === idx;
+            const isDim = idx !== null && e.stepIdx !== idx;
+            e.pathEl.classList.toggle("hover", isHover);
+            e.pathEl.style.opacity = idx === null ? "" : isDim ? "0.18" : "1";
+            e.numBg.style.opacity = idx === null ? "" : isDim ? "0.18" : "1";
+            e.numText.style.opacity = idx === null ? "" : isDim ? "0.18" : "1";
+          }
+        }
+      }
+
+      loadData()
+        .then(init)
+        .catch((err) => {
+          flowTitle.textContent = "Failed to load workflows";
+          flowSummary.innerHTML = `<code>${err.message}</code>`;
+          console.error(err);
+        });
+    })();
+  </script>
+</body>
+</html>
