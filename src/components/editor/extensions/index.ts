@@ -74,3 +74,4 @@ export type { TableHeaderMenuEventDetail } from './table-header-menu';
 export { TableOfContents } from './toc';
 export type { TocHeading } from './toc';
 export { scanHeadings } from './toc';
+export { EmbeddedBlockAlign } from './embedded-block-align';
