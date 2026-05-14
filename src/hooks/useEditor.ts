@@ -23,7 +23,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents, EmbeddedBlockAlign } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
@@ -98,6 +98,12 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
+      // EmbeddedBlockAlign MUST appear after TextAlign — Tiptap resolves
+      // keyboard shortcuts in reverse extension registration order, so
+      // EmbeddedBlockAlign's Mod-Shift-l/e/r handlers fire first. When the
+      // selection is not on an embedded block they return false, which lets
+      // TextAlign's handlers run.
+      EmbeddedBlockAlign,
       TextStyle,
       Color,
       ThemedHighlight.configure({

@@ -398,7 +398,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                       "cursor-pointer gap-2 text-xs",
                       editor.isActive({ textAlign: "left" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
                     )}
-                    onClick={() => editor.chain().focus().setTextAlign("left").run()}
+                    onClick={() => {
+                      if (!editor.chain().focus().setEmbeddedBlockAlign("left").run()) {
+                        editor.chain().focus().setTextAlign("left").run();
+                      }
+                    }}
                   >
                     <AlignLeft className="size-4 shrink-0" strokeWidth={1.5} />
                     Align left
@@ -408,7 +412,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                       "cursor-pointer gap-2 text-xs",
                       editor.isActive({ textAlign: "center" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
                     )}
-                    onClick={() => editor.chain().focus().setTextAlign("center").run()}
+                    onClick={() => {
+                      if (!editor.chain().focus().setEmbeddedBlockAlign("center").run()) {
+                        editor.chain().focus().setTextAlign("center").run();
+                      }
+                    }}
                   >
                     <AlignCenter className="size-4 shrink-0" strokeWidth={1.5} />
                     Align center
@@ -418,7 +426,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                       "cursor-pointer gap-2 text-xs",
                       editor.isActive({ textAlign: "right" }) && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
                     )}
-                    onClick={() => editor.chain().focus().setTextAlign("right").run()}
+                    onClick={() => {
+                      if (!editor.chain().focus().setEmbeddedBlockAlign("right").run()) {
+                        editor.chain().focus().setTextAlign("right").run();
+                      }
+                    }}
                   >
                     <AlignRight className="size-4 shrink-0" strokeWidth={1.5} />
                     Align right
@@ -734,7 +746,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           {/* Alignment */}
           <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("left").run()}
+            onClick={() => {
+              if (!editor.chain().focus().setEmbeddedBlockAlign("left").run()) {
+                editor.chain().focus().setTextAlign("left").run();
+              }
+            }}
             active={editor.isActive({ textAlign: "left" })}
             title="Align left"
           >
@@ -742,7 +758,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           </ToolbarButton>
 
           <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("center").run()}
+            onClick={() => {
+              if (!editor.chain().focus().setEmbeddedBlockAlign("center").run()) {
+                editor.chain().focus().setTextAlign("center").run();
+              }
+            }}
             active={editor.isActive({ textAlign: "center" })}
             title="Align center"
           >
@@ -750,7 +770,11 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           </ToolbarButton>
 
           <ToolbarButton
-            onClick={() => editor.chain().focus().setTextAlign("right").run()}
+            onClick={() => {
+              if (!editor.chain().focus().setEmbeddedBlockAlign("right").run()) {
+                editor.chain().focus().setTextAlign("right").run();
+              }
+            }}
             active={editor.isActive({ textAlign: "right" })}
             title="Align right"
           >
