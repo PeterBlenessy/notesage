@@ -495,6 +495,88 @@ describe("HtmlViewer — block external resources — htmlViewerBlockExternalRes
   });
 });
 
+describe("HtmlViewer — empty content placeholder", () => {
+  const filePath = "/path/to/empty.html";
+  const fileName = "empty.html";
+
+  it("renders placeholder text when content is an empty string", () => {
+    render(
+      <HtmlViewer
+        content=""
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-empty-string"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.getByText(/this html file is empty/i)).toBeTruthy();
+  });
+
+  it("renders placeholder text when content is whitespace-only", () => {
+    render(
+      <HtmlViewer
+        content={"   \n\t  "}
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-empty-whitespace"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.getByText(/this html file is empty/i)).toBeTruthy();
+  });
+
+  it("shows file size (0 bytes) in the placeholder when content is empty", () => {
+    render(
+      <HtmlViewer
+        content=""
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-empty-size"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.getByText(/0 bytes/i)).toBeTruthy();
+  });
+
+  it("does NOT render the placeholder when content has real HTML (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content="<html><body><p>Real content</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-non-empty"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.queryByText(/this html file is empty/i)).toBeNull();
+    expect(screen.getByText("Real content")).toBeTruthy();
+  });
+
+  it("does NOT render the placeholder when content is minimal HTML (e.g. one <p>)", () => {
+    render(
+      <HtmlViewer
+        content="<p>Hi</p>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-minimal-html"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.queryByText(/this html file is empty/i)).toBeNull();
+    expect(screen.getByText("Hi")).toBeTruthy();
+  });
+});
+
 describe("HtmlViewer — Unsafe preview mode", () => {
   const htmlWithScript =
     '<html><body><h1>CDN App</h1><script src="https://cdn.example.com/lib.js"></script></body></html>';

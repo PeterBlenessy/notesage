@@ -81,6 +81,9 @@ export function HtmlViewer({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
 
+  // Whether the content is empty or whitespace-only (triggers placeholder)
+  const isEmpty = content.trim() === "";
+
   // Strip the `<head>` chunk before rendering — global selectors in the
   // file's stylesheet would bleed into the surrounding app chrome.
   // `<body>` content is rendered as a sanitised inline tree.
@@ -400,7 +403,15 @@ export function HtmlViewer({
                 replaceExpanded={false}
                 onReplaceExpandedChange={() => {}}
               />
-              {allowScripts && unsafeHtml !== null ? (
+              {isEmpty ? (
+                <div
+                  className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground"
+                  aria-label={`Rendered HTML: ${fileName}`}
+                >
+                  <span className="text-sm font-medium">This HTML file is empty</span>
+                  <span className="text-xs">0 bytes</span>
+                </div>
+              ) : allowScripts && unsafeHtml !== null ? (
                 <iframe
                   sandbox="allow-scripts"
                   srcDoc={unsafeHtml}
