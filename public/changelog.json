@@ -1,6 +1,36 @@
 {
   "releases": [
     {
+      "version": "0.44.0",
+      "date": "2026-05-14",
+      "previousVersion": "0.43.1",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`. Local relative paths still load.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts` iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included.",
+          "**Unsafe preview mode (per-tab, session-only).** A toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders with raw HTML including CDN and inline scripts. Switching tabs resets it.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — keeps `<form>`, `<input>`, `<button>`, action / method attributes in the sanitised tree.",
+          "**Width + alignment persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file.",
+          "**`Cmd+= / Cmd+- / Cmd+0` zoom in the PDF viewer.** Markdown editor and PDF share the same shortcut.",
+          "**Research and templates folders visible at project root.** Previously hidden under `.notesage/`; now `research/` and `templates/` are first-class folders. Existing hidden content is migrated on next launch."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards sit with a generous margin above and below.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover show the same control.",
+          "**Switching back from Alpha to Stable is one click.** Pick Stable in Settings → Updates → Release Channel and a clear \"Switch back to Stable?\" dialog appears with the version you'll move to. Decline and you stay on the alpha until a stable release exceeds your version.",
+          "**Checking for updates fires automatically when you change channel.** No more manual \"Check for updates\" click after toggling between Stable and Alpha."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch now mirrors the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** Fixed a missing `<TooltipProvider>` that the error boundary was catching on every block render.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
+          "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
+        ]
+      }
+    },
+    {
       "version": "0.44.0-alpha.3",
       "date": "2026-05-12",
       "previousVersion": "0.43.0",
