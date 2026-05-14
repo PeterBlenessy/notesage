@@ -18,7 +18,14 @@ interface Changelog {
 
 const HISTORY_DIR = join(import.meta.dirname, '..', 'docs', 'history');
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public');
-const OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
+// `changelog.json` is the stable-channel feed — entries whose version has no
+// `-` prerelease segment. `changelog-alpha.json` is the alpha-channel feed —
+// every entry including the alpha line. The naming convention follows the
+// release-asset/bundled-file/fetch-URL story: unmarked = stable default,
+// `-alpha` suffix = the variant. See `useChangelog.ts` for the channel-aware
+// URL picker.
+const STABLE_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
+const ALPHA_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog-alpha.json');
 
 function parseVersion(filename: string): string | null {
   // Accepts stable (`0.43.0`) and pre-release (`0.44.0-alpha.0`) suffixes.
@@ -147,14 +154,23 @@ function main() {
   // Sort newest first
   releases.sort((a, b) => compareVersions(a.version, b.version));
 
-  const changelog: Changelog = { releases };
+  // Alpha feed = every release. Stable feed = entries without a prerelease
+  // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies
+  // updates in `useAutoUpdate.ts` — same source of truth across the codebase.
+  const alphaChangelog: Changelog = { releases };
+  const stableChangelog: Changelog = {
+    releases: releases.filter((r) => !r.version.includes('-')),
+  };
 
   if (!existsSync(OUTPUT_DIR)) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  writeFileSync(OUTPUT_FILE, JSON.stringify(changelog, null, 2) + '\n');
-  console.log(`Generated changelog.json with ${releases.length} releases`);
+  writeFileSync(STABLE_OUTPUT_FILE, JSON.stringify(stableChangelog, null, 2) + '\n');
+  writeFileSync(ALPHA_OUTPUT_FILE, JSON.stringify(alphaChangelog, null, 2) + '\n');
+  console.log(
+    `Generated changelog.json (${stableChangelog.releases.length} stable) + changelog-alpha.json (${alphaChangelog.releases.length} total)`,
+  );
 }
 
 main();

@@ -14,17 +14,29 @@
 
 // @vitest-environment jsdom
 
+import "@/test/tauri-mock"; // installs localStorage polyfill needed by Zustand persist (settings-store)
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 // Mock global fetch for changelog.json loads.
 const mockFetch = vi.fn();
+// Mock the Tauri HTTP plugin too — `useChangelog` falls back to it for the
+// remote fetch. Default to a never-resolving promise so tests that don't
+// care about remote behaviour only observe the bundled-fetch path.
+const mockTauriFetch = vi.fn();
+vi.mock("@tauri-apps/plugin-http", () => ({
+  fetch: (...args: unknown[]) => mockTauriFetch(...args),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   globalThis.fetch = mockFetch as unknown as typeof fetch;
+  mockTauriFetch.mockReturnValue(new Promise(() => {})); // never resolves
 });
 
 import { useChangelog } from "../useChangelog";
+import { useSettingsStore } from "@/stores/settings-store";
 
 interface Release {
   version: string;
@@ -143,5 +155,73 @@ describe("useChangelog — getChangesBetween (SemVer comparator)", () => {
       "0.44.0-alpha.3",
       "0.43.1",
     ]);
+  });
+});
+
+describe("useChangelog — channel-aware URL picker", () => {
+  // Regression lock: stable users must fetch the stable-only feed,
+  // alpha users must fetch the alpha feed. Naming is consistent at every layer:
+  // stable → /changelog.json + releases/latest/download/changelog.json
+  // alpha  → /changelog-alpha.json + releases/latest-alpha/download/changelog-alpha.json
+  //
+  // The bad alternative (single feed shared by both channels) leaked alpha
+  // entries into the stable user's "What's new" — that's the regression
+  // this test prevents.
+
+  it("stable channel fetches /changelog.json bundled + releases/latest/download/changelog.json remote", async () => {
+    useSettingsStore.setState({ releaseChannel: "stable" });
+    mockChangelog(["0.43.1", "0.43.0"]);
+
+    const { result } = renderHook(() => useChangelog());
+    await waitFor(() => expect(result.current.changelog).not.toBeNull());
+
+    expect(mockFetch).toHaveBeenCalledWith("/changelog.json");
+    expect(mockTauriFetch).toHaveBeenCalledWith(
+      expect.stringContaining("releases/latest/download/changelog.json"),
+      expect.any(Object),
+    );
+    // Must NOT hit the alpha URLs.
+    expect(mockFetch).not.toHaveBeenCalledWith("/changelog-alpha.json");
+    expect(mockTauriFetch).not.toHaveBeenCalledWith(
+      expect.stringContaining("changelog-alpha.json"),
+      expect.any(Object),
+    );
+  });
+
+  it("alpha channel fetches /changelog-alpha.json bundled + releases/latest-alpha/download/changelog-alpha.json remote", async () => {
+    useSettingsStore.setState({ releaseChannel: "alpha" });
+    mockChangelog(["0.44.0-alpha.3", "0.43.1", "0.43.0"]);
+
+    const { result } = renderHook(() => useChangelog());
+    await waitFor(() => expect(result.current.changelog).not.toBeNull());
+
+    expect(mockFetch).toHaveBeenCalledWith("/changelog-alpha.json");
+    expect(mockTauriFetch).toHaveBeenCalledWith(
+      expect.stringContaining("releases/latest-alpha/download/changelog-alpha.json"),
+      expect.any(Object),
+    );
+    // Must NOT hit the stable URLs.
+    expect(mockFetch).not.toHaveBeenCalledWith("/changelog.json");
+    expect(mockTauriFetch).not.toHaveBeenCalledWith(
+      "https://github.com/PeterBlenessy/notesage/releases/latest/download/changelog.json",
+      expect.any(Object),
+    );
+  });
+
+  it("re-fetches when the user toggles channel mid-session", async () => {
+    useSettingsStore.setState({ releaseChannel: "stable" });
+    mockChangelog(["0.43.1", "0.43.0"]);
+
+    const { rerender } = renderHook(() => useChangelog());
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith("/changelog.json"),
+    );
+
+    // Flip to alpha; the hook should re-fetch the alpha feed.
+    useSettingsStore.setState({ releaseChannel: "alpha" });
+    rerender();
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith("/changelog-alpha.json"),
+    );
   });
 });
