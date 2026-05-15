@@ -148,17 +148,30 @@ export async function openProject(projectPath: string): Promise<void> {
         tree,
     );
 
-    // Wait for the folder's children to render in the sidebar.
-    // We need more than just the folder header — we need to see the actual files.
-    // The folder itself counts as 1 item, so we wait for > 1 items.
+    // Wait for the workspace store to confirm the explorer folder is loaded
+    // with a non-empty file tree. The DOM-based wait we used before
+    // (`.truncate.flex-1` count) was fragile: it only succeeded when the
+    // sidebar was visibly open AND React had committed the render, which
+    // for the first spec on cold CI was racing the addExplorerFolder
+    // store-write. The store IS the source of truth — subsequent
+    // openFile() helpers read from it directly, so we don't need the
+    // DOM render to have happened, just the store mutation to be visible.
     await browser.waitUntil(
-        async () => {
-            const items = await browser.$$('.truncate.flex-1');
-            return items.length > 1;
-        },
+        async () =>
+            await browser.execute((path: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                if (!w.__E2E_WORKSPACE_STORE__) return false;
+                const s = w.__E2E_WORKSPACE_STORE__.getState();
+                const folder = (s.explorerFolders ?? []).find(
+                    (f: { path: string; fileTree?: unknown[] }) => f.path === path,
+                );
+                return Boolean(folder?.fileTree && folder.fileTree.length > 0);
+            }, projectPath),
         {
             timeout: DEFAULT_TIMEOUT,
-            timeoutMsg: `No file tree items appeared within ${DEFAULT_TIMEOUT}ms after opening project`,
+            timeoutMsg: `Explorer folder ${projectPath} did not appear in workspace store with children within ${DEFAULT_TIMEOUT}ms`,
+            interval: 100,
         },
     );
 }
