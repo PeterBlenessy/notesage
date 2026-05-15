@@ -208,7 +208,7 @@ export async function openFile(fileName: string, projectPath?: string): Promise<
         const w = window as any;
         if (w.__E2E_EDITOR_STORE__) {
             const state = w.__E2E_EDITOR_STORE__.getState();
-            const activeTab = state.tabs.find((t: { id: string }) => t.id === state.activeTabId);
+            const activeTab = state.openDocuments.find((t: { id: string }) => t.id === state.activeTabId);
             if (activeTab) {
                 state.markTabClean(activeTab.id, activeTab.content);
             }

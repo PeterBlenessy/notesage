@@ -183,7 +183,7 @@ describe('Performance', function () {
         // Verify we have multiple tabs open
         const tabCount: number = await browser.execute(() => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            return (window as any).__E2E_EDITOR_STORE__?.getState().tabs.length ?? 0;
+            return (window as any).__E2E_EDITOR_STORE__?.getState().openDocuments.length ?? 0;
         });
         console.log(`[perf] Tabs open: ${tabCount}`);
         expect(tabCount).toBeGreaterThanOrEqual(files.length);

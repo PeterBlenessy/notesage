@@ -37,7 +37,7 @@ describe('App startup and project open', () => {
             const w = window as any;
             if (w.__E2E_EDITOR_STORE__) {
                 const state = w.__E2E_EDITOR_STORE__.getState();
-                for (const tab of [...state.tabs]) {
+                for (const tab of [...state.openDocuments]) {
                     state.closeTab(tab.id);
                 }
             }
