@@ -50,7 +50,9 @@ interface SpeechRecognitionHook {
 }
 
 export function useSpeechRecognition(): SpeechRecognitionHook {
-  const [isDictating, setIsDictating] = useState(false);
+  // isDictating is derived from the Zustand store so all mounted instances
+  // (Toolbar MicButton, StatusTray MicButton, etc.) stay in sync.
+  const isDictating = useRecordingStore((s) => s.isDictating);
   const [interimText, setInterimText] = useState('');
   const [finalText, setFinalText] = useState('');
   // Track whether Web Speech API actually works (WKWebView has the constructor but blocks the service)
@@ -117,13 +119,11 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
           if (event.payload.error) {
             log.error('transcription', 'Dictation error event', { error: event.payload.error });
             toast.error(event.payload.error);
-            setIsDictating(false);
             storeStopDictating();
             return;
           }
           if (event.payload.is_final) {
             log.info('transcription', 'Dictation finished');
-            setIsDictating(false);
             storeStopDictating();
           } else if (event.payload.text) {
             setFinalText((prev) => prev + ' ' + event.payload.text);
@@ -147,7 +147,6 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         return;
       }
       log.info('transcription', 'Whisper dictation started successfully', { model: defaultModel });
-      setIsDictating(true);
       storeStartDictating();
     } catch (err) {
       // Only report error if this generation is still current
@@ -210,19 +209,16 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
             log.error('transcription', `Web Speech API error: ${event.error}`);
             toast.error(`Speech recognition error: ${event.error}`);
           }
-          setIsDictating(false);
           storeStopDictating();
         };
 
         recognition.onend = () => {
-          setIsDictating(false);
           storeStopDictating();
           recognitionRef.current = null;
         };
 
         recognition.start();
         recognitionRef.current = recognition;
-        setIsDictating(true);
         storeStartDictating();
       } catch {
         // Expected: Web Speech API start() throws in WKWebView — fall back to whisper-rs
@@ -266,7 +262,6 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       }
     }
 
-    setIsDictating(false);
     storeStopDictating();
   }, [isDictating, storeStopDictating]);
 
