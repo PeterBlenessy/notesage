@@ -122,6 +122,46 @@ After the user commits, tags, and pushes a release tag, **always** monitor the G
 
 This monitoring should run in the background so it does not block other work.
 
+
+## User-facing copy vs Under the hood
+
+The `### Features`, `### Improvements`, and `### Fixes` sections in every release history file are extracted by `scripts/generate-changelog.ts` and shipped to end users as the in-app "What's new" feed. A non-technical user scrolling through versions must be able to understand every bullet in those three sections without knowing what a crate, Dependabot alert, classDef, or IPC is.
+
+### Forbidden in user-facing bullets (Features / Improvements / Fixes)
+
+Any bullet that contains the following is wrong and must be moved to `## Under the hood`:
+
+- **Version number triples** — `11.14.0 → 11.15.0`, `rand 0.8.5`, `mermaid@11.15.0`. Users do not care which version number a dependency is at; they care whether something broke.
+- **Crate / package / library names** — `rand`, `mermaid`, `tiptap`, `comrak`, `docx-rs`. Internal software names are opaque noise.
+- **Alert identifiers** — `Dependabot alert #57`, `classDef HTML injection`, `GHSA-xxxx`. These mean nothing to a user.
+- **Distribution mechanics** — `transitive`, `Cargo.lock`, `lockfile`, `cargo update`. Nobody outside the team knows what transitive means in this context.
+- **Internal terms** — `Rust crate`, `IPC Origin Confusion`, `custom loggers`, `ScopedApproval triples`, `LCA walk`, `Bucket C`. Architecture jargon.
+- **File paths and commit hashes** — `useAIContext.ts`, `ChatFooter.tsx`, `a1b2c3d`. Internal pointers.
+
+### Required bullet shape
+
+Lead with what the user can **do differently** or what got **safer / faster / clearer**. Optionally add where to find it (Settings path, menu name). Put everything else in `## Under the hood`.
+
+> **Format:** `<User-observable outcome> [— <optional location>]`
+
+### Before / After examples
+
+**Security-fix bullet**
+
+- ❌ Before: `Fixed classDef HTML injection in mermaid 11.14.0 → 11.15.0 (Dependabot alert #57, transitive via tiptap)`
+- ✅ After: `Fixed a potential content-injection vulnerability in diagram rendering — no action required`
+
+**Dependency-bump bullet**
+
+- ❌ Before: `Updated rand crate 0.8.5 → 0.9.0 (transitive Cargo.lock update)`
+- ✅ After: `Improved startup reliability on Apple Silicon (internal dependency update)` — or omit entirely if it has no user-observable effect
+
+### Spot-check rule
+
+Read each Features / Improvements / Fixes bullet aloud and ask: _"Would a non-technical user understand this?"_ If the answer requires knowing what a crate, Dependabot, transitive, or classDef is — move the bullet to `## Under the hood`.
+
+The `scripts/generate-changelog.ts` linter will print a console warning for bullets that match known forbidden patterns (version triples, `Dependabot`, `transitive`). The linter is warn-only (exit code 0) — it guides the writer but does not block releases.
+
 ## Important Notes
 
 - This skill prepares the release but does **not** commit or tag. The user decides when to commit.
