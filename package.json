@@ -98,7 +98,7 @@
     "jszip": "^3.10.1",
     "linkedom": "^0.18.12",
     "lowlight": "^3.3.0",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.16.0",
     "mammoth": "^1.12.0",
     "markdown-it": "^14.1.1",
     "markdown-it-sub": "^2.0.0",
