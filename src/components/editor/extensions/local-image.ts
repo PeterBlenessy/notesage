@@ -126,11 +126,26 @@ export const LocalImage = Image.extend({
       // that it fires in production WebKit/Tauri builds. An earlier attempt
       // used an editor-level mouseover plugin which fired in JSDOM/dev but
       // not in production (event-listener target divergence).
+      //
+      // Two-layer structure (fixes toolbar positioning for partial-width images, #258):
+      //   wrapper (display: block) — ProseMirror block-node container, full column width.
+      //     Alignment (left / center / right) is applied via text-align here so that
+      //     the inline-block inner container is positioned within the column correctly.
+      //   inner (display: inline-block, position: relative) — shrink-wraps to the image's
+      //     own width, so the absolutely-positioned toolbar's right:8px measures from the
+      //     image's right edge, not the far-right edge of the page.
       let currentNode = node;
 
       const wrapper = document.createElement("div");
       wrapper.className = "image-block-wrapper";
-      wrapper.style.cssText = "position: relative; display: block; line-height: 0;";
+      // display:block keeps ProseMirror happy (block-level node in the doc model).
+      // line-height:0 prevents the inline-baseline gap below the inner container.
+      wrapper.style.cssText = "display: block; line-height: 0;";
+
+      // The inner container shrink-wraps the image so the absolutely-positioned
+      // toolbar anchors to the image's corner, not the full-column wrapper.
+      const inner = document.createElement("div");
+      inner.style.cssText = "display: inline-block; position: relative; line-height: 0;";
 
       const img = document.createElement("img");
       img.className = "rounded-lg max-w-full block";
@@ -239,8 +254,9 @@ export const LocalImage = Image.extend({
         toolbar.appendChild(btn);
       }
 
-      wrapper.appendChild(img);
-      wrapper.appendChild(toolbar);
+      inner.appendChild(img);
+      inner.appendChild(toolbar);
+      wrapper.appendChild(inner);
 
       // Direct DOM listeners — not a plugin-level listener so they fire in
       // production WebKit builds where delegated editor events may not reach
@@ -265,23 +281,21 @@ export const LocalImage = Image.extend({
         if (blockWidth != null) {
           img.style.width = `${blockWidth}%`;
           img.style.height = "auto";
+          // Alignment is expressed as text-align on the outer wrapper so the
+          // inline-block inner container (which shrink-wraps the image) is
+          // positioned within the column correctly. The img itself stays as a
+          // block inside the inner container.
           if (align === "center") {
-            img.style.marginLeft = "auto";
-            img.style.marginRight = "auto";
-            img.style.display = "block";
+            wrapper.style.textAlign = "center";
           } else if (align === "right") {
-            img.style.marginLeft = "auto";
-            img.style.marginRight = "0";
-            img.style.display = "block";
+            wrapper.style.textAlign = "right";
           } else {
-            img.style.marginLeft = "0";
-            img.style.marginRight = "auto";
-            img.style.display = "block";
+            wrapper.style.textAlign = "left";
           }
         } else {
           img.style.removeProperty("width");
-          img.style.removeProperty("margin-left");
-          img.style.removeProperty("margin-right");
+          img.style.removeProperty("height");
+          wrapper.style.removeProperty("text-align");
         }
 
         // Update active state on width buttons

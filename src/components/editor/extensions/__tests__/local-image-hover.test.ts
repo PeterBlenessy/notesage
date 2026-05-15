@@ -221,4 +221,48 @@ describe('LocalImage NodeView — hover toolbar', () => {
     const btn50 = dom.querySelector<HTMLElement>('[data-width="50"]')!;
     expect(btn50.classList.contains('active')).toBe(true);
   });
+
+  // --- Toolbar positioning: relative to image, not to the full-width wrapper (#258) ---
+
+  it('toolbar position is relative to the image container, not the full-width wrapper', () => {
+    // Bug: the outer wrapper uses display:block which stretches to full content-column
+    // width. The absolutely-positioned toolbar's right:8px then measures from the
+    // far-right edge of the page, not from the image's right edge.
+    //
+    // Fix: the toolbar must be a child of a `position: relative` container that
+    // wraps ONLY the image (e.g. display:inline-block), so right:8px measures
+    // from the image's right edge regardless of the image's width preset.
+    const { dom } = buildNodeView(mockImageNode({ blockWidth: 25 }));
+    const toolbar = dom.querySelector<HTMLElement>('[data-testid="image-block-size-toolbar"]')!;
+
+    // Walk up from toolbar to find its nearest `position: relative` ancestor.
+    let relativeAncestor: HTMLElement | null = toolbar.parentElement;
+    while (relativeAncestor && relativeAncestor !== dom.parentElement) {
+      if (window.getComputedStyle(relativeAncestor).position === 'relative' ||
+          relativeAncestor.style.position === 'relative') break;
+      relativeAncestor = relativeAncestor.parentElement;
+    }
+
+    // The positioning context must NOT be the outer block wrapper (dom itself),
+    // because that element spans the full content column regardless of blockWidth.
+    // It must be a shrink-wrapped inner container (e.g. display:inline-block).
+    expect(relativeAncestor).not.toBeNull();
+    expect(relativeAncestor).not.toBe(dom);
+
+    // The inner container must use a layout that shrinks to the image's own width
+    // (inline-block, fit-content, or equivalent) — NOT a full-width block.
+    const display = relativeAncestor!.style.display;
+    const width = relativeAncestor!.style.width;
+    const isShrinkWrapped =
+      display === 'inline-block' ||
+      width === 'fit-content' ||
+      width === '-moz-fit-content' ||
+      display === 'inline-flex' ||
+      display === 'inline-grid';
+    expect(
+      isShrinkWrapped,
+      `Expected toolbar's positioning context to shrink-wrap the image (got display="${display}", width="${width}"). ` +
+      `A full-width display:block wrapper causes the toolbar to float to the page's right edge for partial-width images.`,
+    ).toBe(true);
+  });
 });
