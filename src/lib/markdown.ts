@@ -79,6 +79,8 @@ export function applyAnnotationsToEditor(
   annotations: Map<number, string>
 ): void {
   if (annotations.size === 0) return;
+  // tiptap ≥3.23 throws when chain() is called on a destroyed editor (e.g. during test teardown)
+  if (editor.isDestroyed) return;
 
   editor.chain().command(({ tr, state }) => {
     tr.setMeta("addToHistory", false);
