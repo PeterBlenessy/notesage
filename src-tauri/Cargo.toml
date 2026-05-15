@@ -61,8 +61,8 @@ serde_norway = "0.9"
 parking_lot = "0.12"
 
 # Filesystem watcher (Phase 5)
-notify = { version = "7", features = ["macos_fsevent"] }
-notify-debouncer-full = "0.4"
+notify = { version = "8", features = ["macos_fsevent"] }
+notify-debouncer-full = "0.7"
 
 # iCloud sync (Phase 5.5)
 fs_extra = "1.3"

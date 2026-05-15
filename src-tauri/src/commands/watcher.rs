@@ -571,4 +571,173 @@ mod tests {
             .any(|(p, _)| p == normal_str.as_ref());
         assert!(in_reindex, "normal file must appear in reindex entries");
     }
+
+    // ── Regression guards for the notify v8 upgrade ────────────────────────────
+    // These tests cover acceptance-criteria behaviours that were not explicitly
+    // tested before the upgrade.  They must pass on both notify v7 and v8.
+
+    #[test]
+    fn process_watcher_events_filters_git_internals() {
+        // Events inside .git/ must be silently dropped from file-changed-batch.
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+
+        let git_path = PathBuf::from("/Users/test/project/.git/COMMIT_EDITMSG");
+        let normal_path = PathBuf::from("/Users/test/project/README.md");
+
+        let events = vec![
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![git_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![normal_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+        ];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        let git_str = git_path.to_string_lossy();
+        let git_in_changes = result.file_changes.iter().any(|e| e.path == git_str);
+        assert!(!git_in_changes, ".git/ internals must not appear in file-changed-batch");
+
+        // The normal README.md must still reach the reindex queue.
+        let normal_str = normal_path.to_string_lossy();
+        let normal_in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == normal_str.as_ref());
+        assert!(normal_in_reindex, "non-git files must appear in reindex entries");
+    }
+
+    #[test]
+    fn process_watcher_events_filters_ds_store() {
+        // .DS_Store events must never reach the frontend.
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+
+        let ds_path = PathBuf::from("/Users/test/project/.DS_Store");
+        let normal_path = PathBuf::from("/Users/test/project/note.md");
+
+        let events = vec![
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![ds_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![normal_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+        ];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        let ds_str = ds_path.to_string_lossy();
+        let ds_in_changes = result.file_changes.iter().any(|e| e.path == ds_str);
+        assert!(!ds_in_changes, ".DS_Store must not appear in file-changed-batch");
+
+        let normal_str = normal_path.to_string_lossy();
+        let normal_in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == normal_str.as_ref());
+        assert!(normal_in_reindex, "non-DS_Store files must appear in reindex entries");
+    }
+
+    #[test]
+    fn process_watcher_events_reclassifies_modify_as_delete_for_nonexistent_file() {
+        // macOS FSEvents quirk: file deletions sometimes arrive as Modify events.
+        // process_watcher_events() must reclassify them as Delete when path no longer exists.
+        // We use a path we know does not exist on disk.
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let ghost_path = PathBuf::from("/tmp/notesage_ghost_file_that_does_not_exist_xyz.md");
+
+        // Ensure the path really doesn't exist
+        assert!(!ghost_path.exists(), "test assumes path does not exist");
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![ghost_path.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // The Modify event must have been reclassified as Delete.
+        let ghost_str = ghost_path.to_string_lossy();
+        let delete_event = result
+            .file_changes
+            .iter()
+            .find(|e| e.path == ghost_str.as_ref());
+        assert!(
+            delete_event.is_some(),
+            "reclassified delete must appear in file-changed-batch"
+        );
+        assert_eq!(
+            delete_event.unwrap().kind,
+            FileChangeKind::Delete,
+            "modify on nonexistent file must be reclassified as Delete (macOS FSEvents quirk)"
+        );
+    }
+
+    #[test]
+    fn process_watcher_events_self_write_suppresses_file_changed_batch_not_reindex() {
+        // A self-written file must NOT appear in file_changes but MUST still appear
+        // in reindex_entries so the SQLite index stays current.
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let self_written = PathBuf::from("/tmp/notesage_self_written_test_xyz.md");
+        // Mark the path as a self-write
+        self_writes.insert(self_written.clone(), Instant::now());
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![self_written.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        let self_str = self_written.to_string_lossy();
+        let in_changes = result.file_changes.iter().any(|e| e.path == self_str);
+        assert!(!in_changes, "self-write must be suppressed from file-changed-batch");
+
+        let in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == self_str.as_ref());
+        assert!(in_reindex, "self-write must still appear in reindex_entries for SQLite");
+    }
 }
