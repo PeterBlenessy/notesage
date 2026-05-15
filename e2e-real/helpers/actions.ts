@@ -81,6 +81,30 @@ export async function waitForElement(selector: string, timeout: number = DEFAULT
  * @param projectPath - Absolute path to the project folder
  */
 export async function openProject(projectPath: string): Promise<void> {
+    // Step 0: Wait for React to mount. On the FIRST spec of a CI session,
+    // the page is loaded but React hasn't rendered yet — the workspace store
+    // is undefined on `window`, sidebar containers don't exist, and the
+    // file-tree-items wait at the end of this function would time out.
+    // external-changes.test.ts works around this with an explicit `#root`
+    // wait in its `before` hook; putting the wait here makes openProject
+    // robust regardless of caller order.
+    const root = await browser.$('#root');
+    await root.waitForExist({ timeout: 10_000 });
+    // Also wait for the workspace store to be exposed on `window` —
+    // App.tsx exposes it via the e2e-testing feature flag, but the
+    // assignment happens during React's first effect cycle.
+    await browser.waitUntil(
+        async () => browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return Boolean((window as any).__E2E_WORKSPACE_STORE__);
+        }),
+        {
+            timeout: 10_000,
+            timeoutMsg: '__E2E_WORKSPACE_STORE__ not exposed on window within 10s — app may not have started in e2e-testing mode',
+            interval: 200,
+        },
+    );
+
     // Step 1: List directory via Tauri invoke (async — must use executeAsync)
     const tree = await browser.executeAsync(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
