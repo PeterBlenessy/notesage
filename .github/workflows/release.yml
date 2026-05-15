@@ -264,6 +264,63 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # tauri-action@v0 generates latest.json with `releases/latest/download/`
+      # URLs when tagName is omitted. For prereleases, `releases/latest` resolves
+      # to the most recent *stable* release — not the prerelease — so alpha users
+      # "update" to a stale stable build, restart, see the prerelease still
+      # advertised, and loop forever (issue #271). tagName cannot be restored to
+      # tauri-action because passing it alongside releaseId triggers a second
+      # createRelease call (orphan-draft issue #203). Fix: patch latest.json to
+      # use tag-specific `releases/download/{tag}/` URLs before publishing.
+      - name: Patch latest.json to use tag-specific asset URLs
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          RELEASE_ID="${{ needs.create-release.outputs.release_id }}"
+
+          # Find the latest.json asset in the draft release
+          ASSET_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" \
+            --jq '.[] | select(.name == "latest.json") | {id: .id, url: .url}')
+
+          if [ -z "${ASSET_JSON}" ]; then
+            echo "::warning::latest.json not found in release assets — skipping patch"
+            exit 0
+          fi
+
+          ASSET_ID=$(echo "${ASSET_JSON}" | jq -r '.id')
+          ASSET_API_URL=$(echo "${ASSET_JSON}" | jq -r '.url')
+
+          # Download latest.json raw content via the API
+          curl -fsSL \
+            -H "Accept: application/octet-stream" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "${ASSET_API_URL}" \
+            -o /tmp/latest.json
+
+          # Skip if the URL is already tag-specific (idempotent)
+          if ! grep -q "releases/latest/download/" /tmp/latest.json; then
+            echo "✓ latest.json already has tag-specific URLs — no patch needed"
+            exit 0
+          fi
+
+          echo "Patching releases/latest/download/ → releases/download/${TAG}/ in latest.json"
+
+          # Patch: releases/latest/download/ → releases/download/{tag}/
+          sed "s|releases/latest/download/|releases/download/${TAG}/|g" \
+            /tmp/latest.json > /tmp/latest.json.tmp && mv /tmp/latest.json.tmp /tmp/latest.json
+
+          echo "Patched latest.json:"
+          cat /tmp/latest.json
+
+          # Delete the old asset and re-upload the patched version
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}"
+          gh release upload "${TAG}" /tmp/latest.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+
+          echo "✓ Patched latest.json: releases/latest/download/ → releases/download/${TAG}/"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish Release
         uses: actions/github-script@v7
         with:
@@ -274,6 +331,36 @@ jobs:
               release_id: ${{ needs.create-release.outputs.release_id }},
               draft: false
             })
+
+      # Regression guard: fail the workflow run if latest.json still contains
+      # releases/latest/download/ after patching + publishing. This catches any
+      # future regression before alpha users receive an update.
+      - name: Verify latest.json has tag-specific URLs
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          # Download latest.json from the now-published release
+          mkdir -p /tmp/verify
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "latest.json" \
+            --dir /tmp/verify 2>/dev/null || {
+            echo "::warning::Could not download latest.json from published release — skipping verification"
+            exit 0
+          }
+
+          echo "Verifying latest.json content:"
+          cat /tmp/verify/latest.json
+
+          # Fail if the wrong URL pattern is still present
+          if grep -q "releases/latest/download/" /tmp/verify/latest.json; then
+            echo "::error::latest.json contains releases/latest/download/ — infinite update loop risk! (issue #271)"
+            exit 1
+          fi
+
+          echo "✓ latest.json verified: no releases/latest/download/ URLs found"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Rolling pointer for the in-app alpha-channel auto-updater. The app
   # (`src/hooks/useAutoUpdate.ts`) hits a static URL for the alpha channel:
