@@ -89,22 +89,25 @@ describe('Real E2E CI plumbing (#254)', () => {
       expect(condition).toMatch(/pull_request/);
     });
 
-    it('has an actions/cache step keyed on tauri-driver', () => {
+    it('has an actions/cache step keyed on tauri-webdriver', () => {
+      // The crate / binary name is `tauri-webdriver`, not `tauri-driver`
+      // (some older Tauri docs use the latter). `scripts/run-real-e2e.sh`
+      // greps for `tauri-webdriver` in PATH; the workflow must match.
       const steps = job?.steps ?? [];
       const cacheStep = steps.find(
         (s) =>
           typeof s.uses === 'string' &&
           s.uses.startsWith('actions/cache') &&
-          JSON.stringify(s.with ?? {}).toLowerCase().includes('tauri-driver'),
+          JSON.stringify(s.with ?? {}).toLowerCase().includes('tauri-webdriver'),
       );
       expect(cacheStep).toBeDefined();
     });
 
-    it('installs tauri-driver via cargo install', () => {
+    it('installs tauri-webdriver via cargo install', () => {
       const steps = job?.steps ?? [];
       expect(
         hasStepWith(steps, (s) =>
-          typeof s.run === 'string' && s.run.includes('cargo install tauri-driver'),
+          typeof s.run === 'string' && s.run.includes('cargo install tauri-webdriver'),
         ),
       ).toBe(true);
     });
