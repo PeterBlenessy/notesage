@@ -46,22 +46,34 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          # Find previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --oneline --pretty="format:- %s" HEAD)
-          else
-            COMMITS=$(git log --oneline --pretty="format:- %s" "${PREV_TAG}..HEAD")
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+
+          # Find the docs/history/*-release-v{version}.md file matching this tag.
+          # Hard-fail when no matching history file is found — release notes are
+          # required before pushing a tag.
+          HISTORY_FILE=$(ls docs/history/*-release-v${VERSION}.md 2>/dev/null | head -1)
+
+          if [ -z "$HISTORY_FILE" ]; then
+            echo "::error::No history file found at docs/history/*-release-v${VERSION}.md — release notes required before tag."
+            exit 1
           fi
 
-          # Write to file for multi-line output
-          echo "## Changes" > /tmp/release_notes.md
-          echo "" >> /tmp/release_notes.md
-          echo "$COMMITS" >> /tmp/release_notes.md
+          # Extract user-facing content: everything from after ## Changes up to
+          # (but not including) ## Under the hood, ## Known issues, or similar
+          # internal sections. This prevents implementation details from leaking
+          # into the public release body or latest.json notes field.
+          NOTES=$(awk '
+            /^## Changes/{found=1; next}
+            found && /^## (Under the hood|Known issues|Known limitations)/{exit}
+            found{print}
+          ' "$HISTORY_FILE" | sed -e 's/[[:space:]]*$//' | awk '
+            NF{found=1} found{print}
+          ' | sed -e '${/^[[:space:]]*$/d}')
 
           # Set as output using delimiter
           echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
-          cat /tmp/release_notes.md >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
           echo "NOTES_EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
