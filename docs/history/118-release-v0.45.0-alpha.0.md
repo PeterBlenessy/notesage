@@ -4,7 +4,7 @@
 **Previous version:** 0.44.0
 **Channel:** Alpha
 
-First alpha after v0.44.0 stable. Closes 5 of 6 open security alerts, modernizes the dependency surface, fixes the long-standing image hover toolbar regression on production builds, and improves the in-app changelog and update-dialog experience.
+First alpha after v0.44.0 stable. **Closes all 6 open security alerts**, modernizes the dependency surface, fixes the long-standing image hover toolbar regression on production builds, and improves the in-app changelog and update-dialog experience.
 
 ## Changes
 
@@ -34,6 +34,8 @@ First alpha after v0.44.0 stable. Closes 5 of 6 open security alerts, modernizes
 
 - **rand low-severity alert closed (transitive).** A Rust dependency that pulls in the `rand` crate was advanced; the unsoundness with custom loggers no longer applies.
 
+- **Tauri IPC Origin Confusion alert closed.** Tauri framework advanced from 2.10.2 to 2.11.1 (Rust crate) + matching `@tauri-apps/*` JS package alignment. Closes Dependabot alert #57. The bump was a side effect of `cargo update`'s global resolution within the existing `tauri = "2"` constraint; the JS-side packages were aligned to match because Tauri requires JS and Rust majors/minors to agree at build time.
+
 ## Known issues
 
 - **Voice dictation can hang the app after extended use** (#264). Reproduce: start dictation, leave it running for a while, eventually the app becomes unresponsive and requires force-quit. Root cause not yet characterised. **Avoid extended dictation sessions on this alpha.** Will be investigated and fixed before v0.45.0 stable.
@@ -52,9 +54,11 @@ First alpha after v0.44.0 stable. Closes 5 of 6 open security alerts, modernizes
 
 The fix in #222 replaces an editor-level `mouseover` ProseMirror plugin (which fired in JSDOM and dev but not in production WebKit) with direct `addEventListener('mouseenter')` on a wrapper `<div>` around the image NodeView. Matches the pattern charts, drawings, and link-previews use. Verified end-to-end on the user's 494 KB image-heavy markdown book — the previously-load-bearing perf revert in commit `19b9fdb5` is preserved (the React-NodeView approach that regressed the parse from ~3s to ~12s is NOT re-introduced).
 
-### Tauri 2.10 → 2.11 (security) NOT in this alpha
+### Tauri 2.10 → 2.11 (security) landed via side effect
 
-Tauri 2.11.1 closes Dependabot alert #57 (IPC Origin Confusion). Held back because framework-level bumps need real Tauri E2E coverage in CI to ship to alpha automatically. Tracking under #234 and gated on #254 (add `pnpm test:e2e-real` to the CI / alpha-gate pipeline).
+This alpha was originally intended to hold back the Tauri framework upgrade (tracked as #227/#234 pending real Tauri E2E coverage from #254/#260). Instead the Rust patch sweep #238 ran `cargo update`, which advanced `tauri` and `tauri-plugin-*` from 2.10.x to 2.11.x within the existing `tauri = "2"` constraint in `Cargo.toml`. The build broke with a JS/Rust major-minor mismatch error from `tauri-action`, forcing JS-side @tauri-apps/* alignment to 2.11 as well. Net result: alert #57 closes, Tauri framework upgraded, no manual real-E2E smoke-test performed yet. Worth a close eye on this alpha's IPC behaviour.
+
+A future-proofing note for #238's pattern: when running `cargo update`, the Cargo.toml's loose version constraints determine what `update` will reach for. To intentionally hold back a major-or-minor of a specific crate, pin it explicitly (e.g. `tauri = "=2.10.2"` instead of `tauri = "2"`).
 
 ### Files Changed
 
