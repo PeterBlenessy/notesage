@@ -135,6 +135,10 @@ objc2-app-kit = { version = "0.3", features = ["NSColor", "NSColorSpace"] }
 default = []
 e2e-testing = ["tauri-plugin-webdriver"]
 
+[[bin]]
+name = "mock_acp_agent"
+path = "src/bin/mock_acp_agent.rs"
+
 [dev-dependencies]
 tempfile = "3"
 
