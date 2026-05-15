@@ -46,18 +46,23 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          # Find previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --oneline --pretty="format:- %s" HEAD)
-          else
-            COMMITS=$(git log --oneline --pretty="format:- %s" "${PREV_TAG}..HEAD")
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          HISTORY_FILE=$(ls docs/history/*-release-v${VERSION}.md 2>/dev/null | head -1)
+
+          if [ -z "$HISTORY_FILE" ]; then
+            echo "::error::No history file found at docs/history/*-release-v${VERSION}.md — release notes required before tag."
+            exit 1
           fi
 
-          # Write to file for multi-line output
-          echo "## Changes" > /tmp/release_notes.md
-          echo "" >> /tmp/release_notes.md
-          echo "$COMMITS" >> /tmp/release_notes.md
+          # Extract user-facing content: everything between "## Changes" and
+          # "## Under the hood" (or end of file). The stop condition fires ONLY
+          # on "## Under the hood" — sections like "## Known issues" and
+          # "## Known limitations" are user-facing and must be included.
+          awk '
+            /^## Changes/{found=1; next}
+            found && /^## Under the hood/{exit}
+            found{print}
+          ' "$HISTORY_FILE" > /tmp/release_notes.md
 
           # Set as output using delimiter
           echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
