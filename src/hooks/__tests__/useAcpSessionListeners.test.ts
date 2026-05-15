@@ -563,4 +563,250 @@ describe('setupAcpChatListeners', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Gap 2 coverage — session update types that were missing from the test suite
+  // ---------------------------------------------------------------------------
+
+  describe('agent_thought_chunk', () => {
+    it('appends a thinking segment on the assistant message', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'thinking step one' },
+        },
+      });
+
+      const msg = getAssistantMessage();
+      const thinkingSegs = (msg?.segments ?? []).filter((s) => s.type === 'thinking');
+      expect(thinkingSegs).toHaveLength(1);
+      expect((thinkingSegs[0] as { content: string }).content).toBe('thinking step one');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('accumulates multiple chunks into one thinking segment', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'part A' } },
+      });
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: ' part B' } },
+      });
+
+      const msg = getAssistantMessage();
+      const thinkingSegs = (msg?.segments ?? []).filter((s) => s.type === 'thinking');
+      expect(thinkingSegs).toHaveLength(1);
+      expect((thinkingSegs[0] as { content: string }).content).toBe('part A part B');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores agent_thought_chunk with non-text content type', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'binary', data: 'abc' } },
+      });
+
+      const msg = getAssistantMessage();
+      const thinkingSegs = (msg?.segments ?? []).filter((s) => s.type === 'thinking');
+      expect(thinkingSegs).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  describe('tool_call', () => {
+    it('pushes a tool_call segment with status running', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          kind: 'read',
+          title: 'Read config.ts',
+          rawInput: '{"file_path":"/project/config.ts"}',
+        },
+      });
+
+      const msg = getAssistantMessage();
+      const toolSegs = (msg?.segments ?? []).filter((s) => s.type === 'tool_call');
+      expect(toolSegs).toHaveLength(1);
+      expect((toolSegs[0] as { status: string }).status).toBe('running');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('records an activity entry alongside the segment', async () => {
+      const deps = makeDeps();
+      const addActivity = vi.fn(deps.addActivity);
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners({ ...deps, addActivity });
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          kind: 'bash',
+          title: 'Run tests',
+          rawInput: '{"command":"pnpm test"}',
+        },
+      });
+
+      expect(addActivity).toHaveBeenCalled();
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  describe('plan', () => {
+    it('pushes a plan segment with the supplied entries', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: 'Step 1: read files', priority: 'high', status: 'pending' },
+            { content: 'Step 2: write output', priority: 'medium', status: 'pending' },
+          ],
+        },
+      });
+
+      const msg = getAssistantMessage();
+      const planSegs = (msg?.segments ?? []).filter((s) => s.type === 'plan');
+      expect(planSegs).toHaveLength(1);
+
+      const entries = (planSegs[0] as { entries: { content: string }[] }).entries;
+      expect(entries).toHaveLength(2);
+      expect(entries[0].content).toBe('Step 1: read files');
+      expect(entries[1].content).toBe('Step 2: write output');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('updates the existing plan segment rather than pushing a second one', async () => {
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [{ content: 'Step 1', priority: 'high', status: 'pending' }],
+        },
+      });
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: 'Step 1', priority: 'high', status: 'in_progress' },
+            { content: 'Step 2', priority: 'medium', status: 'pending' },
+          ],
+        },
+      });
+
+      const msg = getAssistantMessage();
+      const planSegs = (msg?.segments ?? []).filter((s) => s.type === 'plan');
+      expect(planSegs).toHaveLength(1);
+
+      const entries = (planSegs[0] as { entries: { status: string }[] }).entries;
+      expect(entries).toHaveLength(2);
+      expect(entries[0].status).toBe('in_progress');
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  describe('usage_update', () => {
+    it('calls updateUsage with contextUsed and contextSize', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 4200,
+          size: 200000,
+        },
+      });
+
+      expect(vi.mocked(updateUsage)).toHaveBeenCalledWith({
+        contextUsed: 4200,
+        contextSize: 200000,
+        cost: undefined,
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('does not call updateUsage when both used and size are zero', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: { sessionUpdate: 'usage_update', used: 0, size: 0 },
+      });
+
+      expect(vi.mocked(updateUsage)).not.toHaveBeenCalled();
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('passes cost through when provided', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 1000,
+          size: 100000,
+          cost: { amount: 0.05, currency: 'USD' },
+        },
+      });
+
+      expect(vi.mocked(updateUsage)).toHaveBeenCalledWith({
+        contextUsed: 1000,
+        contextSize: 100000,
+        cost: { amount: 0.05, currency: 'USD' },
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
 });
