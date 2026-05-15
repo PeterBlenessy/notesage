@@ -8,7 +8,11 @@
 
 import { measureAction, type TimedResult } from './timing';
 
-const DEFAULT_TIMEOUT = 5000;
+// Bumped from 5s to 15s — on cold CI runners (macos-latest in GitHub Actions)
+// the first spec's React render after the Tauri build is ready can take noticeably
+// longer than local dev. Local rebuilds always complete in well under the original
+// 5s; the wider ceiling only kicks in on first-spec CI pathway.
+const DEFAULT_TIMEOUT = 15000;
 
 /**
  * WebDriver Unicode key constants for modifier and special keys.

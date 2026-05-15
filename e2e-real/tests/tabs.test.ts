@@ -325,9 +325,21 @@ describe('Tab Management', () => {
         });
 
         it('should preserve undo history when switching tabs', async () => {
-            // We are on the "empty.md" tab (the last opened file)
-            const activeTab = await getActiveTab();
-            const activeTabName = activeTab ? await getTabName(activeTab) : '';
+            // We are on the "empty.md" tab (the last opened file).
+            // Read active tab from the store directly — the DOM-class heuristic
+            // in getActiveTab() is fragile across renders. The store is the
+            // single source of truth.
+            const activeTabName: string = await browser.execute(() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                if (!w.__E2E_EDITOR_STORE__) return '';
+                const state = w.__E2E_EDITOR_STORE__.getState();
+                const activeTab = state?.openDocuments?.find((t: { id: string }) => t.id === state.activeTabId);
+                if (!activeTab) return '';
+                // openDocuments items have a filePath; the tab "name" is the file's basename.
+                const path = activeTab.filePath ?? '';
+                return path.split('/').pop() ?? '';
+            });
             console.log(`[tabs] Active tab: ${activeTabName}`);
             expect(activeTabName).toBe('empty.md');
 
