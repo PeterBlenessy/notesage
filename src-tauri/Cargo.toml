@@ -45,7 +45,7 @@ resvg = "0.45"
 typst-library = "0.14.2"
 typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
-comrak = { version = "0.50.0", default-features = false, features = ["syntect"] }
+comrak = { version = "0.52.0", default-features = false, features = ["syntect"] }
 
 # Tag scanning
 regex = "1"
