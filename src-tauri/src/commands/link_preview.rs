@@ -200,6 +200,21 @@ fn extract_domain(url: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Regression guard: the `scraper` dependency must be pinned to ≥ 0.27 in
+    /// Cargo.toml. This test will be RED when the version is still 0.23.
+    #[test]
+    fn test_scraper_dependency_is_0_27() {
+        let cargo_toml = include_str!("../../Cargo.toml");
+        assert!(
+            cargo_toml.contains("scraper = \"0.27\""),
+            "scraper dependency must be bumped to 0.27 in src-tauri/Cargo.toml (found {:?})",
+            cargo_toml
+                .lines()
+                .find(|l| l.trim_start().starts_with("scraper"))
+                .unwrap_or("<not found>")
+        );
+    }
+
     #[test]
     fn test_full_metadata() {
         let html = r#"
