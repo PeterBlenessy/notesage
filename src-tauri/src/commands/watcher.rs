@@ -518,6 +518,142 @@ mod tests {
     }
 
     #[test]
+    fn process_watcher_events_filters_git_internals() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let git_path = PathBuf::from("/Users/test/Notesage/.git/COMMIT_EDITMSG");
+        let git_dir_path = PathBuf::from("/Users/test/Notesage/.git");
+
+        let events = vec![
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![git_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![git_dir_path.clone()],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+        ];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        assert!(
+            result.file_changes.is_empty(),
+            ".git/ paths must not appear in file-changed-batch"
+        );
+    }
+
+    #[test]
+    fn process_watcher_events_filters_ds_store() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let ds_path = PathBuf::from("/Users/test/Notesage/.DS_Store");
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![ds_path.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        assert!(
+            result.file_changes.is_empty(),
+            ".DS_Store must not appear in file-changed-batch"
+        );
+    }
+
+    #[test]
+    fn process_watcher_events_reclassifies_modify_as_delete_for_nonexistent_file() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        // Use a path that is guaranteed not to exist on any system.
+        let nonexistent = PathBuf::from(
+            "/notesage_test_path_that_does_not_exist_a1b2c3d4/file.md",
+        );
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![nonexistent.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // The macOS FSEvents quirk: Modify events for nonexistent files must be
+        // reclassified as Delete.
+        assert_eq!(
+            result.file_changes.len(),
+            1,
+            "expected one event for the nonexistent path"
+        );
+        assert_eq!(
+            result.file_changes[0].kind,
+            FileChangeKind::Delete,
+            "Modify for nonexistent path must be reclassified as Delete"
+        );
+    }
+
+    #[test]
+    fn process_watcher_events_self_write_suppresses_file_changed_batch_not_reindex() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        let file_path = PathBuf::from(
+            "/notesage_test_path_that_does_not_exist_self_write/note.md",
+        );
+        // Mark as self-write BEFORE processing the event.
+        self_writes.insert(file_path.clone(), Instant::now());
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![file_path.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // Self-writes must be excluded from the frontend batch.
+        assert!(
+            result.file_changes.is_empty(),
+            "self-written file must not appear in file-changed-batch"
+        );
+
+        // Self-writes must still be queued for SQLite reindex.
+        let path_str = file_path.to_string_lossy();
+        let in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == path_str.as_ref());
+        assert!(
+            in_reindex,
+            "self-written file must still appear in reindex entries for SQLite"
+        );
+    }
+
+    #[test]
     fn process_watcher_events_excludes_rename_txn_staging_paths() {
         // Simulate a modify event for a file inside the rename-txn staging dir.
         // It must be silently dropped from both file_changes and not interfere with
