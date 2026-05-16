@@ -8,8 +8,12 @@
  *   Terminal 1: pnpm tauri:test
  *   Terminal 2: tauri-webdriver
  *   Terminal 3: pnpm test:e2e-real
+ *
+ * In CI this spec runs via `.github/workflows/test-perf-e2e.yml` (post-merge,
+ * push to main only). It does NOT run in the PR gate (`test.yml`).
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { waitForElement, openFile, getEditorText } from '../helpers/actions';
 import { measureAction } from '../helpers/timing';
@@ -17,13 +21,10 @@ import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 
 const TEST_PROJECT = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
 
-// SKIPPED 2026-05-16: per option A of the e2e-tests purpose decision —
-// e2e-real should be FUNCTIONAL only. Performance budgets in e2e tests
-// flake on shared CI runners (2-3x variance) and conceptually belong in
-// `src/perf/*.perf.test.ts` (with budget multipliers) OR in a dedicated
-// post-merge real-perf job (option C). This spec is suspended until the
-// option-C separate job exists. Tracked separately.
-describe.skip('Performance', function () {
+// Accumulated timing results — written to perf-results.json in after().
+const timingResults: Record<string, number> = {};
+
+describe('Performance', function () {
     // These tests involve large documents and multiple file operations —
     // give them generous timeouts.
     this.timeout(30000);
@@ -44,6 +45,17 @@ describe.skip('Performance', function () {
     after(async () => {
         // Restore the default window size in case a test changed it
         await browser.setWindowSize(1200, 800);
+
+        // Write timing measurements to perf-results.json for CI artifact upload.
+        const output = {
+            timestamp: new Date().toISOString(),
+            commitSha: process.env.GITHUB_SHA ?? 'local',
+            runner: process.env.RUNNER_NAME ?? 'local',
+            measurements: timingResults,
+        };
+        const outPath = path.resolve(process.cwd(), 'perf-results.json');
+        fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+        console.log(`[perf] Results written to ${outPath}`);
     });
 
     // -------------------------------------------------------------------
@@ -55,6 +67,7 @@ describe.skip('Performance', function () {
         });
 
         console.log(`[perf] Large document load time: ${duration.toFixed(0)}ms`);
+        timingResults['large-document-load-ms'] = duration;
         expect(duration).toBeLessThan(3000);
 
         // Verify some expected content actually rendered
@@ -118,6 +131,9 @@ describe.skip('Performance', function () {
 
         console.log(`[perf] Keystroke latencies (ms): ${latencies.map((l) => l.toFixed(1)).join(', ')}`);
         console.log(`[perf] Keystroke avg: ${avg.toFixed(1)}ms, min: ${min.toFixed(1)}ms, max: ${max.toFixed(1)}ms`);
+        timingResults['keystroke-avg-ms'] = avg;
+        timingResults['keystroke-max-ms'] = max;
+        timingResults['keystroke-min-ms'] = min;
 
         expect(avg).toBeLessThan(100);
     });
@@ -181,6 +197,7 @@ describe.skip('Performance', function () {
         const drift = Math.abs(scrollAfter - scrollBefore);
         const tolerance = Math.max(scrollBefore * 0.5, 200);
         console.log(`[perf] Scroll drift: ${drift}px (tolerance: ${tolerance}px)`);
+        timingResults['resize-scroll-drift-px'] = drift;
         expect(drift).toBeLessThan(tolerance);
 
         // Verify content is still rendered
@@ -227,6 +244,7 @@ describe.skip('Performance', function () {
         });
 
         console.log(`[perf] Rapid tab switching (${files.length} tabs x 2 rounds): ${duration.toFixed(0)}ms`);
+        timingResults['tab-switching-ms'] = duration;
 
         // Wait for the last tab switch to settle
         await browser.pause(500);
