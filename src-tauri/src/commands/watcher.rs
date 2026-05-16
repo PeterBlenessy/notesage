@@ -517,6 +517,161 @@ mod tests {
         );
     }
 
+    /// Regression guard: `.git/` internals must not reach `file-changed-batch`.
+    #[test]
+    fn process_watcher_events_filters_git_internals() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+
+        let events = vec![
+            // A file inside a .git directory (e.g. index, COMMIT_EDITMSG)
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![PathBuf::from("/home/user/project/.git/COMMIT_EDITMSG")],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+            // A .git directory itself
+            DebouncedEvent::new(
+                notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                        notify::event::DataChange::Content,
+                    )),
+                    paths: vec![PathBuf::from("/home/user/project/.git")],
+                    attrs: Default::default(),
+                },
+                Instant::now(),
+            ),
+        ];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        assert!(
+            result.file_changes.is_empty(),
+            ".git internals must not appear in file-changed-batch"
+        );
+        // Reindex entries should also be empty (git internals are dropped before reindex)
+        assert!(
+            result.reindex_entries.is_empty(),
+            ".git internals must not appear in reindex entries"
+        );
+    }
+
+    /// Regression guard: `.DS_Store` files must not reach `file-changed-batch`.
+    #[test]
+    fn process_watcher_events_filters_ds_store() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![PathBuf::from("/home/user/project/.DS_Store")],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        assert!(
+            result.file_changes.is_empty(),
+            ".DS_Store must not appear in file-changed-batch"
+        );
+    }
+
+    /// Regression guard: macOS FSEvents quirk — Modify on a nonexistent file must
+    /// be reclassified as Delete before reaching the frontend.
+    #[test]
+    fn process_watcher_events_reclassifies_modify_as_delete_for_nonexistent_file() {
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+
+        // Use a path that definitely does not exist.
+        let nonexistent = PathBuf::from("/tmp/notesage_test_nonexistent_file_12345.md");
+        assert!(!nonexistent.exists(), "test path must not exist");
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![nonexistent.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // The Modify event should have been reclassified to Delete.
+        assert_eq!(
+            result.file_changes.len(),
+            1,
+            "reclassified delete must appear in file_changes"
+        );
+        assert_eq!(
+            result.file_changes[0].kind,
+            FileChangeKind::Delete,
+            "Modify on nonexistent path must be reclassified as Delete"
+        );
+    }
+
+    /// Regression guard: self-writes must be excluded from `file-changed-batch`
+    /// but must still appear in `reindex_entries` (SQLite index must stay current).
+    #[test]
+    fn process_watcher_events_self_write_suppresses_file_changed_batch_not_reindex() {
+        use std::io::Write;
+
+        // Create a real temporary file so the path:
+        //  - exists (no Modify→Delete reclassification), AND
+        //  - is_dir() == false (no directory skip).
+        let mut tmpfile = tempfile::NamedTempFile::new()
+            .expect("could not create temp file for self-write test");
+        writeln!(tmpfile, "notesage self-write test").unwrap();
+        let self_written = tmpfile.path().to_path_buf();
+
+        let mut self_writes: HashMap<PathBuf, Instant> = HashMap::new();
+        self_writes.insert(self_written.clone(), Instant::now());
+
+        let events = vec![DebouncedEvent::new(
+            notify::Event {
+                kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(
+                    notify::event::DataChange::Content,
+                )),
+                paths: vec![self_written.clone()],
+                attrs: Default::default(),
+            },
+            Instant::now(),
+        )];
+
+        let result = process_watcher_events(events, &mut self_writes);
+
+        // Self-write: should NOT appear in file_changes (no false external-change event)
+        let path_str = self_written.to_string_lossy();
+        let in_file_changes = result
+            .file_changes
+            .iter()
+            .any(|e| e.path == path_str.as_ref());
+        assert!(
+            !in_file_changes,
+            "self-written path must not appear in file-changed-batch"
+        );
+
+        // Self-write: MUST appear in reindex_entries (SQLite still needs to be updated)
+        let in_reindex = result
+            .reindex_entries
+            .iter()
+            .any(|(p, _)| p == path_str.as_ref());
+        assert!(
+            in_reindex,
+            "self-written path must still appear in reindex_entries"
+        );
+    }
+
     #[test]
     fn process_watcher_events_excludes_rename_txn_staging_paths() {
         // Simulate a modify event for a file inside the rename-txn staging dir.
