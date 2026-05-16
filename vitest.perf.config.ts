@@ -22,5 +22,12 @@ export default defineConfig({
         url: 'http://localhost',
       },
     },
+    // Perf benchmarks run 3 iterations per test. With PERF_BUDGET_MULTIPLIER=4
+    // on CI, a single budgeted iteration can take up to ~2s (508ms × 4) for
+    // 100KB markdown parse. Three iterations + overhead can exceed vitest's
+    // default 5000ms testTimeout on a slow runner, causing a spurious failure
+    // independent of the perf-budget gate.
+    // 60s timeout absorbs runner variance while still catching genuine hangs.
+    testTimeout: 60_000,
   },
 });

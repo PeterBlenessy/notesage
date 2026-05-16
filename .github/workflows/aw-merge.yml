@@ -1,0 +1,78 @@
+name: AW — Auto-merge (Tier A)
+
+# Fires when `aw-alpha-prep` adds the `tier:A` label to a bot PR.
+# Enables GitHub's native auto-merge so the PR merges as soon as CI is
+# green and any required reviews are satisfied. The merge happens via
+# squash to keep history clean.
+#
+# Tier B PRs are NOT auto-merged here — they queue for the periodic
+# alpha-cut batch (`aw-alpha-cut.yml`). Tier C is left alone for
+# human review.
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to enable auto-merge on (optional)"
+        required: false
+
+permissions:
+  contents: write          # GitHub auto-merge writes the merge commit
+  pull-requests: write     # enable / disable auto-merge flag
+
+concurrency:
+  group: aw-merge-pr-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  enable-auto-merge:
+    # Only act on tier:A label additions to bot-authored PRs.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'tier:A' &&
+       startsWith(github.event.pull_request.head.ref, 'claude/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Enable auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          # Sanity: PR must be open, not draft, not already merged.
+          pr_json=$(gh pr view "$PR_NUMBER" --json state,isDraft,autoMergeRequest)
+          state=$(echo "$pr_json" | jq -r '.state')
+          is_draft=$(echo "$pr_json" | jq -r '.isDraft')
+          existing_auto=$(echo "$pr_json" | jq -r '.autoMergeRequest // empty')
+
+          echo "PR #$PR_NUMBER: state=$state draft=$is_draft auto=${existing_auto:-none}"
+
+          if [[ "$state" != "OPEN" ]]; then
+            echo "PR is $state — skipping auto-merge enable."
+            exit 0
+          fi
+          if [[ "$is_draft" == "true" ]]; then
+            echo "PR is still draft — skipping (aw-review should have marked ready first)."
+            exit 0
+          fi
+          if [[ -n "$existing_auto" ]]; then
+            echo "Auto-merge already enabled — no-op."
+            exit 0
+          fi
+
+          echo "Enabling auto-merge (squash, delete branch on merge) for PR #$PR_NUMBER"
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
+
+          comment_body=$(cat <<EOF
+          🚀 **aw-merge:** auto-merge enabled (squash). PR will merge automatically when all required checks pass on the head branch.
+
+          To cancel: \`gh pr merge $PR_NUMBER --disable-auto\` (or remove the \`tier:A\` label and re-classify).
+          EOF
+          )
+          gh pr comment "$PR_NUMBER" --body "$comment_body"
