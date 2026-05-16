@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+import { useSettingsStore } from '@/stores/settings-store';
 
 export interface Release {
   version: string;
@@ -16,8 +17,14 @@ export interface Changelog {
   releases: Release[];
 }
 
-const GITHUB_CHANGELOG_URL =
+// Stable channel → no `-` prerelease segment in the listing.
+// Alpha channel → full list including alphas.
+// File names + URLs mirror the build artifact naming in
+// `scripts/generate-changelog.ts` and the workflow upload step.
+const STABLE_CHANGELOG_URL =
   'https://github.com/PeterBlenessy/notesage/releases/latest/download/changelog.json';
+const ALPHA_CHANGELOG_URL =
+  'https://github.com/PeterBlenessy/notesage/releases/latest-alpha/download/changelog-alpha.json';
 
 /**
  * SemVer comparator (ASCENDING — standard).
@@ -81,11 +88,17 @@ function splitSemver(v: string): [[number, number, number], string | null] {
 export function useChangelog() {
   const [changelog, setChangelog] = useState<Changelog | null>(null);
   const [loading, setLoading] = useState(false);
-  const fetchedRef = useRef(false);
+  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
+  const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    // Re-fetch when the user toggles channels — different feed, different content.
+    if (fetchedRef.current === releaseChannel) return;
+    fetchedRef.current = releaseChannel;
+
+    const isAlpha = releaseChannel === 'alpha';
+    const bundledUrl = isAlpha ? '/changelog-alpha.json' : '/changelog.json';
+    const remoteUrl = isAlpha ? ALPHA_CHANGELOG_URL : STABLE_CHANGELOG_URL;
 
     let cancelled = false;
 
@@ -94,20 +107,20 @@ export function useChangelog() {
 
       // Load bundled changelog first (instant, always available)
       try {
-        const res = await fetch('/changelog.json');
+        const res = await fetch(bundledUrl);
         if (res.ok) {
           const data = await res.json();
           if (!cancelled) setChangelog(data);
         }
       } catch {
-        // Expected: bundled changelog.json may not exist in dev builds
+        // Expected: bundled changelog may not exist in dev builds
       }
 
       // Then try remote for potentially newer data (via Tauri HTTP plugin to avoid CORS)
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await tauriFetch(GITHUB_CHANGELOG_URL, { signal: controller.signal });
+        const res = await tauriFetch(remoteUrl, { signal: controller.signal });
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
@@ -123,9 +136,8 @@ export function useChangelog() {
     load();
     return () => {
       cancelled = true;
-      fetchedRef.current = false;
     };
-  }, []);
+  }, [releaseChannel]);
 
   const getChangesBetween = useCallback(
     (fromVersion: string, toVersion: string): Release[] => {

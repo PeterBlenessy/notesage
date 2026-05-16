@@ -5,9 +5,10 @@ mod tray;
 
 // Re-exports for integration tests under `tests/`. Kept narrow — only the
 // primitives tests need to drive the real sandbox plumbing from outside the
-// crate (see `tests/sandbox_isolation.rs`).
+// crate (see `tests/sandbox_isolation.rs`, `tests/watcher_integration.rs`).
 pub use commands::sandbox;
 pub use commands::sandbox_monitor;
+pub use commands::watcher;
 
 use commands::*;
 use index::IndexState;

@@ -23,7 +23,7 @@ set -euo pipefail
 WEBDRIVER_HOST="localhost"
 PLUGIN_PORT=4445             # tauri-plugin-webdriver embedded HTTP server
 DRIVER_PORT=4444             # tauri-webdriver bridge (W3C WebDriver endpoint)
-APP_READY_TIMEOUT=120        # seconds — Tauri dev build can be slow
+APP_READY_TIMEOUT=600        # seconds — cold cargo build on CI can take 5-10 min; dev rebuilds are seconds. 10-minute upper bound absorbs cold-build runners without masking genuine hangs.
 DRIVER_READY_TIMEOUT=15      # seconds — tauri-webdriver starts fast
 POLL_INTERVAL=2              # seconds between readiness polls
 

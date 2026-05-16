@@ -45,13 +45,13 @@ resvg = "0.45"
 typst-library = "0.14.2"
 typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
-comrak = { version = "0.50.0", default-features = false, features = ["syntect"] }
+comrak = { version = "0.52.0", default-features = false, features = ["syntect"] }
 
 # Tag scanning
 regex = "1"
 
 # SQLite document index (Phase 10)
-rusqlite = { version = "0.34", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 sha2 = "0.10"
 
 # Skills & Agents Platform (Phase 7)
@@ -110,7 +110,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
 
 # HTML parsing for link preview metadata extraction
-scraper = "0.23"
+scraper = "0.27"
 
 # PPTX export
 ppt-rs = "0.2"

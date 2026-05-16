@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "version": "0.45.0-alpha.0",
+      "date": "2026-05-15",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "features": [
+          "**Update dialog renders markdown.** \"Update available\" and \"Switch back to Stable?\" dialogs now render markdown (bold, bullets, links) instead of plain text. Release notes for v0.45.0 onwards arrive formatted.",
+          "**In-app changelog respects your channel.** Stable users now see only stable releases in the \"What's new\" view. Alpha users see the full list including alphas. Each channel fetches its own feed so a stable user no longer scrolls past alpha entries they never had."
+        ],
+        "improvements": [
+          "**MicButton stays in sync across instances.** Clicking the dictation button in the StatusTray and the Toolbar now share a single source of truth — clicking one to start, then clicking the other to stop, works as expected. Previously the second instance was unaware the first had started a session.",
+          "**Image hover toolbar works in production builds.** Hovering an image in a release / production build now shows the width and alignment popover. Previously the popover only fired in dev mode — a long-standing regression tracked in `docs/history/112-release-v0.44.0-alpha.0.md` as a known issue.",
+          "**Empty HTML files show a placeholder.** Opening a 0-byte or whitespace-only `.html` file now displays \"This HTML file is empty\" instead of a blank pane.",
+          "**Multi-line table cells survive export.** Cells containing `<br>`-separated lines now round-trip through PDF, DOCX, and HTML export without flattening to a single line.",
+          "**Editor scroll-restore is more reliable.** Reopening a doc with a zero-height collapsed cursor no longer fails to scroll to position.",
+          "**Build infrastructure: 22 frontend deps and 10 Rust deps refreshed.** Tiptap 3.22 → 3.23, React 19.2.5 → 19.2.6, Vite 8.0.8 → 8.0.13, tokio 1.49 → 1.52, pdfjs-dist 5.6 → 5.7, and the rest of the patch-version drift since v0.43.0. Frontend test suite ran clean against the new versions; existing functionality is unaffected."
+        ],
+        "fixes": [
+          "**mermaid security alerts (4) closed.** mermaid 11.14.0 → 11.15.0 closes Dependabot alerts about Gantt-chart DoS, classDef HTML injection, configuration CSS injection, and classDef CSS injection. If you embed mermaid diagrams in your documents, this is a meaningful security pickup.",
+          "**rand low-severity alert closed (transitive).** A Rust dependency that pulls in the `rand` crate was advanced; the unsoundness with custom loggers no longer applies.",
+          "**Tauri IPC Origin Confusion alert closed.** Tauri framework advanced from 2.10.2 to 2.11.1 (Rust crate) + matching `@tauri-apps/*` JS package alignment. Closes Dependabot alert #57. The bump was a side effect of `cargo update`'s global resolution within the existing `tauri = \"2\"` constraint; the JS-side packages were aligned to match because Tauri requires JS and Rust majors/minors to agree at build time."
+        ]
+      }
+    },
+    {
       "version": "0.44.0",
       "date": "2026-05-14",
       "previousVersion": "0.43.1",
@@ -27,6 +51,99 @@
           "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
           "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
           "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
+        ]
+      }
+    },
+    {
+      "version": "0.44.0-alpha.3",
+      "date": "2026-05-12",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`. Local relative paths still load.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts` iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included.",
+          "**Unsafe preview mode (per-tab, session-only).** A toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders with raw HTML including CDN and inline scripts. Switching tabs resets it.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — keeps `<form>`, `<input>`, `<button>`, action / method attributes in the sanitised tree.",
+          "**Width + alignment persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file.",
+          "**`Cmd+= / Cmd+- / Cmd+0` zoom in the PDF viewer.** Markdown editor and PDF share the same shortcut.",
+          "**Research and templates folders visible at project root.** Previously hidden under `.notesage/`; now `research/` and `templates/` are first-class folders. Existing hidden content is migrated on next launch."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards sit with a generous margin above and below.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover show the same control.",
+          "**Switching back from Alpha to Stable is one click.** Pick Stable in Settings → Updates → Release Channel and a clear \"Switch back to Stable?\" dialog appears with the version you'll move to. Decline and you stay on the alpha until a stable release exceeds your version.",
+          "**Checking for updates fires automatically when you change channel.** No more manual \"Check for updates\" click after toggling between Stable and Alpha."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch now mirrors the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** Fixed a missing `<TooltipProvider>` that the error boundary was catching on every block render.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
+          "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
+        ]
+      }
+    },
+    {
+      "version": "0.44.0-alpha.2",
+      "date": "2026-05-11",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`, and similar attributes before render. Local relative paths and same-directory files still load. Default OFF.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts`-only iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included (separate toggle below). Default OFF.",
+          "**Unsafe preview mode (per-tab, session-only).** A new toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders in `allow-scripts`-only iframe with raw HTML — CDN scripts and inline `<script>` blocks all execute. Switching tabs resets the toggle. For \"I trust this single file\" workflows that don't warrant flipping the persistent allow-scripts setting on.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — toggle ON to keep `<form>`, `<input>`, `<button>`, `<select>`, and form-submission attributes (action / method) in the sanitised tree. Useful for local docs that legitimately contain forms. Default OFF.",
+          "**Width + alignment now persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. *(Originally in alpha.0; first time effectively shipping.)*",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF share the same shortcut. *(Originally in alpha.0.)*"
+        ],
+        "improvements": [
+          "**Research and templates folders are now visible in the workspace.** They used to live under `.notesage/` (hidden) and were only reachable through the AI chat. Notesage now creates `research/` and `templates/` at the project root the first time you save research or open a template picker. Existing hidden content is migrated on next launch.",
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer. Dangerous tags (`<script>`, `<iframe>`, `<object>`, `<embed>`) are stripped before rendering. *(Originally in alpha.0; the four security toggles above are layered on top of this rewrite.)*",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below. *(Originally in alpha.0.)*",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control. *(Originally in alpha.0.)*",
+          "**The 494 KB book opens in ~3 seconds again.** Fixes a regression introduced during the alpha.0 branch where the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path. *(Originally in alpha.0.)*"
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** Schemas in the markdown-parse worker now mirror the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload. *(Originally in alpha.0.)*",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** `<Tooltip>` outside any `<TooltipProvider>` caught by the error boundary; now all four reference implementations are regression-tested. *(Originally in alpha.0.)*",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio (tracked on every scroll, debounced 150 ms) instead of the stale viewport-cache value. *(Originally in alpha.0.)*",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character. *(Originally in alpha.0.)*",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n` separator, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file. *(Originally in alpha.0.)*"
+        ]
+      }
+    },
+    {
+      "version": "0.44.0-alpha.1",
+      "date": "2026-05-10",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "fixes": [
+          "**Release pipeline unblocked.** Removed the obsolete"
+        ]
+      }
+    },
+    {
+      "version": "0.44.0-alpha.0",
+      "date": "2026-05-10",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "features": [
+          "**Width + alignment now persist on charts, drawings, and link-previews.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. Saved as a small metadata comment at the end of the markdown line so you can edit the value by hand if you want to.",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF zoom share the same shortcut."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** Notesage no longer wraps `.html` files in an isolated iframe — the body renders inline, the toolbar is always visible with a Source / Rendered toggle, `Cmd+T` theme toggling and `Cmd+F` find work straight away. `<script>` and other risky tags are stripped before rendering.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below so they don't visually crowd the surrounding text.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control — a dropdown with a status dot per provider — instead of a segmented toggle.",
+          "**The 494 KB book opens in ~3 seconds again.** A regression introduced during this branch (the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path) is fixed. The conditional zoom only applies when actually zoomed."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch and file-load was missing the `blockWidth` / `align` attribute slots on its chart, drawing, and link-preview shims, so ProseMirror's DOMParser silently dropped those attributes during reload. Schemas now mirror the production extensions; new regression test catches future drift.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** PR #173 shipped a `<Tooltip>` outside any `<TooltipProvider>` — the editor's error boundary caught it on every block render. New design-system rule documents that every `<Tooltip>` must be inside a `<TooltipProvider>`, with a regression test that covers the four reference implementations.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** The viewport cache only captured `scrollY` 5 seconds after an *edit*, so if you scrolled to the top without editing, the cache restored the old pre-scroll position on reopen. Now restores from the live saved ratio (tracked on every scroll, debounced 150 ms).",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character; Nordic `Shift+7` fallback for true `Cmd+/` preserved.",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n`, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file."
         ]
       }
     },
