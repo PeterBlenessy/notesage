@@ -69,6 +69,28 @@ jobs:
           additions=$(echo "$pr_json" | jq -r '.additions')
           changed_files=$(echo "$pr_json" | jq -r '.changedFiles')
           file_paths=$(echo "$pr_json" | jq -r '.files[].path')
+
+          # Identify test-only files. Patterns:
+          #   - e2e-real/** (real-E2E tests + fixtures + helpers)
+          #   - **/__tests__/** (Vitest unit tests, anywhere in src)
+          #   - **/*.test.{ts,tsx,js,jsx} (sibling test files)
+          #   - **/*.spec.{ts,tsx,js,jsx} (Playwright + similar)
+          #   - tests/fixtures/** (markdown round-trip + perf fixtures)
+          #   - src-tauri/tests/** (Rust integration tests)
+          # Test-only files don't carry runtime blast radius — their changes
+          # affect only the test surface itself.
+          TEST_FILE_REGEX='(^e2e-real/|/__tests__/|\.(test|spec)\.(ts|tsx|js|jsx)$|^tests/fixtures/|^src-tauri/tests/)'
+
+          # Split files into test-only vs production.
+          prod_paths=$(echo "$file_paths" | grep -vE "$TEST_FILE_REGEX" || true)
+          test_paths=$(echo "$file_paths" | grep -E "$TEST_FILE_REGEX" || true)
+          prod_count=$(echo "$prod_paths" | grep -c . || echo 0)
+          test_count=$(echo "$test_paths" | grep -c . || echo 0)
+          # Coerce empty greps to 0
+          prod_count=${prod_count:-0}
+          test_count=${test_count:-0}
+
+          echo "  production files: $prod_count, test-only files: $test_count"
           issue_numbers=$(echo "$pr_json" | jq -r '.closingIssuesReferences[].number // empty')
           pr_labels=$(echo "$pr_json" | jq -r '.labels[].name // empty')
           is_draft=$(echo "$pr_json" | jq -r '.isDraft')
@@ -102,30 +124,64 @@ jobs:
             fi
           done
 
+          # ----- Test-only PR fast-path -----
+          # When every changed file is a test file, the PR has zero runtime
+          # blast radius and should not be size-throttled. Load-bearing rule
+          # also does not apply (tests never touch the runtime). Skip directly
+          # to Tier A unless hitl/visual already bumped to C.
+          if [[ "$tier" != "C" && $prod_count -eq 0 && $test_count -gt 0 ]]; then
+            reason="Test-only PR ($test_count test file(s), 0 production files) — no runtime blast radius"
+            echo "  fast-path: $reason"
+            label="tier:A"
+            echo "Classified: $label  ($reason)"
+            gh pr edit "$PR_NUMBER" --add-label "$label"
+            comment_body=$(cat <<EOF
+          🧮 **aw-alpha-prep:** \`$label\` — $reason
+
+          Auto-merge eligibility:
+          - **tier:A** → enabled by \`aw-merge\` workflow; merges automatically when CI is green.
+          EOF
+          )
+            gh pr comment "$PR_NUMBER" --body "$comment_body"
+            exit 0
+          fi
+
           # ----- Tier C: load-bearing files touched -----
-          # Reading from a single string with grep -E is faster than per-file globs.
-          if [[ "$tier" != "C" ]]; then
-            if echo "$file_paths" | grep -qE '(/acp.*\.rs$|/sandbox.*\.rs$|/credentials\.rs$|/watcher\.rs$|/index/|/file\.rs$|editor-store\.ts$|/extensions/.*\.ts$|^\.github/workflows/)'; then
+          # Only check PRODUCTION files (test files in load-bearing-named directories
+          # like `e2e-real/tests/watcher-integration.test.ts` are still test files
+          # and don't carry load-bearing risk).
+          if [[ "$tier" != "C" && -n "$prod_paths" ]]; then
+            if echo "$prod_paths" | grep -qE '(/acp.*\.rs$|/sandbox.*\.rs$|/credentials\.rs$|/watcher\.rs$|/index/|/file\.rs$|editor-store\.ts$|/extensions/.*\.ts$|^\.github/workflows/)'; then
               tier="C"
-              reason="Touches load-bearing file(s): $(echo "$file_paths" | grep -E '(/acp.*\.rs$|/sandbox.*\.rs$|/credentials\.rs$|/watcher\.rs$|/index/|/file\.rs$|editor-store\.ts$|/extensions/.*\.ts$|^\.github/workflows/)' | head -3 | tr '\n' ' ')"
+              reason="Touches load-bearing production file(s): $(echo "$prod_paths" | grep -E '(/acp.*\.rs$|/sandbox.*\.rs$|/credentials\.rs$|/watcher\.rs$|/index/|/file\.rs$|editor-store\.ts$|/extensions/.*\.ts$|^\.github/workflows/)' | head -3 | tr '\n' ' ')"
             fi
           fi
 
-          # ----- Tier C: oversized diff -----
-          if [[ "$tier" != "C" ]] && { (( additions > 250 )) || (( changed_files > 8 )); }; then
+          # ----- Tier C: oversized PRODUCTION diff -----
+          # Size ceiling applies to production files only. A 600-line e2e spec
+          # is not blast-radius — and shouldn't be size-throttled.
+          prod_additions=0
+          if [[ -n "$prod_paths" ]]; then
+            # Pull additions per file from the .files[] array, summing only
+            # production paths.
+            prod_additions=$(echo "$pr_json" | jq --argjson tre "$(printf '"%s"' "$TEST_FILE_REGEX" | jq -R .)" -r '[.files[] | select(.path | test('"\"$TEST_FILE_REGEX\""'; "x") | not) | .additions] | add // 0')
+          fi
+          echo "  production additions: $prod_additions / $additions total"
+
+          if [[ "$tier" != "C" ]] && { (( prod_additions > 250 )) || (( prod_count > 8 )); }; then
             tier="C"
-            reason="Diff exceeds Tier-B ceiling (>$additions lines or >$changed_files files; ceiling 250/8)"
+            reason="Production diff exceeds Tier-B ceiling ($prod_additions lines, $prod_count files; ceiling 250/8)"
           fi
 
-          # ----- Tier B: mid-size or feature-shaped -----
-          if [[ "$tier" == "A" ]] && { (( additions > 100 )) || (( changed_files > 3 )); }; then
+          # ----- Tier B: mid-size or feature-shaped PRODUCTION diff -----
+          if [[ "$tier" == "A" ]] && { (( prod_additions > 100 )) || (( prod_count > 3 )); }; then
             tier="B"
-            reason="Mid-size diff ($additions lines, $changed_files files; Tier-A ceiling 100/3)"
+            reason="Mid-size production diff ($prod_additions lines, $prod_count files; Tier-A ceiling 100/3)"
           fi
 
           # ----- Tier A default -----
           if [[ "$tier" == "A" ]]; then
-            reason="Small, safe-subsystem, no hitl/visual flag; $additions lines, $changed_files files"
+            reason="Small, safe-subsystem, no hitl/visual flag; $prod_additions production lines across $prod_count file(s)"
           fi
 
           # Apply label.
