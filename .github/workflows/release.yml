@@ -46,18 +46,23 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          # Find previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --oneline --pretty="format:- %s" HEAD)
-          else
-            COMMITS=$(git log --oneline --pretty="format:- %s" "${PREV_TAG}..HEAD")
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          HISTORY_FILE=$(ls docs/history/*-release-v${VERSION}.md 2>/dev/null | head -1)
+
+          if [ -z "$HISTORY_FILE" ]; then
+            echo "::error::No history file found at docs/history/*-release-v${VERSION}.md — release notes required before tag."
+            exit 1
           fi
 
-          # Write to file for multi-line output
-          echo "## Changes" > /tmp/release_notes.md
-          echo "" >> /tmp/release_notes.md
-          echo "$COMMITS" >> /tmp/release_notes.md
+          # Extract user-facing content: everything between "## Changes" and
+          # "## Under the hood" (or end of file). The stop condition fires ONLY
+          # on "## Under the hood" — sections like "## Known issues" and
+          # "## Known limitations" are user-facing and must be included.
+          awk '
+            /^## Changes/{found=1; next}
+            found && /^## Under the hood/{exit}
+            found{print}
+          ' "$HISTORY_FILE" > /tmp/release_notes.md
 
           # Set as output using delimiter
           echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
@@ -259,6 +264,91 @@ jobs:
           releaseBody: ${{ needs.create-release.outputs.release_notes }}
           args: --target aarch64-apple-darwin
 
+      # tauri-action@v0, when invoked with releaseId (and thus without tagName),
+      # generates `latest.json` URLs of the form
+      #   https://github.com/<repo>/releases/latest/download/<file>
+      # That URL resolves to whatever GitHub considers the "Latest" release
+      # (skips prereleases). For a stable tag this is harmless; for an alpha tag
+      # it resolves to the latest STABLE release's binary, and the in-app updater
+      # enters an infinite "install latest" loop because every fetched bundle is
+      # the same as the running build. See issue #271.
+      #
+      # Patch the URLs to the tag-explicit form
+      #   https://github.com/<repo>/releases/download/<TAG>/<file>
+      # before the release flips to public.
+      - name: Patch latest.json URLs to tag-explicit form
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const releaseId = ${{ needs.create-release.outputs.release_id }};
+            const tag = context.ref.replace('refs/tags/', '');
+
+            const { data: assets } = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              per_page: 100,
+            });
+
+            const manifestAsset = assets.find(a => a.name === 'latest.json');
+            if (!manifestAsset) {
+              core.setFailed('latest.json not found among release assets');
+              return;
+            }
+
+            // Download via the assets API. We need a Bearer token to fetch the
+            // raw asset bytes (rather than the GitHub redirect to a SAS URL).
+            const { data: rawManifest } = await github.rest.repos.getReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              asset_id: manifestAsset.id,
+              headers: { accept: 'application/octet-stream' },
+            });
+
+            // octokit returns the body as an ArrayBuffer here; coerce to string.
+            const manifestText = Buffer.isBuffer(rawManifest)
+              ? rawManifest.toString('utf8')
+              : new TextDecoder().decode(rawManifest);
+            const manifest = JSON.parse(manifestText);
+
+            const wrongPrefix = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/latest/download/`;
+            const rightPrefix = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}/`;
+
+            let changed = 0;
+            for (const platformKey of Object.keys(manifest.platforms || {})) {
+              const url = manifest.platforms[platformKey].url;
+              if (url && url.startsWith(wrongPrefix)) {
+                manifest.platforms[platformKey].url = url.replace(wrongPrefix, rightPrefix);
+                changed++;
+              }
+            }
+
+            if (changed === 0) {
+              core.info(`No URL rewrite needed (manifest already tag-explicit).`);
+              return;
+            }
+
+            core.info(`Rewrote ${changed} URL(s) in latest.json from /releases/latest/ to /releases/download/${tag}/`);
+
+            // Delete the old asset and re-upload the patched one.
+            await github.rest.repos.deleteReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              asset_id: manifestAsset.id,
+            });
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              name: 'latest.json',
+              data: JSON.stringify(manifest, null, 2),
+              headers: { 'content-type': 'application/json' },
+            });
+
+            core.info('latest.json re-uploaded with tag-explicit URLs.');
+
   publish-release:
     needs: [create-release, build-tauri]
     runs-on: ubuntu-latest
@@ -294,6 +384,46 @@ jobs:
       contents: write
 
     steps:
+      - name: Verify real-E2E passed on main within 24h
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Gate the alpha cut on a recent green real-E2E run on main.
+            // A Tauri framework bump can only ship automatically when the
+            // real-app test suite confirmed the main branch is healthy.
+            const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+            const { data: { workflow_runs } } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'test.yml',
+              branch: 'main',
+              status: 'completed',
+              per_page: 10,
+            });
+
+            for (const run of workflow_runs) {
+              if (run.updated_at < oneDayAgo) break;
+
+              const { data: { jobs } } = await github.rest.actions.listJobsForWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+              });
+
+              const realE2EJob = jobs.find(j => j.name === 'Real Tauri E2E Tests');
+              if (realE2EJob?.conclusion === 'success') {
+                core.info(`✓ Real E2E passed on main (workflow run #${run.id}, ${run.updated_at})`);
+                return;
+              }
+            }
+
+            core.setFailed(
+              'No successful real-E2E run found on main within the last 24h. ' +
+              'Ensure "Real Tauri E2E Tests" in the Tests workflow passed on main ' +
+              'before cutting an alpha release. Re-run the Tests workflow on main manually if needed.'
+            );
+
       - uses: actions/checkout@v6
 
       - name: Download alpha release assets
