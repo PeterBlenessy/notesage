@@ -79,6 +79,7 @@ export function applyAnnotationsToEditor(
   annotations: Map<number, string>
 ): void {
   if (annotations.size === 0) return;
+  if (editor.isDestroyed) return;
 
   editor.chain().command(({ tr, state }) => {
     tr.setMeta("addToHistory", false);
