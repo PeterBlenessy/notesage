@@ -137,6 +137,66 @@ function splitSemver(v: string): [[number, number, number], string | null] {
   return [[parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0], pre];
 }
 
+
+// Patterns that are forbidden in user-facing bullets (Features / Improvements / Fixes).
+// Each entry is [regex, human-readable label].
+// The linter is warn-only: exit code stays 0 so the linter guides the writer
+// without blocking releases. See `.claude/skills/release/SKILL.md` §"User-facing
+// copy vs Under the hood" for the rationale and before/after examples.
+const FORBIDDEN_BULLET_PATTERNS: [RegExp, string][] = [
+  [/\d+\.\d+\.\d+/, 'version triple (e.g. 11.14.0)'],
+  [/Dependabot/i, 'Dependabot reference'],
+  [/transitive/i, '"transitive" distribution mechanic'],
+  [/Cargo\.lock/i, 'Cargo.lock reference'],
+  [/\bcrate\b/i, '"crate" internal term'],
+];
+
+/**
+ * Warn-only linter for user-facing release bullets.
+ *
+ * Scans Features / Improvements / Fixes bullets in all parsed releases and
+ * prints a console.warn for each bullet that matches a forbidden pattern.
+ * Always returns void — callers must NOT exit(1) based on this output.
+ */
+function lintUserFacingBullets(releases: ReleaseEntry[]): void {
+  let warningCount = 0;
+
+  for (const release of releases) {
+    const sectionEntries = Object.entries(release.sections) as [
+      keyof ReleaseEntry['sections'],
+      string[] | undefined,
+    ][];
+
+    for (const [sectionName, bullets] of sectionEntries) {
+      if (!bullets) continue;
+
+      for (const bullet of bullets) {
+        for (const [pattern, label] of FORBIDDEN_BULLET_PATTERNS) {
+          if (pattern.test(bullet)) {
+            console.warn(
+              `[changelog-linter] v${release.version} › ${sectionName} › forbidden pattern (${label}): "${bullet}"`,
+            );
+            warningCount++;
+            break; // one warning per bullet is enough
+          }
+        }
+      }
+    }
+  }
+
+  if (warningCount > 0) {
+    console.warn(
+      `[changelog-linter] ${warningCount} user-facing bullet(s) contain forbidden patterns.`,
+    );
+    console.warn(
+      `[changelog-linter] Move developer-facing detail to ## Under the hood.`,
+    );
+    console.warn(
+      `[changelog-linter] See .claude/skills/release/SKILL.md §"User-facing copy vs Under the hood" for examples.`,
+    );
+  }
+}
+
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
     (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
@@ -153,6 +213,9 @@ function main() {
 
   // Sort newest first
   releases.sort((a, b) => compareVersions(a.version, b.version));
+
+  // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
+  lintUserFacingBullets(releases);
 
   // Alpha feed = every release. Stable feed = entries without a prerelease
   // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies
