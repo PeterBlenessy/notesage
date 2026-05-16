@@ -69,6 +69,10 @@ jobs:
           echo "Enabling auto-merge (squash, delete branch on merge) for PR #$PR_NUMBER"
           gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
 
-          gh pr comment "$PR_NUMBER" --body "🚀 **aw-merge:** auto-merge enabled (squash). PR will merge automatically when all required checks pass on the head branch.
+          comment_body=$(cat <<EOF
+          🚀 **aw-merge:** auto-merge enabled (squash). PR will merge automatically when all required checks pass on the head branch.
 
-To cancel: \`gh pr merge $PR_NUMBER --disable-auto\` (or remove the \`tier:A\` label and re-classify)."
+          To cancel: \`gh pr merge $PR_NUMBER --disable-auto\` (or remove the \`tier:A\` label and re-classify).
+          EOF
+          )
+          gh pr comment "$PR_NUMBER" --body "$comment_body"
