@@ -17,7 +17,13 @@ import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 
 const TEST_PROJECT = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
 
-describe('Performance', function () {
+// SKIPPED 2026-05-16: per option A of the e2e-tests purpose decision —
+// e2e-real should be FUNCTIONAL only. Performance budgets in e2e tests
+// flake on shared CI runners (2-3x variance) and conceptually belong in
+// `src/perf/*.perf.test.ts` (with budget multipliers) OR in a dedicated
+// post-merge real-perf job (option C). This spec is suspended until the
+// option-C separate job exists. Tracked separately.
+describe.skip('Performance', function () {
     // These tests involve large documents and multiple file operations —
     // give them generous timeouts.
     this.timeout(30000);
