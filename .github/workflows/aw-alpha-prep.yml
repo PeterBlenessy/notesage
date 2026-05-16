@@ -25,6 +25,21 @@ name: AW — Alpha Prep (Tier Classifier)
 #     - New feature (acceptance criteria mention new behaviour)
 #
 #   Tier A otherwise.
+#
+# ──  Dependency-bump fast-path (2026-05-16)  ───────────────────────────────────
+# `chore(deps):` PRs with small prod diffs go straight to Tier A even when they
+# touch load-bearing paths. Rationale: dep bumps are mechanical shims against
+# upstream changelog. The upstream changelog is the spec; the test suite is the
+# validation; a human reading 18 lines of `row.get::<_, i64>` cast adds nothing
+# the CI doesn't already verify. The hitl/visual check still wins (issue authors
+# can force a manual review by tagging the issue).
+#
+# Fast-path triggers when ALL hold:
+#   - PR title starts with `chore(deps):`
+#   - No `hitl`/`visual` label on originating issue
+#   - prod_additions < 50  (a "small mechanical shim")
+#   - prod_count    ≤ 3
+# Result: Tier A, regardless of load-bearing path.
 
 on:
   pull_request:
@@ -64,11 +79,12 @@ jobs:
           set -euo pipefail
 
           # Load PR metadata.
-          pr_json=$(gh pr view "$PR_NUMBER" --json additions,deletions,changedFiles,files,closingIssuesReferences,headRefName,labels,isDraft,state)
+          pr_json=$(gh pr view "$PR_NUMBER" --json additions,deletions,changedFiles,files,closingIssuesReferences,headRefName,labels,isDraft,state,title)
 
           additions=$(echo "$pr_json" | jq -r '.additions')
           changed_files=$(echo "$pr_json" | jq -r '.changedFiles')
           file_paths=$(echo "$pr_json" | jq -r '.files[].path')
+          pr_title=$(echo "$pr_json" | jq -r '.title')
 
           # Identify test-only files. Patterns:
           #   - e2e-real/** (real-E2E tests + fixtures + helpers)
@@ -91,6 +107,24 @@ jobs:
           test_count=${test_count:-0}
 
           echo "  production files: $prod_count, test-only files: $test_count"
+
+          # Compute prod_additions early — the deps fast-path needs it before
+          # the load-bearing check. Bash pipeline (not jq) because passing
+          # TEST_FILE_REGEX through jq's JSON-string parser hits "Invalid
+          # escape" on the \. sequences.
+          prod_additions=0
+          if [[ -n "$prod_paths" ]]; then
+            prod_additions=$(echo "$pr_json" \
+              | jq -r '.files[] | "\(.additions) \(.path)"' \
+              | while read -r adds path; do
+                  if ! echo "$path" | grep -qE "$TEST_FILE_REGEX"; then
+                    echo "$adds"
+                  fi
+                done \
+              | awk '{ s += $1 } END { print s+0 }')
+          fi
+          echo "  production additions: $prod_additions / $additions total"
+
           issue_numbers=$(echo "$pr_json" | jq -r '.closingIssuesReferences[].number // empty')
           pr_labels=$(echo "$pr_json" | jq -r '.labels[].name // empty')
           is_draft=$(echo "$pr_json" | jq -r '.isDraft')
@@ -146,6 +180,30 @@ jobs:
             exit 0
           fi
 
+          # ----- Dependency-bump fast-path -----
+          # `chore(deps):` PRs with small prod diffs bypass the load-bearing
+          # check and go straight to Tier A. Rationale documented in the
+          # header comment. The hitl/visual check above still wins.
+          if [[ "$tier" != "C" \
+              && "$pr_title" =~ ^chore\(deps\): \
+              && $prod_additions -lt 50 \
+              && $prod_count -le 3 ]]; then
+            reason="Dep-bump fast-path: chore(deps): with $prod_additions prod lines across $prod_count file(s) (< 50/3 ceiling)"
+            echo "  fast-path: $reason"
+            label="tier:A"
+            echo "Classified: $label  ($reason)"
+            gh pr edit "$PR_NUMBER" --add-label "$label"
+            comment_body=$(cat <<EOF
+          🧮 **aw-alpha-prep:** \`$label\` — $reason
+
+          Auto-merge eligibility:
+          - **tier:A** → enabled by \`aw-merge\` workflow; merges automatically when CI is green.
+          EOF
+          )
+            gh pr comment "$PR_NUMBER" --body "$comment_body"
+            exit 0
+          fi
+
           # ----- Tier C: load-bearing files touched -----
           # Only check PRODUCTION files (test files in load-bearing-named directories
           # like `e2e-real/tests/watcher-integration.test.ts` are still test files
@@ -160,22 +218,7 @@ jobs:
           # ----- Tier C: oversized PRODUCTION diff -----
           # Size ceiling applies to production files only. A 600-line e2e spec
           # is not blast-radius — and shouldn't be size-throttled.
-          # Compute prod_additions in bash (not jq, because passing the regex
-          # through jq's JSON-string parser hits an "Invalid escape" error on
-          # the \. sequences).
-          prod_additions=0
-          if [[ -n "$prod_paths" ]]; then
-            prod_additions=$(echo "$pr_json" \
-              | jq -r '.files[] | "\(.additions) \(.path)"' \
-              | while read -r adds path; do
-                  if ! echo "$path" | grep -qE "$TEST_FILE_REGEX"; then
-                    echo "$adds"
-                  fi
-                done \
-              | awk '{ s += $1 } END { print s+0 }')
-          fi
-          echo "  production additions: $prod_additions / $additions total"
-
+          # prod_additions is already computed above (needed for deps fast-path).
           if [[ "$tier" != "C" ]] && { (( prod_additions > 250 )) || (( prod_count > 8 )); }; then
             tier="C"
             reason="Production diff exceeds Tier-B ceiling ($prod_additions lines, $prod_count files; ceiling 250/8)"
