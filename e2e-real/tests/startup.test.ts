@@ -107,4 +107,28 @@ describe('App startup and project open', () => {
         expect(editorText).toContain('Deep Note');
         expect(editorText).toContain('nested directory');
     });
+
+    // ---------------------------------------------------------------
+    // Test 5: Regression — no stale content after sequential file opens
+    // Opening file A then file B must show B's content, not A's stale content.
+    // Previously openFile() returned as soon as .ProseMirror existed (which was
+    // always true after the first spec), so the second open raced the async
+    // hydration pipeline and could return while A's content was still visible.
+    // ---------------------------------------------------------------
+    it('should not show stale content from previous file after sequential open', async () => {
+        // Open README.md first
+        await openFile('README.md');
+        const firstText = await getEditorText();
+        expect(firstText).toContain('Test Project');
+
+        // Immediately open notes.md — the content poll must wait for B's content
+        await openFile('notes.md');
+        const secondText = await getEditorText();
+
+        // Must show notes.md content (not stale README.md content)
+        expect(secondText).toContain('Apples');
+
+        // Must NOT still be showing the first file's unique content
+        expect(secondText).not.toContain('E2E testing');
+    });
 });
