@@ -41,13 +41,7 @@ describe('Editor interactions', () => {
         expect(editorText).toContain('quick brown fox');
     });
 
-    // SKIPPED 2026-05-16: openFile() may leave the editor showing the previous
-    // file's content in CI (root cause not yet pinned down — local passes).
-    // Reproducer: this test opens notes.md, types unique text, presses Cmd+S,
-    // then re-reads notes.md from disk. CI sees the original content on disk —
-    // either the typing didn't reach the editor, or the editor wasn't switched
-    // to notes.md, or Cmd+S didn't fire on the right tab. Tracked separately.
-    it.skip('should save file to disk with Cmd+S', async () => {
+    it('should save file to disk with Cmd+S', async () => {
         const targetFile = 'notes.md';
         const filePath = path.join(TEST_PROJECT_PATH, targetFile);
 
