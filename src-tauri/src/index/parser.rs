@@ -542,4 +542,18 @@ mod tests {
         let result = parse_file(content, "note.md", true);
         assert!(result.is_research);
     }
+
+    /// Verifies comrak >= 0.52 is in use: `options.extension.insert` was added in 0.51
+    /// and did not exist in 0.50. This test will fail to compile against comrak 0.50.
+    #[test]
+    fn test_comrak_0_52_insert_extension_available() {
+        use comrak::{format_html, Arena, Options};
+        let mut options = Options::default();
+        options.extension.insert = true;
+        let arena = Arena::new();
+        let doc = parse_document(&arena, "++inserted++", &options);
+        let mut html = String::new();
+        format_html(doc, &options, &mut html).unwrap();
+        assert!(html.contains("<ins>"), "comrak insert extension should render <ins> tags");
+    }
 }
