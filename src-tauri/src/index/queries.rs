@@ -115,7 +115,7 @@ pub fn query_tags(conn: &Connection, query: Option<&str>) -> Result<Vec<IndexedT
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         results.push(IndexedTag {
             tag: row.get(0).map_err(|e| e.to_string())?,
-            file_count: row.get(1).map_err(|e| e.to_string())?,
+            file_count: row.get::<_, i64>(1).map_err(|e| e.to_string())? as usize,
         });
     }
 
@@ -170,7 +170,7 @@ pub fn query_mentions(conn: &Connection, query: Option<&str>) -> Result<Vec<Inde
     while let Some(row) = rows.next().map_err(|e| e.to_string())? {
         results.push(IndexedMention {
             mention: row.get(0).map_err(|e| e.to_string())?,
-            file_count: row.get(1).map_err(|e| e.to_string())?,
+            file_count: row.get::<_, i64>(1).map_err(|e| e.to_string())? as usize,
         });
     }
 
@@ -267,7 +267,7 @@ pub fn query_research(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
-                row.get::<_, usize>(5)?,
+                row.get::<_, i64>(5)? as usize,
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, i64>(7)?,
             ))
@@ -369,7 +369,7 @@ pub fn query_tasks(
                 file_name: row.get(1)?,
                 text: row.get(2)?,
                 done: row.get::<_, i32>(3)? != 0,
-                position: row.get(4)?,
+                position: row.get::<_, i64>(4)? as usize,
                 context_before: row.get(5)?,
                 context_after: row.get(6)?,
                 project_name,
@@ -404,8 +404,8 @@ pub fn query_goals(conn: &Connection) -> Result<Vec<IndexedGoal>, String> {
                 file_name: row.get(1)?,
                 title: row.get(2)?,
                 template: row.get(3)?,
-                total_tasks: row.get(4)?,
-                completed_tasks: row.get(5)?,
+                total_tasks: row.get::<_, i64>(4)? as usize,
+                completed_tasks: row.get::<_, i64>(5)? as usize,
                 project_name,
             })
         })
@@ -541,27 +541,27 @@ fn build_fts_query(input: &str) -> String {
 /// Get index statistics.
 pub fn query_stats(conn: &Connection) -> Result<IndexStats, String> {
     let file_count: usize = conn
-        .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
+        .query_row("SELECT COUNT(*) FROM files", [], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())? as usize;
     let tag_count: usize = conn
-        .query_row("SELECT COUNT(DISTINCT tag) FROM tags", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
+        .query_row("SELECT COUNT(DISTINCT tag) FROM tags", [], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())? as usize;
     let mention_count: usize = conn
-        .query_row("SELECT COUNT(DISTINCT mention) FROM mentions", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
+        .query_row("SELECT COUNT(DISTINCT mention) FROM mentions", [], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())? as usize;
     let task_count: usize = conn
-        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
+        .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())? as usize;
     let goal_count: usize = conn
-        .query_row("SELECT COUNT(*) FROM goals", [], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
+        .query_row("SELECT COUNT(*) FROM goals", [], |row| row.get::<_, i64>(0))
+        .map_err(|e| e.to_string())? as usize;
     let indexed_at: u64 = conn
         .query_row(
             "SELECT COALESCE(MAX(indexed_at), 0) FROM files",
             [],
-            |row| row.get(0),
+            |row| row.get::<_, i64>(0),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())? as u64;
 
     Ok(IndexStats {
         file_count,
