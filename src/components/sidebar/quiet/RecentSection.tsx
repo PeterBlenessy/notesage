@@ -286,6 +286,7 @@ export function RecentSection({
   // cap-agnostic from the caller's perspective.
   const settingCap = useSettingsStore((s) => s.sidebarRecentCap);
   const effectiveCap = cap ?? settingCap ?? DEFAULT_RECENT_CAP;
+  if (effectiveCap === 0) return null;
   const { openFile, renamePath } = useFileOperations();
 
   const [expanded, setExpanded] = useState(false);

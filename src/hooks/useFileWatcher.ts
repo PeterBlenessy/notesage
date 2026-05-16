@@ -96,6 +96,12 @@ export function useFileWatcher() {
         }, 300);
       }
 
+      // Remove externally-deleted files from the Recent list immediately so
+      // the sidebar does not show stale entries pointing at non-existent paths.
+      if (kind === "delete") {
+        useEditorStore.getState().removeRecent(normalizePath(path));
+      }
+
       // Runtime iCloud project discovery — detect new projects synced from other machines
       if (kind === "create") {
         const icloudPath = useSettingsStore.getState().icloudNotesagePath;
