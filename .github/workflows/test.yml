@@ -168,11 +168,11 @@ jobs:
   real-e2e-tests:
     name: Real Tauri E2E Tests
     runs-on: macos-latest
-    # Only run on push to main, workflow_dispatch, and workflow_call (e.g. release).
-    # Excluded from pull_request events — the full Tauri build is too expensive
-    # for every PR. Real-app regressions are caught post-merge on main and at
-    # release time via workflow_call from release.yml.
-    if: github.event_name != 'pull_request'
+    # Required by branch protection on `main` (strict mode). Runs on
+    # `pull_request` events too because branch protection counts a skipped
+    # required check as "not satisfied" — there's no native "required-if-run"
+    # mode. Cost: ~8 min of macos-latest runner per PR push. Trade accepted
+    # to keep the alpha-cut gate real (see 2026-05-15 / 16 conversation).
 
     steps:
       - uses: actions/checkout@v6

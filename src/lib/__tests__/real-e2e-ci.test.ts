@@ -82,11 +82,16 @@ describe('Real E2E CI plumbing (#254)', () => {
       expect(job?.['runs-on']).toBe('macos-latest');
     });
 
-    it('is excluded from pull_request events via an if condition', () => {
-      // The job must have an `if:` that prevents it running on pull_request
-      // so costly real-app builds do not run on every PR.
+    it('runs on pull_request events (required by branch protection)', () => {
+      // Branch protection on `main` requires this check to pass. A skipped
+      // job counts as "not satisfied" — there's no native "required-if-run"
+      // mode in GitHub branch protection. So the job has to RUN on PRs,
+      // not be excluded. Cost trade documented in the job's comment.
+      const wf = loadWorkflow('test');
+      expect(wf.on.pull_request).toBeDefined();
+      // The job must NOT have a pull_request-excluding if clause.
       const condition = job?.if ?? '';
-      expect(condition).toMatch(/pull_request/);
+      expect(condition).not.toMatch(/event_name\s*!=\s*['"]pull_request['"]/);
     });
 
     it('has an actions/cache step keyed on tauri-webdriver', () => {
