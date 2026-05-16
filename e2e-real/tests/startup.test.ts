@@ -62,12 +62,7 @@ describe('App startup and project open', () => {
     // ---------------------------------------------------------------
     // Test 2: Open a markdown file and verify editor content
     // ---------------------------------------------------------------
-    // SKIPPED 2026-05-16: same shape as editor.test.ts "should save file" —
-    // openFile() may leave the editor showing the previous file's content in
-    // CI. This test opens README.md and asserts the editor text contains
-    // "Test Project". In CI the editor still shows the previous spec's file
-    // content. Tracked separately.
-    it.skip('should open a markdown file and show editor content', async () => {
+    it('should open a markdown file and show editor content', async () => {
         await openFile('README.md');
         const editorText = await getEditorText();
         console.log(`[startup] Editor text length: ${editorText.length} (informational only)`);
@@ -78,17 +73,30 @@ describe('App startup and project open', () => {
     // ---------------------------------------------------------------
     // Test 3: Open a file with rich markdown content
     // ---------------------------------------------------------------
-    // SKIPPED 2026-05-16: same root cause as the previous test — openFile()
-    // leaves stale editor content in CI. Notes.md doesn't actually become the
-    // active doc, so the editor text doesn't contain "Apples" / "Bread" /
-    // "Write documentation". Tracked separately.
-    it.skip('should render rich markdown content correctly', async () => {
+    it('should render rich markdown content correctly', async () => {
         await openFile('notes.md');
         const editorText = await getEditorText();
         expect(editorText).toContain('Apples');
         expect(editorText).toContain('Bread');
         expect(editorText).toContain('Write documentation');
         expect(editorText).toContain('important blockquote');
+    });
+
+    // ---------------------------------------------------------------
+    // Test 3b: Regression — sequential openFile() shows second file's content
+    // ---------------------------------------------------------------
+    it('should not show stale content from previous file after sequential open', async () => {
+        // Open README.md first, confirm it renders
+        await openFile('README.md');
+        const firstText = await getEditorText();
+        expect(firstText).toContain('Test Project');
+
+        // Then open notes.md — editor must show notes.md content, NOT README.md
+        await openFile('notes.md');
+        const secondText = await getEditorText();
+        expect(secondText).toContain('Apples');
+        // README.md unique content must not be visible after switching
+        expect(secondText).not.toContain('E2E testing');
     });
 
     // ---------------------------------------------------------------
