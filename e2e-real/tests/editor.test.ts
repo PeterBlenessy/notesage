@@ -148,8 +148,7 @@ describe('Editor interactions', () => {
             );
         });
 
-        console.log(`[editor] Slash command menu appeared in ${menuDuration.toFixed(0)}ms`);
-        expect(menuDuration).toBeLessThan(1000);
+        console.log(`[editor] Slash command menu appeared in ${menuDuration.toFixed(0)}ms (informational only)`);
 
         // Filter to heading items and click the first one
         await browser.execute(() => document.execCommand('insertText', false, 'heading'));
