@@ -98,7 +98,7 @@ describe('External Change Detection', () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const w = window as any;
             const state = w.__E2E_EDITOR_STORE__?.getState();
-            const tab = state?.tabs?.find((t: { id: string }) => t.id === state.activeTabId);
+            const tab = state?.openDocuments?.find((t: { id: string }) => t.id === state.activeTabId);
             return tab?.isDirty ?? false;
         });
         console.log(`[ext-change] Tab dirty state: ${isDirty}`);

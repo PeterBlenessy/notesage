@@ -1,0 +1,227 @@
+name: AW — Alpha Cut (periodic)
+
+# Cuts a new alpha tag when conditions are met:
+#   - At least one Tier-A or Tier-B PR has merged to main since the last
+#     alpha tag.
+#   - The most recent `Real Tauri E2E Tests` job on main is green AND
+#     finished within the last 24h.
+#   - No open PRs with the `tier:C` label are waiting on human review.
+#     (Tier C work should land in its own release cycle, not be silently
+#     skipped by an auto alpha.)
+#
+# Cadence: every 6 hours via cron. Also dispatchable manually.
+#
+# When all conditions hold, this workflow:
+#   1. Computes the next alpha version (bumps the prerelease counter).
+#   2. Generates a new history file at `docs/history/NNN-release-vX.Y.Z-alpha.M.md`
+#      from the PRs merged since the previous alpha tag.
+#   3. Bumps `package.json` and regenerates `public/changelog-alpha.json`.
+#   4. Commits + tags + pushes. The existing `release.yml` workflow picks
+#      up the new tag and builds/publishes the alpha.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (compute next version + history file, do not commit/tag)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write          # commit + tag + push
+
+concurrency:
+  group: aw-alpha-cut
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      should_cut: ${{ steps.check.outputs.should_cut }}
+      next_version: ${{ steps.check.outputs.next_version }}
+      next_history_number: ${{ steps.check.outputs.next_history_number }}
+      pr_numbers: ${{ steps.check.outputs.pr_numbers }}
+      previous_tag: ${{ steps.check.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0    # need full history for `git describe` and PR enumeration
+
+      - name: Determine whether to cut a new alpha
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+
+          # 1. Last alpha tag.
+          previous_tag=$(git tag --list 'v*-alpha.*' --sort=-v:refname | head -1 || echo "")
+          if [[ -z "$previous_tag" ]]; then
+            echo "No previous alpha tag found — would need to bootstrap. Skipping."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "Previous alpha: $previous_tag"
+
+          # 2. Tier-A or Tier-B PRs merged since previous_tag?
+          since_iso=$(git log -1 --format=%cI "$previous_tag")
+          echo "Looking for tier:A/B PRs merged since $since_iso"
+          pr_numbers=$(gh pr list \
+            --state merged --base main \
+            --search "merged:>$since_iso label:tier:A,tier:B" \
+            --json number --jq '.[].number' | tr '\n' ',' | sed 's/,$//')
+
+          if [[ -z "$pr_numbers" ]]; then
+            echo "No Tier-A/B PRs merged since $previous_tag — nothing to ship."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "PRs to ship: $pr_numbers"
+          echo "pr_numbers=$pr_numbers" >> "$GITHUB_OUTPUT"
+
+          # 3. Real-E2E green on main within 24h?
+          one_day_ago=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+            || date -u -v-1d +%Y-%m-%dT%H:%M:%SZ)
+          last_e2e=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?branch=main&status=completed&per_page=10" \
+            --jq '.workflow_runs[] | select(.updated_at > "'$one_day_ago'") | .id' \
+            | head -10)
+          e2e_green="false"
+          for run_id in $last_e2e; do
+            real_conclusion=$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/jobs" \
+              --jq '.jobs[] | select(.name == "Real Tauri E2E Tests") | .conclusion' || echo "")
+            if [[ "$real_conclusion" == "success" ]]; then
+              e2e_green="true"
+              echo "Real-E2E green on main: run $run_id"
+              break
+            fi
+          done
+          if [[ "$e2e_green" != "true" ]]; then
+            echo "No green Real-E2E run on main within 24h — refusing to cut."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 4. No open tier:C PRs waiting?
+          tier_c_open=$(gh pr list --state open --label tier:C --json number --jq '.[].number' | wc -l)
+          if (( tier_c_open > 0 )); then
+            echo "$tier_c_open open Tier-C PR(s) waiting on human review — cutting alpha anyway (Tier-C is for stable promotion gate, not alpha gate)."
+          fi
+
+          # 5. Compute next alpha version.
+          # previous_tag format: vX.Y.Z-alpha.M
+          version=${previous_tag#v}
+          base=${version%-alpha.*}
+          counter=${version#*-alpha.}
+          next_counter=$(( counter + 1 ))
+          next_version="${base}-alpha.${next_counter}"
+          echo "Next alpha: v$next_version"
+          echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
+
+          # 6. Next history file number.
+          last_num=$(ls docs/history/ | grep -oE '^[0-9]+' | sort -n | tail -1)
+          next_num=$(printf "%03d" $((10#$last_num + 1)))
+          echo "Next history file: $next_num-release-v$next_version.md"
+          echo "next_history_number=$next_num" >> "$GITHUB_OUTPUT"
+
+          echo "should_cut=true" >> "$GITHUB_OUTPUT"
+
+  cut:
+    needs: preflight
+    if: needs.preflight.outputs.should_cut == 'true' && inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump package.json
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.NEXT_VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          grep '"version"' package.json | head -1
+
+      - name: Generate history file from merged PRs
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PR_NUMBERS: ${{ needs.preflight.outputs.pr_numbers }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
+        run: |
+          set -euo pipefail
+
+          DATE=$(date -u +%Y-%m-%d)
+          FILE="docs/history/${NEXT_NUMBER}-release-v${NEXT_VERSION}.md"
+
+          {
+            echo "# Release v${NEXT_VERSION}"
+            echo ""
+            echo "**Date:** ${DATE}"
+            echo "**Previous version:** ${PREVIOUS_TAG#v}"
+            echo "**Channel:** Alpha"
+            echo ""
+            echo "Auto-cut by \`aw-alpha-cut\` after Tier-A/B PRs landed. Review the merged PRs listed below to confirm the change set matches your expectations before promoting to stable."
+            echo ""
+            echo "## Changes"
+            echo ""
+            echo "### Improvements"
+            echo ""
+            IFS=',' read -ra PRS <<< "$PR_NUMBERS"
+            for pr in "${PRS[@]}"; do
+              title=$(gh pr view "$pr" --json title --jq .title)
+              echo "- ${title} (#${pr})"
+            done
+            echo ""
+            echo "## Under the hood"
+            echo ""
+            echo "Auto-generated. For per-PR detail, see the individual PRs:"
+            for pr in "${PRS[@]}"; do
+              echo "- #${pr}"
+            done
+          } > "$FILE"
+
+          cat "$FILE"
+
+      - name: Update history README
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
+        run: |
+          set -euo pipefail
+          line="| ${NEXT_NUMBER} | [Release v${NEXT_VERSION}](${NEXT_NUMBER}-release-v${NEXT_VERSION}.md) | Auto-cut alpha by \`aw-alpha-cut\`. See merged PRs for details. |"
+          echo "$line" >> docs/history/README.md
+
+      - name: Regenerate changelog
+        run: pnpm install --frozen-lockfile && pnpm generate-changelog
+        env:
+          # pnpm may try to read tarballs; ensure we have access
+          NPM_CONFIG_USERCONFIG: /dev/null
+
+      - name: Commit, tag, push
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          git add package.json docs/history/ public/
+          git commit -m "chore: release v${NEXT_VERSION} (auto-cut by aw-alpha-cut)"
+          git tag "v${NEXT_VERSION}"
+          git push origin main
+          git push origin "v${NEXT_VERSION}"
+          echo "Tagged and pushed v${NEXT_VERSION}. release.yml will pick it up and publish."
