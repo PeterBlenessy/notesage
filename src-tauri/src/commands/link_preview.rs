@@ -200,6 +200,21 @@ fn extract_domain(url: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Compile-time assertion: scraper must be pinned to 0.27 in Cargo.toml.
+    /// This test is RED when scraper = "0.23" and GREEN after the bump to "0.27".
+    #[test]
+    fn test_scraper_dependency_is_0_27() {
+        let cargo_toml = include_str!("../../Cargo.toml");
+        assert!(
+            cargo_toml.contains("scraper = \"0.27\""),
+            "Expected scraper = \"0.27\" in Cargo.toml but found: {}",
+            cargo_toml
+                .lines()
+                .find(|l| l.contains("scraper"))
+                .unwrap_or("<scraper line not found>")
+        );
+    }
+
     #[test]
     fn test_full_metadata() {
         let html = r#"
