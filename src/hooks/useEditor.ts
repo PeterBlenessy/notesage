@@ -95,7 +95,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),
-      TextAlign.configure({
+      TextAlign.extend({
+        addKeyboardShortcuts() {
+          return {};
+        },
+      }).configure({
         types: ["heading", "paragraph"],
       }),
       TextStyle,
