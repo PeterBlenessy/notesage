@@ -80,6 +80,45 @@ jobs:
               change that should be reflected in BOTH the body AND the diff.
               Body-only or diff-only is a gap.
             - On clean review: post checklist, mark PR ready (`gh pr ready`).
+              NOTE: `gh pr ready` may be denied in this environment due to
+              claude-code-action's tool-permission system; that's OK — the
+              post-claude step in this workflow re-attempts `gh pr ready`
+              with `WORKFLOW_PAT` if the PR is still in draft state after
+              the skill finishes. Your responsibility is the checklist
+              comment + the attempt; the post-step is defensive backup.
             - On gaps: post checklist, close PR, reset issue to `tdd + afk`,
               dispatch `aw-tdd` (UNLESS 2 prior resets — then escalate to
               human via `needs-human` label).
+
+      # Defensive backup: claude-code-action's tool-permission system has been
+      # observed denying the `gh pr ready` call even when `Bash(gh:*)` is
+      # allow-listed and the workflow's YAML grants `pull-requests: write`.
+      # This step re-attempts the mark-ready using WORKFLOW_PAT after claude
+      # finishes. If the skill found gaps and closed the PR, `gh pr ready` errors
+      # out harmlessly. If the skill already marked it ready, this is a no-op.
+      - name: Mark PR ready (fallback for claude-code-action permission denial)
+        if: github.event_name != 'workflow_dispatch' || inputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          # Only mark ready if the PR is still in draft state (skill didn't close it
+          # for gaps). gh pr view returns isDraft true/false; ignore the call if the
+          # PR was closed.
+          state=$(gh pr view "$PR_NUMBER" --json state,isDraft --jq '"\(.state)|\(.isDraft)"' 2>/dev/null || echo "MISSING|false")
+          echo "PR #$PR_NUMBER state: $state"
+          case "$state" in
+            "OPEN|true")
+              echo "Marking PR #$PR_NUMBER ready for review"
+              gh pr ready "$PR_NUMBER"
+              ;;
+            "OPEN|false")
+              echo "PR #$PR_NUMBER already ready — no-op"
+              ;;
+            "CLOSED"*|"MERGED"*)
+              echo "PR #$PR_NUMBER is $state — skill found gaps and closed it; no-op"
+              ;;
+            *)
+              echo "PR #$PR_NUMBER state $state — no action"
+              ;;
+          esac
