@@ -1,0 +1,122 @@
+name: Real-App Performance Tracking (post-merge)
+
+# Runs only on push to main — NOT on pull_request events.
+# A failure here does not block PR merges; this job is for trend tracking only.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  perf-e2e:
+    name: Real-App Performance E2E
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set whisper.cpp build flags
+        run: |
+          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+
+      - name: Create sidecar placeholder
+        run: |
+          mkdir -p src-tauri/binaries/lib
+          touch src-tauri/binaries/llama-server-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache tauri-webdriver binary
+        id: cache-tauri-webdriver
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/tauri-webdriver
+          key: ${{ runner.os }}-tauri-webdriver-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install tauri-webdriver
+        if: steps.cache-tauri-webdriver.outputs.cache-hit != 'true'
+        run: cargo install tauri-webdriver
+
+      - name: Run performance E2E tests
+        # continue-on-error so the artifact upload step always runs even when
+        # timing assertions fail on the slower shared CI macOS runner.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+
+          # Start Tauri app in background
+          pnpm tauri:test > /tmp/notesage-perf-tauri.log 2>&1 &
+          TAURI_PID=$!
+          trap "kill $TAURI_PID 2>/dev/null || true; pkill -f tauri-webdriver 2>/dev/null || true" EXIT
+
+          # Wait for plugin endpoint (port 4445)
+          echo "Waiting for WebDriver plugin on port 4445..."
+          for i in $(seq 1 300); do
+            if curl -sf http://localhost:4445/status > /dev/null 2>&1; then
+              echo "WebDriver plugin ready (${i}s)"
+              break
+            fi
+            if ! kill -0 "$TAURI_PID" 2>/dev/null; then
+              echo "Tauri app exited unexpectedly"
+              tail -30 /tmp/notesage-perf-tauri.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Start tauri-webdriver bridge
+          tauri-webdriver > /tmp/notesage-perf-driver.log 2>&1 &
+          DRIVER_PID=$!
+
+          # Wait for tauri-webdriver (port 4444)
+          echo "Waiting for tauri-webdriver on port 4444..."
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:4444/status > /dev/null 2>&1; then
+              echo "tauri-webdriver ready (${i}s)"
+              break
+            fi
+            sleep 1
+          done
+
+          # Run only the performance spec
+          pnpm wdio run wdio.conf.ts --spec ./e2e-real/tests/performance.test.ts
+
+      - name: Upload performance results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-e2e-results-${{ github.sha }}
+          path: perf-results.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload Tauri and driver logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-e2e-logs-${{ github.sha }}
+          path: |
+            /tmp/notesage-perf-tauri.log
+            /tmp/notesage-perf-driver.log
+          retention-days: 14

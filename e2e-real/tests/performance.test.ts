@@ -10,12 +10,17 @@
  *   Terminal 3: pnpm test:e2e-real
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { waitForElement, openFile, getEditorText } from '../helpers/actions';
 import { measureAction } from '../helpers/timing';
 import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 
 const TEST_PROJECT = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
+
+// Accumulate timing results across all tests and write to perf-results.json
+// in the after() hook so the CI workflow can upload it as a structured artifact.
+const timingResults: Record<string, number> = {};
 
 describe('Performance', function () {
     // These tests involve large documents and multiple file operations —
@@ -38,6 +43,18 @@ describe('Performance', function () {
     after(async () => {
         // Restore the default window size in case a test changed it
         await browser.setWindowSize(1200, 800);
+
+        // Write collected timing measurements to perf-results.json so the
+        // CI workflow can upload it as a structured artifact for trend tracking.
+        const output = {
+            timestamp: new Date().toISOString(),
+            commit_sha: process.env.GITHUB_SHA ?? 'local',
+            runner_name: process.env.RUNNER_NAME ?? 'local',
+            measurements: timingResults,
+        };
+        const outPath = path.resolve(process.cwd(), 'perf-results.json');
+        fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+        console.log(`[perf] Results written to perf-results.json`);
     });
 
     // -------------------------------------------------------------------
@@ -49,6 +66,7 @@ describe('Performance', function () {
         });
 
         console.log(`[perf] Large document load time: ${duration.toFixed(0)}ms`);
+        timingResults['large_doc_load_ms'] = duration;
         expect(duration).toBeLessThan(3000);
 
         // Verify some expected content actually rendered
@@ -112,6 +130,9 @@ describe('Performance', function () {
 
         console.log(`[perf] Keystroke latencies (ms): ${latencies.map((l) => l.toFixed(1)).join(', ')}`);
         console.log(`[perf] Keystroke avg: ${avg.toFixed(1)}ms, min: ${min.toFixed(1)}ms, max: ${max.toFixed(1)}ms`);
+        timingResults['keystroke_avg_ms'] = avg;
+        timingResults['keystroke_min_ms'] = min;
+        timingResults['keystroke_max_ms'] = max;
 
         expect(avg).toBeLessThan(100);
     });
@@ -221,6 +242,7 @@ describe('Performance', function () {
         });
 
         console.log(`[perf] Rapid tab switching (${files.length} tabs x 2 rounds): ${duration.toFixed(0)}ms`);
+        timingResults['tab_switching_total_ms'] = duration;
 
         // Wait for the last tab switch to settle
         await browser.pause(500);
