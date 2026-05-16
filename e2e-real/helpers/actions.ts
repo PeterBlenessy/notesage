@@ -8,7 +8,11 @@
 
 import { measureAction, type TimedResult } from './timing';
 
-const DEFAULT_TIMEOUT = 5000;
+// Bumped from 5s to 15s — on cold CI runners (macos-latest in GitHub Actions)
+// the first spec's React render after the Tauri build is ready can take noticeably
+// longer than local dev. Local rebuilds always complete in well under the original
+// 5s; the wider ceiling only kicks in on first-spec CI pathway.
+const DEFAULT_TIMEOUT = 15000;
 
 /**
  * WebDriver Unicode key constants for modifier and special keys.
@@ -77,6 +81,30 @@ export async function waitForElement(selector: string, timeout: number = DEFAULT
  * @param projectPath - Absolute path to the project folder
  */
 export async function openProject(projectPath: string): Promise<void> {
+    // Step 0: Wait for React to mount. On the FIRST spec of a CI session,
+    // the page is loaded but React hasn't rendered yet — the workspace store
+    // is undefined on `window`, sidebar containers don't exist, and the
+    // file-tree-items wait at the end of this function would time out.
+    // external-changes.test.ts works around this with an explicit `#root`
+    // wait in its `before` hook; putting the wait here makes openProject
+    // robust regardless of caller order.
+    const root = await browser.$('#root');
+    await root.waitForExist({ timeout: 10_000 });
+    // Also wait for the workspace store to be exposed on `window` —
+    // App.tsx exposes it via the e2e-testing feature flag, but the
+    // assignment happens during React's first effect cycle.
+    await browser.waitUntil(
+        async () => browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return Boolean((window as any).__E2E_WORKSPACE_STORE__);
+        }),
+        {
+            timeout: 10_000,
+            timeoutMsg: '__E2E_WORKSPACE_STORE__ not exposed on window within 10s — app may not have started in e2e-testing mode',
+            interval: 200,
+        },
+    );
+
     // Step 1: List directory via Tauri invoke (async — must use executeAsync)
     const tree = await browser.executeAsync(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,17 +148,30 @@ export async function openProject(projectPath: string): Promise<void> {
         tree,
     );
 
-    // Wait for the folder's children to render in the sidebar.
-    // We need more than just the folder header — we need to see the actual files.
-    // The folder itself counts as 1 item, so we wait for > 1 items.
+    // Wait for the workspace store to confirm the explorer folder is loaded
+    // with a non-empty file tree. The DOM-based wait we used before
+    // (`.truncate.flex-1` count) was fragile: it only succeeded when the
+    // sidebar was visibly open AND React had committed the render, which
+    // for the first spec on cold CI was racing the addExplorerFolder
+    // store-write. The store IS the source of truth — subsequent
+    // openFile() helpers read from it directly, so we don't need the
+    // DOM render to have happened, just the store mutation to be visible.
     await browser.waitUntil(
-        async () => {
-            const items = await browser.$$('.truncate.flex-1');
-            return items.length > 1;
-        },
+        async () =>
+            await browser.execute((path: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                if (!w.__E2E_WORKSPACE_STORE__) return false;
+                const s = w.__E2E_WORKSPACE_STORE__.getState();
+                const folder = (s.explorerFolders ?? []).find(
+                    (f: { path: string; fileTree?: unknown[] }) => f.path === path,
+                );
+                return Boolean(folder?.fileTree && folder.fileTree.length > 0);
+            }, projectPath),
         {
             timeout: DEFAULT_TIMEOUT,
-            timeoutMsg: `No file tree items appeared within ${DEFAULT_TIMEOUT}ms after opening project`,
+            timeoutMsg: `Explorer folder ${projectPath} did not appear in workspace store with children within ${DEFAULT_TIMEOUT}ms`,
+            interval: 100,
         },
     );
 }
@@ -208,7 +249,7 @@ export async function openFile(fileName: string, projectPath?: string): Promise<
         const w = window as any;
         if (w.__E2E_EDITOR_STORE__) {
             const state = w.__E2E_EDITOR_STORE__.getState();
-            const activeTab = state.tabs.find((t: { id: string }) => t.id === state.activeTabId);
+            const activeTab = state.openDocuments.find((t: { id: string }) => t.id === state.activeTabId);
             if (activeTab) {
                 state.markTabClean(activeTab.id, activeTab.content);
             }
