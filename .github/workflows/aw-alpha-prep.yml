@@ -162,9 +162,18 @@ jobs:
           # is not blast-radius — and shouldn't be size-throttled.
           prod_additions=0
           if [[ -n "$prod_paths" ]]; then
-            # Pull additions per file from the .files[] array, summing only
-            # production paths.
-            prod_additions=$(echo "$pr_json" | jq --argjson tre "$(printf '"%s"' "$TEST_FILE_REGEX" | jq -R .)" -r '[.files[] | select(.path | test('"\"$TEST_FILE_REGEX\""'; "x") | not) | .additions] | add // 0')
+            # Compute prod_additions in bash (not jq, because passing the regex
+            # through jq is hairy with backslash escapes). Read each
+            # "path additions" pair and sum the ones whose path doesn't match
+            # the test-file regex.
+            prod_additions=$(echo "$pr_json" \
+              | jq -r '.files[] | "\(.additions) \(.path)"' \
+              | while read -r adds path; do
+                  if ! echo "$path" | grep -qE "$TEST_FILE_REGEX"; then
+                    echo "$adds"
+                  fi
+                done \
+              | awk '{ s += $1 } END { print s+0 }')
           fi
           echo "  production additions: $prod_additions / $additions total"
 
