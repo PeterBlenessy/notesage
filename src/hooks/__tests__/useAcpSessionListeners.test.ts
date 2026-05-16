@@ -325,6 +325,207 @@ describe('setupAcpChatListeners', () => {
   });
 
   // -------------------------------------------------------------------------
+  // agent_thought_chunk — thinking segment appended
+  // -------------------------------------------------------------------------
+  describe('agent_thought_chunk', () => {
+    it('appends thinking text via appendThinkingSegment', async () => {
+      const deps = makeDeps();
+      const appendThinkingSpy = vi.spyOn(deps, 'appendThinkingSegment');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'I am thinking...' },
+        },
+      });
+
+      expect(appendThinkingSpy).toHaveBeenCalledWith(ASSISTANT_TIMESTAMP, 'I am thinking...');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('does not mutate streamed text content for thought chunks', async () => {
+      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'thinking only' },
+        },
+      });
+
+      expect(getStreamedContent()).toBe('');
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // tool_call — activity added and tool_call segment pushed
+  // -------------------------------------------------------------------------
+  describe('tool_call', () => {
+    it('adds an activity and pushes a tool_call segment', async () => {
+      const deps = makeDeps();
+      const addActivitySpy = vi.spyOn(deps, 'addActivity');
+      const pushSegmentSpy = vi.spyOn(deps, 'pushSegment');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          kind: 'read',
+          title: 'Read src/index.ts',
+          rawInput: JSON.stringify({ file_path: '/project/src/index.ts' }),
+        },
+      });
+
+      expect(addActivitySpy).toHaveBeenCalledTimes(1);
+      const [msgId, activity] = addActivitySpy.mock.calls[0];
+      expect(msgId).toBe(ASSISTANT_TIMESTAMP);
+      expect(activity.kind).toBe('read');
+      expect(activity.status).toBe('running');
+
+      expect(pushSegmentSpy).toHaveBeenCalledTimes(1);
+      const [segMsgId, segment] = pushSegmentSpy.mock.calls[0];
+      expect(segMsgId).toBe(ASSISTANT_TIMESTAMP);
+      expect(segment.type).toBe('tool_call');
+      expect((segment as { status: string }).status).toBe('running');
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // plan — plan segment pushed via updateOrPushPlanSegment
+  // -------------------------------------------------------------------------
+  describe('plan', () => {
+    it('calls updateOrPushPlanSegment with mapped entries', async () => {
+      const deps = makeDeps();
+      const planSpy = vi.spyOn(deps, 'updateOrPushPlanSegment');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: 'Step one', priority: 'high', status: 'in_progress' },
+            { content: 'Step two', priority: 'low', status: 'pending' },
+          ],
+        },
+      });
+
+      expect(planSpy).toHaveBeenCalledTimes(1);
+      const [msgId, entries] = planSpy.mock.calls[0];
+      expect(msgId).toBe(ASSISTANT_TIMESTAMP);
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({ content: 'Step one', priority: 'high', status: 'in_progress' });
+      expect(entries[1]).toMatchObject({ content: 'Step two', priority: 'low', status: 'pending' });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('defaults unknown priority and status to medium/pending', async () => {
+      const deps = makeDeps();
+      const planSpy = vi.spyOn(deps, 'updateOrPushPlanSegment');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [{ content: 'Do something', priority: 'critical', status: 'unknown_state' }],
+        },
+      });
+
+      expect(planSpy).toHaveBeenCalledTimes(1);
+      const [, entries] = planSpy.mock.calls[0];
+      expect(entries[0].priority).toBe('medium');
+      expect(entries[0].status).toBe('pending');
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // usage_update — updateUsage called with contextUsed, contextSize, cost
+  // -------------------------------------------------------------------------
+  describe('usage_update', () => {
+    it('calls updateUsage with parsed token counts and cost', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const updateUsageMock = vi.mocked(updateUsage);
+      updateUsageMock.mockClear();
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 1234,
+          size: 200000,
+          cost: { amount: 0.0025, currency: 'USD' },
+        },
+      });
+
+      expect(updateUsageMock).toHaveBeenCalledWith({
+        contextUsed: 1234,
+        contextSize: 200000,
+        cost: { amount: 0.0025, currency: 'USD' },
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('calls updateUsage with zero cost when cost fields are missing', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const updateUsageMock = vi.mocked(updateUsage);
+      updateUsageMock.mockClear();
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 500,
+          size: 100000,
+        },
+      });
+
+      expect(updateUsageMock).toHaveBeenCalledWith({
+        contextUsed: 500,
+        contextSize: 100000,
+        cost: undefined,
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Path-filter enforcement on permission requests (task #6)
   //
   // Red-team invariants for project isolation. The path filter must run

@@ -4306,6 +4306,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "parking_lot",
+ "piper",
  "ppt-rs",
  "regex",
  "reqwest 0.12.28",
