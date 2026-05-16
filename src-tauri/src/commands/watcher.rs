@@ -28,7 +28,7 @@ pub struct FileChangedEvent {
 ///  - 500ms debounce window
 ///  - Multiple FSEvents re-reports on macOS (observed up to ~3s after write)
 ///  - iCloud sync latency on cloud-synced directories
-const SELF_WRITE_TTL: Duration = Duration::from_secs(5);
+pub const SELF_WRITE_TTL: Duration = Duration::from_secs(5);
 
 /// Managed state holding the active watcher and self-write filter.
 pub struct WatcherState {
@@ -270,7 +270,7 @@ pub struct FileRenamedEvent {
 
 /// Processed result from a batch of debounced watcher events.
 /// Separated from `AppHandle` so the classification logic can be unit-tested.
-pub(crate) struct ProcessedWatcherEvents {
+pub struct ProcessedWatcherEvents {
     /// Rename-both events ready to emit as `file-renamed`.
     pub rename_events: Vec<FileRenamedEvent>,
     /// Non-self-write file change events ready to emit as `file-changed-batch`.
@@ -281,7 +281,7 @@ pub(crate) struct ProcessedWatcherEvents {
 
 /// Classify a batch of debounced events into rename events, file-changed events,
 /// and reindex entries — without touching `AppHandle` so this is unit-testable.
-pub(crate) fn process_watcher_events(
+pub fn process_watcher_events(
     events: Vec<DebouncedEvent>,
     self_writes: &mut HashMap<PathBuf, Instant>,
 ) -> ProcessedWatcherEvents {
