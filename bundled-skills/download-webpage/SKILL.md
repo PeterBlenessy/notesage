@@ -78,7 +78,7 @@ When processing multiple URLs (e.g., from a bookmarks file):
 
 When the user is saving a page for research purposes (mentions "research", "save for later", "add to research", "collect", etc.):
 
-1. **Default output directory:** Use `.notesage/research/` in the current project instead of asking for a custom directory. If no project is open, use `~/Notesage/.notesage/research/`.
+1. **Default output directory:** Use `research/` in the current project (e.g. `<project>/research/`) instead of asking for a custom directory. If no project is open, use `~/Notesage/research/`.
 
 2. **Pass tags:** If the user specified any tags (e.g., "save this for my #climate research"), pass them via the `--tags` flag:
    ```

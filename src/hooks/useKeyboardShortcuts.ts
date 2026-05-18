@@ -8,66 +8,25 @@
  * Composer preview, and pulled `useCommandBarShortcuts` into this hook
  * (composition) so App.tsx only has to mount one keyboard hook.
  *
- * ------------------------------------------------------------------------
- *   SHORTCUT INVENTORY — read this before editing.
- * ------------------------------------------------------------------------
+ * Shortcut inventory → `src/shared/appCommandManifest.json` (single source
+ * of truth for ids, chords, and display strings). The manifest is keyed by
+ * `id` in the typed catalog `src/lib/appCommandCatalog.ts`.
  *
- *   Legacy column = behaviour when `settings.uiPreview === "legacy"`
- *   QuietComposer column = behaviour when `settings.uiPreview === "quiet-composer"`
- *   A dash (—) means this hook does NOT handle the chord; see "Owner" column
- *   for the component that owns it at capture phase.
- *
- *   | Chord       | Legacy                             | QuietComposer                                  | Owner (if not this hook) |
- *   | ----------- | ---------------------------------- | ---------------------------------------------- | ------------------------ |
- *   | ⌘K          | Open CommandPalette (default mode) | emit cmd-bar `focus`                           | this hook (both paths)   |
- *   | ⌘1          | Open CommandPalette (actions)      | emit cmd-bar `focus` prefix `!`                | this hook (both paths)   |
- *   | ⌘2          | Open CommandPalette (mentions)     | emit cmd-bar `focus` prefix `@`                | this hook (both paths)   |
- *   | ⌘3          | Open CommandPalette (tags)         | emit cmd-bar `focus` prefix `#`                | this hook (both paths)   |
- *   | ⌘4          | Open CommandPalette (research)     | emit cmd-bar `focus` prefix `?`                | this hook (both paths)   |
- *   | ⌘⇧1…4       | same as unshifted (same action)    | same as unshifted                              | this hook (both paths)   |
- *   | ⌘⇧P         | Open CommandPalette (commands `>`) | emit cmd-bar `focus` prefix `>`                | this hook (both paths)   |
- *   | ⌘⇧H         | Open find-replace in editor        | Open find-replace in editor                    | this hook                |
- *   | ⌘⇧F         | Open CommandPalette (files)        | emit cmd-bar `focus` (no prefix — file search) | this hook (both paths)   |
- *   | ⌘F          | Open find in editor                | Open find in editor                            | this hook                |
- *   | ⌘W          | Close active tab (dirty guard)     | Close active tab (dirty guard)                 | this hook                |
- *   | ⌘.          | Toggle focus mode                  | —                                              | useFocusMode (capture)   |
- *   | ⌘⇧E         | Open Export dialog                 | Open Export dialog                             | this hook (both paths since sidebar #22) |
- *   | ⌘⇧O         | Open document outline              | Open document outline                          | this hook                |
- *   | ⌘⇧L         | Toggle sidebar pin                 | Toggle sidebar pin                             | this hook                |
- *   | ⌘⇧A         | Toggle activity strip              | emit agent-orb `toggle`                        | this hook                |
- *   | ⌘⇧C         | Toggle chat panel                  | unpin cmd bar (if expanded+pinned) else focus  | this hook                |
- *   | ⌘⇧R         | Toggle recording                   | Toggle recording                               | this hook                |
- *   | ⌘⇧K         | Open Keyboard Shortcuts dialog     | Open Keyboard Shortcuts dialog                 | this hook                |
- *   | ⌘,          | Open Settings                      | Open Settings                                  | this hook                |
- *   | ⌘T          | Toggle theme                       | Toggle theme                                   | this hook                |
- *   | ⌘N          | Open New Note dialog               | —                                              | QuietLayout (capture)    |
- *   | ⌘⇧N         | Open New Project dialog            | —                                              | QuietLayout (capture)    |
- *   | ⌘O          | Open folder picker                 | Open folder picker                             | this hook                |
- *   | ⌃⇧Tab       | Previous Recent doc (MRU)          | Previous Recent doc (MRU)                      | this hook → useRecentDocumentCycle |
- *   | ⌃Tab        | Next Recent doc (MRU)              | Next Recent doc (MRU)                          | this hook → useRecentDocumentCycle |
- *   | ⌘⌥C         | Copy active document's path        | Copy active document's path                    | this hook                |
- *   | ⌘⌥R         | Reveal active document in Finder   | Reveal active document in Finder               | this hook                |
- *   | Esc         | Exit focus mode (when active)      | —                                              | useFocusMode (capture)   |
- *   | ⌘⌥I         | Open Tauri devtools                | Open Tauri devtools                            | this hook                |
+ * Owner table (which component handles each chord) is in
+ * `docs/keyboard-shortcuts.md` — update both that doc and the manifest when
+ * adding or moving a chord.
  *
  * ⌘S (save) is context-aware and lives in `Editor.tsx` / `CodeEditor.tsx` so
- * markdown and code-file save paths can diverge. It's intentionally NOT here.
+ * markdown and code-file save paths can diverge. It is intentionally absent
+ * from the manifest.
  *
- * ------------------------------------------------------------------------
- *   Why the capture-phase listeners in other components aren't migrated.
- * ------------------------------------------------------------------------
+ * Why the capture-phase listeners in other components aren't migrated:
  *
- * `QuietLayout` owns ⌘⇧E (TreeOverlay), ⌘N, and ⌘⇧N at CAPTURE phase with
+ * `QuietLayout` owns ⌘N and ⌘⇧N at CAPTURE phase with
  * `stopImmediatePropagation`. `useFocusMode` owns ⌘. at capture phase.
  * That design predates this consolidation and is deliberate: the capture
  * phase lets those components preempt this hook's bubble-phase listener
- * when the Quiet Composer preview is active. If we absorbed them into this
- * hook, we'd need to conditionally skip them based on `uiPreview` + active
- * popover state + focus state — a worse abstraction than letting each
- * component own its own chord.
- *
- * The JSDoc table above is the single source of truth for "which component
- * owns which chord" — keep it in sync when moving listeners around.
+ * when the Quiet Composer preview is active.
  */
 
 import { useEffect } from "react";
@@ -78,6 +37,7 @@ import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { useCommandBarShortcuts } from "@/hooks/useCommandBarShortcuts";
 import { useDoubleTapCmd } from "@/hooks/useDoubleTapCmd";
+import { fireZoom } from "@/hooks/useEditorZoom";
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import type { PaletteMode } from "@/lib/command-palette";
@@ -503,6 +463,40 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         import("@tauri-apps/api/core").then(({ invoke }) => {
           invoke("open_devtools").catch(console.error);
         });
+        return;
+      }
+
+      // ------------------------------------------------------------------
+      // ⌘+ / ⌘= — increase editor view-zoom (issue #162).
+      // ⌘-   — decrease editor view-zoom.
+      // ⌘0   — reset editor view-zoom to 1.0.
+      //
+      // These are transient: they layer a multiplier on top of the persisted
+      // font size without touching editor-styles-store. The zoom resets to
+      // 1.0 on app restart.
+      //
+      // Key notes:
+      //  - `+` requires Shift on US keyboards (Shift+=), so we match both
+      //    `key === "+"` and `key === "="` (the unshifted physical key).
+      //  - `-` and `0` have no layout ambiguity on any supported keyboard.
+      //  - No `!e.shiftKey` guard on `=` because Shift+= is how you type `+`
+      //    on US; we accept either with or without Shift when key is `+`/`=`.
+      // ------------------------------------------------------------------
+      if (isMod && !e.altKey && (e.key === "+" || e.key === "=")) {
+        e.preventDefault();
+        fireZoom("in");
+        return;
+      }
+
+      if (isMod && !e.altKey && !e.shiftKey && e.key === "-") {
+        e.preventDefault();
+        fireZoom("out");
+        return;
+      }
+
+      if (isMod && !e.altKey && !e.shiftKey && e.key === "0") {
+        e.preventDefault();
+        fireZoom("reset");
         return;
       }
 

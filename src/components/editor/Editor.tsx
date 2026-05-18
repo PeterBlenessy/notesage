@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState, useMemo, lazy, Suspense } fro
 import { createPortal } from "react-dom";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
+import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
 import { EditorContent } from "@tiptap/react";
 import type { EditorState } from "@tiptap/pm/state";
 import { useEditorStore } from "@/stores/editor-store";
@@ -9,6 +10,7 @@ import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
+import { useEditorZoom } from "@/hooks/useEditorZoom";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
@@ -41,6 +43,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { SourceModeEditor } from "./SourceModeEditor";
 
 // PoC: lazy-loaded only when settings.editorEngine === "cm6-live-preview".
@@ -121,6 +124,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const editorStylesPresets = useEditorStylesStore((s) => s.presets);
   const editorStylesDocPresets = useEditorStylesStore((s) => s.documentPresets);
   const editorStylesSetDocPresets = useEditorStylesStore((s) => s.setDocumentPresets);
+  const { zoom: editorZoom } = useEditorZoom();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
@@ -140,11 +144,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     const { id, filePath, fileType } = activeTab;
     const t0 = performance.now();
     const fileName = filePath.split("/").pop() ?? filePath;
+
     (async () => {
       try {
         if (fileType === "image") {
           useEditorStore.getState().loadTabContent(id, "");
-          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB: 0, ms: +(performance.now() - t0).toFixed(1) });
+          log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB: 0, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         if (isBinaryFileType(fileType)) {
@@ -152,7 +157,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           const sizeKB = +(bytes.length / 1024).toFixed(1);
           setBinaryData(filePath, new Uint8Array(bytes));
           useEditorStore.getState().loadTabContent(id, "");
-          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
+          log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         const raw = await tauriApi.readFile(filePath);
@@ -163,7 +168,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         } else {
           useEditorStore.getState().loadTabContent(id, raw);
         }
-        log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
+        log.debug("perf:doc-load", "Doc content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
       } catch (err) {
         console.warn("Failed to load tab content:", filePath, err);
         useEditorStore.getState().setTabLoadError(id, String(err));
@@ -222,6 +227,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => { cancelled = true; };
   }, [activeTab?.contentLoaded, activeTabId, openDocuments.length]);
 
+  // NOTE: theme reactivity for the preview surface was attempted but removed —
+  // depending on `activeTab.previewState` caused the effect to re-fire each
+  // time the state cycled (loading → ready), producing 3 backend preview calls
+  // per file open instead of 1. The brief preview window (typically <2s)
+  // means a theme mismatch during a mid-window toggle is rarely visible; the
+  // hydrated editor reads CSS variables and reflows correctly. Revisit if
+  // user feedback shows the gap matters.
+
   const {
     isProgrammaticScroll,
     isResizing,
@@ -233,6 +246,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     activeTabId,
     activeTabFilePath: activeTab?.filePath,
   });
+
+  useCursorScrollGuard(scrollAreaRef);
 
   const { renderedWidth } = useEditorResize({
     contentRef,
@@ -753,6 +768,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 '--editor-padding-bottom': paddingBottom,
                 '--editor-padding-left': paddingLeft,
                 '--editor-padding-right': paddingRight,
+                '--editor-zoom-multiplier': String(editorZoom),
+                // CSS `zoom` only when actually zoomed — applying `zoom: 1`
+                // unconditionally triggers WebKit layout containment for
+                // every descendant and slows file-load 2-3x on large docs.
+                ...(editorZoom !== 1 ? { zoom: editorZoom } : {}),
                 ...typographyCssVars,
                 ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
               } as React.CSSProperties & Record<`--${string}`, string | undefined>}
@@ -760,7 +780,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               {activeTab && (
                 <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
               )}
-              <EditorContent editor={editor} />
+              {/*
+                Instant-load preview surface (PRD § "Layer 1"). When a markdown
+                tab activates we kick off a comrak HTML render in parallel with
+                the file read; while the result is on screen the user can scroll
+                / select / read while the Tiptap editor finishes hydrating
+                invisibly behind us. The editor is kept mounted (just hidden via
+                display:none) so its plugins, decorations, and selection state
+                are unaffected by the swap — we just toggle which child of the
+                same scroll wrapper is visible. State transitions:
+                  loading  → editor visible (preview HTML not yet returned)
+                  ready    → preview visible, editor hidden
+                  hydrated → editor visible, preview unmounted (HTML dropped)
+              */}
+              {activeTab?.previewState === "ready" && activeTab.previewHtml ? (
+                <MarkdownPreview key={activeTab.id} html={activeTab.previewHtml} />
+              ) : null}
+              <div style={activeTab?.previewState === "ready" ? { display: "none" } : undefined}>
+                <EditorContent editor={editor} />
+              </div>
             </div>
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}

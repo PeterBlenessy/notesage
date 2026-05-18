@@ -19,6 +19,23 @@ const SKIP_DIRS: &[&str] = &[
     ".cargo", ".rustup", "__pycache__", ".venv", "venv",
 ];
 
+/// Returns true if any component of the path starts with '.' — indicating
+/// the file lives inside a dotfolder (e.g. `.git/`, `.ssh/`, `.config/`).
+///
+/// `.notesage` is deliberately excluded from this check so that
+/// `.notesage/research/` files remain indexable (both via `scan_files` and
+/// via the watcher-triggered `reindex_file_in_db` path).
+pub(crate) fn has_dotfolder_component(path: &str) -> bool {
+    Path::new(path).components().any(|c| {
+        if let std::path::Component::Normal(name) = c {
+            let s = name.to_string_lossy();
+            s.starts_with('.') && s != ".notesage"
+        } else {
+            false
+        }
+    })
+}
+
 /// Check if a file extension is indexable.
 pub(crate) fn is_indexable(path: &str) -> bool {
     if path.ends_with(".md") {

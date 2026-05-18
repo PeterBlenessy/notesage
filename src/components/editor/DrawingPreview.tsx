@@ -1,5 +1,5 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Pencil, Copy, Image as ImageIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
 import { DrawingEditor } from "./DrawingEditor";
+import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -19,6 +20,8 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
   const drawingJson = node.attrs.drawingJson as string | null;
   const drawingId = node.attrs.drawingId as string | null;
   const height = (node.attrs.height as number) || 600;
+  const blockWidth = node.attrs.blockWidth as number | null;
+  const align = node.attrs.align as string | null;
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -213,8 +216,22 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
 
   if (!drawingId && !drawingJson) return null;
 
+  const blockStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    blockStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "auto";
+    } else if (align === "right") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "0";
+    } else {
+      blockStyle.marginRight = "auto";
+    }
+  }
+
   return (
-    <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId} contentEditable={false}>
+    <NodeViewWrapper className="drawing-node-view" style={blockStyle} data-drawing-id={drawingId} contentEditable={false}>
       {isEditing && (drawingJson || (drawingId && projectPath)) ? (
         <DrawingEditor
           drawingId={drawingId ?? "inline"}
@@ -261,9 +278,26 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
                 </div>
               )}
               {isHovered && (
-                <div className="drawing-edit-overlay">
-                  <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  <span className="text-xs">Edit</span>
+                /* Bottom-right hover row — width/align controls + Edit pill,
+                   matching the chart node's layout for consistency. */
+                <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1.5">
+                  {(() => {
+                    const pos = getPos();
+                    if (typeof pos !== "number") return null;
+                    return (
+                      <BlockSizeControls
+                        editor={editor}
+                        pos={pos}
+                        node={node}
+                        blockWidth={blockWidth}
+                        align={align}
+                      />
+                    );
+                  })()}
+                  <div className="flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm">
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    <span>Edit</span>
+                  </div>
                 </div>
               )}
             </div>

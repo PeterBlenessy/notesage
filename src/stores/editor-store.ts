@@ -62,6 +62,16 @@ export interface Tab {
    *  `TitleBar` (post-#131) and the `StatusBar`. Undefined means the tab has never been
    *  saved this session. */
   lastSavedAt?: number;
+  /** Session-only: comrak-rendered HTML body fragment from the instant-load preview
+   *  pipeline. Populated by `Editor.tsx`'s on-demand load effect when a markdown tab
+   *  activates, consumed by `MarkdownPreview` until the editor finishes hydrating.
+   *  Not persisted — regenerated on every open. See PRD § "Layer 1". */
+  previewHtml?: string;
+  /** Session-only: lifecycle of the preview surface for this tab. `idle` = no preview
+   *  active (legacy path or non-markdown). `loading` = backend render in flight.
+   *  `ready` = HTML available, editor not yet hydrated — `MarkdownPreview` is on screen.
+   *  `hydrated` = editor has taken over via `setContent`; preview is unmounted. */
+  previewState?: "idle" | "loading" | "ready" | "hydrated";
 }
 
 export interface RecentFile {
@@ -161,6 +171,14 @@ interface EditorStore {
   setScrollToText: (tabId: string, text: string | undefined) => void;
   /** Set tab awaiting save/discard decision (for dirty tab close). */
   setPendingCloseTabId: (tabId: string | null) => void;
+  /** Stash a comrak-rendered HTML preview on a tab and flip its `previewState`
+   *  to `ready`. Called by `Editor.tsx` after `render_markdown_preview`
+   *  resolves. See PRD § "Layer 1". */
+  setPreview: (tabId: string, html: string) => void;
+  /** Update only the lifecycle marker — used to flip to `loading` before the
+   *  backend call returns and to `hydrated` once the live editor has taken
+   *  over via `setContent`. */
+  setPreviewState: (tabId: string, state: NonNullable<Tab["previewState"]>) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -542,6 +560,30 @@ export const useEditorStore = create<EditorStore>()(
 
       setPendingCloseTabId: (tabId: string | null) => {
         set({ pendingCloseTabId: tabId });
+      },
+
+      setPreview: (tabId, html) => {
+        set((state) => ({
+          openDocuments: state.openDocuments.map((tab) =>
+            tab.id === tabId ? { ...tab, previewHtml: html, previewState: "ready" } : tab
+          ),
+        }));
+      },
+
+      setPreviewState: (tabId, previewState) => {
+        set((state) => ({
+          openDocuments: state.openDocuments.map((tab) => {
+            if (tab.id !== tabId) return tab;
+            // When transitioning to `hydrated`, the preview HTML is no longer
+            // needed — drop it so a large doc doesn't sit in memory after the
+            // editor has taken over (#13 — discard preview on tab close).
+            if (previewState === "hydrated") {
+              const { previewHtml: _drop, ...rest } = tab;
+              return { ...rest, previewState };
+            }
+            return { ...tab, previewState };
+          }),
+        }));
       },
 
       updateFilePaths: (oldPrefix: string, newPrefix: string) => {

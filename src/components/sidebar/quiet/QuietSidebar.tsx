@@ -3,6 +3,7 @@ import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { isAnyCustomizePopoverOpen } from "@/lib/sidebar-context-menu-state";
 import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
@@ -127,6 +128,13 @@ export function QuietSidebar() {
   }, [setPendingCreateProject]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    // Hard guard: when a Customize folder appearance popover is up, the
+    // type-to-filter must not consume keystrokes. The popover may not
+    // have stolen keyboard focus (Radix Popover is non-modal), so the
+    // event can fire on a focused row inside <nav> and bubble here.
+    // Bail before touching the filter.
+    if (isAnyCustomizePopoverOpen()) return;
+
     // Let text-entry surfaces inside the sidebar (TreeOverlay search,
     // inline rename, future inputs) own their own keystrokes.
     if (isTypingTarget(event.target)) return;

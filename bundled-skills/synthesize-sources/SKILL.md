@@ -20,8 +20,8 @@ Read multiple research files from the user's research corpus and generate a comp
    execute_skill_script("search-research", "scripts/search.mjs", [query, research_dir_1, research_dir_2, --tag "tagname"])
    ```
    Search directories should include:
-   - Project `.notesage/research/` for each open project
-   - Global `~/Notesage/.notesage/research/`
+   - Project `research/` for each open project (e.g. `<project>/research/`)
+   - Global `~/Notesage/research/`
 
 3. **Read source files.** For each matched result, read the full file content to access the complete article text and frontmatter metadata (title, author, source_url, date_published, tags).
 
@@ -52,7 +52,7 @@ Read multiple research files from the user's research corpus and generate a comp
    Save synthesis as file|Insert into document|Go deeper on [first theme]|Find more sources
    </quick-replies>
 
-   - "Save as file": Save to `.notesage/research/synthesis-{topic}.md` using `save-research` skill
+   - "Save as file": Save to `research/synthesis-{topic}.md` using `save-research` skill
    - "Insert into document": Insert the synthesis at the cursor position in the active document
    - "Go deeper on [theme]": Focus the synthesis on a specific theme identified in the analysis
    - "Find more sources": Suggest search terms or URLs to expand the research corpus

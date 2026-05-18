@@ -5,9 +5,10 @@ mod tray;
 
 // Re-exports for integration tests under `tests/`. Kept narrow — only the
 // primitives tests need to drive the real sandbox plumbing from outside the
-// crate (see `tests/sandbox_isolation.rs`).
+// crate (see `tests/sandbox_isolation.rs`, `tests/watcher_integration.rs`).
 pub use commands::sandbox;
 pub use commands::sandbox_monitor;
+pub use commands::watcher;
 
 use commands::*;
 use index::IndexState;
@@ -84,6 +85,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
+            alpha_check,
             read_file,
             read_binary_file,
             write_file,
@@ -128,10 +130,12 @@ pub fn run() {
             export_pptx,
             export_docx,
             render_html,
+            render_markdown_preview,
             save_binary_file,
             import_pptx_template,
             list_pptx_templates,
             delete_pptx_template,
+            migrate_user_content_paths,
             watch_directory,
             unwatch_directory,
             mark_self_write,

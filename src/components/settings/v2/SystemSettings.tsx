@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { clearAllViewports } from '@/lib/viewport-cache';
 import { invoke } from '@tauri-apps/api/core';
 import {
   ArrowUpCircle,
@@ -129,9 +130,27 @@ export function SystemSettings({
     (s) => s.setNotifyExternalChanges,
   );
 
+  // HTML viewer
+  const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
+  const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
+  const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
+  const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
+  const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
+  const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
+
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
+  const sidebarFilePreviewEnabled = useSettingsStore(
+    (s) => s.sidebarFilePreviewEnabled,
+  );
+  const setSidebarFilePreviewEnabled = useSettingsStore(
+    (s) => s.setSidebarFilePreviewEnabled,
+  );
+
+  // Performance
+  const instantLoadPreview = useSettingsStore((s) => s.instantLoadPreview);
+  const setInstantLoadPreview = useSettingsStore((s) => s.setInstantLoadPreview);
 
   // Diagnostics
   const logLevel = useSettingsStore((s) => s.logLevel);
@@ -141,6 +160,8 @@ export function SystemSettings({
   const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
   const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates);
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
+  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
+  const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -251,6 +272,24 @@ export function SystemSettings({
             />
           }
         />
+        <SettingsRow
+          label="Release channel"
+          description="Stable receives tested releases. Alpha receives pre-release builds."
+          control={
+            <Select
+              value={releaseChannel ?? 'stable'}
+              onValueChange={(v) => setReleaseChannel(v as 'stable' | 'alpha')}
+            >
+              <SelectTrigger className="w-[120px] h-7 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="stable">Stable</SelectItem>
+                <SelectItem value="alpha">Alpha</SelectItem>
+              </SelectContent>
+            </Select>
+          }
+        />
       </SettingsGroup>
 
       <SettingsGroup
@@ -346,7 +385,49 @@ export function SystemSettings({
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Files" description="File visibility in the sidebar.">
+      <SettingsGroup
+        label="HTML viewer"
+        description="Configure sandboxing behaviour when rendering .html and .htm files."
+      >
+        <SettingsRow
+          label="Allow form submissions"
+          description="When on, HTML forms can be submitted inside the viewer iframe. Off by default — only enable if you trust the HTML files you open."
+          htmlFor="html-viewer-allow-forms"
+          control={
+            <Switch
+              id="html-viewer-allow-forms"
+              checked={htmlViewerAllowForms}
+              onCheckedChange={setHtmlViewerAllowForms}
+            />
+          }
+        />
+        <SettingsRow
+          label="Allow scripts (unsafe)"
+          description="When on, inline and same-directory scripts execute in an isolated iframe. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
+          htmlFor="html-viewer-allow-scripts"
+          control={
+            <Switch
+              id="html-viewer-allow-scripts"
+              checked={htmlViewerAllowScripts}
+              onCheckedChange={setHtmlViewerAllowScripts}
+            />
+          }
+        />
+        <SettingsRow
+          label="Block external resources"
+          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering. Inline styles, data: URIs, and relative-path resources are unaffected. Takes effect on the next file open or switch."
+          htmlFor="html-viewer-block-external"
+          control={
+            <Switch
+              id="html-viewer-block-external"
+              checked={htmlViewerBlockExternalResources}
+              onCheckedChange={setHtmlViewerBlockExternalResources}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup label="Files" description="File visibility and hover behaviour in the sidebar.">
         <SettingsRow
           label="Show hidden files"
           description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
@@ -357,6 +438,71 @@ export function SystemSettings({
               checked={showHiddenFiles}
               onCheckedChange={setShowHiddenFiles}
             />
+          }
+        />
+        <SettingsRow
+          label="File hover preview"
+          description="Show a small popover with the first lines of a file when hovering its row in the sidebar. Folder hover previews are unaffected."
+          htmlFor="sidebar-file-preview"
+          control={
+            <Switch
+              id="sidebar-file-preview"
+              checked={sidebarFilePreviewEnabled}
+              onCheckedChange={setSidebarFilePreviewEnabled}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Performance"
+        description="Document loading behaviour."
+      >
+        <SettingsRow
+          label="Instant-load preview"
+          description="Show a quick HTML preview of the document while the editor hydrates in the background. Disable to mount the editor directly — slightly slower first paint on large docs but no preview/editor swap."
+          htmlFor="instant-load-preview"
+          control={
+            <Switch
+              id="instant-load-preview"
+              checked={instantLoadPreview}
+              onCheckedChange={setInstantLoadPreview}
+            />
+          }
+        />
+        <SettingsRow
+          label="Viewport cache"
+          description="Previously viewed large documents are cached to IndexedDB for instant first paint on cold start. Clear this cache to free disk space or force a fresh load."
+          control={
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  Clear viewport cache
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear viewport cache?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes all cached viewport snapshots from IndexedDB. The next cold open of each file will rebuild the cache automatically.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      clearAllViewports().then(() => {
+                        toast.success('Viewport cache cleared');
+                      });
+                    }}
+                  >
+                    Clear cache
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           }
         />
       </SettingsGroup>

@@ -10,6 +10,8 @@ import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
+import { recoverIncompleteTransactions } from "@/lib/rename-transaction";
+import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-paths";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
@@ -487,6 +489,22 @@ export async function reloadTrees() {
     }
   }
 
+  // Recover any incomplete rename transactions left by a previous crash.
+  // Must run after the notes root is validated and the notes tree is loaded,
+  // but before setting startupReady (so the watcher does not start emitting
+  // events for staging files that are still being cleaned up).
+  {
+    const notesRoot = useSettingsStore.getState().notesRootPath;
+    const isValidNotesRoot = notesRoot != null && notesRoot.length > 0 && !notesRoot.startsWith("~");
+    if (isValidNotesRoot) {
+      try {
+        await recoverIncompleteTransactions(notesRoot!);
+      } catch (err) {
+        log.warn("startup", `rename transaction recovery failed: ${err}`);
+      }
+    }
+  }
+
   // Initialize the SQLite document index.
   // If init fails (corrupted DB), auto-recover by deleting the DB and retrying.
   log.info("startup", `Notes tree loaded in ${Math.round(performance.now() - t0)}ms, initializing index`);
@@ -516,6 +534,20 @@ export async function reloadTrees() {
   log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
   console.log('[perf:startup] ready', { totalMs: Math.round(performance.now() - t0) });
+
+  // One-time migration: move user content out of hidden .notesage/ subdirectories
+  // into user-visible sibling folders (issue #172). Fire-and-forget — must not
+  // block the startup path or prevent tab restoration.
+  {
+    const { projects, explorerFolders } = useWorkspaceStore.getState();
+    const notesRoot = useSettingsStore.getState().notesRootPath;
+    const allFolders = [
+      ...projects.map((p) => p.path),
+      ...explorerFolders,
+      ...(notesRoot && !notesRoot.startsWith("~") ? [notesRoot] : []),
+    ].filter(Boolean) as string[];
+    void migrateUserContentPathsForFolders(allFolders).catch(() => {});
+  }
 
   // Wait for tab restoration (started earlier, runs concurrently with above)
   await tabRestorePromise;

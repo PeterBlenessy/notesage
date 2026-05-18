@@ -61,6 +61,17 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         }
       }
     },
+    coreExtensionOptions: {
+      // Skip Tiptap's built-in Delete extension for bulk-load transactions.
+      // Its O(n²) `simplifyChangedRanges` + `nodesBetween` walk dominated post-parse
+      // load time on large docs (~3.4s on the 506KB book). Notesage doesn't
+      // subscribe to the resulting `delete` editor event, so the work is pure overhead.
+      // `loadRawMarkdownIntoEditor` and `setContentWithoutHistory` both set
+      // `addToHistory: false`, so we use that as the bail signal.
+      delete: {
+        filterTransaction: (tr) => tr.getMeta("addToHistory") === false,
+      },
+    },
     extensions: [
       StarterKit.configure({
         codeBlock: false,
@@ -84,7 +95,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),
-      TextAlign.configure({
+      TextAlign.extend({
+        addKeyboardShortcuts() {
+          return {};
+        },
+      }).configure({
         types: ["heading", "paragraph"],
       }),
       TextStyle,
@@ -262,8 +277,13 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         return false;
       },
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
       if (onUpdate) {
+        // Skip serialization for bulk-load transactions tagged
+        // `addToHistory: false` (loadRawMarkdownIntoEditor / setContentWithoutHistory).
+        // On the 506KB book this saves ~1.1s of getMarkdownFromEditor work on
+        // every file open. User-typed transactions add to history and pass through.
+        if (transaction.getMeta("addToHistory") === false) return;
         // Debounce serialization — for large documents (3000+ nodes),
         // serializing on every keystroke is expensive. Mark dirty immediately
         // via a lightweight check, serialize after a brief pause.

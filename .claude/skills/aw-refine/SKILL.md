@@ -14,23 +14,29 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 ## Process
 
-1. **Read the issue.**
-   - `gh issue view $ISSUE_NUMBER --json title,body,labels`
+1. **Read the issue, including comments.**
+   - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`
    - Verify exactly one of `bug` / `enhancement` / `chore` is present AND `refine` is present. If not, post a clarification comment and stop.
    - If `refined` is already present, exit silently (idempotent).
 
+1.5. **Read human comments since the trigger marker** — authoritative override material.
+
+   When the user resets a refined issue to `refine` (via `aw-feedback`'s "Redo refined scope" / assumption-override path, or by manual label flip), they almost always leave a comment explaining what was wrong with the previous refine. **That comment is the most important input to this run.** Without reading it, this skill re-runs against the same body and predictably re-produces the same wrong refinement.
+
+   - Filter the `comments` array to skip bot comments (any comment whose author is `github-actions[bot]`, `claude[bot]`, `app/claude`, or contains a `> *Refined automatically by the` / `> *Read by` marker line at the start).
+   - Of the remaining human comments, focus on those posted after the issue's most recent state-change event. If the issue currently carries `refine` (was reset from `refined`), the relevant comments are everything posted after the most recent `refined` label was added to the issue (use `gh issue view` event history if needed, or simply: any human comment posted after the latest bot `Refined automatically` marker).
+   - Treat each such human comment as **authoritative**. What the human explicitly stated outweighs any conflicting interpretation you would otherwise derive from the issue body alone. Fold the corrections into the rewritten body's `## Assumptions` section AND into the outcome / acceptance-criteria sections as needed — not just a passing mention, but a structural rewrite that makes the corrected scope impossible to re-derive wrong.
+   - If a human comment includes "Files explicitly NOT touched" / "DO NOT" / "Wrong path" sections, mirror them in the rewritten body so `aw-tdd` can't miss them.
+
 2. **Pick the matching template** (see Templates below) based on the category.
 
-3. **Rewrite the body.** Preserve verbatim:
-   - Reproduction steps, error messages, code blocks
-   - Environment / version / hardware details
-   - User-provided technical context
-   - Original outcome statement if it's already clear
+3. **Rewrite the body.** Default is assumption-and-proceed. Only bounce back (post a comment, leave `refine` in place) if the input is unintelligible — empty body, single-character title, no recoverable signal. "Vague but intelligible" is the common case; make defensible assumptions and proceed.
 
-   Improve:
-   - Outcome focus — what observable behavior does the user want?
-   - Scope clarity — what's in, what's out, what are non-goals?
-   - Acceptance criteria — testable, observable outcomes (NOT implementation details)
+   Preserve verbatim: reproduction steps, error messages, code blocks, environment / version, user-provided technical context, original outcome if already clear.
+
+   Improve: outcome focus, scope (in / out / non-goals), acceptance criteria (testable, observable). When you make assumptions because the original was silent or ambiguous, record them under `## Assumptions` in the rewritten body — they're override-able by comment.
+
+   **When step 1.5 found human override comments**, the rewritten body is structurally different from the previous body, not a near-copy. Test: read the new body cold without seeing the comment, and ask "could I derive the override from this alone?" If no, expand the body until yes. The comment was a one-time correction; the body is the durable spec.
 
 4. **Update the body** via `gh issue edit $ISSUE_NUMBER --body-file <(...)`.
 
@@ -51,6 +57,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 ## Outcome
 
 <one-sentence description of the broken behavior the user wants fixed>
+
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
 
 ## Reproduction
 
@@ -87,6 +97,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 <the user need or pain point this addresses; quote the original report where helpful>
 
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
+
 ## Scope
 
 ### In scope
@@ -118,6 +132,10 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 
 <why now? what does this enable or unblock?>
 
+## Assumptions
+
+<bulleted list of any decisions made because the original report was silent or ambiguous; omit the section entirely if none. Override-able by comment.>
+
 ## Scope
 
 ### In scope
@@ -139,14 +157,32 @@ Rewrite a single GitHub issue body into the outcome-oriented template. The issue
 - **Never** modify the title unless it is genuinely not outcome-shaped — most titles are fine.
 - **Preserve** all technical details from the original report verbatim. Quote in code blocks if needed.
 - **`refined` is the state marker; `slice` is the action label** that triggers `aw-slice`. Both must be set after a successful run.
-- If the issue is too vague to rewrite confidently (no clear outcome even after triage), post a clarification comment, leave `refine` in place, do NOT add `refined` or `slice`.
+- **Assumption-and-proceed is the default**; bounce back with `refine` left in place only when the input is unintelligible. Humans override assumptions by comment; `aw-feedback` routes back here.
 
 ## Comment template
+
+**Default (assumptions-and-proceed):**
 
 ```
 > *Refined automatically by the `aw-refine` skill. Reply with corrections or additional context.*
 
 Restructured the body into the outcome-oriented `<category>` template. Reproduction steps and technical details preserved verbatim.
+
+<IF assumptions were made>
+Recorded the following assumptions in the issue body to fill silence in the original report:
+- <assumption 1>
+- <assumption 2>
+
+Comment to override any assumption — `aw-feedback` will route the comment back here.
+</IF>
+```
+
+**Bounce-back (rare — unintelligible only):**
+
+```
+> *Read by the `aw-refine` skill — could not extract a recoverable outcome.*
+
+The original report is missing enough context that I can't form a defensible interpretation. Could you say what user behaviour this should change? A one-sentence "User should be able to X" or "X is broken: Y happens instead of Z" is enough.
 ```
 
 ## Constraints from the dev process

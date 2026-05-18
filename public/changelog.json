@@ -1,6 +1,84 @@
 {
   "releases": [
     {
+      "version": "0.44.0",
+      "date": "2026-05-14",
+      "previousVersion": "0.43.1",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`. Local relative paths still load.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts` iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included.",
+          "**Unsafe preview mode (per-tab, session-only).** A toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders with raw HTML including CDN and inline scripts. Switching tabs resets it.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — keeps `<form>`, `<input>`, `<button>`, action / method attributes in the sanitised tree.",
+          "**Width + alignment persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file.",
+          "**`Cmd+= / Cmd+- / Cmd+0` zoom in the PDF viewer.** Markdown editor and PDF share the same shortcut.",
+          "**Research and templates folders visible at project root.** Previously hidden under `.notesage/`; now `research/` and `templates/` are first-class folders. Existing hidden content is migrated on next launch."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards sit with a generous margin above and below.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover show the same control.",
+          "**Switching back from Alpha to Stable is one click.** Pick Stable in Settings → Updates → Release Channel and a clear \"Switch back to Stable?\" dialog appears with the version you'll move to. Decline and you stay on the alpha until a stable release exceeds your version.",
+          "**Checking for updates fires automatically when you change channel.** No more manual \"Check for updates\" click after toggling between Stable and Alpha."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch now mirrors the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** Fixed a missing `<TooltipProvider>` that the error boundary was catching on every block render.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
+          "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
+        ]
+      }
+    },
+    {
+      "version": "0.43.1",
+      "date": "2026-05-12",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "fixes": [
+          "**The Release Channel selector in Settings → Updates works correctly.** Picking Alpha now actually fetches alpha builds (clicking \"Check for updates\" was previously a no-op on Alpha). Staying on Stable strictly stays on Stable. Installing an alpha — when you're on the Alpha channel — is a one-click in-app install, same as Stable updates, no manual download required."
+        ]
+      }
+    },
+    {
+      "version": "0.43.0",
+      "date": "2026-05-10",
+      "previousVersion": "0.42.0",
+      "sections": {
+        "features": [
+          "**Customize a folder's icon and colour.** Right-click a folder in the sidebar → Customize… to pick from a curated icon set (including a new AI / agentic group — Brain, Bot, Sparkles, Atom) and an 8-colour palette. Works for any folder, whether it's a Notesage folder or one you opened with ⌘O.",
+          "**Manage with Notesage.** A folder you opened with ⌘O can now be promoted to a Notesage folder via right-click → Manage with Notesage. That unlocks AI provider lock, durable comments that survive renames, custom appearance persistence, and per-folder skills, agents, and MCP servers. If the folder already has a `.notesage/` settings directory, the entry reads \"Open as Notesage folder\" instead.",
+          "**Alpha release channel.** Settings → Updates → Release Channel lets you switch to \"Alpha\" to receive pre-release builds with new features earlier than stable. Switch back to \"Stable\" any time. Alpha builds carry a `-alpha.N` version suffix.",
+          "**Faster cold-start for previously-edited files.** Notesage now keeps a local snapshot of recently-edited file viewports. Reopening a file you edited in a previous session paints content almost instantly instead of going through the full parse pipeline."
+        ],
+        "improvements": [
+          "**One unified \"Folders\" sidebar section.** The previous separate \"Projects\" and \"Folders\" sections are merged into a single \"Folders\" list. Notesage folders and folders you opened with ⌘O share the section and are distinguished by their icon, not by sitting in different groups.",
+          "**Folder-only vocabulary.** The user-facing word \"Project\" is gone — everything is now just \"folder\". Locked folders (with an AI provider lock) and folders you opened from elsewhere on disk are signalled by their icons and accessibility labels rather than by separate noun categories.",
+          "**Crash-safe folder renames.** If Notesage crashes or is force-quit while it's migrating comments after a folder rename, the next launch detects the in-progress migration and completes it cleanly. No more lost comments from interrupted folder renames.",
+          "**Folders you opened with ⌘O can be removed from the sidebar.** Right-click → Remove from sidebar. Files stay on disk; the folder just disappears from the workspace until you reopen it.",
+          "**Notesage folders can also be removed from the sidebar** with the same right-click menu entry — useful for trimming back to just the folders you're actively working in."
+        ],
+        "fixes": [
+          "**The customize popover doesn't get covered by the file preview anymore.** Hovering inside the popover used to make the folder hover preview pop up over it. Fixed.",
+          "**Typing while customize is open no longer ends up in the sidebar filter.** Keystrokes meant for the popover used to leak into the sidebar's type-to-filter. Fixed.",
+          "**Right-clicking a folder you opened with ⌘O now reliably opens the Notesage menu.** Previously the OS handled the right-click on those rows and the row got \"selected\" without offering the Customize / Manage / Reveal entries.",
+          "**System folders (`.notesage`, `.git`, etc.) only show safe entries** in their right-click menu. Rename, Delete, Customize, and other mutating actions are hidden for these folders so you can't accidentally damage app or repo state."
+        ]
+      }
+    },
+    {
+      "version": "0.42.0",
+      "date": "2026-05-08",
+      "previousVersion": "0.41.0",
+      "sections": {
+        "improvements": [
+          "**Large markdown files load substantially faster.** A 500 KB book that previously took ~15 seconds to become editable now lands in around 5 seconds on first open and around 3 seconds when you revisit the same doc later in the session. Smaller docs (50–100 KB) finish in under a second on first open and under 800 ms on revisit.",
+          "**Clicking a different document while one is loading now interrupts cleanly.** The previous document's load is cancelled — its content doesn't flash through on the way to the one you actually want. Mouse hover and click hit-tests stay responsive throughout, so you can keep clicking to find the right file without waiting for the wrong one to finish.",
+          "**Recently-viewed documents reopen quickly.** Notesage now keeps the parsed result of recently-opened documents in memory. Switching back to a file you opened earlier in the session skips the parse step entirely and goes straight to displaying the content."
+        ]
+      }
+    },
+    {
       "version": "0.41.0",
       "date": "2026-05-03",
       "previousVersion": "0.40.1",
@@ -84,8 +162,8 @@
       "previousVersion": "0.39.0",
       "sections": {
         "fixes": [
-          "DOCX viewer's \"Convert to Markdown\" path now uses `@xmldom/xmldom` 0.9.10+ — closes four advisories (XML injection through DocumentType / processing-instruction / comment serialization, plus uncontrolled recursion) flagged when opening hostile DOCX content",
-          "Inline Excalidraw drawings bumped to `@excalidraw/excalidraw` 0.18.1, closing the Mermaid sequence-diagram XSS via KaTeX label rendering"
+          "**DOCX viewer is safer when reading content from untrusted sources.** The XML library used to convert .docx files to markdown was patched to close four advisories around how XML metadata gets serialised. If you open or convert a malicious .docx, the path is no longer exploitable.",
+          "**Inline Excalidraw drawings are safer.** The drawing component was patched to close a cross-site-scripting issue in how math labels render inside Mermaid sequence diagrams."
         ]
       }
     },
@@ -174,15 +252,13 @@
       "previousVersion": "0.36.0",
       "sections": {
         "features": [
-          "**Task agent session parity.** Comment-delegated tasks (via `useAgentTaskOperations`) now use the same restoration chain as the main chat (resume → load → list → new). Reopening a delegated thread after an app restart restores the agent's prior context instead of starting fresh. `session/close` fires on terminal states (completed / failed / cancelled), capability-gated and error-swallowed so it never blocks state transitions.",
-          "**EnvVar auth flow.** Enabled `unstable_auth_methods` on both ACP crates. Agents advertising `AuthMethod::EnvVar` now drive a generic credential form — one password-style input per advertised variable, with the agent-provided \"Get yours at\" link as helper text. Replaces the hardcoded Gemini API-key panel.",
-          "**`resource_link` content blocks.** ACP agents emitting `resource_link` blocks now render them inline as markdown links (`[name or basename(uri)](uri)`). `file://` URIs inside a project open as editor tabs via the existing link-click extension; other URIs open in the system browser. Description, when present, renders on a truncated subline.",
-          "**`messageId` propagation.** Enabled `unstable_message_id` on both ACP crates. Outbound `session/prompt` carries the user message's UUID as `PromptRequest.message_id`; inbound `agent_message_chunk` events store the echoed `user_message_id` and the agent's own `message_id` on the corresponding `ChatMessage`. No user-visible change — forward-compatibility plumbing for features that need stable protocol IDs (NES, richer plan linkage)."
+          "**Comments delegated to AI agents now restore their context after a restart.** Reopening a delegated comment thread after restarting Notesage continues where you left off instead of starting fresh — the agent remembers the prior turn. When a delegated task finishes (completed, failed, or cancelled) Notesage cleanly closes the agent's session so resources don't leak.",
+          "**AI agents that authenticate with credentials** (API keys, tokens, environment variables) now drive a generic credentials form provided by the agent itself. The form fields adapt to whatever each agent advertises, with the agent's own \"Get yours at\" link as helper text. Replaces the Gemini-specific API-key panel — works for any agent that advertises this auth mode. Existing Gemini connections continue working without re-entering credentials.",
+          "**AI messages can now include clickable file references.** When an agent sends a link to a file inside your project, clicking it opens the file as a tab. Links to external URLs open in your browser. Optional descriptions render as a second line of text under the link."
         ],
         "improvements": [
-          "`user_message_chunk` events are now recognized as a silent no-op instead of logging \"Unknown ACP session update type\" on every agent echo. No state mutation; we already have the user message locally.",
-          "Auth state now comes from the ACP `authenticate` response. Removed the hardcoded per-provider `<cli> auth status` CLI probes from `acp_binary.rs` (claude, codex, copilot, gemini) — `check_agent_auth` and `resolve_cli_binary` deleted (~130 lines).",
-          "`credentials.envVars` retained as the storage layer for EnvVar auth (populated by the generic form, read at spawn time). Gemini connections with existing stored vars continue working without migration."
+          "**AI agent authentication is more reliable.** Auth state is now driven by the agent itself rather than by Notesage probing each provider's CLI separately. Fewer false alarms, fewer brittle edge cases on non-standard installs.",
+          "**Cleaner dev-console output.** Agent message echoes no longer log \"Unknown ACP session update type\" warnings on every chunk."
         ]
       }
     },

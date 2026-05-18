@@ -26,6 +26,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -41,6 +46,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
 
 interface FileTreeItemProps {
   entry: FileEntry;
@@ -62,6 +68,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDragExpandPending, setIsDragExpandPending] = useState(false);
   const [deleteChildCount, setDeleteChildCount] = useState<number | null>(null);
@@ -465,7 +472,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
-                    Locked to a single AI provider — Project Settings to unlock
+                    Locked to a single AI provider — Folder Settings to unlock
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -570,6 +577,25 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
               </ContextMenuItem>
             </>
           )}
+
+          {/* #140 — Customize folder appearance (icon + color). Directory rows only. */}
+          {entry.is_directory && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                onSelect={() => {
+                  // Let the context menu close as normal. The popover is a
+                  // sibling (rendered outside <ContextMenu>) so its content
+                  // survives the menu's unmount. Defer one frame so the menu
+                  // close animation completes before the popover paints.
+                  requestAnimationFrame(() => setCustomizeOpen(true));
+                }}
+              >
+                Customize…
+              </ContextMenuItem>
+            </>
+          )}
+
           {(() => {
             if (moveDestinations.length === 0) return null;
 
@@ -738,6 +764,28 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           parentPath={entry.path}
           onCreated={() => {}}
         />
+      )}
+
+      {/* #140 — FolderAppearancePicker popover, opened by "Customize…" menu item. */}
+      {entry.is_directory && (
+        <Popover open={customizeOpen} onOpenChange={setCustomizeOpen}>
+          <PopoverTrigger asChild>
+            <span className="sr-only" aria-hidden="true" />
+          </PopoverTrigger>
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={4}
+            className="p-0 w-auto"
+          >
+            <FolderAppearancePicker
+              folderPath={entry.path}
+              folderType="standard"
+              isProject={isProjectFolder}
+              onClose={() => setCustomizeOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
       )}
 
       {entry.is_directory && expanded && entry.children && (

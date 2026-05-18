@@ -98,7 +98,7 @@ describe('QuietSidebar — shell', () => {
     expect(sections).toHaveLength(5);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Pinned',
-      'Projects',
+      'Folders',
       'Recent',
       'Tags',
       'Mentions',
@@ -110,7 +110,7 @@ describe('QuietSidebar — shell', () => {
     const headings = screen.getAllByRole('heading', { level: 2 });
     expect(headings.map((h) => h.textContent)).toEqual([
       'Pinned',
-      'Projects',
+      'Folders',
       'Recent',
       'Tags',
       'Mentions',
@@ -339,7 +339,7 @@ describe('QuietSidebar — sidebar composition (slider visibility control)', () 
     expect(sections).toHaveLength(4);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Pinned',
-      'Projects',
+      'Folders',
       'Recent',
       'Mentions',
     ]);
@@ -378,7 +378,7 @@ describe('QuietSidebar — sidebar composition (slider visibility control)', () 
     expect(sections).toHaveLength(4);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Pinned',
-      'Projects',
+      'Folders',
       'Recent',
       'Tags',
     ]);
@@ -411,7 +411,7 @@ describe('QuietSidebar — sidebar composition (slider visibility control)', () 
     expect(sections).toHaveLength(3);
     expect(sections.map((s) => s.getAttribute('aria-label'))).toEqual([
       'Pinned',
-      'Projects',
+      'Folders',
       'Recent',
     ]);
   });

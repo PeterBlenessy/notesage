@@ -11,6 +11,25 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   } as unknown as typeof ResizeObserver;
 }
 
+// Radix Select uses Pointer Events APIs (hasPointerCapture / setPointerCapture
+// / releasePointerCapture / scrollIntoView) that jsdom does not implement.
+// Polyfill them as no-ops so opening the dropdown in tests does not throw.
+if (typeof Element !== 'undefined') {
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.hasPointerCapture !== 'function') {
+    proto.hasPointerCapture = () => false;
+  }
+  if (typeof proto.setPointerCapture !== 'function') {
+    proto.setPointerCapture = () => {};
+  }
+  if (typeof proto.releasePointerCapture !== 'function') {
+    proto.releasePointerCapture = () => {};
+  }
+  if (typeof proto.scrollIntoView !== 'function') {
+    proto.scrollIntoView = () => {};
+  }
+}
+
 import '@/test/tauri-mock';
 import React, { useRef } from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -120,46 +139,37 @@ describe('StatusTray — task #53', () => {
     expect(text).not.toContain('Session');
   });
 
-  it('renders the completion picker with all four options', () => {
+  // Picker UI changed from a segmented radio group to a Select dropdown
+  // (issue #181). Tests now query the SelectTrigger (role="combobox") and
+  // assert on its displayed text instead of aria-checked on radio buttons.
+  it('renders the completion picker as a dropdown showing "Off" when no inline_completion connections exist', () => {
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const group = document.querySelector('[role="radiogroup"]');
-    expect(group).toBeTruthy();
-    const options = group?.querySelectorAll('[role="radio"]');
-    expect(options?.length).toBe(4);
-    const labels = Array.from(options ?? []).map((b) => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Off', 'Copilot', 'Local AI', 'Ollama']);
-  });
-
-  it('disables options whose connections are not configured', () => {
-    renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const radios = document.querySelectorAll('[role="radio"]');
-    const byLabel: Record<string, HTMLElement> = {};
-    radios.forEach((r) => {
-      byLabel[r.getAttribute('aria-label') ?? ''] = r as HTMLElement;
-    });
-    // With no connections, Off is enabled, others are disabled.
-    expect((byLabel['Off'] as HTMLButtonElement).disabled).toBe(false);
-    expect((byLabel['Copilot'] as HTMLButtonElement).disabled).toBe(true);
-    expect((byLabel['Local AI'] as HTMLButtonElement).disabled).toBe(true);
-    expect((byLabel['Ollama'] as HTMLButtonElement).disabled).toBe(true);
+    const trigger = document.querySelector(
+      '[role="combobox"][aria-label="Completion provider"]',
+    );
+    expect(trigger).toBeTruthy();
+    expect(trigger?.textContent).toContain('Off');
   });
 
   it('marks "Off" as active when completions are disabled globally', () => {
     useSettingsStore.setState({ inlineCompletionsDisabled: true });
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const offButton = Array.from(document.querySelectorAll('[role="radio"]')).find(
-      (b) => b.getAttribute('aria-label') === 'Off',
+    const trigger = document.querySelector(
+      '[role="combobox"][aria-label="Completion provider"]',
     );
-    expect(offButton?.getAttribute('aria-checked')).toBe('true');
+    expect(trigger?.textContent).toContain('Off');
   });
 
-  it('clicking "Off" flips inlineCompletionsDisabled to true', () => {
-    // Start with completions on + Ollama routed, to ensure Off actually changes state.
+  it('selecting "Off" flips inlineCompletionsDisabled to true', async () => {
+    // The Radix Select dropdown is portal-rendered; we drive the ValueChange
+    // path through pointerdown on the trigger + click on the option, which
+    // is the canonical jsdom-friendly interaction.
     const ollama = addConnection({
       id: 'c-ollama',
       provider: 'ollama',
       authMethod: 'local',
       label: 'Ollama',
+      capabilities: ['inline_completion'],
     });
     useRoutingStore.setState({
       routing: {
@@ -170,31 +180,45 @@ describe('StatusTray — task #53', () => {
     });
 
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const offButton = Array.from(document.querySelectorAll('[role="radio"]')).find(
-      (b) => b.getAttribute('aria-label') === 'Off',
-    ) as HTMLButtonElement;
-
+    const trigger = document.querySelector(
+      '[role="combobox"][aria-label="Completion provider"]',
+    ) as HTMLElement;
     expect(useSettingsStore.getState().inlineCompletionsDisabled).toBe(false);
-    fireEvent.click(offButton);
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    // Wait for portal content to mount.
+    await Promise.resolve();
+    const offOption = Array.from(
+      document.querySelectorAll('[role="option"]'),
+    ).find((el) => el.textContent?.trim() === 'Off') as HTMLElement | undefined;
+    expect(offOption).toBeTruthy();
+    if (offOption) fireEvent.click(offOption);
     expect(useSettingsStore.getState().inlineCompletionsDisabled).toBe(true);
   });
 
-  it('clicking an available provider routes it and clears the disabled flag', () => {
+  it('selecting an available provider routes it and clears the disabled flag', async () => {
     const ollama = addConnection({
       id: 'c-ollama',
       provider: 'ollama',
       authMethod: 'local',
       label: 'Ollama',
+      capabilities: ['inline_completion'],
     });
     useSettingsStore.setState({ inlineCompletionsDisabled: true });
 
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
-    const ollamaButton = Array.from(document.querySelectorAll('[role="radio"]')).find(
-      (b) => b.getAttribute('aria-label') === 'Ollama',
-    ) as HTMLButtonElement;
-    expect(ollamaButton.disabled).toBe(false);
+    const trigger = document.querySelector(
+      '[role="combobox"][aria-label="Completion provider"]',
+    ) as HTMLElement;
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    await Promise.resolve();
+    const ollamaOption = Array.from(
+      document.querySelectorAll('[role="option"]'),
+    ).find((el) => el.textContent?.includes('Ollama')) as HTMLElement | undefined;
+    expect(ollamaOption).toBeTruthy();
+    if (ollamaOption) fireEvent.click(ollamaOption);
 
-    fireEvent.click(ollamaButton);
     expect(useSettingsStore.getState().inlineCompletionsDisabled).toBe(false);
     expect(useRoutingStore.getState().routing.inline_completion.connectionId).toBe(
       ollama.id,
@@ -846,6 +870,154 @@ describe('StatusTray — task #53', () => {
       expect(button).toBeTruthy();
       // Without `onOpenActions` threaded in, the button shouldn't fire.
       expect(button!.hasAttribute('disabled')).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // CompletionsGroup — issue #179: dynamic picker from connections-store
+  // -------------------------------------------------------------------------
+
+  describe('CompletionsGroup — dynamic connections (issue #179)', () => {
+    it('shows only inline_completion-capable connections, not hardcoded options', async () => {
+      addConnection({
+        id: 'c-anthropic',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'My Claude',
+        capabilities: ['interactive', 'inline_completion'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Completion provider"]',
+      ) as HTMLElement;
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+      await Promise.resolve();
+      const labels = Array.from(document.querySelectorAll('[role="option"]'))
+        .map((el) => el.textContent?.trim() ?? '');
+      expect(labels.some((l) => l.includes('Off'))).toBe(true);
+      expect(labels.some((l) => l.includes('My Claude'))).toBe(true);
+      expect(labels.some((l) => l.includes('Copilot'))).toBe(false);
+      expect(labels.some((l) => l.includes('Local AI'))).toBe(false);
+    });
+
+    it('omits connections that lack inline_completion capability', async () => {
+      addConnection({
+        id: 'c-interactive-only',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'Chat Only',
+        capabilities: ['interactive'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Completion provider"]',
+      ) as HTMLElement;
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+      await Promise.resolve();
+      const labels = Array.from(document.querySelectorAll('[role="option"]'))
+        .map((el) => el.textContent?.trim() ?? '');
+      // Connection without inline_completion must not appear.
+      expect(labels.some((l) => l.includes('Chat Only'))).toBe(false);
+      // Only the "Off" option should be present.
+      expect(labels.length).toBe(1);
+      expect(labels[0]).toContain('Off');
+    });
+
+    it('shows "Configure in Settings" empty-state when no inline_completion connections exist', () => {
+      // No connections added — default from resetStores().
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).toContain('Configure in Settings');
+    });
+
+    it('does not show hardcoded Copilot/Local AI/Ollama when no matching connections', () => {
+      // With no connections the old code showed three disabled hardcoded buttons.
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const text = document.body.textContent ?? '';
+      expect(text).not.toContain('Copilot');
+      expect(text).not.toContain('Local AI');
+      expect(text).not.toContain('Ollama');
+    });
+
+    it('picking a connection writes its ID to routing-store inline_completion', async () => {
+      addConnection({
+        id: 'c-custom-123',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'My Ollama',
+        capabilities: ['inline_completion'],
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Completion provider"]',
+      ) as HTMLElement;
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+      await Promise.resolve();
+      const option = Array.from(document.querySelectorAll('[role="option"]')).find(
+        (el) => el.textContent?.includes('My Ollama'),
+      ) as HTMLElement | undefined;
+      expect(option).toBeTruthy();
+      if (option) fireEvent.click(option);
+      expect(useRoutingStore.getState().routing.inline_completion.connectionId).toBe('c-custom-123');
+      expect(useSettingsStore.getState().inlineCompletionsDisabled).toBe(false);
+    });
+
+    it('active state reflects the routing-store inline_completion connection ID', () => {
+      addConnection({
+        id: 'c-1',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+        capabilities: ['inline_completion'],
+      });
+      addConnection({
+        id: 'c-2',
+        provider: 'anthropic',
+        authMethod: 'api_key',
+        label: 'Claude',
+        capabilities: ['inline_completion'],
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: 'c-2' },
+        },
+      });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Completion provider"]',
+      );
+      // The trigger displays the currently-selected option's text.
+      expect(trigger?.textContent).toContain('Claude');
+      expect(trigger?.textContent).not.toContain('Ollama');
+    });
+
+    it('Off is active when inlineCompletionsDisabled=true regardless of routing', () => {
+      addConnection({
+        id: 'c-oll',
+        provider: 'ollama',
+        authMethod: 'local',
+        label: 'Ollama',
+        capabilities: ['inline_completion'],
+      });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: null },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: 'c-oll' },
+        },
+      });
+      useSettingsStore.setState({ inlineCompletionsDisabled: true });
+      renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Completion provider"]',
+      );
+      expect(trigger?.textContent).toContain('Off');
+      expect(trigger?.textContent).not.toContain('Ollama');
     });
   });
 });

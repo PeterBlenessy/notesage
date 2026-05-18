@@ -49,6 +49,7 @@ pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>,
 
     // Post-process the HTML
     let html = postprocess_embedded_svgs(&html_output, embedded_svgs);
+    let html = postprocess_br_placeholders(&html);
     let html = postprocess_callouts(&html);
     let html = postprocess_link_previews(&html);
     let html = postprocess_sparklines(&html);
@@ -90,6 +91,15 @@ fn postprocess_embedded_svgs(html: &str, embedded_svgs: Option<&[String]>) -> St
         // Fallback: keep original code block
         caps.get(0).unwrap().as_str().to_string()
     }).to_string()
+}
+
+/// Replace `NOTESAGE_BR_PLACEHOLDER` tokens (inserted by `preprocess_markdown`
+/// for `<br>` tags in table cells) with actual HTML `<br>` elements.
+///
+/// comrak strips raw HTML when `unsafe_` is not set, so `<br>` in table cells
+/// is replaced with a safe placeholder before parsing and restored here.
+fn postprocess_br_placeholders(html: &str) -> String {
+    html.replace("NOTESAGE_BR_PLACEHOLDER", "<br>")
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +254,20 @@ fn preprocess_markdown(markdown: &str, project_root: Option<&str>) -> (String, T
             current_table_meta.clear();
         }
 
-        result.push_str(line);
+        // Replace <br> in table data rows with a safe placeholder before comrak
+        // strips it (comrak replaces raw HTML with "<!-- raw HTML omitted -->"
+        // when unsafe_ is not set). The placeholder is replaced with <br> in
+        // postprocess_br_placeholders after comrak renders the HTML.
+        let line_to_write = if in_table && is_table_row && !is_separator && header_seen {
+            std::borrow::Cow::Owned(
+                line.replace("<br />", "NOTESAGE_BR_PLACEHOLDER")
+                    .replace("<br/>", "NOTESAGE_BR_PLACEHOLDER")
+                    .replace("<br>", "NOTESAGE_BR_PLACEHOLDER"),
+            )
+        } else {
+            std::borrow::Cow::Borrowed(line)
+        };
+        result.push_str(&line_to_write);
         result.push('\n');
     }
 
@@ -1067,5 +1090,61 @@ mod tests {
         let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<h1>Chemistry</h1>"), "h1 Chemistry missing: {}", html);
         assert!(html.contains("<h1>Physics</h1>"), "h1 Physics missing: {}", html);
+    }
+
+    // --- Multi-line table cell (<br> separator) ---
+    // The Notesage editor serializes multi-block cell content as a single GFM row
+    // with <br>-separated text. Both parts must survive into the HTML output so
+    // the exported file renders both lines.
+
+    #[test]
+    fn test_table_multiline_cell_br_both_lines_in_html() {
+        // Notesage editor output: <br> separates multi-paragraph cell content
+        let md = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let html = markdown_to_html(md, "light", None, None);
+        assert!(
+            html.contains("Line1"),
+            "first line of multi-line cell missing from HTML: {}",
+            html
+        );
+        assert!(
+            html.contains("Line2"),
+            "second line of multi-line cell missing from HTML: {}",
+            html
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_produces_br_tag_in_html() {
+        // The <br> separator must appear as an HTML <br> element so that the
+        // two lines render on separate visual lines in the browser.
+        let md = "| Name | Notes |\n|---|---|\n| Alice | Line1<br>Line2 |\n";
+        let html = markdown_to_html(md, "light", None, None);
+        assert!(
+            html.contains("<br") || html.contains("<br>") || html.contains("<br />"),
+            "HTML <br> element missing from output: {}",
+            html
+        );
+    }
+
+    #[test]
+    fn test_table_multiline_cell_br_self_closing_variants_html() {
+        // All three <br> variants must survive into the HTML output
+        for br in &["<br>", "<br/>", "<br />"] {
+            let md = format!("| A | B |\n|---|---|\n| x | Part1{}Part2 |\n", br);
+            let html = markdown_to_html(&md, "light", None, None);
+            assert!(
+                html.contains("Part1"),
+                "first part missing for br variant '{}': {}",
+                br,
+                html
+            );
+            assert!(
+                html.contains("Part2"),
+                "second part missing for br variant '{}': {}",
+                br,
+                html
+            );
+        }
     }
 }

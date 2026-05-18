@@ -12,6 +12,7 @@
  *     custom event and preventDefault.
  *   - Sidebar event chords (⌘⌥C, ⌘⌥R) dispatch named DOM events.
  *   - Listener is removed on unmount.
+ *   - Editor zoom chords: ⌘+/⌘=, ⌘-, ⌘0.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -89,6 +90,41 @@ vi.mock("@/stores/editor-store", () => {
   );
   return { useEditorStore };
 });
+
+// ---------------------------------------------------------------------------
+// Zoom hook mock — intercepts calls to increaseZoom / decreaseZoom / resetZoom.
+// vi.hoisted() is required because vi.mock() factories are hoisted to the top
+// of the file by Vitest's transform; plain `const` declarations wouldn't be
+// initialized yet when the factory runs.
+// ---------------------------------------------------------------------------
+
+const { mockIncreaseZoom, mockDecreaseZoom, mockResetZoom } = vi.hoisted(() => ({
+  mockIncreaseZoom: vi.fn(),
+  mockDecreaseZoom: vi.fn(),
+  mockResetZoom: vi.fn(),
+}));
+
+vi.mock("@/hooks/useEditorZoom", () => ({
+  increaseZoom: mockIncreaseZoom,
+  decreaseZoom: mockDecreaseZoom,
+  resetZoom: mockResetZoom,
+  // After #188, the keyboard hook calls `fireZoom` instead of the bare action
+  // functions so viewers (PDF / EPUB / HTML) can register their own zoom
+  // controllers. The default fallback is the markdown editor zoom — the test
+  // mock routes `fireZoom` straight to the action mocks to preserve assertions.
+  fireZoom: (action: "in" | "out" | "reset") => {
+    if (action === "in") mockIncreaseZoom();
+    else if (action === "out") mockDecreaseZoom();
+    else mockResetZoom();
+  },
+  registerZoomController: () => () => {},
+  useEditorZoom: () => ({
+    zoom: 1.0,
+    increaseZoom: mockIncreaseZoom,
+    decreaseZoom: mockDecreaseZoom,
+    resetZoom: mockResetZoom,
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // Import the hook AFTER the mocks above.
@@ -169,6 +205,11 @@ beforeEach(() => {
   mockEditorState.activeTabId = null;
   mockEditorState.closeTab.mockReset();
   mockEditorState.setPendingCloseTabId.mockReset();
+
+  // Reset zoom mocks.
+  mockIncreaseZoom.mockReset();
+  mockDecreaseZoom.mockReset();
+  mockResetZoom.mockReset();
 
   capturedBarEvents = [];
   unsubscribeBar = subscribeToCmdBarEvents((e) => {
@@ -553,6 +594,71 @@ describe("useKeyboardShortcuts (scaffold bindings)", () => {
     } finally {
       window.removeEventListener(REVEAL_IN_FINDER_EVENT, listener);
     }
+  });
+});
+
+// ===========================================================================
+// Editor zoom chords — ⌘+ / ⌘= / ⌘- / ⌘0 (issue #162).
+//
+// These chords control a transient view-zoom multiplier that is NOT stored in
+// editor-styles-store. The hook delegates to module-level functions from
+// useEditorZoom so the state outlives any individual component.
+// ===========================================================================
+
+describe("useKeyboardShortcuts (editor zoom chords)", () => {
+  it("⌘+ calls increaseZoom", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("+", { metaKey: true, shiftKey: true });
+
+    expect(mockIncreaseZoom).toHaveBeenCalledTimes(1);
+    expect(mockDecreaseZoom).not.toHaveBeenCalled();
+    expect(mockResetZoom).not.toHaveBeenCalled();
+  });
+
+  it("⌘= also calls increaseZoom (same physical key as + without Shift)", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("=", { metaKey: true });
+
+    expect(mockIncreaseZoom).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘- calls decreaseZoom", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("-", { metaKey: true });
+
+    expect(mockDecreaseZoom).toHaveBeenCalledTimes(1);
+    expect(mockIncreaseZoom).not.toHaveBeenCalled();
+    expect(mockResetZoom).not.toHaveBeenCalled();
+  });
+
+  it("⌘0 calls resetZoom", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("0", { metaKey: true });
+
+    expect(mockResetZoom).toHaveBeenCalledTimes(1);
+    expect(mockIncreaseZoom).not.toHaveBeenCalled();
+    expect(mockDecreaseZoom).not.toHaveBeenCalled();
+  });
+
+  it("zoom chords preventDefault so the browser does not open find/etc", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    const evPlus = dispatchKey("+", { metaKey: true, shiftKey: true });
+    const evMinus = dispatchKey("-", { metaKey: true });
+    const evZero = dispatchKey("0", { metaKey: true });
+
+    expect(evPlus.defaultPrevented).toBe(true);
+    expect(evMinus.defaultPrevented).toBe(true);
+    expect(evZero.defaultPrevented).toBe(true);
   });
 });
 

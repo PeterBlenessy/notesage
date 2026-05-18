@@ -6,11 +6,13 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Folder, FolderOpen, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
+import { resolveFolderIcon } from "@/lib/folder-icon";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore, type ExplorerFolder } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useFolderAppearanceStore } from "@/stores/folder-appearance-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { type FileEntry } from "@/lib/tauri";
 import { FolderPeek, derivePeekChildren } from "./FolderPeek";
@@ -20,9 +22,24 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
+import { SIDEBAR_MAKE_PROJECT_EVENT } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
+import {
+  decrementCustomizePopoverOpen,
+  decrementOpenContextMenus,
+  forceCloseAllPeeks,
+  incrementCustomizePopoverOpen,
+  incrementOpenContextMenus,
+} from "@/lib/sidebar-context-menu-state";
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { toast } from "sonner";
@@ -78,6 +95,33 @@ function folderBasename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
+/**
+ * Recursively inserts child entries for an expanded subfolder.
+ * Dirs-before-files ordering mirrors the top-level derivePeekChildren sort.
+ * Used by the `rows` useMemo in FoldersSection to support multi-level inline
+ * expand (#158).
+ */
+function insertChildEntries(
+  list: FolderRowDescriptor[],
+  entries: FileEntry[],
+  folder: ExplorerFolder,
+  expandedChildPaths: Set<string>,
+  showHiddenFiles: boolean,
+): void {
+  const visible = entries.filter((e) => showHiddenFiles || !e.hidden);
+  const dirs = visible.filter((e) => e.is_directory);
+  const files = visible.filter((e) => !e.is_directory);
+  for (const dir of dirs) {
+    list.push({ kind: "child", id: dir.path, folder, entry: dir });
+    if (expandedChildPaths.has(dir.path)) {
+      insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles);
+    }
+  }
+  for (const file of files) {
+    list.push({ kind: "child", id: file.path, folder, entry: file });
+  }
+}
+
 export function FoldersSection({ filter }: FoldersSectionProps = {}) {
   const folders = useWorkspaceStore((s) => s.explorerFolders);
   const removeExplorerFolder = useWorkspaceStore((s) => s.removeExplorerFolder);
@@ -99,7 +143,30 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
   // the folder path is added here so the next derive uses the
   // unbounded variant.
   const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
+  // Multi-level inline expand (#158) — tracks which child subfolder paths are
+  // expanded. Ephemeral, resets on unmount alongside expandedPaths.
+  const [expandedChildPaths, setExpandedChildPaths] = useState<Set<string>>(new Set());
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  // Folder-merge fix — section-level state for the "Customize…" popover.
+  // Only one row can be customizing at a time; clicking Customize on a
+  // different row replaces the open popover. `null` = no popover open.
+  const [customizingPath, setCustomizingPath] = useState<string | null>(null);
+  // Mirror SidebarContextMenu: while the customize popover is open, bump
+  // the shared overlay counter so FolderPeek / FilePreview pause their
+  // hover-open / hover-close logic. We ALSO emit a one-shot
+  // `forceCloseAllPeeks` signal at open time — closing any FolderPeek
+  // that was already open from a prior hover, so the popover doesn't
+  // render beneath the peek.
+  useEffect(() => {
+    if (customizingPath === null) return;
+    forceCloseAllPeeks();
+    incrementOpenContextMenus();
+    incrementCustomizePopoverOpen();
+    return () => {
+      decrementOpenContextMenus();
+      decrementCustomizePopoverOpen();
+    };
+  }, [customizingPath]);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const registerRef = useCallback((rowId: string, el: HTMLElement | null) => {
@@ -173,6 +240,11 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
             folder,
             entry: dir,
           });
+          // Multi-level inline expand (#158): if this child dir is expanded,
+          // recursively insert its children beneath it.
+          if (expandedChildPaths.has(dir.path)) {
+            insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles);
+          }
         }
         if (peek.folderOverflow > 0) {
           list.push({
@@ -201,7 +273,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
       }
     }
     return list;
-  }, [filteredFolders, expandedPaths, showAllPaths, showHiddenFiles]);
+  }, [filteredFolders, expandedPaths, expandedChildPaths, showAllPaths, showHiddenFiles]);
 
   const toggleExpanded = useCallback((path: string, next: boolean) => {
     setExpandedPaths((prev) => {
@@ -262,9 +334,30 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
 
   const handleChildKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: FolderRowDescriptor) => {
+      // ArrowRight on a child directory: expand it (#158).
+      if (event.key === "ArrowRight" && row.entry?.is_directory) {
+        event.preventDefault();
+        if (!expandedChildPaths.has(row.entry.path)) {
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            next.add(row.entry!.path);
+            return next;
+          });
+        }
+        return;
+      }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        focusRow(row.folder.path);
+        // If this is an expanded child directory, collapse it (#158).
+        if (row.entry?.is_directory && expandedChildPaths.has(row.entry.path)) {
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            next.delete(row.entry!.path);
+            return next;
+          });
+        } else {
+          focusRow(row.folder.path);
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -285,15 +378,19 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
         event.preventDefault();
         if (!row.entry) return;
         if (row.entry.is_directory) {
-          // Multi-level inline expand for child folders lands with
-          // sidebar #20 (TreeOverlay deletion). Today: silent no-op
-          // matching ProjectsSection's child-folder behaviour.
+          // Toggle inline expand for child directories (#158).
+          setExpandedChildPaths((prev) => {
+            const next = new Set(prev);
+            if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
+            else next.add(row.entry!.path);
+            return next;
+          });
           return;
         }
         void openFileEntry(row.entry.path, row.entry.name);
       }
     },
-    [rows, focusRow, openFileEntry],
+    [rows, focusRow, openFileEntry, expandedChildPaths],
   );
 
   const handleRemove = useCallback(
@@ -312,77 +409,178 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
 
   return (
     <section
-      aria-label="Folders"
+      aria-label="External folders"
       className="group/section flex flex-col gap-1"
     >
-      <header className="flex items-center justify-between gap-2 px-2 h-6">
-        <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
-          Folders
-        </h2>
-      </header>
-      <ul role="tree" aria-label="Folders" className="flex flex-col m-0 p-0 list-none">
+      {/* Folder-merge fix — header dropped. The merged "Folders" header is
+          rendered by ProjectsSection above; explorer folders flow into the
+          same visual section. The structural FolderSymlink icon (set by
+          resolveFolderIcon) signals that these rows are external. */}
+      <ul role="tree" aria-label="External folders" className="flex flex-col m-0 p-0 list-none">
         {filteredFolders.map((folder) => {
           const isExpanded = expandedPaths.has(folder.path);
           return (
             <li key={folder.path} className="m-0 p-0">
-              <FolderPeek
-                projectPath={folder.path}
-                fileTree={folder.fileTree}
+              <Popover
+                open={customizingPath === folder.path}
+                onOpenChange={(open) =>
+                  setCustomizingPath(open ? folder.path : null)
+                }
               >
-                {/*
-                  Inline ContextMenu (rather than the heavier
-                  SidebarContextMenu used by Projects / Pinned /
-                  Recent) — folders only need three actions: reveal
-                  in Finder, copy path, remove. The shared menu
-                  carries a lot of file/project-specific items that
-                  would be wrong for explorer folders.
-                */}
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <FolderRow
-                      folder={folder}
-                      isExpanded={isExpanded}
-                      isFocused={focusedRowId === folder.path}
-                      hasFocusWithin={focusedRowId !== null}
-                      isActive={
-                        !!activeTabPath &&
-                        activeTabPath.startsWith(folder.path + "/")
-                      }
-                      registerRef={(el) => registerRef(folder.path, el)}
-                      onKeyDown={(e) => handleFolderKeyDown(e, folder)}
-                      onFocus={() => setFocusedRowId(folder.path)}
-                      onActivate={() =>
-                        toggleExpanded(folder.path, !isExpanded)
-                      }
-                    />
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem
-                      onSelect={() => {
-                        void tauriApi
-                          .revealInFinder(folder.path)
-                          .catch((e) =>
-                            toast.error(`Failed to reveal: ${String(e)}`),
-                          );
-                      }}
+                <PopoverAnchor asChild>
+                  <span className="block">
+                    <FolderPeek
+                      projectPath={folder.path}
+                      fileTree={folder.fileTree}
                     >
-                      Reveal in Finder
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      onSelect={() => {
-                        void copyToClipboard(folder.path, "Path copied");
-                      }}
-                    >
-                      Copy path
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      onSelect={() => handleRemove(folder.path)}
-                    >
-                      Remove from sidebar
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              </FolderPeek>
+                      <ContextMenu
+                        onOpenChange={(open) => {
+                          // Match SidebarContextMenu's pattern: bump the
+                          // shared counter so FolderPeek / FilePreview
+                          // pause their hover-open while the menu is up.
+                          // Without this the FolderPeek would still
+                          // schedule its 220 ms openTimer during the
+                          // menu's lifetime and pop over the menu.
+                          if (open) incrementOpenContextMenus();
+                          else decrementOpenContextMenus();
+                        }}
+                      >
+                        <ContextMenuTrigger asChild>
+                          {/*
+                            Radix's Slot uses cloneElement to inject
+                            `onContextMenu` and a ref onto its child.
+                            FolderRow is a function component that
+                            destructures only its declared props, so the
+                            injected handler/ref get silently dropped and
+                            the OS native menu fires (with row-selection
+                            visual). Wrapping with a passthrough <div>
+                            makes the immediate Slot target a raw DOM
+                            element so prop injection lands. Mirrors the
+                            same workaround in ProjectsSection.
+                          */}
+                          <div>
+                            <FolderRow
+                              folder={folder}
+                              isExpanded={isExpanded}
+                              isFocused={focusedRowId === folder.path}
+                              hasFocusWithin={focusedRowId !== null}
+                              isActive={
+                                !!activeTabPath &&
+                                activeTabPath.startsWith(folder.path + "/")
+                              }
+                              registerRef={(el) => registerRef(folder.path, el)}
+                              onKeyDown={(e) => handleFolderKeyDown(e, folder)}
+                              onFocus={() => setFocusedRowId(folder.path)}
+                              onActivate={() =>
+                                toggleExpanded(folder.path, !isExpanded)
+                              }
+                            />
+                          </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              void tauriApi
+                                .revealInFinder(folder.path)
+                                .catch((e) =>
+                                  toast.error(`Failed to reveal: ${String(e)}`),
+                                );
+                            }}
+                          >
+                            Reveal in Finder
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              void copyToClipboard(folder.path, "Path copied");
+                            }}
+                          >
+                            Copy path
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onSelect={() => {
+                              // Defer one frame so the context menu fully
+                              // closes before the popover paints.
+                              requestAnimationFrame(() =>
+                                setCustomizingPath(folder.path),
+                              );
+                            }}
+                          >
+                            Customize…
+                          </ContextMenuItem>
+                          {/* Manage with Notesage — turn this external folder
+                              into a managed Notesage folder. Creates `.notesage/`
+                              and re-registers the folder so it gains AI lock,
+                              custom appearance persistence, durable comments,
+                              per-folder skills/agents/MCP. The dual label
+                              handles the case where `.notesage/` already
+                              exists (folder is structurally Notesage but
+                              isn't registered as such yet — common when
+                              re-opening a previously-managed folder via ⌘O). */}
+                          {(() => {
+                            const hasNotesageDir = folder.fileTree.some(
+                              (c) =>
+                                c.name === ".notesage" && c.is_directory,
+                            );
+                            const label = hasNotesageDir
+                              ? "Open as Notesage folder"
+                              : "Manage with Notesage";
+                            const tooltip = hasNotesageDir
+                              ? "Add this folder to the sidebar as a Notesage folder. It already has a .notesage settings directory."
+                              : "Adds a .notesage settings directory to this folder and unlocks Notesage features: AI provider lock, folder appearance, comments that survive renames, and per-folder skills, agents, and MCP servers.";
+                            return (
+                              <ContextMenuItem
+                                title={tooltip}
+                                onSelect={() => {
+                                  window.dispatchEvent(
+                                    new CustomEvent(
+                                      SIDEBAR_MAKE_PROJECT_EVENT,
+                                      { detail: { path: folder.path } },
+                                    ),
+                                  );
+                                }}
+                              >
+                                {label}
+                              </ContextMenuItem>
+                            );
+                          })()}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onSelect={() => handleRemove(folder.path)}
+                          >
+                            Remove from sidebar
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </FolderPeek>
+                  </span>
+                </PopoverAnchor>
+                <PopoverContent
+                  side="right"
+                  align="start"
+                  sideOffset={4}
+                  className="p-0 w-auto"
+                  // React synthetic events bubble through the REACT tree,
+                  // even across portals. PopoverContent is React-tree-inside
+                  // `<Popover>`, which is inside the QuietSidebar `<nav>`'s
+                  // onKeyDown / inside FolderPeek's onMouseEnter. Without
+                  // these stoppers, typing in the popover lands in the
+                  // sidebar's type-to-filter, and mouse-over the popover
+                  // fires FolderPeek's hover-open. Stop propagation at the
+                  // popover boundary.
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onMouseEnter={(e) => e.stopPropagation()}
+                  onMouseLeave={(e) => e.stopPropagation()}
+                  onMouseOver={(e) => e.stopPropagation()}
+                >
+                  <FolderAppearancePicker
+                    folderPath={folder.path}
+                    folderType="external"
+                    isProject={false}
+                    onClose={() => setCustomizingPath(null)}
+                  />
+                </PopoverContent>
+              </Popover>
               {isExpanded && (
                 <ul role="group" className="m-0 p-0 list-none pl-4">
                   {rows
@@ -416,11 +614,21 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                               row={row}
                               isFocused={focusedRowId === row.id}
                               hasFocusWithin={focusedRowId !== null}
+                              isExpanded={row.entry?.is_directory ? expandedChildPaths.has(row.entry.path) : undefined}
                               registerRef={(el) => registerRef(row.id, el)}
                               onKeyDown={(e) => handleChildKeyDown(e, row)}
                               onFocus={() => setFocusedRowId(row.id)}
                               onActivate={() => {
-                                if (row.entry?.is_directory) return;
+                                if (row.entry?.is_directory) {
+                                  // Toggle inline expand for child directories (#158).
+                                  setExpandedChildPaths((prev) => {
+                                    const next = new Set(prev);
+                                    if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
+                                    else next.add(row.entry!.path);
+                                    return next;
+                                  });
+                                  return;
+                                }
                                 if (row.entry) void openFileEntry(row.entry.path, row.entry.name);
                               }}
                             />
@@ -493,7 +701,17 @@ function FolderRow({
   onActivate,
 }: FolderRowProps) {
   const name = folderBasename(folder.path);
-  const Icon = isExpanded ? FolderOpen : Folder;
+  // Folder-merge fix — read custom appearance from the global path-keyed
+  // registry so user-picked icons / colors actually surface on the row.
+  const appearance = useFolderAppearanceStore((s) =>
+    s.getAppearance(folder.path),
+  );
+  const { icon: Icon, ariaLabel: folderAriaLabel, color } = resolveFolderIcon({
+    type: 'external',
+    expanded: isExpanded,
+    name,
+    appearance,
+  });
   // Roving tabindex with a "no row focused yet" fallback. When the
   // user hasn't tabbed into the section, the first FolderRow (which
   // is the only one mounted with `hasFocusWithin === false`)
@@ -507,7 +725,7 @@ function FolderRow({
       aria-level={1}
       aria-expanded={isExpanded}
       aria-selected={isFocused ? "true" : undefined}
-      aria-label={`Open folder ${name}`}
+      aria-label={folderAriaLabel}
       data-row-type="folder"
       tabIndex={tabIndex}
       onClick={onActivate}
@@ -524,10 +742,15 @@ function FolderRow({
       <Icon
         className={cn(
           "h-3.5 w-3.5 shrink-0",
-          isActive
-            ? "text-[var(--color-accent-primary)]"
-            : "text-muted-foreground/70",
+          // When a custom color is applied, drop the muted greyscale class
+          // so the user-picked color isn't overridden by the muted fill.
+          color
+            ? undefined
+            : isActive
+              ? "text-[var(--color-accent-primary)]"
+              : "text-muted-foreground/70",
         )}
+        style={color ? { color } : undefined}
         strokeWidth={1.5}
         aria-hidden="true"
       />
@@ -596,6 +819,8 @@ interface ChildRowProps {
   row: FolderRowDescriptor;
   isFocused: boolean;
   hasFocusWithin: boolean;
+  /** Whether this child directory is currently expanded inline (#158). */
+  isExpanded?: boolean;
   registerRef: (el: HTMLElement | null) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
@@ -606,16 +831,18 @@ function ChildRow({
   row,
   isFocused,
   hasFocusWithin,
+  isExpanded,
   registerRef,
   onKeyDown,
   onFocus,
   onActivate,
 }: ChildRowProps) {
   if (!row.entry) return null;
-  const Icon = row.entry.is_directory ? Folder : FileText;
-  const ariaLabel = row.entry.is_directory
-    ? `Open folder ${row.entry.name}`
-    : `Open file ${row.entry.name}`;
+  // Sub-directories inside an explorer folder are NOT external themselves —
+  // they're just folders within. Use the standard structural icon.
+  const { icon: Icon, ariaLabel } = row.entry.is_directory
+    ? resolveFolderIcon({ type: 'standard', name: row.entry.name })
+    : { icon: FileText, ariaLabel: `Open file ${row.entry.name}` };
   // ChildRow only renders inside an expanded FolderRow, so it sits
   // BELOW the parent in tab order. The same fallback applies:
   // expose `tabIndex=0` when no row is focused yet so external Tab
@@ -626,6 +853,7 @@ function ChildRow({
       ref={registerRef}
       role="treeitem"
       aria-level={2}
+      aria-expanded={row.entry.is_directory ? (isExpanded ?? false) : undefined}
       aria-selected={isFocused ? "true" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"

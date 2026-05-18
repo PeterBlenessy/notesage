@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { FolderAppearance } from '@/lib/folder-icon';
 
 export interface ProjectMetadata {
   version: 1;
@@ -28,6 +29,13 @@ export interface ProjectMetadata {
     lockedAt: number;
     reason?: string;
   };
+  /**
+   * Optional custom appearance for this project's folder icon.
+   * Issue #140: Per-folder icon and color customization.
+   * Both fields are independently nullable — the user may set only an icon,
+   * only a color, or both. Omitted entirely when neither is set (backward compat).
+   */
+  appearance?: FolderAppearance;
 }
 
 export function createDefaultMetadata(folderName: string): ProjectMetadata {
@@ -52,6 +60,18 @@ interface ProjectMetadataStore {
   updateAI: (projectPath: string, updates: Partial<ProjectMetadata['ai']>) => void;
   setAiLock: (projectPath: string, connectionId: string, reason?: string) => void;
   clearAiLock: (projectPath: string) => void;
+  /**
+   * Set or replace the custom folder appearance for a project.
+   * Marks the project dirty so it will be saved to project.json.
+   * No-op if the project path has no loaded metadata.
+   */
+  setAppearance: (projectPath: string, appearance: FolderAppearance) => void;
+  /**
+   * Remove the custom folder appearance from a project.
+   * Marks the project dirty only if appearance was previously set.
+   * No-op if the project path has no loaded metadata or has no appearance.
+   */
+  clearAppearance: (projectPath: string) => void;
   removeMetadata: (projectPath: string) => void;
   getMetadata: (projectPath: string) => ProjectMetadata | undefined;
   isDirty: (projectPath: string) => boolean;
@@ -132,6 +152,37 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
       const { aiLock: _aiLock, ...rest } = existing;
+      return {
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: rest as ProjectMetadata,
+        },
+        dirtyPaths: newDirty,
+      };
+    }),
+
+  setAppearance: (projectPath, appearance) =>
+    set((state) => {
+      const existing = state.metadataMap[projectPath];
+      if (!existing) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
+      return {
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: { ...existing, appearance },
+        },
+        dirtyPaths: newDirty,
+      };
+    }),
+
+  clearAppearance: (projectPath) =>
+    set((state) => {
+      const existing = state.metadataMap[projectPath];
+      if (!existing || !existing.appearance) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
+      const { appearance: _appearance, ...rest } = existing;
       return {
         metadataMap: {
           ...state.metadataMap,

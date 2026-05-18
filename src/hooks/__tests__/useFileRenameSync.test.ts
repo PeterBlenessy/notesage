@@ -555,7 +555,12 @@ describe('useFileRenameSync — folder rename: closed-tab sidecar reverse-lookup
       }
       return [];
     });
-    setMockInvokeHandler('path_exists', () => false);
+    setMockInvokeHandler('path_exists', (args) => {
+      const { path } = args as { path: string };
+      // old sidecar exists (so executeRenameTransaction proceeds with migration)
+      // new sidecar does NOT exist (so collectClosedTabMigrationInputs includes it as not-yet-migrated)
+      return path === oldSidecarFilePath;
+    });
     setMockInvokeHandler('read_file', (args) => {
       if ((args as { path: string }).path === oldSidecarFilePath) return existingSidecar;
       return '[]';

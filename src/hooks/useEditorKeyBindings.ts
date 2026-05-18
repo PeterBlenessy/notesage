@@ -78,14 +78,17 @@ export function useEditorKeyBindings({
     return () => window.removeEventListener("keydown", handleSave);
   }, [activeTab, saveFile]);
 
-  // Handle Cmd+/ to toggle view mode (Shift+7 = / on Nordic keyboards)
+  // Handle Cmd+/ to toggle view mode (Shift+7 = / on Nordic keyboards).
+  // NOTE: Do NOT match `e.code === "Slash"` standalone — on Swedish ISO the
+  // `-` key sits at the same physical position as the US `/`, so its event
+  // reports `code === "Slash"` even though `key === "-"`. That collides with
+  // ⌘- (zoom out). Match by `key` (with Nordic Shift+7 fallback) only.
   useEffect(() => {
     const handleToggle = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       const isSlash =
         e.key === "/" ||                              // US layout: Cmd+/
         e.key === "?" ||                              // US layout: Cmd+Shift+/
-        e.code === "Slash" ||                         // US layout by code
         (e.shiftKey && e.code === "Digit7");          // Nordic layout: / = Shift+7
       if (isSlash) {
         e.preventDefault();

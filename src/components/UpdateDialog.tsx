@@ -1,4 +1,7 @@
 import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { renderInlineMarkdown } from "@/lib/render-inline-markdown";
 import {
   Dialog,
@@ -15,6 +18,11 @@ import { useChangelog, type Release } from "@/hooks/useChangelog";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import type { UpdateInfo, UpdateStatus } from "@/hooks/useAutoUpdate";
+
+function isAllowedUrl(url: string): boolean {
+  const lower = url.toLowerCase().trimStart();
+  return !lower.startsWith('javascript:') && !lower.startsWith('data:');
+}
 
 interface UpdateDialogProps {
   open: boolean;
@@ -120,6 +128,12 @@ export function UpdateDialog({
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
 
+  // "Leave alpha" downgrade — different copy / different confirmation. The
+  // user is on a prerelease binary, switched to Stable, and the latest stable
+  // is older than their current alpha. Treat this as an explicit channel
+  // exit, not as a normal update offer.
+  const isLeaveAlphaDowngrade = updateInfo.isLeaveAlphaDowngrade === true;
+
   const releases = getChangesBetween(
     updateInfo.currentVersion,
     updateInfo.version
@@ -136,14 +150,34 @@ export function UpdateDialog({
             />
             <div>
               <DialogTitle>
-                {isDownloaded ? "Ready to Restart" : "Update Available"}
+                {isDownloaded
+                  ? "Ready to Restart"
+                  : isLeaveAlphaDowngrade
+                    ? "Switch back to Stable?"
+                    : "Update Available"}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 v{updateInfo.currentVersion} → v{updateInfo.version}
+                {isLeaveAlphaDowngrade && " (downgrade)"}
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
+
+        {isLeaveAlphaDowngrade && !isDownloading && !isDownloaded ? (
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-2">
+            <p>
+              You're running an alpha build on the Stable channel. Switching
+              back to Stable will install <strong>v{updateInfo.version}</strong>,
+              which is older than your current build.
+            </p>
+            <p>
+              Settings or data added by alpha versions may not carry over.
+              You can also stay on the alpha and wait for a stable release
+              newer than yours — Notesage will offer that automatically.
+            </p>
+          </div>
+        ) : null}
 
         <ScrollArea className="max-h-96 rounded-md border border-border p-3">
           {releases.length > 0 ? (
@@ -153,12 +187,35 @@ export function UpdateDialog({
               ))}
             </div>
           ) : updateInfo.notes ? (
-            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-              {updateInfo.notes}
-            </p>
+            <div className="text-xs text-muted-foreground leading-relaxed [&>*:last-child]:mb-0 [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:mb-2">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => {
+                    const url = href ?? '';
+                    return (
+                      <a
+                        href={url}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (isAllowedUrl(url)) void openUrl(url);
+                        }}
+                        className="underline hover:opacity-80"
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                }}
+              >
+                {updateInfo.notes}
+              </ReactMarkdown>
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              A new version is available.
+              {isLeaveAlphaDowngrade
+                ? `Release notes for v${updateInfo.version}.`
+                : "A new version is available."}
             </p>
           )}
         </ScrollArea>
@@ -166,7 +223,9 @@ export function UpdateDialog({
         {isDownloading ? (
           <div className="space-y-2 py-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Downloading update...</span>
+              <span>
+                {isLeaveAlphaDowngrade ? "Switching to Stable..." : "Downloading update..."}
+              </span>
               {progress !== null && <span>{progress}%</span>}
             </div>
             <Progress value={progress ?? 0} className="h-1.5" />
@@ -193,9 +252,11 @@ export function UpdateDialog({
                 onOpenChange(false);
               }}
             >
-              Later
+              {isLeaveAlphaDowngrade ? "Stay on Alpha" : "Later"}
             </Button>
-            <Button onClick={onInstall}>Install & Restart</Button>
+            <Button onClick={onInstall}>
+              {isLeaveAlphaDowngrade ? "Switch to Stable" : "Install & Restart"}
+            </Button>
           </DialogFooter>
         )}
       </DialogContent>

@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
 import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
+import { toast } from 'sonner';
 import { renderHook, act } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { useCopilotCompletion } from '@/hooks/useCopilotCompletion';
@@ -1587,6 +1588,98 @@ describe('useCopilotCompletion', () => {
       });
 
       expect(mockRequestCopilotCompletion).toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Issue #178 — Remove the 'Completions disabled for this file' toast
+  //
+  // The per-tab/per-session toast fires on every app restart, every tab
+  // switch to an out-of-scope file, and every scope change. It is noise:
+  // the user already chose to disable completions (toggle) or the file is
+  // simply outside the selected project. The Status Bar's muted indicator
+  // is the passive hint that remains.
+  // =========================================================================
+
+  describe('issue #178 — no toast on out-of-scope tab activation', () => {
+    beforeEach(() => {
+      useSettingsStore.setState({
+        homeDir: '/Users/tester',
+        notesRootPath: '/Users/tester/Notesage',
+        completionsOnOutOfScope: false,
+      });
+      vi.mocked(toast.info).mockClear();
+    });
+
+    it('does NOT fire toast.info when activating an out-of-scope tab', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [{ path: '/workspace/project-A', fileTree: [] }],
+      });
+      setupConversation(['/workspace/project-A']);
+      // Tab is outside the selected project
+      setupWithTab(makeTab({ filePath: '/workspace/project-B/secret.md' }));
+
+      renderHook(() => useCopilotCompletion(makeMockEditor('content')));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(toast.info).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire toast.info on repeated tab switches to out-of-scope files', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+
+      const tabA = makeTab({ id: 'tab-A', filePath: '/workspace/project-A/file.md', fileName: 'file.md' });
+      const tabB = makeTab({ id: 'tab-B', filePath: '/workspace/project-B/secret.md', fileName: 'secret.md' });
+      useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: 'tab-A' });
+
+      const editor = makeMockEditor('hello');
+      const { rerender } = renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      vi.mocked(toast.info).mockClear();
+
+      // Switch to the out-of-scope tab
+      act(() => {
+        useEditorStore.setState({ activeTabId: 'tab-B' });
+      });
+      rerender();
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Switch back to in-scope then out-of-scope again
+      act(() => {
+        useEditorStore.setState({ activeTabId: 'tab-A' });
+      });
+      rerender();
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      act(() => {
+        useEditorStore.setState({ activeTabId: 'tab-B' });
+      });
+      rerender();
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(toast.info).not.toHaveBeenCalled();
     });
   });
 });

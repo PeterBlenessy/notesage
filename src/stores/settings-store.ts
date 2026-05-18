@@ -24,6 +24,7 @@ export type UiPreview = "legacy" | "quiet-composer";
  * is independent of this setting — it always uses the CM6 source editor.
  */
 export type EditorEngine = "tiptap" | "cm6-live-preview";
+export type ReleaseChannel = 'stable' | 'alpha';
 interface SettingsStore {
   theme: Theme;
   /**
@@ -85,6 +86,7 @@ interface SettingsStore {
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
+  releaseChannel: ReleaseChannel;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
@@ -100,6 +102,23 @@ interface SettingsStore {
   chatHintsShown: boolean;
   /** Show dotfiles and dot-directories in the sidebar file tree */
   showHiddenFiles: boolean;
+  /**
+   * Show the comrak HTML preview while the editor hydrates in the
+   * background (Phase 1 / Phase 3b instant-load). When false, the
+   * editor mounts directly via streaming hydrate — no preview surface,
+   * no preview/editor visual swap. Default true. Diagnostic / preference
+   * toggle: previewing is the right default for large docs (instant
+   * first paint), but some users find the visual swap distracting.
+   */
+  instantLoadPreview: boolean;
+  /**
+   * Show the file-content hover popover that previews the first ~12 lines
+   * of a file when hovering its row in the Quiet Composer sidebar's
+   * Recent / Pinned / Tags / Mentions sections. Default true. The folder
+   * hover popover (`FolderPeek`) is a separate surface and is NOT gated
+   * by this setting.
+   */
+  sidebarFilePreviewEnabled: boolean;
   /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
   showAgentModePicker: boolean;
   /**
@@ -255,6 +274,7 @@ interface SettingsStore {
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
+  setReleaseChannel: (channel: ReleaseChannel) => void;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
@@ -271,6 +291,8 @@ interface SettingsStore {
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
+  setInstantLoadPreview: (enabled: boolean) => void;
+  setSidebarFilePreviewEnabled: (enabled: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
   setUiPreview: (preview: UiPreview) => void;
@@ -303,6 +325,31 @@ interface SettingsStore {
   setStartAtLogin: (start: boolean) => void;
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
+  /**
+   * When true, the HTML viewer iframe includes `allow-forms` and
+   * `allow-top-navigation-by-user-activation` in its sandbox attribute so
+   * HTML forms can be submitted. Default false (forms are blocked).
+   */
+  htmlViewerAllowForms: boolean;
+  setHtmlViewerAllowForms: (enabled: boolean) => void;
+  /**
+   * When true, the HTML viewer bypasses DOMPurify and renders content in an
+   * isolated iframe with `sandbox="allow-scripts"` (no `allow-same-origin`).
+   * Inline `<script>` blocks execute; same-directory `<script src="./local.js">`
+   * is pre-processed via read_file and inlined. Default false (scripts stripped).
+   */
+  htmlViewerAllowScripts: boolean;
+  setHtmlViewerAllowScripts: (enabled: boolean) => void;
+  /**
+   * When true, the HTML viewer strips external network resources (remote `src`,
+   * `href`, and `srcset` attribute values starting with `https?:`) via a
+   * DOMPurify `uponSanitizeAttribute` hook before rendering. Inline `<style>`
+   * blocks, `data:` URIs, `blob:` URIs, and relative paths are unaffected.
+   * Default false (all resources load freely — matching the natural
+   * "open an HTML file and see what's in it" behaviour most users expect).
+   */
+  htmlViewerBlockExternalResources: boolean;
+  setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -331,6 +378,8 @@ export const useSettingsStore = create<SettingsStore>()(
       bundledAgentsCleaned: false,
       chatHintsShown: false,
       showHiddenFiles: false,
+      instantLoadPreview: true,
+      sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
       crossProjectMode: false,
       uiPreview: "legacy",
@@ -376,6 +425,7 @@ export const useSettingsStore = create<SettingsStore>()(
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
+      releaseChannel: 'stable' as ReleaseChannel,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -523,6 +573,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dismissedVersion: version });
       },
 
+      setReleaseChannel: (channel: ReleaseChannel) => {
+        set({ releaseChannel: channel });
+      },
+
       setLastExportTemplate: (template: ExportTemplate) => {
         set({ lastExportTemplate: template });
       },
@@ -581,6 +635,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowHiddenFiles: (show: boolean) => {
         set({ showHiddenFiles: show });
+      },
+
+      setInstantLoadPreview: (enabled: boolean) => {
+        set({ instantLoadPreview: enabled });
+      },
+
+      setSidebarFilePreviewEnabled: (enabled: boolean) => {
+        set({ sidebarFilePreviewEnabled: enabled });
       },
 
       setShowAgentModePicker: (show: boolean) => {
@@ -706,10 +768,28 @@ export const useSettingsStore = create<SettingsStore>()(
       setNotifyExternalChanges: (notify: boolean) => {
         set({ notifyExternalChanges: notify });
       },
+
+      htmlViewerAllowForms: false,
+
+      setHtmlViewerAllowForms: (enabled: boolean) => {
+        set({ htmlViewerAllowForms: enabled });
+      },
+
+      htmlViewerAllowScripts: false,
+
+      setHtmlViewerAllowScripts: (enabled: boolean) => {
+        set({ htmlViewerAllowScripts: enabled });
+      },
+
+      htmlViewerBlockExternalResources: false,
+
+      setHtmlViewerBlockExternalResources: (enabled: boolean) => {
+        set({ htmlViewerBlockExternalResources: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 14,
+      version: 18,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -845,6 +925,34 @@ export const useSettingsStore = create<SettingsStore>()(
           }
         }
         if (version < 14) {
+          // Issue #143 — alpha release channel. Existing users default to
+          // 'stable' so upgrading does not silently opt anyone into alpha.
+          if (typeof state.releaseChannel !== 'string') {
+            state.releaseChannel = 'stable';
+          }
+        }
+        if (version < 15) {
+          // Issue #186 — HTML viewer allow-forms. Default false (forms blocked)
+          // so existing users see no behaviour change after upgrade.
+          if (typeof state.htmlViewerAllowForms !== 'boolean') {
+            state.htmlViewerAllowForms = false;
+          }
+        }
+        if (version < 16) {
+          // Issue #184 — HTML viewer allow-scripts. Default false (scripts stripped)
+          // so existing users see no behaviour change after upgrade.
+          if (typeof state.htmlViewerAllowScripts !== 'boolean') {
+            state.htmlViewerAllowScripts = false;
+          }
+        }
+        if (version < 17) {
+          // Issue #183 — HTML viewer block-external-resources. Default false
+          // (all resources load freely) so existing users see no behaviour change.
+          if (typeof state.htmlViewerBlockExternalResources !== 'boolean') {
+            state.htmlViewerBlockExternalResources = false;
+          }
+        }
+        if (version < 18) {
           // Editor engine PoC (research doc 2026-05-07). Existing users
           // default to the production "tiptap" engine — no surprise.
           if (state.editorEngine !== "cm6-live-preview") {

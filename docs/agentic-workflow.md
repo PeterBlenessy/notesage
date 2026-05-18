@@ -108,6 +108,7 @@ Labels are the state of the system.
 | `refine` | aw-refine should pick up | aw-triage | aw-refine |
 | `slice` | aw-slice should pick up | aw-refine (or human after research) | aw-slice |
 | `awaiting-research` | paused on research peer | aw-slice (research path) | human |
+| `awaiting-prototypes` | paused on prototype peers — user picks the winner | aw-slice (prototype-peers path) | human |
 | `tdd` | aw-tdd should pick up | aw-slice | aw-tdd |
 | `review` | PR is open | aw-tdd | (PR merge closes the issue) |
 
@@ -134,13 +135,14 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | Skill | Job | When | Output |
 | --- | --- | --- | --- |
 | `aw-triage` | Classify, dedup, close-or-categorize | issue opened, or cron | category + `refine`, OR closed as duplicate/wontfix |
-| `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants) | `refine` label set | `+ refined`, `+ slice` |
-| `aw-slice` | Decide one PR vs N peer issues vs research | `slice` label set | one of: `+ tdd` + `afk`-or-`hitl`, OR N peer issues + first slice = original, OR `+ awaiting-research` |
-| `aw-tdd` | TDD red-green-refactor + draft PR | `tdd + afk + refined + category` | `+ review`, draft PR |
+| `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants); record any assumptions made about silent / ambiguous specs | `refine` label set | `+ refined`, `+ slice` (default), OR comment-and-stop with `refine` left in place if the input is unintelligible |
+| `aw-slice` | Decide one PR vs N peer issues vs research vs prototype peers; propose answers to open questions | `slice` label set | one of: `+ tdd` + `afk` (with `## Proposed answers` for any open questions; default), OR `+ tdd` + `hitl` (only when the four narrow `hitl` criteria apply), OR N peer issues + first slice = original, OR `+ awaiting-research`, OR N prototype peers + `+ awaiting-prototypes` |
+| `aw-tdd` | TDD red-green-refactor + draft PR; carries assumptions / proposed answers / implementation-time decisions into the PR body's `## Decisions made` | `tdd + afk + refined + category` | `+ review`, draft PR |
 | `aw-review` | Independent review of a bot-authored draft PR — checks the issue body PLUS comments after `refined` against the diff and tests; flags qualitative criteria for human visual review | `pull_request.opened` for bot-authored draft PR | per-criterion checklist comment; clean → `gh pr ready`; gaps → close PR + reset to `tdd + afk` (max 2 retries) |
 | `aw-feedback` | Interpret human comment on hitl issue or bot PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on bot-authored PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
 | `aw-iterate` | Push small follow-up commit on existing draft PR | `workflow_dispatch` from aw-feedback | new commit on PR branch (or deflection comment if change is too big) |
 | `aw-retrospect` | Look for divergence on merged PR, propose SKILL.md patch | `pull_request.closed` + merged + claude\[bot\] | draft PR with skill edit, OR no-signal comment |
+| `aw-ci-repair` | Auto-repair recurring perf-budget CI flakes on bot-authored draft PRs — wraps bare numeric literals with `PERF_BUDGET_MULTIPLIER` (Pattern A) and adds the env var to the workflow (Pattern B); posts a comment for all other failure patterns (C–E) | `workflow_run.completed` (failure on `claude/*` branch) or `workflow_dispatch` | ≤1 repair commit per PR + comment, OR comment-only for C/D/E patterns |
 
 **The slice decision** is the most important skill rule. aw-slice asks: "what user values does this issue deliver?" Each value is a sentence "User can \[observable behaviour\]." Then:
 
@@ -152,7 +154,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review*.
+Eleven workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair*.
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -167,10 +169,11 @@ Ten workflow files. One *pipeline* + one *sweep* + four *standalones* + one *ret
 | `aw-retrospect.yml` | `pull_request.closed` | Self-improvement on merge |
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
+| `aw-ci-repair.yml` | `workflow_run.completed` (Tests workflow, failure), `workflow_dispatch` | Narrow CI auto-repair: detects recurring perf-budget flake patterns on bot-authored `claude/*` draft PRs and applies one-line fixes (Patterns A+B). Posts a comment for C/D/E. One-attempt cap per PR. |
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
-**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
+**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT` (a fine-grained PAT secret, see "Choice: WORKFLOW_PAT for bot-PR CI gating" below): `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, `aw-ci-repair.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
 
 ## Lifecycle (worked example, default path — owner-filed issue)
 
@@ -262,7 +265,7 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 
 **Why the find/skill split in the sweep.** GitHub evaluates the `concurrency:` expression at JOB level using `needs.*` outputs only — `steps.*.outputs.*` from the same job is NOT available at concurrency-evaluation time. So the candidate has to come from a UPSTREAM job, not from a step in the same job. Splitting each stage into find + skill jobs makes the candidate available via `needs.find_<stage>.outputs.candidate` for the skill job's group expression.
 
-**Regression lock.** `src/lib/__tests__/aw-workflow-concurrency.test.ts` parses every aw-*.yml file and asserts the convention (correct prefix per stage, presence/absence of workflow- vs job-level groups, find/skill split in the sweep, `cancel-in-progress: false` everywhere). Catches drift at PR-review time instead of production-incident time.
+**Regression lock.** `src/lib/__tests__/aw-workflow-concurrency.test.ts` parses every aw-\*.yml file and asserts the convention (correct prefix per stage, presence/absence of workflow- vs job-level groups, find/skill split in the sweep, `cancel-in-progress: false` everywhere). Catches drift at PR-review time instead of production-incident time.
 
 ### Choice: GITHUB_TOKEN for surgical event triggers (not GitHub App token)
 
@@ -272,12 +275,12 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 
 **The fix.** Pass `github_token: ${{ secrets.GITHUB_TOKEN }}` to every label-and-comment-only `claude-code-action` step (triage / refine / slice / feedback / review and the non-tdd jobs in pipeline/sweep). The agent's `Bash(gh:*)` calls then run as `github-actions[bot]`, label changes don't fire downstream events, and the Actions tab becomes an honest log: every visible run represents work the system intended to do.
 
-**Caveat — PR-creating workflows use `WORKFLOW_PAT` instead.** This recursion-guard suppression is correct for label/comment edits but breaks CI on bot PRs (the same suppression hides the `pull_request: opened` event from `test.yml`). Workflows that create PRs (aw-tdd / aw-iterate / aw-retrospect / pipeline-tdd / sweep-tdd) use `WORKFLOW_PAT` so their PRs DO fire CI. See *Choice: WORKFLOW_PAT for bot-PR CI gating* below.
+**Caveat — PR-creating workflows use** `WORKFLOW_PAT` **instead.** This recursion-guard suppression is correct for label/comment edits but breaks CI on bot PRs (the same suppression hides the `pull_request: opened` event from `test.yml`). Workflows that create PRs (aw-tdd / aw-iterate / aw-retrospect / pipeline-tdd / sweep-tdd) use `WORKFLOW_PAT` so their PRs DO fire CI. See *Choice: WORKFLOW_PAT for bot-PR CI gating* below.
 
 **Knock-on changes.** Bot identity flips from `claude[bot]` to `github-actions[bot]`:
 
 - `allowed_bots: "github-actions[bot]"` in every downstream workflow (still required because bot-chained pipeline runs need the action to allow bot-initiated invocation).
-- ~~`if: github.actor != 'github-actions[bot]'` actor-guards on the standalones~~ — no longer needed: the standalones lost their `issues.labeled` trigger entirely (sweep handles label-edit auto-pickup now). Historical note kept for context.
+- `if: github.actor != 'github-actions[bot]'` ~~actor-guards on the standalones~~ — no longer needed: the standalones lost their `issues.labeled` trigger entirely (sweep handles label-edit auto-pickup now). Historical note kept for context.
 - `aw-feedback` and `aw-retrospect` accept BOTH `github-actions[bot]` (current) and `claude[bot]` / `app/claude` (legacy PRs from before the switch) as bot-authored.
 - `aw-iterate` configures git as `github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>` so commits author cleanly.
 - `claude-code-action`'s `use_sticky_comment` feature stops working with custom token. We don't use it.
@@ -288,7 +291,7 @@ We chose a hybrid: pipeline workflow for the happy path (one trigger, jobs chain
 
 ### Choice: WORKFLOW_PAT for bot-PR CI gating (#118)
 
-**The problem.** The GITHUB_TOKEN choice above is correct for label/comment edits — recursion guard suppression keeps the Actions tab honest. But it has a downside the original choice didn't address: **PRs created by `gh pr create` via `GITHUB_TOKEN` also don't fire `pull_request` events.** That means `test.yml` (which listens on `pull_request: opened/synchronize/reopened`) never runs on bot-authored PRs. We were merging bot PRs based only on the agent's local-runner test pass, with zero CI verification — the agent's container can't even compile some platform-specific code (`glib-2.0` for the Rust backend on Linux), so Rust regressions silently slipped through. Plus a separate gap: `GITHUB_TOKEN` lacks the `workflows:write` scope, so bot PRs that need to touch `.github/workflows/` couldn't be pushed at all (cost a manual-rerun on PR #105 yesterday).
+**The problem.** The GITHUB_TOKEN choice above is correct for label/comment edits — recursion guard suppression keeps the Actions tab honest. But it has a downside the original choice didn't address: **PRs created by** `gh pr create` **via** `GITHUB_TOKEN` **also don't fire** `pull_request` **events.** That means `test.yml` (which listens on `pull_request: opened/synchronize/reopened`) never runs on bot-authored PRs. We were merging bot PRs based only on the agent's local-runner test pass, with zero CI verification — the agent's container can't even compile some platform-specific code (`glib-2.0` for the Rust backend on Linux), so Rust regressions silently slipped through. Plus a separate gap: `GITHUB_TOKEN` lacks the `workflows:write` scope, so bot PRs that need to touch `.github/workflows/` couldn't be pushed at all (cost a manual-rerun on PR #105 yesterday).
 
 **The fix.** A fine-grained Personal Access Token (`WORKFLOW_PAT`) scoped to this repo only, with `Contents:R&W + Pull requests:R&W + Workflows:R&W + Issues:R&W + Actions:R + Metadata:R`. Used by every workflow that creates PRs or pushes commits to PR branches:
 
@@ -309,7 +312,7 @@ The other workflows (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-re
 
 **Why not GitHub App.** Strictly more secure but significantly more setup (app creation, private key management, install on repo, `actions/create-github-app-token` in every workflow). Overkill for solo-dev / one repo today; revisit if multi-repo expansion happens later.
 
-**Why not `pull_request_target`.** Would solve the CI gap by running tests in the base-branch context with secrets available, but [GitHub Security Lab guidance](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) treats this pattern as dangerous because it exposes secrets to potentially-untrusted PR code. Bot PRs are trusted today, but the precedent leaks to any future contributor PRs.
+**Why not** `pull_request_target`**.** Would solve the CI gap by running tests in the base-branch context with secrets available, but [GitHub Security Lab guidance](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) treats this pattern as dangerous because it exposes secrets to potentially-untrusted PR code. Bot PRs are trusted today, but the precedent leaks to any future contributor PRs.
 
 **Regression lock.** `src/lib/__tests__/aw-workflow-pat.test.ts` parses every `aw-*.yml` and asserts the PAT/GITHUB_TOKEN choice per workflow — catches drift if a future edit accidentally swaps the token in the wrong direction.
 
@@ -319,7 +322,8 @@ The other workflows (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-re
 
 **The fix.** Two-layer gate:
 
-1. **Pipeline-level `if:` on the triage job** in `aw-pipeline.yml`. Cascades to all downstream stages via `needs:`. Lets through:
+1. **Pipeline-level** `if:` **on the triage job** in `aw-pipeline.yml`. Cascades to all downstream stages via `needs:`. Lets through:
+
    - `OWNER` author-association (the repo owner)
    - `COLLABORATOR` (anyone with push access)
    - `MEMBER` (org members — n/a for personal repo, kept for portability)
@@ -356,11 +360,47 @@ aw-tdd verifies that red tests are RED *before* writing implementation. If a tes
 
 Exception (added by retrospective): tests that cover existing unchanged code paths (regression guards) ARE expected to be green from the start, when at least one new-behavior test is red. Common in additive changes (new flags, new methods).
 
-### Choice: HITL/AFK gates on tdd-ready issues
+### Choice: HITL/AFK gates on tdd-ready issues — narrow `hitl`, default `afk`
 
-Every issue that reaches the `tdd` action label gets exactly one of `afk` (agent runs autonomously) or `hitl` (human approves first). aw-slice picks via heuristics: `hitl` for public API change / schema migration / security policy / many-caller refactor / design-judgment / research; `afk` for localized, observable, well-tested. Default `hitl` when uncertain.
+Every issue that reaches the `tdd` action label gets exactly one of `afk` (agent runs autonomously) or `hitl` (human approves first). The original heuristic defaulted to `hitl` whenever `aw-slice` was uncertain — a long list of triggers (design judgment, many-caller refactors, "looks risky") plus an explicit "default to `hitl` when uncertain" rule.
 
-This is the only autonomy gate besides "draft PR" (always required). Without it, every issue would auto-execute as soon as it reaches `tdd`, with no human review until the PR opens. With it, a human can flip `hitl → afk` after a quick review.
+**The pivot.** That default trapped issues in queues waiting on human input for decisions that could have been a defensible default with a documented justification. PR review is the human checkpoint; pre-coding gates should be reserved for actions that are genuinely irreversible-on-user — not just "judgment calls". Real-world example: issue #139 (folder vocabulary refactor) got marked `hitl` for "design judgment on icons" — a question the implementing PR's diff would answer faster than a human staring at the issue body.
+
+**The new rule.** Default is `afk`. `hitl` is reserved for four narrow, exhaustive criteria:
+
+1. Destructive migration to existing user data the user can't undo from the UI
+2. Security policy relaxation with no safe default
+3. Breaking change to a documented external API (extension API, MCP contract, ACP protocol, public Rust types)
+4. Explicit human request (`"ask me first"` in the issue body or a comment)
+
+Everything else — design judgment, "many callers", "uncertain", visual regression risk — gets `afk` with a documented decision (see the next Choice). Research peers remain a special case: they ARE `hitl` because their output is a recommendation that needs human sign-off before becoming acceptance criteria.
+
+Why the narrowing helps: a `hitl` issue is dead until a human types something. An `afk` issue with documented assumptions ships a draft PR that the human reviews — same human-checkpoint moment, but now they're reviewing concrete code instead of an abstract proposal.
+
+### Choice: propose-don't-punt — every open question gets a suggested answer
+
+The historical anti-pattern at every pre-implementation stage (refine, slice, tdd) was the same shape: when the agent hit a decision it wasn't confident about, it bounced the issue back and waited for human input. `aw-refine` left `refine` in place asking for clarification; `aw-slice` defaulted to `hitl`; `aw-tdd` had no rule and made silent ad-hoc choices.
+
+**The fix.** Every stage MUST propose a defensible answer to every decision it surfaces, document the answer in a public location the user can override by commenting, and proceed. Specifically:
+
+| Stage | Where the proposed answer is recorded | Override mechanism |
+| --- | --- | --- |
+| `aw-refine` | Issue body's `## Assumptions` section (visible in the rewritten body) | Human comments → `aw-feedback` routes back to refine |
+| `aw-slice` | Slice rationale comment's `## Proposed answers` section + issue body's `## Open questions` updated inline | Human comments → `aw-feedback` routes back to slice |
+| `aw-tdd` | PR body's `## Decisions made` section | Human comments → `aw-feedback` dispatches `aw-iterate` |
+
+**Hard limit (when refine *can* still bounce).** Distinguish "vague but intelligible" (the common case → assumption-and-proceed) from "unintelligible" (empty body, single-character title, no recoverable signal → bounce back). Only the second case is allowed to leave `refine` in place. "I'm not sure what icon to pick" is vague-but-intelligible and gets a proposed answer.
+
+**Prototype peers as the alternative to `hitl` for genuine N-way uncertainty.** When `aw-slice` identifies N≥2 defensibly-different approaches and can't pick one without empirical comparison, instead of marking `hitl`, it splits into N peer issues `Prototype A: ...` / `Prototype B: ...`, each marked `tdd + afk`. Each prototype lands as its own draft PR in parallel; the user picks by trying the live builds, merges the winner, closes the losing peers. The original issue carries `awaiting-prototypes` until the user closes it.
+
+**Why this works.** Memory of what was decided lives in public, queryable, override-able commitments — not in the agent's head. A human comment overriding an assumption fires `aw-feedback`, which redispatches the relevant stage with the comment as context. The conversation loop closes; the agent never silently waits.
+
+**Anti-patterns this rule eliminates:**
+
+- ❌ Marking `hitl` because "this involves design judgment" — propose the design choice; PR review is the design-judgment checkpoint
+- ❌ Leaving `refine` in place because "the issue is too vague" — make assumptions, document them, proceed
+- ❌ Punting to the human via `tdd + afk` with unanswered open questions in the body — answer them inline, document the resolution
+- ❌ Silent ad-hoc choices in implementation — every choice that wasn't already in the spec goes in the PR body's `## Decisions made` section
 
 ### Choice: human feedback as a first-class loop (aw-feedback + aw-iterate)
 
@@ -379,6 +419,25 @@ A `hitl` label without a feedback handler is a one-way pause signal — the huma
 
 This closes the conversation loop. The agent can be redirected from ANY pause point to ANY earlier pipeline stage based on the human's natural-language comment — no slash commands, no manual label edits.
 
+### Choice: every stage reads human comments since its trigger marker
+
+**The pivot.** `aw-feedback`'s reset paths (refine → slice → tdd) all rely on the human's comment carrying the new intent. The original assumption was: "the comment is recorded on the issue, the next stage will see it." That assumption was false. Issue #162 (font-size shortcuts) was reset to `refine` twice with explicit override comments ("transient zoom, not persistent font-size change"); both times `aw-refine` faithfully re-refined the same body and produced the same wrong output, because the skill instructions didn't say "read the comments." Only `aw-review` read comments after the trigger marker — every other stage was working off the body alone.
+
+**The fix.** Every stage skill (`aw-refine`, `aw-slice`, `aw-tdd`) now has an explicit "read human comments since the latest `refined` marker" step. The recipe:
+
+1. `gh issue view` includes `comments` in the JSON fields.
+2. Filter out bot comments (`github-actions[bot]`, `claude[bot]`, marker lines like `> *Refined automatically by`).
+3. Of the remaining human comments, focus on those posted after the most recent `refined` event (or the most recent stage marker, depending on which stage is running).
+4. Treat each such human comment as **authoritative** — it overrides the body when the two conflict.
+5. Fold the corrections into the durable spec the next stage sees:
+   - `aw-refine` rewrites the body so the override is impossible to re-derive wrong.
+   - `aw-slice` folds the override into the slice rationale and (if applicable) into peer-issue bodies.
+   - `aw-tdd` writes a red test for each override-comment requirement, alongside any aw-review gap-list.
+
+**Why this works.** The previous loop only had one read-the-comments stage (`aw-review`), too late in the pipeline — by the time aw-review caught the gap, a wrong PR was already open and the user was already frustrated. Reading comments at every stage means the override propagates through the durable artifacts (refined body, slice rationale, peer-issue bodies, red tests) so each downstream stage sees the corrected intent in its primary input, not as a side note to remember.
+
+**Anti-pattern this fixes.** "I refined the body, the comment is on the issue, surely the next agent will see it" — no, the next agent reads what its skill tells it to read. If the skill doesn't say "read comments," the agent doesn't, and the override is invisible.
+
 ### Choice: aw-review as an independent gate before "ready for review"
 
 **The pivot.** Originally `aw-tdd` opened a draft PR and immediately flipped the issue to `review`, expecting the human to be the next gate. Two PRs (#85 and #86) merged through that gate looked clean on paper (tests green, code reads well) but **didn't actually fix the user's problem**. PR #86 changed 7 pickers in `cmd/modes/` while the user's issue actually pointed at chat-footer pickers — the agent took "command bar pickers" too literally. PR #85 implemented `criterion 4` of issue #62 verbatim while the user had commented THREE times asking for criterion 4 to be flipped — `aw-refine` re-ran but didn't fold the comments into the body, and `aw-tdd` faithfully implemented the stale criterion. Neither the implementer nor the post-merge audit caught it. The user was the reviewer, and the user was angry.
@@ -395,9 +454,26 @@ This closes the conversation loop. The agent can be redirected from ANY pause po
 
 Self-improvement loop. On claude\[bot\] PR merge, look for divergence between the originating skill's rules and what shipped (extra files touched, manual fixes after merge, review pushback, test changes, retries). Propose a SKILL.md patch as a draft PR. Always reviewed, never auto-merged. Inspired by rmstdope/my-copilot's `self-learning-skills` pattern.
 
+### Choice: narrow-pattern CI repair instead of broad auto-fix (#195)
+
+**The problem.** Bot-authored PRs from `aw-tdd` repeatedly failed CI because perf budget assertions used bare numeric literals (`toBeLessThan(500)`) that don't account for the CI macOS runner pacing ~3× slower than the dev machine. The fix is mechanical — wrap with `N * (Number(process.env.PERF_BUDGET_MULTIPLIER) || 1)` — but `aw-tdd` kept re-introducing the pattern on every retry because the skill instructions didn't explicitly prohibit it.
+
+**The temptation.** One option is to have `aw-retrospect` patch `aw-tdd`'s SKILL.md to forbid bare literals. That's correct and was also done (see `aw-tdd` SKILL.md). But it doesn't help the dozens of existing bot PRs already in the queue with the wrong pattern, nor the edge case where a future bot PR slips through before the retro patch is applied.
+
+**The fix.** A narrow CI repair skill (`aw-ci-repair`) that fires on `workflow_run.completed` with `conclusion == 'failure'` AND `head_branch` matching `claude/*`. It reads the CI failure log, applies a one-line mechanical fix when the failure is Pattern A (bare literal) or B (missing env var), and posts a comment for all other failure patterns. Hard constraints:
+
+- **≤1 attempt per PR.** Checks for prior `fix(ci):` commits AND prior repair comments before doing anything.
+- **≤2 files.** Refuses to repair if more than 2 files would be touched.
+- **Patterns A + B only auto-fix.** Patterns C (snapshot drift), D (DOM-changed assertion), and E (catch-all) get a comment explaining what was found, with no code changes.
+- **`WORKFLOW_PAT` throughout.** The push must fire `pull_request: synchronize` so CI re-runs on the repaired PR — same rationale as `aw-tdd` and `aw-iterate`.
+
+**Why not just fix it in `aw-tdd`.** `aw-tdd` now explicitly prohibits bare literals (retro-patched). But CI auto-repair adds defense-in-depth: when a bot PR slips through anyway (race, regression, new bot PR format), the repair runs automatically rather than requiring a human to notice, diagnose, and re-trigger. The two mechanisms are complementary, not redundant.
+
+**Scope discipline.** The skill is deliberately narrow. The `if:` guard (`conclusion == 'failure'` AND `startsWith(head_branch, 'claude/')`) prevents it from touching human PRs. The one-attempt cap prevents repair loops. The ≤2-file limit prevents it from accumulating scope over time.
+
 ## Working with the system
 
-**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`. Add the skill's stage to `aw-sweep.yml` as a `find_<name>` + `<name>` job pair (find runs the gh + jq precheck and outputs the candidate; skill job gates on `needs.find_<name>.outputs.candidate != ''` and uses `aw-stage-<name>-${{ needs.find_<name>.outputs.candidate || github.run_id }}` as its concurrency group — see *Choice: shared `aw-stage-{stage}-{issue}` concurrency group*). Create `.github/workflows/aw-<name>.yml` for `workflow_dispatch` only (mirror an existing standalone — workflow-level concurrency `aw-stage-<name>-${{ ... }}`, precheck + claude-code-action with the right `github_token` per *Choice: WORKFLOW_PAT for bot-PR CI gating* — `WORKFLOW_PAT` if it creates PRs or pushes to PR branches, `GITHUB_TOKEN` otherwise). If the skill ever runs against external-author candidates via the sweep, extend each new `find_<name>` precheck JQ with the `external`/`aw-approved` filter (see *Choice: author-association gate for external issues*). Add the new action label(s). Wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. If the skill is reachable from `aw-feedback`, add the matching `gh workflow run aw-<name>.yml --field issue_number=N` to the relevant action block in `aw-feedback`'s SKILL.md. Update this doc.
+**Adding a skill:** create `.claude/skills/aw-<name>/SKILL.md`. Add the skill's stage to `aw-sweep.yml` as a `find_<name>` + `<name>` job pair (find runs the gh + jq precheck and outputs the candidate; skill job gates on `needs.find_<name>.outputs.candidate != ''` and uses `aw-stage-<name>-${{ needs.find_<name>.outputs.candidate || github.run_id }}` as its concurrency group — see *Choice: shared* `aw-stage-{stage}-{issue}` *concurrency group*). Create `.github/workflows/aw-<name>.yml` for `workflow_dispatch` only (mirror an existing standalone — workflow-level concurrency `aw-stage-<name>-${{ ... }}`, precheck + claude-code-action with the right `github_token` per *Choice: WORKFLOW_PAT for bot-PR CI gating* — `WORKFLOW_PAT` if it creates PRs or pushes to PR branches, `GITHUB_TOKEN` otherwise). If the skill ever runs against external-author candidates via the sweep, extend each new `find_<name>` precheck JQ with the `external`/`aw-approved` filter (see *Choice: author-association gate for external issues*). Add the new action label(s). Wire into `aw-pipeline.yml`'s `needs:` chain if it belongs to the happy path. If the skill is reachable from `aw-feedback`, add the matching `gh workflow run aw-<name>.yml --field issue_number=N` to the relevant action block in `aw-feedback`'s SKILL.md. Update this doc.
 
 **Renaming a label:** `gh label edit <old> --name <new>`. Updates all existing issues automatically. Then update SKILL.md, workflow YAML references, and the regression-lock tests in `src/lib/__tests__/aw-*.test.ts`.
 

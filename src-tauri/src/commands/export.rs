@@ -560,20 +560,94 @@ fn sanitize_filename(name: &str) -> String {
 }
 
 /// Resolve the templates directory for a given scope.
+///
+/// New paths (post-migration, issue #172):
+///   - project scope: `<root>/templates/`          (was `.notesage/pptx-templates/`)
+///   - global scope:  `~/Notesage/templates/`       (was `~/.notesage/pptx-templates/`)
 fn templates_dir(scope: &str, project_root: Option<&str>) -> Result<PathBuf, String> {
     match scope {
         "global" => {
             let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-            Ok(home.join(".notesage").join("pptx-templates"))
+            Ok(home.join("Notesage").join("templates"))
         }
         "project" => {
             let root = project_root.ok_or("project_root is required for project scope")?;
-            Ok(PathBuf::from(root)
-                .join(".notesage")
-                .join("pptx-templates"))
+            Ok(PathBuf::from(root).join("templates"))
         }
         _ => Err(format!("Invalid scope: {}", scope)),
     }
+}
+
+/// Result of migrating user content for a single folder.
+#[derive(Debug, Serialize)]
+pub struct MigrateFolderResult {
+    /// Number of individual files (or directories) that were moved.
+    pub migrated: u32,
+    /// Names of sub-directories that had a collision (destination already existed with content).
+    pub collisions: Vec<String>,
+}
+
+/// Migrate a single folder's user content out of hidden `.notesage/` subdirectories into
+/// user-visible sibling folders (issue #172).
+///
+/// Moves:
+///   `<folder>/.notesage/research/`       → `<folder>/research/`
+///   `<folder>/.notesage/pptx-templates/` → `<folder>/templates/`
+///
+/// Returns a [`MigrateFolderResult`] describing what happened.
+/// - Skips a source if it does not exist.
+/// - Reports a collision (but does NOT hard-error) if the destination already contains files.
+/// - Removes the source directory after a successful rename.
+pub fn migrate_folder_user_content(folder: &std::path::Path) -> Result<MigrateFolderResult, String> {
+    let mut result = MigrateFolderResult {
+        migrated: 0,
+        collisions: Vec::new(),
+    };
+
+    let migrations: &[(&str, &str)] = &[
+        // (old relative path inside .notesage, new visible folder name)
+        (".notesage/research", "research"),
+        (".notesage/pptx-templates", "templates"),
+    ];
+
+    for (old_rel, new_name) in migrations {
+        let old_path = folder.join(old_rel);
+        let new_path = folder.join(new_name);
+
+        // Skip if old path doesn't exist
+        if !old_path.exists() {
+            continue;
+        }
+
+        // Skip if destination already has content (collision)
+        if new_path.exists() {
+            let has_content = std::fs::read_dir(&new_path)
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false);
+            if has_content {
+                result.collisions.push(new_name.to_string());
+                continue;
+            }
+        }
+
+        // Rename old → new (fast path, same filesystem)
+        std::fs::rename(&old_path, &new_path)
+            .map_err(|e| format!("Failed to move {:?} to {:?}: {}", old_path, new_path, e))?;
+        result.migrated += 1;
+    }
+
+    Ok(result)
+}
+
+/// Tauri command: run the user-content path migration for a single folder.
+///
+/// Returns `{ migrated: u32, collisions: Vec<String> }`.
+#[tauri::command]
+pub async fn migrate_user_content_paths(
+    folder_path: String,
+) -> Result<MigrateFolderResult, String> {
+    let path = std::path::Path::new(&folder_path);
+    migrate_folder_user_content(path)
 }
 
 /// Read the templates.json index from a directory. Returns empty vec if file doesn't exist.
@@ -871,19 +945,14 @@ mod tests {
         assert_eq!(result.scope, "project");
         assert!(!result.date_added.is_empty());
 
-        // Verify the file was copied
+        // Verify the file was copied to the new visible path
         let expected_path = templates_root
-            .join(".notesage")
-            .join("pptx-templates")
+            .join("templates")
             .join("My_Template.pptx");
-        assert!(expected_path.exists());
+        assert!(expected_path.exists(), "template must be in <root>/templates/");
 
         // Verify templates.json was created
-        let index = read_templates_index(
-            &templates_root
-                .join(".notesage")
-                .join("pptx-templates"),
-        );
+        let index = read_templates_index(&templates_root.join("templates"));
         assert_eq!(index.len(), 1);
         assert_eq!(index[0].id, "My_Template");
 
@@ -897,11 +966,7 @@ mod tests {
         .unwrap();
 
         assert!(!expected_path.exists());
-        let index = read_templates_index(
-            &templates_root
-                .join(".notesage")
-                .join("pptx-templates"),
-        );
+        let index = read_templates_index(&templates_root.join("templates"));
         assert!(index.is_empty());
     }
 
@@ -909,9 +974,8 @@ mod tests {
     async fn test_list_with_project_override() {
         let dir = tempfile::tempdir().unwrap();
         let project_root = dir.path().join("project");
-        let project_templates_dir = project_root
-            .join(".notesage")
-            .join("pptx-templates");
+        // New visible path: <root>/templates/ (not .notesage/pptx-templates/)
+        let project_templates_dir = project_root.join("templates");
         std::fs::create_dir_all(&project_templates_dir).unwrap();
 
         // Add a project template that overrides the built-in "simple"
@@ -1028,5 +1092,181 @@ mod tests {
         assert!(css.contains("font-size: 32px"), "h1 should be 32px");
         // h6 font-size should be 14px
         assert!(css.contains("font-size: 14px"), "h6 should be 14px");
+    }
+
+    // --- RED tests: user-visible paths for research and PPTX templates ---
+
+    /// Per-project PPTX templates must land in `<root>/templates/` (not `.notesage/pptx-templates/`).
+    #[test]
+    fn test_templates_dir_project_uses_visible_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().to_string();
+        let result = templates_dir("project", Some(&root)).unwrap();
+        let expected = dir.path().join("templates");
+        assert_eq!(
+            result, expected,
+            "project templates_dir must be <root>/templates/, not .notesage/pptx-templates/"
+        );
+    }
+
+    /// Global PPTX templates must land in `~/Notesage/templates/` (not `~/.notesage/pptx-templates/`).
+    #[test]
+    fn test_templates_dir_global_uses_notesage_folder() {
+        let result = templates_dir("global", None).unwrap();
+        let result_str = result.to_string_lossy();
+        assert!(
+            result_str.ends_with("/Notesage/templates"),
+            "global templates_dir must end with /Notesage/templates, got: {}",
+            result_str
+        );
+        assert!(
+            !result_str.contains("/.notesage/"),
+            "global templates_dir must NOT contain /.notesage/, got: {}",
+            result_str
+        );
+    }
+
+    /// Migration: moves research files from `.notesage/research/` to `research/` when `research/`
+    /// does not already exist with other content.
+    #[test]
+    fn test_migrate_research_moves_to_visible_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+
+        // Create old-path research file
+        let old_research = folder.join(".notesage").join("research");
+        std::fs::create_dir_all(&old_research).unwrap();
+        std::fs::write(old_research.join("note.md"), "# Research Note").unwrap();
+
+        let result = migrate_folder_user_content(folder);
+        assert!(result.is_ok(), "migration should succeed: {:?}", result);
+
+        // New path must exist
+        let new_research = folder.join("research");
+        assert!(new_research.exists(), "research/ must exist after migration");
+        assert!(
+            new_research.join("note.md").exists(),
+            "research/note.md must exist after migration"
+        );
+
+        // Old path must be gone
+        assert!(
+            !old_research.exists(),
+            ".notesage/research/ must be removed after migration"
+        );
+    }
+
+    /// Migration: moves pptx-templates from `.notesage/pptx-templates/` to `templates/` when
+    /// `templates/` does not already exist with other content.
+    #[test]
+    fn test_migrate_pptx_templates_moves_to_visible_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+
+        // Create old-path templates
+        let old_templates = folder.join(".notesage").join("pptx-templates");
+        std::fs::create_dir_all(&old_templates).unwrap();
+        let mut pptx_data = vec![0x50, 0x4B, 0x03, 0x04];
+        pptx_data.extend_from_slice(&[0u8; 100]);
+        std::fs::write(old_templates.join("my-template.pptx"), &pptx_data).unwrap();
+        let index = vec![PptxTemplateInfo {
+            id: "my-template".to_string(),
+            name: "My Template.pptx".to_string(),
+            scope: "project".to_string(),
+            path: old_templates.join("my-template.pptx").to_string_lossy().to_string(),
+            date_added: "2026-01-01T00:00:00".to_string(),
+        }];
+        write_templates_index(&old_templates, &index).unwrap();
+
+        let result = migrate_folder_user_content(folder);
+        assert!(result.is_ok(), "migration should succeed: {:?}", result);
+
+        let new_templates = folder.join("templates");
+        assert!(new_templates.exists(), "templates/ must exist after migration");
+        assert!(
+            new_templates.join("my-template.pptx").exists(),
+            "templates/my-template.pptx must exist after migration"
+        );
+        assert!(
+            !old_templates.exists(),
+            ".notesage/pptx-templates/ must be removed after migration"
+        );
+    }
+
+    /// Migration: does NOT clobber an existing `research/` folder that has content.
+    #[test]
+    fn test_migrate_research_skips_if_destination_has_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+
+        // Pre-existing research/ with unrelated content
+        let new_research = folder.join("research");
+        std::fs::create_dir_all(&new_research).unwrap();
+        std::fs::write(new_research.join("existing.md"), "# Already here").unwrap();
+
+        // Old path research file
+        let old_research = folder.join(".notesage").join("research");
+        std::fs::create_dir_all(&old_research).unwrap();
+        std::fs::write(old_research.join("old.md"), "# Old Note").unwrap();
+
+        let result = migrate_folder_user_content(folder);
+        // Should return a collision warning (not an error)
+        assert!(result.is_ok(), "migration with collision should not hard-error");
+
+        // Old path must NOT have been removed
+        assert!(
+            old_research.exists(),
+            ".notesage/research/ must remain when research/ already has content"
+        );
+        // New path must not be polluted
+        assert!(
+            !new_research.join("old.md").exists(),
+            "research/old.md must NOT be copied when research/ already has content"
+        );
+    }
+
+    /// Migration: empty source dirs are silently skipped (nothing to migrate).
+    #[test]
+    fn test_migrate_nothing_when_old_path_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path();
+        // No .notesage/research or .notesage/pptx-templates — migration is a no-op
+        let result = migrate_folder_user_content(folder);
+        assert!(result.is_ok(), "migration must succeed when old paths are absent");
+    }
+
+    /// After migration, `import_pptx_template` with scope "project" saves to
+    /// `<root>/templates/` (not `.notesage/pptx-templates/`).
+    #[tokio::test]
+    async fn test_import_pptx_template_uses_new_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_file = dir.path().join("sample.pptx");
+        let mut data = vec![0x50, 0x4B, 0x03, 0x04];
+        data.extend_from_slice(&[0u8; 100]);
+        std::fs::write(&source_file, &data).unwrap();
+
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+
+        let result = import_pptx_template(
+            source_file.to_string_lossy().to_string(),
+            "project".to_string(),
+            Some(project_root.to_string_lossy().to_string()),
+        )
+        .await
+        .unwrap();
+
+        // Must be in <root>/templates/, not <root>/.notesage/pptx-templates/
+        let expected_dir = project_root.join("templates");
+        assert!(
+            result.path.starts_with(expected_dir.to_string_lossy().as_ref()),
+            "import must save to <root>/templates/, got: {}",
+            result.path
+        );
+        assert!(
+            !result.path.contains("/.notesage/"),
+            "import must NOT save to .notesage/, got: {}",
+            result.path
+        );
     }
 }

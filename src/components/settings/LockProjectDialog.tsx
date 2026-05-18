@@ -70,7 +70,7 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
           </DialogTitle>
           <DialogDescription>
             Only the selected provider will be allowed to access &ldquo;{projectName}&rdquo;.
-            All other AI providers will be refused. You can unlock at any time in Project Settings.
+            All other AI providers will be refused. You can unlock at any time in Folder Settings.
           </DialogDescription>
         </DialogHeader>
 
@@ -133,7 +133,7 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
             <p className="mt-1">
               Every send path (chat, resend, comment delegation, inline action) will be refused
               unless it targets the selected provider. The lock cannot be bypassed without unlocking
-              from Project Settings.
+              from Folder Settings.
             </p>
           </div>
         </div>

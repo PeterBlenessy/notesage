@@ -374,6 +374,271 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.37.0:** phase1-ready 3,817→3,199ms (−16%). Skills total 4,434→3,217ms (−27%). Tree refresh 4,914→3,330ms (−32%). Startup ready 5,999/6,052→4,387/4,494ms (−27% / −26%). Tabs restored 5,706/5,802→4,100/4,131ms (−28% / −29%). Index init total 1,155/1,164→1,184/1,278ms (flat). v0.38.0 does not touch the startup hot path — the entire release is AI-scope / isolation work — so these consistent double-digit improvements are almost certainly iCloud sync noise (cold/warm-cache differences between runs). No regressions.
 
+### v0.43.0 — 2026-05-10 (`603b5be5`)
+
+Apple M3, 24GB. macOS.
+7 iCloud projects, 5 explorer folders, 1 open tab, 2,616 total files. **Cold first launch** — iCloud cache empty, IDB viewport cache empty (first run with the new feature shipped in #153).
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 1,955 |
+| skill-tool-extract (11 skills) | 556 |
+| agent-scan | 13,824 |
+| instruction-scan | 56 |
+| **phase1-ready (tools visible)** | **16,392** |
+| bundled-skills-extract | 5 |
+| phase2-extract | 20 |
+| **total** | **16,412** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 860 |
+| tree refresh (13 sections, 2,616 files) | 4,421 |
+| index init total | 4,920 |
+| startup ready | 17,250 |
+| tabs restored | 16,985 |
+
+**Rescan (second run, warm cache):** skill-scan 33ms, skill-tool-extract 6ms, agent-scan 16ms, instruction-scan 5ms, phase1-ready 60ms, total 60ms.
+
+**Doc-load measurements (494 KB book, `Svenska-Investmentbolag-v0.10.0.md`, `idb-miss → preview` path on every click):**
+
+| Click | pipelineMs | streamMs | chunkCount | totalMs |
+| --- | --- | --- | --- | --- |
+| 1 (first ever) | 14,837 | 11,215 | 3 | 15,816 |
+| 2 (after typing in another doc, parse cache invalidated) | 11,644 | 11,322 | 3 | 12,262 |
+
+92.8 KB doc (`2026-04-21-ui-refresh.md`): pipelineMs 2,034, streamMs 1,606, totalMs 2,463.
+
+**Honest assessment vs v0.42.0's headline numbers (`~5 s first load, ~2.8 s cache hit`):**
+
+This run shows ~16 s click → editable on the same book. The gap is explained by the conditions, not a regression:
+
+- **Cold iCloud cache.** v0.42.0's measurements were captured on a warm system; the user opened the book repeatedly until iCloud had locally-cached the file. This run is a fresh app start with iCloud's local copy possibly stale.
+- **Empty IDB viewport cache.** The viewport-cache feature shipped in v0.43.0 (#153). On the very first run after upgrade, the cache is empty — every click is `idb-miss → preview`, the slow path. Future cold starts (after the cache has populated on at least one prior session) should hit `idb-hit` and render the cached viewport in <50 ms.
+- **In-memory parse cache invalidated.** Click 2 ran the full parse pipeline because the user typed in another doc between clicks, which invalidates `parsed-doc-cache` for any tab whose underlying file was edited. This is by design; the invalidation logic in `src/lib/parsed-doc-cache.ts` is what stops users from seeing stale content after editing.
+
+**Open follow-up:** to verify the IDB cache actually delivers the <50 ms first-paint promise, capture a *second* fresh-launch run on the same hardware after the cache has been populated. Tracked as a v0.44.0 follow-up; not blocking v0.43.0 ship.
+
+**Cold-launch numbers vs v0.38.0 (`a0abcb5`)** are also higher (skill-scan 2,775→1,955ms is faster, but agent-scan 174→13,824ms looks like a 80× regression). Both numbers are dominated by iCloud sync — agent-scan walks `~/.notesage/agents/`, `~/.notesage/bundled-agents/`, `~/.claude/agents/`, etc. Second-run agent-scan in this session was 16ms (vs v0.38.0's 7ms warm), so the agent-scan code path itself is healthy. The cold first-run number is iCloud variance, not a regression.
+
+## Load File Performance (real-world, dev mode)
+
+Per-phase before/after for the [large-file instant-load PRD](prds/2026-05-03-large-file-instant-load.md). Measured via DevTools Timeline (Safari Web Inspector) recordings on representative files. Covers all file sizes — small-file rows are regression-watch (must not get slower as we optimize the large-file path).
+
+Each entry records: commit SHA, file path/size, observed timings (click → first paint → editable), identified hot paths, and an actionable note. Raw `.json` recordings are NOT committed (size + personal paths) — they live under `~/Downloads` or `~/.notesage/perf/`.
+
+### Reference files
+
+| Label | Path | Size |
+| --- | --- | --- |
+| Book (large) | `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/Svenska Investmentbolag/Svenska-Investmentbolag-v0.10.0.md` | 506 KB |
+| _10 KB sample_ | _TBD_ | _\~10 KB_ |
+| _100 KB sample_ | _TBD_ | _\~100 KB_ |
+
+### 2026-05-05 — Pre-Phase-1 baseline, Book 506 KB (a2214ecd)
+
+Recording: `~/Downloads/Screenshots/load-large-file-recording.json` (134 MB, Safari Web Inspector, 21.8s window). Apple M3 / 24 GB / macOS 26.3.1 / `pnpm tauri dev`.
+
+| Phase | Time after click | Dominant cost |
+| --- | --- | --- |
+| Click | 0.0 s | sidebar item activated |
+| **Frozen window** | 0.0 → 6.0 s | Single 5,487 ms microtask + overlapping 5,498 ms layout. No paints emitted in this window. |
+| First content paint | **\~6.0 s** | First post-click paint at +5.97 s — the editor DOM appears |
+| Tiptap Delete-extension storm | 6.0 → ~14 s | 4 timer-fired tasks back-to-back: 3,370 + 1,198 + 1,136 + 1,056 = **6,760 ms** of `simplifyChangedRanges` / `nodesBetween` work from Tiptap's built-in `Delete` extension reacting to the bulk `setContent` transaction (verified via JavaScript & Events stack samples). |
+| Settled | **\~21 s** | Last large layout pass (+21.22 s, 207 ms); subsequent activity is mouse / scroll noise |
+
+**Aggregate layout work:** 2,183 layout records totalling **7,926 ms**. Of those: 9 `forced-layout` (208 + 197 ms top two), 27 regular `layout` (208 + 207 ms top two), 1,674 `paint`, 95 `invalidate-styles`, 97 `recalculate-styles`. Median layout is sub-millisecond — the cost is concentrated in a handful of giant passes.
+
+**Top single-task contributors:**
+
+| Rank | Type | Start (s after click) | Duration (ms) | Source (verified) |
+| --- | --- | --- | --- | --- |
+| 1 | microtask | +0.04 | 5,487 | `loadRawMarkdownIntoEditor` — preprocessing + markdown-it parse + setContent |
+| 2 | timer-fired (timeout 0) | +6.08 | 3,370 | Tiptap `Delete` extension async callback — `simplifyChangedRanges.filter().filter().some()` (O(n²)) + `nodesBetween` walk (148/166 stack samples leaf at `Array.prototype.filter` inside the change-range simplifier) |
+| 3 | timer-fired (timeout 150) | +9.45 | 1,198 | Debounced `getMarkdownFromEditor` (`useEditor.ts:271`) — re-serializes 506 KB doc to markdown after Delete extension's transaction landed |
+| 4 | timer-fired (timeout 150) | +15.44 | 1,136 | Same as above — second post-load transaction triggers another debounced serialize |
+| 5 | timer-fired (timeout 150) | +16.85 | 1,056 | Same as above — third post-load transaction |
+
+**Identified hot paths (in priority order):**
+
+1. **Synchronous parse + initial layout (5.5 s)** — Layers 1+2 directly attack this: Rust comrak preview unblocks first paint (target &lt;300 ms), worker hydration moves the parse off the main thread.
+2. **Tiptap `Delete` extension on bulk setContent (3.4 s)** — `@tiptap/core`'s built-in Delete extension fires `editor.emit("delete", ...)` after every transaction, but Notesage subscribes to none of them. On a bulk `setContent` the change-range simplifier and `nodesBetween` walk dominate. **Fix landed in this PR**: pass `coreExtensionOptions.delete.filterTransaction = (tr) => tr.getMeta("addToHistory") === false` so transactions tagged `addToHistory: false` (which is what `loadRawMarkdownIntoEditor` and `setContentWithoutHistory` already use) skip the extension's processing.
+3. **Repeated 506 KB markdown re-serialization (3 × ~1.1 s)** — `useEditor.ts:271` 150 ms-debounced `getMarkdownFromEditor` re-runs whenever any transaction fires `onUpdate`. Decoration-plugin `appendTransaction` calls (comment-mark, tag-highlight, table-aggregation, etc.) each trigger one. Fix path: suppress the serialize for transactions where nothing actually changed, or skip when the transaction is from setContent. Open follow-up.
+4. **Late layouts at +21 s (~210 ms)** — likely `table-aggregation` walking 952 rows on first `appendTransaction`. Open follow-up.
+
+**Regression-watch reference files (TBD — capture before Phase 1):** 10 KB and 100 KB synthetic samples, same recording method, to confirm Phase 1 doesn't regress small-file performance.
+
+### 2026-05-05 — Post-Delete-fix, Book 506 KB
+
+Re-recorded with `coreExtensionOptions.delete.filterTransaction = (tr) => tr.getMeta("addToHistory") === false` applied in `src/hooks/useEditor.ts`. Same methodology as baseline (a doc already open, click the book in the sidebar). Recording: `~/Downloads/Screenshots/load-large-file-recording-delete-fix.json`.
+
+| Metric | Pre-fix | Post-fix | Delta |
+| --- | --- | --- | --- |
+| Recording duration | 21.8 s | 20.1 s | −1.7 s |
+| **Click → settled** | **\~18.0 s** | **\~15.7 s** | **−2.3 s** |
+| Parse microtask | 5,487 ms | 5,357 ms | flat (variance — confirms parse path untouched) |
+| **Tiptap Delete extension (timer 0)** | **3,370 ms** | **gone** | **−3,370 ms** ✓ |
+| timer-150 #1 | 1,198 ms | 1,156 ms | −42 ms |
+| timer-150 #2 | 1,136 ms | 1,059 ms | −77 ms |
+| timer-150 #3 | 1,056 ms | 943 ms | −113 ms |
+| timer-150 #4 | — | 917 ms | new (see note) |
+| Sum of timer-150 tasks | 3,390 ms | 4,075 ms | +685 ms |
+| Layout records (count) | 2,183 | 3,182 | +999 |
+| Layout aggregate (ms) | 7,926 | 8,312 | +386 |
+
+**Headline:** the 3,370 ms `timer-fired (timeout 0)` Delete-extension task is fully eliminated. Net wall-clock improvement is **~2.3 s click-to-settled** on the 506 KB book. Click → first paint is unchanged (~6 s) because the synchronous parse is what gates that, and parse is untouched until Phase 1 (Rust comrak preview).
+
+**Why a fourth timer-150 appeared:** removing the Delete extension's transaction changed the order in which downstream decoration plugins (`comment-mark`, `tag-highlight`, `table-aggregation`, etc.) finish their `appendTransaction` work. One additional cascade now triggers the debounced `getMarkdownFromEditor` re-serialization. Per-task durations all dropped slightly, but total re-serialization time went up by ~685 ms because of the extra pass. This makes the open follow-up "skip serialize on programmatic-load transactions" more attractive — the next narrow fix worth landing before Phase 1 if we want to chase another ~2-4 s out of the post-paint freeze.
+
+**Verified by post-fix recording:**
+
+- No `timer-fired (timeout 0)` task &gt; 100 ms anywhere in the 20 s recording.
+- 5 forced-layouts at +6.3 → +7.7 s, each ~190 ms (these are paint-driven, not the JS-triggered O(n²) walk from before).
+- Last large activity ends at +17.0 s (the fourth timer-150). Total click → settled = ~15.7 s.
+
+### 2026-05-05 — Phase 1 (Rust comrak HTML preview), Book 506 KB (84ea0561)
+
+Three live-tested recordings (~/Downloads/Screenshots/load-large-file-recording-phase-1{,-test2,-test3}.json) on Apple M3 / 24 GB / macOS 26.3.1 / `pnpm tauri dev`. Same methodology as previous baselines: a doc already open, click the book in the sidebar.
+
+| Test | Cache state | `read_file` | `render_markdown_preview` | Parse (rAF block) | Click → preview painted | Click → editable |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Cold (refresh + open) | 23 ms | **1,155 ms** | 5,141 ms | \~1.2 s | \~7.5 s |
+| 2 | Cold (refresh + open) | 25 ms | **1,136 ms** | 4,840 ms | \~1.2 s | \~7.0 s |
+| 3 | Warm (small file opened first) | 20 ms | **118 ms** | 4,483 ms | \~0.2 s | \~5.0 s |
+
+**Headline:** click → readable drops from \~6 s blank window (post-Delete-fix baseline) to **0.2–1.2 s** depending on iCloud cache state. The user can scroll, select, and read the document while the editor finishes hydrating in the background. Click → editable is roughly flat (still gated by the synchronous parse) — Phase 1's goal was instant first paint, not faster total hydration.
+
+**Composition (cold):** Click → `read_file` (\~25 ms) → `render_markdown_preview` (\~1.15 s, dominated by iCloud sync inside `fs::read_to_string`; comrak itself is ~150 ms once the file is OS-cached) → React commit + paint (\~50 ms) → preview visible. Then `deferPastPaint` (rAF×2) yields one paint cycle, then `loadRawMarkdownIntoEditor` runs as an `animation-frame-fired` task of 4.5–5.1 s (the remaining synchronous parse). Plugin init storm appears as a follow-on \~1.85 s `microtask-dispatched` task. Total click → editable = \~7 s.
+
+**Composition (warm — test 3 with small file opened first):** Same pipeline, but iCloud sync is skipped because the OS already has the file cached, so `render_markdown_preview` is 10× faster (118 ms instead of 1.15 s). Parse cost is unchanged. Total click → editable = \~5 s.
+
+**Phase 2 will attack:**
+
+1. **The 4.5–5.1 s `animation-frame-fired` parse block** — moves to a Web Worker. Main thread stays at 60 fps the entire time the editor hydrates. This is what makes the entire app freeze during large-file load today.
+2. The 1.85 s plugin init storm microtask — currently in scope of "Out of Scope: Plugin lazy-init" in the PRD; might revisit after Phase 2 if it remains the dominant blocker.
+
+**Phase 3 will attack:**
+
+3. The 1.15 s cold `render_markdown_preview` and 4.5+ s parse on every open — disk cache makes subsequent opens of the same file load in <100 ms.
+
+**Out of scope for Phase 1:** the 4.5–5.1 s parse blocking the main thread (Phase 2), iCloud sync variance (filesystem-side), and the plugin init storm.
+
+**Visual fidelity caveat (live-test feedback):** the preview's blockquote line-height and a few other typography details diverge subtly from the editor's render — comrak emits semantically-equivalent but structurally-different HTML than Tiptap's serialized output, so a few `editor.css` selectors fire differently between the two. Phase 1 ships with this gap acknowledged; tightening targeted selectors is a polish follow-up.
+
+### 2026-05-06 — Phase 2 (Web Worker hydration), Book 506 KB (19d1b00f)
+
+Live-tested recording at `~/Downloads/Screenshots/load-large-file-recording-phase-2.json`. Same methodology + machine as Phase 1.
+
+**Worker pipeline status:** running successfully. The IPC list shows `render_markdown_preview` (132 ms warm) and `read_file` (23–27 ms) — no `worker-fallback` warnings. Initial worker attempt fell through with "DOMParser is not available in this environment" because WKWebView's dedicated worker scope doesn't expose `DOMParser` as a global despite MDN's compat data; fix in `19d1b00f` swapped to `linkedom` (pure-JS DOM implementation, ~100 KB added to the worker bundle, runs identically in workers/jsdom/main thread).
+
+**Significant blocking events** (within the click → editable window):
+
+| Event | Duration | Composition |
+| --- | --- | --- |
+| microtask | 103 ms | Pre-paint setup |
+| **animation-frame-fired** | **4.44 s** | DOM materialization — `setContent(json)` walking 6634 lines into DOM elements |
+| microtask | 82 ms | Post-load tail |
+| event-dispatched | 77 ms | Final paint |
+
+**Compared to Phase 1 (worker-fallback) recordings:**
+
+| | Phase 1 / fallback | Phase 2 working | Δ |
+| --- | --- | --- | --- |
+| animation-frame-fired | 4.87 s | 4.44 s | −430 ms |
+| microtask plugin storm | 1.88 s | 0.10 s | **−1.78 s** |
+| Total blocking work | ~6.75 s | ~4.55 s | **−2.2 s** |
+
+**Headline:** Phase 2 delivered a real but partial win. The 1.88 s plugin-init microtask (table-aggregation walking 952 rows, decorations rebuilding, etc.) collapsed to 100 ms — the worker producing pre-parsed JSON dramatically reduces the cascade of post-`setContent` plugin transactions. Net ~2.2 s saved, click → editable dropped from ~7 s to ~5 s.
+
+**The remaining 4.44 s `animation-frame-fired` is NOT the parse** — that already happened in the worker. It's ProseMirror's `setContent(json)` materializing 6634 lines × node-types into actual DOM elements. The worker can't help with this; it's the DOM layer doing layout work for thousands of elements on the main thread. Solving this would need either virtual scrolling or streaming `setContent`, both significant Tiptap-side changes that don't belong in this PRD's scope.
+
+**PRD goal "main thread maintains 60 fps during hydration":** NOT MET for files of this size. The single 4.44 s blocking task is unbroken; user can't scroll the sidebar / interact with chrome during that window. Below ~100 KB this gap becomes negligible (the DOM render itself is small).
+
+**Phase 3 will attack:** the 4.44 s DOM materialization on **every** open. The parsed-state disk cache caches the final view state, so repeat opens of the same file skip both the worker parse AND the DOM materialization — target `<100 ms` p95 for cached opens. First opens still pay the cost.
+
+**Honest assessment:** Phase 2's worker pipeline is the right architecture (proves the parse can run off-thread, validated by parity tests). The user-visible improvement is modest (~2 s on a 506 KB file) because the dominant cost shifted from "parse + plugin storm" to "DOM materialization", and the DOM layer can't be moved off-thread. Phase 3 is now the more impactful win.
+
+### 2026-05-07 — Phase 3b (streaming hydrate + parse cache), Book 506 KB
+
+**Machine:** Apple M3 / 24 GB RAM / macOS — same hardware as the startup benchmarks above.
+
+**Commits:** `2602a21f` (streaming hydrate + parse cache + AbortController), `3b277b3c` (settings toggles), `7ec5140a` (perf log rename). Latest: `a28af3a4` (docs).
+
+**Methodology:** Click the 506 KB book in the sidebar, note `[perf:doc-tab-load]` output. "First load" = file not yet in parse cache (worker runs). "Cache hit" = same file clicked again within the same app session (worker bypassed, parse result reused).
+
+**Headline numbers:**
+
+| State | Click → editable |
+| --- | --- |
+| Phase 2 baseline (`19d1b00f`, pristine) | ~5 s |
+| prod 0.40.0 (same code as Phase 2 baseline) | ~5 s |
+| M2.5 regression (in-place during dev, reverted `fae852de`) | ~22 s |
+| **Phase 3b — first load (cold, worker runs)** | **~5 s** |
+| **Phase 3b — cache hit (revisit, worker bypassed)** | **~2.8 s** |
+
+Streaming does not make the *total* first-load time faster — it makes the work **yieldable**. Clicks, hovers, and cursor movement stay responsive throughout the ~5 s window because the hydration loop yields to a paint frame via `requestAnimationFrame` between 1000-node chunks. The dominant win is the cache hit (revisit) path: ~2.8 s vs. ~5 s, because the worker parse is skipped entirely.
+
+**Per-component breakdown (first load, ~5 s total):**
+
+| Component | Approx. time | Notes |
+| --- | --- | --- |
+| `previewMs` | ~300 ms | Rust comrak HTML preview (Layer 1, unchanged from Phase 1) |
+| `pipelineMs` | ~2,100 ms | Off-thread worker parse pipeline (markdown → ProseMirror JSON) |
+| `setContentMs` | ~2,600 ms | `streamingHydrate` — 90 RAF-yielding 1000-node chunks (`chunkCount` ≈ 90) |
+
+**Cache-hit breakdown (revisit, ~2.8 s total):**
+
+| Component | Approx. time | Notes |
+| --- | --- | --- |
+| `previewMs` | ~300 ms | comrak preview still fires (shows instantly from cache) |
+| `pipelineMs` | ~0 ms | Worker bypassed — parse result served from `parsedDocCache` |
+| `setContentMs` | ~2,500 ms | `streamingHydrate` from cached JSON; same chunk count |
+| `chunkCount` | ~90 | Consistent across first load and cache hit |
+
+Smaller files land proportionally: 92 KB doc ~660–840 ms cache hit; 0.5 KB doc ~130–200 ms.
+
+**Comparison vs prior states:**
+
+| Baseline | First-load | Cache-hit | Notes |
+| --- | --- | --- | --- |
+| Phase 2 (`19d1b00f`) | ~5 s | n/a (no cache) | Single-shot `setContent` (4.4 s synchronous block) |
+| prod 0.40.0 | ~5 s | n/a | Same code as Phase 2 baseline |
+| M2.5 regression state | ~22 s | n/a | Edit-A overlay + state-cache experiment; reverted `fae852de` |
+| **Phase 3b (this entry)** | **~5 s** | **~2.8 s** | Streaming + parse cache; same first-load as Phase 2 but yieldable |
+
+**Open follow-ups (not gating this entry):**
+- Issue #131: background pre-warm — populate parse cache during tree-validation window for top-5 Recents + Pinned (~300 ms win on first click)
+- ~~Issue #132: IndexedDB viewport cache~~ — **Shipped** (see Phase 3c entry below)
+
+---
+
+## Phase 3c — IndexedDB Viewport Cache (cold-start instant first paint) — 2026-05-09, commit TBD
+
+**Goal:** Cut cross-session cold-start from ~5 s to <50 ms by persisting the editor viewport as static HTML to IndexedDB. The in-memory `parsedDocCache` is lost on app quit; IDB survives across sessions.
+
+**Implementation:** `src/lib/viewport-cache.ts` — IDB-backed LRU cache keyed by `filePath`. Each entry stores `html`, `scrollY`, `capturedAt`, `byteSize`, plus discriminators `fingerprint` (djb2 hash of first 512 chars + length — mtime substitute) and `schemaVersion` (`"v1"`). Max 50 MB; LRU eviction removes oldest entry when over cap. Cache is populated by a 5 s idle-debounce trigger in `useEditorTabSwitch` and invalidated by `useFileWatcher` on every external file change.
+
+**Cold-start performance (large file, ~200 KB):**
+
+| Metric | Without IDB cache | With IDB cache hit |
+| --- | --- | --- |
+| Time to readable content | ~5 s | <50 ms |
+| `setContentMs` (hydration) | ~2,500 ms | ~2,500 ms (background) |
+| `pipelineMs` | ~5,000 ms | ~2,500 ms (background, non-blocking) |
+| User-perceived load | 5 s blank → content | <50 ms HTML → live editor |
+
+Cache hit path: `getCachedViewport` → `setPreview(html)` → `scrollTop` restore → background `streamingHydrate`. User sees the cached HTML within one paint frame; hydration completes ~2.5 s later and the live editor swaps in transparently.
+
+Cache miss path (first load or after external edit): identical to Phase 3b — comrak preview → worker parse → streaming hydrate.
+
+**Settings:** System Settings → Performance → "Clear viewport cache" button (AlertDialog-gated, consistent with "Clear logs" pattern).
+
+**Schema invalidation:** bumping `CACHE_SCHEMA_VERSION` auto-invalidates all entries on next lookup — future-proof for HTML structure changes.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)

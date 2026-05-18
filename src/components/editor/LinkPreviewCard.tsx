@@ -1,8 +1,9 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Globe, ExternalLink } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 
 type CardState = "input" | "loading" | "loaded" | "error";
 
@@ -13,6 +14,8 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const siteName = node.attrs.siteName as string | null;
   const imageUrl = node.attrs.imageUrl as string | null;
   const faviconUrl = node.attrs.faviconUrl as string | null;
+  const blockWidth = node.attrs.blockWidth as number | null;
+  const align = node.attrs.align as string | null;
 
   const initialState: CardState = !url ? "input" : title ? "loaded" : "loading";
   const [state, setState] = useState<CardState>(initialState);
@@ -99,8 +102,23 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const displaySiteName = siteName || (url ? extractDomain(url) : "");
   const showImage = imageUrl && !imgError;
 
+  const blockStyle: React.CSSProperties = {};
+  if (blockWidth != null) {
+    blockStyle.width = `${blockWidth}%`;
+    if (align === "center") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "auto";
+    } else if (align === "right") {
+      blockStyle.marginLeft = "auto";
+      blockStyle.marginRight = "0";
+    } else {
+      blockStyle.marginRight = "auto";
+    }
+  }
+
   return (
     <NodeViewWrapper
+      style={blockStyle}
       className={cn(
         "link-preview-wrapper my-2 rounded-lg",
         selected && "ring-1 ring-ring"
@@ -148,9 +166,26 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
       {/* Loaded card */}
       {state === "loaded" && (
         <div
-          className="border border-border rounded-lg p-4 cursor-pointer transition-colors duration-150 hover:bg-muted/50 group"
+          className="relative border border-border rounded-lg p-4 cursor-pointer transition-colors duration-150 hover:bg-muted/50 group"
           onClick={handleClick}
         >
+          {/* Width + alignment controls — bottom-right hover overlay,
+              consistent with chart and drawing nodes. */}
+          {(() => {
+            const pos = getPos();
+            if (typeof pos !== "number") return null;
+            return (
+              <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                <BlockSizeControls
+                  editor={editor}
+                  pos={pos}
+                  node={node}
+                  blockWidth={blockWidth}
+                  align={align}
+                />
+              </div>
+            );
+          })()}
           {/* Site name + favicon */}
           <div className="flex items-center gap-1.5 mb-2">
             {faviconUrl && !faviconError ? (

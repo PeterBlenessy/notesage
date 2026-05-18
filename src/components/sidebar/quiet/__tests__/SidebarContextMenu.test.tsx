@@ -371,43 +371,16 @@ describe("SidebarContextMenu", () => {
     expect(screen.queryByText("New Folder")).toBeNull();
   });
 
-  it("shows Make Project on folder rows only (#128)", () => {
-    const { unmount } = renderWithProviders(
-      <SidebarContextMenu filePath="/a/sub" kind="folder">
-        {trigger()}
-      </SidebarContextMenu>,
-    );
-    openMenu();
-    expect(screen.getByText("Make Project")).toBeTruthy();
-    unmount();
-
+  it("does NOT show 'Make Project' / 'Manage with Notesage' on sub-folder rows (moved to top-level FoldersSection)", () => {
     renderWithProviders(
-      <SidebarContextMenu filePath="/a/b.md" kind="file">
+      <SidebarContextMenu filePath="/a/sub" kind="folder">
         {trigger()}
       </SidebarContextMenu>,
     );
     openMenu();
     expect(screen.queryByText("Make Project")).toBeNull();
-  });
-
-  it("Make Project dispatches the sidebar:make-project CustomEvent (#128)", async () => {
-    const listener = vi.fn();
-    window.addEventListener("sidebar:make-project", listener);
-    const user = userEvent.setup();
-
-    renderWithProviders(
-      <SidebarContextMenu filePath="/a/sub" kind="folder">
-        {trigger()}
-      </SidebarContextMenu>,
-    );
-    openMenu();
-    await user.click(screen.getByText("Make Project"));
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    const evt = listener.mock.calls[0][0] as CustomEvent<{ path: string }>;
-    expect(evt.detail).toEqual({ path: "/a/sub" });
-
-    window.removeEventListener("sidebar:make-project", listener);
+    expect(screen.queryByText("Manage with Notesage")).toBeNull();
+    expect(screen.queryByText("Open as Notesage folder")).toBeNull();
   });
 
   it("shows Add to chat on image files only (#128)", () => {

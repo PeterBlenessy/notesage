@@ -174,23 +174,23 @@ describe('countMarkdownFiles', () => {
 // ----------------------------------------------------------------------------
 
 describe('ProjectsSection (quiet variant)', () => {
-  it('renders the uppercase "Projects" heading', () => {
+  it('renders the uppercase "Folders" heading', () => {
     renderWithProviders(<ProjectsSection />);
-    const heading = screen.getByRole('heading', { level: 2, name: /projects/i });
-    expect(heading.textContent).toBe('Projects');
+    const heading = screen.getByRole('heading', { level: 2, name: /folders/i });
+    expect(heading.textContent).toBe('Folders');
     expect(heading.className).toMatch(/uppercase/);
   });
 
   it('renders an accessible add-button', () => {
     renderWithProviders(<ProjectsSection onAdd={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /add project/i });
+    const btn = screen.getByRole('button', { name: /add folder/i });
     expect(btn).toBeTruthy();
   });
 
   it('calls onAdd when the add-button is clicked', () => {
     const onAdd = vi.fn();
     renderWithProviders(<ProjectsSection onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add folder/i }));
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
@@ -205,7 +205,7 @@ describe('ProjectsSection (quiet variant)', () => {
   // create new projects via ⌘⇧N.
   it('excludes the add-button from the Tab order (tabIndex=-1)', () => {
     renderWithProviders(<ProjectsSection onAdd={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /add project/i });
+    const btn = screen.getByRole('button', { name: /add folder/i });
     expect(btn.getAttribute('tabindex')).toBe('-1');
   });
 
@@ -340,24 +340,11 @@ describe('ProjectsSection (quiet variant)', () => {
     ).toBe('false');
   });
 
-  it.skip('is a no-op when the project has no markdown files', async () => {
-    const readFile = vi.fn(() => '');
-    setMockInvokeHandler('read_file', readFile as (args?: Record<string, unknown>) => unknown);
-
-    setProjects([
-      {
-        path: '/Users/me/Notesage/empty',
-        fileTree: [makeFile('image.png', '/Users/me/Notesage/empty/image.png')],
-      },
-    ]);
-
-    renderWithProviders(<ProjectsSection />);
-    fireEvent.click(screen.getByRole('treeitem', { name: /open project empty/i }));
-
-    // No read_file invocation, no tab opened.
-    expect(readFile).not.toHaveBeenCalled();
-    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
-  });
+  // Removed: it.skip('is a no-op when the project has no markdown files'…)
+  // — the behaviour it was asserting (click row → attempt to read README)
+  // was replaced by inline-expand on click (live-test 2026-04-28 #1). The
+  // test had been skipped since that change; deleting rather than carrying
+  // dead code.
 });
 
 // ----------------------------------------------------------------------------
@@ -585,27 +572,128 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     });
   });
 
-  // Sidebar-simplification task #20 — Enter on a child folder used to
-  // open TreeOverlay (now deleted). Today it's a silent no-op until
-  // the multi-level inline-expand follow-up lands. Test asserts the
-  // no-op so a future implementation can flip the assertion in one
-  // place.
-  it('Enter on a child folder row is a no-op (multi-level inline expand TBD)', () => {
+  // ── Multi-level inline expand (issue #158) ────────────────────────────────
+
+  it('clicking a subfolder row expands it inline, revealing its children (#158)', () => {
     setProjects([projectWithChildren]);
     renderWithProviders(<ProjectsSection />);
 
-    const row = screen.getByRole('treeitem', { name: /open project alpha/i });
-    fireEvent.keyDown(row, { key: 'ArrowRight' });
-    fireEvent.keyDown(row, { key: 'ArrowRight' }); // focus docs
+    // Expand the top-level project first.
+    const projectRow = screen.getByRole('treeitem', { name: /open project alpha/i });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
 
-    const docs = screen.getByRole('treeitem', { name: /open folder docs/i });
-    fireEvent.keyDown(docs, { key: 'Enter' });
+    // The `docs` folder row is now visible but not expanded.
+    const docsRow = screen.getByRole('treeitem', { name: /open folder docs/i }) as HTMLElement;
+    expect(docsRow.getAttribute('aria-expanded')).toBe('false');
 
-    // Silent no-op: focus stays on the folder row, no extra rows
-    // rendered, no error thrown.
+    // Click the subfolder row — should expand it inline.
+    fireEvent.click(docsRow);
+
+    // After click, the subfolder should be expanded and its child visible.
     expect(
-      screen.getByRole('treeitem', { name: /open folder docs/i }),
+      screen.getByRole('treeitem', { name: /open folder docs/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('treeitem', { name: /open file intro\.md/i }),
     ).toBeTruthy();
+  });
+
+  it('clicking an already-expanded subfolder row collapses it (#158)', () => {
+    setProjects([projectWithChildren]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', { name: /open project alpha/i });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    const docsRow = screen.getByRole('treeitem', { name: /open folder docs/i }) as HTMLElement;
+    // Expand.
+    fireEvent.click(docsRow);
+    expect(
+      screen.getByRole('treeitem', { name: /open file intro\.md/i }),
+    ).toBeTruthy();
+
+    // Collapse by clicking again.
+    fireEvent.click(screen.getByRole('treeitem', { name: /open folder docs/i }));
+    expect(
+      screen.queryByRole('treeitem', { name: /open file intro\.md/i }),
+    ).toBeNull();
+  });
+
+  it('ArrowRight on a focused subfolder row expands it; ArrowLeft collapses it (#158)', () => {
+    setProjects([projectWithChildren]);
+    renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', { name: /open project alpha/i });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' }); // expand top-level
+
+    const docsRow = screen.getByRole('treeitem', { name: /open folder docs/i }) as HTMLElement;
+
+    // ArrowRight should expand the subfolder.
+    fireEvent.keyDown(docsRow, { key: 'ArrowRight' });
+    expect(
+      screen.getByRole('treeitem', { name: /open folder docs/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('treeitem', { name: /open file intro\.md/i }),
+    ).toBeTruthy();
+
+    // ArrowLeft should collapse it.
+    fireEvent.keyDown(screen.getByRole('treeitem', { name: /open folder docs/i }), { key: 'ArrowLeft' });
+    expect(
+      screen.getByRole('treeitem', { name: /open folder docs/i }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(
+      screen.queryByRole('treeitem', { name: /open file intro\.md/i }),
+    ).toBeNull();
+  });
+
+  it('expansion works recursively at any nesting depth (#158)', () => {
+    const deepProject: WorkspaceProject = {
+      path: '/Users/me/Notesage/deep',
+      fileTree: [
+        makeDir('level1', '/Users/me/Notesage/deep/level1', [
+          makeDir('level2', '/Users/me/Notesage/deep/level1/level2', [
+            makeFile('deep.md', '/Users/me/Notesage/deep/level1/level2/deep.md'),
+          ]),
+        ]),
+      ],
+    };
+    setProjects([deepProject]);
+    renderWithProviders(<ProjectsSection />);
+
+    // Expand top-level project.
+    const projectRow = screen.getByRole('treeitem', { name: /open project deep/i });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+
+    // Expand level1 subfolder.
+    const level1Row = screen.getByRole('treeitem', { name: /open folder level1/i });
+    fireEvent.click(level1Row);
+
+    // Expand level2 subfolder.
+    const level2Row = screen.getByRole('treeitem', { name: /open folder level2/i });
+    fireEvent.click(level2Row);
+
+    // The deeply nested file should be visible.
+    expect(
+      screen.getByRole('treeitem', { name: /open file deep\.md/i }),
+    ).toBeTruthy();
+  });
+
+  it('expanded subfolder state resets on re-mount (ephemeral) (#158)', () => {
+    setProjects([projectWithChildren]);
+    const { unmount } = renderWithProviders(<ProjectsSection />);
+
+    const projectRow = screen.getByRole('treeitem', { name: /open project alpha/i });
+    fireEvent.keyDown(projectRow, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('treeitem', { name: /open folder docs/i }));
+    expect(screen.getByRole('treeitem', { name: /open file intro\.md/i })).toBeTruthy();
+
+    // Unmount and remount — subfolder state should reset.
+    unmount();
+    renderWithProviders(<ProjectsSection />);
+
+    // The project should still be collapsed (top-level state also resets).
+    expect(screen.queryByRole('treeitem', { name: /open folder docs/i })).toBeNull();
   });
 
   it('filters projects by basename substring when `filter` is provided (#43)', () => {
@@ -1308,7 +1396,7 @@ describe('ProjectsSection — inline create project (#42)', () => {
       useQuietSidebarStore.getState().setPendingCreateProject(true);
     });
     renderWithProviders(<ProjectsSection onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole('button', { name: /add project/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add folder/i }));
     expect(onAdd).toHaveBeenCalledTimes(1);
     expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
   });

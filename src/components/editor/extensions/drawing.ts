@@ -15,6 +15,8 @@ declare module "@tiptap/core" {
         drawingJson?: string;
         width?: number | null;
         height?: number;
+        blockWidth?: number | null;
+        align?: string | null;
       }) => ReturnType;
       deleteDrawing: () => ReturnType;
     };
@@ -115,6 +117,26 @@ export const Drawing = Node.create({
           return { "data-drawing-json": attributes.drawingJson as string };
         },
       },
+      blockWidth: {
+        default: null as number | null,
+        parseHTML: (element: HTMLElement) => {
+          const v = element.getAttribute("data-block-width");
+          return v ? Number(v) : null;
+        },
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (attributes.blockWidth == null) return {};
+          return { "data-block-width": String(attributes.blockWidth) };
+        },
+      },
+      align: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-align") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.align) return {};
+          return { "data-align": attributes.align as string };
+        },
+      },
     };
   },
 
@@ -159,6 +181,8 @@ export const Drawing = Node.create({
               drawingJson: attrs?.drawingJson ?? null,
               width: attrs?.width ?? null,
               height: attrs?.height ?? 600,
+              blockWidth: attrs?.blockWidth ?? null,
+              align: attrs?.align ?? null,
             },
           });
         },
@@ -183,10 +207,17 @@ export const Drawing = Node.create({
               drawingJson: string | null;
               width: number | null;
               height: number;
+              blockWidth: number | null;
+              align: string | null;
             };
           };
 
           if (n.attrs.drawingJson) {
+            const parts: string[] = [];
+            if (n.attrs.blockWidth != null) parts.push(`width=${n.attrs.blockWidth}`);
+            if (n.attrs.align != null) parts.push(`align=${n.attrs.align}`);
+            const suffix = parts.length > 0 ? ` {${parts.join(" ")}}` : "";
+
             // Strip volatile appState fields to prevent dirty-on-open
             try {
               const parsed = JSON.parse(n.attrs.drawingJson);
@@ -208,19 +239,28 @@ export const Drawing = Node.create({
                 }
               }
               const json = JSON.stringify(parsed, null, 2);
-              s.write("```excalidraw\n" + json + "\n```\n\n");
+              s.write("```excalidraw" + suffix + "\n" + json + "\n```\n\n");
             } catch {
-              s.write("```excalidraw\n" + n.attrs.drawingJson + "\n```\n\n");
+              s.write("```excalidraw" + suffix + "\n" + n.attrs.drawingJson + "\n```\n\n");
             }
             return;
           }
 
-          // Legacy fallback: sidecar image syntax
+          // Legacy fallback: sidecar image syntax. Width/align metadata are
+          // appended as a trailing HTML comment so the configuration survives
+          // even before the auto-migration to inline JSON has run.
           const drawingId = n.attrs.drawingId;
           if (!drawingId) return;
 
+          const metaParts: string[] = [];
+          if (n.attrs.blockWidth != null)
+            metaParts.push(`blockWidth:${n.attrs.blockWidth}`);
+          if (n.attrs.align != null) metaParts.push(`align:${n.attrs.align}`);
+          const metaSuffix =
+            metaParts.length > 0 ? ` <!--${metaParts.join(",")}-->` : "";
+
           s.write(
-            `![drawing](/.notesage/drawings/${drawingId}.excalidraw)\n\n`
+            `![drawing](/.notesage/drawings/${drawingId}.excalidraw)${metaSuffix}\n\n`
           );
         },
         parse: {

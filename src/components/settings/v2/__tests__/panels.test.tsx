@@ -62,6 +62,24 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Show hidden files')).toBeTruthy();
   });
 
+  it('SystemSettings renders HTML viewer group with Allow form submissions toggle', () => {
+    renderWithProviders(<SystemSettings />);
+    expect(screen.getByText('HTML viewer')).toBeTruthy();
+    expect(screen.getByText('Allow form submissions')).toBeTruthy();
+  });
+
+  it('SystemSettings renders HTML viewer group with Allow scripts (unsafe) toggle', () => {
+    renderWithProviders(<SystemSettings />);
+    expect(screen.getByText('HTML viewer')).toBeTruthy();
+    expect(screen.getByText('Allow scripts (unsafe)')).toBeTruthy();
+  });
+
+  it('SystemSettings renders HTML viewer group with Block external resources toggle', () => {
+    renderWithProviders(<SystemSettings />);
+    expect(screen.getByText('HTML viewer')).toBeTruthy();
+    expect(screen.getByText('Block external resources')).toBeTruthy();
+  });
+
   it('SystemSettings renders "View update" affordance when an update is available', () => {
     renderWithProviders(
       <SystemSettings

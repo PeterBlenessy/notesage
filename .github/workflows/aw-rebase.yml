@@ -1,0 +1,156 @@
+name: AW — Auto-rebase (queue collision recovery)
+
+# When multiple Tier-A PRs have auto-merge enabled and one merges first,
+# the others fall BEHIND main and stall — branch-protection's strict mode
+# requires every PR to be up-to-date with main before merging. This
+# workflow detects that state and unjams the queue by calling
+# `update-branch` (clean three-way merge of main into the PR's base).
+# CI re-runs; auto-merge fires when checks pass.
+#
+# For DIRTY conflicts (actual content overlap), the workflow escalates:
+# disables auto-merge, adds `needs-human`, posts a comment. Lockfile-
+# only conflicts (pnpm-lock.yaml / Cargo.lock) are also escalated for
+# now — auto-regenerate is a follow-up (would need pnpm + Rust toolchain
+# checkouts in this job, more cost / surface).
+#
+# Triggers:
+#   - cron every 15 min (sweep-like)
+#   - manual workflow_dispatch on a single PR
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to rebase (optional — if omitted, sweeps all auto-merge PRs)"
+        required: false
+
+permissions:
+  contents: write          # update branch
+  pull-requests: write     # add label, disable auto-merge, comment
+
+concurrency:
+  group: aw-rebase
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Find candidate PRs
+        id: find
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          REPO: ${{ github.repository }}
+          INPUT_PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$INPUT_PR" ]]; then
+            # Manual dispatch with a specific PR.
+            echo "  manual dispatch — PR #$INPUT_PR"
+            echo "$INPUT_PR" > /tmp/candidate-prs.txt
+          else
+            # Cron sweep — every open PR with auto-merge enabled.
+            gh pr list --repo "$REPO" \
+              --state open \
+              --json number,autoMergeRequest \
+              --jq '.[] | select(.autoMergeRequest != null) | .number' \
+              > /tmp/candidate-prs.txt
+          fi
+
+          count=$(wc -l < /tmp/candidate-prs.txt | tr -d ' ')
+          echo "found $count candidate PR(s):"
+          cat /tmp/candidate-prs.txt
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Rebase or escalate each candidate
+        if: steps.find.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          while read -r pr; do
+            [[ -z "$pr" ]] && continue
+            echo
+            echo "=== PR #$pr ==="
+
+            # Query mergeStateStatus via GraphQL (the JSON API field name
+            # is mergeStateStatus, not mergeable_state, and is more reliable).
+            state=$(gh api graphql -f query='
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    mergeStateStatus
+                    isDraft
+                    state
+                    autoMergeRequest { enabledAt }
+                    files(first: 100) { nodes { path } }
+                  }
+                }
+              }' \
+              -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F number="$pr")
+
+            merge_state=$(echo "$state" | jq -r '.data.repository.pullRequest.mergeStateStatus')
+            is_draft=$(echo "$state" | jq -r '.data.repository.pullRequest.isDraft')
+            pr_state=$(echo "$state" | jq -r '.data.repository.pullRequest.state')
+            auto_enabled=$(echo "$state" | jq -r '.data.repository.pullRequest.autoMergeRequest.enabledAt // empty')
+
+            echo "  state=$pr_state  draft=$is_draft  mergeState=$merge_state  auto=${auto_enabled:-none}"
+
+            if [[ "$pr_state" != "OPEN" || "$is_draft" == "true" ]]; then
+              echo "  not an actionable open ready PR — skip"
+              continue
+            fi
+
+            case "$merge_state" in
+              BEHIND)
+                echo "  BEHIND — calling update-branch (clean merge of main)"
+                if gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" 2>&1 | tee /tmp/update.log; then
+                  echo "  ✓ update-branch fired — CI will re-run; auto-merge will pick up when green"
+                else
+                  # update-branch can fail if the PR is already up-to-date in a transient race.
+                  if grep -q "already up to date" /tmp/update.log; then
+                    echo "  PR already up-to-date (race) — skip"
+                  else
+                    echo "  ✗ update-branch failed — escalating to human"
+                    gh pr edit "$pr" --repo "$REPO" --add-label needs-human
+                    gh pr merge "$pr" --repo "$REPO" --disable-auto || true
+                    gh pr comment "$pr" --repo "$REPO" --body "🚧 **aw-rebase:** \`update-branch\` failed despite \`mergeStateStatus=BEHIND\`. Disabling auto-merge and escalating via \`needs-human\` label. Please investigate manually."
+                  fi
+                fi
+                ;;
+              DIRTY)
+                echo "  DIRTY — content conflict; escalating to human"
+                # Identify the conflicting files (heuristic: list PR files; we can't easily
+                # know which conflict from the API, but the human reviewer can use the PR UI).
+                conflict_hint=$(echo "$state" | jq -r '.data.repository.pullRequest.files.nodes[].path' | head -10 | paste -sd, -)
+                gh pr edit "$pr" --repo "$REPO" --add-label needs-human
+                gh pr merge "$pr" --repo "$REPO" --disable-auto || true
+                gh pr comment "$pr" --repo "$REPO" --body "🚧 **aw-rebase:** PR has a content conflict with \`main\` (\`mergeStateStatus=DIRTY\`). Disabling auto-merge and escalating via \`needs-human\` label.
+
+          **Files in this PR (some may be the conflict source):** \`${conflict_hint}\`
+
+          Resolve manually: rebase locally, push, then re-add the \`tier:A\` label to re-enable auto-merge."
+                ;;
+              CLEAN|HAS_HOOKS|UNSTABLE)
+                echo "  $merge_state — ready/processing; no action needed (auto-merge will fire)"
+                ;;
+              BLOCKED)
+                echo "  BLOCKED — required checks not green yet; no action needed (auto-merge will fire when they pass)"
+                ;;
+              DRAFT)
+                echo "  DRAFT — should not have reached this loop; no action"
+                ;;
+              UNKNOWN)
+                echo "  UNKNOWN — GitHub still computing mergeability; will retry next sweep"
+                ;;
+              *)
+                echo "  unexpected mergeStateStatus=$merge_state — no action; will retry next sweep"
+                ;;
+            esac
+          done < /tmp/candidate-prs.txt

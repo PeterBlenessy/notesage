@@ -1,3 +1,4 @@
+pub mod alpha_update;
 pub mod file;
 pub mod dialog;
 pub mod ai;
@@ -5,6 +6,7 @@ pub mod ai_streaming;
 pub mod tool_execution;
 pub mod segment_builder;
 pub mod export;
+pub mod preview;
 pub mod git;
 pub mod watcher;
 pub mod sync;
@@ -40,10 +42,12 @@ pub mod fonts;
 pub mod link_preview;
 pub mod theme;
 
+pub use alpha_update::*;
 pub use file::*;
 pub use dialog::*;
 pub use ai::*;
 pub use export::*;
+pub use preview::*;
 pub use git::*;
 pub use watcher::*;
 pub use sync::*;
