@@ -49,7 +49,7 @@ flowchart TD
   F -.->|hard gate fails| FAIL[Re-add afk + failure comment]
   F -->|red→green→refactor passes,<br/>+ review, draft PR opened| G[Draft PR<br/>body: Fixes/Resolves #N]
   G -->|pull_request.opened fires aw-review.yml| RV[aw-review]
-  RV -.->|gaps found:<br/>close PR + reset to tdd + afk<br/>(max 2 retries, then escalate)| F
+  RV -.->|gaps found:<br/>close PR + reset to tdd + afk<br/>— max 2 retries, then escalate| F
   RV -->|all criteria met| RDY[PR marked ready]
   RDY -->|human reviews + merges| M[Merged]
   M -->|GitHub auto-close<br/>via 'Fixes #N' or 'Resolves #N'| IC[Issue closed]
@@ -154,7 +154,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Eleven workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair*.
+Fifteen workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair* + four *release infrastructure* (`aw-alpha-prep`, `aw-merge`, `aw-rebase`, `aw-alpha-cut`).
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -170,6 +170,10 @@ Eleven workflow files. One *pipeline* + one *sweep* + four *standalones* + one *
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
 | `aw-ci-repair.yml` | `workflow_run.completed` (Tests workflow, failure), `workflow_dispatch` | Narrow CI auto-repair: detects recurring perf-budget flake patterns on bot-authored `claude/*` draft PRs and applies one-line fixes (Patterns A+B). Posts a comment for C/D/E. One-attempt cap per PR. |
+| `aw-alpha-prep.yml` | `pull_request.ready_for_review`, `pull_request.opened` | Tier classifier. Labels bot PRs `tier:A` / `tier:B` / `tier:C` based on issue labels (hitl/visual), touched paths (load-bearing list), and diff size. `chore(deps):` PRs with prod_additions < 50 fast-path to Tier A. Single source of truth for the release routing decision. |
+| `aw-merge.yml` | `pull_request.labeled` (filter `tier:A` + `claude/*` head ref), `workflow_dispatch` | Enables GitHub native auto-merge (squash) on Tier-A bot PRs. Merge fires when CI green + required reviews satisfied. Tier B/C are NOT touched here. |
+| `aw-rebase.yml` | cron `*/15`, `workflow_dispatch` | Queue-collision recovery: when a Tier-A merge knocks other auto-merge PRs BEHIND main, this sweep calls `update-branch` (clean three-way merge). DIRTY conflicts or lockfile conflicts → disable auto-merge, add `needs-human`, post comment. |
+| `aw-alpha-cut.yml` | cron `0 */6 * * *`, `workflow_dispatch`, `pull_request.closed` (head ref `release/v*`) | Two-job release cutter. `cut` (cron + dispatch): bumps `package.json`, generates `docs/history/NNN-release-vX.Y.Z-alpha.M.md`, regenerates `public/changelog-alpha.json`, pushes to `release/v${NEXT_VERSION}`, opens an auto-merge PR. `tag-after-merge` (PR closed): tags the merge commit `v${NEXT_VERSION}` and pushes the tag, which fires `release.yml`. See "Choice: aw-alpha-cut splits cut + tag-after-merge". |
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 
@@ -190,6 +194,55 @@ Each precheck-bearing workflow finds candidates with `gh + jq` before invoking t
 Total wall time: \~10–15 min from `gh issue create` to draft PR.
 
 **External-author flow.** Issues from non-trusted authors (anyone other than OWNER / COLLABORATOR / MEMBER) get labelled `external` by `aw-mark-external.yml` and a comment is posted explaining the gate. The pipeline + sweep skip them entirely. Owner reviews each one and either closes it (spam / off-topic / malicious) or adds `aw-approved`. The next sweep tick (\~15 min) picks up `aw-approved` issues and runs the same lifecycle as above. See "Choice: author-association gate for external issues" for the rationale.
+
+## Release pipeline (PR → alpha)
+
+The release half of AW takes merged Tier-A/B PRs and turns them into a tagged alpha build. Same `aw-` namespace, same WORKFLOW_PAT, same auto-merge + branch-protection conventions as the issue half.
+
+```mermaid
+flowchart TD
+  P1[Bot PR opens] -->|pull_request.ready_for_review| TP[aw-alpha-prep]
+  TP -->|+ tier:A| ME[aw-merge]
+  TP -.->|+ tier:B| Q[Queue for next alpha cut]
+  TP -.->|+ tier:C| HR[Sits at ready,<br/>human review]
+  ME -->|enable auto-merge| WAIT[CI green +<br/>required reviews]
+  WAIT -.->|fellow Tier-A merged first,<br/>this one is BEHIND| RB[aw-rebase]
+  RB -->|update-branch| WAIT
+  RB -.->|DIRTY or lockfile| ESC[+ needs-human,<br/>disable auto-merge]
+  WAIT -->|all green| MM[Merged to main]
+  HR -->|human merges| MM
+  MM -.->|cron every 6h<br/>OR manual dispatch| AC[aw-alpha-cut: cut job]
+  AC -->|push to release/vX.Y.Z| RPR[Auto-merge PR<br/>chore: release vX.Y.Z]
+  RPR -->|CI green| RMM[Release PR merged]
+  RMM -->|pull_request.closed| AT[aw-alpha-cut:<br/>tag-after-merge]
+  AT -->|push tag vX.Y.Z| RY[release.yml]
+  RY -->|build + publish| AR[GitHub Release<br/>+ artifacts]
+
+  classDef skill fill:#1d76db,stroke:#fff,color:#fff
+  classDef terminal fill:#0e8a16,stroke:#fff,color:#fff
+  classDef stop fill:#cccccc,stroke:#666,color:#000
+  class TP,ME,RB,AC,AT,RY skill
+  class AR,MM,RMM terminal
+  class HR,Q,ESC,WAIT stop
+```
+
+**Lifecycle (worked example, Tier-A PR → alpha):**
+
+| Step | PR / repo state |
+| --- | --- |
+| `aw-tdd` opens draft PR | label: none |
+| `aw-review` flips draft → ready | label: none |
+| `aw-alpha-prep` classifies (small diff, no hitl/visual) | label: `tier:A` |
+| `aw-merge` enables GitHub auto-merge | merge pending CI |
+| CI green → PR merges to main | merge commit on main |
+| Cron tick (every 6h): `aw-alpha-cut` cut job runs | branch `release/v0.45.0-alpha.N` + auto-merge PR opened |
+| Release PR's CI passes → auto-merges | merge commit on main |
+| `aw-alpha-cut` tag-after-merge fires (PR closed event) | tag `v0.45.0-alpha.N` pushed |
+| `release.yml` builds + publishes | GitHub Release with artifacts |
+
+Total wall time: \~25–35 min from bot-PR merge to published alpha (build dominates).
+
+**Tier B PRs** skip `aw-merge` and queue for the next 6h alpha-cut tick, which still picks them up via the `label:tier:A,tier:B` enumeration. **Tier C PRs** sit at ready until a human merges them; the alpha-cut still fires (Tier C is the *stable*-promotion gate, not the alpha gate).
 
 ## Failure modes
 
@@ -453,6 +506,21 @@ This closes the conversation loop. The agent can be redirected from ANY pause po
 ### Choice: aw-retrospect on every merge
 
 Self-improvement loop. On claude\[bot\] PR merge, look for divergence between the originating skill's rules and what shipped (extra files touched, manual fixes after merge, review pushback, test changes, retries). Propose a SKILL.md patch as a draft PR. Always reviewed, never auto-merged. Inspired by rmstdope/my-copilot's `self-learning-skills` pattern.
+
+### Choice: aw-alpha-cut splits cut + tag-after-merge (#317)
+
+**The pivot.** Original `aw-alpha-cut` bumped `package.json`, generated the history file, regenerated the changelog, then committed + tagged + pushed directly to `main` in one job. First time we actually fired it (run 26247447578 on 2026-05-21), the push was rejected: `GH006: Protected branch update failed for refs/heads/main` — branch protection requires the 4 Tests status checks to have passed on the commit being pushed, and a runner's local commit doesn't satisfy that. Every prior alpha (e.g. `v0.45.0-alpha.1` = #312) had actually shipped as a PR; alpha-cut had been dead-code-against-branch-protection the whole time.
+
+**The fix.** Split into two jobs in the same workflow file:
+
+- `cut` (cron + workflow_dispatch) does the bump + history + changelog work, but pushes to a `release/v${NEXT_VERSION}` branch and opens an auto-merge PR with `tier:A` — going through the same branch-protection gate as every other PR.
+- `tag-after-merge` (gates on `pull_request: closed` where merged=true AND head ref starts with `release/v`) tags the merge commit on main with `v${NEXT_VERSION}` and pushes the tag. `release.yml` fires on the tag push and builds the artifacts.
+
+**Why two jobs, not one workflow that waits.** A single job that opens the PR then sleeps until merge would hold a runner for 10–15 minutes (CI duration). The `pull_request: closed` event hook is free — the cut job exits in seconds after pushing the PR, and tag-after-merge wakes up on the merge event when it actually has work to do.
+
+**Why not tag-on-push-to-main instead.** A `push: main` trigger would fire on every commit to main, not just release-PR merges. Filtering by commit message ("starts with `chore: release v`") would work but ties the trigger to a stylistic convention. Branch-name filtering (`startsWith(head.ref, 'release/v')`) is unambiguous and matches what `cut` actually produces.
+
+**Concurrency split.** `cut` uses group `aw-alpha-cut-cut`; `tag-after-merge` uses `aw-alpha-cut-${{ head_ref }}`. They don't queue on each other, and parallel release-branch merges (rare but possible) don't block.
 
 ### Choice: narrow-pattern CI repair instead of broad auto-fix (#195)
 
