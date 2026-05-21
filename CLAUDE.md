@@ -40,7 +40,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | All keyboard shortcuts | @docs/keyboard-shortcuts.md |
 | Implementation history | @docs/history/ |
 | Product requirements | @docs/prds/ |
-| AI dev-process pipeline (issue → triage → refine → slice → tdd → PR → retrospect), label state machine, skills + workflows | @docs/agentic-workflow.md |
+| AI dev-process pipeline (issue → triage → refine → slice → tdd → PR → retrospect), label state machine, skills + workflows | docs/agentic-workflow.md |
 
 **Feature-specific docs (read when working on that area):**
 
