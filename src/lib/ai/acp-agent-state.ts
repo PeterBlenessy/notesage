@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useConnectionsStore } from '@/stores/connections-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
@@ -459,4 +460,49 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
       invoke('acp_agent_stop', { instanceId }).catch(() => {});
     }
   }
+}
+
+/**
+ * Backfill `connection.acpCapabilities` from a session/new (or load/resume/fork) response.
+ *
+ * Lazy upgrade path for connections that existed before the capability probe was
+ * introduced (commit 29013ce8): the eager-session response from `useAcpLifecycle`
+ * carries the same `modes` + `config_options` data the probe extracts, so we
+ * populate caps for free whenever the user opens or switches a chat — no extra
+ * spawn, no startup cost.
+ *
+ * No-op when caps are already populated AND fresh (<24h) AND non-empty.
+ */
+export function backfillAcpCapabilities(
+  connectionId: string | undefined,
+  session: { modes?: AcpSessionModeState | null; config_options?: AcpSessionConfigOption[] | null },
+): void {
+  if (!connectionId) return;
+  const connection = useConnectionsStore.getState().getConnection(connectionId);
+  if (!connection || connection.authMethod !== 'agent_managed') return;
+
+  const existing = connection.acpCapabilities;
+  const fresh = !!existing?.lastProbed && Date.now() - existing.lastProbed < 24 * 60 * 60 * 1000;
+  const hasModes = (existing?.availableModes?.length ?? 0) > 0;
+  if (fresh && hasModes) return;
+
+  const next: AcpDiscoveredCapabilities = {
+    ...existing,
+    availableModes: session.modes?.availableModes ?? existing?.availableModes,
+    configOptions:
+      session.config_options?.map((opt) => ({
+        id: opt.id,
+        name: opt.name,
+        description: opt.description,
+        category: opt.category,
+        currentValue: opt.currentValue,
+        options: opt.options,
+      })) ?? existing?.configOptions,
+    supportsLoadSession: existing?.supportsLoadSession ?? false,
+    supportsImages: existing?.supportsImages ?? false,
+    agentVersion: existing?.agentVersion,
+    lastProbed: Date.now(),
+  };
+  useConnectionsStore.getState().updateConnection(connectionId, { acpCapabilities: next });
+  log.info('ai', `Backfilled acpCapabilities for ${connectionId} from eager session`);
 }
