@@ -34,7 +34,7 @@ function allWorkflowTexts(): Array<{ name: string; text: string }> {
 // affected by the Node runtime deprecation):
 //   actions/checkout@v6          — Node 24
 //   actions/setup-node@v5        — composite, not affected
-//   actions/cache@v4             — composite, not affected (not in inventory)
+//   actions/cache@v5             — Node 24 (bumped from @v4 which ran on Node 20)
 //   Swatinem/rust-cache@v2       — composite, not affected
 //   tauri-apps/tauri-action@v0   — composite, not affected
 //   anthropics/claude-code-action@v1 — composite, not affected
@@ -80,6 +80,22 @@ describe('pnpm/action-setup bumped to @v5 (Node 24) across all workflow files', 
     const offenders: string[] = [];
     for (const { name, text } of allWorkflowTexts()) {
       if (text.includes('pnpm/action-setup@v4')) {
+        offenders.push(name);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. No workflow may reference actions/cache@v4 — bump to @v5 (Node 24)
+// ---------------------------------------------------------------------------
+
+describe('actions/cache bumped to @v5 (Node 24) across all workflow files', () => {
+  it('no workflow file uses actions/cache@v4', () => {
+    const offenders: string[] = [];
+    for (const { name, text } of allWorkflowTexts()) {
+      if (text.includes('actions/cache@v4')) {
         offenders.push(name);
       }
     }
