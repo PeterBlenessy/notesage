@@ -28,16 +28,22 @@ on:
         description: "Dry-run (compute next version + history file, do not commit/tag)"
         required: false
         default: "false"
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 permissions:
   contents: write          # commit + tag + push
+  pull-requests: write     # open auto-merge PR for the release commit
 
 concurrency:
-  group: aw-alpha-cut
+  group: aw-alpha-cut-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'cut' }}
   cancel-in-progress: false
 
 jobs:
   preflight:
+    # Cron + manual dispatch only. The pull_request:closed event triggers tag-after-merge below.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       should_cut: ${{ steps.check.outputs.should_cut }}
@@ -223,14 +229,78 @@ jobs:
           # pnpm may try to read tarballs; ensure we have access
           NPM_CONFIG_USERCONFIG: /dev/null
 
-      - name: Commit, tag, push
+      - name: Commit on release branch and open auto-merge PR
         env:
           NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          PR_NUMBERS: ${{ needs.preflight.outputs.pr_numbers }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           set -euo pipefail
+
+          # Branch protection on main requires 4 status checks to have passed
+          # on the commit being pushed, so we can't push directly. Open an
+          # auto-merge PR instead — the PR runs the same Tests workflow, and
+          # auto-merge fires once the 4 checks are green. The tag-after-merge
+          # job (in this same workflow file) tags + pushes the tag once the
+          # PR's merge commit lands on main.
+          BRANCH="release/v${NEXT_VERSION}"
+          git checkout -b "$BRANCH"
           git add package.json docs/history/ public/
           git commit -m "chore: release v${NEXT_VERSION} (auto-cut by aw-alpha-cut)"
-          git tag "v${NEXT_VERSION}"
-          git push origin main
-          git push origin "v${NEXT_VERSION}"
-          echo "Tagged and pushed v${NEXT_VERSION}. release.yml will pick it up and publish."
+          git push -u origin "$BRANCH"
+
+          # PR body: one bullet per Tier-A/B PR that earned this alpha cut.
+          {
+            echo "Auto-cut by \`aw-alpha-cut\`. The history file at \`docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${NEXT_VERSION}.md\` lists the merged PRs."
+            echo ""
+            echo "## PRs included"
+            echo ""
+            IFS=',' read -ra PRS <<< "$PR_NUMBERS"
+            for pr in "${PRS[@]}"; do
+              echo "- #${pr}"
+            done
+            echo ""
+            echo "Auto-merge enabled. Once the 4 required status checks pass, this merges to main, and the \`tag-after-merge\` job in \`aw-alpha-cut.yml\` tags + pushes \`v${NEXT_VERSION}\`. \`release.yml\` then builds and publishes."
+          } > /tmp/pr-body.md
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release v${NEXT_VERSION}" \
+            --body-file /tmp/pr-body.md \
+            --label "tier:A"
+
+          gh pr merge "$BRANCH" --auto --merge
+
+          echo "Opened auto-merge PR for v${NEXT_VERSION} on branch $BRANCH."
+
+  tag-after-merge:
+    # Fires when a release/v* PR opened by the cut job merges to main.
+    # Tags the merge commit and pushes the tag, which triggers release.yml.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          ref: main
+          fetch-depth: 1
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag merge commit and push
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          # Branch was `release/v${NEXT_VERSION}` — strip the prefix to get the tag.
+          TAG="${BRANCH#release/}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Tagged and pushed $TAG. release.yml will pick it up and publish."
