@@ -222,3 +222,77 @@ describe('LocalImage NodeView — hover toolbar', () => {
     expect(btn50.classList.contains('active')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Design-token and icon compliance tests — issue #259
+// ---------------------------------------------------------------------------
+
+describe('LocalImage NodeView — design-token and icon compliance (#259)', () => {
+  it('align buttons contain SVG icons, not Unicode arrow characters', () => {
+    const { dom } = buildNodeView();
+    dom.dispatchEvent(new Event('mouseenter'));
+    for (const a of ['left', 'center', 'right']) {
+      const btn = dom.querySelector<HTMLElement>(`[data-align="${a}"]`)!;
+      expect(btn, `missing [data-align="${a}"] button`).not.toBeNull();
+      // Must contain an SVG child — the lucide-react icon equivalent.
+      const svg = btn.querySelector('svg');
+      expect(svg, `[data-align="${a}"] must contain an SVG icon, not a Unicode character`).not.toBeNull();
+    }
+  });
+
+  it('align buttons do not render Unicode arrow characters (⬅↔➡)', () => {
+    const { dom } = buildNodeView();
+    dom.dispatchEvent(new Event('mouseenter'));
+    for (const a of ['left', 'center', 'right']) {
+      const btn = dom.querySelector<HTMLElement>(`[data-align="${a}"]`)!;
+      const text = btn.textContent ?? '';
+      // Unicode arrows that the old implementation used
+      expect(text, `[data-align="${a}"] must not use Unicode arrow characters`).not.toMatch(/[⬅↔➡←→]/u);
+    }
+  });
+
+  it('active width button uses --color-accent-primary, not the wrong --color-accent token', () => {
+    const { dom } = buildNodeView(mockImageNode({ blockWidth: 50 }));
+    dom.dispatchEvent(new Event('mouseenter'));
+
+    const activeBtn = dom.querySelector<HTMLElement>('[data-width="50"]')!;
+    expect(activeBtn.classList.contains('active')).toBe(true);
+
+    // style.background is preserved by JSDOM for CSS custom properties.
+    // The old code used `var(--color-accent,...)` — the fix must remove it.
+    const bg = activeBtn.style.background;
+    // Must NOT reference --color-accent as the primary token (negative lookahead
+    // distinguishes --color-accent from --color-accent-primary).
+    expect(bg, 'active width button must not use var(--color-accent,...) pattern').not.toMatch(/var\(--color-accent(?!-)/);
+  });
+
+  it('active align button uses --color-accent-primary, not the wrong --color-accent token', () => {
+    const { dom } = buildNodeView(mockImageNode({ blockWidth: 75, align: 'center' }));
+    dom.dispatchEvent(new Event('mouseenter'));
+
+    const activeBtn = dom.querySelector<HTMLElement>('[data-align="center"]')!;
+    expect(activeBtn.classList.contains('active')).toBe(true);
+
+    const bg = activeBtn.style.background;
+    expect(bg, 'active align button must not use var(--color-accent,...) pattern').not.toMatch(/var\(--color-accent(?!-)/);
+  });
+
+  it('toolbar and all button style attributes contain no hardcoded hex colour values', () => {
+    // Build with active states to trigger the widest set of inline styles.
+    const { dom } = buildNodeView(mockImageNode({ blockWidth: 50, align: 'left' }));
+    dom.dispatchEvent(new Event('mouseenter'));
+
+    const toolbar = dom.querySelector<HTMLElement>('[data-testid="image-block-size-toolbar"]')!;
+    const elements: HTMLElement[] = [toolbar, ...Array.from(toolbar.querySelectorAll<HTMLElement>('*'))];
+
+    for (const el of elements) {
+      // getAttribute('style') returns the serialized CSS including var() fallbacks.
+      // JSDOM preserves #hex inside var() fallbacks even though it normalises
+      // standalone colour literals to rgb() — so this catches var(--x, #abc) patterns.
+      const style = el.getAttribute('style') ?? '';
+      expect(style, `<${el.tagName.toLowerCase()}> must not have hardcoded hex colour: "${style}"`).not.toMatch(
+        /#[0-9a-fA-F]{3,6}(?:[^0-9a-fA-F]|$)/,
+      );
+    }
+  });
+});

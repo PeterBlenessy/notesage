@@ -145,8 +145,42 @@ export const LocalImage = Image.extend({
       const resolve = (src: string) => resolveImageSrc(src, getDocDir());
 
       // Build the hover toolbar -----------------------------------------------
+      // Matches BlockSizeControls.tsx visually: same sizing, CSS-variable tokens
+      // only (no hex fallbacks), and lucide-react-equivalent SVG align icons.
       const WIDTH_PRESETS = [25, 50, 75, 100] as const;
       const ALIGNS = ["left", "center", "right"] as const;
+
+      // Lucide-react icon path data (AlignLeft/Center/Right from lucide v1.16.0).
+      // Using programmatic SVG creation avoids a React mount per image block
+      // (the React NodeView was reverted in 19b9fdb5 due to 2-3x slowdown on
+      // 494 KB image-heavy documents).  One shared set of paths is fine because
+      // the SVG element is created once per align button, not shared.
+      const SVG_NS = "http://www.w3.org/2000/svg";
+      const ALIGN_ICON_PATHS: Record<string, string[]> = {
+        left:   ["M21 5H3", "M15 12H3", "M17 19H3"],
+        center: ["M21 5H3", "M17 12H7", "M19 19H5"],
+        right:  ["M21 5H3", "M21 12H9", "M21 19H7"],
+      };
+
+      function makeLucideAlignSvg(align: string): SVGElement {
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("xmlns", SVG_NS);
+        svg.setAttribute("width", "12");
+        svg.setAttribute("height", "12");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "currentColor");
+        svg.setAttribute("stroke-width", "1.5");
+        svg.setAttribute("stroke-linecap", "round");
+        svg.setAttribute("stroke-linejoin", "round");
+        svg.setAttribute("aria-hidden", "true");
+        for (const d of (ALIGN_ICON_PATHS[align] ?? [])) {
+          const path = document.createElementNS(SVG_NS, "path");
+          path.setAttribute("d", d);
+          svg.appendChild(path);
+        }
+        return svg;
+      }
 
       const toolbar = document.createElement("div");
       toolbar.setAttribute("data-testid", "image-block-size-toolbar");
@@ -159,8 +193,8 @@ export const LocalImage = Image.extend({
         "align-items: center",
         "gap: 2px",
         "border-radius: 6px",
-        "background: var(--color-popover, rgba(255,255,255,0.9))",
-        "border: 1px solid var(--color-border, #e5e7eb)",
+        "background: var(--color-popover)",
+        "border: 1px solid var(--color-border)",
         "padding: 2px 4px",
         "backdrop-filter: blur(4px)",
         "-webkit-backdrop-filter: blur(4px)",
@@ -174,7 +208,7 @@ export const LocalImage = Image.extend({
         btn.type = "button";
         btn.textContent = `${w}%`;
         btn.style.cssText =
-          "background:none;border:none;cursor:pointer;padding:2px 5px;border-radius:4px;font-size:11px;font-family:monospace;min-width:28px;color:var(--color-foreground,#111)";
+          "background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:2px;font-size:10px;font-family:monospace;min-width:28px;color:var(--color-muted-foreground)";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const pos =
@@ -199,23 +233,20 @@ export const LocalImage = Image.extend({
 
       const sep = document.createElement("span");
       sep.style.cssText =
-        "display:inline-block;width:1px;height:14px;background:var(--color-border,#e5e7eb);margin:0 2px";
+        "display:inline-block;width:1px;height:14px;background:var(--color-border);margin:0 2px";
       toolbar.appendChild(sep);
 
       const alignBtns: HTMLButtonElement[] = [];
-      const ALIGN_ICONS: Record<string, string> = {
-        left: "⬅",
-        center: "↔",
-        right: "➡",
-      };
       for (const a of ALIGNS) {
         const btn = document.createElement("button");
         btn.setAttribute("data-align", a);
         btn.type = "button";
         btn.title = `Align ${a}`;
-        btn.textContent = ALIGN_ICONS[a];
+        // SVG icon matching lucide-react AlignLeft / AlignCenter / AlignRight
+        // (same paths as BlockSizeControls.tsx uses via the React component).
+        btn.appendChild(makeLucideAlignSvg(a));
         btn.style.cssText =
-          "background:none;border:none;cursor:pointer;padding:2px 5px;border-radius:4px;font-size:11px;color:var(--color-foreground,#111)";
+          "background:none;border:none;cursor:pointer;padding:0;height:20px;width:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:2px;color:var(--color-muted-foreground)";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const pos =
@@ -284,17 +315,18 @@ export const LocalImage = Image.extend({
           img.style.removeProperty("margin-right");
         }
 
-        // Update active state on width buttons
+        // Update active state on width buttons — use --color-accent-primary
+        // (the correct chromatic token) instead of the wrong --color-accent.
         for (const btn of widthBtns) {
           const w = Number(btn.getAttribute("data-width"));
           if (w === blockWidth) {
             btn.classList.add("active");
-            btn.style.background = "var(--color-accent,var(--color-primary,#333))";
-            btn.style.color = "var(--color-accent-foreground,#fff)";
+            btn.style.background = "var(--color-accent-primary)";
+            btn.style.color = "var(--color-accent-foreground)";
           } else {
             btn.classList.remove("active");
             btn.style.background = "none";
-            btn.style.color = "var(--color-foreground,#111)";
+            btn.style.color = "var(--color-muted-foreground)";
           }
         }
 
@@ -303,12 +335,12 @@ export const LocalImage = Image.extend({
           const a = btn.getAttribute("data-align");
           if (a === align) {
             btn.classList.add("active");
-            btn.style.background = "var(--color-accent,var(--color-primary,#333))";
-            btn.style.color = "var(--color-accent-foreground,#fff)";
+            btn.style.background = "var(--color-accent-primary)";
+            btn.style.color = "var(--color-accent-foreground)";
           } else {
             btn.classList.remove("active");
             btn.style.background = "none";
-            btn.style.color = "var(--color-foreground,#111)";
+            btn.style.color = "var(--color-muted-foreground)";
           }
         }
       };
