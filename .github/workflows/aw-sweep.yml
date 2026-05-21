@@ -321,7 +321,7 @@ jobs:
           # the bot-authored PR needs to fire `pull_request` events for CI.
           token: ${{ secrets.WORKFLOW_PAT }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
 
