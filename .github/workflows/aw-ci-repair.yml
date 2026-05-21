@@ -24,7 +24,7 @@ jobs:
        startsWith(github.event.workflow_run.head_branch, 'claude/')) ||
       github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.WORKFLOW_PAT }}
           fetch-depth: 0
