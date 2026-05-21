@@ -4,25 +4,29 @@
 **Previous version:** 0.45.0-alpha.1
 **Channel:** Alpha
 
-Auto-cut by `aw-alpha-cut` after Tier-A/B PRs landed. Review the merged PRs listed below to confirm the change set matches your expectations before promoting to stable.
+Infrastructure-only release. No user-visible changes vs. alpha.1 — same features, same behaviour. Cut to land the CI plumbing that makes future auto-cuts actually work and to clear two routine dependency patches.
 
 ## Changes
 
 ### Improvements
 
-- fix(ci): aw-alpha-cut pushes to release branch + opens auto-merge PR (#317)
-- fix(e2e-real): turn the Cmd+S save flake into a diagnostic failure (#316)
-- fix(ci): set up pnpm + Node in aw-alpha-cut cut job (#315)
-- chore(deps): bump openssl from 0.10.79 to 0.10.80 in /src-tauri in the cargo group across 1 directory (#314)
-- chore(deps): bump ws from 8.19.0 to 8.20.1 (via audit fix) in /bundled-skills/download-webpage/scripts in the npm_and_yarn group across 1 directory (#313)
-- chore: release v0.45.0-alpha.1 (#312)
+- **Infrastructure-only release.** No user-visible changes vs. alpha.1 — same features, same behaviour. This alpha ships the CI plumbing that makes future auto-cuts actually work, plus two routine dependency patches.
 
 ## Under the hood
 
-Auto-generated. For per-PR detail, see the individual PRs:
-- #317
-- #316
-- #315
-- #314
-- #313
-- #312
+### Auto-cut machinery actually fires end-to-end
+
+`aw-alpha-cut.yml` had two latent bugs that surfaced the first time we tried to fire it. The `cut` job ran `pnpm install` without setting up Node or pnpm and exited 127 (#315). After that was fixed it tried to `git push origin main` directly and was rejected by branch protection because the runner's local commit couldn't satisfy the 4 required status checks (#317). Restructured into two jobs in the same file: `cut` pushes to a `release/v${NEXT_VERSION}` branch and opens an auto-merge PR (going through the same gate as every other PR); `tag-after-merge` fires on the merged PR's close event, tags the merge commit on main, and pushes the tag — which triggers `release.yml` to build the artifacts. The two-job split lets the cut job exit in seconds rather than holding a runner for the entire CI duration.
+
+This alpha is also the first one that rode the new pipeline.
+
+### Real-E2E save-test diagnostic
+
+`editor.test.ts › should save file to disk with Cmd+S` had two distinct failure modes (focus didn't land on ProseMirror; ⌘S didn't flush in 1 s) that both presented as `expected file to contain "SAVE_TEST_<ts>"`. Replaced the fixed 1 s sleep with two staged `waitUntil` guards that fail with precise diagnostics — focus race vs. save-handler-not-firing (#316). Happy path also got faster (no fixed sleep).
+
+### Dependency bumps
+
+- `openssl` 0.10.79 → 0.10.80 (Rust transitive, security patch) — #314.
+- `ws` 8.19.0 → 8.20.1 inside the `bundled-skills/download-webpage` Node script — `npm audit fix` (#313).
+
+Both are mechanical bumps, no behaviour change.
