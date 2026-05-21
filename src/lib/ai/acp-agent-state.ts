@@ -21,7 +21,7 @@ interface CommonMode {
 }
 
 const COMMON_MODES: Record<CommonModeKey, CommonMode> = {
-  read_only:   { key: 'read_only',    name: 'Read Only',   tooltip: 'Can read files — must ask for everything else' },
+  read_only:   { key: 'read_only',    name: 'Read Only',   tooltip: 'Read access only — agent is denied any write or execute tool calls' },
   agent:       { key: 'agent',        name: 'Agent',       tooltip: 'Can read and edit files — asks for risky operations' },
   full_access: { key: 'full_access',  name: 'Full Access', tooltip: 'No permission prompts — use with caution' },
   plan:        { key: 'plan',         name: 'Plan',        tooltip: 'Read-only — proposes changes without executing' },
