@@ -56,18 +56,52 @@ describe('Editor interactions', () => {
         await typeInEditor(uniqueText);
         console.log(`[editor] Typed unique text: ${uniqueText}`);
 
-        // Save with Cmd+S
+        // Guard against silent type failure: confirm the marker landed in the
+        // editor BEFORE pressing ⌘S. Without this guard the test surfaces as a
+        // "save didn't run" failure when the real cause is "type didn't land",
+        // because Notesage only flushes dirty docs and an empty edit leaves the
+        // tab clean. The previous version pressed ⌘S unconditionally and
+        // failed reading the unmodified file off disk (CI run 77228338009).
+        try {
+            await browser.waitUntil(
+                async () => {
+                    const text = await getEditorText();
+                    return text.includes(uniqueText);
+                },
+                {
+                    timeout: 5_000,
+                    interval: 100,
+                    timeoutMsg: `Editor never showed "${uniqueText}" after typeInEditor — focus likely didn't land on ProseMirror`,
+                },
+            );
+        } catch (err) {
+            // Restore the file before rethrowing — otherwise a failure here
+            // leaves a dirty in-memory tab that the next spec inherits.
+            await tauriInvoke('write_file', { path: filePath, content: originalContent });
+            throw err;
+        }
+
+        // Save with Cmd+S, then poll disk for the marker. Replaces a fixed
+        // 1s sleep that was sometimes too short on macos-latest under load.
         await pressShortcut(['Meta', 's']);
-        await browser.pause(1000);
 
-        // Verify file on disk contains unique text
-        const savedContent = await tauriInvoke<string>('read_file', { path: filePath });
-        console.log(`[editor] Saved content length: ${savedContent.length}`);
-        expect(savedContent).toContain(uniqueText);
-
-        // Restore original
-        await tauriInvoke('write_file', { path: filePath, content: originalContent });
-        console.log('[editor] File restored');
+        try {
+            await browser.waitUntil(
+                async () => {
+                    const onDisk = await tauriInvoke<string>('read_file', { path: filePath });
+                    return onDisk.includes(uniqueText);
+                },
+                {
+                    timeout: 5_000,
+                    interval: 200,
+                    timeoutMsg: `File on disk never contained "${uniqueText}" within 5s of ⌘S — save handler likely did not fire`,
+                },
+            );
+        } finally {
+            // Always restore — even if the assertion above failed.
+            await tauriInvoke('write_file', { path: filePath, content: originalContent });
+            console.log('[editor] File restored');
+        }
     });
 
     it('should not show external change toast after saving', async () => {
