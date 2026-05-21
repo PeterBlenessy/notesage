@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.45.0-alpha.1",
+      "date": "2026-05-21",
+      "previousVersion": "0.45.0",
+      "sections": {
+        "improvements": [
+          "**Agent mode picker reappears for existing AI connections.** If your Claude Code / Codex / Copilot / Gemini connection was set up before the recent capability-probe change, the mode picker (Shield icon) in the chat footer had silently disappeared. Opening the chat now restores it automatically — no need to re-add the connection or visit the connection config dialog.",
+          "**Read Only mode tooltip describes what actually happens.** The previous wording suggested the agent would ask for permission before writes — but in Read Only mode the agent is told it has read-only access and silently doesn't try those operations, so no permission card ever surfaces. New tooltip: *\"Read access only — agent is denied any write or execute tool calls.\"*",
+          "**Image hover toolbar matches the chart / drawing / link-preview toolbars.** Visual consistency known issue from alpha.0 is resolved. The width and alignment popover now positions and styles the same as the other block-size toolbars."
+        ],
+        "fixes": [
+          "**`Cmd+Shift+E` (Export), `Cmd+Shift+L` (Sidebar), `Cmd+Shift+R` (Recording) work again.** An editor extension was silently capturing these chords for paragraph alignment. The export dialog opens, the sidebar pins / unpins, and recording starts / stops from the keyboard as documented."
+        ]
+      }
+    },
+    {
       "version": "0.45.0-alpha.0",
       "date": "2026-05-15",
       "previousVersion": "0.44.0",
