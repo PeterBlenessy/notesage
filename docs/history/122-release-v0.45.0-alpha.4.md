@@ -1,7 +1,7 @@
-# Release v0.45.0-alpha.3
+# Release v0.45.0-alpha.4
 
 **Date:** 2026-05-22
-**Previous version:** 0.45.0-alpha.2
+**Previous version:** 0.45.0-alpha.3
 **Channel:** Alpha
 
 Auto-cut by `aw-alpha-cut` after Tier-A/B PRs landed. The auto-dump under "Under the hood" lists the merged PRs verbatim.
@@ -17,6 +17,7 @@ _No user-visible changes._
 
 ## Under the hood
 
-- Corrected the alpha.2 release notes to remove placeholder text and add honest user-facing prose. (#320)
-- Documented the agentic-workflow release half in `docs/agentic-workflow.md` and fixed a Mermaid syntax error. (#319)
-- Split `docs/agentic-workflow.md` into an operational reference and a companion rationale file (`docs/agentic-workflow-rationale.md`) to keep session context lean. (#321)
+Auto-generated dump of merged Tier-A/B PRs. Rewrite as prose grouped by area before stable promotion.
+
+- fix(release): generator writes honest placeholder; fix alpha-3 notes (#323)
+- chore: release v0.45.0-alpha.3 (#322)

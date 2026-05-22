@@ -13,9 +13,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'src-tauri/**'
+              - 'e2e/**'
+              - 'e2e-real/**'
+              - 'bundled-skills/**'
+              - 'public/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'vitest.config.ts'
+              - 'vitest.perf.config.ts'
+              - 'playwright.config.ts'
+              - 'wdio.conf.ts'
+              - 'index.html'
+
   frontend-tests:
     name: Frontend Tests & Coverage
     runs-on: macos-latest
+    needs: check-changes
+    # Skip for docs-only PRs. On push/workflow_dispatch/workflow_call always run.
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
@@ -94,6 +126,8 @@ jobs:
   e2e-tests:
     name: Playwright E2E Tests
     runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
@@ -137,6 +171,8 @@ jobs:
   rust-tests:
     name: Rust Backend Tests
     runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
@@ -171,11 +207,13 @@ jobs:
   real-e2e-tests:
     name: Real Tauri E2E Tests
     runs-on: macos-latest
-    # Required by branch protection on `main` (strict mode). Runs on
-    # `pull_request` events too because branch protection counts a skipped
-    # required check as "not satisfied" — there's no native "required-if-run"
-    # mode. Cost: ~8 min of macos-latest runner per PR push. Trade accepted
-    # to keep the alpha-cut gate real (see 2026-05-15 / 16 conversation).
+    needs: check-changes
+    # Skip for docs-only PRs. On push/workflow_dispatch/workflow_call always run.
+    # Branch protection note: job-level `if` skips produce a "skipped" status
+    # which GitHub (post-2023 rules) treats as passing for required checks.
+    # If branch protection was configured before 2023, open repo Settings →
+    # Branches → edit the main rule → enable "Allow skipped" for this check.
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
