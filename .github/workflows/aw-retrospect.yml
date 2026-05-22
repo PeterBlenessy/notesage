@@ -44,6 +44,7 @@ jobs:
       - name: Run aw-retrospect skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-sonnet-4-6           # retrospect: comparative analysis, skill improvement
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # WORKFLOW_PAT so the draft retro PR fires CI normally — see
           # "Choice: WORKFLOW_PAT for bot-PR CI gating" in
