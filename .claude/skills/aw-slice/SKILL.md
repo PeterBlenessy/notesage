@@ -64,12 +64,14 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
      - Post a "passing through unsliced" comment (template below)
      - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
    - **1 value group, too large for one TDD run** — when there is unambiguously one user value but the
-     implementation has 3 or more sequential phases whose acceptance criteria are independently testable
-     and whose file sets are largely non-overlapping, split into sequential **child issues** (NOT peer
-     issues). Each child implements one phase and produces one PR; phases must land in order.
+     total implementation scope is too large for a single TDD run (estimated >500 lines changed OR
+     >15 files modified), split into sequential **child issues** (NOT peer issues). Each child
+     implements one phase and produces one PR; phases must land in order. The phases do NOT need to
+     be independently shippable — they just need to be coherently separable steps toward the one value.
 
      When to use this path:
-     - You can identify 3+ phases each with a concrete "red test → green" cycle of its own
+     - The total estimated diff is >500 lines or >15 files
+     - You can identify 3+ coherent phases each with its own "red test → green" cycle
      - Each phase's files are substantially separate from the others (minimal overlap)
      - The phases form a strict sequence (phase N depends on phase N-1)
 
