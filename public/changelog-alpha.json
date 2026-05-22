@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.45.0-alpha.3",
+      "date": "2026-05-22",
+      "previousVersion": "0.45.0",
+      "sections": {
+        "improvements": [
+          "**Infrastructure-only release.** Pending hand-edit before stable promotion. The auto-dump under \"Under the hood\" lists merged Tier-A/B PRs verbatim; move anything user-visible up here as `"
+        ]
+      }
+    },
+    {
       "version": "0.45.0-alpha.2",
       "date": "2026-05-21",
       "previousVersion": "0.45.0",
