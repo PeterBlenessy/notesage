@@ -63,6 +63,38 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
      - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
      - Post a "passing through unsliced" comment (template below)
      - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
+   - **1 value group, too large for one TDD run** — when there is unambiguously one user value but the
+     implementation has 3 or more sequential phases whose acceptance criteria are independently testable
+     and whose file sets are largely non-overlapping, split into sequential **child issues** (NOT peer
+     issues). Each child implements one phase and produces one PR; phases must land in order.
+
+     When to use this path:
+     - You can identify 3+ phases each with a concrete "red test → green" cycle of its own
+     - Each phase's files are substantially separate from the others (minimal overlap)
+     - The phases form a strict sequence (phase N depends on phase N-1)
+
+     Mechanism:
+     - First create all child issues via `gh issue create`, then link them to the parent using the
+       GraphQL `addSubIssue` mutation (requires the node ID of both parent and child):
+       ```
+       PARENT_ID=$(gh api graphql -f query='query { repository(owner:"PeterBlenessy",name:"notesage") { issue(number: <N>) { id } } }' -q '.data.repository.issue.id')
+       CHILD_ID=$(gh api graphql -f query='query { repository(owner:"PeterBlenessy",name:"notesage") { issue(number: <M>) { id } } }' -q '.data.repository.issue.id')
+       gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\" }) { issue { id } } }"
+       ```
+     - Title format: `<parent title> — Phase N: <description>`
+       (e.g. `Remove Classic Layout — Phase 2: delete ChatPanel & ActivityStrip`)
+     - Body format: use the "Implementation subtask template". First line MUST be `Child of #<parent>`.
+     - Labels:
+       - Phase 1: category + `refined` + `tdd` + `afk` (auto-starts immediately)
+       - Phases 2+: category + `refined` + `tdd` + `hitl` (human verifies each phase before unblocking the next)
+     - Add `Depends on: #<prior-phase>` in each child's body (except phase 1)
+     - Update parent labels: remove `slice`, add `sliced`
+     - Post a phased-work comment (template below). Stop.
+
+     **Default to NOT using this path.** Most large-looking issues are actually one phase. Only use
+     child issues when each phase independently satisfies real acceptance criteria — not just "this is
+     a lot of code."
+
    - **N independent value groups** — split into N peer issues (NOT sub-issues; no parent/child link):
      - **The original issue becomes the FIRST peer slice.** Rewrite its body to match the first value group only. Update its labels: remove `slice`, add `tdd` + one of `hitl` / `afk`. The original keeps its number, history, and comments.
      - **Create N-1 new peer issues**, one per remaining value group:
@@ -118,6 +150,9 @@ When (b) above triggers:
 3. Each ships as its own draft PR in parallel. User picks the winner, merges, closes losing peers; tracking issue stays open until manually closed.
 
 ## Peer issue references
+
+Child issues (sequential phase path) ARE linked via the GraphQL `addSubIssue` mutation — they have a
+real parent/child relationship visible in the GitHub UI.
 
 Peer issues are NOT linked via the GraphQL `addSubIssue` mutation — there is no parent/child relationship. Instead, the relationship is captured in the body text. Use one of these reference lines as the FIRST non-heading line of every newly-created peer's body:
 
@@ -264,6 +299,20 @@ Each prototype lands as its own draft PR. Try the live builds, merge the winner,
 This issue is now `awaiting-prototypes`. No further automation will run on it until you act.
 ```
 
+**Phased child issues path:**
+
+```
+> *Sliced by the `aw-slice` skill — one user value, split into N sequential phases.*
+
+This issue delivers one value but the implementation has <N> distinct sequential phases. Created <N> child issues:
+
+- #<A> — Phase 1: <description> · `afk` — auto-starts
+- #<B> — Phase 2: <description> · `hitl` — starts after human verifies phase 1 lands cleanly
+- #<C> — Phase 3: <description> · `hitl` — starts after phase 2
+
+Each child has `Child of #<this>` in its body and `Depends on:` its predecessor. Phases land in order; phases 2+ are `hitl` so you can verify each phase before the next begins.
+```
+
 **No-user-value path:**
 
 ```
@@ -274,7 +323,7 @@ This issue describes internal work without a user-observable result. Could you c
 
 ## Constraints from the dev process
 
-- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path), or `slice` → `awaiting-prototypes` (prototype-peers path).
+- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path, including phased child issues path), or `slice` → `awaiting-research` (research path), or `slice` → `awaiting-prototypes` (prototype-peers path).
 - Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
 - Prototype-peers parent stays `awaiting-prototypes` until the user closes it manually after picking a winner. No auto-action.
 - The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it was the original or a peer split off from a multi-value parent.
