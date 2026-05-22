@@ -22,6 +22,10 @@ import {
   subscribeToCmdBarEvents,
   type CmdBarEvent,
 } from "@/lib/cmd-bar-events";
+import {
+  subscribeToAgentOrbEvents,
+  type AgentOrbEvent,
+} from "@/lib/agent-orb-events";
 
 // ---------------------------------------------------------------------------
 // Settings-store mock. `uiPreview` is mutable so each `describe` block can
@@ -189,10 +193,12 @@ function dispatchKey(
 
 let capturedBarEvents: CmdBarEvent[];
 let unsubscribeBar: () => void;
+let capturedOrbEvents: AgentOrbEvent[];
+let unsubscribeOrb: () => void;
 
 beforeEach(() => {
   // Reset settings state.
-  mockSettings.uiPreview = "legacy";
+  mockSettings.uiPreview = "quiet-composer";
   mockSettings.sidebarPinned = false;
   mockSettings.chatPanelOpen = false;
   mockSettings.theme = "light";
@@ -216,70 +222,19 @@ beforeEach(() => {
     capturedBarEvents.push(e);
   });
 
+  capturedOrbEvents = [];
+  unsubscribeOrb = subscribeToAgentOrbEvents((e) => {
+    capturedOrbEvents.push(e);
+  });
+
   document.body.innerHTML = "";
 });
 
 afterEach(() => {
   unsubscribeBar();
+  unsubscribeOrb();
 });
 
-// ===========================================================================
-// Legacy palette path.
-// ===========================================================================
-
-describe("useKeyboardShortcuts (legacy palette path)", () => {
-  it("⌘K opens the legacy command palette in default mode", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("k", { metaKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("default");
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it("⌘1 opens the actions dashboard (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("1", { metaKey: true });
-
-    expect(callbacks.onOpenActions).toHaveBeenCalledTimes(1);
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
-  });
-
-  it.each<[string, PaletteMode]>([
-    ["2", "mentions"],
-    ["3", "tags"],
-    ["4", "research"],
-  ])("⌘%s opens the palette in %s mode (legacy)", (key, mode) => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey(key, { metaKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith(mode);
-  });
-
-  it("⌘⇧P opens the palette in commands mode (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("P", { metaKey: true, shiftKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("commands");
-  });
-
-  it("⌘⇧F opens the palette in files mode (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("F", { metaKey: true, shiftKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("files");
-    expect(capturedBarEvents).toEqual([]);
-  });
-});
 
 // ===========================================================================
 // Quiet-composer path — palette family should be owned by the cmd-bar hook
@@ -343,13 +298,13 @@ describe("useKeyboardShortcuts (quiet-composer path)", () => {
     expect(capturedBarEvents).toEqual([{ type: "focus", prefix: ":file " }]);
   });
 
-  it("⌘. does NOT toggle focus mode (useFocusMode owns it)", () => {
+  it("⌘. toggles focus mode via the callback", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     dispatchKey(".", { metaKey: true });
 
-    expect(callbacks.onToggleFocusMode).not.toHaveBeenCalled();
+    expect(callbacks.onToggleFocusMode).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -401,22 +356,24 @@ describe("useKeyboardShortcuts (uiPreview-agnostic chords)", () => {
   // Keyboard Shortcuts dialog binding now (see useKeyboardShortcuts.ts).
   // The ⌘⇧K coverage above is the only remaining assertion.
 
-  it("⌘⇧C toggles the chat panel", () => {
+  it("⌘⇧C emits cmd-bar focus event (Quiet Composer cmd bar is the chat)", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     dispatchKey("c", { metaKey: true, shiftKey: true });
 
-    expect(mockSettings.setChatPanelOpen).toHaveBeenCalledWith(true);
+    expect(mockSettings.setChatPanelOpen).not.toHaveBeenCalled();
+    expect(capturedBarEvents).toEqual([{ type: "focus" }]);
   });
 
-  it("⌘⇧A toggles the activity strip", () => {
+  it("⌘⇧A emits agent-orb toggle event (Quiet Composer orb is the activity panel)", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
 
     dispatchKey("a", { metaKey: true, shiftKey: true });
 
-    expect(callbacks.onToggleActivityStrip).toHaveBeenCalledTimes(1);
+    expect(callbacks.onToggleActivityStrip).not.toHaveBeenCalled();
+    expect(capturedOrbEvents).toEqual([{ type: "toggle" }]);
   });
 
   it("⌘⇧R toggles recording", () => {
@@ -671,16 +628,15 @@ describe("useKeyboardShortcuts (cleanup)", () => {
     const callbacks = makeCallbacks();
     const { unmount } = renderHook(() => useKeyboardShortcuts(callbacks));
 
-    dispatchKey("k", { metaKey: true });
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
+    dispatchKey("f", { metaKey: true });
+    expect(callbacks.onFindOpen).toHaveBeenCalledTimes(1);
 
     unmount();
 
-    dispatchKey("k", { metaKey: true });
-    dispatchKey("7", { metaKey: true });
+    dispatchKey("f", { metaKey: true });
     dispatchKey("H", { metaKey: true, shiftKey: true });
 
     // Same call count as before unmount.
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
+    expect(callbacks.onFindOpen).toHaveBeenCalledTimes(1);
   });
 });

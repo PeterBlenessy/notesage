@@ -201,12 +201,12 @@ describe('Tab management', () => {
   it('closeTab removes the tab', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
     useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabA = getTab('/a.md')!;
+    const tabB = getTab('/b.md')!;
 
-    useEditorStore.getState().closeTab(tabA.id);
+    useEditorStore.getState().closeTab(tabB.id);
 
-    expect(useEditorStore.getState().openDocuments).toHaveLength(1);
-    expect(getTab('/a.md')).toBeUndefined();
+    expect(useEditorStore.getState().openDocuments).toHaveLength(0);
+    expect(getTab('/b.md')).toBeUndefined();
   });
 
   it('closeTab removes from persistedTabs', () => {
@@ -217,29 +217,20 @@ describe('Tab management', () => {
     expect(useEditorStore.getState().persistedTabs).toEqual([]);
   });
 
-  it('closeTab switches active to previous tab when closing active', () => {
+  it('closeTab sets activeTabId to null when closing the active doc (single-doc shell)', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    const tabC = getTab('/c.md')!;
-
-    // c is active, close it
-    useEditorStore.getState().closeTab(tabC.id);
-
-    const state = useEditorStore.getState();
-    expect(state.openDocuments).toHaveLength(2);
-    // Should switch to tab at index max(0, closedIndex-1) = index 1 = b
-    expect(state.activeTabId).toBe(getTab('/b.md')!.id);
+    const tabA = getTab('/a.md')!;
+    useEditorStore.getState().closeTab(tabA.id);
+    expect(useEditorStore.getState().activeTabId).toBeNull();
   });
 
-  it('closeTab switches to first tab when closing the first active tab', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    // Make a active
-    useEditorStore.getState().setActiveTab(getTab('/a.md')!.id);
-    useEditorStore.getState().closeTab(getTab('/a.md')!.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(getTab('/b.md')!.id);
+  it('closeTab with multiple injected docs: non-active close preserves active', () => {
+    // Inject two docs via setState (bypassing single-doc eviction for this invariant test)
+    const tabA: Tab = { id: 'id-a', filePath: '/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: 'id-b', persistedTabs: [{ filePath: '/a.md', fileName: 'a.md' }, { filePath: '/b.md', fileName: 'b.md' }] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+    useEditorStore.getState().closeTab('id-a');
+    expect(useEditorStore.getState().activeTabId).toBe('id-b');
   });
 
   it('closeTab sets activeTabId to null when closing the last tab', () => {
@@ -251,25 +242,19 @@ describe('Tab management', () => {
   });
 
   it('closeTab does not change activeTabId when closing non-active tab', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabB = getTab('/b.md')!;
-    const tabA = getTab('/a.md')!;
-
-    // b is active, close a
-    useEditorStore.getState().closeTab(tabA.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(tabB.id);
+    const tabA: Tab = { id: 'id-a', filePath: '/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: 'id-b', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+    useEditorStore.getState().closeTab('id-a');
+    expect(useEditorStore.getState().activeTabId).toBe('id-b');
   });
 
   it('setActiveTab changes active tab and persisted path', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabA = getTab('/a.md')!;
-
-    useEditorStore.getState().setActiveTab(tabA.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(tabA.id);
+    const tabA: Tab = { id: 'id-a', filePath: '/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB], activeTabId: 'id-b', persistedTabs: [], persistedActiveFilePath: '/b.md' } as unknown as Parameters<typeof useEditorStore.setState>[0]);
+    useEditorStore.getState().setActiveTab('id-a');
+    expect(useEditorStore.getState().activeTabId).toBe('id-a');
     expect(useEditorStore.getState().persistedActiveFilePath).toBe('/a.md');
   });
 });
@@ -394,12 +379,11 @@ describe('Dirty tracking', () => {
   });
 
   it('markTabDeleted marks all files under a directory path', () => {
-    useEditorStore.getState().openTab('/project/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/project/sub/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
-
+    const tabA: Tab = { id: 'id-a', filePath: '/project/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/project/sub/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabC: Tab = { id: 'id-c', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB, tabC], activeTabId: 'id-c', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().markTabDeleted('/project');
-
     expect(getTab('/project/a.md')!.deleted).toBe(true);
     expect(getTab('/project/sub/b.md')!.deleted).toBe(true);
     expect(getTab('/other/c.md')!.deleted).toBeUndefined();
@@ -522,17 +506,11 @@ describe('External changes', () => {
 describe('Persistence', () => {
   it('persists persistedTabs and persistedActiveFilePath through restart', async () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'content');
     await waitForPersist();
-
     await simulateRestart();
-
     const state = useEditorStore.getState();
-    expect(state.persistedTabs).toEqual([
-      { filePath: '/a.md', fileName: 'a.md' },
-      { filePath: '/b.md', fileName: 'b.md' },
-    ]);
-    expect(state.persistedActiveFilePath).toBe('/b.md');
+    expect(state.persistedTabs).toEqual([{ filePath: '/a.md', fileName: 'a.md' }]);
+    expect(state.persistedActiveFilePath).toBe('/a.md');
   });
 
   it('persists recentFiles through restart', async () => {
@@ -817,18 +795,15 @@ describe('renameTab', () => {
 
 describe('updateFilePaths', () => {
   it('rewrites all paths with matching prefix', () => {
-    useEditorStore.getState().openTab('/old/dir/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/old/dir/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
-    useEditorStore.getState().setScrollPosition('/old/dir/a.md', 0.3);
-
+    const tabA: Tab = { id: 'id-a', filePath: '/old/dir/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/old/dir/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabC: Tab = { id: 'id-c', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB, tabC], activeTabId: 'id-c', persistedTabs: [], persistedActiveFilePath: '/other/c.md', scrollPositions: { '/old/dir/a.md': 0.3 } } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().updateFilePaths('/old/dir', '/new/dir');
-
     const state = useEditorStore.getState();
     expect(state.openDocuments[0].filePath).toBe('/new/dir/a.md');
     expect(state.openDocuments[1].filePath).toBe('/new/dir/b.md');
     expect(state.openDocuments[2].filePath).toBe('/other/c.md');
-    // Last opened tab was /other/c.md which doesn't match prefix, so stays as-is
     expect(state.persistedActiveFilePath).toBe('/other/c.md');
     expect(state.scrollPositions['/new/dir/a.md']).toBe(0.3);
     expect(state.scrollPositions['/old/dir/a.md']).toBeUndefined();
@@ -861,12 +836,11 @@ describe('renameOpenDocument', () => {
   });
 
   it('folder cascade: rewrites all descendant tab paths and fileNames', () => {
-    useEditorStore.getState().openTab('/old/dir/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/old/dir/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
-
+    const tabA: Tab = { id: 'id-a', filePath: '/old/dir/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabB: Tab = { id: 'id-b', filePath: '/old/dir/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    const tabC: Tab = { id: 'id-c', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown' };
+    useEditorStore.setState({ openDocuments: [tabA, tabB, tabC], activeTabId: 'id-c', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().renameOpenDocument('/old/dir', '/new/dir');
-
     const state = useEditorStore.getState();
     const a = state.openDocuments.find(t => t.fileName === 'a.md');
     const b = state.openDocuments.find(t => t.fileName === 'b.md');
@@ -934,57 +908,40 @@ describe('copilot toggle', () => {
 
 describe('reorderTab', () => {
   it('reorders tabs by moving a tab from one index to another', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    useEditorStore.getState().openTab('/d.md', 'd.md', 'd');
-
-    // Move tab at index 0 (a) to index 2
+    const mkTab = (id: string, path: string): Tab => ({ id, filePath: path, fileName: path.split('/').pop()!, isDirty: false, content: '', contentLoaded: true, frontmatter: null, fileType: 'markdown' });
+    useEditorStore.setState({ openDocuments: [mkTab('a', '/a.md'), mkTab('b', '/b.md'), mkTab('c', '/c.md'), mkTab('d', '/d.md')], activeTabId: 'd', persistedTabs: [{ filePath: '/a.md', fileName: 'a.md' }, { filePath: '/b.md', fileName: 'b.md' }, { filePath: '/c.md', fileName: 'c.md' }, { filePath: '/d.md', fileName: 'd.md' }] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().reorderTab(0, 2);
-
     const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/b.md', '/c.md', '/a.md', '/d.md']);
   });
 
   it('no-op when fromIndex equals toIndex', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-
+    const mkTab = (id: string, path: string): Tab => ({ id, filePath: path, fileName: path.split('/').pop()!, isDirty: false, content: '', contentLoaded: true, frontmatter: null, fileType: 'markdown' });
+    useEditorStore.setState({ openDocuments: [mkTab('a', '/a.md'), mkTab('b', '/b.md')], activeTabId: 'b', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().reorderTab(1, 1);
-
     const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/a.md', '/b.md']);
   });
 
   it('does not change activeTabId', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    const activeId = useEditorStore.getState().activeTabId;
-
+    const mkTab = (id: string, path: string): Tab => ({ id, filePath: path, fileName: path.split('/').pop()!, isDirty: false, content: '', contentLoaded: true, frontmatter: null, fileType: 'markdown' });
+    useEditorStore.setState({ openDocuments: [mkTab('a', '/a.md'), mkTab('b', '/b.md'), mkTab('c', '/c.md')], activeTabId: 'c', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().reorderTab(0, 2);
-
-    expect(useEditorStore.getState().activeTabId).toBe(activeId);
+    expect(useEditorStore.getState().activeTabId).toBe('c');
   });
 
   it('updates persistedTabs order to match', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-
+    const mkTab = (id: string, path: string): Tab => ({ id, filePath: path, fileName: path.split('/').pop()!, isDirty: false, content: '', contentLoaded: true, frontmatter: null, fileType: 'markdown' });
+    useEditorStore.setState({ openDocuments: [mkTab('a', '/a.md'), mkTab('b', '/b.md'), mkTab('c', '/c.md')], activeTabId: 'c', persistedTabs: [{ filePath: '/a.md', fileName: 'a.md' }, { filePath: '/b.md', fileName: 'b.md' }, { filePath: '/c.md', fileName: 'c.md' }] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().reorderTab(2, 0);
-
     const persistedPaths = useEditorStore.getState().persistedTabs.map((p) => p.filePath);
     expect(persistedPaths).toEqual(['/c.md', '/a.md', '/b.md']);
   });
 
   it('moving last tab to first position works', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-
+    const mkTab = (id: string, path: string): Tab => ({ id, filePath: path, fileName: path.split('/').pop()!, isDirty: false, content: '', contentLoaded: true, frontmatter: null, fileType: 'markdown' });
+    useEditorStore.setState({ openDocuments: [mkTab('a', '/a.md'), mkTab('b', '/b.md'), mkTab('c', '/c.md')], activeTabId: 'c', persistedTabs: [] } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().reorderTab(2, 0);
-
     const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
     expect(paths).toEqual(['/c.md', '/a.md', '/b.md']);
   });

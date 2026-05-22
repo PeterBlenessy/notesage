@@ -2,27 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { FileType, ViewMode } from "@/lib/file-utils";
-import { useSettingsStore } from "@/stores/settings-store";
 
 
 export type { FileType, ViewMode } from "@/lib/file-utils";
-
-/**
- * Quiet Composer is a single-document shell — opening a new doc evicts the
- * previously-active one, and closing the active doc lands on the empty
- * landing state instead of auto-switching to a sibling tab. Both store
- * actions branch on this helper. The legacy shell is unaffected.
- */
-function isQuietComposer(): boolean {
-  try {
-    return useSettingsStore.getState().uiPreview === "quiet-composer";
-  } catch {
-    // Defensive: if settings-store isn't initialised yet (very early startup),
-    // fall back to legacy semantics so we don't accidentally evict during
-    // tab restoration.
-    return false;
-  }
-}
 
 /** Scroll target for navigating to a specific tag occurrence within a document. */
 export interface ScrollToTag {
@@ -210,10 +192,8 @@ export const useEditorStore = create<EditorStore>()(
           // re-activate it (nothing to evict). Dirty docs rely on the
           // 1-second debounced auto-save in `Editor.tsx` having already
           // flushed by the time the user opens a sibling — same guarantee
-          // the legacy `closeTab` provides today (it doesn't gate on dirty
-          // either; the warn-if-dirty path is in TitleBar / TabBar at the
-          // call site, not in the store mutator).
-          const quiet = isQuietComposer();
+          // as closeTab today (it doesn't gate on dirty either; the
+          // warn-if-dirty path is in TitleBar at the call site, not here).
 
           // Check if tab already exists
           const existingTab = state.openDocuments.find((tab) => tab.filePath === filePath);
@@ -241,16 +221,11 @@ export const useEditorStore = create<EditorStore>()(
             };
           }
 
-          // Create new tab. Under Quiet Composer, evict every other open
-          // doc first so the end state is always exactly 1 entry. Under
-          // the legacy shell we keep the existing append-to-end semantics.
-          const baseDocs = quiet ? [] : state.openDocuments;
-          const basePersisted = quiet
-            ? []
-            : state.persistedTabs.filter((p) => p.filePath !== filePath);
-          const baseAccessOrder = quiet
-            ? []
-            : state.documentAccessOrder;
+          // Create new tab. Evict every other open doc so the end state
+          // is always exactly 1 entry (Quiet Composer is single-doc).
+          const baseDocs: typeof state.openDocuments = [];
+          const basePersisted: typeof state.persistedTabs = [];
+          const baseAccessOrder: string[] = [];
 
           const newTab: Tab = {
             id: crypto.randomUUID(),
@@ -321,21 +296,11 @@ export const useEditorStore = create<EditorStore>()(
           const newTabs = state.openDocuments.filter((tab) => tab.id !== tabId);
           let newActiveTabId = state.activeTabId;
 
-          // If closing active tab, decide where to land. Under Quiet Composer,
-          // closing the active doc lands on the empty landing state — the
-          // shell is a single-document editor by design (see openTab eviction
-          // above), so even if a stale sibling is in the array (e.g., a
-          // pre-quiet tab survived from a setting-flip mid-session) we don't
-          // auto-switch to it. The legacy shell keeps the previous behaviour
-          // of falling back to the prior-index sibling.
+          // If closing the active tab, land on the empty state. Quiet
+          // Composer is a single-document shell by design (see openTab
+          // eviction above), so closing always returns to the empty state.
           if (state.activeTabId === tabId) {
-            if (newTabs.length > 0 && !isQuietComposer()) {
-              const closedIndex = state.openDocuments.findIndex((tab) => tab.id === tabId);
-              const newIndex = Math.max(0, closedIndex - 1);
-              newActiveTabId = newTabs[newIndex]?.id || null;
-            } else {
-              newActiveTabId = null;
-            }
+            newActiveTabId = null;
           }
 
           const newPersistedTabs = closedTab

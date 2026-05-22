@@ -21,8 +21,7 @@ import { MentionsSection } from "./MentionsSection";
  * and SQLite index. Tags and Mentions self-hide when their cap is 0 (the
  * slider IS the visibility control — see settings-store v11→v12 migration).
  *
- * Only mounted when `settings.uiPreview === "quiet-composer"`. That gate
- * lives on `QuietLayout`, so this component does not need its own flag check.
+ * Mounted by `QuietLayout` (the only UI shell).
  *
  * Task #43 — type-to-filter. When the sidebar has focus, pressing a
  * printable key appends to a local `filter` string that's passed down to

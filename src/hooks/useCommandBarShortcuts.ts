@@ -2,8 +2,7 @@
  * useCommandBarShortcuts — global keyboard shortcuts for the floating
  * command bar (Quiet Composer UI, ui-refresh task #20).
  *
- * Active only when `settings-store.uiPreview === "quiet-composer"` so
- * the legacy code path is unaffected. Emits intents on the
+ * Emits intents on the
  * `cmd-bar-events` bus; the FloatingCommandBar subscribes and reacts.
  *
  * Bindings (per `docs/prds/2026-04-21-ui-refresh.md` §"Keyboard
@@ -41,7 +40,6 @@
  */
 import { useEffect } from 'react';
 
-import { useSettingsStore } from '@/stores/settings-store';
 import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 
 // Map ⌘<digit> → prefix character. Both unshifted and shifted variants
@@ -55,23 +53,8 @@ const DIGIT_TO_PREFIX: Record<string, string> = {
   '4': '?',
 };
 
-// NOTE: earlier versions of this hook also defined an
-// `isOutsideCmdBarTextEntry` helper to gate ⌘⇧P / ⌘1–4 on whether focus was
-// in an editable surface. The gate produced a silent P0 (the chords did
-// nothing when focus was in the editor, which is the default state). Every
-// remaining binding in this hook is a ⌘-modifier chord, so the gate is
-// unnecessary — ⌘-chords are app-level shortcuts, not raw typing. Helper
-// removed to keep the file focused; re-introduce it if a non-modifier
-// binding lands here in the future.
-
 export function useCommandBarShortcuts(): void {
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-
   useEffect(() => {
-    // Hard short-circuit on legacy: register no listener at all so the
-    // legacy keymap (useKeyboardShortcuts) is the sole source of truth.
-    if (uiPreview !== 'quiet-composer') return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey;
 
@@ -140,5 +123,5 @@ export function useCommandBarShortcuts(): void {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [uiPreview]);
+  }, []);
 }

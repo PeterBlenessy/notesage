@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { TitleBar } from "@/components/TitleBar";
-import type { LayoutProps } from "@/components/Layout";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
@@ -15,14 +14,14 @@ import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { FocusPill } from "@/components/editor/FocusPill";
-import { RevertInvitation } from "@/components/RevertInvitation";
 import { useQuietChrome } from "@/lib/quiet-chrome";
 import { cn } from "@/lib/utils";
+import type { AgentTask } from "@/stores/activity-store";
 
 /**
  * QuietLayout — Quiet Composer shell (PRD `2026-04-21-ui-refresh`, Phase 1).
  *
- * Mounted only when `settings.uiPreview === "quiet-composer"`. Renders a
+ * The only UI shell. Renders a
  * two-column grid under a TitleBar:
  *
  *   - QuietSidebar (#30)          → left column (240px)
@@ -47,7 +46,30 @@ import { cn } from "@/lib/utils";
  * supplies the slot and forwards the layout-level callbacks.
  */
 
-export type QuietLayoutProps = LayoutProps;
+export interface QuietLayoutProps {
+  onNewNote?: () => void;
+  onNewProject?: () => void;
+  onOpenFolder?: () => void;
+  onOpenProject?: (path: string) => void;
+  onOpenFile?: (path: string, name: string) => void;
+  exportOpen?: boolean;
+  onExportOpenChange?: (open: boolean) => void;
+  outlineOpen?: boolean;
+  onOutlineOpenChange?: (open: boolean) => void;
+  updateAvailable?: boolean;
+  updateVersion?: string;
+  onUpdateClick?: () => void;
+  onShortcutsOpen?: () => void;
+  onOpenActions?: () => void;
+  onOpenSettings?: () => void;
+  onBrowseForProject?: () => void | Promise<void>;
+  onOpenProjectSettings?: (projectPath: string) => void;
+  onMakeProject?: (folderPath: string) => void | Promise<void>;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void | Promise<void>;
+  focusMode?: boolean;
+  onCancelTask?: (taskId: string) => void | Promise<void>;
+  onClickTask?: (task: AgentTask) => void;
+}
 
 /**
  * Resolve the parent directory for a new note triggered by `⌘N`. Returns
@@ -450,14 +472,6 @@ export function QuietLayout(props: QuietLayoutProps) {
        */}
       <FocusPill active={focus.active} onExit={focus.exit} />
 
-      {/*
-        RevertInvitation (#107) — symmetric counterpart to the
-        PreviewInvitation banner mounted in `Layout.tsx`. Gives Quiet
-        Composer users a visible path back to the classic shell without
-        digging into Settings. One-time show + 30-day cooldown on
-        dismissal, same lifecycle as the forward-direction banner.
-      */}
-      <RevertInvitation />
     </div>
   );
 }

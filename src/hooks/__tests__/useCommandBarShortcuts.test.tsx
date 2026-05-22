@@ -71,18 +71,6 @@ afterEach(() => {
   unsubscribe();
 });
 
-describe('useCommandBarShortcuts (legacy gating)', () => {
-  it('is a no-op when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useCommandBarShortcuts());
-
-    dispatchKey('k', { metaKey: true });
-    dispatchKey('1', { metaKey: true });
-    dispatchKey('Escape', {});
-
-    expect(captured).toEqual([]);
-  });
-});
 
 describe('useCommandBarShortcuts (focus shortcuts)', () => {
   it('⌘K emits { type: "focus" } with no prefix', () => {

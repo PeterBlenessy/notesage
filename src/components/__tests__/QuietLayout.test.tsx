@@ -134,7 +134,6 @@ vi.mock('@/components/RevertInvitation', () => ({
 function defaultProps(overrides: Partial<QuietLayoutProps> = {}): QuietLayoutProps {
   return {
     focusMode: false,
-    stripExpanded: false,
     onNewNote: vi.fn(),
     onNewProject: vi.fn(),
     onOpenFolder: vi.fn(),
@@ -145,7 +144,7 @@ function defaultProps(overrides: Partial<QuietLayoutProps> = {}): QuietLayoutPro
     outlineOpen: false,
     onOutlineOpenChange: vi.fn(),
     updateAvailable: false,
-    updateVersion: null,
+    updateVersion: undefined,
     onUpdateClick: vi.fn(),
     onShortcutsOpen: vi.fn(),
     onOpenActions: vi.fn(),

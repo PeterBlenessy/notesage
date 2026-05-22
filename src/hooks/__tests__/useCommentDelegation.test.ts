@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useCommentDelegation } from '@/hooks/useCommentDelegation';
+import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
 
 // ---------------------------------------------------------------------------
 // Patch sonner mock — the tauri-mock provides toast as a plain object with
@@ -1084,16 +1085,19 @@ describe('useCommentDelegation', () => {
         saveComments: saveSpy,
       } as unknown as Partial<ReturnType<typeof useCommentStore.getState>>);
 
-      const setChatOpenSpy = vi.fn();
-      useSettingsStore.setState({
-        setChatPanelOpen: setChatOpenSpy,
-      } as unknown as Partial<ReturnType<typeof useSettingsStore.getState>>);
+      // Capture cmd-bar events to verify the chat panel is opened via emitCmdBarEvent
+      const capturedCmdBarEvents: CmdBarEvent[] = [];
+      const unsubscribeCmdBar = subscribeToCmdBarEvents((e) => {
+        capturedCmdBarEvents.push(e);
+      });
 
       const { result } = renderHook(() => useCommentDelegation());
 
       act(() => {
         result.current.moveToChat(comment, '/Users/test/project', PROJECT_ROOT);
       });
+
+      unsubscribeCmdBar();
 
       // Creates conversation with title from anchor
       expect(createConvSpy).toHaveBeenCalledWith(
@@ -1133,8 +1137,8 @@ describe('useCommentDelegation', () => {
         }),
       );
 
-      // Opens chat panel
-      expect(setChatOpenSpy).toHaveBeenCalledWith(true);
+      // Opens the Quiet Composer command bar (replaces legacy setChatPanelOpen)
+      expect(capturedCmdBarEvents).toEqual([{ type: 'focus' }]);
     });
 
     it('saves comments when storageRoot is provided', () => {

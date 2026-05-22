@@ -2,12 +2,6 @@
  * useKeyboardShortcuts — the single keyboard-shortcut hook, mounted at the app
  * root (App.tsx) alongside the other lifecycle hooks.
  *
- * Batch G12 · task #76 — consolidated the scattered if/else soup of the
- * legacy hook into a declarative SHORTCUT table, added `uiPreview` awareness
- * so ⌘K / ⌘1–4 / ⌘⇧P route to the FloatingCommandBar under the Quiet
- * Composer preview, and pulled `useCommandBarShortcuts` into this hook
- * (composition) so App.tsx only has to mount one keyboard hook.
- *
  * Shortcut inventory → `src/shared/appCommandManifest.json` (single source
  * of truth for ids, chords, and display strings). The manifest is keyed by
  * `id` in the typed catalog `src/lib/appCommandCatalog.ts`.
@@ -20,13 +14,8 @@
  * markdown and code-file save paths can diverge. It is intentionally absent
  * from the manifest.
  *
- * Why the capture-phase listeners in other components aren't migrated:
- *
  * `QuietLayout` owns ⌘N and ⌘⇧N at CAPTURE phase with
  * `stopImmediatePropagation`. `useFocusMode` owns ⌘. at capture phase.
- * That design predates this consolidation and is deliberate: the capture
- * phase lets those components preempt this hook's bubble-phase listener
- * when the Quiet Composer preview is active.
  */
 
 import { useEffect } from "react";
@@ -76,20 +65,14 @@ export const REVEAL_IN_FINDER_EVENT = "notesage:reveal-in-finder";
 export const CYCLE_RECENT_EVENT = "notesage:cycle-recent";
 
 export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
-  // Quiet-composer-only cmd-bar bindings (⌘K, ⌘1–4, ⌘⇧P, Esc inside the
-  // bar). The hook short-circuits itself to a no-op under legacy, so it's
-  // safe to mount unconditionally from here.
+  // Cmd-bar bindings (⌘K, ⌘1–4, ⌘⇧P, Esc inside the bar).
   useCommandBarShortcuts();
 
-  // Quiet-composer-only double-tap ⌘ → emit cmd-bar `focus` on the bus.
-  // Internally gated on `uiPreview === "quiet-composer"` — legacy is a
-  // zero-listener no-op, so it's safe to mount unconditionally here.
+  // Double-tap ⌘ → emit cmd-bar `focus` on the bus.
   useDoubleTapCmd();
 
   const { openDocuments, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
-  const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-  const isQuiet = uiPreview === "quiet-composer";
+  const { setSidebarPinned } = useSettingsStore();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -98,10 +81,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       const keyLower = key.toLowerCase();
 
       // ------------------------------------------------------------------
-      // Focus-mode escape — legacy only. useFocusMode owns Esc under the
-      // quiet-composer preview at capture phase.
+      // Focus-mode escape — useFocusMode owns Esc under QuietLayout at
+      // capture phase, so this branch is effectively dead. Kept as a
+      // belt-and-suspenders for the non-Quiet path (future shells).
       // ------------------------------------------------------------------
-      if (key === "Escape" && callbacks.focusMode && !isQuiet) {
+      if (key === "Escape" && callbacks.focusMode) {
         e.preventDefault();
         callbacks.onExitFocusMode();
         return;
@@ -131,18 +115,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // the React effect ordering guarantees it mounts first. It calls
       // preventDefault; we guard against re-firing here by checking
       // `defaultPrevented`. Belt-and-suspenders: we also short-circuit by
-      // `uiPreview` below so even if the cmd-bar hook weren't mounted
-      // (unlikely), we still wouldn't open the legacy palette.
       // ------------------------------------------------------------------
 
-      // ⌘K
+      // ⌘K — useCommandBarShortcuts handles this for the Quiet Composer.
       if (isMod && !e.shiftKey && !e.altKey && keyLower === "k") {
-        if (isQuiet) {
-          // useCommandBarShortcuts has it. Do NOT open the legacy palette.
-          return;
-        }
-        e.preventDefault();
-        callbacks.onPaletteOpen("default");
+        // useCommandBarShortcuts owns ⌘K; nothing to do here.
         return;
       }
 
@@ -153,21 +130,11 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘⇧F — file search
+      // ⌘⇧F — file search: seed the cmd bar with `:file ` so the
+      // FileMode picker opens with the cursor in the filter slot.
       if (isMod && e.shiftKey && keyLower === "f") {
-        if (isQuiet) {
-          // Quiet Composer: seed the cmd bar with `:file ` so the
-          // FileMode picker (PRD `2026-04-28-cmd-bar-verb-prefixes`,
-          // #11) opens with the cursor in the filter slot. The
-          // trailing space is intentional — the bar's `focus`
-          // subscriber treats this prefix as chord-seeded so the
-          // first Esc collapses the bar.
-          e.preventDefault();
-          emitCmdBarEvent({ type: "focus", prefix: ":file " });
-          return;
-        }
         e.preventDefault();
-        callbacks.onPaletteOpen("files");
+        emitCmdBarEvent({ type: "focus", prefix: ":file " });
         return;
       }
 
@@ -178,49 +145,26 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘1 / ⌘2 / ⌘3 / ⌘4 — palette prefix modes.
+      // ⌘1 / ⌘2 / ⌘3 / ⌘4 — cmd bar prefix modes (owned by useCommandBarShortcuts).
       if (isMod && !e.altKey) {
-        const DIGIT_TO_LEGACY_MODE: Record<string, PaletteMode> = {
-          "1": "default", // actions dashboard opens separately via onOpenActions
-          "2": "mentions",
-          "3": "tags",
-          "4": "research",
-        };
-        if (key in DIGIT_TO_LEGACY_MODE) {
-          if (isQuiet) {
-            // useCommandBarShortcuts owns these.
-            return;
-          }
-          e.preventDefault();
-          if (key === "1") {
-            callbacks.onOpenActions?.();
-          } else {
-            callbacks.onPaletteOpen(DIGIT_TO_LEGACY_MODE[key]);
-          }
+        const DIGIT_KEYS = new Set(["1", "2", "3", "4"]);
+        if (DIGIT_KEYS.has(key)) {
+          // useCommandBarShortcuts owns these.
           return;
         }
       }
 
-      // ⌘⇧P — command palette in `>` (commands) mode under legacy; focus
-      // cmd bar with `>` prefix under quiet-composer.
+      // ⌘⇧P — cmd bar `>` prefix mode (owned by useCommandBarShortcuts).
       if (isMod && e.shiftKey && keyLower === "p") {
-        if (isQuiet) {
-          // useCommandBarShortcuts owns this.
-          return;
-        }
-        e.preventDefault();
-        callbacks.onPaletteOpen("commands");
+        // useCommandBarShortcuts owns this.
         return;
       }
 
       // ------------------------------------------------------------------
-      // Focus mode — legacy only. useFocusMode owns ⌘. under quiet-composer.
+      // Focus mode — useFocusMode owns ⌘. under QuietLayout at capture phase.
+      // Cross-keyboard layout safety: also accept `event.code === "Period"`.
       // ------------------------------------------------------------------
-      // Cross-keyboard layout safety — accept `event.code === "Period"`
-      // alongside `event.key === "."` so future layouts (where `.` may
-      // require a modifier or sit on a different physical key) don't
-      // silently break the chord.
-      if (isMod && !isQuiet && (key === "." || e.code === "Period")) {
+      if (isMod && (key === "." || e.code === "Period")) {
         e.preventDefault();
         callbacks.onToggleFocusMode();
         return;
@@ -228,7 +172,6 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
 
       // ------------------------------------------------------------------
       // Theme / settings / outline / sidebar / chat / activity / recording.
-      // These are uiPreview-agnostic.
       // ------------------------------------------------------------------
 
       // ⌘T — toggle theme
@@ -255,53 +198,33 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // ⌘⇧A — toggle activity strip (legacy) / toggle agent orb popover
-      // (quiet-composer). Under Quiet Composer there is no activity strip,
-      // so we emit on the agent-orb bus instead; `AgentOrb` subscribes and
-      // flips its popover open/closed state. Under legacy, the callback
-      // drives the classic ActivityStrip resizable panel.
+      // ⌘⇧A — toggle agent orb popover. `AgentOrb` subscribes and
+      // flips its popover open/closed state.
       if (isMod && e.shiftKey && keyLower === "a") {
         e.preventDefault();
-        if (isQuiet) {
-          emitAgentOrbEvent({ type: "toggle" });
-        } else {
-          callbacks.onToggleActivityStrip?.();
-        }
+        emitAgentOrbEvent({ type: "toggle" });
         return;
       }
 
-      // ⌘⇧C — toggle chat panel (legacy) / cmd bar semantics (quiet-composer).
-      // Under Quiet Composer the command bar IS the chat (per PRD intent), so
-      // this chord summons the bar rather than toggling a non-existent
-      // `chatPanelOpen` sidebar. Decision table:
+      // ⌘⇧C — cmd bar semantics. The command bar IS the chat in
+      // Quiet Composer. Decision table:
       //
       //   collapsed        → emit `focus` (expand)
       //   expanded+float   → no-op (Esc is the documented dismiss path)
-      //   expanded+pinned  → emit `toggle-pin` (unpin → float; same chord
-      //                     twice unpins)
-      //
-      // We read expand/pin state via the DOM — the bar writes
-      // `data-expanded` and `data-cmd-bar-pinned` on its root. Reading DOM
-      // in a one-off keyboard handler avoids a circular React dependency
-      // (keyboard hook → bar ref → keyboard hook) that the cmd-bar-events
-      // bus was introduced to prevent.
+      //   expanded+pinned  → emit `toggle-pin` (unpin → float)
       if (isMod && e.shiftKey && keyLower === "c" && !e.altKey) {
         e.preventDefault();
-        if (isQuiet) {
-          const bar = document.querySelector(
-            "[data-cmd-bar]",
-          ) as HTMLElement | null;
-          const isExpanded = bar?.getAttribute("data-expanded") === "true";
-          const isPinned = bar?.getAttribute("data-cmd-bar-pinned") === "true";
-          if (isExpanded && isPinned) {
-            emitCmdBarEvent({ type: "toggle-pin" });
-          } else if (!isExpanded) {
-            emitCmdBarEvent({ type: "focus" });
-          }
-          // else: expanded + floating → no-op (user should use Esc)
-        } else {
-          setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
+        const bar = document.querySelector(
+          "[data-cmd-bar]",
+        ) as HTMLElement | null;
+        const isExpanded = bar?.getAttribute("data-expanded") === "true";
+        const isPinned = bar?.getAttribute("data-cmd-bar-pinned") === "true";
+        if (isExpanded && isPinned) {
+          emitCmdBarEvent({ type: "toggle-pin" });
+        } else if (!isExpanded) {
+          emitCmdBarEvent({ type: "focus" });
         }
+        // else: expanded + floating → no-op (user should use Esc)
         return;
       }
 
@@ -511,8 +434,6 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
     closeTab,
     setPendingCloseTabId,
     setSidebarPinned,
-    setChatPanelOpen,
     callbacks,
-    isQuiet,
   ]);
 }

@@ -8,8 +8,7 @@
  * "summon" the command bar by tapping the Cmd key twice without needing
  * a chord. ⌘K remains the canonical entry point.
  *
- * Active only when `settings-store.uiPreview === "quiet-composer"` so the
- * legacy code path is unaffected.
+ * Always active.
  *
  * Detection rules:
  *   1. Only `event.key === 'Meta'` events count as a "tap".
@@ -35,25 +34,18 @@
  */
 import { useEffect, useRef } from 'react';
 
-import { useSettingsStore } from '@/stores/settings-store';
 import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 
 /** Maximum gap between two Meta presses to count as a double-tap, in ms. */
 const DOUBLE_TAP_WINDOW_MS = 300;
 
 export function useDoubleTapCmd(): void {
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-
   // Timestamp of the most recent solo Meta keydown. `0` means "no armed
   // tap" — the initial state and the post-emission reset state both use
   // this sentinel so we don't have to thread an `Option`/null through.
   const lastMetaPressRef = useRef<number>(0);
 
   useEffect(() => {
-    // Hard short-circuit on legacy: register no listener at all so the
-    // legacy keymap is the sole source of truth.
-    if (uiPreview !== 'quiet-composer') return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Meta') {
         const now = performance.now();
@@ -85,5 +77,5 @@ export function useDoubleTapCmd(): void {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [uiPreview]);
+  }, []);
 }

@@ -10,8 +10,8 @@ import { compressImage } from '@/lib/image-compress';
 import { sendImageToChat, supportsVision } from '@/lib/ai/vision';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { useSettingsStore } from '@/stores/settings-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
 import type { VisionCheckContext } from '@/lib/ai/vision';
@@ -104,9 +104,9 @@ function showMenu(x: number, y: number, onSend: () => void) {
   }, 0);
 }
 
-/** Open the chat panel via the settings store. */
+/** Focus the floating command bar so the user can see the attached image. */
 function openChatPanel() {
-  useSettingsStore.getState().setChatPanelOpen(true);
+  emitCmdBarEvent({ type: 'focus' });
 }
 
 export const SendToAI = Extension.create({

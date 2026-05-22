@@ -75,18 +75,6 @@ afterEach(() => {
   performance.now = realPerformanceNow;
 });
 
-describe('useDoubleTapCmd (legacy gating)', () => {
-  it('is a no-op when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useDoubleTapCmd());
-
-    dispatchKey('Meta');
-    advance(50);
-    dispatchKey('Meta');
-
-    expect(captured).toEqual([]);
-  });
-});
 
 describe('useDoubleTapCmd (detection)', () => {
   it('a single Meta press does not emit', () => {

@@ -18,8 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
  *     muted uppercase, content on a card surface with subtle border).
  *   - Wider (560 px) so the `Kbd` combos don't wrap.
  *
- * Mounted in App.tsx alongside the legacy dialog; `uiPreview` decides
- * which one opens.
+ * Mounted in App.tsx.
  */
 
 interface ShortcutEntry {

@@ -245,24 +245,3 @@ describe('#121 ⌘⇧C under Quiet Composer', () => {
   });
 });
 
-describe('#121 ⌘⇧C under Legacy', () => {
-  it('calls setChatPanelOpen (legacy ChatPanel toggle) and does NOT emit on cmd-bar bus', () => {
-    mockUiPreview = 'legacy';
-    mockChatPanelOpen = false;
-    const callbacks = makeCallbacks();
-    renderWithProviders(<Harness callbacks={callbacks} />);
-
-    dispatchKey({ key: 'c', metaKey: true, shiftKey: true });
-
-    // Legacy toggles chatPanelOpen via the settings setter.
-    expect(mockSetChatPanelOpen).toHaveBeenCalledTimes(1);
-    expect(mockSetChatPanelOpen).toHaveBeenCalledWith(true);
-    // setCmdBarPinned must NOT fire under legacy.
-    expect(mockSetCmdBarPinned).not.toHaveBeenCalled();
-    // The bar, if present, remains collapsed (no expand).
-    const bar = getBar();
-    if (bar) {
-      expect(bar.getAttribute('data-expanded')).toBe('false');
-    }
-  });
-});

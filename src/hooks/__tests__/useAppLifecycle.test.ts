@@ -26,18 +26,15 @@ import { renderHook } from '@testing-library/react';
 import '@/test/tauri-mock';
 
 import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
-import type { PaletteMode } from '@/lib/command-palette';
 
-// --- Mutable settings mock (tests flip uiPreview) ---
+// --- Mutable settings mock ---
 const mockSettings: {
-  uiPreview: 'legacy' | 'quiet-composer';
   logLevel: 'info';
   skillsReady: boolean;
   startupReady: boolean;
   setSkillsReady: (v: boolean) => void;
   setStartupReady: (v: boolean) => void;
 } = {
-  uiPreview: 'quiet-composer',
   logLevel: 'info',
   skillsReady: true,
   startupReady: true,
@@ -128,15 +125,12 @@ import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 
 let captured: CmdBarEvent[];
 let unsubscribe: () => void;
-let onOpenPalette: ReturnType<typeof vi.fn<(mode: PaletteMode, drilldown: string) => void>>;
 
 beforeEach(() => {
-  mockSettings.uiPreview = 'quiet-composer';
   captured = [];
   unsubscribe = subscribeToCmdBarEvents((e) => {
     captured.push(e);
   });
-  onOpenPalette = vi.fn<(mode: PaletteMode, drilldown: string) => void>();
 });
 
 afterEach(() => {
@@ -144,9 +138,8 @@ afterEach(() => {
 });
 
 describe('useAppLifecycle — tag click routing', () => {
-  it('emits cmd-bar drilldown when uiPreview === "quiet-composer"', () => {
-    mockSettings.uiPreview = 'quiet-composer';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
+  it('emits cmd-bar drilldown for tag badge clicks', () => {
+    renderHook(() => useAppLifecycle());
 
     window.dispatchEvent(
       new CustomEvent('notesage:open-tag-search', { detail: { tag: 'finance' } }),
@@ -155,26 +148,12 @@ describe('useAppLifecycle — tag click routing', () => {
     expect(captured).toEqual([
       { type: 'focus', prefix: '#', drilldown: { kind: 'tag', name: 'finance' } },
     ]);
-    expect(onOpenPalette).not.toHaveBeenCalled();
-  });
-
-  it('calls onOpenPalette when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
-
-    window.dispatchEvent(
-      new CustomEvent('notesage:open-tag-search', { detail: { tag: 'urgent' } }),
-    );
-
-    expect(onOpenPalette).toHaveBeenCalledWith('tags', 'urgent');
-    expect(captured).toEqual([]);
   });
 });
 
 describe('useAppLifecycle — mention click routing', () => {
-  it('emits cmd-bar drilldown when uiPreview === "quiet-composer"', () => {
-    mockSettings.uiPreview = 'quiet-composer';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
+  it('emits cmd-bar drilldown for mention badge clicks', () => {
+    renderHook(() => useAppLifecycle());
 
     window.dispatchEvent(
       new CustomEvent('notesage:open-mention-search', { detail: { mention: 'alice' } }),
@@ -183,18 +162,5 @@ describe('useAppLifecycle — mention click routing', () => {
     expect(captured).toEqual([
       { type: 'focus', prefix: '@', drilldown: { kind: 'mention', name: 'alice' } },
     ]);
-    expect(onOpenPalette).not.toHaveBeenCalled();
-  });
-
-  it('calls onOpenPalette when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
-
-    window.dispatchEvent(
-      new CustomEvent('notesage:open-mention-search', { detail: { mention: 'bob' } }),
-    );
-
-    expect(onOpenPalette).toHaveBeenCalledWith('mentions', 'bob');
-    expect(captured).toEqual([]);
   });
 });

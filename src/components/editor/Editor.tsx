@@ -9,6 +9,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
 import { useEditorZoom } from "@/hooks/useEditorZoom";
 import { useEditor } from "@/hooks/useEditor";
@@ -61,7 +62,6 @@ import { EditorEmptyState } from "./EditorEmptyState";
 import { BubbleMenu } from "./BubbleMenu";
 import { FindBar } from "./FindBar";
 import { TranscriptionOverlay } from "./TranscriptionOverlay";
-import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { StatusBar } from "./StatusBar";
@@ -101,7 +101,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
   const contentWidth = useSettingsStore((s) => s.contentWidth);
   const marginTop = useSettingsStore((s) => s.marginTop);
   const marginBottom = useSettingsStore((s) => s.marginBottom);
@@ -560,14 +559,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
-  // Quiet Composer mode flag — used by every StatusBar mount in this
-  // component (error state, loading state, viewer fallback, main path)
-  // so all branches render the matching variant. Live-test 2026-04-26
-  // bug #3: error/loading branches were rendering the legacy `"full"`
-  // strip even while QuietLayout was mounted, so the user briefly saw
-  // the legacy chrome flash during file-open.
-  const isQuietVariant = uiPreview === "quiet-composer";
-  const statusBarVariant: "full" | "quiet" = isQuietVariant ? "quiet" : "full";
+  // Quiet Composer is the only shell — always use the quiet StatusBar variant.
+  const statusBarVariant = "quiet" as const;
 
   // Show error state for tabs whose files could not be loaded from disk
   if (activeTab && activeTab.loadError) {
@@ -622,29 +615,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
-  const isQuietComposer = isQuietVariant;
-  const toolbarVariant = isQuietComposer ? "pill" : "inline";
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {toolbarVisible && !focusMode && !isQuietComposer && (
-        <div className="flex items-center border-b border-border shrink-0 bg-background">
-          <Toolbar
-            editor={editor}
-            onImageInsert={() => setImageDialogOpen(true)}
-            viewMode={activeTab?.viewMode}
-            onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
-            sourceWordWrap={sourceWordWrap}
-            onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
-            variant={toolbarVariant}
-          />
-          {gitEnabled && isGitRepo && projectPath && !reviewActive && (
-            <div className="shrink-0 pr-2">
-              <BranchDiffSelector projectPath={projectPath} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Quiet Composer uses the floating pill toolbar — no inline toolbar here. */}
       {activeTab?.viewMode === "source" ? (
         <SourceModeEditor
           tabId={activeTab.id}
@@ -664,13 +637,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       ) : (
         <div className="flex-1 overflow-hidden relative">
           {/*
-            Quiet Composer pill toolbar (#110). Floats over the document area
+            Pill toolbar (#110). Floats over the document area
             anchored to the top-centre of this `relative` container. Hidden in
             focus mode; source mode renders SourceModeEditor instead so this
             branch is already wysiwyg-only. The StatusTray hosts the source-
-            mode toggle for the quiet shell.
+            mode toggle.
           */}
-          {isQuietComposer && toolbarVisible && !focusMode && (
+          {toolbarVisible && !focusMode && (
             <div
               data-editor-pill-toolbar
               className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto"
@@ -788,7 +761,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           editor={editor}
           maxWidth={maxWidth}
           renderedWidth={renderedWidth}
-          variant={isQuietComposer ? "quiet" : "full"}
+          variant="quiet"
           onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
           comments={commentOps.comments}
           branchName={repo?.currentBranch ?? ""}
@@ -1009,7 +982,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               chatStore.setActiveConversation(conv.id);
               const threadMessages = getThread(conv.messages, conv.activeLeafId) || conv.messages;
               await sendChatMessage(text, threadMessages);
-              useSettingsStore.getState().setChatPanelOpen(true);
+              emitCmdBarEvent({ type: "focus" });
               return;
             }
           }

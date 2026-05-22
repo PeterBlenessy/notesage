@@ -157,7 +157,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     showHiddenFiles, setShowHiddenFiles,
     showAgentModePicker, setShowAgentModePicker,
     crossProjectMode, setCrossProjectMode,
-    uiPreview, setUiPreview,
     completionsOnOutOfScope, setCompletionsOnOutOfScope,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
@@ -1111,22 +1110,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                   </div>
 
                   <div className="space-y-2">
-                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
-                      <div className="flex items-center justify-between gap-3">
-                        <Label htmlFor="ui-preview" className="text-sm font-medium cursor-pointer">
-                          Try the new UI
-                        </Label>
-                        <Switch
-                          id="ui-preview"
-                          checked={uiPreview === 'quiet-composer'}
-                          onCheckedChange={(checked) => setUiPreview(checked ? 'quiet-composer' : 'legacy')}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Opt in to the Quiet Composer preview. Toggle off to return to the classic layout. Restart not required.
-                      </p>
-                    </div>
-
                     <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
                       <div className="flex items-center justify-between gap-3">
                         <Label className="text-sm font-medium">

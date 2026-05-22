@@ -213,21 +213,3 @@ describe('#121 ⌘⇧A under Quiet Composer', () => {
   });
 });
 
-describe('#121 ⌘⇧A under Legacy', () => {
-  it('calls onToggleActivityStrip and does NOT toggle the orb popover', () => {
-    mockUiPreview = 'legacy';
-    const callbacks = makeCallbacks();
-    renderWithProviders(<Harness callbacks={callbacks} />);
-
-    const orb = screen.getByTestId('agent-orb');
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-
-    dispatchKey({ key: 'a', metaKey: true, shiftKey: true });
-
-    // Legacy callback fires.
-    expect(callbacks.onToggleActivityStrip).toHaveBeenCalledTimes(1);
-    // Orb popover must NOT have toggled — the legacy path does not emit on
-    // the agent-orb bus.
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-  });
-});
