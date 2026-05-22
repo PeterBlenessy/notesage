@@ -13,13 +13,10 @@ Before promoting this alpha to stable, edit this file:
 
 ## Changes
 
-### Improvements
-
-- **Infrastructure-only release.** Pending hand-edit before stable promotion. The auto-dump under "Under the hood" lists merged Tier-A/B PRs verbatim; move anything user-visible up here as `### Features` / `### Improvements` / `### Fixes` and rewrite in user-facing prose. <!-- Generator silently skips releases with no Features/Improvements/Fixes section; keep at least one bullet here. -->
+_No user-visible changes._
 
 ## Under the hood
 
-Auto-generated dump of merged Tier-A/B PRs. Rewrite as prose grouped by area before stable promotion.
-
-- fix(release): alpha-2 user-facing notes + workflow stub aligns (#320)
-- docs(aw): describe release half + fix mermaid paren-in-label (#319)
+- Corrected the alpha.2 release notes to remove placeholder text and add honest user-facing prose. (#320)
+- Documented the agentic-workflow release half in `docs/agentic-workflow.md` and fixed a Mermaid syntax error. (#319)
+- Split `docs/agentic-workflow.md` into an operational reference and a companion rationale file (`docs/agentic-workflow-rationale.md`) to keep session context lean. (#321)
