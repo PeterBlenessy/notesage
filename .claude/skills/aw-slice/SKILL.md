@@ -59,18 +59,26 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 4. **Decide: don't slice OR slice into N value-aligned children.**
 
    - **0 value groups** — the issue describes only internal work with no user-visible result. Post a clarification comment asking "what user behaviour does this enable?" Leave `slice` in place. Stop.
-   - **1 value group (the common case)** — DO NOT slice. The parent itself becomes the work unit:
-     - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
-     - Post a "passing through unsliced" comment (template below)
-     - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
-   - **1 value group, too large for one TDD run** — when there is unambiguously one user value but the
-     total implementation scope is too large for a single TDD run (estimated >500 lines changed OR
-     >15 files modified), split into sequential **child issues** (NOT peer issues). Each child
-     implements one phase and produces one PR; phases must land in order. The phases do NOT need to
-     be independently shippable — they just need to be coherently separable steps toward the one value.
+   - **1 value group** — check scope before deciding:
+     - **Estimate the implementation size**: count distinct files that need to change and estimate
+       total lines added/removed based on the issue body's "Files likely to change" section and
+       acceptance criteria.
+     - **If scope is large (estimated >500 lines OR >15 files modified)** → phased child issues path
+       (see below).
+     - **If scope is normal (<500 lines AND ≤15 files)** → DO NOT slice. The parent itself becomes
+       the work unit:
+       - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
+       - Post a "passing through unsliced" comment (template below)
+       - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
+
+   - **1 value group, too large for one TDD run (>500 lines OR >15 files)** — one user value but
+     total implementation scope exceeds what a single TDD run can reliably complete. Split into
+     sequential **child issues** (NOT peer issues). Each child implements one phase and produces one
+     PR; phases must land in order. The phases do NOT need to be independently shippable — they just
+     need to be coherently separable steps toward the one value.
 
      When to use this path:
-     - The total estimated diff is >500 lines or >15 files
+     - Estimated total diff is >500 lines or >15 files
      - You can identify 3+ coherent phases each with its own "red test → green" cycle
      - Each phase's files are substantially separate from the others (minimal overlap)
      - The phases form a strict sequence (phase N depends on phase N-1)
