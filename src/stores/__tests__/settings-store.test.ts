@@ -154,7 +154,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
-  uiPreview: 'legacy',
+  uiPreview: 'quiet-composer',
   accent: 'default',
   cmdBarPinned: false,
   cmdBarPinnedWidth: 400,
@@ -1045,24 +1045,19 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
 });
 
 // ===========================================================================
-// uiPreview flag (Phase 1 of Quiet Composer rollout — task #1)
+// uiPreview flag (Classic layout removal — task #2: force quiet-composer)
 // ===========================================================================
 
 describe('uiPreview flag', () => {
-  it('defaults to "legacy" on a fresh install', () => {
+  it('defaults to "quiet-composer" on a fresh install', () => {
     useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
+    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
   });
 
-  it('setUiPreview flips between "legacy" and "quiet-composer"', () => {
+  it('setUiPreview can set quiet-composer', () => {
     useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-
     useSettingsStore.getState().setUiPreview('quiet-composer');
     expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-
-    useSettingsStore.getState().setUiPreview('legacy');
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
   });
 
   it('persists across a simulated restart', async () => {
@@ -1074,9 +1069,52 @@ describe('uiPreview flag', () => {
     expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
   });
 
-  it('v3 → v5 migration: adds uiPreview: "legacy" (and accent: "default") to a state that lacks them', async () => {
+  it('v18 migration: upgrades uiPreview: "legacy" → "quiet-composer"', async () => {
+    // Existing user upgrade: persisted at version 17 with uiPreview = "legacy".
+    // Migration <18 force-flips to "quiet-composer".
+    const v17State = {
+      state: {
+        theme: 'dark',
+        contrastLevel: 50,
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+        printLayout: false,
+        uiPreview: 'legacy',
+        accent: 'default',
+      },
+      version: 17,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v17State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    // Migration should have upgraded "legacy" → "quiet-composer"
+    expect(s.uiPreview).toBe('quiet-composer');
+    // Pre-existing fields survive untouched.
+    expect(s.theme).toBe('dark');
+    expect(s.contrastLevel).toBe(50);
+
+    // The persisted JSON should reflect version 18 with the updated uiPreview.
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(18);
+    expect(parsed.state.uiPreview).toBe('quiet-composer');
+  });
+
+  it('v3 → v18 migration chain: adds uiPreview: "quiet-composer" (and accent: "default") to a state that lacks them', async () => {
     // Existing user upgrade: persisted at version 3, no uiPreview/accent fields.
-    // Migration chain runs both <4 (uiPreview) and <5 (accent) branches.
+    // Migration chain runs v<4 (uiPreview = legacy), then v<18 (upgrades to quiet-composer).
     const v3State = {
       state: {
         theme: 'dark',
@@ -1101,20 +1139,17 @@ describe('uiPreview flag', () => {
     await waitForPersist();
 
     const s = useSettingsStore.getState();
-    expect(s.uiPreview).toBe('legacy');
+    // Chain: v<4 sets "legacy", then v<18 upgrades to "quiet-composer"
+    expect(s.uiPreview).toBe('quiet-composer');
     // Pre-existing fields survive untouched.
     expect(s.theme).toBe('dark');
     expect(s.contrastLevel).toBe(50);
 
-    // The persisted JSON should reflect the bumped version and both new fields,
-    // so the migration doesn't re-run on the next launch. The chain runs all
-    // the way to the current version, so subsequent migrations (#28's
-    // cmdBarPinned defaults) also apply.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
-    expect(parsed.state.uiPreview).toBe('legacy');
+    expect(parsed.version).toBe(18);
+    expect(parsed.state.uiPreview).toBe('quiet-composer');
     expect(parsed.state.accent).toBe('default');
   });
 });
@@ -1255,7 +1290,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1401,7 +1436,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1720,7 +1755,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1975,7 +2010,7 @@ describe('v8 → v9 migration (preview invitation timestamps)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.previewInvitationShownAt).toBeNull();
     expect(parsed.state.previewInvitationDismissedAt).toBeNull();
   });
@@ -2077,7 +2112,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -2148,7 +2183,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2270,7 +2305,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2292,7 +2327,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2318,7 +2353,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2452,7 +2487,7 @@ describe('v14 migration: releaseChannel', () => {
     expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV13State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2460,7 +2495,7 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
   });
 });
 
@@ -2498,7 +2533,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
     expect(useSettingsStore.getState().htmlViewerAllowForms).toBe(true);
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV14State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2506,7 +2541,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
   });
 });
 
@@ -2545,7 +2580,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
     expect(useSettingsStore.getState().htmlViewerAllowScripts).toBe(true);
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV15State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2553,7 +2588,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
   });
 });
 
@@ -2604,7 +2639,7 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
     expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(true);
   });
 
-  it('bumps persisted version to 17 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV16State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2612,6 +2647,6 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(18);
   });
 });

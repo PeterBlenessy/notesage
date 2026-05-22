@@ -122,10 +122,10 @@ interface SettingsStore {
    */
   crossProjectMode: boolean;
   /**
-   * UI preview opt-in. Default "legacy" for both fresh installs and existing
-   * users on upgrade — no user is force-flipped to the new layout. Phase 1 of
-   * the Quiet Composer rollout (PRD 2026-04-21-ui-refresh): the new UI mounts
-   * only when this is "quiet-composer".
+   * UI preview opt-in. Default "quiet-composer" for fresh installs.
+   * Migration in version 18 upgrades any persisted "legacy" value to
+   * "quiet-composer" so existing users are force-migrated to the new shell.
+   * Task: classic-layout-removal #2.
    */
   uiPreview: UiPreview;
   /**
@@ -367,7 +367,7 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
       crossProjectMode: false,
-      uiPreview: "legacy",
+      uiPreview: "quiet-composer",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
       cmdBarExpandedWidth: 640,
@@ -769,7 +769,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 17,
+      version: 18,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -930,6 +930,15 @@ export const useSettingsStore = create<SettingsStore>()(
           // (all resources load freely) so existing users see no behaviour change.
           if (typeof state.htmlViewerBlockExternalResources !== 'boolean') {
             state.htmlViewerBlockExternalResources = false;
+          }
+        }
+        if (version < 18) {
+          // Classic layout removal (#325) — force all users onto the Quiet
+          // Composer shell. Any persisted "legacy" value is upgraded to
+          // "quiet-composer". Undefined (first launch after install) also gets
+          // the new default.
+          if (state.uiPreview === 'legacy' || typeof state.uiPreview === 'undefined') {
+            state.uiPreview = 'quiet-composer';
           }
         }
         return state;
