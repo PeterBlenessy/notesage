@@ -3,24 +3,31 @@ import { setupTauriMock, trackInvokeCalls } from '../fixtures/tauri-mock';
 import { SAMPLE_PROJECT_PATH, SAMPLE_FILES, SAMPLE_FILE_TREE } from '../fixtures/sample-data';
 
 /**
- * Helper to inject an explorer folder into the workspace-store so the sidebar
- * renders a file tree. The workspace-store uses Zustand persist with the key
- * "notesage-workspace", so we write directly to localStorage before the store
- * rehydrates. Because setupTauriMock's addInitScript runs before the app boots,
- * we can also use addInitScript for this.
+ * Helper to inject the workspace state so the QuietSidebar renders the
+ * project with its file tree in the Projects section.
+ *
+ * The workspace-store uses Zustand persist with the key "notesage-workspace".
+ * We write directly to localStorage before the store rehydrates so that on
+ * boot the QuietSidebar's ProjectsSection already has the project registered
+ * with a populated fileTree. This avoids needing to trigger list_directory
+ * via a UI interaction before the file tree is visible.
+ *
+ * Note: the persist partialize function strips fileTree when the app writes
+ * state back to localStorage, but injecting here bypasses that — the
+ * rehydration merge reads `p.projects` directly, preserving our fileTree.
  */
 async function injectWorkspaceState(page: import('@playwright/test').Page): Promise<void> {
   await page.addInitScript(
-    ({ projectPath }) => {
-      // Pre-seed the workspace with the explorer folder path.
-      // The file tree will be loaded via list_directory when we trigger a refresh.
+    ({ projectPath, fileTree }) => {
+      // Pre-seed the workspace with the project path and its file tree.
+      // QuietSidebar's ProjectsSection reads workspace-store.projects.
       const state = {
         state: {
-          explorerFolders: [{ path: projectPath }],
-          projects: [],
+          explorerFolders: [],
+          projects: [{ path: projectPath, fileTree }],
           recentProjects: [],
           notesTree: [],
-          expandedFolders: [projectPath],
+          expandedFolders: [],
           explorerCollapsed: false,
           projectsCollapsed: false,
           notesCollapsed: false,
@@ -29,23 +36,25 @@ async function injectWorkspaceState(page: import('@playwright/test').Page): Prom
       };
       localStorage.setItem('notesage-workspace', JSON.stringify(state));
     },
-    { projectPath: SAMPLE_PROJECT_PATH },
+    { projectPath: SAMPLE_PROJECT_PATH, fileTree: SAMPLE_FILE_TREE },
   );
 }
 
 /**
- * Ensure the file tree is loaded and visible. The Zustand persist merge
- * strips fileTree from explorer folders, so we need to trigger list_directory
- * by clicking the folder to expand it, or by programmatically calling
- * the store's refreshExplorerFolder method.
+ * Ensure the file tree is loaded and visible in the QuietSidebar.
+ *
+ * The QuietSidebar ProjectsSection shows the project basename as a row.
+ * Clicking the project row toggles inline expansion, revealing child file rows.
+ * The fileTree is pre-seeded via injectWorkspaceState, so children appear
+ * immediately after expansion without a list_directory round-trip.
  */
 async function waitForFileTree(page: import('@playwright/test').Page): Promise<void> {
-  // The folder name should be visible in the sidebar — click it to expand and load the tree
-  const folderName = page.getByText('notesage-e2e-project', { exact: true }).first();
-  await expect(folderName).toBeVisible({ timeout: 5000 });
-  await folderName.click();
+  // The project basename should be visible in the sidebar Projects section
+  const projectRow = page.getByText('notesage-e2e-project', { exact: true }).first();
+  await expect(projectRow).toBeVisible({ timeout: 5000 });
+  await projectRow.click();
 
-  // Wait for file items to appear (list_directory is called on expand)
+  // Wait for file items to appear (tree expands inline after click)
   await page.waitForFunction(
     () => document.body.textContent?.includes('welcome.md'),
     { timeout: 10000 },
@@ -85,8 +94,23 @@ test.describe('File operations', () => {
     });
   });
 
-  test.describe('Opening a second file creates a new tab', () => {
-    test('opening two files shows two tabs', async ({ page }) => {
+  test.describe('Opening a second file changes editor content', () => {
+    test('opening two files shows each file\'s content in the editor', async ({ page }) => {
+      await waitForFileTree(page);
+
+      // Open the first file
+      await page.getByText('welcome.md', { exact: true }).first().click();
+      const editorContent = page.locator('#editor-content .ProseMirror');
+      await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
+
+      // Open a second file — editor should switch to its content
+      await page.getByText('todo.md', { exact: true }).first().click();
+      await expect(editorContent).toContainText('Todo List', { timeout: 10000 });
+    });
+  });
+
+  test.describe('Switching files via sidebar changes editor content', () => {
+    test('clicking a different file in the sidebar updates the editor', async ({ page }) => {
       await waitForFileTree(page);
 
       // Open the first file
@@ -98,30 +122,8 @@ test.describe('File operations', () => {
       await page.getByText('todo.md', { exact: true }).first().click();
       await expect(editorContent).toContainText('Todo List', { timeout: 10000 });
 
-      // Both tabs should be visible in the tab bar
-      // TabBar renders buttons with the filename text
-      const welcomeTab = page.getByRole('button', { name: /welcome\.md/ }).first();
-      const todoTab = page.getByRole('button', { name: /todo\.md/ }).first();
-      await expect(welcomeTab).toBeVisible();
-      await expect(todoTab).toBeVisible();
-    });
-  });
-
-  test.describe('Switching tabs changes editor content', () => {
-    test('clicking a tab switches the displayed content', async ({ page }) => {
-      await waitForFileTree(page);
-
-      // Open two files
+      // Switch back to the first file by clicking it in the sidebar again
       await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
-      await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
-
-      await page.getByText('todo.md', { exact: true }).first().click();
-      await expect(editorContent).toContainText('Todo List', { timeout: 10000 });
-
-      // Switch back to the first tab by clicking it
-      const welcomeTab = page.getByRole('button', { name: /welcome\.md/ }).first();
-      await welcomeTab.click();
 
       // Editor should now show welcome.md content again
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });

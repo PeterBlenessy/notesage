@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { setupTauriMock } from '../fixtures/tauri-mock';
 
-test.describe('Navigation — Command Palette', () => {
+test.describe('Navigation — Command Bar', () => {
   test.beforeEach(async ({ page }) => {
     await setupTauriMock(page);
     await page.goto('/');
@@ -9,73 +9,79 @@ test.describe('Navigation — Command Palette', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('Cmd+K opens the command palette', async ({ page }) => {
-    // Press Cmd+K to open the command palette
+  test('Cmd+K opens the command bar', async ({ page }) => {
+    // Press Cmd+K to open the command bar (Quiet Composer FloatingCommandBar)
     await page.keyboard.press('Meta+k');
 
-    // The command palette is a Dialog containing a cmdk Command component.
-    // The input has data-slot="command-input".
-    const paletteInput = page.locator('[data-slot="command-input"]');
-    await expect(paletteInput).toBeVisible({ timeout: 3000 });
-
-    // The command list should also be visible
-    const paletteList = page.locator('[data-slot="command-list"]');
-    await expect(paletteList).toBeVisible();
+    // The command bar expands and shows a combobox textarea.
+    // The bar container has data-cmd-bar + data-expanded="true" when open.
+    const commandBarInput = page.locator('textarea[role="combobox"]');
+    await expect(commandBarInput).toBeVisible({ timeout: 3000 });
   });
 
-  test('typing in the palette filters results', async ({ page }) => {
+  test('typing ">" prefix in the command bar filters palette results', async ({ page }) => {
     await page.keyboard.press('Meta+k');
 
-    const paletteInput = page.locator('[data-slot="command-input"]');
-    await expect(paletteInput).toBeVisible({ timeout: 3000 });
+    const commandBarInput = page.locator('textarea[role="combobox"]');
+    await expect(commandBarInput).toBeVisible({ timeout: 3000 });
 
-    // Type a search query — even without workspace files, the palette should
-    // show action items (e.g., "New Note", "Toggle Theme") or "No results".
-    await paletteInput.fill('New Note');
+    // Type ">" to enter PaletteMode, then filter by "New Note".
+    // The ">" prefix activates the command palette picker (PaletteMode).
+    await commandBarInput.fill('>New Note');
 
-    // Wait for the list to update. Either a matching item or "No results" text
-    // should appear. We check for a cmdk item containing the text, or the
-    // empty state.
-    const matchingItem = page.locator('[cmdk-item]').filter({ hasText: /new note/i });
-    const emptyState = page.locator('[cmdk-empty]');
+    // Wait for the palette list or empty state.
+    // PaletteMode renders data-palette-list with data-palette-row items,
+    // or data-palette-empty when no commands match.
+    const matchingItem = page.locator('[data-palette-row]').filter({ hasText: /new note/i });
+    const emptyState = page.locator('[data-palette-empty]');
 
     // At least one of these should be visible
     await expect(matchingItem.or(emptyState)).toBeVisible({ timeout: 3000 });
   });
 
-  test('selecting a result triggers navigation', async ({ page }) => {
+  test('selecting a palette result executes the command', async ({ page }) => {
     await page.keyboard.press('Meta+k');
 
-    const paletteInput = page.locator('[data-slot="command-input"]');
-    await expect(paletteInput).toBeVisible({ timeout: 3000 });
+    const commandBarInput = page.locator('textarea[role="combobox"]');
+    await expect(commandBarInput).toBeVisible({ timeout: 3000 });
 
-    // Type ">" prefix to enter commands mode, then look for "Toggle Theme"
-    await paletteInput.fill('>Toggle Theme');
+    // Record initial theme so we can verify toggle-theme executed
+    const html = page.locator('html');
+    const hadDark = await html.evaluate((el) => el.classList.contains('dark'));
 
-    const themeItem = page.locator('[cmdk-item]').filter({ hasText: /toggle theme/i });
+    // Type ">" prefix to enter PaletteMode, then search for "Toggle Theme"
+    await commandBarInput.fill('>Toggle Theme');
 
-    // If the command item exists, clicking it should close the palette
+    const themeItem = page.locator('[data-palette-row="toggle-theme"]');
+
+    // If the command item exists, clicking it should execute the command.
+    // In Quiet Composer the bar stays open after palette picks — we verify
+    // execution by checking the theme changed, not by bar closure.
     const itemCount = await themeItem.count();
     if (itemCount > 0) {
       await themeItem.first().click();
 
-      // Palette should close after selecting an item
-      await expect(paletteInput).not.toBeVisible({ timeout: 3000 });
+      // Theme should have toggled (dark class flips)
+      if (hadDark) {
+        await expect(html).not.toHaveClass(/\bdark\b/, { timeout: 3000 });
+      } else {
+        await expect(html).toHaveClass(/\bdark\b/, { timeout: 3000 });
+      }
     }
   });
 
-  test('Escape closes the command palette', async ({ page }) => {
-    // Open the palette
+  test('Escape closes the command bar', async ({ page }) => {
+    // Open the bar
     await page.keyboard.press('Meta+k');
 
-    const paletteInput = page.locator('[data-slot="command-input"]');
-    await expect(paletteInput).toBeVisible({ timeout: 3000 });
+    const commandBarInput = page.locator('textarea[role="combobox"]');
+    await expect(commandBarInput).toBeVisible({ timeout: 3000 });
 
-    // Press Escape to close
+    // Press Escape to collapse the bar
     await page.keyboard.press('Escape');
 
-    // Palette should no longer be visible
-    await expect(paletteInput).not.toBeVisible({ timeout: 3000 });
+    // Bar should collapse — combobox textarea is no longer in the DOM
+    await expect(commandBarInput).not.toBeVisible({ timeout: 3000 });
   });
 });
 
@@ -115,34 +121,37 @@ test.describe('Navigation — Theme Toggle', () => {
   });
 });
 
-test.describe('Navigation — Chat Panel Toggle', () => {
+test.describe('Navigation — Command Bar Toggle', () => {
   test.beforeEach(async ({ page }) => {
     await setupTauriMock(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
   });
 
-  test('Cmd+Shift+C toggles the chat panel', async ({ page }) => {
-    // Chat panel uses a textarea with "Ask" placeholder when open
-    const chatIndicator = page.locator('textarea[placeholder*="Ask"]');
+  test('Cmd+Shift+C opens the command bar; Escape closes it', async ({ page }) => {
+    // In Quiet Composer, the FloatingCommandBar replaces the chat panel.
+    // Cmd+Shift+C when the bar is collapsed → expands the bar (focus event).
+    // Cmd+Shift+C when the bar is expanded+floating → no-op (documented).
+    // Use Escape to collapse the bar.
+    const commandBarInput = page.locator('textarea[role="combobox"]');
 
-    // Chat panel starts closed by default
-    await expect(chatIndicator).not.toBeVisible({ timeout: 3000 });
+    // Bar starts collapsed — combobox not visible
+    await expect(commandBarInput).not.toBeVisible({ timeout: 3000 });
 
     // Click body to ensure the app has focus
     await page.locator('body').click();
 
-    // Open chat panel
+    // Open the bar via Cmd+Shift+C
     await page.keyboard.press('Meta+Shift+c');
 
-    // Chat panel should now be visible
-    await expect(chatIndicator).toBeVisible({ timeout: 5000 });
+    // Bar should now be expanded — combobox visible
+    await expect(commandBarInput).toBeVisible({ timeout: 5000 });
 
-    // Close chat panel
-    await page.keyboard.press('Meta+Shift+c');
+    // Close the bar via Escape
+    await page.keyboard.press('Escape');
 
-    // Chat panel should be hidden again
-    await expect(chatIndicator).not.toBeVisible({ timeout: 5000 });
+    // Bar should collapse — combobox no longer visible
+    await expect(commandBarInput).not.toBeVisible({ timeout: 5000 });
   });
 });
 
