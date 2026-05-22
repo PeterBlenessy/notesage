@@ -115,6 +115,7 @@ jobs:
       - name: Run aw-triage skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-haiku-4-5-20251001   # triage: pattern-match classification, reversible
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # See aw-pipeline.yml for the rationale: GITHUB_TOKEN triggers the
           # built-in recursion guard so the agent's gh calls don't spawn
@@ -181,6 +182,7 @@ jobs:
       - name: Run aw-refine skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-opus-4-7             # refine: writes the spec — wrong here = wrong everywhere
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # See aw-pipeline.yml for the rationale.
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -249,6 +251,7 @@ jobs:
       - name: Run aw-slice skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-opus-4-7             # slice: architectural judgment, defines PR strategy
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # See aw-pipeline.yml for the rationale.
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -309,7 +312,7 @@ jobs:
     needs: find_tdd
     if: needs.find_tdd.outputs.candidate != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       group: aw-stage-tdd-${{ needs.find_tdd.outputs.candidate || github.run_id }}
       cancel-in-progress: false
@@ -333,9 +336,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Select model (escalate to Opus after 2 failures)
+        id: model_select
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ needs.find_tdd.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          ATTEMPTS=$(gh issue view "$ISSUE" --json comments \
+            --jq '[.comments[] | select(.body | startswith("> *Starting implementation"))] | length')
+          if [[ "$ATTEMPTS" -ge 2 ]]; then
+            echo "model=claude-opus-4-7" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — escalating to Opus"
+          else
+            echo "model=claude-sonnet-4-6" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — using Sonnet"
+          fi
+
       - name: Run aw-tdd skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: ${{ steps.model_select.outputs.model }}   # sonnet default; escalates to opus after 2 failures
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # WORKFLOW_PAT — same rationale as aw-pipeline.yml's tdd job.
           github_token: ${{ secrets.WORKFLOW_PAT }}

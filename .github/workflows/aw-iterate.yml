@@ -72,6 +72,7 @@ jobs:
       - name: Run aw-iterate skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-sonnet-4-6           # iterate: bounded implementation of reviewer requests
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # WORKFLOW_PAT (not GITHUB_TOKEN) so the follow-up commit push
           # triggers `pull_request: synchronize` and CI re-runs on the PR.

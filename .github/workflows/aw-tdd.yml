@@ -31,7 +31,7 @@ concurrency:
 jobs:
   code:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
         with:
@@ -101,10 +101,29 @@ jobs:
             echo "candidate=$ISSUE" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Select model (escalate to Opus after 2 failures)
+        if: steps.find.outputs.candidate != ''
+        id: model_select
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ steps.find.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          ATTEMPTS=$(gh issue view "$ISSUE" --json comments \
+            --jq '[.comments[] | select(.body | startswith("> *Starting implementation"))] | length')
+          if [[ "$ATTEMPTS" -ge 2 ]]; then
+            echo "model=claude-opus-4-7" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — escalating to Opus"
+          else
+            echo "model=claude-sonnet-4-6" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — using Sonnet"
+          fi
+
       - name: Run aw-tdd skill
         if: steps.find.outputs.candidate != ''
         uses: anthropics/claude-code-action@v1
         with:
+          model: ${{ steps.model_select.outputs.model }}   # sonnet default; escalates to opus after 2 failures
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the fine-grained PAT (WORKFLOW_PAT) instead of GITHUB_TOKEN
           # so the bot-authored PR fires `pull_request` events normally

@@ -33,6 +33,7 @@ jobs:
       - name: Run aw-ci-repair skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-sonnet-4-6           # ci-repair: diagnosing subtle test/type failures
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.WORKFLOW_PAT }}
           allowed_bots: "github-actions[bot]"

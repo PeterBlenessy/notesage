@@ -64,6 +64,7 @@ jobs:
         if: steps.find.outputs.candidates != ''
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-haiku-4-5-20251001   # triage: pattern-match classification, reversible
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # See aw-pipeline.yml for the rationale: GITHUB_TOKEN triggers the
           # built-in recursion guard so the agent's gh calls don't spawn
