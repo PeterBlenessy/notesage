@@ -312,7 +312,7 @@ jobs:
     needs: find_tdd
     if: needs.find_tdd.outputs.candidate != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       group: aw-stage-tdd-${{ needs.find_tdd.outputs.candidate || github.run_id }}
       cancel-in-progress: false

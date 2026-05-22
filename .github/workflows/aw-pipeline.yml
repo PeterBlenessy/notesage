@@ -263,7 +263,7 @@ jobs:
     needs: slice
     if: needs.slice.outputs.ready == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       group: aw-stage-tdd-${{ github.event.issue.number }}
       cancel-in-progress: false
