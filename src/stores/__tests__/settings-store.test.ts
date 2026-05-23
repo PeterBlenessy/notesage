@@ -69,11 +69,7 @@ vi.mock('@/lib/tauri-storage', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
-import {
-  useSettingsStore,
-  shouldShowPreviewInvitation,
-  PREVIEW_INVITATION_REAPPEAR_MS,
-} from '../settings-store';
+import { useSettingsStore } from '../settings-store';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -209,7 +205,6 @@ describe('initial state defaults', () => {
     expect(s.sidebarOpen).toBe(true);
     expect(s.sidebarPinned).toBe(true);
     expect(s.sidebarWidth).toBe(280);
-    expect(s.chatPanelOpen).toBe(false);
     expect(s.notesRootPath).toBe('~/Notesage');
     expect(s.gitEnabled).toBe(false);
     expect(s.personasMigrated).toBe(false);
@@ -337,11 +332,6 @@ describe('boolean setters', () => {
   it('setSidebarPinned', () => {
     useSettingsStore.getState().setSidebarPinned(false);
     expect(useSettingsStore.getState().sidebarPinned).toBe(false);
-  });
-
-  it('setChatPanelOpen', () => {
-    useSettingsStore.getState().setChatPanelOpen(true);
-    expect(useSettingsStore.getState().chatPanelOpen).toBe(true);
   });
 
   it('setGitEnabled', () => {
@@ -1045,34 +1035,12 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
 });
 
 // ===========================================================================
-// uiPreview flag (Classic layout removal — task #2: force quiet-composer)
+// v18 → v19 migration (Classic layout removal — drop deleted fields)
 // ===========================================================================
 
-describe('uiPreview flag', () => {
-  it('defaults to "quiet-composer" on a fresh install', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-  });
-
-  it('setUiPreview can set quiet-composer', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-  });
-
-  it('persists across a simulated restart', async () => {
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-  });
-
-  it('v18 migration: upgrades uiPreview: "legacy" → "quiet-composer"', async () => {
-    // Existing user upgrade: persisted at version 17 with uiPreview = "legacy".
-    // Migration <18 force-flips to "quiet-composer".
-    const v17State = {
+describe('v18 → v19 migration (Classic layout removal)', () => {
+  it('strips uiPreview, chatPanelOpen, previewInvitation*, revertInvitation* from persisted state', async () => {
+    const v18State = {
       state: {
         theme: 'dark',
         contrastLevel: 50,
@@ -1082,75 +1050,42 @@ describe('uiPreview flag', () => {
         sidebarOpen: true,
         sidebarPinned: true,
         sidebarWidth: 280,
-        chatPanelOpen: false,
+        chatPanelOpen: true,
         notesRootPath: '~/Notesage',
         gitEnabled: false,
         logLevel: 'warn',
         printLayout: false,
-        uiPreview: 'legacy',
+        uiPreview: 'quiet-composer',
         accent: 'default',
+        previewInvitationShownAt: 1234567890,
+        previewInvitationDismissedAt: 1234567899,
+        revertInvitationShownAt: 1234567890,
+        revertInvitationDismissedAt: 1234567899,
       },
-      version: 17,
+      version: 18,
     };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v17State));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v18State));
 
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
+    // Pre-existing kept fields survive untouched.
     const s = useSettingsStore.getState();
-    // Migration should have upgraded "legacy" → "quiet-composer"
-    expect(s.uiPreview).toBe('quiet-composer');
-    // Pre-existing fields survive untouched.
     expect(s.theme).toBe('dark');
     expect(s.contrastLevel).toBe(50);
+    expect(s.accent).toBe('default');
 
-    // The persisted JSON should reflect version 18 with the updated uiPreview.
+    // The persisted JSON is at v19 with the deleted fields gone.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
-    expect(parsed.state.uiPreview).toBe('quiet-composer');
-  });
-
-  it('v3 → v18 migration chain: adds uiPreview: "quiet-composer" (and accent: "default") to a state that lacks them', async () => {
-    // Existing user upgrade: persisted at version 3, no uiPreview/accent fields.
-    // Migration chain runs v<4 (uiPreview = legacy), then v<18 (upgrades to quiet-composer).
-    const v3State = {
-      state: {
-        theme: 'dark',
-        contrastLevel: 50,
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        printLayout: false,
-      },
-      version: 3,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v3State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    // Chain: v<4 sets "legacy", then v<18 upgrades to "quiet-composer"
-    expect(s.uiPreview).toBe('quiet-composer');
-    // Pre-existing fields survive untouched.
-    expect(s.theme).toBe('dark');
-    expect(s.contrastLevel).toBe(50);
-
-    const raw = localStorageMock.getItem(STORAGE_KEY);
-    expect(raw).toBeTruthy();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
-    expect(parsed.state.uiPreview).toBe('quiet-composer');
-    expect(parsed.state.accent).toBe('default');
+    expect(parsed.version).toBe(19);
+    expect(parsed.state.uiPreview).toBeUndefined();
+    expect(parsed.state.chatPanelOpen).toBeUndefined();
+    expect(parsed.state.previewInvitationShownAt).toBeUndefined();
+    expect(parsed.state.previewInvitationDismissedAt).toBeUndefined();
+    expect(parsed.state.revertInvitationShownAt).toBeUndefined();
+    expect(parsed.state.revertInvitationDismissedAt).toBeUndefined();
   });
 });
 
@@ -1811,258 +1746,6 @@ describe('v7 → v8 migration (sidebar composition)', () => {
   });
 });
 
-// ===========================================================================
-// Preview invitation banner — fields, setters, helper, migration
-// (ui-refresh task #97)
-// ===========================================================================
-
-describe('preview invitation — defaults', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('previewInvitationShownAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationShownAt).toBeNull();
-  });
-
-  it('previewInvitationDismissedAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationDismissedAt).toBeNull();
-  });
-});
-
-describe('markPreviewInvitationShown / dismissPreviewInvitation', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('markPreviewInvitationShown sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().markPreviewInvitationShown();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationShownAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-
-  it('dismissPreviewInvitation sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().dismissPreviewInvitation();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationDismissedAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-});
-
-describe('shouldShowPreviewInvitation — pure helper', () => {
-  const now = 1_000_000_000_000; // arbitrary fixed clock
-
-  it('returns false when user is already on quiet-composer', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'quiet-composer',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when never shown and on legacy', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when shown but never dismissed (sticky until user acts)', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns false when dismissed less than 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: now - 1_000,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when dismissed exactly 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - PREVIEW_INVITATION_REAPPEAR_MS - 1,
-          previewInvitationDismissedAt: now - PREVIEW_INVITATION_REAPPEAR_MS,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when dismissed > 30 days ago', () => {
-    const longAgo = now - PREVIEW_INVITATION_REAPPEAR_MS - 10_000;
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: longAgo,
-          previewInvitationDismissedAt: longAgo,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('PREVIEW_INVITATION_REAPPEAR_MS is 30 days', () => {
-    expect(PREVIEW_INVITATION_REAPPEAR_MS).toBe(30 * 24 * 60 * 60 * 1000);
-  });
-});
-
-describe('preview invitation — persistence round-trip', () => {
-  it('persists shownAt and dismissedAt across restart', async () => {
-    const shown = Date.now() - 1000;
-    const dismissed = Date.now();
-    useSettingsStore.setState({
-      previewInvitationShownAt: shown,
-      previewInvitationDismissedAt: dismissed,
-    });
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
-
-describe('v8 → v9 migration (preview invitation timestamps)', () => {
-  it('adds previewInvitationShownAt: null and previewInvitationDismissedAt: null to a v8 state lacking them', async () => {
-    const v8State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-      },
-      version: 8,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v8State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBeNull();
-    expect(s.previewInvitationDismissedAt).toBeNull();
-
-    const raw = localStorageMock.getItem(STORAGE_KEY);
-    expect(raw).toBeTruthy();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
-    expect(parsed.state.previewInvitationShownAt).toBeNull();
-    expect(parsed.state.previewInvitationDismissedAt).toBeNull();
-  });
-
-  it('preserves existing preview invitation timestamps when present (idempotent)', async () => {
-    const shown = 1_700_000_000_000;
-    const dismissed = 1_700_000_500_000;
-    const v9State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-        previewInvitationShownAt: shown,
-        previewInvitationDismissedAt: dismissed,
-      },
-      version: 9,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v9State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
 
 describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
   it('adds cmdBarExpandedWidth: 640 to a v9 state lacking it', async () => {

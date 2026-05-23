@@ -4,7 +4,6 @@ import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useEditorStore, type Tab } from "@/stores/editor-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { CYCLE_RECENT_EVENT } from "@/hooks/useKeyboardShortcuts";
 
@@ -160,7 +159,6 @@ describe("useRecentDocumentCycle", () => {
 
 describe("useRecentDocumentCycle — Quiet Composer mode", () => {
   beforeEach(() => {
-    useSettingsStore.setState({ uiPreview: "quiet-composer" });
     // Quiet Composer cycle calls openFile → tauriApi.readFile →
     // invoke('read_file'). Register here (not at top level) because
     // tauri-mock clears handlers between every test.
@@ -176,10 +174,6 @@ describe("useRecentDocumentCycle — Quiet Composer mode", () => {
       persistedActiveFilePath: null,
       documentAccessOrder: [],
     });
-  });
-
-  afterEach(() => {
-    useSettingsStore.setState({ uiPreview: "legacy" });
   });
 
   it("walks recentFiles and loads the previous entry from disk on ⌃⇧Tab", async () => {

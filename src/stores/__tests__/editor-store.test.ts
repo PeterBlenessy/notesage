@@ -63,7 +63,6 @@ vi.mock('@/lib/tauri-storage', () => {
 
 import { useEditorStore } from '../editor-store';
 import type { Tab } from '../editor-store';
-import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1046,15 +1045,8 @@ describe('lastSavedAt tracking', () => {
 // ===========================================================================
 
 describe('Quiet Composer single-document semantics', () => {
-  beforeEach(() => {
-    // Flip the UI preview for this block. Tests in other blocks assume
-    // legacy semantics, which is the default — so we restore in afterEach.
-    useSettingsStore.setState({ uiPreview: 'quiet-composer' });
-  });
-
-  afterEach(() => {
-    useSettingsStore.setState({ uiPreview: 'legacy' });
-  });
+  // Quiet Composer is the only shell, so single-document semantics are
+  // unconditional — no setup flag required (was uiPreview before #6).
 
   it('openTab evicts the previous active tab — end state is exactly 1 tab', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
