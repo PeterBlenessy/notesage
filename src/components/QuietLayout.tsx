@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { TitleBar } from "@/components/TitleBar";
-import type { LayoutProps } from "@/components/Layout";
+import type { AgentTask } from "@/stores/activity-store";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
@@ -15,7 +15,6 @@ import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { FocusPill } from "@/components/editor/FocusPill";
-import { RevertInvitation } from "@/components/RevertInvitation";
 import { useQuietChrome } from "@/lib/quiet-chrome";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +46,37 @@ import { cn } from "@/lib/utils";
  * supplies the slot and forwards the layout-level callbacks.
  */
 
-export type QuietLayoutProps = LayoutProps;
+export interface QuietLayoutProps {
+  focusMode?: boolean;
+  stripExpanded: boolean;
+  // Editor area callbacks
+  onNewNote: (parentPath?: string) => void;
+  onNewProject: () => void;
+  onOpenFolder: () => void;
+  onOpenProject: (path: string) => void;
+  onOpenFile: (path: string, name: string) => void;
+  // Export
+  exportOpen: boolean;
+  onExportOpenChange: (open: boolean) => void;
+  // Outline
+  outlineOpen: boolean;
+  onOutlineOpenChange: (open: boolean) => void;
+  // Update
+  updateAvailable: boolean;
+  updateVersion: string | null;
+  onUpdateClick: () => void;
+  // Misc
+  onShortcutsOpen: () => void;
+  onOpenActions: () => void;
+  onOpenSettings: () => void;
+  onBrowseForProject: () => void;
+  onOpenProjectSettings: (path: string) => void;
+  onMakeProject: (path: string) => void;
+  onExportFile: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
+  // Activity
+  onCancelTask: (taskId: string) => Promise<void>;
+  onClickTask: (task: AgentTask) => void;
+}
 
 /**
  * Resolve the parent directory for a new note triggered by `⌘N`. Returns
@@ -450,14 +479,6 @@ export function QuietLayout(props: QuietLayoutProps) {
        */}
       <FocusPill active={focus.active} onExit={focus.exit} />
 
-      {/*
-        RevertInvitation (#107) — symmetric counterpart to the
-        PreviewInvitation banner mounted in `Layout.tsx`. Gives Quiet
-        Composer users a visible path back to the classic shell without
-        digging into Settings. One-time show + 30-day cooldown on
-        dismissal, same lifecycle as the forward-direction banner.
-      */}
-      <RevertInvitation />
     </div>
   );
 }

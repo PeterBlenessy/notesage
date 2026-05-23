@@ -1,7 +1,5 @@
-import { MessageSquare, Bot, X } from "lucide-react";
-import { useSettingsStore } from "@/stores/settings-store";
+import { X } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useActivityStore } from "@/stores/activity-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -46,14 +44,10 @@ export type TitleBarProps = ClassicTitleBarProps | QuietTitleBarProps;
 
 export function TitleBar(props: TitleBarProps) {
   const mode = props.mode ?? "classic";
-  const chatPanelOpen = useSettingsStore((s) => s.chatPanelOpen);
   const activeTab = useEditorStore((s) => {
     const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab ?? null;
   });
-  const panelExpanded = useActivityStore((s) => !s.isManuallyHidden);
-  const hasRunning = useActivityStore((s) => s.tasks.some((t) => t.status === 'running'));
-
   const title = activeTab?.fileName ?? "Notesage";
   const isDirty = Boolean(activeTab?.isDirty);
 
@@ -120,45 +114,6 @@ export function TitleBar(props: TitleBarProps) {
       </div>
     ) : null;
 
-  // Narrow the discriminated union up front so the JSX below can reference
-  // the classic-mode callbacks without triggering TS2339 on the quiet-mode
-  // variant. The `mode === "quiet"` branch renders no buttons, so these
-  // references are unreachable there.
-  const classicControls =
-    props.mode === "quiet" ? null : (
-      <div className="flex items-center gap-0.5 pr-3 shrink-0">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={props.onToggleChat}
-          className={cn(
-            "text-muted-foreground hover:text-foreground transition-colors duration-150",
-            chatPanelOpen && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-          )}
-          title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧C)`}
-          aria-label={chatPanelOpen ? "Hide AI Chat" : "Show AI Chat"}
-        >
-          <MessageSquare className="size-4" strokeWidth={1.5} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={props.onToggleActivityStrip}
-          className={cn(
-            "relative text-muted-foreground hover:text-foreground transition-colors duration-150",
-            panelExpanded && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
-          )}
-          title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
-          aria-label={panelExpanded ? "Hide Agent Panel" : "Show Agent Panel"}
-        >
-          <Bot className="size-4" strokeWidth={1.5} />
-          {hasRunning && (
-            <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-foreground" />
-          )}
-        </Button>
-      </div>
-    );
-
   return (
     <div
       className={cn(
@@ -197,14 +152,7 @@ export function TitleBar(props: TitleBarProps) {
         </span>
       </div>
 
-      {/*
-        Right: chat toggle + activity strip toggle (classic) OR dirty
-        dot only (quiet). The "saved Xs ago" readout moved to StatusBar
-        (live-test 2026-04-26). Both variants never render together —
-        `classicControls` is null in quiet mode and `quietDocChrome` is
-        null in classic mode (or when the active tab is clean).
-       */}
-      {classicControls}
+      {/* Right: dirty dot + close button (quiet mode only). */}
       {quietDocChrome}
     </div>
   );

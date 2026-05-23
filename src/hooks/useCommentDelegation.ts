@@ -3,8 +3,8 @@ import { toast } from 'sonner';
 import { useAgentTaskOperations } from '@/hooks/useAgentTaskOperations';
 import { useCommentStore, appendPartialReply, clearPartialReply, type Comment, type DelegationMode } from '@/stores/comment-store';
 import { useChatStore } from '@/stores/chat-store';
-import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /** Resolve the sandbox scope for a file — its containing project or explorer folder. */
@@ -514,7 +514,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
       }
 
       // Open chat panel
-      useSettingsStore.getState().setChatPanelOpen(true);
+      emitCmdBarEvent({ type: 'focus' });
     },
     []
   );

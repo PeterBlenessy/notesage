@@ -9,6 +9,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
 import { useEditorZoom } from "@/hooks/useEditorZoom";
 import { useEditor } from "@/hooks/useEditor";
@@ -980,7 +981,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               chatStore.setActiveConversation(conv.id);
               const threadMessages = getThread(conv.messages, conv.activeLeafId) || conv.messages;
               await sendChatMessage(text, threadMessages);
-              useSettingsStore.getState().setChatPanelOpen(true);
+              emitCmdBarEvent({ type: 'focus' });
               return;
             }
           }
