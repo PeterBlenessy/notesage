@@ -624,9 +624,6 @@ function App() {
     onToggleRecording: () => {
       window.dispatchEvent(new CustomEvent("notesage:toggle-recording"));
     },
-    onOpenActions: () => {
-      emitCmdBarEvent({ type: "focus", prefix: "!" });
-    },
   });
 
   return (
