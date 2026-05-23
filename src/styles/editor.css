@@ -357,6 +357,26 @@
  * is untouched.
  * ========================================================================== */
 
+.ProseMirror[data-preview] {
+  /* Override the root `.ProseMirror { white-space: pre-wrap }` rule for
+     the preview surface only. Comrak emits pretty-printed HTML with `\n`
+     between block-level siblings (`</p>\n<h2>...`); under `pre-wrap`
+     those text nodes become anonymous inline boxes that render as
+     line-height-sized blank gaps between every block. The live editor
+     doesn't have this problem because Tiptap writes DOM nodes directly
+     (no stray text nodes between blocks). The editor still needs
+     `pre-wrap` for ProseMirror's internal whitespace check; the preview
+     is read-only HTML and doesn't.
+
+     Background: surfaced after the 2026-05-22 GitHub Actions macos
+     runner image rotation (20260427 → 20260520) bumped Chromium /
+     WebKit; the older renderer happened to suppress these whitespace
+     boxes, the newer one renders them per spec. `<pre>` blocks inside
+     the preview keep their own browser-default `white-space: pre`, so
+     code formatting still works. */
+  white-space: normal;
+}
+
 .ProseMirror[data-preview] blockquote > p {
   /* Tighten spacing between paragraphs inside a multi-paragraph blockquote
      (e.g. quoted line + attribution). Comrak emits each line as its own `<p>`;
