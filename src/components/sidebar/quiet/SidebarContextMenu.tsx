@@ -78,9 +78,10 @@ export const SIDEBAR_ENTER_RENAME_MODE_EVENT = "sidebar:enter-rename-mode";
 
 /**
  * App-level CustomEvents dispatched by the menu (#128). `App.tsx` subscribes
- * and proxies to the legacy handlers so we don't have to prop-drill through
- * QuietSidebar → each section → SidebarContextMenu. Mirrors the approach
- * already used by `SIDEBAR_ENTER_RENAME_MODE_EVENT` above.
+ * and proxies to the file-operation handlers so we don't have to
+ * prop-drill through QuietSidebar → each section → SidebarContextMenu.
+ * Mirrors the approach already used by `SIDEBAR_ENTER_RENAME_MODE_EVENT`
+ * above.
  */
 export const SIDEBAR_MAKE_PROJECT_EVENT = "sidebar:make-project";
 export const SIDEBAR_COMMIT_FILE_EVENT = "sidebar:commit-file";
@@ -186,11 +187,10 @@ export function SidebarContextMenu({
     repoState?.isGitRepo && repoState.fileStatusMap?.has(filePath),
   );
 
-  // #135 — "Move to…" destinations. Same shape the legacy
-  // `FileTreeItem` derives (`Quick Notes` root + every project + every
-  // explorer folder, deduped, with the row's own path filtered out for
-  // directory rows so a folder can't be moved into itself). Computed
-  // once per render — the destination list is small.
+  // #135 — "Move to…" destinations: Quick Notes root + every project +
+  // every explorer folder, deduped, with the row's own path filtered
+  // out for directory rows so a folder can't be moved into itself.
+  // Computed once per render — the destination list is small.
   const currentParent = filePath.slice(0, filePath.lastIndexOf("/"));
   const moveDestinations = useMemo(() => {
     type Destination = {
@@ -372,8 +372,8 @@ export function SidebarContextMenu({
   // #128 — New Folder. Creates the directory immediately + refreshes the
   // tree. Uses a deterministic default name "Untitled Folder" with numeric
   // suffixes until a non-colliding path is found; rename follows up via
-  // inline-rename if the user wants a different name. Mirrors the legacy
-  // FileTreeItem's `handleNewFolder` flow without the extra dialog.
+  // inline-rename if the user wants a different name. Skips the
+  // confirmation dialog.
   const handleNewFolder = async () => {
     if (!isContainer) return;
     try {
@@ -511,8 +511,7 @@ export function SidebarContextMenu({
           )}
 
           {/* #128 — New File / New Folder for container rows. Files get the
-             *  New-File-in-parent-dir convenience too so the menu reaches
-             *  parity with the legacy FileTreeItem.
+             *  New-File-in-parent-dir convenience too.
              *  System folders (`.notesage`, `.git`, etc.) hide both — users
              *  shouldn't be creating files inside app/repo state directories.
              */}
@@ -615,8 +614,8 @@ export function SidebarContextMenu({
             Copy filename
           </ContextMenuItem>
 
-          {/* #128 — Export as… Markdown files only. Submenu fans out into
-             *  the four formats the legacy export-file handler supports. */}
+          {/* #128 — Export as… Markdown files only. Submenu fans out
+             *  into the four export formats. */}
           {isMarkdown && (
             <>
               <ContextMenuSeparator />

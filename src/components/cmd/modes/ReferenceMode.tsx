@@ -71,7 +71,7 @@ interface ReferenceModeProps {
   onPick: (chip: AttachmentChip) => void;
   /**
    * Called when the user picks an occurrence inside a person's drilldown.
-   * Optional so existing callers (tests, legacy code paths) keep working.
+   * Optional so existing callers (tests, non-drilldown call sites) keep working.
    */
   onPickOccurrence?: (action: ReferenceOccurrenceAction) => void;
   /**

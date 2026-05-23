@@ -30,7 +30,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
  *
  * Live-test 2026-04-26 — slice 2 (drilldown) of the cmd-bar parity work.
  * Slice 1 wired single-level pickers + navigation; this slice adds the
- * legacy two-level drilldown the user explicitly asked for.
+ * two-level drilldown the user explicitly asked for.
  */
 
 export type TagPickAction = {

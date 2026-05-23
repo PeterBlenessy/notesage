@@ -210,7 +210,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // ⌘⇧E — Open Export dialog (multi-format: PDF / DOCX / PPTX /
       // HTML). Sidebar-simplification task #22 — the capture-phase
       // preempt that QuietLayout used to install for TreeOverlay was
-      // deleted in #20, so this handler now fires in both shells.
+      // deleted in #20, so this handler is the sole owner of the chord.
       if (isMod && e.shiftKey && keyLower === "e") {
         e.preventDefault();
         if (useEditorStore.getState().activeTabId) {

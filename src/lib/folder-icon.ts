@@ -13,10 +13,9 @@
  * the structural default for `standard` and `external` folders. Locked
  * folders ignore appearance — security state cannot be skinned away.
  *
- * This module is the single source of truth consumed by both Classic
- * Layout sidebar (FileTreeItem, ProjectItem) and Quiet Composer sidebar
- * (ProjectsSection, FoldersSection). Callers should never inline their
- * own icon/aria-label logic for folder rows.
+ * This module is the single source of truth consumed by the sidebar
+ * (`ProjectsSection`, `FoldersSection`, `FileTreeItem`). Callers should
+ * never inline their own icon/aria-label logic for folder rows.
  */
 
 import {

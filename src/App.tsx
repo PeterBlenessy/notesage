@@ -11,9 +11,9 @@ const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDia
 const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
 const KeyboardShortcutsDialogV2 = lazy(() => import("@/components/KeyboardShortcutsDialogV2").then(m => ({ default: m.KeyboardShortcutsDialogV2 })));
 const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
-// #128 — Sidebar-driven commit dialog. Same `CommitDialog` component
-// used by the legacy `ProjectItem`; lazy-loaded here so the classic
-// path is unaffected.
+// #128 — Sidebar-driven commit dialog. Lazy-loaded here so the
+// affordance is only instantiated when the sidebar context menu
+// actually fires `SIDEBAR_COMMIT_FILE_EVENT`.
 const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
@@ -127,7 +127,7 @@ function App() {
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab
   // (e.g. "On Craft.md — Notesage"). Falls back to "Notesage" when no
-  // document is active. Shared across Classic + Quiet Composer.
+  // document is active.
   useWindowTitle();
   useMcpDiscovery();
   useLocalAI();
@@ -497,8 +497,8 @@ function App() {
   // Listen for `>` palette command-bar dispatch (live-test 2026-04-26).
   // FloatingCommandBar emits `notesage:palette-command` with a stable
   // `commandId` from `PALETTE_COMMANDS`; we map ids to the same callbacks
-  // already plumbed through `useKeyboardShortcuts` so legacy chord and
-  // palette pick run identical code paths.
+  // plumbed through `useKeyboardShortcuts` so the chord and the palette
+  // pick run identical code paths.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ commandId?: string }>).detail;
@@ -690,11 +690,10 @@ function App() {
           />
         </Suspense>
         {/*
-          #128 — Global commit dialog for the Quiet Composer sidebar's
-          "Commit…" menu item. Mounted here so it survives sidebar row
-          unmount / re-render cycles. Legacy `ProjectItem` keeps its own
-          commit dialog (different project context); this one is driven
-          exclusively by the `sidebar:commit-file` CustomEvent.
+          #128 — Global commit dialog for the sidebar's "Commit…" menu
+          item. Mounted at the App root so it survives sidebar row
+          unmount / re-render cycles. Driven exclusively by the
+          `sidebar:commit-file` CustomEvent.
         */}
         {commitDialogState && (
           <Suspense fallback={null}>

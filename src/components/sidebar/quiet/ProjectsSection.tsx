@@ -51,9 +51,7 @@ import { announce } from "@/components/sidebar/quiet/aria-announcer";
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
  * counts plus keyboard-driven one-level inline expansion (task #37).
  *
- * Distinct from `src/components/sidebar/ProjectsSection.tsx` — that file
- * powers the legacy expandable sidebar and is untouched by this task. The
- * quiet-composer sidebar is wired to `workspace-store.projects`.
+ * The sidebar is wired to `workspace-store.projects`.
  *
  * Accessibility: the list is a real ARIA tree (`role="tree"`) with
  * `treeitem` rows. Arrow keys walk visible rows (siblings + expanded

@@ -187,7 +187,7 @@ export function CodeEditor({
     <div className="h-full flex flex-col">
       {/* Toolbar — file name + dirty indicator (the Tiptap editor surface
           for markdown has its own toolbar; this is the code-file-specific
-          variant and is shared across both layouts). */}
+          variant). */}
       <div className="h-9 border-b border-border px-3 flex items-center shrink-0 bg-background">
         <span className="text-xs text-muted-foreground truncate max-w-[200px]">
           {fileName}
@@ -200,8 +200,8 @@ export function CodeEditor({
       {/*
         Floating language-indicator pill — same visual family as the PDF/EPUB/
         DOCX/PPTX viewer pills (PRD 2026-04-21-ui-refresh task #62). Positioned
-        top-right rather than top-centre so it does not collide with the pill
-        toolbar (quiet composer) or the tab bar (classic layout).
+        top-right rather than top-centre so it does not collide with the
+        pill toolbar.
       */}
       {languageName && (
         <ViewerToolbarPill

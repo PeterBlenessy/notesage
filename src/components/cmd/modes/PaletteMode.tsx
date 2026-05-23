@@ -302,8 +302,7 @@ function PaletteMode({
             onClick={() => onPick(cmd.id)}
             className={cn(
               // Density (live-test 2026-04-26): smaller text + tighter
-              // vertical padding match the legacy command palette and
-              // the tightened sibling pickers.
+              // vertical padding match the other prefix-mode pickers.
               'flex items-center gap-2 px-3 py-1.5 text-left text-[13px]',
               'transition-colors',
               isHighlighted

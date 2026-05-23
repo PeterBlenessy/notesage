@@ -1015,28 +1015,6 @@
   background-color: var(--color-foreground);
 }
 
-/* Tab bar horizontal scrollbar — always 2px to avoid layout shift, thumb visible on hover only */
-.tabbar-scrollbar::-webkit-scrollbar {
-  height: 2px;
-}
-
-.tabbar-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-accent);
-}
-
-.tabbar-scrollbar::-webkit-scrollbar-thumb {
-  background-color: var(--color-accent);
-  border-radius: 1px;
-}
-
-.tabbar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: oklch(45% 0 0);
-}
-
-.dark .tabbar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: oklch(55% 0 0);
-}
-
 /* Tag badges */
 .tag-badge {
   background-color: var(--color-muted);

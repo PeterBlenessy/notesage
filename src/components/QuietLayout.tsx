@@ -19,10 +19,11 @@ import { useQuietChrome } from "@/lib/quiet-chrome";
 import { cn } from "@/lib/utils";
 
 /**
- * QuietLayout — Quiet Composer shell (PRD `2026-04-21-ui-refresh`, Phase 1).
+ * QuietLayout — the app's UI shell (PRD `2026-04-21-ui-refresh`,
+ * formerly the "Quiet Composer" Phase 1 preview; Classic Layout was
+ * removed in #325).
  *
- * Mounted only when `settings.uiPreview === "quiet-composer"`. Renders a
- * two-column grid under a TitleBar:
+ * Renders a two-column grid under a TitleBar:
  *
  *   - QuietSidebar (#30)          → left column (240px)
  *   - Editor (#101) → centre document area (1fr); the DocHead breadcrumb
@@ -38,11 +39,10 @@ import { cn } from "@/lib/utils";
  * surface — no separate chat panel.
  *
  * The centre column hosts the `<Editor />` mount tree backed by
- * `editor-store`, so document switches, dirty tracking, and the per-tab
- * EditorState cache work identically across both shells. The editor
- * component itself owns its inner chrome (Toolbar, FindBar, BubbleMenu,
- * StatusBar, ExportDialog, CommentPopover, etc.) — QuietLayout just
- * supplies the slot and forwards the layout-level callbacks.
+ * `editor-store`. The editor component itself owns its inner chrome
+ * (Toolbar, FindBar, BubbleMenu, StatusBar, ExportDialog,
+ * CommentPopover, etc.) — QuietLayout just supplies the slot and
+ * forwards the layout-level callbacks.
  */
 
 export interface QuietLayoutProps {
@@ -111,9 +111,9 @@ export function resolveCreateParent(
 }
 
 export function QuietLayout(props: QuietLayoutProps) {
-  // Editor props — forwarded from App.tsx so the Editor mount inside the
-  // centre column behaves identically to the legacy `EditorArea`. The
-  // remaining props (chat / activity callbacks) wait for #102 + later.
+  // Editor props — forwarded from App.tsx so the centre-column Editor
+  // mount has the file-operation callbacks it needs (new note, new
+  // project, open folder/project/file, export, etc.).
   const {
     onNewNote,
     onNewProject,
@@ -222,10 +222,10 @@ export function QuietLayout(props: QuietLayoutProps) {
   }, [sidebarPinned]);
 
   // `⌘⇧E` capture-phase listener was REMOVED in sidebar #20 along with
-  // TreeOverlay. The chord now bubbles to the legacy
-  // `useKeyboardShortcuts` handler in both shells, where it opens the
-  // Export dialog (multi-format — PDF / DOCX / PPTX / HTML). Sidebar
-  // #22 covers the doc updates for that rebinding.
+  // TreeOverlay. The chord now bubbles to the `useKeyboardShortcuts`
+  // handler, where it opens the Export dialog (multi-format — PDF /
+  // DOCX / PPTX / HTML). Sidebar #22 covers the doc updates for that
+  // rebinding.
 
   // `⌘N` — inline create note (task #41). Routes to the QuietSidebar's
   // inline-edit row by setting `quiet-sidebar-store.pendingCreate` to the
@@ -281,10 +281,9 @@ export function QuietLayout(props: QuietLayoutProps) {
 
   // `⌘⇧N` — inline create project (task #42). Routes to the QuietSidebar's
   // top-of-Projects inline-edit row by flipping
-  // `quiet-sidebar-store.pendingCreateProject`. The legacy shell binds the
-  // same chord to "New Project" dialog via `useKeyboardShortcuts`; we use
-  // capture phase + stopImmediatePropagation to claim the chord while the
-  // quiet-composer preview is active.
+  // `quiet-sidebar-store.pendingCreateProject`. Capture-phase +
+  // stopImmediatePropagation so the chord can't fall through to any
+  // other listener.
   const setPendingCreateProject = useQuietSidebarStore(
     (s) => s.setPendingCreateProject,
   );
@@ -397,13 +396,12 @@ export function QuietLayout(props: QuietLayoutProps) {
         >
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
             {/*
-              Editor mount (#101). Same `<Editor />` instance the legacy
-              `EditorArea` mounts in `Layout.tsx` — `editor-store` is shared
-              across both shells, so document switches, dirty tracking,
-              and the per-tab EditorState cache work identically. The
-              editor itself owns its inner chrome (Toolbar, FindBar,
-              BubbleMenu, StatusBar, ExportDialog, CommentPopover,
-              TranscriptionOverlay, DocumentOutline). `focusMode` is
+              Editor mount (#101). `editor-store` drives document
+              switches, dirty tracking, and the per-tab EditorState
+              cache. The editor itself owns its inner chrome (Toolbar,
+              FindBar, BubbleMenu, StatusBar, ExportDialog,
+              CommentPopover, TranscriptionOverlay, DocumentOutline).
+              `focusMode` is
               driven by QuietLayout's local `useFocusMode` hook (see
               `editorFocusMode` above) so the editor hides its toolbar /
               status while focus mode is active. `data-doc-area` is the

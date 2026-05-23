@@ -769,7 +769,6 @@ describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
 // The capture-phase listener in QuietLayout that preempted the legacy
 // Export-as-PDF chord was deleted alongside TreeOverlay in
 // sidebar-simplification task #20. ⌘⇧E now bubbles to
-// `useKeyboardShortcuts` and opens the multi-format Export dialog in
-// both shells. The original #139 regression test asserted the
-// preempt; with TreeOverlay gone there's nothing to preempt and
-// nothing to test here.
+// `useKeyboardShortcuts` and opens the multi-format Export dialog.
+// The original #139 regression test asserted the preempt; with
+// TreeOverlay gone there's nothing to preempt and nothing to test here.

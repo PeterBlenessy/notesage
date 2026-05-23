@@ -36,7 +36,7 @@ import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
  * TaskMode — picker for the `!` prefix in the FloatingCommandBar
  * (PRD `2026-04-21-ui-refresh`, Phase 1, task #17).
  *
- * Rebuilt 2026-04-26 to reach legacy ActionsDialog parity: tasks, comments,
+ * Rebuilt 2026-04-26 to reach ActionsDialog parity: tasks, comments,
  * agent tasks, and goals are all surfaced through the same picker, with the
  * same Type / Status / Project filters as the dashboard. Source of truth is
  * the existing `useActionStore` — we DON'T re-implement scanning, status
@@ -120,7 +120,7 @@ function actionSecondaryLabel(a: ActionItem): string {
 }
 
 /**
- * Status-filter buckets. We mirror the legacy ActionFilterBar's `open`/`done`
+ * Status-filter buckets. We mirror the ActionFilterBar's `open`/`done`
  * grouping (delegated/pending/running roll up into "open") — that's how the
  * dashboard exposes status to users. The store still supports the full
  * granular set under the hood.

@@ -23,7 +23,7 @@ const isLoading = useChatStore((s) => s.isLoading);
 const activeTool = useChatStore((s) => s.activeTool);
 ```
 
-**Priority:** Flag top-level/always-visible components first (Layout, Sidebar, ChatPanel, FileTreeItem) — their re-renders cascade to all children. Modal/dialog components are lower priority.
+**Priority:** Flag top-level/always-visible components first (QuietLayout, QuietSidebar, FloatingCommandBar, FileTreeItem) — their re-renders cascade to all children. Modal/dialog components are lower priority.
 
 Search pattern: Find all `useXxxStore()` calls (no argument) and check if the result is destructured.
 

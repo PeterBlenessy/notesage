@@ -10,7 +10,7 @@ import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
  * Consolidation note (2026-04-24 / supersedes #127 + #130 + #116 stream gap):
  * this component used to roll its own message loop + render a subset of
  * per-message affordances + switch cards. The #113 functional-parity audit
- * catalogued ten features missing relative to the legacy `ChatMessageList`:
+ * catalogued ten features missing relative to `ChatMessageList`:
  * QuickReplies, ContextDivider, BranchSwitcher, empty-state onboarding,
  * LocalAISetupCard, per-message Edit / Resend / Retry / Branch, edit-mode
  * banner, Permission / Domain / ToolCall / AgentStatus cards, streaming

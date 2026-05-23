@@ -31,11 +31,10 @@ interface EditorViewerContainerProps {
   /** Save file to disk (for code file editing) */
   saveFile?: (filePath: string, content: string, tabId: string) => Promise<boolean>;
   /**
-   * Which StatusBar variant to mount below the viewer. Defaults to
-   * `"full"` (legacy) so callers outside QuietLayout get the
-   * unchanged behaviour. QuietLayout passes `"quiet"` so viewers
-   * (PDF, EPUB, DOCX, code, plain-text) render the same minimal
-   * status strip as the markdown editor.
+   * Which StatusBar variant to mount below the viewer. The app
+   * exclusively uses `"quiet"`; the `"full"` variant is retained as a
+   * fallback. `"quiet"` renders the same minimal status strip viewers
+   * (PDF, EPUB, DOCX, code, plain-text) share with the markdown editor.
    */
   statusBarVariant?: "full" | "quiet";
 }

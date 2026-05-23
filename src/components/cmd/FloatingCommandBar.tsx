@@ -56,8 +56,7 @@ import {
   unregisterSendImageHandler,
 } from "@/lib/ai/vision";
 // AttachmentStrip is no longer used here — chips render inline next
-// to the textarea (live-test 2026-04-25). The shared `AttachmentStrip`
-// stays in the legacy ChatInput.
+// to the textarea (live-test 2026-04-25).
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
@@ -304,12 +303,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [setActiveConversation],
   );
 
-  // #134 — context chips + explicit-attach offer. Mirrors the legacy
-  // ChatInput's render: auto-attached files appear as ContextPill rows
-  // above the input; when the active tab sits outside the selected
-  // project scope, an "Add this file to chat" affordance lets the user
-  // opt in. The hook is shared with ChatInput; reading it here keeps
-  // the UX consistent across shells.
+  // #134 — context chips + explicit-attach offer. Auto-attached files
+  // appear as ContextPill rows above the input; when the active tab
+  // sits outside the selected project scope, an "Add this file to
+  // chat" affordance lets the user opt in.
   const {
     contextItems,
     dismissItem,
@@ -320,8 +317,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #133 — dictation. The hook tries Web Speech first and falls back
   // to whisper-rs in WKWebView. `finalText` accumulates as transcription
   // completes; `interimText` is the live "still hearing you" preview
-  // shown as a placeholder while dictating. Mirrors the legacy
-  // `ChatInput` wiring exactly.
+  // shown as a placeholder while dictating.
   const {
     startDictation,
     stopDictation,
@@ -374,7 +370,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
   // hands them to `sendChatMessage` where the Rust backend serializes
-  // them per-provider. Cleared on successful send. The legacy
+  // them per-provider. Cleared on successful send. The shared
   // `AttachmentStrip` component handles thumbnail rendering (see the
   // render block below the input).
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -397,9 +393,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // #126 parity — subscribe to the vision event bus so editor "Add to
   // chat" actions and sidebar drops route their images into the
-  // composer. Legacy `ChatInput` owns the same subscription; we mirror
-  // it here so the Quiet shell gets the same behaviour. Mounted once
-  // per bar instance — the bus rejects duplicate registrations.
+  // composer. Mounted once per bar instance — the bus rejects
+  // duplicate registrations.
   useEffect(() => {
     registerSendImageHandler((attachment) => {
       addImageAttachment(attachment);
@@ -778,7 +773,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   );
 
   // Live-test 2026-04-25 #151 — auto-resize the cmd-bar textarea so it
-  // grows with multi-line content (matches the legacy ChatInput pattern).
+  // grows with multi-line content.
   // Caps at 160 px (~6 lines) so the bar can't push past the doc area;
   // beyond that the textarea scrolls internally. Called from
   // `handleInputChange` AND from a `useEffect` on `inputValue` so
@@ -1728,10 +1723,10 @@ function PinnedResizeHandle() {
       onKeyDown={onKeyDown}
       data-cmd-bar-resize-handle
       className={cn(
-        // Hair-thin 1px strip on the left edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, generous
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // is the look the user requested (live-test 2026-04-26).
+        // Hair-thin 1px strip on the left edge: `w-px`, hover highlight,
+        // generous pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover is the look the user requested
+        // (live-test 2026-04-26).
         "absolute left-0 top-0 h-full w-px cursor-col-resize",
         // Invisible at rest (the bar's own border carries the edge);
         // distinctly visible on hover/focus.
@@ -1861,10 +1856,9 @@ function ExpandedResizeHandle({ side }: { side: "left" | "right" }) {
       data-cmd-bar-resize-handle
       data-cmd-bar-resize-side={side}
       className={cn(
-        // Hair-thin 1px strip on the chosen edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, 16px
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // (live-test 2026-04-26).
+        // Hair-thin 1px strip on the chosen edge: `w-px`, hover
+        // highlight, 16px pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover (live-test 2026-04-26).
         "absolute top-0 h-full w-px cursor-col-resize",
         side === "right" ? "right-0" : "left-0",
         "bg-transparent hover:bg-muted-foreground transition-colors",
@@ -2316,8 +2310,8 @@ function ExpandedContent({
           this border-t boundary, which made it visually a sibling of
           the bar's chrome instead of part of the input area. Moving
           it inside the same border-t container groups attachments +
-          input + send button as one block — same pattern the legacy
-          ChatInput uses (AttachmentStrip → textarea → send).
+          input + send button as one block (AttachmentStrip → textarea
+          → send).
 
           Paste / drag-drop handlers stay on this OUTER container so
           dropping anywhere in the attachments-or-input area attaches
