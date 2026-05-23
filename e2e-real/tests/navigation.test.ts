@@ -165,11 +165,14 @@ describe('Navigation and UI', () => {
     // Test 3: Sidebar toggle (Cmd+Shift+L)
     // ---------------------------------------------------------------
     it('should toggle sidebar with Cmd+Shift+L', async () => {
-        // Verify the sidebar Settings button is visible initially
-        const settingsBtn = await browser.$('button[title*="Settings"]');
-        await settingsBtn.waitForExist({ timeout: 3000, timeoutMsg: 'Settings button not found' });
-        expect(await settingsBtn.isDisplayed()).toBe(true);
-        console.log('[nav] Settings button visible before toggle');
+        // Verify the QuietSidebar nav is mounted initially. The legacy
+        // `button[title*="Settings"]` lookup pointed at a Classic-only
+        // sidebar header button that doesn't exist in Quiet Composer —
+        // Settings is reached via ⌘, or the command bar's `>settings`.
+        const sidebarNav = await browser.$('nav[aria-label="Workspace sidebar"]');
+        await sidebarNav.waitForExist({ timeout: 3000, timeoutMsg: 'Workspace sidebar nav not found' });
+        expect(await sidebarNav.isDisplayed()).toBe(true);
+        console.log('[nav] Workspace sidebar visible before toggle');
 
         // Toggle sidebar with Cmd+Shift+L (toggles sidebarPinned in settings store)
         await pressShortcut(['Meta', 'Shift', 'l']);
@@ -214,43 +217,43 @@ describe('Navigation and UI', () => {
     // Test 4: Focus mode (Cmd+.)
     // ---------------------------------------------------------------
     it('should enter and exit focus mode with Cmd+.', async () => {
-        // Verify sidebar is visible before entering focus mode
-        const settingsBtnBefore = await browser.$('button[title*="Settings"]');
-        await settingsBtnBefore.waitForExist({ timeout: 3000, timeoutMsg: 'Settings button not found before focus mode' });
-        console.log('[nav] Settings button visible before focus mode');
+        // Focus mode adds `.focus-mode` to the QuietLayout root and applies
+        // a CSS opacity fade to the sidebar. We assert on the class rather
+        // than DOM visibility — opacity:0 still computes as "displayed".
+        const layoutRoot = await browser.$('[data-quiet-layout-root]');
+        await layoutRoot.waitForExist({ timeout: 3000, timeoutMsg: 'Quiet layout root not found before focus mode' });
+
+        const startedInFocus = ((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode');
+        if (startedInFocus) {
+            // Defensive: previous tests should have reset, but make sure.
+            await pressShortcut(['Meta', '.']);
+            await browser.pause(150);
+        }
 
         // Enter focus mode (Cmd+.)
         await pressShortcut(['Meta', '.']);
 
-        // Wait for sidebar to disappear (focus mode hides sidebar + toolbar)
         await browser.waitUntil(
-            async () => {
-                const btn = await browser.$('button[title*="Settings"]');
-                return !(await btn.isDisplayed().catch(() => false));
-            },
+            async () => ((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode'),
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Focus mode did not hide sidebar within 2s',
+                timeoutMsg: 'Focus mode class did not appear on layout root within 2s',
             },
         );
-        console.log('[nav] Focus mode entered — sidebar hidden');
+        console.log('[nav] Focus mode entered — focus-mode class on root');
 
         // Exit focus mode with Escape
         await browser.keys(['Escape']);
 
-        // Sidebar should be visible again
         await browser.waitUntil(
-            async () => {
-                const btn = await browser.$('button[title*="Settings"]');
-                return await btn.isDisplayed().catch(() => false);
-            },
+            async () => !((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode'),
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Focus mode did not restore sidebar within 2s',
+                timeoutMsg: 'Focus mode class did not clear on layout root within 2s',
             },
         );
-        console.log('[nav] Focus mode exited — sidebar restored');
+        console.log('[nav] Focus mode exited — focus-mode class cleared');
     });
 });

@@ -77,9 +77,11 @@ test.describe('File operations', () => {
       const fileItem = page.getByText('welcome.md', { exact: true }).first();
       await fileItem.click();
 
-      // Wait for the editor content area to appear and contain the file's content
-      // Tiptap renders into a .ProseMirror div inside #editor-content
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      // Wait for the editor content area to appear and contain the file's content.
+      // Tiptap renders into a `.ProseMirror` div — the legacy `#editor-content`
+      // wrapper was dropped with Classic removal (#325), so target the
+      // ProseMirror element directly.
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toBeVisible({ timeout: 10000 });
 
       // The welcome.md file has "Welcome to Notesage" as the H1
@@ -95,7 +97,7 @@ test.describe('File operations', () => {
       await waitForFileTree(page);
 
       await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
 
       await page.getByText('todo.md', { exact: true }).first().click();
@@ -112,7 +114,7 @@ test.describe('File operations', () => {
 
       // Open a file first
       await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
 
       // Type something to make the tab dirty — Cmd+S is a no-op on clean tabs

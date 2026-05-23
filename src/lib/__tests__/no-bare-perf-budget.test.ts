@@ -79,9 +79,9 @@ const ALLOWLIST: Allowlist = new Map([
     join(ROOT, 'e2e', 'tests', 'file-operations.spec.ts'),
     [
       // writeCalls.length >= 1 — count of IPC calls, not a timing budget
-      { line: 143, reason: 'count check (writeCalls.length >= 1)' },
+      { line: 145, reason: 'count check (writeCalls.length >= 1)' },
       // content.length > 0 — string length check, not a timing budget
-      { line: 152, reason: 'length check (content.length > 0)' },
+      { line: 154, reason: 'length check (content.length > 0)' },
     ],
   ],
   [
