@@ -120,14 +120,12 @@ import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 
 let captured: CmdBarEvent[];
 let unsubscribe: () => void;
-let onOpenPalette: ReturnType<typeof vi.fn<(mode: string, drilldown: string) => void>>;
 
 beforeEach(() => {
   captured = [];
   unsubscribe = subscribeToCmdBarEvents((e) => {
     captured.push(e);
   });
-  onOpenPalette = vi.fn<(mode: string, drilldown: string) => void>();
 });
 
 afterEach(() => {
@@ -136,7 +134,7 @@ afterEach(() => {
 
 describe('useAppLifecycle — tag click routing', () => {
   it('emits cmd-bar drilldown on notesage:open-tag-search', () => {
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
+    renderHook(() => useAppLifecycle());
 
     window.dispatchEvent(
       new CustomEvent('notesage:open-tag-search', { detail: { tag: 'finance' } }),
@@ -145,14 +143,13 @@ describe('useAppLifecycle — tag click routing', () => {
     expect(captured).toEqual([
       { type: 'focus', prefix: '#', drilldown: { kind: 'tag', name: 'finance' } },
     ]);
-    expect(onOpenPalette).not.toHaveBeenCalled();
   });
 
 });
 
 describe('useAppLifecycle — mention click routing', () => {
   it('emits cmd-bar drilldown on notesage:open-mention-search', () => {
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
+    renderHook(() => useAppLifecycle());
 
     window.dispatchEvent(
       new CustomEvent('notesage:open-mention-search', { detail: { mention: 'alice' } }),
@@ -161,7 +158,6 @@ describe('useAppLifecycle — mention click routing', () => {
     expect(captured).toEqual([
       { type: 'focus', prefix: '@', drilldown: { kind: 'mention', name: 'alice' } },
     ]);
-    expect(onOpenPalette).not.toHaveBeenCalled();
   });
 
 });

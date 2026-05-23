@@ -19,13 +19,10 @@ import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { toast } from "sonner";
-interface UseAppLifecycleOptions {
-  onOpenPalette?: (mode: string, drilldown: string) => void;
-}
 
 /**
  * Consolidates all App-level startup side effects and event listeners:
- *  - Tag/mention badge click → command palette
+ *  - Tag/mention badge click → cmd-bar drilldown
  *  - ACP cleanup on beforeunload
  *  - Visibility-change wake handler with health check
  *  - Drag/drop prevention
@@ -34,7 +31,7 @@ interface UseAppLifecycleOptions {
  *  - localStorage cleanup for removed stores
  *  - Startup tree reload (reloadTrees)
  */
-export function useAppLifecycle({ onOpenPalette: _onOpenPalette }: UseAppLifecycleOptions = {}) {
+export function useAppLifecycle() {
   // --- Tag badge click → cmd bar ---
   // In-document `#tag` clicks fire `notesage:open-tag-search`. Quiet Composer
   // is the only shell, so we always emit to the FloatingCommandBar.
