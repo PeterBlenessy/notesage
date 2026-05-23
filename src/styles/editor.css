@@ -11,7 +11,10 @@
   color: var(--color-foreground);
   /* Required by ProseMirror to suppress its white-space check warning */
   white-space: pre-wrap;
-  /* Base font from paragraph preset (legacy vars kept for backwards compat) */
+  /* Base font from paragraph preset. The `var(--editor-font-family, ...)`
+     fallback exists because editor-styles-store rolled out via a
+     migration — older persisted states may not have the namespaced
+     `--ns-*` variables yet. */
   font-family: var(--ns-paragraph-font-family, var(--editor-font-family));
   /* Base font size — view-zoom is applied via CSS `zoom` on the editor
      wrapper, so we don't need to multiply here (would compound the scale). */
@@ -1576,7 +1579,8 @@ mark.dom-find-highlight-active {
   cursor: default;
 }
 
-/* Legacy: single button without container (backward compat) */
+/* Single-button hover for the historical mermaid preview shape
+   (no wrapping container). */
 .mermaid-preview:hover > .mermaid-edit-btn {
   opacity: 1;
 }

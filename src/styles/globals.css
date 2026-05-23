@@ -576,8 +576,7 @@ body {
  * The toggle is set by `useWindowFocus()` (mounted from `QuietLayout.tsx`)
  * which listens on `window` for `focus` / `blur` and writes
  * `data-window-inactive="true|false"` onto the QuietLayout root
- * (`[data-quiet-layout-root]`). Quiet Composer only — Classic Layout is
- * Phase 3 deletion track, so the rules are scoped to the Quiet root.
+ * (`[data-quiet-layout-root]`).
  *
  * Initial state: read from `document.hasFocus()` so a window mounted
  * while in the background renders desaturated immediately.
@@ -808,7 +807,7 @@ body {
 
 /*
  * #142 — Translucent title bar requires content to actually pass behind it.
- * QuietLayout drops the legacy `pt-11` compensation on the doc area when
+ * QuietLayout drops the `pt-11` compensation on the doc area when
  * transparent chrome is on, so the editor's scroll area now extends up to
  * y=0 (the title bar's z=30 absolute layer overlays it). Two surfaces inside
  * the editor need extra top clearance so they don't sit visually trapped
@@ -941,7 +940,7 @@ body {
  * The `Pinned`/`ExpandedResizeHandle` components set `data-cmd-bar-resizing="true"`
  * on `<html>` while the pointer is down and clear it on pointerup. While the
  * attribute is present we strip the bar's transitions so width tracks the
- * cursor frame-perfectly, matching the legacy chat panel's resize feel.
+ * cursor frame-perfectly.
  * ========================================================================= */
 html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
   transition: none !important;
