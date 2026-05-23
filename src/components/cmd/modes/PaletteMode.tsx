@@ -100,15 +100,10 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 // ---------------------------------------------------------------------------
-// Inline command registry. Sourced from the existing CommandPalette actions
-// list (see `src/components/CommandPalette.tsx`) — copied as a static array
-// so the picker stays decoupled from the legacy palette wiring.
-//
-// `execute` is intentionally a no-op here. Real wiring lands in #20 when
-// FloatingCommandBar dispatches commands by id. Until then the picker is
-// pure presentation.
-//
-// "Preview HTML" is intentionally omitted — it's removed in #72.
+// Inline command registry. Static array so the picker stays decoupled from
+// the dispatch wiring. `execute` is intentionally a no-op here — real
+// wiring lands in cmd-bar #20 when FloatingCommandBar dispatches commands
+// by id. Until then the picker is pure presentation.
 // ---------------------------------------------------------------------------
 
 const noop = () => {};
@@ -171,17 +166,9 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     execute: noop,
   },
   {
-    id: 'toggle-chat-panel',
-    label: 'Toggle chat panel',
-    description: 'Show or hide the AI chat sidebar',
-    icon: 'MessageSquare',
-    shortcut: '⌘⇧C',
-    execute: noop,
-  },
-  {
-    id: 'toggle-agent-panel',
-    label: 'Toggle agent panel',
-    description: 'Show or hide the agent activity panel',
+    id: 'toggle-agent-orb',
+    label: 'Toggle agent orb',
+    description: 'Show or hide the agent activity orb popover',
     icon: 'ListChecks',
     shortcut: '⌘⇧A',
     execute: noop,
@@ -199,14 +186,14 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     label: 'Keyboard shortcuts',
     description: 'View the full keyboard shortcuts reference',
     icon: 'Keyboard',
-    shortcut: '⌘7',
+    shortcut: '⌘⇧K',
     execute: noop,
   },
 ];
 
-// Live-test 2026-04-26 — uncapped to match the legacy palette which shows
-// every matching action. The bar's picker tray is `overflow-y-auto` so a
-// long list scrolls instead of overflowing.
+// Live-test 2026-04-26 — uncapped so every matching action is shown.
+// The bar's picker tray is `overflow-y-auto` so a long list scrolls
+// instead of overflowing.
 
 function PaletteMode({
   filter,

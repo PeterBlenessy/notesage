@@ -2,18 +2,15 @@
 
 Chat, agents, skills, comment delegation, research, and voice transcription — the user-facing AI features built on top of the [AI Providers](ai-providers.md) infrastructure.
 
-## Chat Surfaces
+## Chat Surface
 
-The chat experience is exposed through two different shells. Both call into the same `useAIOperations.sendChatMessage` pipeline, the same `chat-store`, the same segment renderer, the same branching/resend/edit flows, and the same scoped-approvals layer. Only the surrounding chrome differs.
+Chat is reached through the `FloatingCommandBar` (`src/components/cmd/FloatingCommandBar.tsx`) inside `QuietLayout` — a compact bottom-centre pill that expands on focus (or `Cmd+K`) into a portal-mounted overlay with the input, attachment chips, context row, and conversation stream. A pin affordance (persisted as `settings.cmdBarPinned`) converts the floating overlay into a fixed-position right-edge side panel; the document column reserves matching `padding-right` via the `--cmd-bar-pinned-width` CSS variable. Prefix characters (`/`, `@`, `#`, `!`, `?`, `>`) morph the bar into mode-specific pickers (skills, references, tags, tasks, research, palette).
 
-- **Classic Layout** (`src/components/Layout.tsx`, default): a collapsible right sidebar — `ChatPanel` (`src/components/chat/ChatPanel.tsx`) — opened with `Cmd+Shift+C`. Resizable up to 50% of the content area. Hosts the message list, input, footer (provider, project picker, mode/effort dropdowns), branch switcher, and permission/approval cards inline.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the same chat is reached through `FloatingCommandBar` (`src/components/cmd/FloatingCommandBar.tsx`) — a compact bottom-centre pill that expands on focus (or `Cmd+K`) into a portal-mounted overlay with the input, attachment chips, context row, and conversation stream. A pin affordance (persisted as `settings.cmdBarPinned`) converts the floating overlay into a fixed-position right-edge side panel; the document column reserves matching `padding-right` via the `--cmd-bar-pinned-width` CSS variable. Prefix characters (`/`, `@`, `#`, `!`, `?`, `>`) morph the bar into mode-specific pickers (skills, references, tags, tasks, research, palette).
-
-Everything described in the rest of this document applies regardless of which shell is mounted — when a section says "the chat panel" it means whichever surface is active.
+The bar shells the same `useAIOperations.sendChatMessage` pipeline, `chat-store`, segment renderer, branching/resend/edit flows, and scoped-approvals layer that the rest of this document references when it says "the chat panel" — the cmd bar IS the chat panel.
 
 ## Chat Pipeline
 
-Streaming AI responses, identical across both shells.
+Streaming AI responses.
 
 **Direct API path:**
 
@@ -164,12 +161,9 @@ Document comments with AI agent delegation — foundational infrastructure for h
 
 **Agent activity surface:**
 
-The agent activity list (running, completed, failed tasks) is exposed through two different surfaces — both backed by the same `activity-store`:
+The agent activity list (running, completed, failed tasks) is exposed through `AgentOrb` (`src/components/activity/AgentOrb.tsx`) — backed by `activity-store`. A 46px ambient circle pinned to the bottom-right of the workspace. Pulses (CSS-only keyframe) and shows a count badge while running tasks are in flight; otherwise a static neutral surface with a subtle Bot glyph. Click (or Enter) opens an `AgentPanel` (`src/components/activity/AgentPanel.tsx`) inside a shadcn `Popover` with focus trap, Esc-to-close, and focus restoration. Hidden via `display: none` while the FloatingCommandBar is in pinned mode (the side panel covers the same screen real estate).
 
-- **Classic Layout** — `ActivityStrip` (`src/components/activity/ActivityStrip.tsx`): a narrow 40px rail along the right edge with per-task status icons, plus a resizable sidebar `ActivityPanel` for full task details. Toggled via Cmd+Shift+A or the title bar button.
-- **Quiet Composer Layout** — `AgentOrb` (`src/components/activity/AgentOrb.tsx`): a 46px ambient circle pinned to the bottom-right of the workspace. Pulses (CSS-only keyframe) and shows a count badge while running tasks are in flight; otherwise a static neutral surface with a subtle Bot glyph. Click (or Enter) opens an `AgentPanel` (`src/components/activity/AgentPanel.tsx`) inside a shadcn `Popover` with focus trap, Esc-to-close, and focus restoration. Hidden via `display: none` while the FloatingCommandBar is in pinned mode (the side panel covers the same screen real estate).
-
-Both surfaces share the same task model:
+Task model:
 
 - Task persistence: historical tasks survive app restart; interrupted tasks marked as error on rehydration
 - Per-task details: thinking output, streaming response, activity log
@@ -265,14 +259,13 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 
 | File | Purpose |
 | --- | --- |
-| `src/components/chat/ChatPanel.tsx` | AI chat sidebar (Classic Layout) |
+| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel — the chat surface |
 | `src/components/chat/ChatInput.tsx` | Message input (/ for skills, @ for agents) |
-| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel (Quiet Composer Layout) |
+| `src/components/chat/ChatMessageList.tsx` | Conversation stream (segments, branches, tool calls) |
 | `src/components/chat/PermissionCard.tsx` | ACP tool call approval |
 | `src/components/chat/ToolCallPermissionCard.tsx` | Direct API tool call approval |
 | `src/components/editor/CommentPopover.tsx` | Comment create/view/delegate |
-| `src/components/activity/ActivityStrip.tsx` | Agent activity strip + panel (Classic Layout) |
-| `src/components/activity/AgentOrb.tsx` | Agent orb pulse + popover trigger (Quiet Composer Layout) |
+| `src/components/activity/AgentOrb.tsx` | Agent orb pulse + popover trigger |
 | `src/components/activity/AgentPanel.tsx` | Agent task list inside the orb popover |
 | `src/hooks/useCommentDelegation.ts` | Comment → agent delegation flow |
 | `src/hooks/useAgentTaskOperations.ts` | Background agent task management |

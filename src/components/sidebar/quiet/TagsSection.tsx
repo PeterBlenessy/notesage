@@ -139,8 +139,7 @@ export function TagsSection({
   const handleTagClick = (tagName: string) => {
     // Live-test 2026-04-26 (slice 2) — emit a `drilldown` payload so the
     // cmd bar mounts directly at TagMode's level-2 view (occurrences for
-    // this tag) instead of the level-1 list. Saves one click and matches
-    // the legacy palette UX.
+    // this tag) instead of the level-1 list. Saves one click.
     emitCmdBarEvent({
       type: "focus",
       prefix: "#",

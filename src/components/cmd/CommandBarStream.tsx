@@ -16,11 +16,10 @@ import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
  * banner, Permission / Domain / ToolCall / AgentStatus cards, streaming
  * indicator.
  *
- * Rather than re-implement each in the Quiet Composer surface, the command
- * bar now renders the same `<ChatMessageList />` the legacy ChatPanel uses —
- * identical pattern to AgentOrb wrapping `<AgentPanel />`. Single source of
- * truth for chat rendering across both shells; every future chat feature
- * lands in one place.
+ * The command bar renders `<ChatMessageList />` directly — identical
+ * pattern to `AgentOrb` wrapping `<AgentPanel />`. Single source of
+ * truth for chat rendering; every future chat feature lands in one
+ * place.
  *
  * Height: the wrapper uses `flex flex-1 min-h-0` and inherits its cap
  * from the enclosing FloatingCommandBar — floating mode sets the bar to
@@ -46,9 +45,9 @@ interface CommandBarStreamProps {
 }
 
 function CommandBarStream({ onSend, onResend, onEdit, onPrefill }: CommandBarStreamProps) {
-  // Scope the list to the active conversation's selected projects — same
-  // read the classic ChatPanel uses to drive sandbox-scope / domain
-  // auto-approval decisions inside the list.
+  // Scope the list to the active conversation's selected projects —
+  // drives sandbox-scope / domain auto-approval decisions inside the
+  // list.
   const selectedProjectPaths = useChatStore(selectProjectPaths);
 
   return (

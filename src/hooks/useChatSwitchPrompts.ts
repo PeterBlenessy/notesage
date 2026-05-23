@@ -23,7 +23,7 @@ import { useProjectMetadataStore } from '@/stores/project-metadata-store';
  *      `interactive` connection mid-chat. We compare the previous
  *      `effectiveConnection.id` against the current one. The
  *      effective connection is `projectOverride ?? routing[interactive]`,
- *      same resolution the legacy `ChatPanel` uses.
+ *      same resolution `FloatingCommandBar` uses.
  *   2. Project selection change — the user added or removed a project
  *      from the conversation scope. We compare the previous selected
  *      path set against the current one (set-equality, ignoring
@@ -34,11 +34,9 @@ import { useProjectMetadataStore } from '@/stores/project-metadata-store';
  *   - First-render rehydration (prev was empty/undefined)
  *   - A pending prompt already in flight (don't stack)
  *
- * The hook lives in `useChatSwitchPrompts` so any chat surface
- * (legacy `ChatPanel`, Quiet Composer `FloatingCommandBar`) can mount
- * it once and get the same data-isolation guarantees. Without it the
- * Quiet Composer silently routed messages to the new provider without
- * the user's consent — a real regression vs. the legacy behaviour.
+ * The hook lives in `useChatSwitchPrompts` so the chat surface
+ * (`FloatingCommandBar`) can mount it once and get the data-isolation
+ * guarantees.
  */
 export function useChatSwitchPrompts(): void {
   const messages = useChatStore(selectMessages);
@@ -57,10 +55,10 @@ export function useChatSwitchPrompts(): void {
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
   // Resolve effective connection (lock → project override → routing
-  // slot), matching legacy ChatFooter exactly. Without the `aiLock`
-  // priority a locked project would still see `effectiveConnection`
-  // change when the user opens the picker, falsely triggering the
-  // AgentSwitchCard for projects whose provider is pinned.
+  // slot). Without the `aiLock` priority a locked project would still
+  // see `effectiveConnection` change when the user opens the picker,
+  // falsely triggering the AgentSwitchCard for projects whose provider
+  // is pinned.
   const singleProjectPath =
     selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const singleMetadata = singleProjectPath

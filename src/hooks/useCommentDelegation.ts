@@ -468,7 +468,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
     [delegateComment, taskConnection]
   );
 
-  /** Move a comment conversation to the chat panel as a new conversation. */
+  /** Move a comment conversation to the command bar as a new conversation. */
   const moveToChat = useCallback(
     (comment: Comment, projectPath?: string, storageRoot?: string) => {
       const anchorSnippet = comment.anchorText.length > 50
@@ -513,7 +513,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         });
       }
 
-      // Open chat panel
+      // Focus the floating command bar (Quiet Composer chat surface).
       emitCmdBarEvent({ type: 'focus' });
     },
     []

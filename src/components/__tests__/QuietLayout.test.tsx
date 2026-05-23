@@ -105,23 +105,8 @@ vi.mock('@/stores/settings-store', () => {
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
-    // #107 — the `RevertInvitation` banner mounted inside QuietLayout
-    // imports this helper. Not under test here; return `false` so the
-    // banner stays hidden and doesn't pull in the real store surface.
-    shouldShowRevertInvitation: () => false,
-    // #97 — symmetric helper for the preview banner. Not mounted in
-    // QuietLayout but exporting it keeps the mock API matching the
-    // real module's public surface.
-    shouldShowPreviewInvitation: () => false,
   };
 });
-
-// #107 — stub the banner itself so the tests don't need to mock the
-// settings fields / Button subtree. The banner is covered by its own
-// focused tests.
-vi.mock('@/components/RevertInvitation', () => ({
-  RevertInvitation: () => null,
-}));
 
 // ---------------------------------------------------------------------------
 // Helpers

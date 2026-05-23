@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { QuietLayout } from "@/components/QuietLayout";
 
@@ -78,10 +79,9 @@ function App() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
-  // #128 — global commit dialog state for Quiet Composer's sidebar
-  // context menu. The classic shell still owns its own per-project
-  // commit state inside `ProjectItem`; this App-level dialog is an
-  // additional mount path driven by `SIDEBAR_COMMIT_FILE_EVENT`.
+  // #128 — global commit dialog state for the Quiet Composer sidebar
+  // context menu. Driven by `SIDEBAR_COMMIT_FILE_EVENT` from the
+  // sidebar's commit affordance.
   const [commitDialogState, setCommitDialogState] = useState<{
     projectPath: string;
   } | null>(null);
@@ -527,15 +527,10 @@ function App() {
         case "open-settings":
           openSettingsAndCloseMenus(setSettingsOpen);
           break;
-        case "toggle-chat-panel":
-          // Quiet Composer: the cmd bar IS the chat. We just closed it
-          // after the pick — re-open via the bus `focus` event so the
-          // user lands in the composer (matches "toggle on" intent).
-          emitCmdBarEvent({ type: "focus" });
-          break;
-        case "toggle-agent-panel":
-          // Quiet Composer's AgentOrb popover has no programmatic open
-          // path yet. No-op for now — the chord (⌘⇧A) still works.
+        case "toggle-agent-orb":
+          // Same bus the ⌘⇧A chord uses — AgentOrb's popover toggles
+          // its open state when this event fires.
+          emitAgentOrbEvent({ type: "toggle" });
           break;
         case "document-outline":
           setOutlineOpen(true);
@@ -555,9 +550,8 @@ function App() {
 
   // Listen for `notesage:open-file` events dispatched by FloatingCommandBar
   // pickers (`?` research, `!` task, and the upcoming `#`/`@` drilldowns).
-  // App-level listener routes to `openFile` from `useFileOperations` —
-  // matches the legacy palette's `handleOpenResearchFile` / `handleOpenFile`
-  // call sites without plumbing the hook through QuietLayout.
+  // App-level listener routes to `openFile` from `useFileOperations`
+  // without plumbing the hook through QuietLayout.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (
@@ -581,8 +575,7 @@ function App() {
 
   // Listen for `notesage:open-file-at-tag` events dispatched by the
   // FloatingCommandBar's `#` tag and `@` mention pickers. Routes to
-  // `openFileAtTag` (same code path the legacy CommandPalette uses for
-  // its tag/mention drilldown selection).
+  // `openFileAtTag` to perform the tag/mention drilldown selection.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (

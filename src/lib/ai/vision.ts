@@ -12,9 +12,9 @@ export interface VisionCheckContext {
 }
 
 // ---------------------------------------------------------------------------
-// Event bus for sending images from the editor to the chat panel.
+// Event bus for sending images from the editor to the command bar.
 // ChatInput registers a handler on mount; the editor's SendToAI extension
-// calls sendImageToChat() to inject an attachment into the chat input.
+// calls sendImageToChat() to inject an attachment into the cmd bar input.
 // ---------------------------------------------------------------------------
 
 type SendImageHandler = (attachment: ImageAttachment) => void;

@@ -24,9 +24,9 @@ import { parseNotesageDrop } from '@/lib/drag-utils';
  * or CommandBarStream's host) and pushed in via props so ChatInput can
  * pre-fill the textarea + show the "Editing message" banner.
  *
- * Lives here because ChatInput is the sole consumer after the Classic
- * ChatPanel deletion (task #9). The mirror state inside FloatingCommandBar
- * is intentionally inlined and structurally compatible.
+ * Lives here because ChatInput is the sole consumer of the type. The
+ * mirror state inside FloatingCommandBar is intentionally inlined and
+ * structurally compatible.
  */
 export interface EditContext {
   parentId: string | null;
@@ -526,7 +526,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           <div className="flex items-center gap-2 flex-wrap px-3 py-1.5">
             {footer}
             <div className="flex items-center gap-1.5 ml-auto">
-              {/* attachButton removed — image attach moved to the "+" menu in ChatFooter */}
+              {/* attachButton removed — image attach moved to the "+" menu in CommandBarContext */}
               {micButton}
               {stopButton}
               {sendButton}

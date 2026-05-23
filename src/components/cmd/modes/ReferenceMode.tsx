@@ -50,9 +50,9 @@ const PER_SOURCE_QUOTA = 3;
 /**
  * Live-test 2026-04-26 (slice 2) — `@person` drilldown.
  *
- * When the user picks a person at level 1, ReferenceMode drills into the
- * file occurrences of that mention (legacy palette parity). The level-2
- * pick fires a separate callback (`onPickOccurrence`) that carries the
+ * When the user picks a person at level 1, ReferenceMode drills into
+ * the file occurrences of that mention. The level-2 pick fires a
+ * separate callback (`onPickOccurrence`) that carries the
  * full navigate payload. File / comment picks still fire the original
  * `onPick(chip)` — file → open file directly, comment → no-op for now.
  */

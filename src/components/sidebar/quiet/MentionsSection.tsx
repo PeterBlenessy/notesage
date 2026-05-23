@@ -141,7 +141,7 @@ export function MentionsSection({
   const handleMentionClick = (mentionName: string) => {
     // Live-test 2026-04-26 (slice 2) — drilldown directly to the level-2
     // occurrences view in ReferenceMode. Mirrors TagsSection's tag click
-    // behaviour and matches the legacy palette UX.
+    // behaviour.
     emitCmdBarEvent({
       type: "focus",
       prefix: "@",

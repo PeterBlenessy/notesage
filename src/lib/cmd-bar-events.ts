@@ -37,7 +37,7 @@ export type CmdBarEvent =
   // between "chat stream" mode and "history list" mode. The bar's
   // subscriber flips its local `chatView` state. Selecting a conversation
   // from the history list returns to chat via the `onSelectConversation`
-  // callback, same as the legacy `ChatPanel` does (#118).
+  // callback (#118).
   | { type: 'toggle-history' }
   // `close` — fired by the X button in `CommandBarContext` (live-test
   // 2026-04-26). Unlike `dismiss`, this is an explicit user "close the

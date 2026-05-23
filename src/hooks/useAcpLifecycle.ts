@@ -572,8 +572,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       const userTimestamp = Date.now();
       // Stamp the target connection on the user message so later resend/edit
-      // actions (ChatPanel.handleResend, handleEdit — task #10) can detect
-      // provider mismatch. See matching write in useDirectApiChat.ts.
+      // actions in `FloatingCommandBar` can detect provider mismatch
+      // (project-data-isolation task #10). See matching write in
+      // useDirectApiChat.ts.
       const userMessage: ChatMessage = {
         role: 'user',
         content,

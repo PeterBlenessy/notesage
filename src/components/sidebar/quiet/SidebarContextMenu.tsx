@@ -401,8 +401,8 @@ export function SidebarContextMenu({
   // because FoldersSection dispatches it.
 
   // #128 — Add to chat. Image files only. Compresses the bytes
-  // client-side and hands off to the vision event bus so the chat panel
-  // attaches the image (same handler `FileTreeItem` uses).
+  // client-side and hands off to the vision event bus so the command
+  // bar attaches the image (same handler `FileTreeItem` uses).
   const handleAddToChat = async () => {
     if (!isImage) return;
     try {
@@ -583,7 +583,7 @@ export function SidebarContextMenu({
           )}
 
           {/* #128 — Add to chat. Image files only; hands off to the vision
-             *  event bus so the chat panel attaches the image. */}
+             *  event bus so the command bar attaches the image. */}
           {isImage && (
             <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleAddToChat()}>
               Add to chat

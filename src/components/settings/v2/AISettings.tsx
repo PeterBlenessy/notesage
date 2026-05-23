@@ -101,8 +101,8 @@ export function AISettings() {
               </span>{' '}
               to the AI agent — disables project isolation. Only enable for
               power-user workflows that explicitly need multi-project
-              visibility. A persistent banner appears in the chat panel while
-              this is on.
+              visibility. A persistent banner appears in the command bar
+              while this is on.
             </>
           }
           htmlFor="cross-project-mode"

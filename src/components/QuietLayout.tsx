@@ -34,12 +34,11 @@ import { cn } from "@/lib/utils";
  * grid — in floating mode it portal-mounts over the workspace, in
  * pinned mode it docks as a fixed-position right-edge panel and the
  * document area reserves matching padding-right via the
- * `--cmd-bar-pinned-width` CSS variable. Re-introducing a classic
- * `<ChatPanel />` here would duplicate the composer surface.
+ * `--cmd-bar-pinned-width` CSS variable. The cmd bar IS the chat
+ * surface — no separate chat panel.
  *
- * The centre column hosts the same `<Editor />` mount tree that
- * `Layout.tsx → EditorArea` uses on the legacy path; `editor-store` is
- * shared, so document switches, dirty tracking, and the per-tab
+ * The centre column hosts the `<Editor />` mount tree backed by
+ * `editor-store`, so document switches, dirty tracking, and the per-tab
  * EditorState cache work identically across both shells. The editor
  * component itself owns its inner chrome (Toolbar, FindBar, BubbleMenu,
  * StatusBar, ExportDialog, CommentPopover, etc.) — QuietLayout just
@@ -133,7 +132,7 @@ export function QuietLayout(props: QuietLayoutProps) {
     focusMode: focusModeProp,
     // #130 — agent task cancel/navigate callbacks flow from App.tsx →
     // QuietLayout → AgentOrb → AgentPanel so task rows inside the orb
-    // popover are wired up identically to the classic ActivityPanel.
+    // popover are clickable.
     onCancelTask,
     onClickTask,
   } = props;
@@ -148,8 +147,7 @@ export function QuietLayout(props: QuietLayoutProps) {
   // unfocused-window de-emphasis. Toggles `data-window-inactive="true"`
   // on the `[data-quiet-layout-root]` node below; CSS in `globals.css`
   // re-points `--accent` to the desaturated inactive variant and dims
-  // pre-stamped chrome targets. Quiet Composer only — Classic Layout is
-  // on the Phase 3 deletion list per the 2026-04-27 scoping decision.
+  // pre-stamped chrome targets.
   useWindowFocus();
 
   // #56 — Focus mode. Owns the `⌘.` toggle and the `Esc` fall-through
@@ -166,10 +164,8 @@ export function QuietLayout(props: QuietLayoutProps) {
   useQuietChrome();
 
   // The editor reads `focusMode` to gate its own chrome (Toolbar, StatusBar).
-  // QuietLayout owns the live focus-mode flag via `useFocusMode()` above (the
-  // app-level legacy flag isn't flipped in this preview because the legacy
-  // `⌘.` listener is suppressed at capture phase). OR with the prop too in
-  // case a future code path drives it from App.
+  // QuietLayout owns the live focus-mode flag via `useFocusMode()` above.
+  // OR with the prop too in case a future code path drives it from App.
   const editorFocusMode = focus.active || !!focusModeProp;
 
   // When the command bar is pinned (#28), the document column needs to
@@ -193,9 +189,7 @@ export function QuietLayout(props: QuietLayoutProps) {
   // `settings-store.sidebarPinned` via `useKeyboardShortcuts`; QuietLayout
   // observes the flag and either renders the sidebar + reserves the 252px
   // grid track, or omits the sidebar entirely and collapses the grid to a
-  // single `1fr` column. Both shells share the setting — toggling here
-  // also affects the Classic layout's pinned state, which is the intended
-  // unified behaviour. Default is `true` (sidebar visible out of the box).
+  // single `1fr` column. Default is `true` (sidebar visible out of the box).
   const sidebarPinned = useSettingsStore((s) => s.sidebarPinned);
 
   const documentAreaStyle: React.CSSProperties = cmdBarPinned
@@ -349,11 +343,10 @@ export function QuietLayout(props: QuietLayoutProps) {
           longer shifts the document chrome's centerline. */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/*
-          TitleBar in Quiet Composer mode (tasks #103 + #124). Suppresses
-          the chat-toggle and activity-strip-toggle buttons — their
-          classic-mode targets (ChatPanel, ActivityStrip) aren't mounted
-          here; the FloatingCommandBar and AgentOrb own those
-          affordances instead.
+          TitleBar — renders the document title + dirty dot + close
+          button. The FloatingCommandBar and AgentOrb own the chat /
+          agent-panel affordances; the title bar carries no toggle
+          buttons in this shell.
 
           #132 — when `quietChromeTransparent` is on the title bar
           overlays the doc area instead of pushing it down. The

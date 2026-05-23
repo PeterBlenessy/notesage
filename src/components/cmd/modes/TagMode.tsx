@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 /**
  * TagMode — picker for the `#tag` prefix mode in the FloatingCommandBar.
  *
- * Two-level drilldown matching the legacy `CommandPalette` UX:
+ * Two-level drilldown:
  *   1. Top level — list of tags from `tauriApi.indexTags`, ordered by
  *      file_count descending. Click / Enter selects a tag and drills into
  *      its occurrences.

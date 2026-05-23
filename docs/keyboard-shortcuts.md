@@ -9,8 +9,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Save | `⌘S` | Save current file to disk |
 | Open folder | `⌘O` | Open native folder-picker dialog (loads selected folder as Explorer / project) |
 | Close active document | `⌘W` | Close the active document (warns if unsaved). Internally still called "tab" — see Implementation Notes |
-| New note | `⌘N` | Classic Layout: opens new-note dialog. Quiet Composer: opens inline-create row in the active project (no dialog) |
-| New project | `⌘⇧N` | Classic Layout: opens new-project dialog. Quiet Composer: opens inline-create row in the Projects section (no dialog) |
+| New note | `⌘N` | Opens an inline-create row in the active project (no dialog) |
+| New project | `⌘⇧N` | Opens an inline-create row in the Projects section (no dialog) |
 | Export | `⌘⇧E` | Open Export dialog (multi-format: PDF / DOCX / PPTX / HTML). Works in both shells since sidebar #20 deleted TreeOverlay (which used to preempt the chord under Quiet Composer). |
 
 ## Editor Formatting
@@ -62,8 +62,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Toggle chat panel | `⌘⇧C` | Classic: show/hide AI chat sidebar. Quiet Composer: focuses the FloatingCommandBar when collapsed (third summon path alongside `⌘K` and double-tap `⌘`); when the bar is already expanded+pinned, unpins it back to floating; otherwise no-op (use `Esc` to collapse) |
-| Toggle agent panel | `⌘⇧A` | Classic: show/hide agent activity panel. Quiet Composer: toggle the `AgentOrb` popover (the orb IS the agent panel) |
+| Summon command bar | `⌘⇧C` | Focuses the FloatingCommandBar when collapsed (third summon path alongside `⌘K` and double-tap `⌘`); when the bar is already expanded+pinned, unpins it back to floating; otherwise no-op (use `Esc` to collapse) |
+| Toggle agent orb | `⌘⇧A` | Open/close the `AgentOrb` popover (the orb IS the agent panel) |
 | Add comment | `⌘⇧M` | Create inline comment on selected text. **Wired through Tiptap, not through `useKeyboardShortcuts`** — see Implementation Notes |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
@@ -75,7 +75,6 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | --- | --- | --- |
 | Previous Recent doc | `⌃⇧Tab` | Cycle backward through MRU document history (mirrors VS Code's MRU-cycle convention; works in both shells) |
 | Next Recent doc | `⌃Tab` | Cycle forward through MRU document history |
-| Middle-click tab | Mouse middle button | Close document — Classic Layout only (Quiet Composer has no tab strip) |
 
 ## Slash Commands
 
@@ -103,9 +102,9 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 
 | Action | Press (chord) | Glyph form (display) | Description |
 | --- | --- | --- | --- |
-| Command palette / Command bar | `⌘K` | `⌘K` | Classic: open `CommandPalette`. Quiet Composer: focus the `FloatingCommandBar` |
+| Command palette / Command bar | `⌘K` | `⌘K` | Focus the `FloatingCommandBar` |
 | Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
-| Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Classic: toggle ChatPanel. Quiet Composer: focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
+| Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
 | Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. Quiet Composer: focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
@@ -135,7 +134,7 @@ Single-char prefixes win when both could match. Backspacing past the prefix retu
 | --- | --- | --- | --- |
 | Noun | `!` | Tasks | Quiet Composer command-bar TaskMode (open / attach a task) |
 | Noun | `#` | Tags | Search for #tags across all files |
-| Noun | `@` | Mentions / References | Search for @mentions (legacy palette) or open ReferenceMode (Quiet Composer) |
+| Noun | `@` | References | Open ReferenceMode — search for @mentions, files, comments |
 | Noun | `>` | Commands | Filter actions (New Note, Toggle Theme, etc.) |
 | Noun | `?` | Research | Search research files across all projects |
 | Noun | `/` | Skills | Quiet Composer command-bar SkillMode |
@@ -156,7 +155,7 @@ _None at the moment — the previous file-search and Quick Capture entries have 
 
 ### Owner table (Quiet Composer vs Legacy)
 
-The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) maintains an authoritative table of which component owns each chord under the Quiet Composer preview vs Classic Layout. Read that JSDoc table before changing a binding — the preview branch routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar` (`useCommandBarShortcuts`), while ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt the legacy listeners. ⌘⇧E was previously a QuietLayout capture-phase chord (TreeOverlay) but was reclaimed by Export in sidebar-simplification #22 once TreeOverlay was deleted. `⌘.` (focus mode) is owned by `useFocusMode` at capture phase and the double-tap `⌘` summon path lives in `useDoubleTapCmd`. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
+The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) owns most app-level chords. It composes `useCommandBarShortcuts` (which routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar`) and `useDoubleTapCmd` (the double-tap `⌘` summon path). ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt other listeners. ⌘. (focus mode) is owned by `useFocusMode` at capture phase. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
 
 ### Shortcut Priority
 
