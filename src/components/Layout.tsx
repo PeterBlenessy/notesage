@@ -110,7 +110,7 @@ function EditorArea({
 // --- Layout component ---
 
 export interface LayoutProps {
-  focusMode: boolean;
+  focusMode?: boolean;
   stripExpanded: boolean;
   // Editor area callbacks
   onNewNote: (parentPath?: string) => void;

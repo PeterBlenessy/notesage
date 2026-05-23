@@ -26,11 +26,10 @@ import { renderHook } from '@testing-library/react';
 import '@/test/tauri-mock';
 
 import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
-import type { PaletteMode } from '@/lib/command-palette';
 
 // --- Mutable settings mock (tests flip uiPreview) ---
 const mockSettings: {
-  uiPreview: 'legacy' | 'quiet-composer';
+  uiPreview: 'quiet-composer';
   logLevel: 'info';
   skillsReady: boolean;
   startupReady: boolean;
@@ -128,7 +127,7 @@ import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 
 let captured: CmdBarEvent[];
 let unsubscribe: () => void;
-let onOpenPalette: ReturnType<typeof vi.fn<(mode: PaletteMode, drilldown: string) => void>>;
+let onOpenPalette: ReturnType<typeof vi.fn<(mode: string, drilldown: string) => void>>;
 
 beforeEach(() => {
   mockSettings.uiPreview = 'quiet-composer';
@@ -136,7 +135,7 @@ beforeEach(() => {
   unsubscribe = subscribeToCmdBarEvents((e) => {
     captured.push(e);
   });
-  onOpenPalette = vi.fn<(mode: PaletteMode, drilldown: string) => void>();
+  onOpenPalette = vi.fn<(mode: string, drilldown: string) => void>();
 });
 
 afterEach(() => {
@@ -158,17 +157,6 @@ describe('useAppLifecycle — tag click routing', () => {
     expect(onOpenPalette).not.toHaveBeenCalled();
   });
 
-  it('calls onOpenPalette when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
-
-    window.dispatchEvent(
-      new CustomEvent('notesage:open-tag-search', { detail: { tag: 'urgent' } }),
-    );
-
-    expect(onOpenPalette).toHaveBeenCalledWith('tags', 'urgent');
-    expect(captured).toEqual([]);
-  });
 });
 
 describe('useAppLifecycle — mention click routing', () => {
@@ -186,15 +174,4 @@ describe('useAppLifecycle — mention click routing', () => {
     expect(onOpenPalette).not.toHaveBeenCalled();
   });
 
-  it('calls onOpenPalette when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useAppLifecycle({ onOpenPalette }));
-
-    window.dispatchEvent(
-      new CustomEvent('notesage:open-mention-search', { detail: { mention: 'bob' } }),
-    );
-
-    expect(onOpenPalette).toHaveBeenCalledWith('mentions', 'bob');
-    expect(captured).toEqual([]);
-  });
 });
