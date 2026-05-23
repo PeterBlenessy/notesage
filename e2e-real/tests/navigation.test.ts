@@ -28,9 +28,18 @@ async function resetNavigationState(): Promise<void> {
         if (w.__E2E_SETTINGS_STORE__) {
             const s = w.__E2E_SETTINGS_STORE__.getState();
             if (!s.sidebarPinned) s.setSidebarPinned(true);
-            if (s.chatPanelOpen) s.setChatPanelOpen(false);
         }
     });
+    // Collapse the FloatingCommandBar if it's open. The bar exposes
+    // `data-expanded` on its root; sending Escape is the documented
+    // collapse path in float mode.
+    const bar = await browser.$('[data-cmd-bar]');
+    if (await bar.isExisting()) {
+        const expanded = await bar.getAttribute('data-expanded');
+        if (expanded === 'true') {
+            await pressShortcut(['Escape']);
+        }
+    }
     await browser.pause(300);
 }
 
@@ -100,83 +109,56 @@ describe('Navigation and UI', () => {
     });
 
     // ---------------------------------------------------------------
-    // Test 2: Chat panel toggle (Cmd+Shift+C)
+    // Test 2: FloatingCommandBar expand / collapse
     // ---------------------------------------------------------------
-    it('should toggle chat panel with Cmd+Shift+C', async () => {
-        // Ensure chat panel is initially closed by reading the store
-        const initiallyOpen = await browser.execute(() => {
-            const raw = localStorage.getItem('notesage-settings');
-            if (!raw) return false;
-            try {
-                return JSON.parse(raw).state?.chatPanelOpen ?? false;
-            } catch {
-                return false;
-            }
-        });
-        console.log(`[nav] Chat panel initially open: ${initiallyOpen}`);
+    it('should expand the FloatingCommandBar with Cmd+Shift+C and collapse with Esc', async () => {
+        const bar = await browser.$('[data-cmd-bar]');
+        await bar.waitForExist({ timeout: 3000, timeoutMsg: 'Cmd bar not found within 3s' });
 
-        // If already open, close it first to start from a known state
-        if (initiallyOpen) {
-            await pressShortcut(['Meta', 'Shift', 'c']);
+        // Ensure the bar starts collapsed.
+        const initiallyExpanded = await bar.getAttribute('data-expanded');
+        if (initiallyExpanded === 'true') {
+            await pressShortcut(['Escape']);
             await browser.pause(300);
         }
+        const startState = await bar.getAttribute('data-expanded');
+        console.log(`[nav] Cmd bar initially expanded: ${startState === 'true'}`);
+        expect(startState).toBe('false');
 
-        // Open the chat panel and measure how long it takes to appear
+        // ⌘⇧C expands the bar — measure how long it takes the attribute to flip.
         await pressShortcut(['Meta', 'Shift', 'c']);
 
         const { duration } = await measureAction(async () => {
-            // The ChatPanel renders a textarea for input — wait for it
             await browser.waitUntil(
-                async () => {
-                    const chatOpen = await browser.execute(() => {
-                        const raw = localStorage.getItem('notesage-settings');
-                        if (!raw) return false;
-                        try {
-                            return JSON.parse(raw).state?.chatPanelOpen ?? false;
-                        } catch {
-                            return false;
-                        }
-                    });
-                    return chatOpen === true;
-                },
+                async () => (await bar.getAttribute('data-expanded')) === 'true',
                 {
                     timeout: 2000,
                     interval: 50,
-                    timeoutMsg: 'Chat panel did not open within 2s',
+                    timeoutMsg: 'Cmd bar did not expand within 2s',
                 },
             );
         });
-        console.log(`[nav] Chat panel opened in ${duration.toFixed(0)}ms (informational only)`);
+        console.log(`[nav] Cmd bar expanded in ${duration.toFixed(0)}ms (informational only)`);
 
-        // Allow animations to settle and look for the chat textarea
+        // Allow animations to settle and look for the bar's combobox textarea.
         await browser.pause(200);
-        const textarea = await browser.$('textarea');
+        const textarea = await browser.$('[data-cmd-bar] textarea[role="combobox"]');
         const textareaExists = await textarea.isExisting();
-        console.log(`[nav] Chat textarea present: ${textareaExists}`);
+        console.log(`[nav] Cmd bar textarea present: ${textareaExists}`);
         expect(textareaExists).toBe(true);
 
-        // Close the chat panel
-        await pressShortcut(['Meta', 'Shift', 'c']);
+        // Escape is the documented collapse path in float mode (a second
+        // ⌘⇧C is a no-op while expanded+floating).
+        await pressShortcut(['Escape']);
         await browser.waitUntil(
-            async () => {
-                const chatOpen = await browser.execute(() => {
-                    const raw = localStorage.getItem('notesage-settings');
-                    if (!raw) return false;
-                    try {
-                        return JSON.parse(raw).state?.chatPanelOpen ?? false;
-                    } catch {
-                        return false;
-                    }
-                });
-                return chatOpen === false;
-            },
+            async () => (await bar.getAttribute('data-expanded')) === 'false',
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Chat panel did not close within 2s',
+                timeoutMsg: 'Cmd bar did not collapse within 2s',
             },
         );
-        console.log('[nav] Chat panel closed');
+        console.log('[nav] Cmd bar collapsed');
     });
 
     // ---------------------------------------------------------------

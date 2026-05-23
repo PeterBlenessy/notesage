@@ -3,15 +3,10 @@
 /**
  * Unit tests for useAppLifecycle's tag/mention badge click routing.
  *
- * Audit #1 (2026-04-27 quiet-composer-migration) caught that clicking a
- * `#tag` or `@mention` badge inside the editor did nothing under Quiet
- * Composer because the legacy `<CommandPalette>` is the only listener for
- * the resulting `notesage:open-tag-search` / `notesage:open-mention-search`
- * events, and that component isn't mounted in Quiet mode.
- *
- * The fix branches on `useSettingsStore.getState().uiPreview`:
- *   - Quiet path  → emit `cmd-bar-events` `{ type: 'focus', prefix, drilldown }`
- *   - Legacy path → call `onOpenPalette(...)` (unchanged)
+ * Clicking a `#tag` or `@mention` badge inside the editor emits a
+ * `notesage:open-tag-search` / `notesage:open-mention-search` event;
+ * the hook listens and re-emits a `cmd-bar-events` `{ type: 'focus',
+ * prefix, drilldown }` payload that the FloatingCommandBar picks up.
  *
  * These tests mock every other side effect of `useAppLifecycle` (heavy
  * startup, ACP cleanup, visibility-change wake handler, drag-drop guards)
@@ -27,16 +22,14 @@ import '@/test/tauri-mock';
 
 import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
 
-// --- Mutable settings mock (tests flip uiPreview) ---
+// --- Settings mock — minimum surface the hook touches at startup. ---
 const mockSettings: {
-  uiPreview: 'quiet-composer';
   logLevel: 'info';
   skillsReady: boolean;
   startupReady: boolean;
   setSkillsReady: (v: boolean) => void;
   setStartupReady: (v: boolean) => void;
 } = {
-  uiPreview: 'quiet-composer',
   logLevel: 'info',
   skillsReady: true,
   startupReady: true,
@@ -130,7 +123,6 @@ let unsubscribe: () => void;
 let onOpenPalette: ReturnType<typeof vi.fn<(mode: string, drilldown: string) => void>>;
 
 beforeEach(() => {
-  mockSettings.uiPreview = 'quiet-composer';
   captured = [];
   unsubscribe = subscribeToCmdBarEvents((e) => {
     captured.push(e);
@@ -143,8 +135,7 @@ afterEach(() => {
 });
 
 describe('useAppLifecycle — tag click routing', () => {
-  it('emits cmd-bar drilldown when uiPreview === "quiet-composer"', () => {
-    mockSettings.uiPreview = 'quiet-composer';
+  it('emits cmd-bar drilldown on notesage:open-tag-search', () => {
     renderHook(() => useAppLifecycle({ onOpenPalette }));
 
     window.dispatchEvent(
@@ -160,8 +151,7 @@ describe('useAppLifecycle — tag click routing', () => {
 });
 
 describe('useAppLifecycle — mention click routing', () => {
-  it('emits cmd-bar drilldown when uiPreview === "quiet-composer"', () => {
-    mockSettings.uiPreview = 'quiet-composer';
+  it('emits cmd-bar drilldown on notesage:open-mention-search', () => {
     renderHook(() => useAppLifecycle({ onOpenPalette }));
 
     window.dispatchEvent(
