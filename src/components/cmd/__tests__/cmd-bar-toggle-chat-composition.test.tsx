@@ -35,33 +35,21 @@ vi.mock('@/hooks/useReducedMotion', () => ({
 // Settings-store is shared between useKeyboardShortcuts, useCommandBarShortcuts,
 // and FloatingCommandBar. We need getters/setters so the bar reads the mock
 // and setCmdBarPinned can be spied on.
-let mockUiPreview: 'legacy' | 'quiet-composer' = 'quiet-composer';
 let mockCmdBarPinned = false;
-let mockChatPanelOpen = false;
 const mockSetCmdBarPinned = vi.fn<(next: boolean) => void>((next) => {
   mockCmdBarPinned = next;
-});
-const mockSetChatPanelOpen = vi.fn<(next: boolean) => void>((next) => {
-  mockChatPanelOpen = next;
 });
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
-    get uiPreview() {
-      return mockUiPreview;
-    },
     get cmdBarPinned() {
       return mockCmdBarPinned;
     },
     cmdBarPinnedWidth: 400,
-    get chatPanelOpen() {
-      return mockChatPanelOpen;
-    },
     sidebarPinned: false,
     theme: 'light' as const,
     setCmdBarPinned: (next: boolean) => mockSetCmdBarPinned(next),
     setCmdBarPinnedWidth: vi.fn(),
-    setChatPanelOpen: (next: boolean) => mockSetChatPanelOpen(next),
     setSidebarPinned: vi.fn(),
     setTheme: vi.fn(),
   };
@@ -199,11 +187,8 @@ function dispatchKey(init: KeyboardEventInit) {
 }
 
 beforeEach(() => {
-  mockUiPreview = 'quiet-composer';
   mockCmdBarPinned = false;
-  mockChatPanelOpen = false;
   mockSetCmdBarPinned.mockClear();
-  mockSetChatPanelOpen.mockClear();
   mockEditorState.openDocuments = [];
   mockEditorState.activeTabId = null;
   document.body.innerHTML = '';
@@ -218,8 +203,6 @@ describe('#121 ⌘⇧C under Quiet Composer', () => {
     dispatchKey({ key: 'c', metaKey: true, shiftKey: true });
 
     expect(getBar()?.getAttribute('data-expanded')).toBe('true');
-    // Legacy setter must NOT be called under quiet-composer.
-    expect(mockSetChatPanelOpen).not.toHaveBeenCalled();
   });
 
   it('unpins the bar when expanded AND pinned', () => {
@@ -238,31 +221,8 @@ describe('#121 ⌘⇧C under Quiet Composer', () => {
     // receives the `toggle-pin` event and flips the setting.
     expect(mockSetCmdBarPinned).toHaveBeenCalledTimes(1);
     expect(mockSetCmdBarPinned).toHaveBeenCalledWith(false);
-    // Legacy chatPanelOpen path must NOT fire under quiet-composer.
-    expect(mockSetChatPanelOpen).not.toHaveBeenCalled();
     // The bar is still rendered (we flipped pin, not expanded).
     expect(getBar()).not.toBeNull();
   });
 });
 
-describe('#121 ⌘⇧C under Legacy', () => {
-  it('calls setChatPanelOpen (legacy ChatPanel toggle) and does NOT emit on cmd-bar bus', () => {
-    mockUiPreview = 'legacy';
-    mockChatPanelOpen = false;
-    const callbacks = makeCallbacks();
-    renderWithProviders(<Harness callbacks={callbacks} />);
-
-    dispatchKey({ key: 'c', metaKey: true, shiftKey: true });
-
-    // Legacy toggles chatPanelOpen via the settings setter.
-    expect(mockSetChatPanelOpen).toHaveBeenCalledTimes(1);
-    expect(mockSetChatPanelOpen).toHaveBeenCalledWith(true);
-    // setCmdBarPinned must NOT fire under legacy.
-    expect(mockSetCmdBarPinned).not.toHaveBeenCalled();
-    // The bar, if present, remains collapsed (no expand).
-    const bar = getBar();
-    if (bar) {
-      expect(bar.getAttribute('data-expanded')).toBe('false');
-    }
-  });
-});

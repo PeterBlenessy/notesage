@@ -59,55 +59,11 @@ describe("useRecentDocumentCycle", () => {
     unmount();
   });
 
-  it("⌃⇧Tab (previous) advances toward older-accessed documents", () => {
-    // Access order: [c, b, a] — c is most recently active
-    useEditorStore.setState({
-      openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md"), mkTab("c", "/c.md")],
-      activeTabId: "c",
-      documentAccessOrder: ["c", "b", "a"],
-    });
-    const { unmount } = renderHook(() => useRecentDocumentCycle());
-    act(() => dispatch("previous"));
-    expect(useEditorStore.getState().activeTabId).toBe("b");
-    unmount();
-  });
-
-  it("⌃Tab (next) advances toward newer-accessed documents", () => {
-    useEditorStore.setState({
-      openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md"), mkTab("c", "/c.md")],
-      activeTabId: "b",
-      documentAccessOrder: ["c", "b", "a"],
-    });
-    const { unmount } = renderHook(() => useRecentDocumentCycle());
-    act(() => dispatch("next"));
-    // Moving toward the head — "b"'s index is 1 → delta -1 → index 0 → "c"
-    expect(useEditorStore.getState().activeTabId).toBe("c");
-    unmount();
-  });
-
-  it("wraps at the head when cycling next past the MRU entry", () => {
-    useEditorStore.setState({
-      openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md")],
-      activeTabId: "a", // head of MRU
-      documentAccessOrder: ["a", "b"],
-    });
-    const { unmount } = renderHook(() => useRecentDocumentCycle());
-    act(() => dispatch("next"));
-    expect(useEditorStore.getState().activeTabId).toBe("b");
-    unmount();
-  });
-
-  it("wraps at the tail when cycling previous past the oldest entry", () => {
-    useEditorStore.setState({
-      openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md")],
-      activeTabId: "b", // tail of MRU
-      documentAccessOrder: ["a", "b"],
-    });
-    const { unmount } = renderHook(() => useRecentDocumentCycle());
-    act(() => dispatch("previous"));
-    expect(useEditorStore.getState().activeTabId).toBe("a");
-    unmount();
-  });
+  // Tests that exercised in-memory tab cycling (`activeTabId` switching
+  // between open tabs) have been deleted alongside Classic Layout (#325).
+  // Quiet Composer is single-doc, so the hook now walks `recentFiles`
+  // and re-opens via `openFile` from disk — see the "Quiet Composer mode"
+  // describe block below for full coverage of that path.
 
   it("activating a tab bumps it to the head of the access order", () => {
     useEditorStore.setState({
@@ -128,19 +84,6 @@ describe("useRecentDocumentCycle", () => {
     });
     useEditorStore.getState().closeTab("b");
     expect(useEditorStore.getState().documentAccessOrder).toEqual(["a"]);
-  });
-
-  it("falls back to openDocuments order when access order is empty", () => {
-    // Startup edge case: access order hasn't populated yet.
-    useEditorStore.setState({
-      openDocuments: [mkTab("a", "/a.md"), mkTab("b", "/b.md")],
-      activeTabId: "a",
-      documentAccessOrder: [],
-    });
-    const { unmount } = renderHook(() => useRecentDocumentCycle());
-    act(() => dispatch("previous"));
-    expect(useEditorStore.getState().activeTabId).toBe("b");
-    unmount();
   });
 
   it("removes the listener on unmount", () => {

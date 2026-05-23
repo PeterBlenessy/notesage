@@ -119,7 +119,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   sidebarOpen: true,
   sidebarPinned: true,
   sidebarWidth: 280,
-  chatPanelOpen: false,
   notesRootPath: '~/Notesage',
   gitEnabled: false,
   personasMigrated: false,
@@ -150,7 +149,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
-  uiPreview: 'quiet-composer',
   accent: 'default',
   cmdBarPinned: false,
   cmdBarPinnedWidth: 400,
@@ -166,8 +164,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   sidebarRecentCap: 5,
   sidebarTagsCap: 5,
   sidebarMentionsCap: 5,
-  previewInvitationShownAt: null,
-  previewInvitationDismissedAt: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -1225,7 +1221,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1371,7 +1367,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1690,7 +1686,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1795,7 +1791,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -1866,7 +1862,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -1988,7 +1984,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2010,7 +2006,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2036,7 +2032,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2178,7 +2174,7 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2224,7 +2220,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2271,7 +2267,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2330,6 +2326,6 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(18);
+    expect(parsed.version).toBe(19);
   });
 });

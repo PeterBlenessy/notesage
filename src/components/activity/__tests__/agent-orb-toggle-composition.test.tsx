@@ -72,27 +72,16 @@ vi.mock('@/hooks/useReducedMotion', () => ({
   useReducedMotion: () => false,
 }));
 
-let mockUiPreview: 'legacy' | 'quiet-composer' = 'quiet-composer';
 let mockCmdBarPinned = false;
-let mockChatPanelOpen = false;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
-    get uiPreview() {
-      return mockUiPreview;
-    },
     get cmdBarPinned() {
       return mockCmdBarPinned;
-    },
-    get chatPanelOpen() {
-      return mockChatPanelOpen;
     },
     sidebarPinned: false,
     theme: 'light' as const,
     setCmdBarPinned: vi.fn(),
-    setChatPanelOpen: vi.fn((next: boolean) => {
-      mockChatPanelOpen = next;
-    }),
     setSidebarPinned: vi.fn(),
     setTheme: vi.fn(),
   };
@@ -184,9 +173,7 @@ function dispatchKey(init: KeyboardEventInit) {
 }
 
 beforeEach(() => {
-  mockUiPreview = 'quiet-composer';
   mockCmdBarPinned = false;
-  mockChatPanelOpen = false;
   mockEditorState.openDocuments = [];
   mockEditorState.activeTabId = null;
   document.body.innerHTML = '';
@@ -213,21 +200,3 @@ describe('#121 ⌘⇧A under Quiet Composer', () => {
   });
 });
 
-describe('#121 ⌘⇧A under Legacy', () => {
-  it('calls onToggleActivityStrip and does NOT toggle the orb popover', () => {
-    mockUiPreview = 'legacy';
-    const callbacks = makeCallbacks();
-    renderWithProviders(<Harness callbacks={callbacks} />);
-
-    const orb = screen.getByTestId('agent-orb');
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-
-    dispatchKey({ key: 'a', metaKey: true, shiftKey: true });
-
-    // Legacy callback fires.
-    expect(callbacks.onToggleActivityStrip).toHaveBeenCalledTimes(1);
-    // Orb popover must NOT have toggled — the legacy path does not emit on
-    // the agent-orb bus.
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-  });
-});

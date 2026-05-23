@@ -4,8 +4,6 @@
  * Unit tests for useDoubleTapCmd.
  *
  * Verifies:
- *   - the hook is a no-op when uiPreview === "legacy" (no event emitted on
- *     Meta press)
  *   - a single Meta press does not emit
  *   - two Meta presses within 300 ms emit { type: "focus" } once
  *   - two Meta presses with > 300 ms between them do NOT emit
@@ -14,32 +12,14 @@
  *     would require a fresh pair after the reset
  *   - cleanup removes the listener on unmount
  *
- * The settings-store is mocked so individual tests can flip `uiPreview`
- * between "legacy" and "quiet-composer". `performance.now` is monkey-patched
- * because vi.useFakeTimers does not advance the high-resolution clock that
- * the hook relies on.
+ * `performance.now` is monkey-patched because vi.useFakeTimers does not
+ * advance the high-resolution clock that the hook relies on.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
-
-const mockSettings: { uiPreview: 'legacy' | 'quiet-composer' } = {
-  uiPreview: 'quiet-composer',
-};
-
-vi.mock('@/stores/settings-store', () => {
-  return {
-    useSettingsStore: Object.assign(
-      vi.fn((selector: (s: typeof mockSettings) => unknown) =>
-        selector(mockSettings),
-      ),
-      { getState: () => mockSettings },
-    ),
-  };
-});
-
 import { useDoubleTapCmd } from '@/hooks/useDoubleTapCmd';
 
 let captured: CmdBarEvent[];
@@ -60,7 +40,6 @@ function advance(ms: number) {
 }
 
 beforeEach(() => {
-  mockSettings.uiPreview = 'quiet-composer';
   captured = [];
   unsubscribe = subscribeToCmdBarEvents((e) => {
     captured.push(e);
@@ -73,19 +52,6 @@ beforeEach(() => {
 afterEach(() => {
   unsubscribe();
   performance.now = realPerformanceNow;
-});
-
-describe('useDoubleTapCmd (legacy gating)', () => {
-  it('is a no-op when uiPreview === "legacy"', () => {
-    mockSettings.uiPreview = 'legacy';
-    renderHook(() => useDoubleTapCmd());
-
-    dispatchKey('Meta');
-    advance(50);
-    dispatchKey('Meta');
-
-    expect(captured).toEqual([]);
-  });
 });
 
 describe('useDoubleTapCmd (detection)', () => {

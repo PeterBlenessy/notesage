@@ -197,16 +197,9 @@ describe('Tab management', () => {
     expect(tab.scrollToText).toBe('search');
   });
 
-  it('closeTab removes the tab', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabA = getTab('/a.md')!;
-
-    useEditorStore.getState().closeTab(tabA.id);
-
-    expect(useEditorStore.getState().openDocuments).toHaveLength(1);
-    expect(getTab('/a.md')).toBeUndefined();
-  });
+  // Post Classic-Layout-removal (#325) — multi-tab Tab-management tests
+  // have been deleted; the multi-tab scenarios cannot occur at runtime
+  // because openTab() unconditionally evicts the prior doc.
 
   it('closeTab removes from persistedTabs', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
@@ -216,60 +209,12 @@ describe('Tab management', () => {
     expect(useEditorStore.getState().persistedTabs).toEqual([]);
   });
 
-  it('closeTab switches active to previous tab when closing active', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    const tabC = getTab('/c.md')!;
-
-    // c is active, close it
-    useEditorStore.getState().closeTab(tabC.id);
-
-    const state = useEditorStore.getState();
-    expect(state.openDocuments).toHaveLength(2);
-    // Should switch to tab at index max(0, closedIndex-1) = index 1 = b
-    expect(state.activeTabId).toBe(getTab('/b.md')!.id);
-  });
-
-  it('closeTab switches to first tab when closing the first active tab', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    // Make a active
-    useEditorStore.getState().setActiveTab(getTab('/a.md')!.id);
-    useEditorStore.getState().closeTab(getTab('/a.md')!.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(getTab('/b.md')!.id);
-  });
-
   it('closeTab sets activeTabId to null when closing the last tab', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
     useEditorStore.getState().closeTab(getTab('/a.md')!.id);
 
     expect(useEditorStore.getState().activeTabId).toBeNull();
     expect(useEditorStore.getState().persistedActiveFilePath).toBeNull();
-  });
-
-  it('closeTab does not change activeTabId when closing non-active tab', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabB = getTab('/b.md')!;
-    const tabA = getTab('/a.md')!;
-
-    // b is active, close a
-    useEditorStore.getState().closeTab(tabA.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(tabB.id);
-  });
-
-  it('setActiveTab changes active tab and persisted path', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    const tabA = getTab('/a.md')!;
-
-    useEditorStore.getState().setActiveTab(tabA.id);
-
-    expect(useEditorStore.getState().activeTabId).toBe(tabA.id);
-    expect(useEditorStore.getState().persistedActiveFilePath).toBe('/a.md');
   });
 });
 
@@ -393,9 +338,17 @@ describe('Dirty tracking', () => {
   });
 
   it('markTabDeleted marks all files under a directory path', () => {
-    useEditorStore.getState().openTab('/project/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/project/sub/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
+    // Quiet Composer's single-doc shell evicts on openTab, but `markTabDeleted`
+    // still has to handle N tabs in the store (e.g., from persisted-state
+    // restore that survived a state migration). Seed via setState() to
+    // bypass the eviction.
+    useEditorStore.setState({
+      openDocuments: [
+        { id: 't1', filePath: '/project/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'a' },
+        { id: 't2', filePath: '/project/sub/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'b' },
+        { id: 't3', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'c' },
+      ],
+    } as unknown as Parameters<typeof useEditorStore.setState>[0]);
 
     useEditorStore.getState().markTabDeleted('/project');
 
@@ -520,6 +473,8 @@ describe('External changes', () => {
 
 describe('Persistence', () => {
   it('persists persistedTabs and persistedActiveFilePath through restart', async () => {
+    // Quiet Composer is single-document — only the most recent openTab
+    // survives eviction. The persisted snapshot should reflect that.
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
     useEditorStore.getState().openTab('/b.md', 'b.md', 'content');
     await waitForPersist();
@@ -528,7 +483,6 @@ describe('Persistence', () => {
 
     const state = useEditorStore.getState();
     expect(state.persistedTabs).toEqual([
-      { filePath: '/a.md', fileName: 'a.md' },
       { filePath: '/b.md', fileName: 'b.md' },
     ]);
     expect(state.persistedActiveFilePath).toBe('/b.md');
@@ -816,9 +770,18 @@ describe('renameTab', () => {
 
 describe('updateFilePaths', () => {
   it('rewrites all paths with matching prefix', () => {
-    useEditorStore.getState().openTab('/old/dir/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/old/dir/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
+    // Seed multi-tab state directly — Quiet Composer single-doc semantics
+    // would otherwise evict to one tab, but `updateFilePaths` must still
+    // handle N tabs (e.g. from persisted state restore).
+    useEditorStore.setState({
+      openDocuments: [
+        { id: 't1', filePath: '/old/dir/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'a' },
+        { id: 't2', filePath: '/old/dir/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'b' },
+        { id: 't3', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'c' },
+      ],
+      activeTabId: 't3',
+      persistedActiveFilePath: '/other/c.md',
+    } as unknown as Parameters<typeof useEditorStore.setState>[0]);
     useEditorStore.getState().setScrollPosition('/old/dir/a.md', 0.3);
 
     useEditorStore.getState().updateFilePaths('/old/dir', '/new/dir');
@@ -827,7 +790,6 @@ describe('updateFilePaths', () => {
     expect(state.openDocuments[0].filePath).toBe('/new/dir/a.md');
     expect(state.openDocuments[1].filePath).toBe('/new/dir/b.md');
     expect(state.openDocuments[2].filePath).toBe('/other/c.md');
-    // Last opened tab was /other/c.md which doesn't match prefix, so stays as-is
     expect(state.persistedActiveFilePath).toBe('/other/c.md');
     expect(state.scrollPositions['/new/dir/a.md']).toBe(0.3);
     expect(state.scrollPositions['/old/dir/a.md']).toBeUndefined();
@@ -860,9 +822,14 @@ describe('renameOpenDocument', () => {
   });
 
   it('folder cascade: rewrites all descendant tab paths and fileNames', () => {
-    useEditorStore.getState().openTab('/old/dir/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/old/dir/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/other/c.md', 'c.md', 'c');
+    // Multi-tab seed via setState — see `markTabDeleted` test above.
+    useEditorStore.setState({
+      openDocuments: [
+        { id: 't1', filePath: '/old/dir/a.md', fileName: 'a.md', isDirty: false, content: 'a', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'a' },
+        { id: 't2', filePath: '/old/dir/b.md', fileName: 'b.md', isDirty: false, content: 'b', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'b' },
+        { id: 't3', filePath: '/other/c.md', fileName: 'c.md', isDirty: false, content: 'c', contentLoaded: true, frontmatter: null, fileType: 'markdown', lastSavedContent: 'c' },
+      ],
+    } as unknown as Parameters<typeof useEditorStore.setState>[0]);
 
     useEditorStore.getState().renameOpenDocument('/old/dir', '/new/dir');
 
@@ -931,63 +898,8 @@ describe('copilot toggle', () => {
   });
 });
 
-describe('reorderTab', () => {
-  it('reorders tabs by moving a tab from one index to another', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    useEditorStore.getState().openTab('/d.md', 'd.md', 'd');
-
-    // Move tab at index 0 (a) to index 2
-    useEditorStore.getState().reorderTab(0, 2);
-
-    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
-    expect(paths).toEqual(['/b.md', '/c.md', '/a.md', '/d.md']);
-  });
-
-  it('no-op when fromIndex equals toIndex', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-
-    useEditorStore.getState().reorderTab(1, 1);
-
-    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
-    expect(paths).toEqual(['/a.md', '/b.md']);
-  });
-
-  it('does not change activeTabId', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-    const activeId = useEditorStore.getState().activeTabId;
-
-    useEditorStore.getState().reorderTab(0, 2);
-
-    expect(useEditorStore.getState().activeTabId).toBe(activeId);
-  });
-
-  it('updates persistedTabs order to match', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-
-    useEditorStore.getState().reorderTab(2, 0);
-
-    const persistedPaths = useEditorStore.getState().persistedTabs.map((p) => p.filePath);
-    expect(persistedPaths).toEqual(['/c.md', '/a.md', '/b.md']);
-  });
-
-  it('moving last tab to first position works', () => {
-    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
-    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
-    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
-
-    useEditorStore.getState().reorderTab(2, 0);
-
-    const paths = useEditorStore.getState().openDocuments.map((t) => t.filePath);
-    expect(paths).toEqual(['/c.md', '/a.md', '/b.md']);
-  });
-});
+// `reorderTab` describe block deleted alongside Classic Layout (#325)
+// — TabBar was the only caller and it has been removed.
 
 describe('lastSavedAt tracking', () => {
   it('updateTabContent stamps lastSavedAt on dirty → clean transition', () => {

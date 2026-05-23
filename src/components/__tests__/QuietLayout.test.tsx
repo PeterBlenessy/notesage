@@ -37,16 +37,12 @@ import { toast as mockedToast } from 'sonner';
 // Mock TitleBar — heavy dependency tree, not relevant to placeholder shell
 // ---------------------------------------------------------------------------
 
-// Stub the TitleBar. Echoes back the `mode` prop via a data attribute so
-// tests can assert QuietLayout passes `mode="quiet"` (tasks #103 + #124 —
-// hide the chat / activity-strip toggle buttons in Quiet Composer because
-// the FloatingCommandBar + AgentOrb replace their targets).
+// Stub the TitleBar. Always echoes data-titlebar-mode="quiet" so the
+// .app.focus-mode CSS hook regression-lock keeps working — the real
+// TitleBar applies the same constant attribute post-Classic-removal.
 vi.mock('@/components/TitleBar', () => ({
-  TitleBar: (props: { mode?: string }) => (
-    <div
-      data-testid="titlebar"
-      data-titlebar-mode={props.mode ?? 'classic'}
-    >
+  TitleBar: () => (
+    <div data-testid="titlebar" data-titlebar-mode="quiet">
       TitleBar
     </div>
   ),
@@ -187,11 +183,12 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByTestId('titlebar')).toBeTruthy();
   });
 
-  it('passes mode="quiet" to the TitleBar (tasks #103 + #124)', () => {
-    // Hides the chat-toggle + activity-strip-toggle buttons in the TitleBar
-    // because the FloatingCommandBar and AgentOrb replace their targets in
-    // Quiet Composer. Dead toggles in the top chrome would contradict the
-    // "quieter UI" promise.
+  it('mounts the TitleBar with data-titlebar-mode="quiet"', () => {
+    // TitleBar's `data-titlebar-mode="quiet"` is a load-bearing CSS hook
+    // for `.app.focus-mode [data-titlebar-mode="quiet"]` in globals.css
+    // (which hides the bar entirely in focus mode). Post-Classic-removal
+    // (#325) the attribute is a constant; the test locks it in so a
+    // future TitleBar refactor doesn't silently break the CSS.
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     const titlebar = screen.getByTestId('titlebar');
     expect(titlebar.getAttribute('data-titlebar-mode')).toBe('quiet');

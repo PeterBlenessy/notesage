@@ -375,7 +375,6 @@ export function QuietLayout(props: QuietLayoutProps) {
             globals.css. The right column compensates with `pt-9`
             so editor content starts below the bar. */}
         <TitleBar
-          mode="quiet"
           className="absolute right-0 top-0 z-30 left-[var(--quiet-sidebar-width,0px)]"
         />
 

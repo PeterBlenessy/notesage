@@ -4,46 +4,23 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * TitleBar — shared top chrome for both Layout shells.
+ * TitleBar — top chrome for QuietLayout.
  *
- * `mode` gates which surface-specific controls render alongside the drag
- * region and the document title:
- *
- * - `"classic"` (default) — renders the chat-toggle + activity-strip-toggle
- *   pair, which drive the legacy ChatPanel and ActivityStrip side regions
- *   inside `Layout.tsx`. The `onToggleChat` and `onToggleActivityStrip`
- *   callbacks are required in this mode.
- *
- * - `"quiet"` — tasks #103 + #124. Quiet Composer replaces the legacy chat
- *   panel with the FloatingCommandBar and the legacy activity strip with the
- *   AgentOrb, both mounted by `QuietLayout.tsx`. The two toggle buttons have
- *   no behaviour in that shell, so hiding them removes dead UI from the top
- *   chrome. Callbacks are not accepted in this mode — the discriminated
- *   union prevents call sites from wiring up handlers that would never fire.
+ * Renders the document title (drag region) plus the dirty dot + close-document
+ * `×` button in the right zone when a document is active. Was previously a
+ * discriminated union of classic vs quiet modes; Classic Layout removal
+ * (#325) dropped the classic branch.
  */
-interface ClassicTitleBarProps {
-  mode?: "classic";
-  onToggleChat: () => void;
-  onToggleActivityStrip: () => void;
+export interface TitleBarProps {
   /**
    * Optional extra utility classes appended to the root. Used by
    * `QuietLayout` (#132) to switch the bar to absolute positioning
-   * when translucent chrome is enabled — accepted on both modes for
-   * symmetry but only set in quiet mode today.
+   * when translucent chrome is enabled.
    */
   className?: string;
 }
 
-interface QuietTitleBarProps {
-  mode: "quiet";
-  /** See `ClassicTitleBarProps.className`. */
-  className?: string;
-}
-
-export type TitleBarProps = ClassicTitleBarProps | QuietTitleBarProps;
-
 export function TitleBar(props: TitleBarProps) {
-  const mode = props.mode ?? "classic";
   const activeTab = useEditorStore((s) => {
     const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
     return tab ?? null;
@@ -51,24 +28,8 @@ export function TitleBar(props: TitleBarProps) {
   const title = activeTab?.fileName ?? "Notesage";
   const isDirty = Boolean(activeTab?.isDirty);
 
-  // Quiet Composer has no DocHead breadcrumb (#131) — the dirty dot is
-  // the only doc-state signal that lives in the title bar right zone.
-  // The "saved Xs ago" readout moved to the StatusBar next to the word
-  // count (live-test 2026-04-26) so document state info is consolidated
-  // in one place. We also no longer render an em-dash placeholder when
-  // `lastSavedAt` is missing — the right zone is simply empty for clean
-  // tabs, matching the user's "less visual noise" preference. The
-  // classic shell keeps its existing TabBar where per-tab dirty dots
-  // already live.
-  //
-  // Live-test 2026-04-26 — added a small × close-document button next
-  // to the dirty dot. Quiet Composer has no TabBar (intentional), so
-  // before this there was no clickable affordance to close the active
-  // document and return to the landing state. ⌘W still works globally
-  // via `useKeyboardShortcuts`; this gives the same action a visible
-  // home. The button reuses the same `closeTab` /
-  // `setPendingCloseTabId` flow that ⌘W and the legacy TabBar X drive,
-  // so warn-if-dirty behaviour is consistent across surfaces.
+  // ⌘W mirror — closes the active document (or routes through the
+  // setPendingCloseTabId warn flow when the doc is dirty).
   const handleCloseActiveTab = () => {
     const editorState = useEditorStore.getState();
     const id = editorState.activeTabId;
@@ -81,38 +42,37 @@ export function TitleBar(props: TitleBarProps) {
     editorState.closeTab(id);
   };
 
-  const quietDocChrome =
-    props.mode === "quiet" && activeTab ? (
-      <div className="flex items-center gap-2 pr-3 shrink-0">
-        {isDirty ? (
-          <span
-            role="status"
-            aria-label="Unsaved changes"
-            className="inline-block h-1.5 w-1.5 rounded-full"
-            style={{ background: "var(--accent, var(--primary))" }}
-          />
-        ) : null}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleCloseActiveTab}
-          className={cn(
-            "text-xs text-muted-foreground hover:text-foreground",
-            // Live-test 2026-04-26 — the X is hover-revealed: invisible
-            // at rest, fades in when the user hovers ANY part of the
-            // title bar (the `group/titlebar` lives on the outer wrapper).
-            // `focus-visible:opacity-100` keeps keyboard users from
-            // losing the affordance.
-            "opacity-0 group-hover/titlebar:opacity-100 focus-visible:opacity-100",
-            "transition-[color,opacity] duration-150",
-          )}
-          title="Close document (⌘W)"
-          aria-label="Close document"
-        >
-          <X className="size-3.5" strokeWidth={1.5} />
-        </Button>
-      </div>
-    ) : null;
+  const docChrome = activeTab ? (
+    <div className="flex items-center gap-2 pr-3 shrink-0">
+      {isDirty ? (
+        <span
+          role="status"
+          aria-label="Unsaved changes"
+          className="inline-block h-1.5 w-1.5 rounded-full"
+          style={{ background: "var(--accent, var(--primary))" }}
+        />
+      ) : null}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={handleCloseActiveTab}
+        className={cn(
+          "text-xs text-muted-foreground hover:text-foreground",
+          // Live-test 2026-04-26 — the X is hover-revealed: invisible
+          // at rest, fades in when the user hovers ANY part of the
+          // title bar (the `group/titlebar` lives on the outer wrapper).
+          // `focus-visible:opacity-100` keeps keyboard users from
+          // losing the affordance.
+          "opacity-0 group-hover/titlebar:opacity-100 focus-visible:opacity-100",
+          "transition-[color,opacity] duration-150",
+        )}
+        title="Close document (⌘W)"
+        aria-label="Close document"
+      >
+        <X className="size-3.5" strokeWidth={1.5} />
+      </Button>
+    </div>
+  ) : null;
 
   return (
     <div
@@ -134,7 +94,11 @@ export function TitleBar(props: TitleBarProps) {
         props.className,
       )}
       data-tauri-drag-region
-      data-titlebar-mode={mode}
+      // CSS hook for `.app.focus-mode [data-titlebar-mode="quiet"]` in
+      // globals.css which hides the title bar entirely in focus mode.
+      // The attribute is now constant ("quiet") since Classic Layout
+      // removal left QuietLayout as the only consumer.
+      data-titlebar-mode="quiet"
     >
       {/* Center: document title (drag region) */}
       <div
@@ -152,8 +116,8 @@ export function TitleBar(props: TitleBarProps) {
         </span>
       </div>
 
-      {/* Right: dirty dot + close button (quiet mode only). */}
-      {quietDocChrome}
+      {/* Right: dirty dot + close button. */}
+      {docChrome}
     </div>
   );
 }
