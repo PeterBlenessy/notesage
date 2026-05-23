@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@/test/component-harness';
 import { ChatInput } from '../ChatInput';
-import type { EditContext } from '../ChatPanel';
+import type { EditContext } from '../ChatInput';
 
 // Mock hooks used by ChatInput
 vi.mock('@/hooks/useSpeechRecognition', () => ({
