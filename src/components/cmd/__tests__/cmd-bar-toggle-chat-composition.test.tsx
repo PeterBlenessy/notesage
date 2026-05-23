@@ -144,11 +144,8 @@ vi.mock('@/components/chat/ChatHistoryView', () => ({
 
 function makeCallbacks() {
   return {
-    onPaletteOpen: vi.fn(),
     onFindOpen: vi.fn(),
     onFindReplaceOpen: vi.fn(),
-    onToggleFocusMode: vi.fn(),
-    onExitFocusMode: vi.fn(),
     onOutlineOpen: vi.fn(),
     onSettingsOpen: vi.fn(),
     onExportOpen: vi.fn(),
@@ -156,10 +153,7 @@ function makeCallbacks() {
     onNewNote: vi.fn(),
     onOpenFolder: vi.fn(),
     onShortcutsOpen: vi.fn(),
-    onToggleActivityStrip: vi.fn(),
     onToggleRecording: vi.fn(),
-    onOpenActions: vi.fn(),
-    focusMode: false,
   };
 }
 
