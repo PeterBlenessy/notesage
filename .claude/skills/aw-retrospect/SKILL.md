@@ -12,6 +12,12 @@ After a bot-authored PR is merged (the bot identity is `github-actions[bot]`; le
 - `PR_NUMBER` — the merged PR
 - The repository's history (the merged PR, the issue it implemented, the skill that produced it)
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Process
 
 1. **Read the merged PR.**

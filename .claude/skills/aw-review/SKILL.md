@@ -20,6 +20,12 @@ Runs as a SEPARATE workflow (`aw-review.yml`) on a fresh runner. The reviewer ag
 - `PR_NUMBER` — the draft PR to review
 - The repo is checked out by the workflow (read-only — this skill never modifies code)
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Pre-flight
 
 1. **Read the PR.** `gh pr view N --json title,body,labels,files,headRefName,author,isDraft,state`

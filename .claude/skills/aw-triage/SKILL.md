@@ -12,6 +12,12 @@ Classify a single top-level GitHub issue and set its category label. Don't modif
 - `ISSUE_NUMBER` — the issue to triage
 - The repository's open and closed issues (queried via `gh search issues`)
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Process
 
 1. **Read the issue.**

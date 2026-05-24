@@ -33,6 +33,12 @@ The size budget: ≤200 lines diff added beyond the existing PR, ≤5 files modi
 - `FEEDBACK_COMMENT` — the human's comment text (passed in workflow prompt)
 - The PR's branch is already checked out by the workflow
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Pre-flight
 
 1. **Read the PR.** `gh pr view $PR_NUMBER --json title,body,labels,files,headRefName,author`
