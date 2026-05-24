@@ -43,7 +43,8 @@ name: AW — Alpha Prep (Tier Classifier)
 
 on:
   pull_request:
-    types: [ready_for_review]
+    types: [ready_for_review, closed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -61,11 +62,17 @@ concurrency:
 
 jobs:
   classify:
-    # Only act on bot-authored PRs (branch prefix `claude/*`). Skip
-    # human-authored PRs entirely — they're outside the AW pipeline.
+    # Classify bot PRs when they go ready-for-review (ready_for_review event,
+    # claude/* branch prefix) AND human PRs when they merge (closed event,
+    # merged == true, non-claude/* branch). The merged-human path closes #351
+    # — human PRs now receive tier labels so aw-alpha-cut can include them.
     if: |
       github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.pull_request.head.ref, 'claude/')
+      startsWith(github.event.pull_request.head.ref, 'claude/') ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'closed' &&
+       github.event.pull_request.merged == true &&
+       !startsWith(github.event.pull_request.head.ref, 'claude/'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -132,9 +139,15 @@ jobs:
 
           echo "PR #$PR_NUMBER: $additions+ / $changed_files files / state=$pr_state / draft=$is_draft"
 
-          # Guard: bail if PR is closed/merged or back to draft.
-          if [[ "$pr_state" != "OPEN" || "$is_draft" == "true" ]]; then
-            echo "PR is $pr_state (draft=$is_draft) — no classification."
+          # Guard: bail if PR is back to draft (open-only path) or is closed
+          # without merging. MERGED state is valid here — the closed+merged
+          # event path classifies human PRs after they land on main.
+          if [[ "$pr_state" == "CLOSED" ]]; then
+            echo "PR is CLOSED (not merged) — no classification."
+            exit 0
+          fi
+          if [[ "$pr_state" == "OPEN" && "$is_draft" == "true" ]]; then
+            echo "PR is OPEN draft — no classification."
             exit 0
           fi
 

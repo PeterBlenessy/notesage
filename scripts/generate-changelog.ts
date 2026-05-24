@@ -197,6 +197,45 @@ function lintUserFacingBullets(releases: ReleaseEntry[]): void {
   }
 }
 
+const PLACEHOLDER_PATTERN = /^_No user-visible changes\._$/m;
+
+/**
+ * Blocking guard: returns false (and logs an error) when the specified
+ * history file still contains the auto-generated placeholder string AND
+ * the current alpha cut contains at least one Tier-A PR.
+ *
+ * Returns true (passes) when:
+ *   - `hasTierA` is false — no user-visible work in the bundle
+ *   - `filePath` is undefined or the file does not exist
+ *   - The file exists but `## Changes` contains real prose (not the placeholder)
+ *
+ * Callers must exit(1) when this returns false.
+ */
+export function checkPlaceholderGuard(filePath: string | undefined, hasTierA: boolean): boolean {
+  if (!hasTierA || !filePath) return true;
+  if (!existsSync(filePath)) return true;
+
+  const content = readFileSync(filePath, 'utf-8');
+
+  // Find the ## Changes section and check for the placeholder within it.
+  const changesSectionMatch = content.match(/^## Changes\s*\n([\s\S]*?)(?=^## |\z)/m);
+  if (!changesSectionMatch) return true;
+
+  const changesBody = changesSectionMatch[1];
+  if (PLACEHOLDER_PATTERN.test(changesBody.trim())) {
+    console.error(
+      `[changelog-linter] BLOCKING: "${filePath}" still contains the auto-generated placeholder` +
+        ` in ## Changes, but this bundle includes Tier-A user-visible PRs.`,
+    );
+    console.error(
+      `[changelog-linter] The Claude editorial step must rewrite ## Changes before the release PR opens.`,
+    );
+    return false;
+  }
+
+  return true;
+}
+
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
     (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
@@ -217,6 +256,15 @@ function main() {
   // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
   lintUserFacingBullets(releases);
 
+  // Blocking guard: fail if the newly generated history file still has the
+  // placeholder AND the bundle contains Tier-A user-visible PRs. Set via the
+  // `cut` job in aw-alpha-cut.yml before calling `pnpm generate-changelog`.
+  const newHistoryFile = process.env.CHANGELOG_NEW_HISTORY_FILE;
+  const hasTierA = process.env.CHANGELOG_HAS_TIER_A === '1';
+  if (!checkPlaceholderGuard(newHistoryFile, hasTierA)) {
+    process.exit(1);
+  }
+
   // Alpha feed = every release. Stable feed = entries without a prerelease
   // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies
   // updates in `useAutoUpdate.ts` — same source of truth across the codebase.
@@ -236,4 +284,9 @@ function main() {
   );
 }
 
-main();
+// Only run main() when executed directly, not when imported for testing.
+// With tsx / ts-node, process.argv[1] is the script path.
+const scriptPath = new URL(import.meta.url).pathname;
+if (process.argv[1] === scriptPath || process.argv[1]?.endsWith('generate-changelog.ts')) {
+  main();
+}

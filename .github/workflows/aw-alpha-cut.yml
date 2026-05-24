@@ -225,11 +225,49 @@ jobs:
           line="| ${NEXT_NUMBER} | [Release v${NEXT_VERSION}](${NEXT_NUMBER}-release-v${NEXT_VERSION}.md) | Auto-cut alpha by \`aw-alpha-cut\`. See merged PRs for details. |"
           echo "$line" >> docs/history/README.md
 
+      - name: Claude editorial rewrite of ## Changes
+        uses: anthropics/claude-code-action@v1
+        with:
+          model: claude-sonnet-4-6
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Bash(gh:*),Read,Edit"
+          prompt: |
+            Rewrite the `## Changes` section of the newly generated alpha release history file.
+
+            **Context you MUST read first (in order):**
+            1. `.claude/skills/release/SKILL.md` — tone, structure, and forbidden patterns for user-facing bullets
+            2. `.claude/feedback/feedback_user_facing_release_notes.md` — concrete before/after examples
+            3. The two most-recent non-placeholder `docs/history/*.md` files — match their tone exactly
+            4. The current history file: `docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${{ needs.preflight.outputs.next_version }}.md`
+
+            **PR metadata to read (one by one):**
+            Run: `gh pr view <N> --json title,body,additions,deletions,changedFiles` for each PR number in: ${{ needs.preflight.outputs.pr_numbers }}
+
+            **Your task:**
+            - Group PRs into `### Features`, `### Improvements`, `### Fixes` based on their content.
+            - Write each bullet in user-facing prose (what the user will notice or can now do — no internal jargon, no file paths, no PR numbers, no version triples).
+            - If all bundled PRs are infra-only (no user-visible change), leave `## Changes` as `_No user-visible changes._` and do NOT add subsections.
+            - Move developer-facing detail to `## Under the hood`.
+            - Rewrite the one-line summary paragraph between the metadata block and `## Changes` to match the release theme.
+            - Edit the file in-place. Do not create a new file.
+
+            **Output:** the updated history file committed with `git add docs/history/` — no PR, no branch, just a staged edit on the current branch.
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+
       - name: Regenerate changelog
         run: pnpm install --frozen-lockfile && pnpm generate-changelog
         env:
           # pnpm may try to read tarballs; ensure we have access
           NPM_CONFIG_USERCONFIG: /dev/null
+          # Signal to the blocking linter that this bundle contains Tier-A
+          # user-visible work. The linter exits non-zero if ## Changes still
+          # holds the placeholder after Claude's editorial step above.
+          CHANGELOG_HAS_TIER_A: "1"
+          CHANGELOG_NEW_HISTORY_FILE: "docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${{ needs.preflight.outputs.next_version }}.md"
 
       - name: Commit on release branch and open auto-merge PR
         env:
