@@ -375,6 +375,15 @@ class View {
         }
     }
     expand() {
+        // Notesage patch: defensive guard. ResizeObserver can fire one
+        // final time after the EpubViewer unmounts (e.g., when the user
+        // opens a PDF in the single-doc Quiet Composer shell, evicting
+        // the EPUB tab — PdfViewer mounting in the same scroll container
+        // triggers a layout change before this observer is fully torn
+        // down). `this.document` is null at that point, so destructuring
+        // crashes. `render()` has the same guard at line ~287; `expand()`
+        // is missing it upstream. Mirror it here.
+        if (!this.document) return
         const { documentElement } = this.document
         if (this.#column) {
             const side = this.#vertical ? 'height' : 'width'

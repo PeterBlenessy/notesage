@@ -62,6 +62,7 @@ Read EPUB ebooks directly in Notesage with paginated or scrollable rendering.
 - foliate-js vendored in `public/foliate-js/` (cannot be bundled by Vite — uses dynamic ES module imports)
 - `<foliate-view>` Web Component loaded via dynamic `import('/foliate-js/view.js')`
 - Vendored `view.js` patched to suppress red SVG overlay annotations from search
+- Vendored `paginator.js` patched: `expand()` now early-returns when `this.document` is null. Without the guard, foliate's `ResizeObserver` can fire one final time after EpubViewer unmounts (e.g., when opening a PDF in the single-doc shell evicts the EPUB tab) and crash on `const { documentElement } = this.document`. `render()` already had the same guard upstream; `expand()` is missing it.
 - Content theming via `renderer.setStyles()` CSS injection into EPUB iframe
 - Keyboard event forwarding from EPUB iframes to parent window
 - `epub-store` (Zustand, persisted): view mode preference + per-file bookmarks
