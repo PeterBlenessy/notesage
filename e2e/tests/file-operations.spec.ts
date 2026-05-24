@@ -3,21 +3,23 @@ import { setupTauriMock, trackInvokeCalls } from '../fixtures/tauri-mock';
 import { SAMPLE_PROJECT_PATH, SAMPLE_FILES, SAMPLE_FILE_TREE } from '../fixtures/sample-data';
 
 /**
- * Helper to inject an explorer folder into the workspace-store so the sidebar
- * renders a file tree. The workspace-store uses Zustand persist with the key
- * "notesage-workspace", so we write directly to localStorage before the store
- * rehydrates. Because setupTauriMock's addInitScript runs before the app boots,
- * we can also use addInitScript for this.
+ * Helper to inject a project into the workspace-store so the QuietSidebar
+ * Projects section renders a file tree. The workspace-store uses Zustand
+ * persist with the key "notesage-workspace"; we write directly to
+ * localStorage before the store rehydrates.
+ *
+ * QuietSidebar only shows Projects + Pinned + Recent + Tags + Mentions —
+ * Explorer folders aren't surfaced in Quiet, so we seed `projects[]` (not
+ * `explorerFolders[]`). We include `fileTree` inline so the sidebar has
+ * something to expand without going through list_directory.
  */
 async function injectWorkspaceState(page: import('@playwright/test').Page): Promise<void> {
   await page.addInitScript(
-    ({ projectPath }) => {
-      // Pre-seed the workspace with the explorer folder path.
-      // The file tree will be loaded via list_directory when we trigger a refresh.
+    ({ projectPath, fileTree }) => {
       const state = {
         state: {
-          explorerFolders: [{ path: projectPath }],
-          projects: [],
+          explorerFolders: [],
+          projects: [{ path: projectPath, fileTree }],
           recentProjects: [],
           notesTree: [],
           expandedFolders: [projectPath],
@@ -29,7 +31,7 @@ async function injectWorkspaceState(page: import('@playwright/test').Page): Prom
       };
       localStorage.setItem('notesage-workspace', JSON.stringify(state));
     },
-    { projectPath: SAMPLE_PROJECT_PATH },
+    { projectPath: SAMPLE_PROJECT_PATH, fileTree: SAMPLE_FILE_TREE },
   );
 }
 
@@ -75,9 +77,11 @@ test.describe('File operations', () => {
       const fileItem = page.getByText('welcome.md', { exact: true }).first();
       await fileItem.click();
 
-      // Wait for the editor content area to appear and contain the file's content
-      // Tiptap renders into a .ProseMirror div inside #editor-content
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      // Wait for the editor content area to appear and contain the file's content.
+      // Tiptap renders into a `.ProseMirror` div — the legacy `#editor-content`
+      // wrapper was dropped with Classic removal (#325), so target the
+      // ProseMirror element directly.
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toBeVisible({ timeout: 10000 });
 
       // The welcome.md file has "Welcome to Notesage" as the H1
@@ -85,49 +89,22 @@ test.describe('File operations', () => {
     });
   });
 
-  test.describe('Opening a second file creates a new tab', () => {
-    test('opening two files shows two tabs', async ({ page }) => {
+  test.describe('Opening a second file evicts the first (single-doc shell)', () => {
+    test('opening two files shows only the most recently opened in the editor', async ({ page }) => {
+      // Post-Classic-removal (#325) QuietLayout is a single-document shell —
+      // opening a second file evicts the first instead of stacking tabs.
+      // The TabBar test that used to live here is gone with TabBar itself.
       await waitForFileTree(page);
 
-      // Open the first file
       await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
-      await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
-
-      // Open a second file
-      await page.getByText('todo.md', { exact: true }).first().click();
-      await expect(editorContent).toContainText('Todo List', { timeout: 10000 });
-
-      // Both tabs should be visible in the tab bar
-      // TabBar renders buttons with the filename text
-      const welcomeTab = page.getByRole('button', { name: /welcome\.md/ }).first();
-      const todoTab = page.getByRole('button', { name: /todo\.md/ }).first();
-      await expect(welcomeTab).toBeVisible();
-      await expect(todoTab).toBeVisible();
-    });
-  });
-
-  test.describe('Switching tabs changes editor content', () => {
-    test('clicking a tab switches the displayed content', async ({ page }) => {
-      await waitForFileTree(page);
-
-      // Open two files
-      await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
 
       await page.getByText('todo.md', { exact: true }).first().click();
       await expect(editorContent).toContainText('Todo List', { timeout: 10000 });
 
-      // Switch back to the first tab by clicking it
-      const welcomeTab = page.getByRole('button', { name: /welcome\.md/ }).first();
-      await welcomeTab.click();
-
-      // Editor should now show welcome.md content again
-      await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
-
-      // Verify it no longer shows todo.md content
-      await expect(editorContent).not.toContainText('Todo List');
+      // The previously-open welcome.md content is gone from the editor.
+      await expect(editorContent).not.toContainText('Welcome to Notesage');
     });
   });
 
@@ -137,7 +114,7 @@ test.describe('File operations', () => {
 
       // Open a file first
       await page.getByText('welcome.md', { exact: true }).first().click();
-      const editorContent = page.locator('#editor-content .ProseMirror');
+      const editorContent = page.locator('.ProseMirror');
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
 
       // Type something to make the tab dirty — Cmd+S is a no-op on clean tabs

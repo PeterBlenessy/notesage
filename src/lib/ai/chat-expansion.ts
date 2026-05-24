@@ -4,10 +4,9 @@ import { tauriApi } from "@/lib/tauri";
 import type { Connection } from "@/lib/ai/connections";
 
 /**
- * Shared `@agent-name` / `/skill-name` prefix expansion used by both the
- * legacy `ChatPanel.doSend` and the Quiet Composer `FloatingCommandBar`.
- * Extracted for task #126 so the two shells can't drift — in particular,
- * the ACP pass-through vs. direct-API swap behaviour must stay in sync
+ * Shared `@agent-name` / `/skill-name` prefix expansion used by
+ * `FloatingCommandBar` at send time. Extracted as a standalone helper
+ * so the ACP pass-through vs. direct-API swap behaviour stays in sync
  * with `effectiveConnection?.authMethod`.
  *
  * Both helpers return `null` to mean "skip the send" (e.g. `@agent-name`
@@ -85,8 +84,8 @@ export interface SkillExpansionResult {
  * and the skill body loads, return an expanded prompt embedding the
  * body; otherwise return the original content unchanged.
  *
- * The expansion format mirrors the legacy `ChatPanel.doSend` path so
- * the model sees the same prompt on both shells.
+ * The expansion format inlines the skill body in the prompt the model
+ * receives.
  */
 export async function expandSkillPrefix(
   content: string,

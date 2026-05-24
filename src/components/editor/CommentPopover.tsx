@@ -58,7 +58,7 @@ interface CommentPopoverProps {
   onCancelDelegation?: () => void;
   /** Called to resolve a comment */
   onResolve?: (commentId: string) => void;
-  /** Called to move the conversation to the chat panel */
+  /** Called to move the conversation to the command bar */
   onMoveToChat?: () => void;
   /** Called when user sends a follow-up reply (chat mode — inline) */
   onReply?: (text: string) => void;

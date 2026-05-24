@@ -44,12 +44,9 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 
 **Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
-## Sidebar Surfaces
+## Sidebar Surface
 
-The workspace tree is exposed through two different shells. Both read from the same `workspace-store` (explorer folders, projects, notes tree) — only the chrome differs.
-
-- **Classic Layout** (`src/components/Layout.tsx`, default): the recursive `Sidebar` (`src/components/sidebar/Sidebar.tsx`) renders the full file tree inline (`FileTree.tsx` + `FileTreeItem.tsx`) with expand/collapse, file icons, drag-to-reorder, the right-click context menu, and inline rename. Cmd+Shift+L toggles visibility.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the sidebar is the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) showing five stacked sections — Pinned, Projects, Recent, Tags, Mentions — instead of the recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). The full hierarchical workspace tree is reached on demand via the `TreeOverlay` (`src/components/sidebar/quiet/TreeOverlay.tsx`), a focus-trapped slide-in panel triggered by `⌘⇧E` with its own search box, keyboard navigation (arrows, Home/End, Enter/Space, Esc), and per-session expansion state. The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
+The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Five stacked sections — Pinned, Projects, Recent, Tags, Mentions — instead of a recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). The full hierarchical workspace tree is reached on demand via the `TreeOverlay` (`src/components/sidebar/quiet/TreeOverlay.tsx`), a focus-trapped slide-in panel triggered by `⌘⇧E` with its own search box, keyboard navigation (arrows, Home/End, Enter/Space, Esc), and per-session expansion state. The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
 
 ## Notesage Library & iCloud Sync
 
@@ -139,13 +136,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 | File | Purpose |
 | --- | --- |
-| `src/components/sidebar/Sidebar.tsx` | Main sidebar container (Classic Layout) |
-| `src/components/sidebar/FileTree.tsx` | File/folder tree |
-| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node |
-| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Quiet Composer Layout) |
-| `src/components/sidebar/quiet/TreeOverlay.tsx` | Slide-in workspace tree (⌘⇧E, Quiet Composer Layout) |
-| `src/components/NewProjectDialog.tsx` | New project creation |
-| `src/components/NewNoteDialog.tsx` | New note creation |
+| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Recent / Tags / Mentions) |
+| `src/components/sidebar/quiet/TreeOverlay.tsx` | Slide-in workspace tree (⌘⇧E) |
+| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the overlay) |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |

@@ -40,8 +40,8 @@ describe('Toolbar — variants', () => {
     registerDefaultHandlers();
   });
 
-  describe('variant="inline" (default, legacy)', () => {
-    it('wrapper has no pill attribute and keeps legacy flat-bar classes', () => {
+  describe('variant="inline" (default)', () => {
+    it('wrapper has no pill attribute and keeps flat-bar classes', () => {
       const editor = createMockEditor() as unknown as Editor;
       const { container } = renderWithProviders(
         <Toolbar editor={editor} />,

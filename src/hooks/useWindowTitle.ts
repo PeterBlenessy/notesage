@@ -9,8 +9,8 @@ import { useEditorStore } from "@/stores/editor-store";
  *   - `${fileName} — Notesage` when a document is active.
  *   - `Notesage` when no document is active.
  *
- * Applies to both Classic and Quiet Composer layouts — mount once at the
- * App level (same tier as the other `useStartup*` hooks). WKWebView
+ * Mount once at the App level (same tier as the other `useStartup*`
+ * hooks). WKWebView
  * reflects `document.title` as the OS-level window title on macOS, so
  * no Tauri IPC is needed for the basic case.
  */

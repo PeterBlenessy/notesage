@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardR
 import { ArrowUp, Square, Mic, MicOff, X, ImagePlus, Plus } from 'lucide-react';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
-import type { EditContext } from './ChatPanel';
 import { Button } from '@/components/ui/button';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -18,6 +17,28 @@ import { compressImage } from '@/lib/image-compress';
 import { registerSendImageHandler, unregisterSendImageHandler } from '@/lib/ai/vision';
 import { tauriApi } from '@/lib/tauri';
 import { parseNotesageDrop } from '@/lib/drag-utils';
+
+/**
+ * Edit-mode metadata threaded through ChatInput when the user clicks
+ * "Edit" on an existing message. Held in the parent (FloatingCommandBar
+ * or CommandBarStream's host) and pushed in via props so ChatInput can
+ * pre-fill the textarea + show the "Editing message" banner.
+ *
+ * Lives here because ChatInput is the sole consumer of the type. The
+ * mirror state inside FloatingCommandBar is intentionally inlined and
+ * structurally compatible.
+ */
+export interface EditContext {
+  parentId: string | null;
+  originalContent: string;
+  /**
+   * Connection ID the original message was routed to. Compared against the
+   * current connection at send-time to catch cross-provider edit-sends — if
+   * they differ, `<ResendProviderDialog>` gates the send. Undefined for legacy
+   * messages that predate connectionId recording.
+   */
+  originalConnectionId?: string;
+}
 
 export interface ChatInputHandle {
   prefill: (text: string) => void;
@@ -505,7 +526,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           <div className="flex items-center gap-2 flex-wrap px-3 py-1.5">
             {footer}
             <div className="flex items-center gap-1.5 ml-auto">
-              {/* attachButton removed — image attach moved to the "+" menu in ChatFooter */}
+              {/* attachButton removed — image attach moved to the "+" menu in CommandBarContext */}
               {micButton}
               {stopButton}
               {sendButton}

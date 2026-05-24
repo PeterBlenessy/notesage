@@ -149,8 +149,7 @@ const PANELS: PanelEntry[] = [
 ];
 
 /**
- * New settings dialog mounted in App.tsx under the Quiet Composer
- * preview (`uiPreview === 'quiet-composer'`). Wraps the per-area panel
+ * Settings dialog mounted in App.tsx. Wraps the per-area panel
  * components delivered by tasks #65 / #66 / #67 in the shared
  * `SettingsShell` + `SettingsSearch` chrome.
  *

@@ -16,7 +16,6 @@ export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
-export type UiPreview = "legacy" | "quiet-composer";
 export type ReleaseChannel = 'stable' | 'alpha';
 interface SettingsStore {
   theme: Theme;
@@ -42,7 +41,6 @@ interface SettingsStore {
   sidebarOpen: boolean;
   sidebarPinned: boolean;
   sidebarWidth: number;
-  chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
   printLayout: boolean;
@@ -122,13 +120,6 @@ interface SettingsStore {
    */
   crossProjectMode: boolean;
   /**
-   * UI preview opt-in. Default "legacy" for both fresh installs and existing
-   * users on upgrade — no user is force-flipped to the new layout. Phase 1 of
-   * the Quiet Composer rollout (PRD 2026-04-21-ui-refresh): the new UI mounts
-   * only when this is "quiet-composer".
-   */
-  uiPreview: UiPreview;
-  /**
    * Quiet Composer pinned-panel mode (PRD 2026-04-21-ui-refresh, task #28).
    * When true the FloatingCommandBar renders as a right-edge side panel
    * instead of the centre-bottom floating overlay. Default false.
@@ -189,29 +180,6 @@ interface SettingsStore {
    * `sidebarTagsCap`. `0` hides the section entirely.
    */
   sidebarMentionsCap: number;
-  /**
-   * Timestamp (ms since epoch) when the preview-invitation banner was last
-   * shown to the user, or null if it has never been shown. Used by
-   * `shouldShowPreviewInvitation` to gate the 30-day re-appearance window
-   * after a dismissal. Persisted. ui-refresh task #97.
-   */
-  previewInvitationShownAt: number | null;
-  /**
-   * Timestamp (ms since epoch) when the user last dismissed the preview-
-   * invitation banner, or null if it has never been dismissed. Used by
-   * `shouldShowPreviewInvitation` to compute the 30-day cooldown. Persisted.
-   * ui-refresh task #97.
-   */
-  previewInvitationDismissedAt: number | null;
-  /**
-   * Mirror of the preview-invitation timestamps for the REVERT banner
-   * (task #107). When a user is in Quiet Composer mode, we surface a
-   * symmetric "Prefer the classic UI? Switch back" banner once and then
-   * honour a 30-day cooldown on dismissal. Persisted. Separate fields
-   * so the two banners' show/dismiss state doesn't interfere.
-   */
-  revertInvitationShownAt: number | null;
-  revertInvitationDismissedAt: number | null;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -241,7 +209,6 @@ interface SettingsStore {
   setSidebarOpen: (open: boolean) => void;
   setSidebarPinned: (pinned: boolean) => void;
   setSidebarWidth: (width: number) => void;
-  setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
   setPrintLayout: (enabled: boolean) => void;
@@ -281,7 +248,6 @@ interface SettingsStore {
   setSidebarFilePreviewEnabled: (enabled: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
-  setUiPreview: (preview: UiPreview) => void;
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
   setCmdBarExpandedWidth: (width: number) => void;
@@ -297,14 +263,6 @@ interface SettingsStore {
   setSidebarRecentCap: (n: number) => void;
   setSidebarTagsCap: (n: number) => void;
   setSidebarMentionsCap: (n: number) => void;
-  /** Mark the preview-invitation banner as shown right now. ui-refresh #97. */
-  markPreviewInvitationShown: () => void;
-  /** Mark the preview-invitation banner as dismissed right now. ui-refresh #97. */
-  dismissPreviewInvitation: () => void;
-  /** Mark the revert-invitation banner as shown right now. ui-refresh #107. */
-  markRevertInvitationShown: () => void;
-  /** Mark the revert-invitation banner as dismissed right now. ui-refresh #107. */
-  dismissRevertInvitation: () => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -356,7 +314,6 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarOpen: true,
       sidebarPinned: true,
       sidebarWidth: 280,
-      chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
       personasMigrated: false,
@@ -367,7 +324,6 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
       crossProjectMode: false,
-      uiPreview: "legacy",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
       cmdBarExpandedWidth: 640,
@@ -378,10 +334,6 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarMentionsCap: 5,
-      previewInvitationShownAt: null,
-      previewInvitationDismissedAt: null,
-      revertInvitationShownAt: null,
-      revertInvitationDismissedAt: null,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -479,10 +431,6 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setSidebarWidth: (width: number) => {
         set({ sidebarWidth: Math.round(Math.max(200, Math.min(400, width))) });
-      },
-
-      setChatPanelOpen: (open: boolean) => {
-        set({ chatPanelOpen: open });
       },
 
       setNotesRootPath: (path: string) => {
@@ -637,10 +585,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ crossProjectMode: enabled });
       },
 
-      setUiPreview: (preview: UiPreview) => {
-        set({ uiPreview: preview });
-      },
-
       setCmdBarPinned: (pinned: boolean) => {
         set({ cmdBarPinned: pinned });
       },
@@ -713,22 +657,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ sidebarMentionsCap: Math.round(Math.max(0, Math.min(15, n))) });
       },
 
-      markPreviewInvitationShown: () => {
-        set({ previewInvitationShownAt: Date.now() });
-      },
-
-      dismissPreviewInvitation: () => {
-        set({ previewInvitationDismissedAt: Date.now() });
-      },
-
-      markRevertInvitationShown: () => {
-        set({ revertInvitationShownAt: Date.now() });
-      },
-
-      dismissRevertInvitation: () => {
-        set({ revertInvitationDismissedAt: Date.now() });
-      },
-
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -769,7 +697,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 17,
+      version: 19,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -932,6 +860,27 @@ export const useSettingsStore = create<SettingsStore>()(
             state.htmlViewerBlockExternalResources = false;
           }
         }
+        if (version < 18) {
+          // Classic layout removal (#325) — force all users onto the Quiet
+          // Composer shell. Any persisted "legacy" value is upgraded to
+          // "quiet-composer". Undefined (first launch after install) also gets
+          // the new default.
+          if (state.uiPreview === 'legacy' || typeof state.uiPreview === 'undefined') {
+            state.uiPreview = 'quiet-composer';
+          }
+        }
+        if (version < 19) {
+          // Classic layout removal (#325) finalization — the uiPreview,
+          // chatPanelOpen, and preview/revert-invitation fields no longer
+          // exist in the store. Drop them from persisted state so a future
+          // schema reshuffle can reuse the names cleanly.
+          delete state.uiPreview;
+          delete state.chatPanelOpen;
+          delete state.previewInvitationShownAt;
+          delete state.previewInvitationDismissedAt;
+          delete state.revertInvitationShownAt;
+          delete state.revertInvitationDismissedAt;
+        }
         return state;
       },
 
@@ -943,64 +892,3 @@ export const useSettingsStore = create<SettingsStore>()(
     }
   )
 );
-
-/**
- * Window (in milliseconds) before the preview-invitation banner reappears
- * after dismissal — 30 days.
- */
-export const PREVIEW_INVITATION_REAPPEAR_MS = 30 * 24 * 60 * 60 * 1000;
-
-/**
- * Pure helper — given the relevant slice of settings state and a "now"
- * timestamp, decide whether the preview-invitation banner should be shown.
- *
- * Returns false if the user has already opted into the new UI (uiPreview is
- * "quiet-composer"). Otherwise returns true if the banner has never been
- * shown, or if 30 days have elapsed since both the last appearance and the
- * last dismissal (so a freshly-dismissed banner doesn't immediately re-pop
- * but reappears one more time after the cooldown).
- *
- * Pure: no Date.now() lookup, no store reads — caller passes both inputs so
- * the helper is trivially testable. ui-refresh task #97.
- */
-export function shouldShowPreviewInvitation(
-  state: Pick<
-    SettingsStore,
-    "uiPreview" | "previewInvitationShownAt" | "previewInvitationDismissedAt"
-  >,
-  now: number,
-): boolean {
-  // Already on the new UI — no need to invite.
-  if (state.uiPreview === "quiet-composer") return false;
-
-  // Never shown before — show on first launch.
-  if (state.previewInvitationShownAt === null) return true;
-
-  // Shown but never dismissed — the user hasn't actively closed it yet, so
-  // keep showing it on subsequent launches in the same session window.
-  if (state.previewInvitationDismissedAt === null) return true;
-
-  // Previously dismissed — re-appear once after the 30-day cooldown from
-  // the last dismissal.
-  return now - state.previewInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS;
-}
-
-/**
- * Mirror of `shouldShowPreviewInvitation` for the revert banner (task
- * #107). Only eligible when the user is currently on Quiet Composer;
- * same 30-day cooldown shape so the two banners feel symmetric. Pure.
- */
-export function shouldShowRevertInvitation(
-  state: Pick<
-    SettingsStore,
-    "uiPreview" | "revertInvitationShownAt" | "revertInvitationDismissedAt"
-  >,
-  now: number,
-): boolean {
-  if (state.uiPreview !== "quiet-composer") return false;
-  if (state.revertInvitationShownAt === null) return true;
-  if (state.revertInvitationDismissedAt === null) return true;
-  return (
-    now - state.revertInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS
-  );
-}

@@ -2,8 +2,13 @@
 //
 // Verifies that:
 // 1. test.yml has a push-to-main trigger so real-E2E runs after every merge.
-// 2. test.yml has a `real-e2e-tests` job that runs on macos-latest.
-// 3. The job is excluded from pull_request events (too expensive).
+// 2. test.yml has a `real-e2e-tests` job that runs on macos-26 (pinned —
+//    see the job-level test for the why).
+// 3. The job runs on pull_request events (required by branch protection)
+//    BUT may be skipped for docs-only PRs (the `check-changes` outputs
+//    gate it via `needs.check-changes.outputs.code == 'true' || ...`).
+//    Branch protection treats skipped jobs as passing (post-2023 rules)
+//    so the docs-only skip is safe — see PR #329.
 // 4. The job installs tauri-driver with cargo + actions/cache.
 // 5. The job runs `pnpm test:e2e-real-full`.
 // 6. The job uploads logs on failure for triage.
@@ -78,20 +83,43 @@ describe('Real E2E CI plumbing (#254)', () => {
       expect(job).toBeDefined();
     });
 
-    it('runs on macos-latest', () => {
-      expect(job?.['runs-on']).toBe('macos-latest');
+    it('runs on macos-26 (pinned to escape the Safari 26.5 WKWebView regression on macos-15)', () => {
+      // Was `macos-latest` until 2026-05-24. Image macos-15-arm64/20260520
+      // bumped Safari to 26.5 which has a WKWebView regression that breaks
+      // every `openFile → ProseMirror render` test path. macos-26 image
+      // 20260520 stayed on Safari 26.4 and runs the suite cleanly. See
+      // issue #334 for the underlying-bug record; this lock-in is the
+      // workaround. Revisit if/when GitHub rotates macos-26 to Safari 26.5
+      // — at that point we fall back to a self-hosted runner.
+      expect(job?.['runs-on']).toBe('macos-26');
     });
 
-    it('runs on pull_request events (required by branch protection)', () => {
-      // Branch protection on `main` requires this check to pass. A skipped
-      // job counts as "not satisfied" — there's no native "required-if-run"
-      // mode in GitHub branch protection. So the job has to RUN on PRs,
-      // not be excluded. Cost trade documented in the job's comment.
+    it('runs on pull_request events (with docs-only skip via check-changes)', () => {
+      // Branch protection on `main` requires this check to pass on PRs.
+      // PR #329 added a docs-only-skip optimisation: the job is gated on
+      // `needs.check-changes.outputs.code == 'true' || github.event_name
+      // != 'pull_request'`. Per GitHub's post-2023 rules a skipped job
+      // counts as passing for required checks, so the docs-only skip is
+      // safe under branch protection.
+      //
+      // What we lock in here:
+      // 1. `on.pull_request` is set so the workflow fires on PRs at all.
+      // 2. The job has a `check-changes` dependency so the docs-only-skip
+      //    plumbing is in place.
+      // 3. The `if` condition references `check-changes.outputs.code` so
+      //    the job DOES run on PRs that touch code (the common case).
       const wf = loadWorkflow('test');
       expect(wf.on.pull_request).toBeDefined();
-      // The job must NOT have a pull_request-excluding if clause.
+
+      const needs = Array.isArray(job?.needs)
+        ? job?.needs
+        : job?.needs
+          ? [job.needs]
+          : [];
+      expect(needs).toContain('check-changes');
+
       const condition = job?.if ?? '';
-      expect(condition).not.toMatch(/event_name\s*!=\s*['"]pull_request['"]/);
+      expect(condition).toMatch(/check-changes\.outputs\.code/);
     });
 
     it('has an actions/cache step keyed on tauri-webdriver', () => {

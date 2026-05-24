@@ -28,9 +28,18 @@ async function resetNavigationState(): Promise<void> {
         if (w.__E2E_SETTINGS_STORE__) {
             const s = w.__E2E_SETTINGS_STORE__.getState();
             if (!s.sidebarPinned) s.setSidebarPinned(true);
-            if (s.chatPanelOpen) s.setChatPanelOpen(false);
         }
     });
+    // Collapse the FloatingCommandBar if it's open. The bar exposes
+    // `data-expanded` on its root; sending Escape is the documented
+    // collapse path in float mode.
+    const bar = await browser.$('[data-cmd-bar]');
+    if (await bar.isExisting()) {
+        const expanded = await bar.getAttribute('data-expanded');
+        if (expanded === 'true') {
+            await pressShortcut(['Escape']);
+        }
+    }
     await browser.pause(300);
 }
 
@@ -100,94 +109,70 @@ describe('Navigation and UI', () => {
     });
 
     // ---------------------------------------------------------------
-    // Test 2: Chat panel toggle (Cmd+Shift+C)
+    // Test 2: FloatingCommandBar expand / collapse
     // ---------------------------------------------------------------
-    it('should toggle chat panel with Cmd+Shift+C', async () => {
-        // Ensure chat panel is initially closed by reading the store
-        const initiallyOpen = await browser.execute(() => {
-            const raw = localStorage.getItem('notesage-settings');
-            if (!raw) return false;
-            try {
-                return JSON.parse(raw).state?.chatPanelOpen ?? false;
-            } catch {
-                return false;
-            }
-        });
-        console.log(`[nav] Chat panel initially open: ${initiallyOpen}`);
+    it('should expand the FloatingCommandBar with Cmd+Shift+C and collapse with Esc', async () => {
+        const bar = await browser.$('[data-cmd-bar]');
+        await bar.waitForExist({ timeout: 3000, timeoutMsg: 'Cmd bar not found within 3s' });
 
-        // If already open, close it first to start from a known state
-        if (initiallyOpen) {
-            await pressShortcut(['Meta', 'Shift', 'c']);
+        // Ensure the bar starts collapsed.
+        const initiallyExpanded = await bar.getAttribute('data-expanded');
+        if (initiallyExpanded === 'true') {
+            await pressShortcut(['Escape']);
             await browser.pause(300);
         }
+        const startState = await bar.getAttribute('data-expanded');
+        console.log(`[nav] Cmd bar initially expanded: ${startState === 'true'}`);
+        expect(startState).toBe('false');
 
-        // Open the chat panel and measure how long it takes to appear
+        // ⌘⇧C expands the bar — measure how long it takes the attribute to flip.
         await pressShortcut(['Meta', 'Shift', 'c']);
 
         const { duration } = await measureAction(async () => {
-            // The ChatPanel renders a textarea for input — wait for it
             await browser.waitUntil(
-                async () => {
-                    const chatOpen = await browser.execute(() => {
-                        const raw = localStorage.getItem('notesage-settings');
-                        if (!raw) return false;
-                        try {
-                            return JSON.parse(raw).state?.chatPanelOpen ?? false;
-                        } catch {
-                            return false;
-                        }
-                    });
-                    return chatOpen === true;
-                },
+                async () => (await bar.getAttribute('data-expanded')) === 'true',
                 {
                     timeout: 2000,
                     interval: 50,
-                    timeoutMsg: 'Chat panel did not open within 2s',
+                    timeoutMsg: 'Cmd bar did not expand within 2s',
                 },
             );
         });
-        console.log(`[nav] Chat panel opened in ${duration.toFixed(0)}ms (informational only)`);
+        console.log(`[nav] Cmd bar expanded in ${duration.toFixed(0)}ms (informational only)`);
 
-        // Allow animations to settle and look for the chat textarea
+        // Allow animations to settle and look for the bar's combobox textarea.
         await browser.pause(200);
-        const textarea = await browser.$('textarea');
+        const textarea = await browser.$('[data-cmd-bar] textarea[role="combobox"]');
         const textareaExists = await textarea.isExisting();
-        console.log(`[nav] Chat textarea present: ${textareaExists}`);
+        console.log(`[nav] Cmd bar textarea present: ${textareaExists}`);
         expect(textareaExists).toBe(true);
 
-        // Close the chat panel
-        await pressShortcut(['Meta', 'Shift', 'c']);
+        // Escape is the documented collapse path in float mode (a second
+        // ⌘⇧C is a no-op while expanded+floating).
+        await pressShortcut(['Escape']);
         await browser.waitUntil(
-            async () => {
-                const chatOpen = await browser.execute(() => {
-                    const raw = localStorage.getItem('notesage-settings');
-                    if (!raw) return false;
-                    try {
-                        return JSON.parse(raw).state?.chatPanelOpen ?? false;
-                    } catch {
-                        return false;
-                    }
-                });
-                return chatOpen === false;
-            },
+            async () => (await bar.getAttribute('data-expanded')) === 'false',
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Chat panel did not close within 2s',
+                timeoutMsg: 'Cmd bar did not collapse within 2s',
             },
         );
-        console.log('[nav] Chat panel closed');
+        console.log('[nav] Cmd bar collapsed');
     });
 
     // ---------------------------------------------------------------
     // Test 3: Sidebar toggle (Cmd+Shift+L)
     // ---------------------------------------------------------------
     it('should toggle sidebar with Cmd+Shift+L', async () => {
-        // Verify the sidebar Settings button is visible initially
-        const settingsBtn = await browser.$('button[title*="Settings"]');
-        await settingsBtn.waitForExist({ timeout: 3000, timeoutMsg: 'Settings button not found' });
-        expect(await settingsBtn.isDisplayed()).toBe(true);
-        console.log('[nav] Settings button visible before toggle');
+        // Verify the QuietSidebar nav is mounted initially. The legacy
+        // `button[title*="Settings"]` lookup pointed at a Classic-only
+        // sidebar header button that doesn't exist in Quiet Composer —
+        // Settings is reached via ⌘, or the command bar's `>settings`.
+        const sidebarNav = await browser.$('nav[aria-label="Workspace sidebar"]');
+        await sidebarNav.waitForExist({ timeout: 3000, timeoutMsg: 'Workspace sidebar nav not found' });
+        expect(await sidebarNav.isDisplayed()).toBe(true);
+        console.log('[nav] Workspace sidebar visible before toggle');
 
         // Toggle sidebar with Cmd+Shift+L (toggles sidebarPinned in settings store)
         await pressShortcut(['Meta', 'Shift', 'l']);
@@ -232,43 +217,43 @@ describe('Navigation and UI', () => {
     // Test 4: Focus mode (Cmd+.)
     // ---------------------------------------------------------------
     it('should enter and exit focus mode with Cmd+.', async () => {
-        // Verify sidebar is visible before entering focus mode
-        const settingsBtnBefore = await browser.$('button[title*="Settings"]');
-        await settingsBtnBefore.waitForExist({ timeout: 3000, timeoutMsg: 'Settings button not found before focus mode' });
-        console.log('[nav] Settings button visible before focus mode');
+        // Focus mode adds `.focus-mode` to the QuietLayout root and applies
+        // a CSS opacity fade to the sidebar. We assert on the class rather
+        // than DOM visibility — opacity:0 still computes as "displayed".
+        const layoutRoot = await browser.$('[data-quiet-layout-root]');
+        await layoutRoot.waitForExist({ timeout: 3000, timeoutMsg: 'Quiet layout root not found before focus mode' });
+
+        const startedInFocus = ((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode');
+        if (startedInFocus) {
+            // Defensive: previous tests should have reset, but make sure.
+            await pressShortcut(['Meta', '.']);
+            await browser.pause(150);
+        }
 
         // Enter focus mode (Cmd+.)
         await pressShortcut(['Meta', '.']);
 
-        // Wait for sidebar to disappear (focus mode hides sidebar + toolbar)
         await browser.waitUntil(
-            async () => {
-                const btn = await browser.$('button[title*="Settings"]');
-                return !(await btn.isDisplayed().catch(() => false));
-            },
+            async () => ((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode'),
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Focus mode did not hide sidebar within 2s',
+                timeoutMsg: 'Focus mode class did not appear on layout root within 2s',
             },
         );
-        console.log('[nav] Focus mode entered — sidebar hidden');
+        console.log('[nav] Focus mode entered — focus-mode class on root');
 
         // Exit focus mode with Escape
         await browser.keys(['Escape']);
 
-        // Sidebar should be visible again
         await browser.waitUntil(
-            async () => {
-                const btn = await browser.$('button[title*="Settings"]');
-                return await btn.isDisplayed().catch(() => false);
-            },
+            async () => !((await layoutRoot.getAttribute('class')) ?? '').includes('focus-mode'),
             {
                 timeout: 2000,
                 interval: 50,
-                timeoutMsg: 'Focus mode did not restore sidebar within 2s',
+                timeoutMsg: 'Focus mode class did not clear on layout root within 2s',
             },
         );
-        console.log('[nav] Focus mode exited — sidebar restored');
+        console.log('[nav] Focus mode exited — focus-mode class cleared');
     });
 });

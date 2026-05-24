@@ -210,8 +210,8 @@ vi.mock('@/stores/project-metadata-store', () => {
   };
 });
 
-// #125 — `showAgentModePicker` gates whether the mode picker renders in
-// both shells (legacy + quiet). Flip per-test to cover both paths.
+// #125 — `showAgentModePicker` gates whether the mode picker renders.
+// Flip per-test to cover both paths.
 let mockShowAgentModePicker = false;
 
 vi.mock('@/stores/settings-store', () => {
@@ -574,9 +574,7 @@ describe('CommandBarContext', () => {
 
   // -------------------------------------------------------------------------
   // New-chat button (live-test 2026-04-26) — sits LEFT of the history toggle
-  // and dispatches `createConversation()` on the chat store. Mirrors the
-  // legacy `ChatPanel`'s "+" affordance so the new chat is consistent across
-  // both shells.
+  // and dispatches `createConversation()` on the chat store.
   // -------------------------------------------------------------------------
 
   describe('new-chat button (live-test 2026-04-26)', () => {

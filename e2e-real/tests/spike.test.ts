@@ -32,16 +32,18 @@ describe('Spike — app loads and sidebar renders', () => {
     it('should find the sidebar within 3 seconds', async () => {
         const startTime = await browser.execute(() => performance.now());
 
-        // SidebarPanel renders a Settings button at the bottom — use its title attribute.
-        // The sidebar itself doesn't have semantic IDs, so we look for a known child.
-        const settingsBtn = await browser.$('button[title*="Settings"]');
-        await settingsBtn.waitForExist({ timeout: 3000 });
+        // QuietSidebar nav landmark — the old Classic-Layout `Settings`
+        // button at the sidebar footer was deleted in PR #333. Settings
+        // now opens via ⌘, or the cmd bar's `>settings`. The sidebar nav
+        // itself is the visibility marker.
+        const sidebarNav = await browser.$('nav[aria-label="Workspace sidebar"]');
+        await sidebarNav.waitForExist({ timeout: 3000 });
 
         const endTime = await browser.execute(() => performance.now());
         const duration = endTime - startTime;
 
-        console.log(`[spike] Sidebar (Settings button) found in ${duration.toFixed(0)}ms (informational only)`);
-        expect(settingsBtn).toBeExisting();
+        console.log(`[spike] Sidebar nav found in ${duration.toFixed(0)}ms (informational only)`);
+        expect(sidebarNav).toBeExisting();
     });
 
     it('should find the editor area', async () => {

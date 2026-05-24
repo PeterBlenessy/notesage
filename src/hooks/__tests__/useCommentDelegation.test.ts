@@ -5,7 +5,7 @@ import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useCommentStore, type Comment } from '@/stores/comment-store';
 import { useChatStore } from '@/stores/chat-store';
-import { useSettingsStore } from '@/stores/settings-store';
+import { subscribeToCmdBarEvents, type CmdBarEvent } from '@/lib/cmd-bar-events';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useCommentDelegation } from '@/hooks/useCommentDelegation';
@@ -1084,10 +1084,8 @@ describe('useCommentDelegation', () => {
         saveComments: saveSpy,
       } as unknown as Partial<ReturnType<typeof useCommentStore.getState>>);
 
-      const setChatOpenSpy = vi.fn();
-      useSettingsStore.setState({
-        setChatPanelOpen: setChatOpenSpy,
-      } as unknown as Partial<ReturnType<typeof useSettingsStore.getState>>);
+      const capturedEvents: CmdBarEvent[] = [];
+      const unsubscribe = subscribeToCmdBarEvents((e) => capturedEvents.push(e));
 
       const { result } = renderHook(() => useCommentDelegation());
 
@@ -1133,8 +1131,9 @@ describe('useCommentDelegation', () => {
         }),
       );
 
-      // Opens chat panel
-      expect(setChatOpenSpy).toHaveBeenCalledWith(true);
+      // Opens the floating command bar (Quiet Composer chat surface).
+      expect(capturedEvents).toContainEqual({ type: 'focus' });
+      unsubscribe();
     });
 
     it('saves comments when storageRoot is provided', () => {
@@ -1150,10 +1149,6 @@ describe('useCommentDelegation', () => {
         createConversation: vi.fn().mockReturnValue('conv-1'),
         addMessage: vi.fn(),
       } as unknown as Partial<ReturnType<typeof useChatStore.getState>>);
-
-      useSettingsStore.setState({
-        setChatPanelOpen: vi.fn(),
-      } as unknown as Partial<ReturnType<typeof useSettingsStore.getState>>);
 
       const { result } = renderHook(() => useCommentDelegation());
 
@@ -1176,10 +1171,6 @@ describe('useCommentDelegation', () => {
         createConversation: vi.fn().mockReturnValue('conv-1'),
         addMessage: vi.fn(),
       } as unknown as Partial<ReturnType<typeof useChatStore.getState>>);
-
-      useSettingsStore.setState({
-        setChatPanelOpen: vi.fn(),
-      } as unknown as Partial<ReturnType<typeof useSettingsStore.getState>>);
 
       const { result } = renderHook(() => useCommentDelegation());
 

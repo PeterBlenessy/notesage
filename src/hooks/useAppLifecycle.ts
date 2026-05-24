@@ -19,15 +19,10 @@ import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { toast } from "sonner";
-import type { PaletteMode } from "@/lib/command-palette";
-
-interface UseAppLifecycleOptions {
-  onOpenPalette: (mode: PaletteMode, drilldown: string) => void;
-}
 
 /**
  * Consolidates all App-level startup side effects and event listeners:
- *  - Tag/mention badge click → command palette
+ *  - Tag/mention badge click → cmd-bar drilldown
  *  - ACP cleanup on beforeunload
  *  - Visibility-change wake handler with health check
  *  - Drag/drop prevention
@@ -36,54 +31,36 @@ interface UseAppLifecycleOptions {
  *  - localStorage cleanup for removed stores
  *  - Startup tree reload (reloadTrees)
  */
-export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
-  // --- Tag badge click → cmd bar (Quiet Composer) or command palette (Legacy) ---
-  // In-document `#tag` clicks fire `notesage:open-tag-search`. Under the
-  // legacy shell the `<CommandPalette>` is mounted and `onOpenPalette`
-  // routes to it; under Quiet Composer the palette isn't mounted at all
-  // (`App.tsx` gates its mount on `uiPreview !== "quiet-composer"`), so we
-  // emit a `cmd-bar-events` `focus` payload that drills the FloatingCommandBar
-  // straight into TagMode's level-2 occurrences view — same drilldown shape
-  // the sidebar `TagsSection` already uses (audit #1, sidebar-simplification
-  // task #17).
+export function useAppLifecycle() {
+  // --- Tag badge click → cmd bar ---
+  // In-document `#tag` clicks fire `notesage:open-tag-search`. Quiet Composer
+  // is the only shell, so we always emit to the FloatingCommandBar.
   useEffect(() => {
     const handler = (e: Event) => {
       const tag = (e as CustomEvent<{ tag: string }>).detail.tag;
-      const { uiPreview } = useSettingsStore.getState();
-      if (uiPreview === "quiet-composer") {
-        emitCmdBarEvent({
-          type: "focus",
-          prefix: "#",
-          drilldown: { kind: "tag", name: tag },
-        });
-      } else {
-        onOpenPalette("tags", tag);
-      }
+      emitCmdBarEvent({
+        type: "focus",
+        prefix: "#",
+        drilldown: { kind: "tag", name: tag },
+      });
     };
     window.addEventListener("notesage:open-tag-search", handler);
     return () => window.removeEventListener("notesage:open-tag-search", handler);
-  }, [onOpenPalette]);
+  }, []);
 
-  // --- Mention badge click → cmd bar (Quiet Composer) or command palette (Legacy) ---
-  // Same routing rationale as the tag handler above; ReferenceMode handles
-  // the level-2 drilldown via `initialPersonDrilldown`.
+  // --- Mention badge click → cmd bar ---
   useEffect(() => {
     const handler = (e: Event) => {
       const mention = (e as CustomEvent<{ mention: string }>).detail.mention;
-      const { uiPreview } = useSettingsStore.getState();
-      if (uiPreview === "quiet-composer") {
-        emitCmdBarEvent({
-          type: "focus",
-          prefix: "@",
-          drilldown: { kind: "mention", name: mention },
-        });
-      } else {
-        onOpenPalette("mentions", mention);
-      }
+      emitCmdBarEvent({
+        type: "focus",
+        prefix: "@",
+        drilldown: { kind: "mention", name: mention },
+      });
     };
     window.addEventListener("notesage:open-mention-search", handler);
     return () => window.removeEventListener("notesage:open-mention-search", handler);
-  }, [onOpenPalette]);
+  }, []);
 
   // --- Migrate v1 AI settings + clear orphaned stores ---
   useEffect(() => {

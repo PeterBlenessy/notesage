@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-05-22 |
-| **Status** | Not started |
+| **Status** | All 13 tasks implemented on `feat/classic-layout-removal` (2026-05-23). Branch pending review + merge to main. |
 | **PRD** | [classic-layout-removal](../prds/2026-05-22-classic-layout-removal.md) |
 | **Total** | 13 tasks: 7S, 6M, 0L |
 | **Suggested order** | Prep (#1–#2) → Remove references (#3–#7) → Delete files (#8–#10) → Cleanup (#11–#13) |
@@ -35,7 +35,7 @@ Likely must keep: `ChatMessage.tsx`, `PermissionCard.tsx`, `DomainApprovalCard.t
 
 ---
 
-### #2 — Harden settings-store: make Quiet Composer the persisted default
+### #2 — Harden settings-store: make Quiet Composer the persisted default ✅
 
 **Description:**
 - Change the `settings-store` initial state default for `uiPreview` from `"legacy"` to `"quiet-composer"`.
@@ -54,7 +54,7 @@ Likely must keep: `ChatMessage.tsx`, `PermissionCard.tsx`, `DomainApprovalCard.t
 
 ---
 
-### #3 — Simplify App.tsx: remove all uiPreview branches
+### #3 — Simplify App.tsx: remove all uiPreview branches ✅
 
 **Description:**
 Remove all Classic Layout gating in `App.tsx`. This is the largest single-file change in the project.
@@ -87,7 +87,7 @@ Do NOT delete the actual component files yet — that happens in tasks #8–#10.
 
 ---
 
-### #4 — Simplify Editor.tsx: remove isQuietVariant ternaries
+### #4 — Simplify Editor.tsx: remove isQuietVariant ternaries ✅
 
 **Description:**
 Remove the Classic-vs-Quiet branching in `Editor.tsx`:
@@ -109,7 +109,7 @@ Remove the Classic-vs-Quiet branching in `Editor.tsx`:
 
 ---
 
-### #5 — Simplify hooks: remove Classic routing paths
+### #5 — Simplify hooks: remove Classic routing paths ✅
 
 **Description:**
 Remove `uiPreview` reads and Classic-path branches from five hooks:
@@ -145,7 +145,7 @@ Remove `uiPreview` reads and Classic-path branches from five hooks:
 
 ---
 
-### #6 — Prune settings-store: remove uiPreview and Classic-only fields
+### #6 — Prune settings-store: remove uiPreview and Classic-only fields ✅
 
 **Description:**
 With no more code reading these fields, delete them from the store entirely.
@@ -176,7 +176,7 @@ In `settings-store.test.ts`:
 
 ---
 
-### #7 — Prune editor-store: remove isQuietComposer helper
+### #7 — Prune editor-store: remove isQuietComposer helper ✅
 
 **Description:**
 Remove the `isQuietComposer()` helper from `editor-store.ts` and all its call sites.
@@ -196,7 +196,7 @@ Remove the `isQuietComposer()` helper from `editor-store.ts` and all its call si
 
 ---
 
-### #8 — Delete Classic shell: Layout.tsx, TabBar.tsx, Tab.tsx
+### #8 — Delete Classic shell: Layout.tsx, TabBar.tsx, Tab.tsx ✅
 
 **Description:**
 After tasks #3–#7 have removed all references, delete the Classic shell files:
@@ -224,7 +224,7 @@ Also delete any test files that exclusively test the deleted components:
 
 ---
 
-### #9 — Delete Classic chat/activity: ChatPanel, ChatFooter, ActivityStrip
+### #9 — Delete Classic chat/activity: ChatPanel, ChatFooter, ActivityStrip ✅
 
 **Description:**
 Using the audit from task #1, delete Classic-only chat and activity components.
@@ -263,7 +263,7 @@ Delete accompanying test files for deleted components (verify each exists first)
 
 ---
 
-### #10 — Delete Classic dialogs and palette
+### #10 — Delete Classic dialogs and palette ✅
 
 **Description:**
 Delete the remaining Classic-only standalone components:
@@ -293,7 +293,7 @@ Delete accompanying test files for each (check existence first):
 
 ---
 
-### #11 — Clean up settings UI: remove uiPreview toggle
+### #11 — Clean up settings UI: remove uiPreview toggle ✅
 
 **Description:**
 `src/components/settings/v2/AppearanceSettings.tsx` has a "UI version" / "Quiet Composer" toggle section (~lines 192–221) that allowed users to switch between layouts. Remove it — there is no longer a choice.
@@ -316,7 +316,7 @@ Also verify `src/components/settings/SettingsDialog.tsx` has already been delete
 
 ---
 
-### #12 — Delete dead test suites for Classic branching
+### #12 — Delete dead test suites for Classic branching ✅
 
 **Description:**
 Remove test suites whose only purpose was verifying `uiPreview` branching that no longer exists.
@@ -343,7 +343,7 @@ Files/suites to delete or prune:
 
 ---
 
-### #13 — CSS cleanup: remove stale Classic comments
+### #13 — CSS cleanup: remove stale Classic comments ✅
 
 **Description:**
 Remove stale comments referencing the Classic layout from CSS files:

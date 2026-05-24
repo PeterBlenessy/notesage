@@ -188,10 +188,6 @@ export function AppearanceSettings() {
   // Show advanced quiet-chrome switches whenever the preset is "custom".
   const showQuietChromeAdvanced = quietChromePreset === 'custom';
 
-  // ── Layout (formerly in Advanced > Experimental) ─────────────────────
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-  const setUiPreview = useSettingsStore((s) => s.setUiPreview);
-
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -201,24 +197,6 @@ export function AppearanceSettings() {
           shows which panel is active. The tagline lives there as a
           column-header tooltip if we ever need it. Removing the hero
           tightens the panel meaningfully and matches the comp. */}
-
-      {/* ── Layout ────────────────────────────────────────────────── */}
-      <SettingsGroup label="Layout">
-        <SettingsRow
-          label="Quiet Composer"
-          description="The new layout. Floating command bar, ambient agent orb, full-height sidebar. Toggle off to return to the classic layout."
-          htmlFor="appearance-ui-preview"
-          control={
-            <Switch
-              id="appearance-ui-preview"
-              checked={uiPreview === 'quiet-composer'}
-              onCheckedChange={(checked) =>
-                setUiPreview(checked ? 'quiet-composer' : 'legacy')
-              }
-            />
-          }
-        />
-      </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">

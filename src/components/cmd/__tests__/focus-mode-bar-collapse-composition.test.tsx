@@ -72,7 +72,6 @@ vi.mock("@/hooks/useReducedMotion", () => ({
 let mockCmdBarPinned = false;
 vi.mock("@/stores/settings-store", () => {
   const state = {
-    uiPreview: "quiet-composer" as const,
     get cmdBarPinned() {
       return mockCmdBarPinned;
     },

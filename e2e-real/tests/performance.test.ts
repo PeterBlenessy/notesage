@@ -206,57 +206,55 @@ describe('Performance', function () {
     });
 
     // -------------------------------------------------------------------
-    // Test 4: Rapid tab switching
+    // Test 4: Rapid sequential file opens (Quiet Composer single-doc shell)
+    //
+    // Originally "rapid tab switching" — that test opened 4 files and
+    // expected 4 tabs in `openDocuments`. PR #333 (Classic Layout removal)
+    // made the shell single-document: `openTab` evicts the prior active
+    // document, so the array is always length 1. The replacement here
+    // measures the same underlying concern (no crash / no stale content
+    // under rapid file-open pressure) reshaped for the new semantics —
+    // open 4 files back-to-back, assert the last one's content is what's
+    // visible and no JS errors fired.
+    //
+    // (The "no stale content" invariant is also covered by
+    // `startup.test.ts > should not show stale content from previous file
+    // after sequential open`. This case adds the "rapid + multiple files"
+    // pressure that the old tab-switching test was probing.)
     // -------------------------------------------------------------------
-    it('should handle rapid tab switching without errors', async () => {
-        // Open multiple files
+    it('should handle rapid sequential file opens without errors', async () => {
         const files = ['README.md', 'notes.md', 'code-examples.md', 'large-doc.md'];
-        for (const file of files) {
-            await openFile(file);
-            // Brief pause to let each tab initialize
-            await browser.pause(200);
-        }
 
-        // Verify we have multiple tabs open
-        const tabCount: number = await browser.execute(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            return (window as any).__E2E_EDITOR_STORE__?.getState().openDocuments.length ?? 0;
-        });
-        console.log(`[perf] Tabs open: ${tabCount}`);
-        expect(tabCount).toBeGreaterThanOrEqual(files.length);
-
-        // Rapidly switch between tabs by clicking them in sequence
         const { duration } = await measureAction(async () => {
-            // Click each tab 2 full rounds — 8 switches total
-            for (let round = 0; round < 2; round++) {
-                for (const file of files) {
-                    // Tabs display the filename. Find and click the tab element.
-                    const tab = await browser.$(
-                        `//span[contains(@class, "truncate") and text()="${file}"]`
-                    );
-                    const exists = await tab.isExisting();
-                    if (exists) {
-                        await tab.click();
-                        // No pause — this is intentionally rapid
-                    }
-                }
+            for (const file of files) {
+                await openFile(file);
             }
         });
 
-        console.log(`[perf] Rapid tab switching (${files.length} tabs x 2 rounds): ${duration.toFixed(0)}ms`);
-        timingResults['tab-switching-ms'] = duration;
+        console.log(`[perf] Rapid sequential opens (${files.length} files): ${duration.toFixed(0)}ms`);
+        timingResults['rapid-open-ms'] = duration;
 
-        // Wait for the last tab switch to settle
+        // Single-doc shell: exactly 1 entry in openDocuments after the
+        // last open, and the active tab is the last file.
+        const state: { count: number; activePath: string | null } = await browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const s = (window as any).__E2E_EDITOR_STORE__?.getState();
+            if (!s) return { count: 0, activePath: null };
+            const active = s.openDocuments.find((t: { id: string; filePath: string }) => t.id === s.activeTabId);
+            return { count: s.openDocuments.length, activePath: active?.filePath ?? null };
+        });
+        console.log(`[perf] Active doc after rapid opens: ${state.activePath} (openDocuments.length=${state.count})`);
+        expect(state.count).toBe(1);
+        expect(state.activePath ?? '').toContain(files[files.length - 1]);
+
+        // Settle, then verify the editor renders the last file's content.
         await browser.pause(500);
-
-        // Verify the editor still works — last clicked tab should show content
-        const lastFile = files[files.length - 1];
         const text = await getEditorText();
-        console.log(`[perf] Final tab content length: ${text.length} characters`);
+        console.log(`[perf] Final editor content length: ${text.length} characters`);
         expect(text.length).toBeGreaterThan(0);
 
-        // Check for JS errors by looking at console (best effort)
-        // Note: browser.getLogs() is not supported by tauri-webdriver
+        // Best-effort console error sweep (tauri-webdriver doesn't expose
+        // browser logs — gated behind getLogs availability).
         if (typeof browser.getLogs === 'function') {
             const logs = await browser.getLogs('browser');
             const errors = logs.filter(
@@ -266,11 +264,11 @@ describe('Performance', function () {
                     !log.message.includes('DevTools'),
             );
             if (errors.length > 0) {
-                console.log(`[perf] Browser errors after rapid switching:`, errors);
+                console.log(`[perf] Browser errors after rapid opens:`, errors);
             }
             expect(errors.length).toBe(0);
         }
 
-        console.log(`[perf] Rapid tab switching completed without errors`);
+        console.log(`[perf] Rapid sequential opens completed without errors`);
     });
 });

@@ -42,7 +42,7 @@ import { CommentList } from "./CommentListPopover";
 
 /**
  * Inline completion icon — italic T with sparkle trail. Mirrors the
- * SVG in `StatusBar.tsx` so the tray and the legacy bar stay visually
+ * SVG in `StatusBar.tsx` so the tray and the bar stay visually
  * consistent.
  */
 function InlineCompletionIcon({ className }: { className?: string }) {
@@ -108,9 +108,9 @@ export interface StatusTrayProps {
 
   /**
    * Opens the Actions dashboard from the Actions group (bugs #3-#5).
-   * Mirrors the legacy `ActionsIndicator` button in `StatusBar`'s
-   * full variant — the QuietStatusBar variant gets the same
-   * affordance via this group inside the popover.
+   * Mirrors the `ActionsIndicator` button in `StatusBar`'s full
+   * variant — the QuietStatusBar variant gets the same affordance via
+   * this group inside the popover.
    */
   onOpenActions?: () => void;
 
@@ -139,7 +139,7 @@ export interface StatusTrayProps {
   /**
    * Source-mode toggle callback. When provided alongside `viewMode`, the
    * tray shows a WYSIWYG ↔ Source switcher above the Completions group.
-   * Mirrors `Toolbar`'s `onToggleViewMode` prop in the legacy variant.
+   * Mirrors `Toolbar`'s `onToggleViewMode` prop.
    */
   onToggleViewMode?: () => void;
 }
@@ -344,8 +344,8 @@ function CommentsGroup({
   /**
    * Closes the parent StatusTray popover. Called after the user picks a
    * comment so the user lands back on the editor with focus on the
-   * jumped-to anchor — same UX as the legacy `CommentListPopover` (which
-   * dismisses itself on row click).
+   * jumped-to anchor — same UX as the standalone `CommentListPopover`
+   * (which dismisses itself on row click).
    */
   onCloseTray: () => void;
 }) {
@@ -362,7 +362,7 @@ function CommentsGroup({
   // Local open state for the inner Comments popover. Anchored to the
   // "View open comments" button via PopoverTrigger asChild — Radix
   // handles outside-click and Escape automatically. We dispatch the
-  // legacy `notesage:open-comment-list` CustomEvent on open so existing
+  // `notesage:open-comment-list` CustomEvent on open so existing
   // listeners (and the perf/regression tests that watch for it) keep
   // firing exactly once per click.
   const [listOpen, setListOpen] = React.useState(false);
@@ -424,7 +424,7 @@ function CommentsGroup({
             align="start"
             sideOffset={8}
             // Sit ABOVE the parent StatusTray popover (z-50) so we don't
-            // get clipped by it. Same width + max-height as the legacy
+            // get clipped by it. Same width + max-height as
             // `CommentListPopover`'s content for visual parity.
             className="w-72 p-0 max-h-80 overflow-y-auto z-[60]"
             onClick={(e) => e.stopPropagation()}
@@ -477,7 +477,7 @@ function CommentsGroup({
 
 // ---------------------------------------------------------------------------
 // Actions group (bugs #3-#5) — open-actions count + click to open
-// ActionsDialog. Mirrors the legacy `ActionsIndicator` button in the
+// ActionsDialog. Mirrors the `ActionsIndicator` button in the
 // full-variant StatusBar but presents it as a click-to-reveal row
 // inside the StatusTray popover, consistent with the other groups.
 // When `openCount === 0` the row stays visible with a muted "No open

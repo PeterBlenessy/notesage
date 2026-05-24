@@ -87,7 +87,7 @@ async function simulateRestart(
   await waitForPersist();
 }
 
-const DEFAULTS = { tasks: [], isManuallyHidden: false };
+const DEFAULTS = { tasks: [] };
 
 function makeTask(overrides: Partial<Omit<AgentTask, 'activities' | 'startedAt'>> = {}): Omit<AgentTask, 'activities' | 'startedAt'> {
   return {
@@ -650,16 +650,6 @@ describe('persistence — rehydration', () => {
   });
 });
 
-// ===========================================================================
-// setManuallyHidden
-// ===========================================================================
-
-describe('setManuallyHidden', () => {
-  it('toggles the isManuallyHidden flag', () => {
-    expect(useActivityStore.getState().isManuallyHidden).toBe(false);
-    useActivityStore.getState().setManuallyHidden(true);
-    expect(useActivityStore.getState().isManuallyHidden).toBe(true);
-    useActivityStore.getState().setManuallyHidden(false);
-    expect(useActivityStore.getState().isManuallyHidden).toBe(false);
-  });
-});
+// `setManuallyHidden` describe deleted with Classic Layout removal (#325).
+// The flag was ActivityStrip's hide state; ActivityStrip is gone and the
+// AgentOrb popover open/closed state lives in the agent-orb-events bus.

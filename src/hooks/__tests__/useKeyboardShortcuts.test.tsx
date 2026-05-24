@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 
 /**
- * Unit tests for useKeyboardShortcuts (post-consolidation, ui-refresh #76).
+ * Unit tests for useKeyboardShortcuts (post-Classic-removal).
  *
  * Focus areas:
- *   - `uiPreview: "legacy"` runs the legacy palette path (⌘K, ⌘1–4, ⌘⇧P).
- *   - `uiPreview: "quiet-composer"` skips legacy palette handlers for those
- *     chords (the cmd bar hook owns them) and instead emits cmd-bar events.
- *   - uiPreview-agnostic chords fire in both modes (⌘⇧H, ⌘⇧O, ⌘⇧K, ⌘⇧R).
- *   - Scaffold bindings for ⌘⇧[/⌘⇧] (MRU cycling, task #77) dispatch a
- *     custom event and preventDefault.
+ *   - Cmd-bar focus chords (⌘K, ⌘1–4, ⌘⇧P, ⌘⇧F) emit on the cmd-bar bus.
+ *   - Agent-orb toggle (⌘⇧A) emits on the agent-orb bus.
+ *   - Other shell chords fire (⌘⇧H, ⌘⇧K, ⌘⇧R, ⌘⇧C cmd-bar focus, ⌘⇧E, ⌘,, ⌘T).
+ *   - Scaffold bindings for ⌃Tab/⌃⇧Tab (MRU cycling) dispatch a custom event.
  *   - Sidebar event chords (⌘⌥C, ⌘⌥R) dispatch named DOM events.
  *   - Listener is removed on unmount.
  *   - Editor zoom chords: ⌘+/⌘=, ⌘-, ⌘0.
@@ -22,30 +20,25 @@ import {
   subscribeToCmdBarEvents,
   type CmdBarEvent,
 } from "@/lib/cmd-bar-events";
+import {
+  subscribeToAgentOrbEvents,
+  type AgentOrbEvent,
+} from "@/lib/agent-orb-events";
 
 // ---------------------------------------------------------------------------
-// Settings-store mock. `uiPreview` is mutable so each `describe` block can
-// flip it. Other fields are the minimal set referenced by the hook.
+// Settings-store mock — the minimal set referenced by the hook.
 // ---------------------------------------------------------------------------
-
-type UiPreview = "legacy" | "quiet-composer";
 
 const mockSettings: {
-  uiPreview: UiPreview;
   sidebarPinned: boolean;
-  chatPanelOpen: boolean;
   theme: "light" | "dark" | "system";
   setTheme: ReturnType<typeof vi.fn>;
   setSidebarPinned: ReturnType<typeof vi.fn>;
-  setChatPanelOpen: ReturnType<typeof vi.fn>;
 } = {
-  uiPreview: "legacy",
   sidebarPinned: false,
-  chatPanelOpen: false,
   theme: "light",
   setTheme: vi.fn(),
   setSidebarPinned: vi.fn(),
-  setChatPanelOpen: vi.fn(),
 };
 
 vi.mock("@/stores/settings-store", () => {
@@ -136,7 +129,6 @@ import {
   REVEAL_IN_FINDER_EVENT,
   CYCLE_RECENT_EVENT,
 } from "@/hooks/useKeyboardShortcuts";
-import type { PaletteMode } from "@/lib/command-palette";
 
 // ---------------------------------------------------------------------------
 // Callbacks factory.
@@ -144,7 +136,6 @@ import type { PaletteMode } from "@/lib/command-palette";
 
 function makeCallbacks(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[0]> = {}) {
   const base = {
-    onPaletteOpen: vi.fn<(mode: PaletteMode) => void>(),
     onFindOpen: vi.fn(),
     onFindReplaceOpen: vi.fn(),
     onToggleFocusMode: vi.fn(),
@@ -156,9 +147,7 @@ function makeCallbacks(overrides: Partial<Parameters<typeof useKeyboardShortcuts
     onNewNote: vi.fn(),
     onOpenFolder: vi.fn(),
     onShortcutsOpen: vi.fn(),
-    onToggleActivityStrip: vi.fn(),
     onToggleRecording: vi.fn(),
-    onOpenActions: vi.fn(),
     focusMode: false,
   };
   return { ...base, ...overrides };
@@ -189,16 +178,15 @@ function dispatchKey(
 
 let capturedBarEvents: CmdBarEvent[];
 let unsubscribeBar: () => void;
+let capturedOrbEvents: AgentOrbEvent[];
+let unsubscribeOrb: () => void;
 
 beforeEach(() => {
   // Reset settings state.
-  mockSettings.uiPreview = "legacy";
   mockSettings.sidebarPinned = false;
-  mockSettings.chatPanelOpen = false;
   mockSettings.theme = "light";
   mockSettings.setTheme.mockReset();
   mockSettings.setSidebarPinned.mockReset();
-  mockSettings.setChatPanelOpen.mockReset();
 
   // Reset editor state.
   mockEditorState.openDocuments = [];
@@ -215,91 +203,30 @@ beforeEach(() => {
   unsubscribeBar = subscribeToCmdBarEvents((e) => {
     capturedBarEvents.push(e);
   });
+  capturedOrbEvents = [];
+  unsubscribeOrb = subscribeToAgentOrbEvents((e) => {
+    capturedOrbEvents.push(e);
+  });
 
   document.body.innerHTML = "";
 });
 
 afterEach(() => {
   unsubscribeBar();
+  unsubscribeOrb();
 });
 
 // ===========================================================================
-// Legacy palette path.
+// Cmd-bar focus chords — owned by the composed useCommandBarShortcuts hook.
+// useKeyboardShortcuts mounts the composed hook so the chords flow through.
 // ===========================================================================
 
-describe("useKeyboardShortcuts (legacy palette path)", () => {
-  it("⌘K opens the legacy command palette in default mode", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
+describe("useKeyboardShortcuts (cmd-bar focus chords)", () => {
+  it("⌘K emits cmd-bar focus with no prefix", () => {
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey("k", { metaKey: true });
 
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("default");
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it("⌘1 opens the actions dashboard (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("1", { metaKey: true });
-
-    expect(callbacks.onOpenActions).toHaveBeenCalledTimes(1);
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
-  });
-
-  it.each<[string, PaletteMode]>([
-    ["2", "mentions"],
-    ["3", "tags"],
-    ["4", "research"],
-  ])("⌘%s opens the palette in %s mode (legacy)", (key, mode) => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey(key, { metaKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith(mode);
-  });
-
-  it("⌘⇧P opens the palette in commands mode (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("P", { metaKey: true, shiftKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("commands");
-  });
-
-  it("⌘⇧F opens the palette in files mode (legacy)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("F", { metaKey: true, shiftKey: true });
-
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledWith("files");
-    expect(capturedBarEvents).toEqual([]);
-  });
-});
-
-// ===========================================================================
-// Quiet-composer path — palette family should be owned by the cmd-bar hook
-// and NOT trigger the legacy palette callbacks.
-// ===========================================================================
-
-describe("useKeyboardShortcuts (quiet-composer path)", () => {
-  beforeEach(() => {
-    mockSettings.uiPreview = "quiet-composer";
-  });
-
-  it("⌘K does NOT open the legacy palette (cmd bar owns it)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
-
-    dispatchKey("k", { metaKey: true });
-
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
-    // The composed useCommandBarShortcuts emits the focus event — assert
-    // the cmd-bar bus saw it so we know "something" happened.
     expect(capturedBarEvents).toEqual([{ type: "focus" }]);
   });
 
@@ -309,37 +236,29 @@ describe("useKeyboardShortcuts (quiet-composer path)", () => {
     ["3", "#"],
     ["4", "?"],
   ])("⌘%s emits cmd-bar focus with prefix %s", (digit, prefix) => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey(digit, { metaKey: true });
 
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
-    expect(callbacks.onOpenActions).not.toHaveBeenCalled();
     expect(capturedBarEvents).toEqual([{ type: "focus", prefix }]);
   });
 
   it("⌘⇧P emits cmd-bar focus with prefix '>'", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey("P", { metaKey: true, shiftKey: true });
 
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
     expect(capturedBarEvents).toEqual([{ type: "focus", prefix: ">" }]);
   });
 
   it("⌘⇧F emits cmd-bar focus with `:file ` prefix (PRD verb-prefixes #11)", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey("F", { metaKey: true, shiftKey: true });
 
-    expect(callbacks.onPaletteOpen).not.toHaveBeenCalled();
     // Trailing space in the prefix is intentional — the cursor lands
     // in the verb's filter slot so the user can type the query
-    // immediately. The bar's `focus` subscriber treats this prefix
-    // as chord-seeded so the first Esc collapses the bar.
+    // immediately.
     expect(capturedBarEvents).toEqual([{ type: "focus", prefix: ":file " }]);
   });
 
@@ -354,69 +273,52 @@ describe("useKeyboardShortcuts (quiet-composer path)", () => {
 });
 
 // ===========================================================================
-// uiPreview-agnostic chords. Same behaviour in both modes.
+// Shell-level chords.
 // ===========================================================================
 
-describe("useKeyboardShortcuts (uiPreview-agnostic chords)", () => {
-  it.each<UiPreview>(["legacy", "quiet-composer"])(
-    "⌘⇧H opens find-replace under uiPreview=%s",
-    (preview) => {
-      mockSettings.uiPreview = preview;
-      const callbacks = makeCallbacks();
-      renderHook(() => useKeyboardShortcuts(callbacks));
-
-      dispatchKey("H", { metaKey: true, shiftKey: true });
-
-      expect(callbacks.onFindReplaceOpen).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each<UiPreview>(["legacy", "quiet-composer"])(
-    "⌘F opens find under uiPreview=%s",
-    (preview) => {
-      mockSettings.uiPreview = preview;
-      const callbacks = makeCallbacks();
-      renderHook(() => useKeyboardShortcuts(callbacks));
-
-      dispatchKey("f", { metaKey: true });
-
-      expect(callbacks.onFindOpen).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it.each<UiPreview>(["legacy", "quiet-composer"])(
-    "⌘⇧K opens the Keyboard Shortcuts dialog under uiPreview=%s",
-    (preview) => {
-      mockSettings.uiPreview = preview;
-      const callbacks = makeCallbacks();
-      renderHook(() => useKeyboardShortcuts(callbacks));
-
-      dispatchKey("K", { metaKey: true, shiftKey: true });
-
-      expect(callbacks.onShortcutsOpen).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  // ⌘7 was removed live-test 2026-04-26 — ⌘⇧K is the canonical
-  // Keyboard Shortcuts dialog binding now (see useKeyboardShortcuts.ts).
-  // The ⌘⇧K coverage above is the only remaining assertion.
-
-  it("⌘⇧C toggles the chat panel", () => {
+describe("useKeyboardShortcuts (shell chords)", () => {
+  it("⌘⇧H opens find-replace", () => {
     const callbacks = makeCallbacks();
     renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("H", { metaKey: true, shiftKey: true });
+
+    expect(callbacks.onFindReplaceOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘F opens find", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("f", { metaKey: true });
+
+    expect(callbacks.onFindOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘⇧K opens the Keyboard Shortcuts dialog", () => {
+    const callbacks = makeCallbacks();
+    renderHook(() => useKeyboardShortcuts(callbacks));
+
+    dispatchKey("K", { metaKey: true, shiftKey: true });
+
+    expect(callbacks.onShortcutsOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("⌘⇧C emits cmd-bar focus when the bar is collapsed", () => {
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey("c", { metaKey: true, shiftKey: true });
 
-    expect(mockSettings.setChatPanelOpen).toHaveBeenCalledWith(true);
+    // No data-cmd-bar element in the DOM → treated as collapsed → focus.
+    expect(capturedBarEvents).toEqual([{ type: "focus" }]);
   });
 
-  it("⌘⇧A toggles the activity strip", () => {
-    const callbacks = makeCallbacks();
-    renderHook(() => useKeyboardShortcuts(callbacks));
+  it("⌘⇧A emits a toggle on the agent-orb bus", () => {
+    renderHook(() => useKeyboardShortcuts(makeCallbacks()));
 
     dispatchKey("a", { metaKey: true, shiftKey: true });
 
-    expect(callbacks.onToggleActivityStrip).toHaveBeenCalledTimes(1);
+    expect(capturedOrbEvents).toEqual([{ type: "toggle" }]);
   });
 
   it("⌘⇧R toggles recording", () => {
@@ -671,16 +573,20 @@ describe("useKeyboardShortcuts (cleanup)", () => {
     const callbacks = makeCallbacks();
     const { unmount } = renderHook(() => useKeyboardShortcuts(callbacks));
 
+    // ⌘K emits a cmd-bar focus event while mounted.
     dispatchKey("k", { metaKey: true });
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
+    expect(capturedBarEvents).toHaveLength(1);
 
     unmount();
 
+    // Post-unmount: chords should not emit anything new on either bus
+    // and shell callbacks should not fire.
     dispatchKey("k", { metaKey: true });
-    dispatchKey("7", { metaKey: true });
     dispatchKey("H", { metaKey: true, shiftKey: true });
+    dispatchKey("a", { metaKey: true, shiftKey: true });
 
-    // Same call count as before unmount.
-    expect(callbacks.onPaletteOpen).toHaveBeenCalledTimes(1);
+    expect(capturedBarEvents).toHaveLength(1);
+    expect(capturedOrbEvents).toHaveLength(0);
+    expect(callbacks.onFindReplaceOpen).not.toHaveBeenCalled();
   });
 });

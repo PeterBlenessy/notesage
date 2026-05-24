@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils";
  * ResearchMode — picker for the `?research` prefix mode (PRD
  * `2026-04-21-ui-refresh`, Phase 1, task #18).
  *
- * Wraps the existing `index_search_research` Tauri command (the SQLite-
- * backed canonical caller used by `CommandPalette` in research mode). The
- * picker is **pure presentation** — the parent FloatingCommandBar passes
+ * Wraps the `index_search_research` Tauri command (the SQLite-backed
+ * canonical caller). The picker is **pure presentation** — the parent
+ * FloatingCommandBar passes
  * the active filter text and an `onPick` callback. Selecting a row fires
  * `onPick` with an AttachmentChip the parent inserts; the parent is also
  * responsible for clearing the `?` token from the input.
@@ -47,12 +47,11 @@ export interface ResearchModeProps {
   }) => void;
 }
 
-/** Hard cap on results — keep the dropdown short and snappy. */
-// Live-test 2026-04-26 — bumped 10 → 50 to match the legacy palette's
-// research limit. The picker scrolls now (cmd bar tray is overflow-y-auto).
+/** Hard cap on results — keep the dropdown short and snappy. The picker
+ *  scrolls (cmd bar tray is `overflow-y-auto`). */
 const RESULT_LIMIT = 50;
 
-/** Debounce window for backend queries — mirrors CommandPalette's 300ms. */
+/** Debounce window for backend queries. */
 const QUERY_DEBOUNCE_MS = 300;
 
 function ResearchMode({

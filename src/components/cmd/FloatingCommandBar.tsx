@@ -56,8 +56,7 @@ import {
   unregisterSendImageHandler,
 } from "@/lib/ai/vision";
 // AttachmentStrip is no longer used here — chips render inline next
-// to the textarea (live-test 2026-04-25). The shared `AttachmentStrip`
-// stays in the legacy ChatInput.
+// to the textarea (live-test 2026-04-25).
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
@@ -264,19 +263,18 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const reducedMotion = useReducedMotion();
 
-  // Send wiring (#23). We reuse the existing `sendChatMessage` from
-  // `useAIOperations` — the same entry point `ChatPanel` calls — so all
-  // routing (direct API / ACP / Copilot LSP / local), provider lock checks,
-  // segment isolation, and downstream streaming come "for free".
+  // Send wiring (#23). Uses `sendChatMessage` from `useAIOperations` so
+  // all routing (direct API / ACP / Copilot LSP / local), provider lock
+  // checks, segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
   const isLoading = useChatStore((s) => s.isLoading);
 
-  // Parity with legacy ChatFooter (live-test 2026-04-26 audit gap #10) —
-  // input + send must be disabled while either an AgentSwitchCard or a
-  // pending-project-switch prompt is awaiting the user's choice. Without
-  // this, users can keep typing/sending mid-prompt, which races the
-  // resolver and may cause messages to land on the wrong segment.
+  // Live-test 2026-04-26 audit gap #10 — input + send must be disabled
+  // while either an AgentSwitchCard or a pending-project-switch prompt
+  // is awaiting the user's choice. Without this, users can keep
+  // typing/sending mid-prompt, which races the resolver and may cause
+  // messages to land on the wrong segment.
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const switchPending =
@@ -284,16 +282,16 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // Live-test 2026-04-26 audit gap #1 — mount the shared switch-prompt
   // hook so changing provider or project selection mid-conversation
-  // raises the AgentSwitchCard / pending-project-switch prompt the
-  // same way the legacy `ChatPanel` does. Without this, Quiet Composer
-  // silently sent messages to the new provider with full prior history.
+  // raises the AgentSwitchCard / pending-project-switch prompt.
+  // Without this, the bar would silently send messages to the new
+  // provider with full prior history.
   useChatSwitchPrompts();
 
   // #118 — chatView toggles the expanded bar between its usual chat
   // stream and a past-conversation list. The clock icon in
   // `CommandBarContext` fires `toggle-history` on the bus; the
   // subscription below flips this state. Selecting a conversation from
-  // the list returns to chat mode (same UX as legacy `ChatPanel`).
+  // the list returns to chat mode.
   const [chatView, setChatView] = useState<"chat" | "history">("chat");
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
@@ -305,12 +303,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [setActiveConversation],
   );
 
-  // #134 — context chips + explicit-attach offer. Mirrors the legacy
-  // ChatInput's render: auto-attached files appear as ContextPill rows
-  // above the input; when the active tab sits outside the selected
-  // project scope, an "Add this file to chat" affordance lets the user
-  // opt in. The hook is shared with ChatInput; reading it here keeps
-  // the UX consistent across shells.
+  // #134 — context chips + explicit-attach offer. Auto-attached files
+  // appear as ContextPill rows above the input; when the active tab
+  // sits outside the selected project scope, an "Add this file to
+  // chat" affordance lets the user opt in.
   const {
     contextItems,
     dismissItem,
@@ -321,8 +317,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #133 — dictation. The hook tries Web Speech first and falls back
   // to whisper-rs in WKWebView. `finalText` accumulates as transcription
   // completes; `interimText` is the live "still hearing you" preview
-  // shown as a placeholder while dictating. Mirrors the legacy
-  // `ChatInput` wiring exactly.
+  // shown as a placeholder while dictating.
   const {
     startDictation,
     stopDictation,
@@ -344,9 +339,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   }, [finalText]);
 
   // #127 parity — connection + routing state for the cross-provider
-  // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
-  // per-project `ai.provider` override layer; a follow-up can extract
-  // that into a shared hook if needed).
+  // resend/edit dialog (minus the per-project `ai.provider` override
+  // layer; a follow-up can extract that into a shared hook if needed).
   const interactiveConnection = useRoutingStore((s) =>
     s.getConnectionForUseCase("interactive"),
   );
@@ -376,7 +370,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
   // hands them to `sendChatMessage` where the Rust backend serializes
-  // them per-provider. Cleared on successful send. The legacy
+  // them per-provider. Cleared on successful send. The shared
   // `AttachmentStrip` component handles thumbnail rendering (see the
   // render block below the input).
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -399,9 +393,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // #126 parity — subscribe to the vision event bus so editor "Add to
   // chat" actions and sidebar drops route their images into the
-  // composer. Legacy `ChatInput` owns the same subscription; we mirror
-  // it here so the Quiet shell gets the same behaviour. Mounted once
-  // per bar instance — the bus rejects duplicate registrations.
+  // composer. Mounted once per bar instance — the bus rejects
+  // duplicate registrations.
   useEffect(() => {
     registerSendImageHandler((attachment) => {
       addImageAttachment(attachment);
@@ -459,8 +452,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // #127 parity — cross-provider resend/edit dialog state. Opens when
   // the message's recorded connectionId differs from the active
-  // `interactiveConnection`. ChatPanel owns the same state machine for
-  // the legacy surface.
+  // `interactiveConnection`.
   interface ResendDialogState {
     mode: "resend" | "edit";
     content: string;
@@ -781,7 +773,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   );
 
   // Live-test 2026-04-25 #151 — auto-resize the cmd-bar textarea so it
-  // grows with multi-line content (matches the legacy ChatInput pattern).
+  // grows with multi-line content.
   // Caps at 160 px (~6 lines) so the bar can't push past the doc area;
   // beyond that the textarea scrolls internally. Called from
   // `handleInputChange` AND from a `useEffect` on `inputValue` so
@@ -832,7 +824,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // `useAIOperations.sendChatMessage` pipeline. We REUSE this hook rather
   // than rebuild the streaming flow so the composer inherits provider
   // routing, project lock enforcement, segment isolation, and downstream
-  // streaming behaviour from `ChatPanel`.
+  // streaming behaviour.
   //
   // Chip handling for v1 is pragmatic: when the message has chips, we
   // prepend a tiny `[refs: …]` block so the references reach the model as
@@ -859,11 +851,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         : "";
     const rawContent = `${refsBlock}${trimmed}`;
 
-    // #126 parity — `@agent-name` / `/skill-name` expansion at send time.
-    // ChatPanel.doSend does the same pipeline via the shared helpers in
-    // `src/lib/ai/chat-expansion.ts`. Skipping these would send the
-    // literal prefix as model input, losing the agent swap + skill-body
-    // injection the user expects.
+    // #126 parity — `@agent-name` / `/skill-name` expansion at send time
+    // via the shared helpers in `src/lib/ai/chat-expansion.ts`. Skipping
+    // these would send the literal prefix as model input, losing the
+    // agent swap + skill-body injection the user expects.
     const agentResult = interpretAgentPrefix(rawContent, interactiveConnection);
     if (agentResult.skipSend) {
       // Only a bare `@agent-name` was typed — active agent has been
@@ -891,8 +882,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         originalConnectionId: editContext.originalConnectionId,
         currentConnectionId: interactiveConnection?.id ?? null,
       });
-      // Leave editContext in place — the dialog's confirm path clears it
-      // via `doSend` (same semantics as ChatPanel).
+      // Leave editContext in place — the dialog's confirm path clears
+      // it via `doSend`.
       return;
     }
 
@@ -914,9 +905,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       sendOpts.displayContent = rawContent;
       sendOpts.skillName = skillResult.skillName;
     }
-    // #126 parity — image attachments reach the provider via the same
-    // `attachments` opt ChatPanel uses. Cleared optimistically alongside
-    // the input / chips.
+    // #126 parity — image attachments reach the provider via the
+    // `attachments` opt. Cleared optimistically alongside the input /
+    // chips.
     if (pendingAttachments.length > 0) {
       sendOpts.attachments = pendingAttachments;
       setPendingAttachments([]);
@@ -991,8 +982,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // Resend a user message — same-provider path deletes + re-sends. On
   // cross-provider mismatch we open `ResendProviderDialog` so the user
-  // can pick which connection receives the resend. Mirrors
-  // `ChatPanel.handleResend` for #127 parity.
+  // can pick which connection receives the resend (#127 parity).
   const handleStreamResend = useCallback(
     (message: ChatMessageType) => {
       const currentId = interactiveConnection?.id ?? null;
@@ -1040,7 +1030,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const clearEditContext = useCallback(() => setEditContext(null), []);
 
   // #127 parity — dialog confirm/cancel + memoized options for the
-  // `ResendProviderDialog` render. Mirrors ChatPanel's handlers.
+  // `ResendProviderDialog` render.
   const handleResendDialogConfirm = useCallback(
     (choice: ResendProviderChoice) => {
       const dialog = resendDialog;
@@ -1733,10 +1723,10 @@ function PinnedResizeHandle() {
       onKeyDown={onKeyDown}
       data-cmd-bar-resize-handle
       className={cn(
-        // Hair-thin 1px strip on the left edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, generous
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // is the look the user requested (live-test 2026-04-26).
+        // Hair-thin 1px strip on the left edge: `w-px`, hover highlight,
+        // generous pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover is the look the user requested
+        // (live-test 2026-04-26).
         "absolute left-0 top-0 h-full w-px cursor-col-resize",
         // Invisible at rest (the bar's own border carries the edge);
         // distinctly visible on hover/focus.
@@ -1866,10 +1856,9 @@ function ExpandedResizeHandle({ side }: { side: "left" | "right" }) {
       data-cmd-bar-resize-handle
       data-cmd-bar-resize-side={side}
       className={cn(
-        // Hair-thin 1px strip on the chosen edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, 16px
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // (live-test 2026-04-26).
+        // Hair-thin 1px strip on the chosen edge: `w-px`, hover
+        // highlight, 16px pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover (live-test 2026-04-26).
         "absolute top-0 h-full w-px cursor-col-resize",
         side === "right" ? "right-0" : "left-0",
         "bg-transparent hover:bg-muted-foreground transition-colors",
@@ -2118,7 +2107,7 @@ interface ExpandedContentProps {
   isLoading: boolean;
   /** True while either an AgentSwitchCard or pending-project-switch
    *  prompt is awaiting the user's choice. Disables the textarea +
-   *  send button (parity with legacy ChatFooter). */
+   *  send button. */
   switchPending: boolean;
   pendingProjectSwitch: boolean;
   pendingAgentSwitch: boolean;
@@ -2216,10 +2205,9 @@ function ExpandedContent({
       {activePrefix ? null : <CommandBarContext chatView={chatView} />}
 
       {activePrefix ? null : chatView === "history" ? (
-        // #118 — Past-conversation list. Reuses the legacy
-        // `ChatHistoryView` so selection behaviour + per-conversation
-        // metadata (date, title, message count, branch count) matches
-        // the classic shell. Selecting a conversation flips back to
+        // #118 — Past-conversation list via `ChatHistoryView` — selection
+        // behaviour and per-conversation metadata (date, title, message
+        // count, branch count). Selecting a conversation flips back to
         // chat view via `onSelectConversation`.
         <div className="flex flex-1 flex-col min-h-0">
           <ChatHistoryView
@@ -2322,8 +2310,8 @@ function ExpandedContent({
           this border-t boundary, which made it visually a sibling of
           the bar's chrome instead of part of the input area. Moving
           it inside the same border-t container groups attachments +
-          input + send button as one block — same pattern the legacy
-          ChatInput uses (AttachmentStrip → textarea → send).
+          input + send button as one block (AttachmentStrip → textarea
+          → send).
 
           Paste / drag-drop handlers stay on this OUTER container so
           dropping anywhere in the attachments-or-input area attaches

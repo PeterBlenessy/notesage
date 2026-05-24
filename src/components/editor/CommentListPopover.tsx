@@ -52,9 +52,9 @@ interface CommentListProps {
  * relative timestamp, and per-row delegate. Click a row to fire
  * `onSelectComment(comment)` (and `onDismiss()`).
  *
- * Extracted from `CommentListPopover` so other shells (e.g. the Quiet
- * Composer `StatusTray`) can mount the same UI inside their own popover
- * without bringing the legacy trigger button along. The legacy
+ * Extracted from `CommentListPopover` so other surfaces (e.g. the
+ * `StatusTray`) can mount the same UI inside their own popover
+ * without bringing the trigger button along. The standalone
  * `CommentListPopover` continues to render this component inside its
  * own Radix popover \u2014 no behaviour change for existing callers.
  */
