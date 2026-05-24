@@ -149,20 +149,94 @@ describe('generate-changelog.ts — forbidden-pattern regexes', () => {
   });
 });
 
-describe('generate-changelog.ts — warn-only behaviour', () => {
+describe('generate-changelog.ts — bullet-linter warn-only behaviour', () => {
   it('uses console.warn to report offending bullets', () => {
     const script = loadScript();
     expect(script).toMatch(/console\.warn/);
   });
 
-  it('does NOT call process.exit(1) inside the linter (exit code stays 0)', () => {
+  it('does NOT call process.exit(1) inside the bullet-linter (warn-only by design)', () => {
     const script = loadScript();
-    // Find the linter function body
-    const linterMatch = script.match(
-      /function lint[\s\S]*?(?=\nfunction |\nexport |\nconst [A-Z_]|$)/i,
+    // Match the `lintUserFacingBullets` function body specifically — the new
+    // `lintLatestPlaceholder` function below it DOES return false to trigger
+    // exit, and that's correct.
+    const bulletLinterMatch = script.match(
+      /function lintUserFacingBullets[\s\S]*?(?=\nfunction )/,
     );
-    const linterBody = linterMatch ? linterMatch[0] : '';
-    // The linter section itself must not exit with code 1
-    expect(linterBody).not.toMatch(/process\.exit\(1\)/);
+    const body = bulletLinterMatch ? bulletLinterMatch[0] : '';
+    expect(body).not.toMatch(/process\.exit\(1\)/);
+  });
+});
+
+describe('generate-changelog.ts — blocking placeholder linter', () => {
+  it('defines the literal PLACEHOLDER_CHANGES_STRING constant', () => {
+    const script = loadScript();
+    expect(script).toMatch(/PLACEHOLDER_CHANGES_STRING\s*=\s*['"]_No user-visible changes\._['"]/);
+  });
+
+  it('defines INFRA_ONLY_OPTOUT_PATTERNS for the explicit opt-out', () => {
+    const script = loadScript();
+    expect(script).toMatch(/INFRA_ONLY_OPTOUT_PATTERNS/);
+    expect(script).toMatch(/Infrastructure-only release/);
+    expect(script).toMatch(/No user-visible changes vs/);
+  });
+
+  it('exports / defines a lintLatestPlaceholder function', () => {
+    const script = loadScript();
+    expect(script).toMatch(/function lintLatestPlaceholder/);
+  });
+
+  it('main() exits 1 when lintLatestPlaceholder returns false', () => {
+    const script = loadScript();
+    // The call site in main() must guard with `if (!lintLatestPlaceholder(...))`
+    // and call process.exit(1) on failure. Match the pattern loosely.
+    expect(script).toMatch(/if\s*\(\s*!lintLatestPlaceholder\([^)]*\)\s*\)\s*\{[\s\S]*?process\.exit\(1\)/);
+  });
+
+  it('checks the LATEST entry only (older entries grandfathered)', () => {
+    const script = loadScript();
+    // The function header comment / body should mention "latest" / "newest"
+    // semantics so the grandfathering intent is documented at the source.
+    expect(script).toMatch(/lintLatestPlaceholder[\s\S]{0,500}(latest|newest)/i);
+  });
+
+  it('accepts an opt-out by checking the raw file body for opt-out patterns', () => {
+    const script = loadScript();
+    // The function must read the raw file (not rely on the parsed `sections`)
+    // because the parser drops placeholder-only releases. Look for readFileSync
+    // inside the function body.
+    const fnMatch = script.match(/function lintLatestPlaceholder[\s\S]*?(?=\nfunction )/);
+    expect(fnMatch).toBeTruthy();
+    if (fnMatch) {
+      expect(fnMatch[0]).toMatch(/readFileSync/);
+    }
+  });
+});
+
+describe('aw-release-notes skill — file shape', () => {
+  it('exists at .claude/skills/aw-release-notes/SKILL.md', () => {
+    const skillPath = resolve(ROOT, '.claude/skills/aw-release-notes/SKILL.md');
+    const content = readFileSync(skillPath, 'utf-8');
+    expect(content).toMatch(/^---\nname: aw-release-notes/);
+  });
+
+  it('declares MODE input with alpha and stable values', () => {
+    const skillPath = resolve(ROOT, '.claude/skills/aw-release-notes/SKILL.md');
+    const content = readFileSync(skillPath, 'utf-8');
+    expect(content).toMatch(/MODE/);
+    expect(content).toMatch(/alpha/);
+    expect(content).toMatch(/stable/);
+  });
+
+  it('documents the stable-mode alpha-noise filter (drops alpha-introduced-then-alpha-fixed bugs)', () => {
+    const skillPath = resolve(ROOT, '.claude/skills/aw-release-notes/SKILL.md');
+    const content = readFileSync(skillPath, 'utf-8');
+    expect(content).toMatch(/alpha[\s-]?introduced/i);
+  });
+
+  it('documents the infra-only opt-out phrase the linter recognises', () => {
+    const skillPath = resolve(ROOT, '.claude/skills/aw-release-notes/SKILL.md');
+    const content = readFileSync(skillPath, 'utf-8');
+    expect(content).toMatch(/Infrastructure-only release/);
   });
 });

@@ -38,6 +38,22 @@ Bump the version, generate a changelog, and create a release history entry.
 
    **Before writing,** open the two most recent prior `docs/history/*.md` files and match their tone. Describe what the user will notice or can now do, not what file changed or which subsystem moved.
 
+   ### Stable promotion — consolidate the alpha series via `aw-release-notes`
+
+   When the release being prepared is a **stable** version (no `-alpha.N` suffix) AND there are alpha history files between the previous stable tag and now, do NOT write the body from scratch. Instead:
+
+   1. Find the previous stable tag: `git tag --list 'v*' | grep -v alpha | sort -V | tail -1`.
+   2. List every `docs/history/*.md` file with a version strictly between previous stable and the new version. These are the alpha entries to consolidate.
+   3. List the PRs merged since the previous stable tag (`gh pr list --search "merged:>$(git log -1 --format=%cI <prev-stable>) base:main" --json number,title --jq '.[].number' | paste -sd,`).
+   4. Invoke the **`aw-release-notes` skill** at `.claude/skills/aw-release-notes/SKILL.md` in `MODE=stable` with:
+      - `HISTORY_FILE` = the new file you just created (with the template body intact)
+      - `NEXT_VERSION` = the new stable version
+      - `PR_NUMBERS` = the comma-separated list from step 3
+      - `PREVIOUS_TAG` = the previous stable tag
+      - `PRIOR_ALPHA_FILES` = newline-separated list from step 2
+   5. The skill consolidates the alpha series into ONE coherent stable changelog — drops alpha-introduced-then-alpha-fixed bugs, collapses iterative refinements into single bullets, polishes for the wider stable audience. Read its output and edit if needed.
+   6. Run `pnpm generate-changelog` to regenerate `public/changelog.json` and `public/changelog-alpha.json`. The blocking linter will fail if the consolidated body still contains the placeholder string — fix and rerun.
+
    **Avoid in Features / Fixes / Improvements bullets:**
    - Task numbers (`#12`, `#23`, etc.) — internal
    - File paths (`useAIContext.ts`, `ChatFooter.tsx`) — internal

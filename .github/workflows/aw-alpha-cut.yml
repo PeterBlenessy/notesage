@@ -231,6 +231,35 @@ jobs:
           # pnpm may try to read tarballs; ensure we have access
           NPM_CONFIG_USERCONFIG: /dev/null
 
+      - name: Rewrite placeholder into user-facing prose (aw-release-notes skill)
+        # Editorial pass: replace `_No user-visible changes._` with prose drawn
+        # from the bundled PRs, per the skill's tone + structure rules.
+        # The skill regenerates changelog-alpha.json after the rewrite so the
+        # commit captures both the .md and the .json.
+        uses: anthropics/claude-code-action@v1
+        with:
+          model: sonnet
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.WORKFLOW_PAT }}
+          allowed_bots: "github-actions[bot]"
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Bash,Edit,Write,Read,Grep,Glob"
+          prompt: |
+            Run the `aw-release-notes` skill at
+            `.claude/skills/aw-release-notes/SKILL.md` in MODE=alpha against
+            the placeholder file at $HISTORY_FILE. Read the skill in full
+            and follow it precisely. After rewriting the file, run
+            `pnpm generate-changelog` and stage the .md + both
+            public/changelog*.json files. Do NOT commit — the next step
+            commits everything for you.
+        env:
+          MODE: alpha
+          HISTORY_FILE: docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${{ needs.preflight.outputs.next_version }}.md
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          PR_NUMBERS: ${{ needs.preflight.outputs.pr_numbers }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+
       - name: Commit on release branch and open auto-merge PR
         env:
           NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}

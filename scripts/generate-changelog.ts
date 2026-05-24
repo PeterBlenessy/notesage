@@ -140,15 +140,29 @@ function splitSemver(v: string): [[number, number, number], string | null] {
 
 // Patterns that are forbidden in user-facing bullets (Features / Improvements / Fixes).
 // Each entry is [regex, human-readable label].
-// The linter is warn-only: exit code stays 0 so the linter guides the writer
-// without blocking releases. See `.claude/skills/release/SKILL.md` §"User-facing
-// copy vs Under the hood" for the rationale and before/after examples.
+// The bullet-linter is warn-only: exit code stays 0 so the linter guides the writer
+// without blocking releases on historical entries. See `.claude/skills/release/SKILL.md`
+// §"User-facing copy vs Under the hood" for the rationale and before/after examples.
 const FORBIDDEN_BULLET_PATTERNS: [RegExp, string][] = [
   [/\d+\.\d+\.\d+/, 'version triple (e.g. 11.14.0)'],
   [/Dependabot/i, 'Dependabot reference'],
   [/transitive/i, '"transitive" distribution mechanic'],
   [/Cargo\.lock/i, 'Cargo.lock reference'],
   [/\bcrate\b/i, '"crate" internal term'],
+];
+
+// Placeholder text the aw-alpha-cut workflow writes when no editorial pass has
+// run yet. The aw-release-notes skill MUST replace this with prose before the
+// PR is opened — see `.claude/skills/aw-release-notes/SKILL.md`.
+const PLACEHOLDER_CHANGES_STRING = '_No user-visible changes._';
+
+// Explicit opt-out phrases that signal an intentional infra-only release.
+// When the intro contains one of these AND the Changes section is the
+// placeholder, the linter accepts it (releases that genuinely shipped nothing
+// user-visible — e.g. CI plumbing alphas).
+const INFRA_ONLY_OPTOUT_PATTERNS: RegExp[] = [
+  /Infrastructure-only release/i,
+  /No user-visible changes vs/i,
 ];
 
 /**
@@ -197,6 +211,79 @@ function lintUserFacingBullets(releases: ReleaseEntry[]): void {
   }
 }
 
+/**
+ * Blocking linter for the LATEST release entry only.
+ *
+ * Detects the case where the auto-cut placeholder was committed without an
+ * editorial rewrite. Returns true if the latest entry is OK to ship, false if
+ * it must be reworked. Older entries are grandfathered — they're immutable
+ * history at this point and rewriting them is not in scope.
+ *
+ * Rule:
+ *   - If the latest entry's `## Changes` content equals the literal placeholder
+ *     `_No user-visible changes._`, then the file body MUST contain one of the
+ *     INFRA_ONLY_OPTOUT_PATTERNS to be considered intentional. Otherwise it's
+ *     a forgotten rewrite and the linter fails (caller exits 1).
+ *
+ * The check reads the raw file content because the parser drops releases with
+ * empty sections — we need the source to distinguish "intentionally empty" from
+ * "accidentally empty".
+ */
+function lintLatestPlaceholder(historyDir: string): boolean {
+  const files = readdirSync(historyDir).filter(
+    (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
+  );
+  if (files.length === 0) return true;
+
+  // Find the latest file by version (same comparator the JSON output uses).
+  const sorted = files
+    .map((f) => ({ file: f, version: parseVersion(f) }))
+    .filter((e): e is { file: string; version: string } => e.version !== null)
+    .sort((a, b) => compareVersions(a.version, b.version));
+  if (sorted.length === 0) return true;
+
+  const latest = sorted[0];
+  const filepath = join(historyDir, latest.file);
+  const content = readFileSync(filepath, 'utf-8');
+
+  // Extract the ## Changes section content (between ## Changes and ## Under the hood, or EOF).
+  const changesMatch = content.match(/##\s+Changes\s*\n([\s\S]*?)(?=\n##\s|$)/);
+  if (!changesMatch) {
+    // No ## Changes section at all — unusual but not the placeholder case; pass through.
+    return true;
+  }
+  const changesBody = changesMatch[1].trim();
+
+  // Placeholder check: is the Changes section just the literal default text?
+  if (changesBody !== PLACEHOLDER_CHANGES_STRING) {
+    return true; // Real content present, OK.
+  }
+
+  // Placeholder is present. Check if the intro opts out explicitly.
+  const hasOptOut = INFRA_ONLY_OPTOUT_PATTERNS.some((p) => p.test(content));
+  if (hasOptOut) {
+    console.log(
+      `[changelog-linter] ${latest.file}: placeholder ## Changes accepted (infra-only opt-out present).`,
+    );
+    return true;
+  }
+
+  // Placeholder without opt-out — block.
+  console.error(
+    `[changelog-linter] BLOCKED: ${latest.file} has placeholder ## Changes section without an opt-out marker.`,
+  );
+  console.error(
+    `[changelog-linter] The aw-release-notes skill must replace "${PLACEHOLDER_CHANGES_STRING}" with editorial prose,`,
+  );
+  console.error(
+    `[changelog-linter] OR the intro paragraph must contain "Infrastructure-only release." / "No user-visible changes vs ..." to opt out.`,
+  );
+  console.error(
+    `[changelog-linter] See .claude/skills/aw-release-notes/SKILL.md for the editorial rules.`,
+  );
+  return false;
+}
+
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
     (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
@@ -216,6 +303,14 @@ function main() {
 
   // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
   lintUserFacingBullets(releases);
+
+  // Blocking linter: refuse to generate the JSON if the LATEST release entry
+  // is the unrewritten auto-cut placeholder. This is the gate that catches
+  // alpha cuts that skipped the editorial pass (whether the Claude action
+  // failed silently or someone reverted the rewrite).
+  if (!lintLatestPlaceholder(HISTORY_DIR)) {
+    process.exit(1);
+  }
 
   // Alpha feed = every release. Stable feed = entries without a prerelease
   // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies

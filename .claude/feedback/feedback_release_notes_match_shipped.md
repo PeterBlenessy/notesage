@@ -3,7 +3,12 @@ name: Release notes must match shipped state
 description: Every release (including patches) needs a docs/history/release-vX.Y.Z.md reconciled to what actually shipped. Drafted-too-early notes ship false statements to users via the in-app changelog dialog.
 type: feedback
 originSessionId: 0199f13c-9269-40e1-ae22-927b740ae013
-aw_applies: no
+aw_applies: yes
+aw_applies_to: [aw-alpha-cut, aw-release-notes, release]
+aw_note: |
+  The aw-release-notes skill MUST only describe what actually merged in the
+  bundle's PR list — no inventing capabilities, no carrying forward language
+  from prior versions that no longer reflects the current state.
 ---
 The draft `docs/history/<NNN>-release-vX.Y.Z.md` exists per release, but features evolve during live-testing. Reconcile the draft to the actually-shipped state BEFORE tagging — otherwise `public/changelog.json` (built from those files) and the same-name GitHub Release asset embed stale claims, and `useChangelog.ts` shows them in the in-app dialog.
 

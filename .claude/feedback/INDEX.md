@@ -75,13 +75,18 @@ every skill loads the rule regardless of skill identity.
 
 - [feedback_fix_all_test_failures.md](feedback_fix_all_test_failures.md) — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
 
+### aw-release-notes
+
+- [feedback_release_notes_match_shipped.md](feedback_release_notes_match_shipped.md) — Every release (including patches) needs a docs/history/release-vX.Y.Z.md reconciled to what actually shipped. Drafted-too-early notes ship false statements to users via the in-app changelog dialog.
+- [feedback_user_facing_release_notes.md](feedback_user_facing_release_notes.md) — The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood".
+
 ## Bucket counts
 
 | Bucket | Count | Loaded by AW skills? |
 |---|---|---|
-| `yes` | 29 | Yes — every skill that lists the rule in its `aw_applies_to` |
+| `yes` | 31 | Yes — every skill that lists the rule in its `aw_applies_to` |
 | `with-modification` | 3 | Yes — with the modification noted in the rule's `aw_note` |
-| `no` | 11 | No — interactive-only or out of AW scope |
+| `no` | 9 | No — interactive-only or out of AW scope |
 | **Total** | **43** | |
 
 ## All rules (alphabetical)
@@ -116,7 +121,7 @@ every skill loads the rule regardless of skill identity.
 | [feedback_promote_alpha_from_alpha_not_main.md](feedback_promote_alpha_from_alpha_not_main.md) | `no` | — | When user says "promote the latest alpha to stable", tag from the alpha's commit (or cherry-pick only the version bump on top of it), never from main HEAD. Main HEAD may contain post-alpha code that has not been live-tested. |
 | [feedback_red_team_tdd.md](feedback_red_team_tdd.md) | `yes` | aw-tdd | Drive security/isolation work from failing attack tests — write the attack, confirm it succeeds (leak is real), flip the assertion, land the fix, keep the test as a regression lock |
 | [feedback_reduce_rust_weight.md](feedback_reduce_rust_weight.md) | `yes` | aw-tdd | Project has too much Rust complexity. Prefer browser/frontend solutions over Rust backends when the browser can do the job. |
-| [feedback_release_notes_match_shipped.md](feedback_release_notes_match_shipped.md) | `no` | — | Every release (including patches) needs a docs/history/release-vX.Y.Z.md reconciled to what actually shipped. Drafted-too-early notes ship false statements to users via the in-app changelog dialog. |
+| [feedback_release_notes_match_shipped.md](feedback_release_notes_match_shipped.md) | `yes` | aw-alpha-cut, aw-release-notes, release | Every release (including patches) needs a docs/history/release-vX.Y.Z.md reconciled to what actually shipped. Drafted-too-early notes ship false statements to users via the in-app changelog dialog. |
 | [feedback_running_app_sees_main.md](feedback_running_app_sees_main.md) | `no` | — | When user is running pnpm tauri dev and testing live, sub-agent worktree changes are invisible to the app until merged to main. |
 | [feedback_search_all_renderers.md](feedback_search_all_renderers.md) | `yes` | aw-tdd | When a visual bug appears in a UI element, grep the whole codebase for every renderer of that element before assuming one file is "the" implementation. Especially in apps with multiple layout shells. |
 | [feedback_survey_shadcn_first.md](feedback_survey_shadcn_first.md) | `yes` | aw-tdd | Notesage's design system says "use shadcn first." When the user asks whether a shadcn component fits, the right answer is a structured survey of every relevant primitive (CommandItem, DropdownMenuRadioItem, DropdownMenuCheckboxItem, SelectItem, etc.), not "no, only X exists, build custom." Surveying first prevents recommending tailor-made components when shadcn already covers the pattern. |
@@ -127,7 +132,7 @@ every skill loads the rule regardless of skill identity.
 | [feedback_thorough_audit.md](feedback_thorough_audit.md) | `yes` | aw-review | When reviewing code or auditing a fix, the bar is whether the request has actually been satisfied. Paper-pass via "tests green + code looks right" is not enough; the review must compare the actual implementation against the actual asks (body + comments + reality). |
 | [feedback_touch_after_edit_for_vite.md](feedback_touch_after_edit_for_vite.md) | `no` | — | Claude Code's Edit tool can write files in a way that preserves the original mtime, which makes Vite's file watcher miss the change and the running app keeps stale code |
 | [feedback_two_way_prd_tasks_links.md](feedback_two_way_prd_tasks_links.md) | `yes` | aw-slice | Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always |
-| [feedback_user_facing_release_notes.md](feedback_user_facing_release_notes.md) | `no` | — | The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood". |
+| [feedback_user_facing_release_notes.md](feedback_user_facing_release_notes.md) | `yes` | aw-alpha-cut, aw-release-notes, release | The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood". |
 | [feedback_verify_prod_dev.md](feedback_verify_prod_dev.md) | `with-modification` | aw-tdd | Always verify changes work in BOTH production builds and dev mode before saying they're safe |
 | [feedback_write_feedback_to_repo.md](feedback_write_feedback_to_repo.md) | `yes` | all | When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes). |
 | [feedback_wysiwyg_exports.md](feedback_wysiwyg_exports.md) | `yes` | aw-tdd | Export styling must come from the editor, not template pickers. Templates are for document creation, not export. |

@@ -3,7 +3,14 @@ name: User-facing release notes must not include developer-facing detail
 description: The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood".
 type: feedback
 originSessionId: e0a9c6e6-c7bb-4748-a54a-f7fbc33596a2
-aw_applies: no
+aw_applies: yes
+aw_applies_to: [aw-alpha-cut, aw-release-notes, release]
+aw_note: |
+  The aw-release-notes skill enforces these rules when rewriting auto-cut
+  alpha placeholders and when consolidating an alpha series into a stable
+  release. The blocking placeholder linter in scripts/generate-changelog.ts
+  refuses to ship if the latest entry still has `_No user-visible changes._`
+  without the infra-only opt-out marker.
 ---
 The `### Features` / `### Improvements` / `### Fixes` sections of `docs/history/NNN-release-vX.Y.Z.md` are extracted by `scripts/generate-changelog.ts` into the user-visible in-app changelog AND into the update-available dialog (via the `notes` field of `latest.json` — see PR #268's automation that's coming).
 
