@@ -155,7 +155,7 @@ function resetStores() {
     },
   });
   useConnectionsStore.setState({ connections: [] });
-  useActivityStore.setState({ tasks: [], isManuallyHidden: false });
+  useActivityStore.setState({ tasks: [] });
   useChatStore.setState({ conversations: [], activeConversationId: null });
   useProjectMetadataStore.setState({ metadataMap: {} });
   usePermissionStore.setState({

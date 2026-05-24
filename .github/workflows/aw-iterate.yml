@@ -57,7 +57,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
 
@@ -72,6 +72,7 @@ jobs:
       - name: Run aw-iterate skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-sonnet-4-6           # iterate: bounded implementation of reviewer requests
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # WORKFLOW_PAT (not GITHUB_TOKEN) so the follow-up commit push
           # triggers `pull_request: synchronize` and CI re-runs on the PR.

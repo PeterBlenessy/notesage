@@ -177,84 +177,137 @@ export async function openProject(projectPath: string): Promise<void> {
 }
 
 /**
+ * Extracts the first meaningful text from a markdown string for use as a
+ * polling sentinel in openFile(). Strips leading markdown syntax characters
+ * (#, -, >, *, digits+period) and trims whitespace. Returns the first token
+ * that is at least 3 characters long (capped at 40) to avoid false positives
+ * from punctuation-only lines.
+ *
+ * @param content - Raw markdown file content
+ * @returns A stable text fragment that should appear in the editor once the
+ *          file is rendered, or an empty string if no suitable token found.
+ */
+export function extractFirstSignificantText(content: string): string {
+    for (const line of content.split('\n')) {
+        // Strip leading markdown syntax: headings, list markers, blockquotes
+        const stripped = line.replace(/^[#\-*>]+\s*/, '').replace(/^\d+\.\s+/, '').trim();
+        if (stripped.length >= 3) {
+            return stripped.substring(0, 40);
+        }
+    }
+    return '';
+}
+
+/**
  * Opens a file by name from the current test project.
- * Uses Tauri invoke to read the file and the editor store to open a tab.
- * This is more reliable than clicking the sidebar DOM.
+ * Uses Tauri invoke to read the file content, then opens the tab via the
+ * editor store and polls ProseMirror until the sentinel text is visible.
+ *
+ * The polling step is the key fix for issue #285: previously openFile()
+ * only waited for `.ProseMirror` to exist in the DOM, which always
+ * succeeds immediately after the first spec. The async `useEditorTabSwitch`
+ * pipeline (worker parse → requestAnimationFrame-deferred setContent) had
+ * not finished loading the new file's content, leaving the previous file's
+ * text visible to subsequent assertions.
  *
  * @param fileName - The file name (e.g., "README.md") or relative path (e.g., "nested/deep-note.md")
  * @param projectPath - Optional project path override. If not provided, uses the last opened project.
  */
 export async function openFile(fileName: string, projectPath?: string): Promise<void> {
-    // Read file content via Tauri invoke and open it in the editor store
-    const result = await browser.executeAsync(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (name: string, basePath: string | undefined, done: (result: any) => void) => {
+    // Step 1: Resolve the full file path (Node.js side)
+    const filePath = await browser.execute(
+        (name: string, basePath: string | undefined) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const w = window as any;
-
-            // Determine the file path
-            let filePath: string;
-            if (basePath) {
-                filePath = `${basePath}/${name}`;
-            } else {
-                // Use the last explorer folder as the base
-                const folders = w.__E2E_WORKSPACE_STORE__?.getState().explorerFolders ?? [];
-                if (folders.length === 0) {
-                    done({ error: 'No explorer folders open' });
-                    return;
-                }
-                filePath = `${folders[folders.length - 1].path}/${name}`;
-            }
-
-            w.__TAURI_INTERNALS__
-                .invoke('read_file', { path: filePath })
-                .then((content: string) => {
-                    // Open the file in the editor store
-                    if (w.__E2E_EDITOR_STORE__) {
-                        const bareFileName = name.includes('/') ? name.split('/').pop()! : name;
-                        w.__E2E_EDITOR_STORE__.getState().openTab(filePath, bareFileName, content);
-                    }
-                    done({ ok: true });
-                })
-                .catch((err: Error) => {
-                    done({ error: `Failed to read ${filePath}: ${err}` });
-                });
+            if (basePath) return `${basePath}/${name}`;
+            const folders = w.__E2E_WORKSPACE_STORE__?.getState().explorerFolders ?? [];
+            if (folders.length === 0) return null;
+            return `${folders[folders.length - 1].path}/${name}`;
         },
         fileName,
         projectPath,
-    ) as { ok?: boolean; error?: string };
+    ) as string | null;
 
-    if (result?.error) {
-        throw new Error(result.error);
+    if (!filePath) {
+        throw new Error(`openFile("${fileName}"): no explorer folders open and no projectPath provided`);
     }
 
-    // Wait for the ProseMirror editor to appear
-    await browser.waitUntil(
-        async () => {
-            const editor = await browser.$('.ProseMirror');
-            return editor.isExisting();
+    // Step 2: Read file content via Tauri invoke (Node.js side via tauriInvoke)
+    const content = await tauriInvoke<string>('read_file', { path: filePath });
+
+    // Step 3: Extract a sentinel from the file content before entering browser context.
+    // This gives us something to poll for in ProseMirror once setContent() completes.
+    const contentKey = extractFirstSignificantText(content);
+
+    // Step 4: Open the tab in the editor store (sync store update)
+    await browser.execute(
+        (fp: string, name: string, fileContent: string) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const w = window as any;
+            if (w.__E2E_EDITOR_STORE__) {
+                const bareFileName = name.includes('/') ? name.split('/').pop()! : name;
+                w.__E2E_EDITOR_STORE__.getState().openTab(fp, bareFileName, fileContent);
+            }
         },
-        {
-            timeout: DEFAULT_TIMEOUT,
-            timeoutMsg: `Editor did not appear within ${DEFAULT_TIMEOUT}ms after opening "${fileName}"`,
-        },
+        filePath,
+        fileName,
+        content,
     );
 
-    // Mark the tab clean so dirty tracking starts from a known baseline.
-    // Without this, the editor's setContent() triggers an onUpdate that
-    // may mark the tab dirty before the user has typed anything.
-    await browser.pause(200);
-    await browser.execute(() => {
+    // Step 5: Poll until ProseMirror shows the sentinel text (or filePath for empty files).
+    // This is the critical wait: useEditorTabSwitch's async pipeline must finish
+    // before we consider the file "open". Without this, stale content from the
+    // previous spec is still visible when the next assertion runs.
+    if (contentKey) {
+        await browser.waitUntil(
+            async () => {
+                const editor = await browser.$('.ProseMirror');
+                if (!(await editor.isExisting())) return false;
+                const text = await editor.getText();
+                return text.includes(contentKey);
+            },
+            {
+                timeout: DEFAULT_TIMEOUT,
+                timeoutMsg: `Editor did not show sentinel "${contentKey}" within ${DEFAULT_TIMEOUT}ms after opening "${fileName}"`,
+                interval: 100,
+            },
+        );
+    } else {
+        // Empty file fallback: poll until the editor store's active tab path matches.
+        await browser.waitUntil(
+            async () =>
+                browser.execute((fp: string) => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const w = window as any;
+                    if (!w.__E2E_EDITOR_STORE__) return false;
+                    const state = w.__E2E_EDITOR_STORE__.getState();
+                    const activeTab = state.openDocuments.find(
+                        (t: { id: string }) => t.id === state.activeTabId,
+                    );
+                    return activeTab?.filePath === fp;
+                }, filePath),
+            {
+                timeout: DEFAULT_TIMEOUT,
+                timeoutMsg: `Editor store did not activate "${filePath}" within ${DEFAULT_TIMEOUT}ms`,
+                interval: 100,
+            },
+        );
+    }
+
+    // Step 6: Mark the tab clean so dirty tracking starts from a known baseline.
+    await browser.execute((fp: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const w = window as any;
         if (w.__E2E_EDITOR_STORE__) {
             const state = w.__E2E_EDITOR_STORE__.getState();
-            const activeTab = state.openDocuments.find((t: { id: string }) => t.id === state.activeTabId);
-            if (activeTab) {
-                state.markTabClean(activeTab.id, activeTab.content);
+            const tab = state.openDocuments.find(
+                (t: { filePath: string }) => t.filePath === fp,
+            );
+            if (tab) {
+                state.markTabClean(tab.id, tab.content);
             }
         }
-    });
+    }, filePath);
 }
 
 /**

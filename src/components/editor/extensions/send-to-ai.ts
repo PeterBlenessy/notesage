@@ -1,8 +1,8 @@
 /**
- * ProseMirror plugin that adds a "Add to chat" context menu item
- * on image and drawing nodes.  Clicking the item compresses the image,
- * injects it into the chat input via the sendImageToChat event bus,
- * and opens the chat panel.
+ * ProseMirror plugin that adds an "Add to chat" context menu item
+ * on image and drawing nodes. Clicking the item compresses the image,
+ * injects it into the command bar via the `sendImageToChat` event bus,
+ * and focuses the bar.
  */
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -10,7 +10,7 @@ import { compressImage } from '@/lib/image-compress';
 import { sendImageToChat, supportsVision } from '@/lib/ai/vision';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { useSettingsStore } from '@/stores/settings-store';
+import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -104,9 +104,9 @@ function showMenu(x: number, y: number, onSend: () => void) {
   }, 0);
 }
 
-/** Open the chat panel via the settings store. */
-function openChatPanel() {
-  useSettingsStore.getState().setChatPanelOpen(true);
+/** Focus the floating command bar (Quiet Composer chat surface). */
+function focusCommandBar() {
+  emitCmdBarEvent({ type: 'focus' });
 }
 
 export const SendToAI = Extension.create({
@@ -148,7 +148,7 @@ export const SendToAI = Extension.create({
                       attachment = await compressImage(blob, { name: 'image.png' });
                     }
                     sendImageToChat(attachment);
-                    openChatPanel();
+                    focusCommandBar();
                     toast.success('Image added to chat');
                   } catch {
                     toast.error('Failed to process image');
@@ -177,7 +177,7 @@ export const SendToAI = Extension.create({
                           attachment = await compressImage(blob, { name: 'drawing.png' });
                         }
                         sendImageToChat(attachment);
-                        openChatPanel();
+                        focusCommandBar();
                         toast.success('Drawing added to chat');
                         return;
                       }
@@ -196,7 +196,7 @@ export const SendToAI = Extension.create({
                     const svgBlob = new Blob([svgContent], { type: 'image/svg+xml' });
                     const attachment = await compressImage(svgBlob, { name: 'drawing.png' });
                     sendImageToChat(attachment);
-                    openChatPanel();
+                    focusCommandBar();
                     toast.success('Drawing added to chat');
                   } catch {
                     toast.error('Failed to process drawing');

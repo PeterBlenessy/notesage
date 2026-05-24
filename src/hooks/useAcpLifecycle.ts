@@ -17,7 +17,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
@@ -412,6 +412,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         log.info('ai', `ACP eager session modes: ${JSON.stringify(session.modes)}`);
         setSessionModes(session.modes ?? null);
         setSessionConfigOptions(session.config_options ?? null);
+        backfillAcpCapabilities(effectiveConnection?.id, session);
 
         // Apply user's configured defaults only for fresh sessions. A restoration hit
         // returns the agent's existing mode/config — don't overwrite it.
@@ -571,8 +572,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       const userTimestamp = Date.now();
       // Stamp the target connection on the user message so later resend/edit
-      // actions (ChatPanel.handleResend, handleEdit — task #10) can detect
-      // provider mismatch. See matching write in useDirectApiChat.ts.
+      // actions in `FloatingCommandBar` can detect provider mismatch
+      // (project-data-isolation task #10). See matching write in
+      // useDirectApiChat.ts.
       const userMessage: ChatMessage = {
         role: 'user',
         content,
@@ -711,6 +713,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           log.info('ai', `ACP session config_options: ${JSON.stringify(session.config_options)}`);
           setSessionModes(session.modes ?? null);
           setSessionConfigOptions(session.config_options ?? null);
+          backfillAcpCapabilities(effectiveConnection?.id, session);
 
           // Set model via ACP-native mechanism (replaces CLI arg injection)
           if (effectiveConnection?.config?.model && session.session_id) {
@@ -983,6 +986,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         // Store session modes and config options for UI rendering
         setSessionModes(session.modes ?? null);
         setSessionConfigOptions(session.config_options ?? null);
+        backfillAcpCapabilities(effectiveConnection?.id, session);
 
         // Set model via ACP-native mechanism
         if (effectiveConnection?.config?.model && session.session_id) {

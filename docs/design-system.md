@@ -85,8 +85,8 @@ return (
 
 **Reference implementations** (all wrap their own provider, copy this shape):
 
-- `src/components/activity/ActivityStrip.tsx`
-- `src/components/chat/ChatPanel.tsx`
+- `src/components/activity/AgentOrb.tsx`
+- `src/components/cmd/FloatingCommandBar.tsx`
 - `src/components/CommitDialog.tsx`
 - `src/components/editor/BlockSizeToolbar.tsx`
 
@@ -280,11 +280,9 @@ Both the hover popover and the keyboard expansion use the same `derivePeekChildr
 
 Implementation: `src/components/sidebar/quiet/FolderPeek.tsx`.
 
-### TitleBar (quiet mode)
+### TitleBar
 
-QuietLayout replaces the legacy `TabBar` with nothing between the `TitleBar` and the editor surface — the breadcrumb row previously rendered here (`DocHead`) was removed in task #131. Instead, the `TitleBar` in quiet mode (`src/components/TitleBar.tsx`, `mode="quiet"`) carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a right-aligned "saved Xs ago" timer (`src/components/SavedLabel.tsx`). The filename itself is still centred in the bar via `editor-store.activeTabId`.
-
-The classic shell keeps its `TabBar` row where per-tab dirty dots live; `TitleBar` in `mode="classic"` renders the chat + activity toggle buttons instead of the saved-ago chrome.
+Sits at the top of the editor zone with no tab strip beneath it (a breadcrumb row used to render here as `DocHead`; removed in task #131). `TitleBar` (`src/components/TitleBar.tsx`) carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a close-document × button. The filename is centred in the bar via `editor-store.activeTabId`. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`).
 
 ### Status Tray + Status Bar
 
@@ -375,7 +373,7 @@ CSS rules in `globals.css` key off the attribute and:
 
 What stays unchanged: body text, borders, backgrounds, syntax highlighting, diff colors, `--color-destructive`. Desaturating chrome must NOT drop body-text contrast below WCAG AA — verified by `pnpm audit:contrast` (the inactive accent is a permanent regression-lock pair).
 
-Quiet Composer only — Classic Layout is on the Phase 3 deletion list, so the rules are scoped to the Quiet root rather than `<html>`.
+The CSS rules are scoped to the QuietLayout root (`[data-quiet-layout-root]`) rather than `<html>` so the cmd bar (which portals to `document.body`) intentionally stays bright.
 
 Anti-patterns to avoid:
 

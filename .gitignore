@@ -36,6 +36,10 @@ coverage/
 test-results/
 playwright-report/
 
+# Real Tauri E2E perf-results.json — written by performance.test.ts
+# (CI uploads as artifact; local runs leave a fresh copy).
+perf-results.json
+
 # Build outputs
 *.dmg
 *.app

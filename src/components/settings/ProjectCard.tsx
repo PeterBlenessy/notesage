@@ -43,10 +43,9 @@ function basename(path: string): string {
 }
 
 /**
- * Minimalistic action pill matching the legacy chat-footer style — a
- * compact `h-7` button with subtle hover ring, optional leading icon,
- * and compact text label. Opens a popover, fires an action, or shows
- * state.
+ * Minimalistic action pill — a compact `h-7` button with subtle hover
+ * ring, optional leading icon, and compact text label. Opens a popover,
+ * fires an action, or shows state.
  */
 function ActionPill({
   icon: Icon,

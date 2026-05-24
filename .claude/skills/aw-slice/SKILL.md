@@ -12,6 +12,12 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 - `ISSUE_NUMBER` — the parent issue to slice
 - The issue body, title, labels, and any prior comments (read via `gh issue view`)
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Process
 
 1. **Read the issue, including comments.**
@@ -59,10 +65,54 @@ Decide how a refined GitHub issue should be implemented: as one PR (the common c
 4. **Decide: don't slice OR slice into N value-aligned children.**
 
    - **0 value groups** — the issue describes only internal work with no user-visible result. Post a clarification comment asking "what user behaviour does this enable?" Leave `slice` in place. Stop.
-   - **1 value group (the common case)** — DO NOT slice. The parent itself becomes the work unit:
-     - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
-     - Post a "passing through unsliced" comment (template below)
-     - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
+   - **1 value group** — check scope before deciding:
+     - **Estimate the implementation size**: count distinct files that need to change and estimate
+       total lines added/removed based on the issue body's "Files likely to change" section and
+       acceptance criteria.
+     - **If scope is large (estimated >500 lines OR >15 files modified)** → phased child issues path
+       (see below).
+     - **If scope is normal (<500 lines AND ≤15 files)** → DO NOT slice. The parent itself becomes
+       the work unit:
+       - Update parent labels: remove `slice`, add `tdd` and exactly one of `hitl` / `afk`
+       - Post a "passing through unsliced" comment (template below)
+       - Stop. `aw-tdd` will pick up the parent directly and produce one PR.
+
+   - **1 value group, too large for one TDD run (>500 lines OR >15 files)** — one user value but
+     total implementation scope exceeds what a single TDD run can reliably complete. Split into
+     sequential **child issues** (NOT peer issues). Each child implements one phase and produces one
+     PR; phases must land in order. The phases do NOT need to be independently shippable — they just
+     need to be coherently separable steps toward the one value.
+
+     When to use this path:
+     - Estimated total diff is >500 lines or >15 files
+     - You can identify 3+ coherent phases each with its own "red test → green" cycle
+     - Each phase's files are substantially separate from the others (minimal overlap)
+     - The phases form a strict sequence (phase N depends on phase N-1)
+
+     Mechanism:
+     - First create all child issues via `gh issue create`, then link them to the parent using the
+       GraphQL `addSubIssue` mutation (requires the node ID of both parent and child):
+       ```
+       OWNER=$(gh repo view --json owner --jq '.owner.login')
+       REPO=$(gh repo view --json name --jq '.name')
+       PARENT_ID=$(gh api graphql -f query="query { repository(owner:\"$OWNER\",name:\"$REPO\") { issue(number: <N>) { id } } }" -q '.data.repository.issue.id')
+       CHILD_ID=$(gh api graphql -f query="query { repository(owner:\"$OWNER\",name:\"$REPO\") { issue(number: <M>) { id } } }" -q '.data.repository.issue.id')
+       gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\" }) { issue { id } } }"
+       ```
+     - Title format: `<parent title> — Phase N: <description>`
+       (e.g. `Remove Classic Layout — Phase 2: delete ChatPanel & ActivityStrip`)
+     - Body format: use the "Implementation subtask template". First line MUST be `Child of #<parent>`.
+     - Labels:
+       - Phase 1: category + `refined` + `tdd` + `afk` (auto-starts immediately)
+       - Phases 2+: category + `refined` + `tdd` + `hitl` (human verifies each phase before unblocking the next)
+     - Add `Depends on: #<prior-phase>` in each child's body (except phase 1)
+     - Update parent labels: remove `slice`, add `sliced`
+     - Post a phased-work comment (template below). Stop.
+
+     **Default to NOT using this path.** Most large-looking issues are actually one phase. Only use
+     child issues when each phase independently satisfies real acceptance criteria — not just "this is
+     a lot of code."
+
    - **N independent value groups** — split into N peer issues (NOT sub-issues; no parent/child link):
      - **The original issue becomes the FIRST peer slice.** Rewrite its body to match the first value group only. Update its labels: remove `slice`, add `tdd` + one of `hitl` / `afk`. The original keeps its number, history, and comments.
      - **Create N-1 new peer issues**, one per remaining value group:
@@ -118,6 +168,9 @@ When (b) above triggers:
 3. Each ships as its own draft PR in parallel. User picks the winner, merges, closes losing peers; tracking issue stays open until manually closed.
 
 ## Peer issue references
+
+Child issues (sequential phase path) ARE linked via the GraphQL `addSubIssue` mutation — they have a
+real parent/child relationship visible in the GitHub UI.
 
 Peer issues are NOT linked via the GraphQL `addSubIssue` mutation — there is no parent/child relationship. Instead, the relationship is captured in the body text. Use one of these reference lines as the FIRST non-heading line of every newly-created peer's body:
 
@@ -264,6 +317,20 @@ Each prototype lands as its own draft PR. Try the live builds, merge the winner,
 This issue is now `awaiting-prototypes`. No further automation will run on it until you act.
 ```
 
+**Phased child issues path:**
+
+```
+> *Sliced by the `aw-slice` skill — one user value, split into N sequential phases.*
+
+This issue delivers one value but the implementation has <N> distinct sequential phases. Created <N> child issues:
+
+- #<A> — Phase 1: <description> · `afk` — auto-starts
+- #<B> — Phase 2: <description> · `hitl` — starts after human verifies phase 1 lands cleanly
+- #<C> — Phase 3: <description> · `hitl` — starts after phase 2
+
+Each child has `Child of #<this>` in its body and `Depends on:` its predecessor. Phases land in order; phases 2+ are `hitl` so you can verify each phase before the next begins.
+```
+
 **No-user-value path:**
 
 ```
@@ -274,8 +341,30 @@ This issue describes internal work without a user-observable result. Could you c
 
 ## Constraints from the dev process
 
-- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path), or `slice` → `awaiting-research` (research path), or `slice` → `awaiting-prototypes` (prototype-peers path).
+- Parent label transitions: `slice` → `tdd + (afk|hitl)` (don't-slice path), or `slice` → `sliced` (slice path, including phased child issues path), or `slice` → `awaiting-research` (research path), or `slice` → `awaiting-prototypes` (prototype-peers path).
 - Re-slicing after research: human or automation flips `awaiting-research` → `slice` on the parent.
 - Prototype-peers parent stays `awaiting-prototypes` until the user closes it manually after picking a winner. No auto-action.
 - The `aw-tdd` workflow picks up any issue labeled `tdd` + `afk` regardless of whether it was the original or a peer split off from a multi-value parent.
 - One PR = one user value. If a PR delivers two unrelated values, it was sliced wrong — split into two PRs.
+
+## Most-relevant feedback rules for this skill
+
+When context budget is tight, prioritise loading these rules from
+`.claude/feedback/` (the full set is in `.claude/feedback/INDEX.md`).
+
+<!-- BEGIN auto-generated by scripts/gen-feedback-index.py — do not hand-edit -->
+
+**Universal (load for every skill):**
+
+- `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
+
+**Specific to `aw-slice`:**
+
+- `.claude/feedback/feedback_attach_docs_to_issue.md` — When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue
+- `.claude/feedback/feedback_task_done_format.md` — Use checkmark emoji in task title to mark done, never use checkbox syntax
+- `.claude/feedback/feedback_task_status_marks.md` — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
+- `.claude/feedback/feedback_two_way_prd_tasks_links.md` — Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always
+
+<!-- END auto-generated -->

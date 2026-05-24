@@ -57,6 +57,7 @@ jobs:
       - name: Run aw-triage skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-haiku-4-5-20251001   # triage: pattern-match classification, reversible
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
           # PR creation) trigger the built-in recursion guard — downstream
@@ -131,6 +132,7 @@ jobs:
       - name: Run aw-refine skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-opus-4-7             # refine: writes the spec — wrong here = wrong everywhere
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
           # PR creation) trigger the built-in recursion guard — downstream
@@ -186,6 +188,7 @@ jobs:
       - name: Run aw-slice skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-opus-4-7             # slice: architectural judgment, defines PR strategy
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use GITHUB_TOKEN so the agent's gh calls (label changes, comments,
           # PR creation) trigger the built-in recursion guard — downstream
@@ -260,7 +263,7 @@ jobs:
     needs: slice
     if: needs.slice.outputs.ready == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     concurrency:
       group: aw-stage-tdd-${{ github.event.issue.number }}
       cancel-in-progress: false
@@ -273,7 +276,7 @@ jobs:
           # "Choice: WORKFLOW_PAT for bot-PR CI gating" in
           # docs/agentic-workflow.md.
           token: ${{ secrets.WORKFLOW_PAT }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 9
       - uses: actions/setup-node@v5
@@ -282,9 +285,26 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Select model (escalate to Opus after 2 failures)
+        id: model_select
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          ATTEMPTS=$(gh issue view "$ISSUE" --json comments \
+            --jq '[.comments[] | select(.body | startswith("> *Starting implementation"))] | length')
+          if [[ "$ATTEMPTS" -ge 2 ]]; then
+            echo "model=claude-opus-4-7" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — escalating to Opus"
+          else
+            echo "model=claude-sonnet-4-6" >> "$GITHUB_OUTPUT"
+            echo "TDD attempt $((ATTEMPTS+1)) — using Sonnet"
+          fi
       - name: Run aw-tdd skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: ${{ steps.model_select.outputs.model }}   # sonnet default; escalates to opus after 2 failures
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use WORKFLOW_PAT for the tdd job specifically — the bot-authored
           # PR it creates needs to fire `pull_request` events to run CI.

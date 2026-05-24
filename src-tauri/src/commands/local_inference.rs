@@ -1015,3 +1015,26 @@ pub fn build_server_args(
     }
     args
 }
+
+#[cfg(test)]
+mod tests {
+    /// Verify the bundled llama.cpp version pin is at least b9000.
+    ///
+    /// This test fails on the old b8648 pin and passes once the file is bumped
+    /// to a recent stable tagged release (b9000+). Format must be `b{number}`.
+    #[test]
+    fn llama_cpp_version_is_at_least_b9000() {
+        let version = include_str!("../../binaries/LLAMA_CPP_VERSION").trim();
+        assert!(
+            version.starts_with('b'),
+            "LLAMA_CPP_VERSION must be in bNNNN format, got: {version}"
+        );
+        let build_num: u32 = version[1..]
+            .parse()
+            .expect("LLAMA_CPP_VERSION build number must be a valid integer");
+        assert!(
+            build_num >= 9000,
+            "LLAMA_CPP_VERSION must be at least b9000 for this bump; currently pinned to {version}"
+        );
+    }
+}

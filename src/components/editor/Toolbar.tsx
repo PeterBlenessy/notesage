@@ -72,14 +72,17 @@ interface ToolbarProps {
   sourceWordWrap?: boolean;
   onToggleWordWrap?: () => void;
   /**
-   * Visual variant.
-   * - `"inline"` (default, legacy): flat bar, relies on the parent wrapper for
+   * Visual variant. The app exclusively uses `"pill"`; the `"inline"`
+   * variant is retained as a fallback for direct callers / regression
+   * tests and could be removed in a follow-up cleanup PR.
+   * - `"inline"` (default): flat bar, relies on the parent wrapper for
    *   the bottom border. Byte-identical to pre-#49 rendering.
-   * - `"pill"` (quiet composer): self-contained rounded pill with
-   *   `backdrop-blur`, subtle border + shadow. Positioning is the caller's
-   *   responsibility (e.g. `QuietLayout` absolutely positions at top-centre).
-   *   Tagged with `data-quiet-toolbar` so the `.typing` fade-on-type class
-   *   (#50) can target it without coupling to Tailwind classnames.
+   * - `"pill"`: self-contained rounded pill with `backdrop-blur`,
+   *   subtle border + shadow. Positioning is the caller's
+   *   responsibility (e.g. `QuietLayout` absolutely positions at
+   *   top-centre). Tagged with `data-quiet-toolbar` so the `.typing`
+   *   fade-on-type class (#50) can target it without coupling to
+   *   Tailwind classnames.
    */
   variant?: "inline" | "pill";
 }

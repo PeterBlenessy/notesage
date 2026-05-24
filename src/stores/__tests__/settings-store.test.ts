@@ -69,11 +69,7 @@ vi.mock('@/lib/tauri-storage', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
-import {
-  useSettingsStore,
-  shouldShowPreviewInvitation,
-  PREVIEW_INVITATION_REAPPEAR_MS,
-} from '../settings-store';
+import { useSettingsStore } from '../settings-store';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,7 +119,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   sidebarOpen: true,
   sidebarPinned: true,
   sidebarWidth: 280,
-  chatPanelOpen: false,
   notesRootPath: '~/Notesage',
   gitEnabled: false,
   personasMigrated: false,
@@ -154,7 +149,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
-  uiPreview: 'legacy',
   accent: 'default',
   cmdBarPinned: false,
   cmdBarPinnedWidth: 400,
@@ -170,8 +164,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   sidebarRecentCap: 5,
   sidebarTagsCap: 5,
   sidebarMentionsCap: 5,
-  previewInvitationShownAt: null,
-  previewInvitationDismissedAt: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -209,7 +201,6 @@ describe('initial state defaults', () => {
     expect(s.sidebarOpen).toBe(true);
     expect(s.sidebarPinned).toBe(true);
     expect(s.sidebarWidth).toBe(280);
-    expect(s.chatPanelOpen).toBe(false);
     expect(s.notesRootPath).toBe('~/Notesage');
     expect(s.gitEnabled).toBe(false);
     expect(s.personasMigrated).toBe(false);
@@ -337,11 +328,6 @@ describe('boolean setters', () => {
   it('setSidebarPinned', () => {
     useSettingsStore.getState().setSidebarPinned(false);
     expect(useSettingsStore.getState().sidebarPinned).toBe(false);
-  });
-
-  it('setChatPanelOpen', () => {
-    useSettingsStore.getState().setChatPanelOpen(true);
-    expect(useSettingsStore.getState().chatPanelOpen).toBe(true);
   });
 
   it('setGitEnabled', () => {
@@ -1045,39 +1031,12 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
 });
 
 // ===========================================================================
-// uiPreview flag (Phase 1 of Quiet Composer rollout — task #1)
+// v18 → v19 migration (Classic layout removal — drop deleted fields)
 // ===========================================================================
 
-describe('uiPreview flag', () => {
-  it('defaults to "legacy" on a fresh install', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-  });
-
-  it('setUiPreview flips between "legacy" and "quiet-composer"', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-
-    useSettingsStore.getState().setUiPreview('legacy');
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-  });
-
-  it('persists across a simulated restart', async () => {
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-  });
-
-  it('v3 → v5 migration: adds uiPreview: "legacy" (and accent: "default") to a state that lacks them', async () => {
-    // Existing user upgrade: persisted at version 3, no uiPreview/accent fields.
-    // Migration chain runs both <4 (uiPreview) and <5 (accent) branches.
-    const v3State = {
+describe('v18 → v19 migration (Classic layout removal)', () => {
+  it('strips uiPreview, chatPanelOpen, previewInvitation*, revertInvitation* from persisted state', async () => {
+    const v18State = {
       state: {
         theme: 'dark',
         contrastLevel: 50,
@@ -1087,35 +1046,42 @@ describe('uiPreview flag', () => {
         sidebarOpen: true,
         sidebarPinned: true,
         sidebarWidth: 280,
-        chatPanelOpen: false,
+        chatPanelOpen: true,
         notesRootPath: '~/Notesage',
         gitEnabled: false,
         logLevel: 'warn',
         printLayout: false,
+        uiPreview: 'quiet-composer',
+        accent: 'default',
+        previewInvitationShownAt: 1234567890,
+        previewInvitationDismissedAt: 1234567899,
+        revertInvitationShownAt: 1234567890,
+        revertInvitationDismissedAt: 1234567899,
       },
-      version: 3,
+      version: 18,
     };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v3State));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v18State));
 
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
+    // Pre-existing kept fields survive untouched.
     const s = useSettingsStore.getState();
-    expect(s.uiPreview).toBe('legacy');
-    // Pre-existing fields survive untouched.
     expect(s.theme).toBe('dark');
     expect(s.contrastLevel).toBe(50);
+    expect(s.accent).toBe('default');
 
-    // The persisted JSON should reflect the bumped version and both new fields,
-    // so the migration doesn't re-run on the next launch. The chain runs all
-    // the way to the current version, so subsequent migrations (#28's
-    // cmdBarPinned defaults) also apply.
+    // The persisted JSON is at v19 with the deleted fields gone.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
-    expect(parsed.state.uiPreview).toBe('legacy');
-    expect(parsed.state.accent).toBe('default');
+    expect(parsed.version).toBe(19);
+    expect(parsed.state.uiPreview).toBeUndefined();
+    expect(parsed.state.chatPanelOpen).toBeUndefined();
+    expect(parsed.state.previewInvitationShownAt).toBeUndefined();
+    expect(parsed.state.previewInvitationDismissedAt).toBeUndefined();
+    expect(parsed.state.revertInvitationShownAt).toBeUndefined();
+    expect(parsed.state.revertInvitationDismissedAt).toBeUndefined();
   });
 });
 
@@ -1255,7 +1221,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1401,7 +1367,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1720,7 +1686,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1776,258 +1742,6 @@ describe('v7 → v8 migration (sidebar composition)', () => {
   });
 });
 
-// ===========================================================================
-// Preview invitation banner — fields, setters, helper, migration
-// (ui-refresh task #97)
-// ===========================================================================
-
-describe('preview invitation — defaults', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('previewInvitationShownAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationShownAt).toBeNull();
-  });
-
-  it('previewInvitationDismissedAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationDismissedAt).toBeNull();
-  });
-});
-
-describe('markPreviewInvitationShown / dismissPreviewInvitation', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('markPreviewInvitationShown sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().markPreviewInvitationShown();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationShownAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-
-  it('dismissPreviewInvitation sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().dismissPreviewInvitation();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationDismissedAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-});
-
-describe('shouldShowPreviewInvitation — pure helper', () => {
-  const now = 1_000_000_000_000; // arbitrary fixed clock
-
-  it('returns false when user is already on quiet-composer', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'quiet-composer',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when never shown and on legacy', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when shown but never dismissed (sticky until user acts)', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns false when dismissed less than 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: now - 1_000,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when dismissed exactly 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - PREVIEW_INVITATION_REAPPEAR_MS - 1,
-          previewInvitationDismissedAt: now - PREVIEW_INVITATION_REAPPEAR_MS,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when dismissed > 30 days ago', () => {
-    const longAgo = now - PREVIEW_INVITATION_REAPPEAR_MS - 10_000;
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: longAgo,
-          previewInvitationDismissedAt: longAgo,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('PREVIEW_INVITATION_REAPPEAR_MS is 30 days', () => {
-    expect(PREVIEW_INVITATION_REAPPEAR_MS).toBe(30 * 24 * 60 * 60 * 1000);
-  });
-});
-
-describe('preview invitation — persistence round-trip', () => {
-  it('persists shownAt and dismissedAt across restart', async () => {
-    const shown = Date.now() - 1000;
-    const dismissed = Date.now();
-    useSettingsStore.setState({
-      previewInvitationShownAt: shown,
-      previewInvitationDismissedAt: dismissed,
-    });
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
-
-describe('v8 → v9 migration (preview invitation timestamps)', () => {
-  it('adds previewInvitationShownAt: null and previewInvitationDismissedAt: null to a v8 state lacking them', async () => {
-    const v8State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-      },
-      version: 8,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v8State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBeNull();
-    expect(s.previewInvitationDismissedAt).toBeNull();
-
-    const raw = localStorageMock.getItem(STORAGE_KEY);
-    expect(raw).toBeTruthy();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
-    expect(parsed.state.previewInvitationShownAt).toBeNull();
-    expect(parsed.state.previewInvitationDismissedAt).toBeNull();
-  });
-
-  it('preserves existing preview invitation timestamps when present (idempotent)', async () => {
-    const shown = 1_700_000_000_000;
-    const dismissed = 1_700_000_500_000;
-    const v9State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-        previewInvitationShownAt: shown,
-        previewInvitationDismissedAt: dismissed,
-      },
-      version: 9,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v9State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
 
 describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
   it('adds cmdBarExpandedWidth: 640 to a v9 state lacking it', async () => {
@@ -2077,7 +1791,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -2148,7 +1862,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2270,7 +1984,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2292,7 +2006,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2318,7 +2032,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2452,7 +2166,7 @@ describe('v14 migration: releaseChannel', () => {
     expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV13State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2460,7 +2174,7 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2498,7 +2212,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
     expect(useSettingsStore.getState().htmlViewerAllowForms).toBe(true);
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV14State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2506,7 +2220,7 @@ describe('v15 migration: htmlViewerAllowForms', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2545,7 +2259,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
     expect(useSettingsStore.getState().htmlViewerAllowScripts).toBe(true);
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV15State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2553,7 +2267,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
   });
 });
 
@@ -2604,7 +2318,7 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
     expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(true);
   });
 
-  it('bumps persisted version to 17 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV16State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2612,6 +2326,6 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(19);
   });
 });

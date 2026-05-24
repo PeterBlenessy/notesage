@@ -55,6 +55,7 @@ jobs:
       - name: Run aw-review skill
         uses: anthropics/claude-code-action@v1
         with:
+          model: claude-opus-4-7             # review: quality gate, must match tdd quality
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # See aw-pipeline.yml for the rationale.
           github_token: ${{ secrets.GITHUB_TOKEN }}

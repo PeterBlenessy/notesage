@@ -40,13 +40,13 @@ interface ChatMessageListProps {
   onSend: (content: string, attachments?: import('@/lib/ai/types').ImageAttachment[]) => void;
   selectedProjectPaths: string[];
   /**
-   * Resend signature takes the full `ChatMessageType` so the ChatPanel can read
+   * Resend signature takes the full `ChatMessageType` so the host can read
    * `message.connectionId` to gate cross-provider resends on the confirmation
    * dialog (#10 in project-data-isolation).
    */
   onResend?: (message: ChatMessageType) => void;
   /**
-   * Edit signature mirrors resend: the full `ChatMessageType` so ChatPanel can
+   * Edit signature mirrors resend: the full `ChatMessageType` so the host can
    * capture `message.connectionId` in the edit context and detect provider
    * mismatches at send time.
    */

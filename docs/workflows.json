@@ -1,0 +1,308 @@
+{
+  "$schema": "Notesage workflow viewer data — see docs/workflows.html",
+  "canvas": { "width": 1380, "height": 900 },
+  "categories": {
+    "frontend":     { "label": "Frontend UI",      "fill": "#e6f0ff", "darkFill": "#1a2742", "stroke": "#5b8def" },
+    "state":        { "label": "State / Hooks",    "fill": "#f0e6ff", "darkFill": "#2a1f42", "stroke": "#8d5bef" },
+    "ipc":          { "label": "IPC Boundary",     "fill": "#fff4e0", "darkFill": "#3a2c12", "stroke": "#d49434" },
+    "rust-io":      { "label": "Rust — I/O & State","fill": "#e6ffea", "darkFill": "#152a1a", "stroke": "#4eaf63" },
+    "rust-ai":      { "label": "Rust — AI / Agents","fill": "#e0f7ff", "darkFill": "#0f2c3a", "stroke": "#3aa8d4" },
+    "security":     { "label": "Security",         "fill": "#ffe6e6", "darkFill": "#3a1515", "stroke": "#d44848" },
+    "external":     { "label": "External",         "fill": "#f0f0f0", "darkFill": "#2a2a2a", "stroke": "#888888" }
+  },
+  "nodes": [
+    { "id": "editor",            "label": "Editor (Tiptap)",        "category": "frontend", "x": 30,   "y": 60,  "subtitle": "src/components/editor/" },
+    { "id": "chat-cmdbar",       "label": "Chat / Command Bar",     "category": "frontend", "x": 30,   "y": 140, "subtitle": "ChatPanel · FloatingCommandBar" },
+    { "id": "sidebar",           "label": "Sidebar",                "category": "frontend", "x": 30,   "y": 220, "subtitle": "FileTree · QuietSidebar" },
+    { "id": "activity",          "label": "Activity / Agent Orb",   "category": "frontend", "x": 30,   "y": 300, "subtitle": "AgentPanel · ActivityStrip" },
+    { "id": "shell",             "label": "Shell / Layout",         "category": "frontend", "x": 30,   "y": 380, "subtitle": "App.tsx · QuietLayout · Dialogs" },
+
+    { "id": "stores",            "label": "Zustand Stores",         "category": "state",    "x": 230,  "y": 100, "subtitle": "editor · workspace · chat · ai · …" },
+    { "id": "hooks",             "label": "React Hooks",            "category": "state",    "x": 230,  "y": 220, "subtitle": "useFileOperations · useAcpLifecycle · …" },
+    { "id": "editor-ext",        "label": "Editor Extensions",      "category": "state",    "x": 230,  "y": 340, "subtitle": "ProseMirror plugins · markdown.ts" },
+
+    { "id": "tauri-ipc",         "label": "Tauri IPC",              "category": "ipc",      "x": 430,  "y": 240, "subtitle": "invoke() · events" },
+
+    { "id": "file-cmds",         "label": "File Commands",          "category": "rust-io",  "x": 620,  "y": 30,  "subtitle": "commands/file.rs · dialog.rs" },
+    { "id": "watcher",           "label": "Filesystem Watcher",     "category": "rust-io",  "x": 620,  "y": 100, "subtitle": "commands/watcher.rs · notify crate" },
+    { "id": "sqlite-index",      "label": "SQLite Index",           "category": "rust-io",  "x": 620,  "y": 170, "subtitle": "src/index/ · rusqlite + comrak + FTS5" },
+    { "id": "skills",            "label": "Skills / Agents",        "category": "rust-io",  "x": 620,  "y": 240, "subtitle": "skills.rs · agents.rs · script_exec.rs" },
+    { "id": "export-engine",     "label": "Export Engines",         "category": "rust-io",  "x": 620,  "y": 310, "subtitle": "export.rs · Typst · docx-rs · ppt-rs" },
+    { "id": "transcription",     "label": "Transcription",          "category": "rust-io",  "x": 620,  "y": 380, "subtitle": "transcription.rs · whisper-rs" },
+    { "id": "agent-manager",     "label": "Agent Binary Manager",   "category": "rust-io",  "x": 620,  "y": 450, "subtitle": "agent_manager.rs · acp_binary.rs" },
+
+    { "id": "ai-streaming",      "label": "AI Streaming",           "category": "rust-ai",  "x": 820,  "y": 30,  "subtitle": "ai_streaming.rs · tool_execution.rs" },
+    { "id": "acp-layer",         "label": "ACP Layer",              "category": "rust-ai",  "x": 820,  "y": 100, "subtitle": "acp.rs · acp_client.rs · agent-client-protocol" },
+    { "id": "copilot-lsp",       "label": "Copilot LSP",            "category": "rust-ai",  "x": 820,  "y": 170, "subtitle": "copilot_lsp.rs · copilot_protocol.rs · JSON-RPC" },
+    { "id": "local-ai-server",   "label": "Local AI Server",        "category": "rust-ai",  "x": 820,  "y": 240, "subtitle": "local_inference.rs · llama-server sidecar" },
+
+    { "id": "sandbox",           "label": "Seatbelt Sandbox",       "category": "security", "x": 1020, "y": 100, "subtitle": "sandbox.rs · sandbox_monitor.rs" },
+    { "id": "network-proxy",     "label": "Network Proxy",          "category": "security", "x": 1020, "y": 180, "subtitle": "network_proxy.rs · domain allowlists" },
+    { "id": "credentials",       "label": "OS Keychain",            "category": "security", "x": 1020, "y": 260, "subtitle": "credentials.rs · keyring crate" },
+
+    { "id": "filesystem",        "label": "Filesystem",             "category": "external", "x": 1210, "y": 30,  "subtitle": "Local · iCloud · git working tree" },
+    { "id": "ai-apis",           "label": "AI Provider APIs",       "category": "external", "x": 1210, "y": 100, "subtitle": "Anthropic · OpenAI · Ollama · DuckDuckGo" },
+    { "id": "agent-subprocess",  "label": "Agent Subprocesses",     "category": "external", "x": 1210, "y": 170, "subtitle": "claude-agent-acp · codex · copilot · gemini" },
+    { "id": "model-hub",         "label": "Model Hub / Releases",   "category": "external", "x": 1210, "y": 240, "subtitle": "Hugging Face · GitHub Releases" }
+  ],
+  "flows": [
+    {
+      "id": "save-file",
+      "title": "Save a file (Cmd+S)",
+      "summary": "Persists the active document to disk, suppresses the resulting watcher event, and triggers a SQLite reindex of the changed file.",
+      "steps": [
+        { "from": "editor",        "to": "editor-ext",   "label": "serialize doc",       "detail": "ProseMirror doc → markdown via prosemirror-markdown serializer in src/lib/markdown.ts" },
+        { "from": "editor-ext",    "to": "hooks",        "label": "saveFile(path, text)","detail": "useFileOperations.saveFile() called from editor's Cmd+S handler" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('mark_self_write')","detail": "Records the path in WatcherState.self_writes with a 5s TTL so the upcoming watcher event is suppressed" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('write_file')","detail": "After mark_self_write resolves; writes UTF-8 bytes" },
+        { "from": "tauri-ipc",     "to": "file-cmds",    "label": "write_file(path, content)","detail": "commands/file.rs writes the file via std::fs" },
+        { "from": "file-cmds",     "to": "filesystem",   "label": "fs::write",           "detail": "Real disk write; macOS FSEvents queues a Modify event" },
+        { "from": "filesystem",    "to": "watcher",      "label": "FSEvents → notify",   "detail": "notify_debouncer_full coalesces within 500ms; classified as Modify" },
+        { "from": "watcher",       "to": "sqlite-index", "label": "queue reindex",       "detail": "Self-writes are still indexed (only the frontend file-changed-batch event is suppressed)" },
+        { "from": "watcher",       "to": "tauri-ipc",    "label": "(suppressed)",        "detail": "is_self_write() returns true so no file-changed-batch event fires for this path" },
+        { "from": "hooks",         "to": "stores",       "label": "mark tab clean",      "detail": "editor-store.markClean(tabId); savedAt timestamp updated, 'saved Xs ago' chrome refreshes" }
+      ]
+    },
+    {
+      "id": "open-file",
+      "title": "Open a file from the sidebar",
+      "summary": "Loads file contents from disk, parses markdown into a ProseMirror doc, and either creates or activates a tab.",
+      "steps": [
+        { "from": "sidebar",       "to": "hooks",        "label": "click row",           "detail": "FileTreeItem onActivate → useFileOperations.openFile(path)" },
+        { "from": "hooks",         "to": "stores",       "label": "lookup tab",          "detail": "editor-store.openDocuments scanned for existing tab; if found, just activate" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('read_file')", "detail": "Only invoked on cache miss; routes by extension (markdown vs binary viewer)" },
+        { "from": "tauri-ipc",     "to": "file-cmds",    "label": "read_file(path)",     "detail": "commands/file.rs returns Ok(String) for UTF-8, Err otherwise" },
+        { "from": "file-cmds",     "to": "filesystem",   "label": "fs::read_to_string",  "detail": "Reads bytes; cloud paths gated by 10s per-step timeout in startup wrapper" },
+        { "from": "hooks",         "to": "stores",       "label": "addTab + setActive",  "detail": "editor-store.openDocuments updated with new entry; activeTabId set" },
+        { "from": "stores",        "to": "editor",       "label": "render active tab",   "detail": "Editor.tsx subscribes to activeTabId; effect triggers content load" },
+        { "from": "editor",        "to": "editor-ext",   "label": "loadRawMarkdownIntoEditor","detail": "Parses markdown → ProseMirror doc; logs [perf:doc-load] and [perf:setContent]" }
+      ]
+    },
+    {
+      "id": "startup-restore",
+      "title": "Open project + restore tabs (startup)",
+      "summary": "App boot flow: validates persisted workspace state, refreshes file trees, restores open tabs, initializes the SQLite index, and starts watchers.",
+      "steps": [
+        { "from": "shell",         "to": "hooks",        "label": "App mount → useAppLifecycle","detail": "Single 30s global timeout + 10s per-step timeouts so cloud paths can't hang startup" },
+        { "from": "hooks",         "to": "stores",       "label": "rehydrate Zustand",   "detail": "workspace · editor · settings · ai · routing · permission stores load from localStorage" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "list_directory(project)","detail": "One call per project root; show_hidden honoured by settings.showHiddenFiles" },
+        { "from": "tauri-ipc",     "to": "file-cmds",    "label": "list_directory recursive","detail": "Returns FileEntry[] with hidden flag; .DS_Store and .git internals always excluded" },
+        { "from": "file-cmds",     "to": "filesystem",   "label": "scan dir tree",       "detail": "Walks the workspace; ancestor stat needed for fs.watch parent traversal" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "init_index(project)", "detail": "src/index/mod.rs ensures index.db exists; iCloud-excluded via xattr" },
+        { "from": "tauri-ipc",     "to": "sqlite-index", "label": "open / migrate db",   "detail": "Per-project ~/.notesage/index.db schema check + comrak walk for changed files" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "watch_directory(...)","detail": "Once per project root; deduped against WatcherState.watched_paths" },
+        { "from": "tauri-ipc",     "to": "watcher",      "label": "notify watcher start","detail": "Lazy-init RecommendedWatcher with 500ms debounce" },
+        { "from": "hooks",         "to": "editor",       "label": "restore active tab",  "detail": "editor-store.activeTabId reapplied; loadRawMarkdownIntoEditor for first paint" },
+        { "from": "stores",        "to": "shell",        "label": "set startupReady",    "detail": "settings.startupReady=true releases the watcher gate; tray sync begins" }
+      ]
+    },
+    {
+      "id": "external-change",
+      "title": "External file change → diff review",
+      "summary": "A file changes outside Notesage (other editor, AI agent, terminal). Watcher fires, the frontend either silently reloads or surfaces an inline diff for review.",
+      "steps": [
+        { "from": "filesystem",    "to": "watcher",      "label": "FSEvents change",     "detail": "Real change hits notify; not in self_writes set" },
+        { "from": "watcher",       "to": "sqlite-index", "label": "queue reindex",       "detail": "All real changes feed the reindex queue regardless of frontend gating" },
+        { "from": "watcher",       "to": "tauri-ipc",    "label": "emit file-changed-batch","detail": "Batched per debounce window: [{ path, kind: 'create'|'modify'|'delete' }]" },
+        { "from": "tauri-ipc",     "to": "hooks",        "label": "useFileWatcher event","detail": "Reads file, compares to in-memory tab; bails if identical (content guard)" },
+        { "from": "hooks",         "to": "stores",       "label": "branch on setting",   "detail": "settings.externalChangeDiffReview decides: silent reload (off) vs review (on)" },
+        { "from": "stores",        "to": "editor",       "label": "OFF: setContent",     "detail": "Auto-reload via editor.commands.setContent + 3s info toast (toastExternalReload)" },
+        { "from": "stores",        "to": "editor-ext",   "label": "ON: inline diff",     "detail": "external-change-store.addChange() drives the InlineDiff plugin; per-hunk accept/reject" },
+        { "from": "editor-ext",    "to": "chat-cmdbar",  "label": "sticky action toast", "detail": "toastExternalChange with Accept / Reject / Dismiss; Reject re-saves to avoid re-detection loop" }
+      ]
+    },
+    {
+      "id": "send-direct-api",
+      "title": "Send a chat message (direct API: Anthropic / OpenAI / Ollama)",
+      "summary": "Streaming SSE chat to a hosted or local API. Tokens flow back as Tauri events; segments dual-write into the chat store.",
+      "steps": [
+        { "from": "chat-cmdbar",   "to": "hooks",        "label": "send + attachments",  "detail": "ChatInput → useDirectApiChat.send(); images compressed via image-compress.ts" },
+        { "from": "hooks",         "to": "stores",       "label": "addMessage(user)",    "detail": "chat-store appends user message; tool definitions resolved from skill-store.getToolDefinitions()" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('ai_chat_stream')","detail": "Args include connection_id (NOT the API key) + tools array + scope" },
+        { "from": "tauri-ipc",     "to": "credentials",  "label": "resolve key by id",   "detail": "ai_streaming.rs reads the API key from OS keychain via keyring crate" },
+        { "from": "credentials",   "to": "ai-streaming", "label": "secret string",       "detail": "Key never returns to the frontend" },
+        { "from": "ai-streaming",  "to": "ai-apis",      "label": "POST stream",         "detail": "Anthropic /v1/messages, OpenAI /v1/responses, or Ollama /api/chat (with runtime thinking detection via /api/show)" },
+        { "from": "ai-apis",       "to": "ai-streaming", "label": "SSE chunks",          "detail": "Provider-specific framing parsed; thinking, text, tool_use, image blocks" },
+        { "from": "ai-streaming",  "to": "tauri-ipc",    "label": "emit ai-stream-*",    "detail": "ai-stream-chunk · ai-stream-thinking-chunk · ai-tool-call · ai-stream-image · ai-stream-done" },
+        { "from": "tauri-ipc",     "to": "hooks",        "label": "stream listeners",    "detail": "useDirectApiChat throttles to 50ms flushes; appends segments + content (dual write)" },
+        { "from": "hooks",         "to": "stores",       "label": "appendTextSegment / pushSegment","detail": "chat-store actions; conv.updatedAt bumped to invalidate selectors" },
+        { "from": "stores",        "to": "chat-cmdbar",  "label": "render segments",     "detail": "SegmentRenderer → Text/Thinking/ToolCall/ToolResult/Image segment views" }
+      ]
+    },
+    {
+      "id": "send-acp",
+      "title": "Send a chat message (ACP agent: Claude Code / Codex / Copilot CLI / Gemini)",
+      "summary": "JSON-RPC over stdio to a managed agent subprocess running under Seatbelt. Tool calls require permission cards; updates stream as session events.",
+      "steps": [
+        { "from": "chat-cmdbar",   "to": "hooks",        "label": "send",                "detail": "useAcpLifecycle ensures a session via restoreOrCreateAcpSession (resume → load → list → new)" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('acp_session_prompt')","detail": "Includes session_id, content blocks (text + image), and any locked project paths" },
+        { "from": "tauri-ipc",     "to": "acp-layer",    "label": "session/prompt",      "detail": "agent-client-protocol crate marshals to JSON-RPC; writes to subprocess stdin" },
+        { "from": "acp-layer",     "to": "sandbox",      "label": "(spawn-time gate)",   "detail": "First spawn loaded a Seatbelt profile from getChatSandboxScope: writable=selected projects, deny default network" },
+        { "from": "acp-layer",     "to": "agent-subprocess","label": "stdin write",      "detail": "Agent runs inside Seatbelt; only allowed network is localhost:proxy_port" },
+        { "from": "agent-subprocess","to": "network-proxy","label": "HTTP via proxy",    "detail": "All outbound HTTP forced through the localhost proxy by HTTP_PROXY env + kernel deny-default" },
+        { "from": "network-proxy", "to": "ai-apis",      "label": "allowlisted domain",  "detail": "Built-in defaults per provider + user-configurable additions; unknown domains trigger approval card" },
+        { "from": "agent-subprocess","to": "acp-layer",  "label": "session/update",      "detail": "agent_message_chunk · agent_thought_chunk · tool_call · tool_call_update · plan · usage_update" },
+        { "from": "acp-layer",     "to": "tauri-ipc",    "label": "emit acp-session-update","detail": "AcpClient impl forwards every notification to the frontend" },
+        { "from": "tauri-ipc",     "to": "hooks",        "label": "useAcpSessionListeners","detail": "Normalizes ToolCallContent (Diff/Content/Terminal) via acp-utils.normalizeToolCallContent" },
+        { "from": "hooks",         "to": "stores",       "label": "dual-write segments", "detail": "chat-store + activity-store updated; tool calls become ToolCallSegment + AgentActivity" },
+        { "from": "stores",        "to": "activity",     "label": "task pulse / orb",    "detail": "AgentOrb count badge + CSS keyframe pulse; click opens AgentPanel popover" }
+      ]
+    },
+    {
+      "id": "ai-tool-call",
+      "title": "AI tool call execution (e.g., write_file)",
+      "summary": "Mid-stream the model requests a tool. Permission card surfaces for write/execute tools, then the executor runs the tool, scope-gates the path, and feeds the result back into the next API turn.",
+      "steps": [
+        { "from": "ai-streaming",  "to": "tauri-ipc",    "label": "emit ai-tool-call",   "detail": "Payload: { id, name, arguments } parsed from provider-specific tool_use blocks" },
+        { "from": "tauri-ipc",     "to": "hooks",        "label": "useDirectApiChat hears event","detail": "Routes to tool-executor.ts for client-side execution" },
+        { "from": "hooks",         "to": "stores",       "label": "permission check",    "detail": "Auto-allow for read tools; permission-store.toolCallAlways scoped by (toolName, connectionId, projectRoot)" },
+        { "from": "stores",        "to": "chat-cmdbar",  "label": "render permission card","detail": "ToolCallPermissionCard for non-auto tools; tiered allow once/session/always; 30s auto-deny" },
+        { "from": "hooks",         "to": "hooks",        "label": "isToolCallAllowed",   "detail": "src/lib/tool-executor.ts gates FS tools on path scope (selectProjectPaths(chat-store))" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('write_file')","detail": "Or read_file / list_directory / web_search / execute_skill_script depending on tool" },
+        { "from": "tauri-ipc",     "to": "file-cmds",    "label": "execute",             "detail": "Backend command runs; result string returned" },
+        { "from": "file-cmds",     "to": "filesystem",   "label": "fs op",               "detail": "Real disk write; will trigger save-file flow's watcher path next" },
+        { "from": "hooks",         "to": "stores",       "label": "push ToolResultSegment","detail": "chat-store appends the result; activity-store records approvalMode (auto/user/denied)" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "ai_chat_stream (continue)","detail": "Result fed back as role:'tool' message; loop caps at 20 calls per turn" }
+      ]
+    },
+    {
+      "id": "inline-completion",
+      "title": "Inline completion (Copilot LSP ghost text)",
+      "summary": "Editor changes are mirrored to the Copilot Language Server over JSON-RPC; suggestions render as ghost-text widget decorations.",
+      "steps": [
+        { "from": "editor",        "to": "editor-ext",   "label": "doc transaction",     "detail": "Tiptap update event fires on every edit" },
+        { "from": "editor-ext",    "to": "hooks",        "label": "useCopilotCompletion debounce","detail": "150ms debounce; uses ProseMirror plain-text projection of the doc" },
+        { "from": "hooks",         "to": "stores",       "label": "isUriInScope check",  "detail": "src/lib/ai/uri-scope.ts gates on chat-footer-selected project roots; out-of-scope tabs skipped" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke copilot/textDocument/didChange","detail": "Full content replacement; followed by textDocument/inlineCompletion at cursor" },
+        { "from": "tauri-ipc",     "to": "copilot-lsp",  "label": "JSON-RPC request",    "detail": "copilot_protocol.rs handles Content-Length framing + pending request map" },
+        { "from": "copilot-lsp",   "to": "agent-subprocess","label": "stdin → copilot-language-server","detail": "Spawned from agent-manager; subscription auth via OAuth device flow" },
+        { "from": "agent-subprocess","to": "ai-apis",   "label": "Copilot completion API","detail": "Provider-side completion call; response returned to LSP" },
+        { "from": "agent-subprocess","to": "copilot-lsp","label": "JSON-RPC response",   "detail": "Reader loop matches request id → resolves pending promise" },
+        { "from": "copilot-lsp",   "to": "tauri-ipc",    "label": "completion text",     "detail": "Returned as Tauri command result" },
+        { "from": "hooks",         "to": "editor-ext",   "label": "setGhostText",        "detail": "GhostText extension dispatches a transaction with widget decoration at cursor" },
+        { "from": "editor-ext",    "to": "editor",       "label": "render ghost",        "detail": "Tab to accept · Esc to dismiss · any keystroke auto-clears" }
+      ]
+    },
+    {
+      "id": "comment-delegation",
+      "title": "Comment delegation to AI agent",
+      "summary": "User creates a comment with text selected, then delegates to the agent_tasks-routed connection. Agent reply renders inside the comment thread with optional 'Apply' inline diff.",
+      "steps": [
+        { "from": "editor",        "to": "editor-ext",   "label": "Cmd+Shift+M",         "detail": "CommentMark extension applied to selection; anchor positions persisted via PM mapping" },
+        { "from": "editor-ext",    "to": "stores",       "label": "comment-store.add",   "detail": "Project files: keyed by frontmatter UUID. Non-project: path-hashed sidecar in ~/.notesage/comments/" },
+        { "from": "stores",        "to": "tauri-ipc",    "label": "write comment sidecar","detail": "JSON file in .notesage/comments/{uuid}.json or path-{hash}.json" },
+        { "from": "chat-cmdbar",   "to": "hooks",        "label": "Delegate clicked",    "detail": "useCommentDelegation → useAgentTaskOperations.startTask() with anchor text + prompt" },
+        { "from": "hooks",         "to": "stores",       "label": "activity-store.start","detail": "AgentActivity recorded with kind:'task'; orb pulses, panel shows running entry" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('acp_session_prompt')","detail": "Routed via routing-store.agent_tasks slot; restoreOrCreateAcpSession used" },
+        { "from": "tauri-ipc",     "to": "acp-layer",    "label": "session/prompt",      "detail": "Same path as send-acp; session resilience via acp_is_agent_alive timer (5min)" },
+        { "from": "acp-layer",     "to": "agent-subprocess","label": "agent runs",       "detail": "Tool calls scope-gated via path-filter.ts (auto-allow AND user-approve paths)" },
+        { "from": "agent-subprocess","to": "tauri-ipc","label": "session updates",     "detail": "Reply text accumulates as a threaded reply on the comment" },
+        { "from": "tauri-ipc",     "to": "hooks",        "label": "useAcpSessionListeners","detail": "Updates threaded reply on the comment; existingTaskId reused for multi-turn" },
+        { "from": "hooks",         "to": "editor-ext",   "label": "Apply → AISuggestion","detail": "Applies inline diff to anchor text; preamble stripped; Cmd+Enter accept / Cmd+Backspace reject" }
+      ]
+    },
+    {
+      "id": "skill-execution",
+      "title": "Skill discovery + script execution",
+      "summary": "Skills are discovered from on-disk SKILL.md files, surfaced to the model as tool definitions, and (when called) executed as sandboxed scripts.",
+      "steps": [
+        { "from": "shell",         "to": "hooks",        "label": "useSkillOperations",  "detail": "Runs at startup AND on watcher event; logs [perf:skills]" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('discover_skills')","detail": "Scope: ~/.notesage/skills/ (global) + selected projects' .notesage/skills/" },
+        { "from": "tauri-ipc",     "to": "skills",       "label": "scan + parse",        "detail": "skills.rs walks dirs; skills_frontmatter.rs parses YAML; skills_tool_parser.rs extracts tool defs" },
+        { "from": "skills",        "to": "filesystem",   "label": "read SKILL.md",       "detail": "Project skills override global; auto-extracts bundled skills on first run" },
+        { "from": "skills",        "to": "tauri-ipc",    "label": "Skill[]",             "detail": "Returned to frontend with byProject + global registry shape" },
+        { "from": "hooks",         "to": "stores",       "label": "skill-store update",  "detail": "{ global, byProject } merged at send time by selectedProjectPaths" },
+        { "from": "stores",        "to": "ai-streaming", "label": "tools[] in prompt",   "detail": "skill-store.getToolDefinitions() called; agent's allowed-tools filters the set" },
+        { "from": "ai-streaming",  "to": "tauri-ipc",    "label": "emit ai-tool-call",   "detail": "Tool name follows skill__{skill}__{script} convention" },
+        { "from": "hooks",         "to": "stores",       "label": "permission card",     "detail": "permission-store.skillScriptAlways scoped by (toolName, connectionId, projectRoot)" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('execute_skill_script')","detail": "Args resolved from ArgMapping (frontmatter or Usage: comment fallback)" },
+        { "from": "tauri-ipc",     "to": "skills",       "label": "spawn interpreter",   "detail": "script_exec.rs resolves bash/python/node via shell_path.rs PATH; runs under Seatbelt scope" },
+        { "from": "skills",        "to": "agent-subprocess","label": "subprocess",       "detail": "Sandbox writable = chat scope; network = proxy-only" }
+      ]
+    },
+    {
+      "id": "export-pdf",
+      "title": "Export PDF",
+      "summary": "Markdown → Typst markup → embedded Typst compiler → PDF bytes → native save dialog → disk write.",
+      "steps": [
+        { "from": "shell",         "to": "hooks",        "label": "ExportDialog confirm","detail": "Cmd+Shift+E or sidebar 'Export as PDF'; useExportOperations.exportPdf()" },
+        { "from": "hooks",         "to": "stores",       "label": "read settings",       "detail": "Template (clean/academic/report), TOC, page numbers, page size persisted" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('export_pdf')","detail": "Args include the in-memory markdown (NOT just the path) so unsaved edits export" },
+        { "from": "tauri-ipc",     "to": "export-engine","label": "markdown_to_typst",   "detail": "comrak GFM walk → Typst markup; tables, drawings, link previews handled" },
+        { "from": "export-engine", "to": "filesystem",   "label": "resolve drawing svgs","detail": "project_root used to find .excalidraw → .svg sidecars" },
+        { "from": "export-engine", "to": "export-engine","label": "Typst compile",       "detail": "NotesageWorld trait impl + bundled fonts (Inter/Source Serif 4/JetBrains Mono); typst_pdf::pdf()" },
+        { "from": "export-engine", "to": "tauri-ipc",    "label": "Vec<u8> bytes",       "detail": "PDF bytes returned to the frontend" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "open save dialog",    "detail": "tauri-plugin-dialog save; default filename from doc title" },
+        { "from": "tauri-ipc",     "to": "file-cmds",    "label": "save_binary_file",    "detail": "Writes raw bytes (write_file is UTF-8 only); offers 'Reveal in Finder' toast action" },
+        { "from": "file-cmds",     "to": "filesystem",   "label": "fs::write bytes",     "detail": "PDF lands at the chosen path" }
+      ]
+    },
+    {
+      "id": "voice-transcription",
+      "title": "Voice transcription (record → Whisper → insert)",
+      "summary": "cpal captures audio, resamples to 16kHz mono, whisper-rs runs locally, and segments are inserted at the cursor.",
+      "steps": [
+        { "from": "editor",        "to": "hooks",        "label": "Cmd+Shift+R",         "detail": "useRecording.toggle(); shows recording indicator" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('start_recording')","detail": "Source: 'microphone'; spawns dedicated thread (cpal Stream is !Send)" },
+        { "from": "tauri-ipc",     "to": "transcription","label": "cpal stream start",   "detail": "Captures at device-native sample rate / channel count" },
+        { "from": "editor",        "to": "hooks",        "label": "Cmd+Shift+R again",   "detail": "User stops recording" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('stop_recording')","detail": "Returns AudioBufferInfo (duration, samples, rate)" },
+        { "from": "transcription", "to": "tauri-ipc",    "label": "buffer ready",        "detail": "Resamples to 16kHz mono in transcription state" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('transcribe', model)","detail": "Auto-downloads base model if none present" },
+        { "from": "tauri-ipc",     "to": "transcription","label": "whisper-rs run",      "detail": "Metal GPU acceleration on macOS; emits transcription-progress events" },
+        { "from": "transcription", "to": "tauri-ipc",    "label": "TranscriptionResult", "detail": "Segments with start/end timestamps + detected language" },
+        { "from": "hooks",         "to": "editor-ext",   "label": "insert segments",     "detail": "Concatenated text inserted at cursor via PM transaction" }
+      ]
+    },
+    {
+      "id": "domain-approval",
+      "title": "Domain approval (sandbox + proxy + user)",
+      "summary": "An ACP agent makes an HTTP request to a domain not on the allowlist. The proxy queues it and asks the user via a chat card; the kernel sandbox guarantees the agent can't bypass the proxy.",
+      "steps": [
+        { "from": "agent-subprocess","to": "sandbox",   "label": "outbound TCP",        "detail": "Seatbelt: (deny default) for network; only localhost:proxy_port allowed" },
+        { "from": "sandbox",       "to": "network-proxy","label": "kernel-routed",      "detail": "Agent literally cannot reach anywhere else; HTTP_PROXY env points at the localhost port" },
+        { "from": "network-proxy", "to": "stores",       "label": "domain check",        "detail": "permission-store.alwaysAllowedDomains scoped by (connectionId, projectRoot|'global')" },
+        { "from": "network-proxy", "to": "tauri-ipc",    "label": "emit domain-approval-request","detail": "Sent on cache miss; carries instance_id + domain" },
+        { "from": "tauri-ipc",     "to": "chat-cmdbar",  "label": "DomainApprovalCard",  "detail": "Allow once / for session / always · Deny · 30s auto-deny timeout" },
+        { "from": "chat-cmdbar",   "to": "stores",       "label": "store decision",      "detail": "Always-allow persisted; session-allow held in memory; once-allow consumed" },
+        { "from": "stores",        "to": "tauri-ipc",    "label": "approve / deny",      "detail": "invoke('approve_domain' / 'deny_domain') with the request id" },
+        { "from": "tauri-ipc",     "to": "network-proxy","label": "release / drop",      "detail": "Approved: proxies to ai-apis. Denied/timeout: 403 to agent + chat message" },
+        { "from": "sandbox",       "to": "activity",     "label": "violation entries",   "detail": "sandbox_monitor.rs streams `log stream` for Seatbelt deny lines; rendered in Activity panel" }
+      ]
+    },
+    {
+      "id": "image-attachment",
+      "title": "Image attachment in chat (paste → compress → vision)",
+      "summary": "Image enters via paste, drag, file picker, or 'Add to chat' from the editor. Client-side compression keeps payload small; vision capability is checked per provider.",
+      "steps": [
+        { "from": "editor-ext",    "to": "chat-cmdbar",  "label": "vision event bus",    "detail": "Right-click 'Add to chat' on editor image / drawing → src/lib/ai/vision.ts dispatches event" },
+        { "from": "sidebar",       "to": "chat-cmdbar",  "label": "drag image file",     "detail": "Or 'Add to chat' from sidebar context menu on image files" },
+        { "from": "chat-cmdbar",   "to": "hooks",        "label": "addAttachment(file)", "detail": "Up to 5 attachments per message; AttachmentStrip thumbnails appear" },
+        { "from": "hooks",         "to": "hooks",        "label": "image-compress.ts",   "detail": "Canvas API: resize to 1568px max, PNG→JPEG, 5MB cap" },
+        { "from": "hooks",         "to": "stores",       "label": "vision capability",   "detail": "Anthropic/OpenAI: always. Ollama: /api/show probe. Local: catalog supports_vision. ACP: promptCapabilities.images" },
+        { "from": "stores",        "to": "chat-cmdbar",  "label": "(switch model?)",     "detail": "Switching to a non-vision model clears pending attachments" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "ai_chat_stream + images","detail": "Per-provider serialization — Anthropic base64 blocks, OpenAI image_url, Ollama images[] field" },
+        { "from": "tauri-ipc",     "to": "ai-streaming", "label": "format payload",      "detail": "ai_streaming.rs picks the right shape per provider" },
+        { "from": "ai-streaming",  "to": "ai-apis",      "label": "POST with images",    "detail": "Stream resumes as in send-direct-api flow" }
+      ]
+    },
+    {
+      "id": "agent-install",
+      "title": "Agent binary install (managed install wizard)",
+      "summary": "On first connection, the agent binary is downloaded from GitHub Releases into ~/.notesage/agents/bin/. Updates ride the same path.",
+      "steps": [
+        { "from": "shell",         "to": "hooks",        "label": "Add Connection",      "detail": "Settings → Connections → agent-managed provider; install wizard opens" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('install_agent')","detail": "agent_manager.rs picks the right asset for the current platform" },
+        { "from": "tauri-ipc",     "to": "agent-manager","label": "begin install",       "detail": "Looks up version manifest; deduplicates against current installed version" },
+        { "from": "agent-manager", "to": "model-hub",    "label": "download asset",      "detail": "GitHub Releases zip/tar; chunked download with progress events" },
+        { "from": "agent-manager", "to": "tauri-ipc",    "label": "emit install-progress","detail": "Frontend shows progress bar in the wizard" },
+        { "from": "agent-manager", "to": "filesystem",   "label": "extract to bin",      "detail": "~/.notesage/agents/bin/<agent>; chmod +x; symlink-resolution friendly" },
+        { "from": "hooks",         "to": "tauri-ipc",    "label": "invoke('acp_register_connection')","detail": "Capability probe spawns the agent briefly to discover modes / config / capabilities" },
+        { "from": "tauri-ipc",     "to": "acp-layer",    "label": "spawn → initialize",  "detail": "ACP initialize handshake; AuthMethod list returned" },
+        { "from": "acp-layer",     "to": "agent-subprocess","label": "stdio JSON-RPC",   "detail": "If EnvVar auth: surface generic credential form. If OAuth: open browser via run_in_terminal" },
+        { "from": "acp-layer",     "to": "tauri-ipc",    "label": "capabilities",        "detail": "Stored on connection; auto-refreshed when stale (>24h)" },
+        { "from": "hooks",         "to": "stores",       "label": "connections-store",   "detail": "Connection added; routing-store auto-fills compatible use-case slots" }
+      ]
+    }
+  ]
+}

@@ -14,15 +14,13 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * Shared visual-state indicators for every Quiet Composer sidebar row
- * (task #129). Renders the same three classes of state the legacy
- * `FileTreeItem` carries:
+ * Shared visual-state indicators for every sidebar row (task #129).
+ * Renders three classes of state:
  *
  *   - git status — single-letter glyph from `useFileTreeItemState`
  *     (M / A / U / D / R / C; `●` when a folder contains changes).
  *   - external-change indicator — dim dot when another process wrote
- *     the file behind our back (same state the classic path uses to
- *     drive its inline diff review).
+ *     the file behind our back (drives the inline diff review).
  *   - AI-lock padlock — project rows only. Surfaces when the project
  *     carries an `aiLock`; tooltip lists the locked connection.
  *

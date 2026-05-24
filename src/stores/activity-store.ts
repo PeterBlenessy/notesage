@@ -30,7 +30,6 @@ export interface AgentTask {
 
 interface ActivityStore {
   tasks: AgentTask[];
-  isManuallyHidden: boolean;
 
   addTask(task: Omit<AgentTask, 'activities' | 'startedAt'>): void;
   removeTask(id: string): void;
@@ -54,7 +53,6 @@ interface ActivityStore {
   appendPartialOutput(id: string, chunk: string): void;
   appendThinkingOutput(id: string, chunk: string): void;
   setFinalOutput(id: string, output: string): void;
-  setManuallyHidden(hidden: boolean): void;
   clearCompleted(): void;
 }
 
@@ -62,7 +60,6 @@ export const useActivityStore = create<ActivityStore>()(
   persist(
     (set) => ({
       tasks: [],
-      isManuallyHidden: false,
 
       addTask: (partial) => {
         const task: AgentTask = {
@@ -215,10 +212,6 @@ export const useActivityStore = create<ActivityStore>()(
             t.id === id ? { ...t, finalOutput: output, partialOutput: undefined } : t
           ),
         }));
-      },
-
-      setManuallyHidden: (hidden) => {
-        set({ isManuallyHidden: hidden });
       },
 
       clearCompleted: () => {

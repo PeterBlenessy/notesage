@@ -13,9 +13,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'src-tauri/**'
+              - 'e2e/**'
+              - 'e2e-real/**'
+              - 'bundled-skills/**'
+              - 'public/**'
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'vite.config.ts'
+              - 'vitest.config.ts'
+              - 'vitest.perf.config.ts'
+              - 'playwright.config.ts'
+              - 'wdio.conf.ts'
+              - 'index.html'
+
   frontend-tests:
     name: Frontend Tests & Coverage
     runs-on: macos-latest
+    needs: check-changes
+    # Skip for docs-only PRs. On push/workflow_dispatch/workflow_call always run.
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
@@ -23,7 +55,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10
 
@@ -64,6 +96,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
         uses: actions/upload-artifact@v4
         with:
           name: perf-results
@@ -76,6 +109,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -92,12 +126,14 @@ jobs:
   e2e-tests:
     name: Playwright E2E Tests
     runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10
 
@@ -125,6 +161,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
@@ -134,6 +171,8 @@ jobs:
   rust-tests:
     name: Rust Backend Tests
     runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
@@ -167,18 +206,29 @@ jobs:
 
   real-e2e-tests:
     name: Real Tauri E2E Tests
-    runs-on: macos-latest
-    # Required by branch protection on `main` (strict mode). Runs on
-    # `pull_request` events too because branch protection counts a skipped
-    # required check as "not satisfied" — there's no native "required-if-run"
-    # mode. Cost: ~8 min of macos-latest runner per PR push. Trade accepted
-    # to keep the alpha-cut gate real (see 2026-05-15 / 16 conversation).
+    # Pinned to `macos-26` (not `macos-latest`) to escape the Safari 26.5
+    # regression that ships with `macos-15` image 20260520+ and breaks
+    # the openFile → ProseMirror render path in WKWebView. macos-26 image
+    # 20260520 is still on Safari 26.4 and runs the suite cleanly. See
+    # issue #334. Tradeoff: macos-26 arm64 runner has 3 CPUs / 7 GB RAM
+    # (smaller than macos-latest), so the cold Rust build is ~2 min
+    # slower. Revisit when GitHub rotates macos-26 to Safari 26.5 — if
+    # the same regression appears there, fall back to a self-hosted
+    # runner on a Mac whose local WebKit works.
+    runs-on: macos-26
+    needs: check-changes
+    # Skip for docs-only PRs. On push/workflow_dispatch/workflow_call always run.
+    # Branch protection note: job-level `if` skips produce a "skipped" status
+    # which GitHub (post-2023 rules) treats as passing for required checks.
+    # If branch protection was configured before 2023, open repo Settings →
+    # Branches → edit the main rule → enable "Allow skipped" for this check.
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10
 
@@ -212,7 +262,7 @@ jobs:
 
       - name: Cache tauri-webdriver binary
         id: cache-tauri-webdriver
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/tauri-webdriver
           key: ${{ runner.os }}-tauri-webdriver-${{ hashFiles('**/Cargo.lock') }}
@@ -229,6 +279,7 @@ jobs:
 
       - name: Upload real-E2E logs on failure
         if: failure()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
         uses: actions/upload-artifact@v4
         with:
           name: real-e2e-logs

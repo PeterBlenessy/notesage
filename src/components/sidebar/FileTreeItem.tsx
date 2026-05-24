@@ -11,6 +11,7 @@ import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useFileTreeItemState } from "@/hooks/useFileTreeItemState";
 import { cn } from "@/lib/utils";
@@ -292,7 +293,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       const blob = new Blob([new Uint8Array(bytes)], { type: mimeMap[ext] ?? 'image/png' });
       const attachment = await compressImage(blob, { name: entry.name });
       sendImageToChat(attachment);
-      useSettingsStore.getState().setChatPanelOpen(true);
+      emitCmdBarEvent({ type: 'focus' });
       toast.success('Image added to chat');
     } catch {
       toast.error('Failed to add image to chat');

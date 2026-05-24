@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 /**
  * TagMode — picker for the `#tag` prefix mode in the FloatingCommandBar.
  *
- * Two-level drilldown matching the legacy `CommandPalette` UX:
+ * Two-level drilldown:
  *   1. Top level — list of tags from `tauriApi.indexTags`, ordered by
  *      file_count descending. Click / Enter selects a tag and drills into
  *      its occurrences.
@@ -30,7 +30,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
  *
  * Live-test 2026-04-26 — slice 2 (drilldown) of the cmd-bar parity work.
  * Slice 1 wired single-level pickers + navigation; this slice adds the
- * legacy two-level drilldown the user explicitly asked for.
+ * two-level drilldown the user explicitly asked for.
  */
 
 export type TagPickAction = {
