@@ -93,8 +93,10 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
      - First create all child issues via `gh issue create`, then link them to the parent using the
        GraphQL `addSubIssue` mutation (requires the node ID of both parent and child):
        ```
-       PARENT_ID=$(gh api graphql -f query='query { repository(owner:"PeterBlenessy",name:"notesage") { issue(number: <N>) { id } } }' -q '.data.repository.issue.id')
-       CHILD_ID=$(gh api graphql -f query='query { repository(owner:"PeterBlenessy",name:"notesage") { issue(number: <M>) { id } } }' -q '.data.repository.issue.id')
+       OWNER=$(gh repo view --json owner --jq '.owner.login')
+       REPO=$(gh repo view --json name --jq '.name')
+       PARENT_ID=$(gh api graphql -f query="query { repository(owner:\"$OWNER\",name:\"$REPO\") { issue(number: <N>) { id } } }" -q '.data.repository.issue.id')
+       CHILD_ID=$(gh api graphql -f query="query { repository(owner:\"$OWNER\",name:\"$REPO\") { issue(number: <M>) { id } } }" -q '.data.repository.issue.id')
        gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\" }) { issue { id } } }"
        ```
      - Title format: `<parent title> — Phase N: <description>`

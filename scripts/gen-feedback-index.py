@@ -37,8 +37,9 @@ def parse_frontmatter(text: str) -> dict:
 
 def main():
     files = sorted(FEEDBACK_DIR.glob("feedback_*.md"))
-    if len(files) != 41:
-        print(f"warn: expected 41 files, found {len(files)}", file=sys.stderr)
+    if not files:
+        print("error: no feedback_*.md files found in .claude/feedback/", file=sys.stderr)
+        sys.exit(1)
 
     rules = []
     for f in files:

@@ -13,6 +13,7 @@ every skill loads the rule regardless of skill identity.
 ### all
 
 - [feedback_delete_old_skills.md](feedback_delete_old_skills.md) — Never ask the user to run commands or do mechanical steps — just do them yourself
+- [feedback_generic_voice.md](feedback_generic_voice.md) — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
 
 ### aw-triage
 
@@ -77,10 +78,10 @@ every skill loads the rule regardless of skill identity.
 
 | Bucket | Count | Loaded by AW skills? |
 |---|---|---|
-| `yes` | 27 | Yes — every skill that lists the rule in its `aw_applies_to` |
+| `yes` | 28 | Yes — every skill that lists the rule in its `aw_applies_to` |
 | `with-modification` | 3 | Yes — with the modification noted in the rule's `aw_note` |
 | `no` | 11 | No — interactive-only or out of AW scope |
-| **Total** | **41** | |
+| **Total** | **42** | |
 
 ## All rules (alphabetical)
 
@@ -100,6 +101,7 @@ every skill loads the rule regardless of skill identity.
 | [feedback_fix_ci_always.md](feedback_fix_ci_always.md) | `yes` | — | Fix any CI failures encountered, whether pre-existing or new — never dismiss them as "not our problem |
 | [feedback_full_coverage.md](feedback_full_coverage.md) | `yes` | aw-tdd, aw-review | When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so. |
 | [feedback_functional_parity_vs_visual_parity.md](feedback_functional_parity_vs_visual_parity.md) | `yes` | aw-tdd, aw-review | When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other. |
+| [feedback_generic_voice.md](feedback_generic_voice.md) | `yes` | all | Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording. |
 | [feedback_issue_titles_plain.md](feedback_issue_titles_plain.md) | `yes` | aw-triage, aw-refine | The repo follows Conventional Commits (`feat(area):`, `fix(area):`, etc.) for commit messages and PR titles, but ISSUE titles should remain plain descriptive — no verb-prefix, no scope. The verb prefix can be presumptuous at the issue stage (you don't yet know if it's a fix vs feat) and the type often drifts through triage/refine anyway. |
 | [feedback_manage_branch_yourself.md](feedback_manage_branch_yourself.md) | `yes` | aw-tdd | When the work belongs on a specific branch, the agent must check / switch / create the branch via git, not tell the user to do it |
 | [feedback_mark_prd_done.md](feedback_mark_prd_done.md) | `yes` | aw-tdd | When completing tasks, mark them done in BOTH the task breakdown file AND the PRD — headings and checkboxes |

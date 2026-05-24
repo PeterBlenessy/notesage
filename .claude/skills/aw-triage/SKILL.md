@@ -26,7 +26,7 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 
 2. **Search for duplicates and wontfix matches.**
    - Pick 3–5 key terms from the title and body.
-   - Run `gh search issues "<terms>" --repo PeterBlenessy/notesage --state all --limit 10`.
+   - Run `gh search issues "<terms>" --repo "$(gh repo view --json nameWithOwner --jq .nameWithOwner)" --state all --limit 10`.
    - Compare each candidate's *outcome* (not wording) to the current issue.
 
 3. **Decide a status.** Exactly one of:
