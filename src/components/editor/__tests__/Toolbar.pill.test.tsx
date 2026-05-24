@@ -66,7 +66,7 @@ describe('Toolbar — variants', () => {
   });
 
   describe('variant="pill" (quiet composer)', () => {
-    it('wrapper has data-quiet-toolbar, rounded-full, and backdrop-blur', () => {
+    it('wrapper has data-quiet-toolbar, rounded-full, and a popover bg', () => {
       const editor = createMockEditor() as unknown as Editor;
       const { container } = renderWithProviders(
         <Toolbar editor={editor} variant="pill" />,
@@ -76,8 +76,34 @@ describe('Toolbar — variants', () => {
       expect(wrapper).toBeTruthy();
       const className = wrapper?.className ?? '';
       expect(className).toContain('rounded-full');
-      expect(className).toContain('backdrop-blur-[14px]');
       expect(className).toContain('border');
+      // The default (`quietChromeTransparent: false`) state uses an opaque
+      // `bg-popover` — the floating-chrome elevation token. The translucent
+      // path (`bg-popover/70 backdrop-blur-[14px]`) is exercised separately
+      // below.
+      expect(className).toContain('bg-popover');
+      expect(className).not.toContain('backdrop-blur');
+    });
+
+    it('translucent variant kicks in when quietChromeTransparent is enabled', async () => {
+      // The pill toolbar mirrors `FloatingCommandBar`'s collapsed pill —
+      // opaque by default, translucent when the operator opts in. This test
+      // exercises the see-through recipe.
+      const { useSettingsStore } = await import('@/stores/settings-store');
+      const prev = useSettingsStore.getState().quietChromeTransparent;
+      useSettingsStore.getState().setQuietChromeTransparent(true);
+      try {
+        const editor = createMockEditor() as unknown as Editor;
+        const { container } = renderWithProviders(
+          <Toolbar editor={editor} variant="pill" />,
+        );
+        const wrapper = container.querySelector('[data-quiet-toolbar]');
+        const className = wrapper?.className ?? '';
+        expect(className).toContain('bg-popover/70');
+        expect(className).toContain('backdrop-blur-[14px]');
+      } finally {
+        useSettingsStore.getState().setQuietChromeTransparent(prev);
+      }
     });
 
     it('wrapper does not carry a bottom border class', () => {

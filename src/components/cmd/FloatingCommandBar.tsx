@@ -1496,14 +1496,23 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // shadcn Popover (StatusTray, etc.) already uses full
         // opacity — the bar now matches.
         "border border-border shadow-lg",
-        // Live-test 2026-04-26 — match the title bar / status bar feel by
-        // letting the collapsed pill go translucent when the user has
-        // turned on `quietChromeTransparent` (Settings > Appearance).
-        // Expanded and pinned modes stay opaque (full `bg-popover`) so
-        // chat stream content reads cleanly on top. Tokens mirror
-        // `TitleBar.tsx`: `bg-background/40` + `backdrop-blur-xl`.
+        // Aligned with the editor pill toolbar (`Toolbar.tsx`'s
+        // `isPill` branch) so the two floating chrome elements read as
+        // one family. Opaque `bg-popover` by default; translucent
+        // `bg-popover/70 backdrop-blur-[14px]` when the operator has
+        // opted into `quietChromeTransparent`. Earlier this branch
+        // used `bg-background/40 backdrop-blur-xl` (mirroring TitleBar)
+        // but `/40` over a contrasting document (white-bg PDF in dark
+        // mode) let too much underlying lightness through, breaking
+        // legibility — operator-reported. `/70` over `bg-popover`
+        // (slightly lighter than canvas in dark mode per design system
+        // elevation cue) reads cleanly against either light or dark
+        // documents in either theme.
+        //
+        // Expanded and pinned modes still stay opaque (full `bg-popover`)
+        // so chat stream content reads cleanly on top.
         !effectiveExpanded && !isPinned && quietChromeTransparent
-          ? "bg-background/40 backdrop-blur-xl"
+          ? "bg-popover/70 backdrop-blur-[14px]"
           : "bg-popover backdrop-blur-md",
       )}
     >
