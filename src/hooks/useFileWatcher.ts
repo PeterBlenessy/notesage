@@ -84,6 +84,15 @@ export function useFileWatcher() {
       parsedDocCache.delete(path);
       // Drop the IDB viewport snapshot — cached HTML would be stale.
       deleteCachedViewport(path);
+      // Drop the per-file ProseMirror EditorState cache — restoring a stale
+      // cached state would surface pre-modification content on the next click.
+      // The active-tab case is handled separately by `useFileWatcherIntegration`
+      // (which reloads in place); this dispatch covers cached states for files
+      // that were evicted from `openDocuments` while their state lingered in
+      // the Editor's `cachedEditorStatesRef`.
+      window.dispatchEvent(
+        new CustomEvent('notesage:invalidate-editor-state', { detail: { filePath: path } }),
+      );
 
       // For create/delete events, debounce file tree refresh.
       // Pass the parent directory so only the affected section is refreshed
