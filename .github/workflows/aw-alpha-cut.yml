@@ -73,8 +73,42 @@ jobs:
           echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
           echo "Previous alpha: $previous_tag"
 
-          # 2. Tier-A or Tier-B PRs merged since previous_tag?
+          # 2. Check for merged PRs since previous_tag.
           since_iso=$(git log -1 --format=%cI "$previous_tag")
+
+          # 2a. Detect merged PRs with no tier label — refuse to cut until
+          # they are tiered. Human-merged PRs often land without tier labels
+          # (the classifier only fires on bot-authored PRs), which caused the
+          # preflight to evaluate zero qualifying PRs even when real work had
+          # landed. Checking first blocks the cut and surfaces the listing so
+          # the release manager can tier each PR before re-dispatching.
+          echo "Checking for merged PRs without tier labels since $since_iso"
+          unclassified_prs=$(gh pr list \
+            --state merged --base main \
+            --search "merged:>$since_iso -label:tier:A -label:tier:B -label:tier:C" \
+            --json number --jq '.[].number')
+
+          if [[ -n "$unclassified_prs" ]]; then
+            echo "Unclassified merged PRs found — refusing to cut until they are tiered."
+            {
+              echo "## ❌ Alpha cut blocked — unclassified merged PRs"
+              echo ""
+              echo "The following PRs were merged to \`main\` since \`$previous_tag\` without a tier label."
+              echo "Apply \`tier:A\`, \`tier:B\`, or \`tier:C\` to each, then re-dispatch this workflow."
+              echo ""
+              echo "| PR | Title |"
+              echo "|---|---|"
+              gh pr list \
+                --state merged --base main \
+                --search "merged:>$since_iso -label:tier:A -label:tier:B -label:tier:C" \
+                --json number,title \
+                --jq '.[] | "| #\(.number) | \(.title) |"'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # 2b. Tier-A or Tier-B PRs merged since previous_tag?
           echo "Looking for tier:A/B PRs merged since $since_iso"
           pr_numbers=$(gh pr list \
             --state merged --base main \
