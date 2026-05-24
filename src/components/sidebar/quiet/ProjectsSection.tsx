@@ -634,8 +634,9 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   const focusRow = useCallback((rowId: string) => {
     const el = rowRefs.current.get(rowId);
     if (el) {
-      setFocusedRowId(rowId);
+      // Focus first to avoid a WebKit re-render race (tabIndex change mid-flight); onFocus handles setFocusedRowId too.
       el.focus();
+      setFocusedRowId(rowId);
     }
   }, []);
 

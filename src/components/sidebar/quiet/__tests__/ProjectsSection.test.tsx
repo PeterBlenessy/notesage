@@ -510,6 +510,21 @@ describe('ProjectsSection — keyboard navigation (#37)', () => {
     expect(document.activeElement).toBe(row);
   });
 
+  it('ArrowUp from the first child row returns focus to the parent project row', () => {
+    setProjects([projectWithChildren]);
+    renderWithProviders(<ProjectsSection />);
+
+    const alpha = screen.getByRole('treeitem', { name: /open project alpha/i });
+    fireEvent.keyDown(alpha, { key: 'ArrowRight' }); // expand
+    fireEvent.keyDown(alpha, { key: 'ArrowRight' }); // focus first child (docs)
+
+    const firstChild = screen.getByRole('treeitem', { name: /open folder docs/i });
+    expect(document.activeElement).toBe(firstChild);
+
+    fireEvent.keyDown(firstChild, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(alpha);
+  });
+
   it('ArrowDown / ArrowUp walk visible rows including expanded children', () => {
     setProjects([projectWithChildren, secondProject]);
     renderWithProviders(<ProjectsSection />);
