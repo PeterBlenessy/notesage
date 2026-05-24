@@ -104,6 +104,14 @@ The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri
 
 `src-tauri/Cargo.toml` maintains its own independent crate version.
 
+## AW pipeline & accumulated feedback
+
+The Agentic Workflow (AW) pipeline orchestrates triage → refine → slice → tdd → review → iterate on GitHub issues. Skills live in `.claude/skills/aw-*/`; workflows in `.github/workflows/aw-*.yml`. The pipeline is documented in `docs/agentic-workflow.md`.
+
+Every AW skill begins with **Step 0: Load accumulated rules** — it reads `.claude/feedback/INDEX.md` then loads the `feedback_*.md` rules whose `aw_applies_to` frontmatter targets this skill. These rules are behavioural corrections accumulated from interactive sessions, kept in the repo so the corpus travels with the project. New corrections land in `.claude/feedback/` via the `save-feedback` skill (write rule + run `scripts/gen-feedback-index.py` + stage for review). Each skill also carries an auto-generated "Most-relevant feedback rules for this skill" section at the bottom of its `SKILL.md` for quick lookup under context pressure.
+
+The full integration plan and rationale: issue #336.
+
 ## Key Decisions
 
 1. **ProseMirror:** Enables AI decorations, collaborative editing

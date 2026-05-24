@@ -292,7 +292,7 @@ fn start_mic_on_thread(
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let actual_rate = config.sample_rate.0;
+        let actual_rate = config.sample_rate;
         let actual_channels = config.channels;
 
         log::info!(
