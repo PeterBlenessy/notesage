@@ -1,7 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type MutableRefObject } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import type { EditorState } from "@tiptap/pm/state";
-import { useEditorStore } from "@/stores/editor-store";
+import type { EditorStateCache } from "@/lib/editor-state-cache";
 import { useExternalChangeStore } from "@/stores/external-change-store";
 import {
   showInlineDiff,
@@ -27,7 +26,7 @@ interface Tab {
 interface UseFileWatcherIntegrationParams {
   editor: TiptapEditor | null;
   activeTab: Tab | null | undefined;
-  cachedEditorStatesRef: MutableRefObject<Map<string, EditorState>>;
+  cachedEditorStatesRef: MutableRefObject<EditorStateCache>;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
   clearExternalChange: (filePath: string) => void;
   saveFile: (filePath: string, content: string, tabId: string) => Promise<unknown>;
@@ -52,7 +51,7 @@ export function useFileWatcherIntegration({
   useEffect(() => {
     if (!editor || !activeTab || activeExternalContent === undefined) return;
 
-    cachedEditorStatesRef.current.delete(activeTab.id);
+    cachedEditorStatesRef.current.delete(activeTab.filePath);
     loadRawMarkdownIntoEditor(editor, activeExternalContent);
     updateTabContent(activeTab.id, activeExternalContent, false);
     clearExternalChange(activeTab.filePath);
@@ -73,15 +72,25 @@ export function useFileWatcherIntegration({
       } else {
         // Non-active tab: invalidate cached EditorState so the next tab switch
         // loads the fresh content from the store instead of the stale cached state.
-        const tab = useEditorStore.getState().openDocuments.find((t) => t.filePath === filePath);
-        if (tab) {
-          cachedEditorStatesRef.current.delete(tab.id);
-        }
+        cachedEditorStatesRef.current.delete(filePath);
       }
     };
     window.addEventListener('notesage:refresh-editor-content', handler);
     return () => window.removeEventListener('notesage:refresh-editor-content', handler);
   }, [editor, activeTab?.filePath]);
+
+  // External file change for a file whose ProseMirror EditorState is still
+  // cached but whose tab has been evicted from `openDocuments` (Quiet
+  // Composer single-doc shell). Drop the cached state so the next reopen
+  // re-parses from the fresh on-disk content.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { filePath } = (e as CustomEvent).detail ?? {};
+      if (filePath) cachedEditorStatesRef.current.delete(filePath);
+    };
+    window.addEventListener('notesage:invalidate-editor-state', handler);
+    return () => window.removeEventListener('notesage:invalidate-editor-state', handler);
+  }, [cachedEditorStatesRef]);
 
   // --- External change review (clean tabs) ---
   // Select the raw record and derive the array in a memo to avoid new-reference infinite loops
