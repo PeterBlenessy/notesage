@@ -4,7 +4,7 @@ import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
 import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
 import { EditorContent } from "@tiptap/react";
-import type { EditorState } from "@tiptap/pm/state";
+import { EditorStateCache } from "@/lib/editor-state-cache";
 import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -382,8 +382,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     savedSuggestionsRef,
     suggestionActive,
   } = useCommentEditorSync(editor);
-  /** Per-tab ProseMirror EditorState cache — preserves undo/redo, selection, and plugin state across tab switches. */
-  const cachedEditorStatesRef = useRef<Map<string, EditorState>>(new Map());
+  /**
+   * Per-file ProseMirror EditorState cache — preserves undo/redo, selection,
+   * and plugin state across tab switches AND across single-doc-shell evictions
+   * (Quiet Composer opens evict the previous tab, minting a new tab.id; keying
+   * by filePath keeps the cache reachable across the re-open).
+   */
+  const cachedEditorStatesRef = useRef(new EditorStateCache());
 
   // External change detection + inline diff review
   const {

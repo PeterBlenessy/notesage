@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import type { EditorState } from "@tiptap/pm/state";
 import { useEditorStore, type Tab } from "@/stores/editor-store";
+import type { EditorStateCache } from "@/lib/editor-state-cache";
 import { useSettingsStore } from "@/stores/settings-store";
 import {
   AISuggestionPluginKey,
@@ -84,7 +84,7 @@ interface AISuggestion {
 interface UseEditorTabSwitchOptions {
   editor: TiptapEditor | null;
   activeTab: Tab | null;
-  cachedEditorStatesRef: MutableRefObject<Map<string, EditorState>>;
+  cachedEditorStatesRef: MutableRefObject<EditorStateCache>;
   savedSuggestionsRef: MutableRefObject<Map<string, AISuggestion>>;
   scrollAreaRef: RefObject<HTMLDivElement | null>;
   isProgrammaticScroll: MutableRefObject<boolean>;
@@ -135,6 +135,14 @@ export function useEditorTabSwitch({
   // when the call resolves (success or failure).
   const previewInFlightRef = useRef<string | null>(null);
 
+  // Tracks the file path of the previously activated tab. We can't derive this
+  // from `lastLoadedTabId` because Quiet Composer's single-doc shell evicts
+  // the previous tab from `openDocuments` BEFORE this effect runs — the id
+  // is still valid as a Map key, but the lookup to recover its filePath fails.
+  // Keying the EditorState cache by filePath (not tab.id) lets the cache
+  // survive eviction-and-reopen of the same file.
+  const lastLoadedFilePathRef = useRef<string | null>(null);
+
   // AbortController for the in-flight worker parse + post-preview setContent
   // chain. When a new tab is activated we abort the previous controller —
   // the worker's eventual result is dropped and we never call `setContent`
@@ -163,10 +171,16 @@ export function useEditorTabSwitch({
       const contentBytes = activeTab.content ? new TextEncoder().encode(activeTab.content).length : 0;
       const contentSizeKB = +(contentBytes / 1024).toFixed(1);
 
-      // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations)
+      // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations).
+      // EditorState is keyed by filePath so it survives single-doc-shell eviction;
+      // the AI-suggestion side cache stays keyed by tab.id (suggestions are
+      // tab-scoped and don't need to survive eviction — losing one is graceful).
       const prevTabId = lastLoadedTabId.current;
+      const prevFilePath = lastLoadedFilePathRef.current;
+      if (prevFilePath) {
+        cachedEditorStatesRef.current.set(prevFilePath, editor.state);
+      }
       if (prevTabId) {
-        cachedEditorStatesRef.current.set(prevTabId, editor.state);
         // Also save AI suggestion separately (for explicit position validation on restore)
         const pluginState = AISuggestionPluginKey.getState(editor.state);
         if (pluginState?.suggestion) {
@@ -179,7 +193,7 @@ export function useEditorTabSwitch({
       // Save scroll position of the tab we're LEAVING
       saveOutgoingTabScroll();
 
-      const cachedState = cachedEditorStatesRef.current.get(activeTab.id);
+      const cachedState = cachedEditorStatesRef.current.get(activeTab.filePath);
       const pendingExternal = externalChanges[activeTab.filePath];
 
       // Determine if this tab is eligible for the instant-load preview path
@@ -199,6 +213,7 @@ export function useEditorTabSwitch({
       }
 
       lastLoadedTabId.current = activeTab.id;
+      lastLoadedFilePathRef.current = activeTab.filePath;
       const tabIdOnEntry = activeTab.id;
 
       // Set document directory BEFORE setContent so image nodes resolve paths correctly.
@@ -270,7 +285,7 @@ export function useEditorTabSwitch({
 
       if (pendingExternal !== undefined && !activeTab.isDirty) {
         // External change reload — sync, fast.
-        cachedEditorStatesRef.current.delete(activeTab.id);
+        cachedEditorStatesRef.current.delete(activeTab.filePath);
         loadRawMarkdownIntoEditor(editor, pendingExternal);
         updateTabContent(activeTab.id, pendingExternal, false);
         clearExternalChange(activeTab.filePath);
@@ -280,7 +295,7 @@ export function useEditorTabSwitch({
       } else if (cachedState) {
         // Cached editor state — sync, instant restore.
         editor.view.updateState(cachedState);
-        cachedEditorStatesRef.current.delete(activeTab.id);
+        cachedEditorStatesRef.current.delete(activeTab.filePath);
         useEditorStore.getState().setPreviewState(activeTab.id, "hydrated");
         runPostLoad(true);
       } else if (isFreshMarkdownParse && contentBytes >= SKIP_PREVIEW_THRESHOLD_BYTES && useSettingsStore.getState().instantLoadPreview) {
@@ -787,7 +802,7 @@ export function useEditorTabSwitch({
     prevViewMode.current = activeTab.viewMode;
 
     if (wasSource && isNowWysiwyg) {
-      cachedEditorStatesRef.current.delete(activeTab.id);
+      cachedEditorStatesRef.current.delete(activeTab.filePath);
       loadRawMarkdownIntoEditor(editor, activeTab.content);
       // Re-set image storage in case it was lost
       const imgStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
