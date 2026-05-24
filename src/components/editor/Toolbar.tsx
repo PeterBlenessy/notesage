@@ -51,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settings-store";
 import type { ViewMode } from "@/lib/file-utils";
 import {
   HeadingPicker,
@@ -134,6 +135,15 @@ function ToolbarSeparator() {
 export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
   const isSource = viewMode === "source";
   const isPill = variant === "pill";
+  // The pill toolbar is floating chrome — its background recipe mirrors
+  // the FloatingCommandBar's collapsed pill so the two read as the same
+  // chrome family. Both honour the operator's `quietChromeTransparent`
+  // setting: opaque `bg-popover` by default, translucent
+  // `bg-popover/70 backdrop-blur-[14px]` when the operator has opted into
+  // see-through chrome. `bg-popover` (not `bg-background`) is the right
+  // token here per the design system — popover is intentionally a touch
+  // lighter than the canvas in dark mode to cue floating elevation.
+  const quietChromeTransparent = useSettingsStore((s) => s.quietChromeTransparent);
 
   // Force re-render on editor transactions so active state (heading level, bold, etc.) stays current
   const [, setTick] = useState(0);
@@ -156,8 +166,14 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
   const wrapperClassName = isPill
     ? cn(
         "inline-flex items-center gap-0.5 px-1.5 py-1 min-w-0",
-        "rounded-full border border-border bg-background/70 shadow-sm",
-        "backdrop-blur-[14px]",
+        "rounded-full border border-border shadow-sm",
+        // Matched recipe with `FloatingCommandBar` collapsed pill — see
+        // the comment on `quietChromeTransparent` above. Verified to
+        // read cleanly in both themes against contrasting documents
+        // (white-bg PDF in dark mode, dark code-block in light mode).
+        quietChromeTransparent
+          ? "bg-popover/70 backdrop-blur-[14px]"
+          : "bg-popover",
         // #86 reduced-motion sweep: the typing-fade pulse is decorative —
         // disable the opacity transition entirely under reduce, don't shorten.
         "transition-opacity duration-[340ms] ease-in-out",
