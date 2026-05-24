@@ -119,14 +119,14 @@ ppt-rs = "0.2"
 docx-rs = "0.4"
 
 # Voice transcription
-whisper-rs = "0.15"
-cpal = "0.15"
+whisper-rs = "0.16"
+cpal = "0.17"
 
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-whisper-rs = { version = "0.15", features = ["metal"] }
+whisper-rs = { version = "0.16", features = ["metal"] }
 # AppKit bridge for NSColor.controlAccentColor (system accent color picker option)
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSColorSpace"] }
