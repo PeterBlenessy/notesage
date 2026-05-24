@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.45.0-alpha.5",
+      "date": "2026-05-24",
+      "previousVersion": "0.45.0",
+      "sections": {
+        "improvements": [
+          "**Quiet Composer is now the only editor shell.** The earlier multi-column workspace with tab strips, the activity panel rail, the chat panel, and the command palette modal has been removed. Everything you used to do there now lives in one of the surfaces you already know: the floating command bar (⌘K) for prompts, palettes, and quick switches; the flat sidebar for Pinned / Projects / Recent / Tags / Mentions; and the document switcher (⌃Tab / ⌃⇧Tab) for cycling recent files. One coherent interface instead of two parallel ones.",
+          "**Large markdown documents reopen in under a second.** A regression introduced during the layout transition meant the editor's document state was being thrown away every time you switched to another file and back. Returning to a long note now feels instant — roughly six times faster on a 500 KB document — and your undo history is preserved across switches."
+        ],
+        "fixes": [
+          "**PDF, DOCX, and EPUB viewers no longer log a teardown error.** Switching from an open EPUB to a different file fired one final layout callback after the EPUB had unmounted, throwing a `paginator.js` error into the developer console. The error was non-fatal — the new viewer rendered normally — but it cluttered the console and broke the \"clean console after viewer swap\" expectation."
+        ]
+      }
+    },
+    {
       "version": "0.45.0-alpha.2",
       "date": "2026-05-21",
       "previousVersion": "0.45.0",
