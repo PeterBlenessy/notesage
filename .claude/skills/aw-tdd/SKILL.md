@@ -60,6 +60,8 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 
 4. **Read the relevant files.** The subtask body lists `Files likely to change:` — read each, plus their tests, plus 1–2 levels of imports/callers.
 
+   **Before opening any single file, grep for parallel implementations.** Per `feedback_search_all_renderers`: run `grep -rn` for every UI element, function, store action, or component the issue mentions, across `src/` (or the project's source root). Single-file fixes that miss a parallel implementation are the most common cause of `aw-review` resets. Projects often carry parallel implementations transiently — two layout shells during a migration, two settings dialogs while one is being deprecated, a legacy plus a new sidebar tree. If the grep returns more than one renderer of the same concern, list every match in the PR body's `## Decisions made` and either fix all of them or explicitly defer the others with a rationale. Do not silently fix one and ship.
+
 4.5. **Apply propose-don't-punt.** Look for prior agent guidance:
 
    - Issue body's `## Assumptions` section (set by `aw-refine`) — these are committed assumptions; honour them unless overridden by a comment.
@@ -67,6 +69,8 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
    - Slice rationale comment's `## Proposed answers` section (set by `aw-slice`) — these are authoritative; implement against them.
 
    Carry every assumption, proposed answer, or implementation-time decision forward into the PR body's `## Decisions made` section so reviewers see what was chosen and can override at PR review (or by comment, which `aw-feedback` routes back). Never block waiting for human input mid-implementation; pick a defensible choice and document it.
+
+   **Escape hatch — tangled-issue circuit breaker.** Per `feedback_no_partial_fixes`: if the issue surfaces THREE OR MORE interrelated sub-decisions that propose-don't-punt can't resolve confidently (each choice constrains the next; getting any one wrong cascades), STOP. Do NOT proceed with a defensible-guess implementation — a partial fix to a tangled issue is worse than no fix because it creates a PR the reviewer cannot evaluate. Instead: post the tangled-issue comment template (below), flip the issue to `hitl` (remove `tdd` + `afk`), and exit. The operator unwinds the tangle by clarifying the issue body or splitting into peer issues, then re-flips to `tdd + afk` for retry.
 
 ## Lifecycle labels
 
@@ -88,6 +92,8 @@ Update the subtask issue's labels at three points:
    - **Exception for additive changes:** if a listed test covers an *existing, unchanged* code path (e.g. a regression guard verifying 'file behaviour still works when the new flag is false'), it is expected to be green before implementation. Continue as long as at least one test covering the *new* behaviour is red.
    - Otherwise: the test is wrong (it's testing something already true) or the bug is not real — post a comment explaining, fail the workflow, do NOT proceed to green
 
+5. **Security / isolation carve-out — red MUST prove the leak is real.** Per `feedback_red_team_tdd`: if the issue is a security, isolation, sandboxing, permission, or privacy concern, the red test must demonstrate the LEAK before the fix. Write the attack: a test that simulates the unauthorized read, the cross-boundary call, the bypassed permission — and confirm it currently SUCCEEDS (i.e., the test asserts the leak is observable, and the assertion passes against unmodified code). Only then write the fix and flip the assertion. Tests that assert "the gate correctly denies X" without first proving "X was previously not denied" are worthless as regression locks — the gate may have already existed. If you can't make the attack succeed against current code, the bug is not real or the test is wrong; escalate via `hitl`, do NOT proceed to green.
+
 ### Green
 
 1. Write the minimum implementation to make the tests pass. Do not add features not required by the tests.
@@ -105,9 +111,13 @@ Update the subtask issue's labels at three points:
 1. **Red tests were red:** verified before green phase. No PR opens if green-from-start.
 2. **Red tests are green after implementation:** verified after green phase.
 3. **Full test suite passes:** `pnpm test` — all existing tests still green.
+
+   **Pre-existing failures count.** Per `feedback_fix_all_test_failures` and `feedback_fix_ci_always`: a failure that existed on `main` before this branch is still a failure on this branch — CI runs the same suite and will fail identically. Either fix the failure as part of this PR (a one-line side commit on this branch is fine) OR, if the failure is genuinely environmental (CI runner image regression, third-party stack outage), follow the bounded-retry escape hatch in `feedback_fix_all_test_failures`: up to 3 fix attempts, then post a diagnostic comment and label `needs-human` rather than pushing red. Do NOT loosen the failing assertion, the tolerance, or the timeout to make red turn green — that anti-pattern was explicitly called out.
+
 4. **Typecheck passes:** `pnpm typecheck`.
 5. **Lint passes** (if the repo has a lint script): check `package.json` for `lint`. Skip if absent.
-6. **No unrelated changes:** `git diff --stat` — should only touch the files listed in the subtask body (plus their tests). If unexpected files are modified, abort.
+6. **Outcome check (post-implementation).** Per `feedback_outcome_shaped_criteria` and `feedback_code_review_mandatory_gate`: re-read the issue body's first paragraph (the operator's stated outcome) AND every comment posted since the latest `refined` marker. List every behaviour the diff changes. Ask: if the operator opens this PR right now, do they get the outcome the issue described — not "do the listed red tests pass", but "does the user experience match"? If the criteria pass literally but the outcome misses, the criteria were wrong; flip the issue back to `refine` with a comment surfacing the mismatch rather than shipping the literal-but-wrong implementation.
+7. **No unrelated changes:** `git diff --stat` — should only touch the files listed in the subtask body (plus their tests). If unexpected files are modified, abort.
 
 ## Branch + PR
 
@@ -194,6 +204,20 @@ Reset back to `tdd + afk`. Cron will not auto-retry — investigate and either:
 > *Skipping for now — blocked by open dependency.*
 
 `Depends on: <#blocker>` is not yet closed. Will retry when it closes.
+```
+
+**Tangled-issue circuit breaker (from Pre-flight step 4.5):**
+
+```
+> *Escalating to human — issue surfaces 3+ tangled sub-decisions per `feedback_no_partial_fixes`.*
+
+Stopping before implementation. The propose-don't-punt heuristic isn't safe to apply here because each of the following decisions constrains the others, and getting one wrong cascades:
+
+- <sub-decision 1> — <why it's tangled with the others>
+- <sub-decision 2> — <why it's tangled with the others>
+- <sub-decision 3> — <why it's tangled with the others>
+
+A partial fix would create a PR that can't be reviewed cleanly. Flipping to `hitl` for the operator to either clarify the issue body or split into peer issues with the tangle resolved upfront. Re-flip to `tdd + afk` to retry.
 ```
 
 ## PR body template

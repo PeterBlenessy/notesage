@@ -39,9 +39,13 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 
 ## Review process
 
+### Outcome reread (before scoring criteria)
+
+Before opening the criteria checklist, read the issue body's first paragraph (the operator's stated outcome) AND every comment posted since the latest `refined` marker. Ask the question that tests-passing does NOT answer: **if the operator opens this PR, do they get the experience they described?** Per `feedback_outcome_shaped_criteria`, criteria that name files/lines/functions are *suggested* implementation hints, not the bar. Per `feedback_code_review_mandatory_gate`, tests-green is necessary but not sufficient — read the diff with critical intent. If the diff satisfies every criterion but the user-observable outcome is something else (because the criteria over-specified the wrong implementation), the criteria were wrong; surface the gap as **✗ Outcome miss** in the review comment rather than approving the literal-but-wrong fix.
+
 ### Per acceptance criterion
 
-For each item in the issue body's `## Acceptance criteria` checklist, classify:
+For each item in the issue body's `## Acceptance criteria` checklist, classify. Remember from the outcome reread above: a criterion that passes literally while the outcome misses is still a gap. When in doubt, prefer the outcome to the literal criterion text.
 
 #### Concrete (assert-testable)
 
@@ -74,11 +78,14 @@ The criterion uses universal language. Verify by enumeration:
 
 ### Per user comment after `refined`
 
-Each comment is a potential scope change that should have been folded into the body by `aw-refine` and implemented by `aw-tdd`. For each:
+Each comment is a potential scope change that should have been folded into the body by `aw-refine` and implemented by `aw-tdd`. **Enumerate every comment posted since the latest `refined` marker, in chronological order — do NOT skip any.** Silent skips are the exact failure mode this section exists to catch. Per `feedback_thorough_audit`, the bar for "reviewed" is that every ask is compared against the diff, not just the structured criteria.
 
-- Extract the specific request (paraphrase if needed).
-- Check whether the issue body was updated to reflect it (compare current body to the version at the time of the comment).
-- Check whether the diff implements it.
+For each comment, in the review's gap table, include:
+
+- The comment date and the author handle (so the operator can trace).
+- A short verbatim quote of the request (paraphrasing is acceptable for very long comments, but a quote is preferred — it documents that the comment was actually read).
+- Whether the issue body was updated to reflect it (compare current body to the version at the time of the comment).
+- Whether the diff implements it.
 - Mark **✓ Reflected** if both, **✗ Missed** if either is missing.
 
 A scope change that lives only in comments and never made it into the body OR the diff is the failure mode that motivates this skill. Flag it loudly.

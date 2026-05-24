@@ -40,6 +40,8 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
    - `enhancement` — new feature, capability, or material improvement
    - `chore` — refactor, docs-only, dependency bump, tooling, cleanup
 
+4.5. **Out-of-AW-scope check (dependency bumps).** If the issue is a dependency upgrade — `chore(deps)`, lockfile update, package bump, lint sweep across the codebase — do NOT proceed with the standard refine→slice→tdd pipeline. Per `feedback_aw_dep_upgrades`, AW has historically failed to close these out cleanly (test failures from the upstream change cascade through multiple AW retries without converging). Instead: add labels `chore` + `needs-human` (do NOT add `refine`), post the out-of-scope comment template, and exit. The operator handles the bump locally and batch-merges.
+
 5. **Apply labels and comment.**
    - Add the chosen category label.
    - Add the `refine` action label (signals `aw-refine` to pick this up next).
@@ -48,7 +50,7 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 ## Output rules
 
 - **Exactly one** of `bug` / `enhancement` / `chore` per issue (or none, if asking for clarification).
-- **Exactly one** action label after a successful run: `refine`. Never set `slice`, `sliced`, `tdd`, or `review` here.
+- **Exactly one** action label after a successful run: `refine` for in-scope issues, OR `needs-human` for out-of-AW-scope dependency bumps (step 4.5). Never set `slice`, `sliced`, `tdd`, or `review` here.
 - Never modify title or body.
 - **Idempotent** — running twice on the same issue produces the same result. The workflow precheck filters re-runs by checking for an existing category; the skill should still no-op if it sees one.
 
@@ -93,6 +95,18 @@ I couldn't confidently classify this. Could you refine:
 - <specific question 2>
 
 Once you reply, I'll re-run triage.
+```
+
+**Out-of-AW-scope (dependency bump / lint sweep):**
+
+```
+> *Triaged automatically by the `aw-triage` skill.*
+
+**Classification:** `chore` — dependency bump / lockfile update / lint sweep.
+
+This kind of change has historically not converged through the AW pipeline (per `feedback_aw_dep_upgrades`): upstream behavioural changes cascade into test failures that AW retries fail to resolve. Marking `needs-human` for local handling — the operator updates, runs the suite, and batch-merges.
+
+If this should run through AW anyway, remove the `needs-human` label and add `refine`.
 ```
 
 ## When to ask for clarification instead of classifying
