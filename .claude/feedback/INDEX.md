@@ -14,6 +14,7 @@ every skill loads the rule regardless of skill identity.
 
 - [feedback_delete_old_skills.md](feedback_delete_old_skills.md) — Never ask the user to run commands or do mechanical steps — just do them yourself
 - [feedback_generic_voice.md](feedback_generic_voice.md) — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- [feedback_write_feedback_to_repo.md](feedback_write_feedback_to_repo.md) — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 ### aw-triage
 
@@ -78,10 +79,10 @@ every skill loads the rule regardless of skill identity.
 
 | Bucket | Count | Loaded by AW skills? |
 |---|---|---|
-| `yes` | 28 | Yes — every skill that lists the rule in its `aw_applies_to` |
+| `yes` | 29 | Yes — every skill that lists the rule in its `aw_applies_to` |
 | `with-modification` | 3 | Yes — with the modification noted in the rule's `aw_note` |
 | `no` | 11 | No — interactive-only or out of AW scope |
-| **Total** | **42** | |
+| **Total** | **43** | |
 
 ## All rules (alphabetical)
 
@@ -128,4 +129,5 @@ every skill loads the rule regardless of skill identity.
 | [feedback_two_way_prd_tasks_links.md](feedback_two_way_prd_tasks_links.md) | `yes` | aw-slice | Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always |
 | [feedback_user_facing_release_notes.md](feedback_user_facing_release_notes.md) | `no` | — | The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood". |
 | [feedback_verify_prod_dev.md](feedback_verify_prod_dev.md) | `with-modification` | aw-tdd | Always verify changes work in BOTH production builds and dev mode before saying they're safe |
+| [feedback_write_feedback_to_repo.md](feedback_write_feedback_to_repo.md) | `yes` | all | When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes). |
 | [feedback_wysiwyg_exports.md](feedback_wysiwyg_exports.md) | `yes` | aw-tdd | Export styling must come from the editor, not template pickers. Templates are for document creation, not export. |
