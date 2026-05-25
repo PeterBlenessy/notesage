@@ -127,3 +127,4 @@ Chronological log of major implementation milestones and changes.
 | 121 | [Release v0.45.0-alpha.3](121-release-v0.45.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 122 | [Release v0.45.0-alpha.4](122-release-v0.45.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 123 | [Release v0.45.0-alpha.5](123-release-v0.45.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 124 | [Release v0.45.0](124-release-v0.45.0.md) | Promotes the v0.45.0 alpha series to stable — Quiet Composer is now the only editor shell. |
