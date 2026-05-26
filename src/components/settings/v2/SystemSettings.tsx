@@ -131,8 +131,6 @@ export function SystemSettings({
   );
 
   // HTML viewer
-  const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
-  const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
   const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
   const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
@@ -390,20 +388,8 @@ export function SystemSettings({
         description="Configure sandboxing behaviour when rendering .html and .htm files."
       >
         <SettingsRow
-          label="Allow form submissions"
-          description="When on, HTML forms can be submitted inside the viewer iframe. Off by default — only enable if you trust the HTML files you open."
-          htmlFor="html-viewer-allow-forms"
-          control={
-            <Switch
-              id="html-viewer-allow-forms"
-              checked={htmlViewerAllowForms}
-              onCheckedChange={setHtmlViewerAllowForms}
-            />
-          }
-        />
-        <SettingsRow
           label="Allow scripts (unsafe)"
-          description="When on, inline and same-directory scripts execute in an isolated iframe. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
+          description="When on, inline and same-directory scripts execute in an isolated iframe. Forms and event handlers are included when scripts are enabled. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
           htmlFor="html-viewer-allow-scripts"
           control={
             <Switch
@@ -415,7 +401,7 @@ export function SystemSettings({
         />
         <SettingsRow
           label="Block external resources"
-          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering. Inline styles, data: URIs, and relative-path resources are unaffected. Takes effect on the next file open or switch."
+          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering across all render paths. Inline styles, data: URIs, and relative-path resources are unaffected."
           htmlFor="html-viewer-block-external"
           control={
             <Switch

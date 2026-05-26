@@ -111,76 +111,6 @@ describe("HtmlViewer", () => {
   });
 });
 
-describe("HtmlViewer form sanitisation — htmlViewerAllowForms", () => {
-  const htmlContent =
-    "<html><body><h1>Page</h1><form action='/submit'><input type='text' name='q'/><button type='submit'>Go</button></form></body></html>";
-  const filePath = "/path/to/form.html";
-  const fileName = "form.html";
-
-  afterEach(() => {
-    // Reset to default after each test so other tests are not affected
-    useSettingsStore.setState({ htmlViewerAllowForms: false } as Parameters<typeof useSettingsStore.setState>[0]);
-  });
-
-  it("strips <form> + form controls by default (regression guard)", () => {
-    render(
-      <HtmlViewer
-        content={htmlContent}
-        fileName={fileName}
-        filePath={filePath}
-        tabId="tab-forms-default"
-        isDirty={false}
-        updateTabContent={vi.fn()}
-        saveFileWithContent={vi.fn()}
-      />
-    );
-    // Surrounding markup still renders — only the form subtree is gone.
-    expect(screen.getByText("Page")).toBeTruthy();
-    expect(document.querySelector("form")).toBeNull();
-    expect(document.querySelector("input")).toBeNull();
-    expect(document.querySelector("button[type='submit']")).toBeNull();
-  });
-
-  it("preserves <form> + form controls when htmlViewerAllowForms is true", () => {
-    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
-    render(
-      <HtmlViewer
-        content={htmlContent}
-        fileName={fileName}
-        filePath={filePath}
-        tabId="tab-forms-on"
-        isDirty={false}
-        updateTabContent={vi.fn()}
-        saveFileWithContent={vi.fn()}
-      />
-    );
-    const form = document.querySelector("form");
-    expect(form).not.toBeNull();
-    // The action attribute must round-trip — that's the actual submit target.
-    expect(form!.getAttribute("action")).toBe("/submit");
-    const input = document.querySelector("input");
-    expect(input).not.toBeNull();
-    expect(input!.getAttribute("name")).toBe("q");
-    expect(document.querySelector("button[type='submit']")).not.toBeNull();
-  });
-
-  it("still strips <script> when htmlViewerAllowForms is true (regression guard)", () => {
-    useSettingsStore.setState({ htmlViewerAllowForms: true } as Parameters<typeof useSettingsStore.setState>[0]);
-    render(
-      <HtmlViewer
-        content="<html><body><form><input/></form><script>alert(1)</script></body></html>"
-        fileName={fileName}
-        filePath={filePath}
-        tabId="tab-forms-script"
-        isDirty={false}
-        updateTabContent={vi.fn()}
-        saveFileWithContent={vi.fn()}
-      />
-    );
-    expect(document.querySelector("script")).toBeNull();
-    expect(document.querySelector("form")).not.toBeNull();
-  });
-});
 
 describe("PlainTextViewer routing for HTML files", () => {
   it("routes .html files to HtmlViewer (renders inline body, not code-editor)", () => {
@@ -566,6 +496,158 @@ describe("HtmlViewer — empty content placeholder", () => {
     );
     expect(screen.queryByText(/this html file is empty/i)).toBeNull();
     expect(screen.getByText("Hi")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED tests: blockExternal enforced on all render paths (currently broken)
+// ---------------------------------------------------------------------------
+
+describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("blockExternal ON + allowScripts ON → external https:// img src stripped from iframe srcdoc", async () => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://cdn.example.com/photo.jpg" alt="remote"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-scripts-https"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+      expect(srcdoc).not.toContain("https://cdn.example.com/photo.jpg");
+    });
+  });
+
+  it("blockExternal ON + allowScripts ON → relative-path img src preserved in iframe srcdoc", async () => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="./images/local.jpg" alt="local"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-scripts-rel"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      const iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+      expect(srcdoc).toContain("./images/local.jpg");
+    });
+  });
+});
+
+describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  beforeEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("blockExternal ON + unsafeMode active → external https:// img src stripped from iframe srcdoc", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="https://cdn.example.com/photo.jpg" alt="remote"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-unsafe-https"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).not.toContain("https://cdn.example.com/photo.jpg");
+  });
+
+  it("blockExternal ON + unsafeMode active → relative-path img src preserved in iframe srcdoc", () => {
+    useSettingsStore.setState({
+      htmlViewerBlockExternalResources: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><img src="./images/local.jpg" alt="local"></body></html>'
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-block-unsafe-rel"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("./images/local.jpg");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED test: forms render by default after allowForms toggle removal
+// ---------------------------------------------------------------------------
+
+describe("HtmlViewer — form renders by default (allowForms removed)", () => {
+  const filePath = "/path/to/form.html";
+  const fileName = "form.html";
+
+  it("forms render in sanitised div without any toggle (regression guard)", () => {
+    render(
+      <HtmlViewer
+        content="<html><body><form action='/submit'><input type='text' name='q'><button>Go</button></form></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-forms-default-render"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(document.querySelector("form")).not.toBeNull();
   });
 });
 
