@@ -24,9 +24,14 @@ import {
 // so the guarantee holds for the sanitised-div, allowScripts iframe, and
 // unsafe-preview iframe paths equally.
 function stripExternalResources(html: string): string {
+  // Preserve DOCTYPE — DOMParser strips it from outerHTML serialisation.
+  const doctypeMatch = html.match(/^(\s*<!DOCTYPE[^>]*>)/i);
+  const doctype = doctypeMatch ? doctypeMatch[1] : "";
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
   const externalPattern = /^https?:/i;
+  const cssUrlExternal = /url\(\s*['"]?https?:[^'")\s]+['"]?\s*\)/gi;
 
   for (const el of Array.from(doc.querySelectorAll("[src]"))) {
     const val = el.getAttribute("src");
@@ -50,7 +55,28 @@ function stripExternalResources(html: string): string {
       }
     }
   }
-  return doc.documentElement.outerHTML;
+  // Strip CSS url(https://…) from inline style attributes.
+  for (const el of Array.from(doc.querySelectorAll("[style]"))) {
+    const val = el.getAttribute("style");
+    if (val) {
+      const stripped = val.replace(cssUrlExternal, "url()");
+      if (stripped !== val) el.setAttribute("style", stripped);
+    }
+  }
+  // Strip CSS url(https://…) from <style> block text content.
+  for (const el of Array.from(doc.querySelectorAll("style"))) {
+    if (el.textContent) {
+      el.textContent = el.textContent.replace(cssUrlExternal, "url()");
+    }
+  }
+  // Strip external URLs from additional resource-bearing attributes.
+  for (const attr of ["poster", "formaction", "ping", "action", "data"]) {
+    for (const el of Array.from(doc.querySelectorAll(`[${attr}]`))) {
+      const val = el.getAttribute(attr);
+      if (val && externalPattern.test(val)) el.removeAttribute(attr);
+    }
+  }
+  return doctype + doc.documentElement.outerHTML;
 }
 
 interface HtmlViewerProps {
@@ -140,10 +166,10 @@ export function HtmlViewer({
   // file's stylesheet would bleed into the surrounding app chrome.
   // `<body>` content is rendered as a sanitised inline tree.
   const sanitisedBody = useMemo(() => {
-    // Pull out body if a full document was supplied; otherwise treat the
-    // whole content as fragment.
-    const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const fragment = bodyMatch ? bodyMatch[1] : content;
+    // Use DOMParser to extract body content — handles false </body> tags
+    // inside <pre> blocks or HTML comments that would truncate the regex approach.
+    const parsed = new DOMParser().parseFromString(content, "text/html");
+    const fragment = parsed.body.innerHTML || content;
 
     // Apply external-resource stripping before DOMPurify so the guarantee
     // is consistent with the iframe render paths (which use the same utility).
@@ -201,13 +227,14 @@ export function HtmlViewer({
     [content, blockExternal],
   );
 
-  // Reset search state when switching modes or content changes
+  // Reset search state when switching modes, content changes, or iframe mode toggles.
   useEffect(() => {
     setFindBarOpen(false);
+    setSearchQuery("");
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [sourceMode, content]);
+  }, [sourceMode, content, unsafeMode]);
 
   // Unsafe mode is session-only — reset when the user switches to a different tab
   useEffect(() => {
@@ -215,16 +242,23 @@ export function HtmlViewer({
     setShowConfirmDialog(false);
   }, [tabId]);
 
-  // Listen for Cmd+F / notesage:find-open — only active in rendered mode
+  // Zoom is per-file — reset to 1.0 when the tab changes so it doesn't leak.
   useEffect(() => {
-    if (sourceMode) return;
+    setZoom(1.0);
+  }, [tabId]);
+
+  // Listen for Cmd+F / notesage:find-open — only active in sanitised-div mode;
+  // disabled in iframe modes (allowScripts or unsafeMode) where find operates
+  // inside the sandboxed frame, not the host DOM.
+  useEffect(() => {
+    if (sourceMode || allowScripts || unsafeMode) return;
     const handleFindOpen = () => {
       setFindBarOpen(true);
       requestAnimationFrame(() => searchInputRef.current?.focus());
     };
     window.addEventListener("notesage:find-open", handleFindOpen);
     return () => window.removeEventListener("notesage:find-open", handleFindOpen);
-  }, [sourceMode]);
+  }, [sourceMode, allowScripts, unsafeMode]);
 
   // Register as the active zoom controller while rendered. ⌘+ / ⌘- / ⌘0
   // scale the rendered tree via CSS `zoom` (#188).
@@ -260,8 +294,8 @@ export function HtmlViewer({
       if (marks.length > 0) {
         setSearchCurrentIndex(0);
         requestAnimationFrame(() => {
-          marks[0].scrollIntoView({ behavior: "smooth", block: "center" });
-          marks[0].classList.add("dom-find-highlight-active");
+          marks[0]?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+          marks[0]?.classList.add("dom-find-highlight-active");
         });
       } else {
         setSearchCurrentIndex(-1);
@@ -272,8 +306,8 @@ export function HtmlViewer({
 
   const scrollToMatch = useCallback((index: number, marks: HTMLElement[]) => {
     for (const m of marks) m.classList.remove("dom-find-highlight-active");
-    marks[index].classList.add("dom-find-highlight-active");
-    marks[index].scrollIntoView({ behavior: "smooth", block: "center" });
+    marks[index]?.classList.add("dom-find-highlight-active");
+    marks[index]?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }, []);
 
   const handleNext = useCallback(() => {
@@ -436,6 +470,7 @@ export function HtmlViewer({
               <button
                 type="button"
                 onClick={() => {
+                  if (allowScripts || unsafeMode) return;
                   setFindBarOpen(true);
                   requestAnimationFrame(() => searchInputRef.current?.focus());
                 }}
