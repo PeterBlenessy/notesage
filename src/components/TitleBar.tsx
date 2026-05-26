@@ -2,6 +2,12 @@ import { X } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * TitleBar — top chrome for QuietLayout.
@@ -105,15 +111,24 @@ export function TitleBar(props: TitleBarProps) {
         className="flex-1 flex items-center justify-center min-w-0 px-4"
         data-tauri-drag-region
       >
-        <span
-          className={cn(
-            "text-xs truncate",
-            activeTab ? "text-foreground font-medium" : "text-muted-foreground"
-          )}
-          data-tauri-drag-region
-        >
-          {title}
-        </span>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={cn(
+                  "text-xs truncate",
+                  activeTab ? "text-foreground font-medium" : "text-muted-foreground"
+                )}
+                data-tauri-drag-region
+              >
+                {title}
+              </span>
+            </TooltipTrigger>
+            {activeTab && (
+              <TooltipContent side="bottom">{activeTab.filePath}</TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Right: dirty dot + close button. */}

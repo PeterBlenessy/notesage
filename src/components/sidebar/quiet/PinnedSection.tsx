@@ -43,6 +43,12 @@ import {
   hasFileDrag,
   isBelowMidpoint,
 } from "./file-drag";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
@@ -301,7 +307,14 @@ function PinnedRowImpl({
             />
           ) : (
             <>
-              <span className="truncate min-w-0 flex-1">{name}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="truncate min-w-0 flex-1">{name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{path}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {/* #129 — git status + external-change dot. Pinned rows are
                  *  always files, so `kind="file"` is hard-coded. */}
               <SidebarRowIndicators path={path} kind="file" />
