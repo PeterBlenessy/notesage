@@ -269,13 +269,6 @@ interface SettingsStore {
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
   /**
-   * When true, the HTML viewer iframe includes `allow-forms` and
-   * `allow-top-navigation-by-user-activation` in its sandbox attribute so
-   * HTML forms can be submitted. Default false (forms are blocked).
-   */
-  htmlViewerAllowForms: boolean;
-  setHtmlViewerAllowForms: (enabled: boolean) => void;
-  /**
    * When true, the HTML viewer bypasses DOMPurify and renders content in an
    * isolated iframe with `sandbox="allow-scripts"` (no `allow-same-origin`).
    * Inline `<script>` blocks execute; same-directory `<script src="./local.js">`
@@ -285,11 +278,11 @@ interface SettingsStore {
   setHtmlViewerAllowScripts: (enabled: boolean) => void;
   /**
    * When true, the HTML viewer strips external network resources (remote `src`,
-   * `href`, and `srcset` attribute values starting with `https?:`) via a
-   * DOMPurify `uponSanitizeAttribute` hook before rendering. Inline `<style>`
-   * blocks, `data:` URIs, `blob:` URIs, and relative paths are unaffected.
-   * Default false (all resources load freely — matching the natural
-   * "open an HTML file and see what's in it" behaviour most users expect).
+   * `href`, and `srcset` attribute values starting with `https?:`) before
+   * rendering. Applied via a shared `stripExternalResources()` utility on all
+   * render paths (sanitised-div, allowScripts iframe, unsafe-preview iframe).
+   * Inline `<style>` blocks, `data:` URIs, `blob:` URIs, and relative paths are
+   * unaffected. Default false (all resources load freely).
    */
   htmlViewerBlockExternalResources: boolean;
   setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
@@ -677,12 +670,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ notifyExternalChanges: notify });
       },
 
-      htmlViewerAllowForms: false,
-
-      setHtmlViewerAllowForms: (enabled: boolean) => {
-        set({ htmlViewerAllowForms: enabled });
-      },
-
       htmlViewerAllowScripts: false,
 
       setHtmlViewerAllowScripts: (enabled: boolean) => {
@@ -697,7 +684,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 19,
+      version: 20,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -880,6 +867,13 @@ export const useSettingsStore = create<SettingsStore>()(
           delete state.previewInvitationDismissedAt;
           delete state.revertInvitationShownAt;
           delete state.revertInvitationDismissedAt;
+        }
+        if (version < 20) {
+          // HTML viewer allowForms removal (#360) — the toggle was non-functional
+          // when allowScripts was ON (DOMPurify hook never ran on the iframe path).
+          // Forms without scripts are inert in a sanitised div, so the setting is
+          // dropped. Delete the persisted key so the name is free for future reuse.
+          delete state.htmlViewerAllowForms;
         }
         return state;
       },
