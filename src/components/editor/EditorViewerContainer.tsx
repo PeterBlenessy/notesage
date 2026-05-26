@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback } from "react";
+import { Suspense, lazy, useState, useCallback, useEffect } from "react";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { StatusBar } from "./StatusBar";
 import { toast } from "sonner";
@@ -44,6 +44,11 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
   const isHtml = isHtmlViewerFile(activeTab.fileName);
   const [htmlSourceMode, setHtmlSourceMode] = useState(false);
   const toggleHtmlSourceMode = useCallback(() => setHtmlSourceMode((v) => !v), []);
+
+  // Bug 5: Reset source mode when the active tab changes
+  useEffect(() => {
+    setHtmlSourceMode(false);
+  }, [activeTab.id]);
 
   let viewer: React.ReactNode = null;
   switch (activeTab.fileType) {

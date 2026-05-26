@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
+import { EditorViewerContainer } from "../../EditorViewerContainer";
 import { useSettingsStore } from "@/stores/settings-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
+import { fireZoom } from "@/hooks/useEditorZoom";
+
+// jsdom doesn't implement scrollIntoView — mock it globally
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -13,6 +20,15 @@ vi.mock("../CodeEditor", () => ({
     <div data-testid="code-editor" data-filename={fileName}>
       {content}
     </div>
+  ),
+}));
+
+// Mock StatusBar to avoid complex store dependencies when testing EditorViewerContainer
+vi.mock("@/components/editor/StatusBar", () => ({
+  StatusBar: ({ onToggleViewMode }: { onToggleViewMode?: () => void }) => (
+    <button data-testid="status-toggle-view" onClick={onToggleViewMode}>
+      Toggle View
+    </button>
   ),
 }));
 
@@ -754,5 +770,308 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe).not.toBeNull();
     // Raw inline script is preserved in srcdoc
     expect(iframe!.getAttribute("srcdoc")).toContain("window._test = 42");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RED tests — 10 correctness bugs identified in issue #375
+// These tests must be RED (failing) before implementation and GREEN after.
+// ---------------------------------------------------------------------------
+
+// Bug 1: CSS url() in inline style attributes not stripped by stripExternalResources
+describe("HtmlViewer — Bug 1: CSS url() in inline style not stripped when blockExternal ON", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("blockExternal ON + unsafe preview: CSS url() in inline style is stripped from srcdoc", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><div style="background-image: url(https://evil.com/img.gif)">Content</div></body></html>'
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug1"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).not.toMatch(/url\s*\(\s*https?:/i);
+  });
+});
+
+// Bug 2 & 3: Additional HTML attributes (poster, action) not stripped
+describe("HtmlViewer — Bug 2 & 3: poster and form action not stripped when blockExternal ON", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("blockExternal ON + unsafe preview: video poster attribute is stripped from srcdoc", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><video poster="https://evil.com/thumb.jpg"></video></body></html>'
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug2-poster"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).not.toContain("https://evil.com/thumb.jpg");
+  });
+
+  it("blockExternal ON + unsafe preview: form action attribute is stripped from srcdoc", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<html><body><form action="https://evil.com/submit"><input type="submit" value="Go"></form></body></html>'
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug3-action"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).not.toContain("https://evil.com/submit");
+  });
+});
+
+// Bug 4: Find bar opens even when in iframe render mode (allowScripts or unsafeMode)
+describe("HtmlViewer — Bug 4: Find bar opens in iframe modes when it should not", () => {
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("notesage:find-open event does not open find bar when allowScripts iframe is active", async () => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>Hello</p></body></html>"
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug4"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(document.querySelector("iframe")).not.toBeNull());
+    fireEvent(window, new Event("notesage:find-open"));
+    expect(document.querySelector('input[aria-label="Find in document"]')).toBeNull();
+  });
+});
+
+// Bug 5: htmlSourceMode not reset when switching between HTML tabs in EditorViewerContainer
+describe("EditorViewerContainer — Bug 5: htmlSourceMode leaks across HTML tab switches", () => {
+  const makeHtmlTab = (id: string) => ({
+    id,
+    filePath: `/path/${id}.html`,
+    fileName: `${id}.html`,
+    fileType: "other" as const,
+    content: "<html><body><p>Hello</p></body></html>",
+    isDirty: false,
+  });
+
+  it("htmlSourceMode resets to false when switching to a different HTML tab", () => {
+    const tab1 = makeHtmlTab("evc-bug5-a");
+    const tab2 = makeHtmlTab("evc-bug5-b");
+    // updateTabContent and saveFile are required for PlainTextViewer to route to HtmlViewer
+    const updateTabContent = vi.fn();
+    const saveFile = vi.fn().mockResolvedValue(true);
+    const { rerender } = render(
+      <EditorViewerContainer
+        activeTab={tab1}
+        focusMode={false}
+        updateTabContent={updateTabContent}
+        saveFile={saveFile}
+      />
+    );
+    // Activate source mode via the mocked StatusBar toggle
+    fireEvent.click(screen.getByTestId("status-toggle-view"));
+    // Source mode ON — CodeEditor must be visible
+    expect(screen.getByTestId("code-editor")).toBeTruthy();
+    // Switch to a different tab
+    rerender(
+      <EditorViewerContainer
+        activeTab={tab2}
+        focusMode={false}
+        updateTabContent={updateTabContent}
+        saveFile={saveFile}
+      />
+    );
+    // Source mode must have reset — no CodeEditor
+    expect(screen.queryByTestId("code-editor")).toBeNull();
+  });
+});
+
+// Bug 6: notesage:find-open event opens find bar even when unsafeMode (iframe) is active
+describe("HtmlViewer — Bug 6: notesage:find-open opens find bar in unsafeMode", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("notesage:find-open event does not open find bar when unsafeMode iframe is active", () => {
+    render(
+      <HtmlViewer
+        content="<html><body><p>Hello</p></body></html>"
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug6"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // Activate unsafe preview mode
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    // Now in unsafe iframe mode — fire find-open event
+    fireEvent(window, new Event("notesage:find-open"));
+    // Find bar must NOT open (useless/broken in iframe mode — renderRef is null)
+    expect(document.querySelector('input[aria-label="Find in document"]')).toBeNull();
+  });
+});
+
+// Bug 7: searchQuery state not cleared when content changes (reset effect is incomplete)
+describe("HtmlViewer — Bug 7: searchQuery not cleared when content changes", () => {
+  it("search query input is empty when find bar is reopened after content change", () => {
+    const { rerender } = render(
+      <HtmlViewer
+        content="<html><body><p>Hello world</p></body></html>"
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug7"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // Open find bar and type a query
+    fireEvent.click(screen.getByRole("button", { name: "Find" }));
+    const input = document.querySelector('input[aria-label="Find in document"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Hello" } });
+    expect(input.value).toBe("Hello");
+    // Change content — triggers the reset effect
+    rerender(
+      <HtmlViewer
+        content="<html><body><p>Different content entirely</p></body></html>"
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug7"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    // Reopen find bar
+    fireEvent.click(screen.getByRole("button", { name: "Find" }));
+    const inputAfter = document.querySelector('input[aria-label="Find in document"]') as HTMLInputElement;
+    // Query must be cleared — not the stale "Hello" from the previous file
+    expect(inputAfter.value).toBe("");
+  });
+});
+
+// Bug 8: zoom state not reset when tabId changes
+describe("HtmlViewer — Bug 8: zoom not reset on tab switch", () => {
+  afterEach(() => {
+    // Reset the module-level zoom controller after each test
+    act(() => { fireZoom("reset"); });
+  });
+
+  it("zoom resets to 1.0 (zoom indicator disappears) when tabId changes", () => {
+    const commonProps = {
+      content: "<html><body><p>Hello</p></body></html>",
+      fileName: "page.html",
+      filePath: "/path/page.html",
+      isDirty: false,
+      updateTabContent: vi.fn(),
+      saveFileWithContent: vi.fn(),
+    };
+    const { rerender } = render(<HtmlViewer {...commonProps} tabId="tab-bug8-a" />);
+    // Trigger zoom in via the registered viewer zoom controller
+    act(() => { fireZoom("in"); });
+    // Zoom indicator should be visible (non-1.0 zoom)
+    expect(screen.getByText("110%")).toBeTruthy();
+    // Switch to a different tab
+    rerender(<HtmlViewer {...commonProps} tabId="tab-bug8-b" />);
+    // Zoom must reset — zoom indicator should disappear
+    expect(screen.queryByText("110%")).toBeNull();
+  });
+});
+
+// Bug 9: DOCTYPE declaration dropped by stripExternalResources
+describe("HtmlViewer — Bug 9: DOCTYPE dropped by stripExternalResources", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false, htmlViewerBlockExternalResources: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("blockExternal ON + unsafe preview: DOCTYPE html is preserved in iframe srcdoc", () => {
+    useSettingsStore.setState({ htmlViewerBlockExternalResources: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content='<!DOCTYPE html><html><body><img src="https://evil.com/img.jpg"></body></html>'
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug9"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
+    const iframe = document.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
+    expect(srcdoc.toLowerCase()).toContain("<!doctype");
+  });
+});
+
+// Bug 10: Body extraction regex truncates on </body> inside HTML comments
+describe("HtmlViewer — Bug 10: Body extraction truncates on </body> inside HTML comment", () => {
+  it("renders content that appears after a comment containing </body>", () => {
+    render(
+      <HtmlViewer
+        content="<html><body><!-- </body> --><p>After comment</p></body></html>"
+        fileName="page.html"
+        filePath="/path/page.html"
+        tabId="tab-bug10"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    expect(screen.getByText("After comment")).toBeTruthy();
   });
 });

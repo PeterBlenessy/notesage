@@ -24,6 +24,11 @@ import {
 // so the guarantee holds for the sanitised-div, allowScripts iframe, and
 // unsafe-preview iframe paths equally.
 function stripExternalResources(html: string): string {
+  // Bug 9: DOMParser/outerHTML drops the DOCTYPE declaration. Preserve it so
+  // the unsafe-preview iframe srcdoc renders in standards mode.
+  const doctypeMatch = html.match(/^\s*(<!DOCTYPE[^>]*>)\s*/i);
+  const doctype = doctypeMatch ? doctypeMatch[1] : "";
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, "text/html");
   const externalPattern = /^https?:/i;
@@ -50,7 +55,29 @@ function stripExternalResources(html: string): string {
       }
     }
   }
-  return doc.documentElement.outerHTML;
+
+  // Bug 2 & 3: Strip additional attributes that can trigger external network
+  // requests: video poster thumbnails, form submission targets, ping beacons,
+  // object data sources, and formaction overrides.
+  for (const attr of ["poster", "formaction", "action", "ping", "data"]) {
+    for (const el of Array.from(doc.querySelectorAll(`[${attr}]`))) {
+      const val = el.getAttribute(attr);
+      if (val && externalPattern.test(val)) el.removeAttribute(attr);
+    }
+  }
+
+  // Bug 1: Strip CSS url() values containing external URLs from inline style
+  // attributes. Replaces e.g. url(https://evil.com/img.gif) with url().
+  const cssUrlExternal = /url\s*\(\s*['"]?\s*https?:[^)'"]*['"]?\s*\)/gi;
+  for (const el of Array.from(doc.querySelectorAll("[style]"))) {
+    const val = el.getAttribute("style");
+    if (val && cssUrlExternal.test(val)) {
+      el.setAttribute("style", val.replace(cssUrlExternal, "url()"));
+    }
+  }
+
+  // Bug 9: Restore the original DOCTYPE before returning.
+  return doctype + doc.documentElement.outerHTML;
 }
 
 interface HtmlViewerProps {
@@ -140,10 +167,17 @@ export function HtmlViewer({
   // file's stylesheet would bleed into the surrounding app chrome.
   // `<body>` content is rendered as a sanitised inline tree.
   const sanitisedBody = useMemo(() => {
-    // Pull out body if a full document was supplied; otherwise treat the
-    // whole content as fragment.
-    const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const fragment = bodyMatch ? bodyMatch[1] : content;
+    // Bug 10: Use DOMParser instead of a non-greedy regex so that occurrences
+    // of </body> inside HTML comments (e.g. <!-- </body> -->) do not truncate
+    // the extracted fragment prematurely.
+    let fragment: string;
+    if (/<body\b/i.test(content)) {
+      const domParser = new DOMParser();
+      const parsedDoc = domParser.parseFromString(content, "text/html");
+      fragment = parsedDoc.body ? parsedDoc.body.innerHTML : content;
+    } else {
+      fragment = content;
+    }
 
     // Apply external-resource stripping before DOMPurify so the guarantee
     // is consistent with the iframe render paths (which use the same utility).
@@ -201,30 +235,41 @@ export function HtmlViewer({
     [content, blockExternal],
   );
 
-  // Reset search state when switching modes or content changes
+  // Reset search state when switching modes, content, or unsafe mode changes.
+  // Bug 7: include setSearchQuery("") so stale query text is cleared.
+  // Bug 6 (defensive): unsafeMode in deps ensures find bar is closed when
+  // switching to iframe mode, even if the bar was programmatically opened.
   useEffect(() => {
     setFindBarOpen(false);
+    setSearchQuery("");
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [sourceMode, content]);
+  }, [sourceMode, content, unsafeMode]);
 
-  // Unsafe mode is session-only — reset when the user switches to a different tab
+  // Unsafe mode and zoom are session-only — reset when switching to a different tab.
+  // Bug 8: also reset zoom so the new tab always starts at 1.0, not the
+  // previous tab's zoom level.
   useEffect(() => {
     setUnsafeMode(false);
     setShowConfirmDialog(false);
+    setZoom(1.0);
   }, [tabId]);
 
-  // Listen for Cmd+F / notesage:find-open — only active in rendered mode
+  // Listen for Cmd+F / notesage:find-open — only active in the sanitised-div
+  // render path. Bugs 4 & 6: suppress the event when rendering an iframe
+  // (allowScripts or unsafeMode) because renderRef.current is null in those
+  // paths and DOM-based search would silently fail.
   useEffect(() => {
     if (sourceMode) return;
     const handleFindOpen = () => {
+      if (allowScripts || unsafeMode) return;
       setFindBarOpen(true);
       requestAnimationFrame(() => searchInputRef.current?.focus());
     };
     window.addEventListener("notesage:find-open", handleFindOpen);
     return () => window.removeEventListener("notesage:find-open", handleFindOpen);
-  }, [sourceMode]);
+  }, [sourceMode, allowScripts, unsafeMode]);
 
   // Register as the active zoom controller while rendered. ⌘+ / ⌘- / ⌘0
   // scale the rendered tree via CSS `zoom` (#188).
