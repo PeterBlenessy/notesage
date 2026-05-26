@@ -19,6 +19,40 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// Strip attributes containing external (http/https) URLs from a raw HTML string.
+// Applied before content reaches any render path when blockExternal is ON,
+// so the guarantee holds for the sanitised-div, allowScripts iframe, and
+// unsafe-preview iframe paths equally.
+function stripExternalResources(html: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const externalPattern = /^https?:/i;
+
+  for (const el of Array.from(doc.querySelectorAll("[src]"))) {
+    const val = el.getAttribute("src");
+    if (val && externalPattern.test(val)) el.removeAttribute("src");
+  }
+  for (const el of Array.from(doc.querySelectorAll("[href]"))) {
+    const val = el.getAttribute("href");
+    if (val && externalPattern.test(val)) el.removeAttribute("href");
+  }
+  for (const el of Array.from(doc.querySelectorAll("[srcset]"))) {
+    const val = el.getAttribute("srcset");
+    if (val) {
+      const filtered = val
+        .split(",")
+        .filter((s) => !externalPattern.test(s.trim()))
+        .join(",");
+      if (filtered.trim()) {
+        el.setAttribute("srcset", filtered);
+      } else {
+        el.removeAttribute("srcset");
+      }
+    }
+  }
+  return doc.documentElement.outerHTML;
+}
+
 interface HtmlViewerProps {
   content: string;
   fileName: string;
@@ -47,12 +81,7 @@ function PillDivider() {
   );
 }
 
-// Form tags + attributes that round-trip submission. Forbidden by default so a
-// sanitised .html file can't ship a covert "click here to submit" form. The
-// `htmlViewerAllowForms` setting (Settings > System) re-allows them for users
-// who explicitly want to render local docs that contain real forms.
-const FORM_TAGS = ["form", "input", "button", "select", "textarea", "label", "fieldset", "legend", "option", "optgroup"];
-const FORM_ATTRS = ["action", "method", "name", "for", "type", "value", "placeholder", "checked", "selected", "disabled", "readonly", "required", "min", "max", "step", "pattern"];
+
 
 /**
  * HtmlViewer — render an HTML file directly in a sanitised div with the
@@ -67,9 +96,12 @@ const FORM_ATTRS = ["action", "method", "name", "for", "type", "value", "placeho
  * markdown HTML and AI-suggested HTML, so the viewer is no longer a special
  * surface that other features have to know about.
  *
- * `htmlViewerAllowForms` opt-in (Settings > System) keeps `<form>` and its
- * controls in the sanitised tree so local docs with real forms render. Default
- * off — a hostile-document threat model treats forms as exfil surfaces.
+ * Two orthogonal security settings (Settings > System):
+ * - `htmlViewerBlockExternalResources`: strips remote http/https URLs from all
+ *   render paths via `stripExternalResources()`. Applied consistently regardless
+ *   of which render path (sanitised-div, allowScripts iframe, unsafe-preview).
+ * - `htmlViewerAllowScripts`: renders in an isolated `sandbox="allow-scripts"`
+ *   iframe. Forms and event handlers are included when scripts are enabled.
  */
 export function HtmlViewer({
   content,
@@ -82,7 +114,6 @@ export function HtmlViewer({
   sourceMode: sourceModeControlled,
   onToggleSourceMode,
 }: HtmlViewerProps) {
-  const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const allowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const blockExternal = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const [sourceModeInternal, setSourceModeInternal] = useState(false);
@@ -113,36 +144,24 @@ export function HtmlViewer({
     // whole content as fragment.
     const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     const fragment = bodyMatch ? bodyMatch[1] : content;
-    const baseForbidTags = ["script", "iframe", "object", "embed"];
 
-    // When block-external-resources is ON, add a hook that strips attribute
-    // values starting with `https?:` from `src`, `href`, and `srcset`.
-    // The hook is added immediately before sanitise() and removed after so it
-    // does not leak into other DOMPurify consumers (ai-suggestion.ts, etc.).
-    if (blockExternal) {
-      DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
-        if (!["src", "href", "srcset"].includes(data.attrName)) return;
-        if (/^https?:/i.test(data.attrValue)) data.keepAttr = false;
-      });
-    }
+    // Apply external-resource stripping before DOMPurify so the guarantee
+    // is consistent with the iframe render paths (which use the same utility).
+    const processedFragment = blockExternal
+      ? stripExternalResources(fragment)
+      : fragment;
 
-    const result = DOMPurify.sanitize(fragment, {
+    return DOMPurify.sanitize(processedFragment, {
       ALLOW_DATA_ATTR: false,
-      FORBID_TAGS: allowForms ? baseForbidTags : [...baseForbidTags, ...FORM_TAGS],
-      ADD_ATTR: allowForms ? FORM_ATTRS : [],
+      FORBID_TAGS: ["script", "iframe", "object", "embed"],
     });
-
-    if (blockExternal) {
-      DOMPurify.removeHook("uponSanitizeAttribute");
-    }
-
-    return result;
-  }, [content, allowForms, blockExternal]);
+  }, [content, blockExternal]);
 
   // When allow-scripts is ON, pre-process the raw HTML: read same-directory
   // <script src="./..."> files via Tauri read_file and rewrite them as inline
   // <script> blocks so the iframe (which has a null/opaque origin — no
   // allow-same-origin) can execute them without a cross-origin fetch.
+  // When blockExternal is also ON, strip external URLs after script inlining.
   useEffect(() => {
     if (!allowScripts) {
       setUnsafeHtml(null);
@@ -165,11 +184,22 @@ export function HtmlViewer({
           // If file can't be read, leave the original tag in place
         }
       }
+      if (blockExternal) {
+        processed = stripExternalResources(processed);
+      }
       if (!cancelled) setUnsafeHtml(processed);
     }
     process();
     return () => { cancelled = true; };
-  }, [allowScripts, content, filePath]);
+  }, [allowScripts, content, filePath, blockExternal]);
+
+  // Content for the unsafe-preview iframe, with optional external-resource
+  // stripping when blockExternal is ON. Memoised to avoid re-parsing on every
+  // render when the content has not changed.
+  const unsafePreviewContent = useMemo(
+    () => (blockExternal ? stripExternalResources(content) : content),
+    [content, blockExternal],
+  );
 
   // Reset search state when switching modes or content changes
   useEffect(() => {
@@ -442,7 +472,7 @@ export function HtmlViewer({
         >
           {unsafeMode ? (
             <iframe
-              srcDoc={content}
+              srcDoc={unsafePreviewContent}
               sandbox="allow-scripts"
               className="w-full h-full border-0"
               title={`Unsafe preview: ${fileName}`}
