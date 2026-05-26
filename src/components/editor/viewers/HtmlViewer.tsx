@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Code, Eye, ShieldAlert } from "lucide-react";
+import { Eye, ShieldAlert, Search, ChevronUp, ChevronDown, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
-import { FindBar } from "@/components/editor/FindBar";
 import { CodeEditor } from "./CodeEditor";
+import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useSettingsStore } from "@/stores/settings-store";
 import { registerZoomController } from "@/hooks/useEditorZoom";
 import {
@@ -26,11 +27,25 @@ interface HtmlViewerProps {
   isDirty: boolean;
   updateTabContent: (content: string) => void;
   saveFileWithContent: (content: string) => void;
+  sourceMode?: boolean;
+  onToggleSourceMode?: () => void;
 }
 
 const ZOOM_STEP = 1.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
+
+const PILL_BTN =
+  "inline-flex items-center gap-1 h-7 px-2 rounded-full text-xs hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:pointer-events-none";
+
+function PillDivider() {
+  return (
+    <span
+      className="w-px h-3.5 bg-border/60 mx-0.5"
+      aria-hidden="true"
+    />
+  );
+}
 
 // Form tags + attributes that round-trip submission. Forbidden by default so a
 // sanitised .html file can't ship a covert "click here to submit" form. The
@@ -64,13 +79,18 @@ export function HtmlViewer({
   isDirty,
   updateTabContent,
   saveFileWithContent,
+  sourceMode: sourceModeControlled,
+  onToggleSourceMode,
 }: HtmlViewerProps) {
   const allowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
   const allowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const blockExternal = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
-  const [sourceMode, setSourceMode] = useState(false);
+  const [sourceModeInternal, setSourceModeInternal] = useState(false);
+  const sourceMode = sourceModeControlled ?? sourceModeInternal;
+  const setSourceMode = onToggleSourceMode ?? (() => setSourceModeInternal((v) => !v));
   const [unsafeHtml, setUnsafeHtml] = useState<string | null>(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [zoom, setZoom] = useState(1.0);
@@ -80,6 +100,7 @@ export function HtmlViewer({
   const renderRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Whether the content is empty or whitespace-only (triggers placeholder)
   const isEmpty = content.trim() === "";
@@ -167,7 +188,10 @@ export function HtmlViewer({
   // Listen for Cmd+F / notesage:find-open — only active in rendered mode
   useEffect(() => {
     if (sourceMode) return;
-    const handleFindOpen = () => setFindBarOpen(true);
+    const handleFindOpen = () => {
+      setFindBarOpen(true);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    };
     window.addEventListener("notesage:find-open", handleFindOpen);
     return () => window.removeEventListener("notesage:find-open", handleFindOpen);
   }, [sourceMode]);
@@ -244,6 +268,7 @@ export function HtmlViewer({
 
   const handleClose = useCallback(() => {
     setFindBarOpen(false);
+    setSearchQuery("");
     const container = getSearchContainer();
     if (container) clearDomHighlights(container);
     setSearchMatches([]);
@@ -251,30 +276,20 @@ export function HtmlViewer({
     setSearchCurrentIndex(-1);
   }, [getSearchContainer]);
 
-  const toolbarClass =
-    "h-9 border-b border-border px-3 flex items-center gap-2 shrink-0 bg-background";
-
   if (sourceMode) {
     return (
-      <div className="h-full flex flex-col">
-        <div className={toolbarClass} data-testid="html-viewer-toolbar">
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            {fileName}
-          </span>
-          {isDirty && <span className="text-xs text-muted-foreground">●</span>}
-          <span className="text-xs text-muted-foreground ml-2">Source</span>
-          <div className="ml-auto">
-            <button
-              type="button"
-              aria-label="Switch to rendered view"
-              onClick={() => setSourceMode(false)}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border"
-            >
-              <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-              Rendered
-            </button>
-          </div>
-        </div>
+      <div className="h-full flex flex-col relative">
+        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="absolute top-4 left-1/2 -translate-x-1/2">
+          <button
+            type="button"
+            aria-label="Switch to rendered view"
+            onClick={setSourceMode}
+            className={cn(PILL_BTN, "text-muted-foreground")}
+          >
+            <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span>Rendered</span>
+          </button>
+        </ViewerToolbarPill>
         <div className="flex-1 min-h-0 overflow-hidden">
           <CodeEditor
             content={content}
@@ -316,58 +331,101 @@ export function HtmlViewer({
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="h-full flex flex-col">
-        <div className={toolbarClass} data-testid="html-viewer-toolbar">
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            {fileName}
-          </span>
-          <span className="text-xs text-muted-foreground ml-2">
-            {unsafeMode ? "Unsafe preview" : "Rendered"}
-          </span>
-          {!unsafeMode && zoom !== 1.0 && (
-            <span
-              className="text-xs text-muted-foreground ml-2 tabular-nums"
-              aria-label="Zoom level"
-            >
-              {Math.round(zoom * 100)}%
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              aria-label="Unsafe preview mode"
-              title={
-                unsafeMode
-                  ? "Unsafe preview active — scripts are executing"
-                  : "Enable unsafe preview mode (renders scripts)"
-              }
-              onClick={() => {
-                if (!unsafeMode) {
-                  setShowConfirmDialog(true);
-                } else {
-                  setUnsafeMode(false);
+      <div className="h-full flex flex-col relative">
+        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="absolute top-4 left-1/2 -translate-x-1/2">
+          {findBarOpen ? (
+            <>
+              <Search className="h-3.5 w-3.5 text-muted-foreground ml-1.5 shrink-0" strokeWidth={1.5} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  handleSearch(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (e.shiftKey) handlePrevious(); else handleNext();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    handleClose();
+                  }
+                }}
+                placeholder="Find…"
+                className="bg-transparent border-none outline-none text-xs text-foreground placeholder:text-muted-foreground w-28 px-1"
+                aria-label="Find in document"
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+              {searchMatches.length > 0 && (
+                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                  {searchCurrentIndex + 1}/{searchMatches.length}
+                </span>
+              )}
+              <button type="button" onClick={handlePrevious} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Previous match">
+                <ChevronUp className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+              <button type="button" onClick={handleNext} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Next match">
+                <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+              <button type="button" onClick={handleClose} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Close find">
+                <X className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-label="Unsafe preview mode"
+                title={
+                  unsafeMode
+                    ? "Unsafe preview active — scripts are executing"
+                    : "Enable unsafe preview mode (renders scripts)"
                 }
-              }}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors border ${
-                unsafeMode
-                  ? "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground border-border"
-              }`}
-            >
-              <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
-              Unsafe preview
-            </button>
-            <button
-              type="button"
-              aria-label="Switch to source view"
-              onClick={() => setSourceMode(true)}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-border"
-            >
-              <Code className="h-3.5 w-3.5" aria-hidden="true" />
-              Source
-            </button>
-          </div>
-        </div>
+                onClick={() => {
+                  if (!unsafeMode) {
+                    setShowConfirmDialog(true);
+                  } else {
+                    setUnsafeMode(false);
+                  }
+                }}
+                className={cn(
+                  PILL_BTN,
+                  unsafeMode
+                    ? "bg-destructive/10 text-destructive"
+                    : "text-muted-foreground",
+                )}
+              >
+                <ShieldAlert className="h-3.5 w-3.5" strokeWidth={1.5} />
+                {unsafeMode && <span>Unsafe</span>}
+              </button>
+              <PillDivider />
+              <button
+                type="button"
+                onClick={() => {
+                  setFindBarOpen(true);
+                  requestAnimationFrame(() => searchInputRef.current?.focus());
+                }}
+                className={cn(PILL_BTN, "text-muted-foreground")}
+                title="Find (Cmd+F)"
+                aria-label="Find"
+              >
+                <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+              {!unsafeMode && zoom !== 1.0 && (
+                <>
+                  <PillDivider />
+                  <span className="text-xs text-muted-foreground tabular-nums px-1">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                </>
+              )}
+            </>
+          )}
+        </ViewerToolbarPill>
 
         {/* Content area. Three render paths, in priority order:
             1. Unsafe preview mode (user clicked toolbar toggle + accepted dialog) —
@@ -380,56 +438,42 @@ export function HtmlViewer({
             3. Default — DOMPurify sanitised inline div. */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-auto relative p-3"
+          className="flex-1 overflow-auto relative"
         >
           {unsafeMode ? (
             <iframe
               srcDoc={content}
               sandbox="allow-scripts"
-              className="w-full h-full border-0 rounded-lg"
+              className="w-full h-full border-0"
               title={`Unsafe preview: ${fileName}`}
             />
+          ) : isEmpty ? (
+            <div
+              className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground"
+              aria-label={`Rendered HTML: ${fileName}`}
+            >
+              <span className="text-sm font-medium">This HTML file is empty</span>
+              <span className="text-xs">0 bytes</span>
+            </div>
+          ) : allowScripts && unsafeHtml !== null ? (
+            <iframe
+              sandbox="allow-scripts"
+              srcDoc={unsafeHtml}
+              title={`Rendered HTML (scripts enabled): ${fileName}`}
+              aria-label={`Rendered HTML: ${fileName}`}
+              className="w-full h-full border-0"
+              style={{ minHeight: "60vh", zoom }}
+            />
           ) : (
-            <>
-              <FindBar
-                open={findBarOpen}
-                onClose={handleClose}
-                matchCount={searchMatches.length}
-                currentMatch={searchCurrentIndex}
-                onSearch={handleSearch}
-                onNext={handleNext}
-                onPrevious={handlePrevious}
-                replaceEnabled={false}
-                replaceExpanded={false}
-                onReplaceExpandedChange={() => {}}
+            <div className="p-6">
+              <div
+                ref={renderRef}
+                className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
+                style={{ zoom }}
+                aria-label={`Rendered HTML: ${fileName}`}
+                dangerouslySetInnerHTML={{ __html: sanitisedBody }}
               />
-              {isEmpty ? (
-                <div
-                  className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground"
-                  aria-label={`Rendered HTML: ${fileName}`}
-                >
-                  <span className="text-sm font-medium">This HTML file is empty</span>
-                  <span className="text-xs">0 bytes</span>
-                </div>
-              ) : allowScripts && unsafeHtml !== null ? (
-                <iframe
-                  sandbox="allow-scripts"
-                  srcDoc={unsafeHtml}
-                  title={`Rendered HTML (scripts enabled): ${fileName}`}
-                  aria-label={`Rendered HTML: ${fileName}`}
-                  className="w-full h-full rounded-lg border border-border shadow-sm bg-white"
-                  style={{ minHeight: "60vh", zoom }}
-                />
-              ) : (
-                <div
-                  ref={renderRef}
-                  className="bg-white text-black rounded-lg border border-border shadow-sm p-6 max-w-3xl mx-auto"
-                  style={{ zoom }}
-                  aria-label={`Rendered HTML: ${fileName}`}
-                  dangerouslySetInnerHTML={{ __html: sanitisedBody }}
-                />
-              )}
-            </>
+            </div>
           )}
         </div>
       </div>
