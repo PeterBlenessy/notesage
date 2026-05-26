@@ -1,6 +1,12 @@
 import { useMemo, useCallback } from "react";
 import { List } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Editor } from "@tiptap/core";
 
 interface HeadingItem {
@@ -96,9 +102,18 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
                   <span className="text-xs font-mono shrink-0 w-5 text-center text-muted-foreground">
                     H{heading.level}
                   </span>
-                  <span className={`text-sm truncate text-foreground ${heading.level <= 2 ? "font-medium" : ""}`}>
-                    {heading.text || "Untitled"}
-                  </span>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={`text-sm truncate text-foreground ${heading.level <= 2 ? "font-medium" : ""}`}>
+                          {heading.text || "Untitled"}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" sideOffset={8}>
+                        {heading.text || "Untitled"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </button>
               ))
           )}

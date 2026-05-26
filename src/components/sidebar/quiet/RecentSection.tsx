@@ -35,6 +35,12 @@ import { FilePreview } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import { formatSavedShort } from "@/lib/saved-ago";
 import { beginFileDrag } from "./file-drag";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * RecentSection — quiet-composer sidebar recent-documents list (task #33).
@@ -238,7 +244,16 @@ function RecentRow({
             />
           ) : (
             <>
-              <span className="truncate min-w-0 flex-1">{entry.name}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="truncate min-w-0 flex-1">{entry.name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {entry.name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {/* #129 — git status + external-change dot. Recent rows are
                  *  always files, so `kind="file"` is hard-coded. */}
               <SidebarRowIndicators path={entry.path} kind="file" />

@@ -32,6 +32,12 @@ import {
   subscribeToOpenContextMenus,
   subscribeToForceCloseAllPeeks,
 } from "@/lib/sidebar-context-menu-state";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Hover-triggered popover that previews one level of a project's contents.
@@ -509,9 +515,18 @@ export function FolderPeek({
                               strokeWidth={1.5}
                               aria-hidden="true"
                             />
-                            <span className="truncate min-w-0 flex-1">
-                              {entry.name}
-                            </span>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate min-w-0 flex-1">
+                                    {entry.name}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" sideOffset={8}>
+                                  {entry.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* Meta column (live-test 2026-04-26 #152)
                                 — folders show the recursive file count
                                 so users can scan project structure at
@@ -600,9 +615,18 @@ export function FolderPeek({
                               fileName={entry.name}
                               className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
                             />
-                            <span className="truncate min-w-0 flex-1">
-                              {entry.name}
-                            </span>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate min-w-0 flex-1">
+                                    {entry.name}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" sideOffset={8}>
+                                  {entry.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* Meta column (live-test 2026-04-26 #152)
                                 — files show "time since last opened"
                                 from the persisted MRU. Files never
