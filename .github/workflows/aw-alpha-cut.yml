@@ -156,8 +156,19 @@ jobs:
           version=${previous_tag#v}
           base=${version%-alpha.*}
           counter=${version#*-alpha.}
-          next_counter=$(( counter + 1 ))
-          next_version="${base}-alpha.${next_counter}"
+
+          # If the stable tag for this base already exists (e.g. v0.45.0 is
+          # released but the last alpha was v0.45.0-alpha.5), bump the patch
+          # and start a new alpha series.
+          if git tag --list "v${base}" | grep -q .; then
+            IFS='.' read -r major minor patch <<< "$base"
+            base="${major}.${minor}.$(( patch + 1 ))"
+            next_version="${base}-alpha.1"
+            echo "Stable v${version%-alpha.*} exists — starting new series: v$next_version"
+          else
+            next_counter=$(( counter + 1 ))
+            next_version="${base}-alpha.${next_counter}"
+          fi
           echo "Next alpha: v$next_version"
           echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
 
