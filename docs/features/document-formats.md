@@ -139,6 +139,27 @@ Editable CodeMirror 6 editor for code files with syntax highlighting, line numbe
 - Simple `<pre>` rendering for non-code text files (`.txt`, `.log`, `.csv`, extensionless)
 - In-document search via `dom-search.ts`
 
+## HTML Viewer
+
+Renders `.html` and `.htm` files inline with a DOMPurify-sanitised div (default) or in a sandboxed iframe when scripts are enabled.
+
+**Two security settings (Settings > System > HTML viewer):**
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| **Block external resources** | Off | When on, strips remote `http://` / `https://` URLs from `src`, `href`, and `srcset` attributes. Applied consistently on all render paths (sanitised-div, allowScripts iframe, unsafe-preview iframe) via a shared `stripExternalResources()` utility. |
+| **Allow scripts (unsafe)** | Off | When on, renders in a `sandbox="allow-scripts"` iframe (no `allow-same-origin`). Inline and same-directory scripts execute. Forms and event handlers are included. |
+
+**Render paths (in priority order):**
+
+1. **Unsafe preview** (toolbar toggle, session-only) — raw HTML in `sandbox="allow-scripts"` iframe. Accepts a confirmation dialog. `blockExternal` still applies.
+2. **Allow scripts** (persistent setting) — pre-processes same-directory `<script src="./...">` into inline scripts via `read_file`, then renders in a sandboxed iframe. `blockExternal` still applies.
+3. **Default** — DOMPurify-sanitised inline div. Scripts, iframes, objects, and embeds removed.
+
+- Source/Rendered toggle in toolbar
+- Find-in-document (Cmd+F) available in rendered mode
+- Zoom controls (Cmd+= / Cmd+- / Cmd+0) in rendered mode
+
 ## PDF Viewer
 
 - Powered by pdfjs-dist

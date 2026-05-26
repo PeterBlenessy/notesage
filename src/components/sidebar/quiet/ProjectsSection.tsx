@@ -46,6 +46,12 @@ import {
   openContextMenuOnElement,
 } from "@/components/sidebar/quiet/useSidebarItemShortcuts";
 import { announce } from "@/components/sidebar/quiet/aria-announcer";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
@@ -1362,7 +1368,16 @@ function ProjectRow({
         />
       ) : (
         <>
-          <span className="truncate min-w-0 flex-1">{name}</span>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="truncate min-w-0 flex-1">{name}</span>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {name}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
              *  the aggregate git "●" glyph when any file inside the project
              *  has changes, and the pending-external-change dot. */}
@@ -1607,7 +1622,16 @@ function ChildRow({
         />
       ) : (
         <>
-          <span className="truncate min-w-0 flex-1">{entry.name}</span>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="truncate min-w-0 flex-1">{entry.name}</span>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {entry.name}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           {/* #129 — per-row visual state. File rows surface git status +
              *  external-change; folder rows only surface the aggregate
              *  "●" when the folder contains changes. */}

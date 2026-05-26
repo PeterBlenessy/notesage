@@ -37,6 +37,12 @@ import {
 } from "@/stores/settings-store";
 import { tauriApi, type PptxTemplateInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ExportDialogProps {
   open: boolean;
@@ -320,9 +326,18 @@ export function ExportDialog({
                               : "border-border hover:bg-accent/50"
                           )}
                         >
-                          <span className="text-sm font-medium truncate w-full">
-                            {tmpl.name}
-                          </span>
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-sm font-medium truncate w-full">
+                                  {tmpl.name}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {tmpl.name}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                           <span className="text-[11px] leading-tight text-muted-foreground">
                             {tmpl.scope === "project" ? "Project" : "Global"}
                           </span>
