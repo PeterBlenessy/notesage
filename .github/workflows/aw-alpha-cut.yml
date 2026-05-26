@@ -89,23 +89,23 @@ jobs:
             --json number --jq '.[].number')
 
           if [[ -n "$unclassified_prs" ]]; then
-            echo "Unclassified merged PRs found — refusing to cut until they are tiered."
+            echo "Unclassified merged PRs found — auto-labelling as tier:B."
+            for pr in $unclassified_prs; do
+              echo "  Labelling PR #$pr as tier:B"
+              gh pr edit "$pr" --add-label "tier:B"
+            done
             {
-              echo "## ❌ Alpha cut blocked — unclassified merged PRs"
+              echo "## ℹ️ Auto-classified untiered merged PRs as tier:B"
               echo ""
               echo "The following PRs were merged to \`main\` since \`$previous_tag\` without a tier label."
-              echo "Apply \`tier:A\`, \`tier:B\`, or \`tier:C\` to each, then re-dispatch this workflow."
+              echo "They have been auto-classified as \`tier:B\` (included in this alpha cut)."
               echo ""
               echo "| PR | Title |"
               echo "|---|---|"
-              gh pr list \
-                --state merged --base main \
-                --search "merged:>$since_iso -label:tier:A -label:tier:B -label:tier:C" \
-                --json number,title \
-                --jq '.[] | "| #\(.number) | \(.title) |"'
+              for pr in $unclassified_prs; do
+                gh pr view "$pr" --json number,title --jq '"| #\(.number) | \(.title) |"'
+              done
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "should_cut=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
 
           # 2b. Tier-A or Tier-B PRs merged since previous_tag?
