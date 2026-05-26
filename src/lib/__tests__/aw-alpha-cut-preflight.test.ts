@@ -3,16 +3,17 @@
 //
 // Background: when a human merges a PR to main without applying a tier label,
 // the preflight's step 2 searches for `label:tier:A,tier:B` PRs and finds
-// zero — reporting "nothing to ship" even though a real PR landed. The
-// workflow exits cleanly with `should_cut=false`, making it look like no
-// work was done.
+// zero — reporting "nothing to ship" even though a real PR landed.
 //
-// The fix: before (or alongside) the tier:A/B check, query for merged PRs
-// that carry NONE of the three tier labels. If any are found, refuse to cut
-// and write a listing of those PRs (number + title) to the Actions step
-// summary so the human knows exactly what to tier.
+// Original fix (issue #351): detect unclassified PRs and block the cut with
+// `should_cut=false` + `exit 0` so the release manager can tier each PR
+// before re-dispatching.
 //
-// These tests parse the actual workflow YAML to lock in the new logic.
+// Updated fix (PR #365): instead of blocking, auto-label the unclassified PRs
+// as tier:B and continue the cut. This avoids manual intervention while still
+// ensuring every merged PR is included in the release.
+//
+// These tests parse the actual workflow YAML to lock in the current logic.
 // They catch any future drift where someone re-silences the unclassified-PR
 // detection.
 
@@ -76,11 +77,13 @@ describe('aw-alpha-cut preflight — unclassified PR detection (#351)', () => {
     expect(unclassifiedBlock).toMatch(/title/);
   });
 
-  it('sets should_cut=false when unclassified PRs are found', () => {
-    // The guard must emit should_cut=false into $GITHUB_OUTPUT before exiting.
-    // Extract the block that runs when unclassified PRs are detected.
+  it('auto-labels unclassified PRs as tier:B when found', () => {
+    // PR #365 changed the behaviour: instead of blocking the cut, the workflow
+    // now automatically labels each unclassified PR as tier:B so the cut can
+    // proceed without manual intervention.
     const unclassifiedBlock = extractUnclassifiedBlock(body);
-    expect(unclassifiedBlock).toMatch(/should_cut=false/);
+    expect(unclassifiedBlock).toMatch(/tier:B/);
+    expect(unclassifiedBlock).toMatch(/gh pr edit/);
   });
 
   it('writes the unclassified PR listing to GITHUB_STEP_SUMMARY', () => {
@@ -102,12 +105,13 @@ describe('aw-alpha-cut preflight — unclassified PR detection (#351)', () => {
     expect(unclassifiedIdx).toBeLessThan(nothingToShipIdx);
   });
 
-  it('exits without cutting when unclassified PRs exist', () => {
-    // When unclassified PRs are found the step must not continue to set
-    // should_cut=true — it must exit before reaching step 5 (compute version).
-    // The exit 0 after the unclassified check is the gate.
+  it('continues cut after auto-labeling (does not exit early)', () => {
+    // PR #365 changed the behaviour: after auto-labeling, the workflow continues
+    // the cut instead of exiting. The unclassified block must NOT contain an
+    // early exit — the cut proceeds so the newly-labeled tier:B PRs are included.
     const unclassifiedBlock = extractUnclassifiedBlock(body);
-    expect(unclassifiedBlock).toMatch(/exit 0/);
+    expect(unclassifiedBlock).not.toMatch(/exit 0/);
+    expect(unclassifiedBlock).not.toMatch(/should_cut=false/);
   });
 });
 
