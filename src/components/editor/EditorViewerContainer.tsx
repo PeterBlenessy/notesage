@@ -1,7 +1,8 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useState, useCallback } from "react";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { StatusBar } from "./StatusBar";
 import { toast } from "sonner";
+import { isHtmlViewerFile } from "@/lib/codemirror-languages";
 
 // Lazy-load heavy viewers — their libraries (pdfjs-dist, docx-preview, foliate-js)
 // are only fetched when the user actually opens that file type.
@@ -40,6 +41,10 @@ interface EditorViewerContainerProps {
 }
 
 export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile, statusBarVariant = "full" }: EditorViewerContainerProps) {
+  const isHtml = isHtmlViewerFile(activeTab.fileName);
+  const [htmlSourceMode, setHtmlSourceMode] = useState(false);
+  const toggleHtmlSourceMode = useCallback(() => setHtmlSourceMode((v) => !v), []);
+
   let viewer: React.ReactNode = null;
   switch (activeTab.fileType) {
     case "image":
@@ -98,6 +103,8 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
               ? (content: string) => { saveFile(activeTab.filePath, content, activeTab.id); }
               : undefined
           }
+          sourceMode={isHtml ? htmlSourceMode : undefined}
+          onToggleSourceMode={isHtml ? toggleHtmlSourceMode : undefined}
         />
       );
       break;
@@ -116,6 +123,8 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
           variant={statusBarVariant}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
+          viewMode={isHtml ? (htmlSourceMode ? "source" : "wysiwyg") : undefined}
+          onToggleViewMode={isHtml ? toggleHtmlSourceMode : undefined}
         />
       )}
     </div>

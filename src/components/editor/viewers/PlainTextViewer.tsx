@@ -14,6 +14,8 @@ interface PlainTextViewerProps {
   isDirty?: boolean;
   updateTabContent?: (content: string) => void;
   saveFileWithContent?: (content: string) => void;
+  sourceMode?: boolean;
+  onToggleSourceMode?: () => void;
 }
 
 export function PlainTextViewer({
@@ -24,6 +26,8 @@ export function PlainTextViewer({
   isDirty,
   updateTabContent,
   saveFileWithContent,
+  sourceMode,
+  onToggleSourceMode,
 }: PlainTextViewerProps) {
   // Route .html/.htm files to the HTML rendered viewer
   if (isHtmlViewerFile(fileName) && filePath && tabId && updateTabContent && saveFileWithContent) {
@@ -36,6 +40,8 @@ export function PlainTextViewer({
         isDirty={isDirty ?? false}
         updateTabContent={updateTabContent}
         saveFileWithContent={saveFileWithContent}
+        sourceMode={sourceMode}
+        onToggleSourceMode={onToggleSourceMode}
       />
     );
   }
@@ -56,11 +62,11 @@ export function PlainTextViewer({
   }
 
   // Plain text fallback — existing <pre> rendering
-  return <PlainTextFallback content={content} fileName={fileName} />;
+  return <PlainTextFallback content={content} />;
 }
 
-/** Plain text viewer with DOM-based find bar — unchanged from the original. */
-function PlainTextFallback({ content, fileName }: { content: string; fileName: string }) {
+/** Plain text viewer with DOM-based find bar. */
+function PlainTextFallback({ content }: { content: string }) {
   // Search state
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
@@ -170,13 +176,6 @@ function PlainTextFallback({ content, fileName }: { content: string; fileName: s
 
   return (
     <div ref={viewerRef} className="h-full flex flex-col" tabIndex={-1}>
-      {/* Toolbar */}
-      <div className="h-9 border-b border-border px-3 flex items-center shrink-0 bg-background">
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {fileName}
-        </span>
-      </div>
-
       {/* Content area with FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
         <FindBar

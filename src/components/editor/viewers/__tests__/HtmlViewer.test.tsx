@@ -56,7 +56,7 @@ describe("HtmlViewer", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
-  it("shows a toggle button to switch between rendered and source modes", () => {
+  it("renders CodeEditor when sourceMode prop is true", () => {
     render(
       <HtmlViewer
         content={htmlContent}
@@ -66,14 +66,14 @@ describe("HtmlViewer", () => {
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
+        sourceMode={true}
+        onToggleSourceMode={vi.fn()}
       />
     );
-    // There should be a source-view toggle button in rendered mode
-    const toggleButton = screen.getByRole("button", { name: /switch to source view/i });
-    expect(toggleButton).toBeTruthy();
+    expect(screen.getByTestId("code-editor")).toBeTruthy();
   });
 
-  it("clicking toggle switches to source (CodeEditor) mode", () => {
+  it("renders HTML content when sourceMode prop is false", () => {
     render(
       <HtmlViewer
         content={htmlContent}
@@ -83,20 +83,16 @@ describe("HtmlViewer", () => {
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
+        sourceMode={false}
+        onToggleSourceMode={vi.fn()}
       />
     );
-    // Initially in rendered mode — no code editor
     expect(screen.queryByTestId("code-editor")).toBeNull();
-
-    // Click source toggle
-    const toggleButton = screen.getByRole("button", { name: /switch to source view/i });
-    fireEvent.click(toggleButton);
-
-    // Should now show CodeEditor
-    expect(screen.getByTestId("code-editor")).toBeTruthy();
+    expect(screen.getByText("Hello")).toBeTruthy();
   });
 
-  it("clicking toggle again returns to rendered mode", () => {
+  it("calls onToggleSourceMode when Rendered button is clicked in source mode", () => {
+    const toggleFn = vi.fn();
     render(
       <HtmlViewer
         content={htmlContent}
@@ -106,16 +102,12 @@ describe("HtmlViewer", () => {
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
+        sourceMode={true}
+        onToggleSourceMode={toggleFn}
       />
     );
-    // Click to enter source mode
-    fireEvent.click(screen.getByRole("button", { name: /switch to source view/i }));
-    expect(screen.getByTestId("code-editor")).toBeTruthy();
-    // Click the rendered-view button to return
     fireEvent.click(screen.getByRole("button", { name: /switch to rendered view/i }));
-    expect(screen.queryByTestId("code-editor")).toBeNull();
-    // Inline-rendered body is back, and the rendered text is visible.
-    expect(screen.getByText("Hello")).toBeTruthy();
+    expect(toggleFn).toHaveBeenCalledOnce();
   });
 });
 
