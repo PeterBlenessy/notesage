@@ -35,6 +35,12 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatSavedShort } from "@/lib/saved-ago";
 import {
   FILE_DRAG_MIME,
@@ -301,7 +307,16 @@ function PinnedRowImpl({
             />
           ) : (
             <>
-              <span className="truncate min-w-0 flex-1">{name}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="truncate min-w-0 flex-1">{name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {/* #129 — git status + external-change dot. Pinned rows are
                  *  always files, so `kind="file"` is hard-coded. */}
               <SidebarRowIndicators path={path} kind="file" />

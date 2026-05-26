@@ -6,6 +6,12 @@ import {
 } from "@/components/ui/command";
 import type { SymbolSearchConfig, SymbolOccurrence, PaletteSearchScope } from "@/lib/command-palette";
 import { resolveSearchPaths, getDefaultPaletteScope } from "@/lib/command-palette";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface SymbolSearchResultsProps {
   config: SymbolSearchConfig;
@@ -123,7 +129,14 @@ export function SymbolSearchResults({
               onSelect={() => handleItemSelect(item.name)}
             >
               <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-              <span className="flex-1 truncate">{item.name}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex-1 truncate">{item.name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>{item.name}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <span className="text-xs text-muted-foreground">
                 {item.fileCount} {item.fileCount === 1 ? "file" : "files"}
               </span>
@@ -148,7 +161,14 @@ export function SymbolSearchResults({
             >
               <div className="flex items-center gap-2 w-full">
                 <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                <span className="flex-1 truncate">{occ.file_name}</span>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="flex-1 truncate">{occ.file_name}</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>{occ.file_name}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               {occ.context_before && (
                 <span className="text-xs text-muted-foreground truncate w-full pl-6">
