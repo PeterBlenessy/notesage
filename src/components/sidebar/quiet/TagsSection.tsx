@@ -20,6 +20,12 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useRovingTabindex } from "@/components/sidebar/quiet/useRovingTabindex";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Default maximum number of tag rows shown before "Show more" expands the
@@ -196,10 +202,19 @@ export function TagsSection({
                   "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
                 )}
               >
-                <span className="truncate min-w-0">
-                  <span className="text-muted-foreground">#</span>
-                  {tag.name}
-                </span>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="truncate min-w-0">
+                        <span className="text-muted-foreground">#</span>
+                        {tag.name}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      #{tag.name}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <span className="text-xs text-muted-foreground ml-auto shrink-0">
                   {tag.usageCount}
                 </span>
