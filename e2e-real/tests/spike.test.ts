@@ -84,3 +84,65 @@ describe('Spike — app loads and sidebar renders', () => {
         expect(result.timestamp).toBeGreaterThan(0);
     });
 });
+
+describe('HTML viewer pill toolbar (#375)', () => {
+    before(async () => {
+        const { ensureProjectOpen } = await import('../helpers/setup');
+        const path = await import('path');
+        const testProjectPath = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
+        await ensureProjectOpen(testProjectPath);
+    });
+
+    it('should show both shield and search buttons in the pill for HTML files', async () => {
+        const { tauriInvoke } = await import('../helpers/actions');
+        const path = await import('path');
+        const testProjectPath = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
+        const filePath = `${testProjectPath}/test-page.html`;
+        const content = await tauriInvoke<string>('read_file', { path: filePath });
+
+        // Open via editor store directly — HTML files don't render in ProseMirror
+        await browser.execute(
+            (fp: string, fileContent: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                if (w.__E2E_EDITOR_STORE__) {
+                    w.__E2E_EDITOR_STORE__.getState().openTab(fp, 'test-page.html', fileContent);
+                }
+            },
+            filePath,
+            content,
+        );
+        await browser.pause(1000);
+
+        // Wait for the pill toolbar to appear
+        const pill = await browser.$('[data-viewer-id="html"]');
+        await pill.waitForExist({ timeout: 10000 });
+        console.log('[html-pill] Pill toolbar found');
+
+        // Both buttons must be visible
+        const findBtn = await pill.$('button[aria-label="Find"]');
+        expect(await findBtn.isExisting()).toBe(true);
+        expect(await findBtn.isDisplayed()).toBe(true);
+        console.log('[html-pill] Find button: visible');
+
+        const unsafeBtn = await pill.$('button[aria-label="Unsafe preview mode"]');
+        expect(await unsafeBtn.isExisting()).toBe(true);
+        expect(await unsafeBtn.isDisplayed()).toBe(true);
+        console.log('[html-pill] Unsafe preview button: visible');
+
+        // Click find and verify the search input morphs in
+        await findBtn.click();
+        const searchInput = await browser.$('input[aria-label="Find in document"]');
+        await searchInput.waitForExist({ timeout: 5000 });
+        expect(await searchInput.isDisplayed()).toBe(true);
+        console.log('[html-pill] Search input appeared after click');
+
+        // Type a query and verify matches
+        await searchInput.setValue('Hello');
+        await browser.pause(500);
+        const pillText = await pill.getText();
+        console.log(`[html-pill] Pill text after search: "${pillText}"`);
+        expect(pillText).toContain('/');
+        console.log('[html-pill] Search button verified — visible and functional');
+    });
+});

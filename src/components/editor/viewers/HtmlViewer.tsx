@@ -19,10 +19,81 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Strip attributes containing external (http/https) URLs from a raw HTML string.
-// Applied before content reaches any render path when blockExternal is ON,
-// so the guarantee holds for the sanitised-div, allowScripts iframe, and
-// unsafe-preview iframe paths equally.
+// Search helper injected into iframe srcDoc. Listens for postMessage commands
+// from the parent, highlights matches inside the iframe DOM, and reports back.
+const IFRAME_SEARCH_SCRIPT = `<script data-notesage-search>
+(function() {
+  var marks = [];
+  var current = -1;
+  var HIGHLIGHT = 'background:oklch(85% 0.15 85);padding:1px 0';
+  var ACTIVE = 'background:oklch(75% 0.18 85);padding:1px 0';
+
+  function clearMarks() {
+    for (var i = marks.length - 1; i >= 0; i--) {
+      var m = marks[i];
+      var parent = m.parentNode;
+      if (parent) { parent.replaceChild(document.createTextNode(m.textContent || ''), m); parent.normalize(); }
+    }
+    marks = []; current = -1;
+  }
+
+  function doSearch(query) {
+    clearMarks();
+    if (!query) { window.parent.postMessage({type:'ns-search-result',count:0,current:-1},'*'); return; }
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    var textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    var lq = query.toLowerCase();
+    for (var i = 0; i < textNodes.length; i++) {
+      var node = textNodes[i];
+      var text = node.textContent || '';
+      var idx = text.toLowerCase().indexOf(lq);
+      while (idx !== -1) {
+        var before = node.splitText(idx);
+        var after = before.splitText(query.length);
+        var mark = document.createElement('mark');
+        mark.style.cssText = HIGHLIGHT;
+        mark.setAttribute('data-ns-match','');
+        before.parentNode.replaceChild(mark, before);
+        mark.appendChild(document.createTextNode(text.substr(idx, query.length)));
+        marks.push(mark);
+        node = after;
+        text = node.textContent || '';
+        idx = text.toLowerCase().indexOf(lq);
+      }
+    }
+    if (marks.length > 0) { current = 0; marks[0].style.cssText = ACTIVE; marks[0].scrollIntoView({block:'center'}); }
+    window.parent.postMessage({type:'ns-search-result',count:marks.length,current:current},'*');
+  }
+
+  function navigate(dir) {
+    if (marks.length === 0) return;
+    marks[current].style.cssText = HIGHLIGHT;
+    current = (current + dir + marks.length) % marks.length;
+    marks[current].style.cssText = ACTIVE;
+    marks[current].scrollIntoView({block:'center'});
+    window.parent.postMessage({type:'ns-search-result',count:marks.length,current:current},'*');
+  }
+
+  window.addEventListener('message', function(e) {
+    if (!e.data || !e.data.type) return;
+    if (e.data.type === 'ns-search') doSearch(e.data.query);
+    if (e.data.type === 'ns-search-next') navigate(1);
+    if (e.data.type === 'ns-search-prev') navigate(-1);
+    if (e.data.type === 'ns-search-clear') { clearMarks(); window.parent.postMessage({type:'ns-search-result',count:0,current:-1},'*'); }
+  });
+})();
+</script>`;
+
+function injectSearchScript(html: string): string {
+  const closeBody = html.lastIndexOf("</body>");
+  if (closeBody !== -1) return html.slice(0, closeBody) + IFRAME_SEARCH_SCRIPT + html.slice(closeBody);
+  return html + IFRAME_SEARCH_SCRIPT;
+}
+
+// Strip external (http/https) resource references from a raw HTML string.
+// Covers attributes, inline styles, and <style> blocks. Applied before
+// content reaches any render path when blockExternal is ON.
 function stripExternalResources(html: string): string {
   // Preserve DOCTYPE — DOMParser strips it from outerHTML serialisation.
   const doctypeMatch = html.match(/^(\s*<!DOCTYPE[^>]*>)/i);
@@ -33,14 +104,14 @@ function stripExternalResources(html: string): string {
   const externalPattern = /^https?:/i;
   const cssUrlExternal = /url\(\s*['"]?https?:[^'")\s]+['"]?\s*\)/gi;
 
-  for (const el of Array.from(doc.querySelectorAll("[src]"))) {
-    const val = el.getAttribute("src");
-    if (val && externalPattern.test(val)) el.removeAttribute("src");
+  const URL_ATTRS = ["src", "href", "poster", "formaction", "ping", "action", "data"];
+  for (const attr of URL_ATTRS) {
+    for (const el of Array.from(doc.querySelectorAll(`[${attr}]`))) {
+      const val = el.getAttribute(attr);
+      if (val && externalPattern.test(val)) el.removeAttribute(attr);
+    }
   }
-  for (const el of Array.from(doc.querySelectorAll("[href]"))) {
-    const val = el.getAttribute("href");
-    if (val && externalPattern.test(val)) el.removeAttribute("href");
-  }
+
   for (const el of Array.from(doc.querySelectorAll("[srcset]"))) {
     const val = el.getAttribute("srcset");
     if (val) {
@@ -155,9 +226,13 @@ export function HtmlViewer({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const renderRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const iframeSearchCountRef = useRef(0);
+
+  const isIframeMode = unsafeMode || (allowScripts && unsafeHtml !== null);
 
   // Whether the content is empty or whitespace-only (triggers placeholder)
   const isEmpty = content.trim() === "";
@@ -234,16 +309,12 @@ export function HtmlViewer({
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [sourceMode, content, unsafeMode]);
+  }, [sourceMode, unsafeMode, allowScripts, content]);
 
-  // Unsafe mode is session-only — reset when the user switches to a different tab
+  // Unsafe mode + zoom are session-only — reset when the user switches to a different tab
   useEffect(() => {
     setUnsafeMode(false);
     setShowConfirmDialog(false);
-  }, [tabId]);
-
-  // Zoom is per-file — reset to 1.0 when the tab changes so it doesn't leak.
-  useEffect(() => {
     setZoom(1.0);
   }, [tabId]);
 
@@ -273,13 +344,34 @@ export function HtmlViewer({
     });
   }, [sourceMode]);
 
-  const getSearchContainer = useCallback((): HTMLElement | null => {
-    return renderRef.current ?? null;
+  // Listen for search results from iframe
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type !== "ns-search-result") return;
+      const { count, current } = e.data as { count: number; current: number };
+      iframeSearchCountRef.current = count;
+      setSearchMatches(new Array(count) as HTMLElement[]);
+      setSearchCurrentIndex(current);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const postToIframe = useCallback((msg: Record<string, unknown>) => {
+    iframeRef.current?.contentWindow?.postMessage(msg, "*");
   }, []);
 
   const handleSearch = useCallback(
     (query: string) => {
-      const container = getSearchContainer();
+      if (isIframeMode) {
+        postToIframe({ type: "ns-search", query });
+        if (!query) {
+          setSearchMatches([]);
+          setSearchCurrentIndex(-1);
+        }
+        return;
+      }
+      const container = renderRef.current;
       if (!container) return;
       clearDomHighlights(container);
       if (!query) {
@@ -301,7 +393,7 @@ export function HtmlViewer({
         setSearchCurrentIndex(-1);
       }
     },
-    [getSearchContainer],
+    [isIframeMode, postToIframe],
   );
 
   const scrollToMatch = useCallback((index: number, marks: HTMLElement[]) => {
@@ -311,6 +403,7 @@ export function HtmlViewer({
   }, []);
 
   const handleNext = useCallback(() => {
+    if (isIframeMode) { postToIframe({ type: "ns-search-next" }); return; }
     const marks = searchMatchesRef.current;
     if (marks.length === 0) return;
     setSearchCurrentIndex((prev) => {
@@ -318,9 +411,10 @@ export function HtmlViewer({
       scrollToMatch(next, marks);
       return next;
     });
-  }, [scrollToMatch]);
+  }, [isIframeMode, postToIframe, scrollToMatch]);
 
   const handlePrevious = useCallback(() => {
+    if (isIframeMode) { postToIframe({ type: "ns-search-prev" }); return; }
     const marks = searchMatchesRef.current;
     if (marks.length === 0) return;
     setSearchCurrentIndex((prev) => {
@@ -328,22 +422,26 @@ export function HtmlViewer({
       scrollToMatch(prevIdx, marks);
       return prevIdx;
     });
-  }, [scrollToMatch]);
+  }, [isIframeMode, postToIframe, scrollToMatch]);
 
   const handleClose = useCallback(() => {
     setFindBarOpen(false);
     setSearchQuery("");
-    const container = getSearchContainer();
-    if (container) clearDomHighlights(container);
+    if (isIframeMode) {
+      postToIframe({ type: "ns-search-clear" });
+    } else {
+      const container = renderRef.current;
+      if (container) clearDomHighlights(container);
+    }
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [getSearchContainer]);
+  }, [isIframeMode, postToIframe]);
 
   if (sourceMode) {
     return (
       <div className="h-full flex flex-col relative">
-        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="absolute top-4 left-1/2 -translate-x-1/2">
+        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef}>
           <button
             type="button"
             aria-label="Switch to rendered view"
@@ -396,9 +494,9 @@ export function HtmlViewer({
       </AlertDialog>
 
       <div className="h-full flex flex-col relative">
-        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="absolute top-4 left-1/2 -translate-x-1/2">
+        <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="overflow-hidden transition-all duration-200 ease-out">
           {findBarOpen ? (
-            <>
+            <div className="flex items-center gap-0.5 animate-in fade-in slide-in-from-left-2 duration-150">
               <Search className="h-3.5 w-3.5 text-muted-foreground ml-1.5 shrink-0" strokeWidth={1.5} />
               <input
                 ref={searchInputRef}
@@ -438,7 +536,7 @@ export function HtmlViewer({
               <button type="button" onClick={handleClose} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Close find">
                 <X className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
-            </>
+            </div>
           ) : (
             <>
               <button
@@ -470,7 +568,6 @@ export function HtmlViewer({
               <button
                 type="button"
                 onClick={() => {
-                  if (allowScripts || unsafeMode) return;
                   setFindBarOpen(true);
                   requestAnimationFrame(() => searchInputRef.current?.focus());
                 }}
@@ -507,7 +604,8 @@ export function HtmlViewer({
         >
           {unsafeMode ? (
             <iframe
-              srcDoc={unsafePreviewContent}
+              ref={iframeRef}
+              srcDoc={injectSearchScript(unsafePreviewContent)}
               sandbox="allow-scripts"
               className="w-full h-full border-0"
               title={`Unsafe preview: ${fileName}`}
@@ -522,8 +620,9 @@ export function HtmlViewer({
             </div>
           ) : allowScripts && unsafeHtml !== null ? (
             <iframe
+              ref={iframeRef}
               sandbox="allow-scripts"
-              srcDoc={unsafeHtml}
+              srcDoc={injectSearchScript(unsafeHtml)}
               title={`Rendered HTML (scripts enabled): ${fileName}`}
               aria-label={`Rendered HTML: ${fileName}`}
               className="w-full h-full border-0"
