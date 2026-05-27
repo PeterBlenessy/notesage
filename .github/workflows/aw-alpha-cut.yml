@@ -82,11 +82,17 @@ jobs:
           # preflight to evaluate zero qualifying PRs even when real work had
           # landed. Checking first blocks the cut and surfaces the listing so
           # the release manager can tier each PR before re-dispatching.
+          # Release PRs ("chore: release v*") are excluded from all queries
+          # below — they are infra artifacts of a previous alpha cut, not
+          # shippable work. Including them would cause an infinite loop:
+          # alpha cut merges a release PR → next cut finds it → cuts again → ∞.
+          release_filter='select(.title | startswith("chore: release") | not)'
+
           echo "Checking for merged PRs without tier labels since $since_iso"
           unclassified_prs=$(gh pr list \
             --state merged --base main \
             --search "merged:>$since_iso -label:tier:A -label:tier:B -label:tier:C" \
-            --json number --jq '.[].number')
+            --json number,title --jq ".[] | $release_filter | .number")
 
           if [[ -n "$unclassified_prs" ]]; then
             echo "Unclassified merged PRs found — auto-labelling as tier:B."
@@ -113,7 +119,7 @@ jobs:
           pr_numbers=$(gh pr list \
             --state merged --base main \
             --search "merged:>$since_iso label:tier:A,tier:B" \
-            --json number --jq '.[].number' | tr '\n' ',' | sed 's/,$//')
+            --json number,title --jq "[.[] | $release_filter | .number] | join(\",\")")
 
           if [[ -z "$pr_numbers" ]]; then
             echo "No Tier-A/B PRs merged since $previous_tag — nothing to ship."
