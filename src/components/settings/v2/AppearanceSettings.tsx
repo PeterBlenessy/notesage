@@ -77,6 +77,8 @@ const QUIET_CHROME_OVERRIDE_ROWS: ReadonlyArray<{
 }> = [
   { key: 'toolbar', label: 'Toolbar' },
   { key: 'status', label: 'Status bar' },
+  { key: 'titlebar', label: 'Title bar' },
+  { key: 'cmdbar', label: 'Command bar (minimized)' },
   { key: 'sidebar', label: 'Sidebar' },
   { key: 'orb', label: 'Agent orb' },
 ];
