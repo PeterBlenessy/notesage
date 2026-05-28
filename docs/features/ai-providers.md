@@ -265,7 +265,7 @@ Script-bearing skills are automatically converted to first-class tool definition
 - **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
 - **OpenAI:** Tools wrapped in `{ type: "function", function: { ... } }`. Tool calls detected via `delta.tool_calls` in streamed chunks.
 - **Ollama:** Same format as OpenAI. Requires models with function calling support (Qwen3, Llama 3.1+, Mistral).
-- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Uses non-streaming fallback when tools are present due to llama-server streaming limitations with tool calls.
+- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Tool calls stream incrementally in `delta.tool_calls` (requires llama.cpp b9000+ via the toolParser compatibility layer from PR #16531). The version pin is enforced by `llama_cpp_version_is_at_least_b9000`; downgrading would re-introduce the bug where tool calls error or land in the `reasoning` field instead of `tool_calls`.
 
 **Permission model:**
 

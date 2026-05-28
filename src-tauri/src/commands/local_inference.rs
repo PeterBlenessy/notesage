@@ -432,9 +432,11 @@ pub fn kill_orphaned_servers() {
 /// Stream chat completions through the local llama-server.
 /// Uses the OpenAI-compatible `/v1/chat/completions` endpoint with SSE.
 ///
-/// **llama-server limitation:** streaming + tools cannot be used together.
-/// When tools are provided, falls back to a non-streaming request and emits
-/// the response as events to maintain the same frontend interface.
+/// Tool calls stream incrementally in `delta.tool_calls` (llama.cpp b9000+
+/// via the toolParser compatibility layer added in PR #16531). The single
+/// SSE loop interleaves content deltas, thinking-tag parsing, and tool-call
+/// accumulation — no non-streaming fallback. The version pin is enforced by
+/// `llama_cpp_version_is_at_least_b9000` to keep this invariant.
 pub async fn local_bundled_chat_stream(
     window: &tauri::Window,
     messages: &[super::ChatMessage],
@@ -564,7 +566,7 @@ pub async fn local_bundled_chat_stream(
     let mut body = serde_json::json!({
         "model": model_name,
         "messages": api_messages,
-        "stream": !has_tools,
+        "stream": true,
         "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
@@ -610,55 +612,14 @@ pub async fn local_bundled_chat_stream(
         return Err(format!("Local AI error: {}", error_text));
     }
 
-    // --- Non-streaming path: tools present, parse full JSON response ---
-    if has_tools {
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse local AI response: {}", e))?;
-
-        // Extract text content
-        if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
-            if !content.is_empty() {
-                window.emit("ai-stream-chunk", content)
-                    .map_err(|e| format!("Failed to emit chunk: {}", e))?;
-            }
-        }
-
-        // Extract tool calls
-        let mut has_tool_calls = false;
-        if let Some(tool_calls) = json["choices"][0]["message"]["tool_calls"].as_array() {
-            for tc in tool_calls {
-                has_tool_calls = true;
-                let id = tc["id"].as_str().unwrap_or("").to_string();
-                let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
-                let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
-                let arguments: serde_json::Value = serde_json::from_str(args_str)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                if !name.is_empty() {
-                    window.emit("ai-tool-call", serde_json::json!({
-                        "id": id,
-                        "name": name,
-                        "arguments": arguments
-                    })).map_err(|e| format!("Failed to emit tool call: {}", e))?;
-                }
-            }
-        }
-
-        if has_tool_calls {
-            window.emit("ai-tool-calls-done", ())
-                .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
-        } else {
-            window.emit("ai-stream-done", ())
-                .map_err(|e| format!("Failed to emit done: {}", e))?;
-        }
-
-        return Ok(());
-    }
-
-    // --- Streaming path: no tools, use SSE ---
+    // --- Streaming SSE path (handles both content and tool calls) ---
+    //
+    // llama-server b9000+ supports streaming + tool calls together via the
+    // toolParser compatibility layer (llama.cpp PR #16531). The single SSE
+    // loop below handles content deltas (with thinking-tag parsing) AND
+    // incrementally-streamed tool calls in `delta.tool_calls`.
     use futures::StreamExt;
+    use super::tool_execution::ChatCompletionsToolCallAccumulator;
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -690,6 +651,13 @@ pub async fn local_bundled_chat_stream(
     let mut tag_buf = String::new();
     let mut in_thinking_tag: Option<&str> = None; // closing tag we're looking for
 
+    // Tool call accumulation. Each SSE chunk may carry partial tool-call data:
+    //   first chunk for an index → id + function.name
+    //   subsequent chunks       → function.arguments (concatenated)
+    // Mirror of the openai_compatible_chat_stream pattern.
+    let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
+    let mut finish_reason = String::new();
+
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&bytes);
@@ -709,7 +677,35 @@ pub async fn local_bundled_chat_stream(
                 }
 
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
+                    let choice = &json["choices"][0];
+
+                    if let Some(reason) = choice["finish_reason"].as_str() {
+                        finish_reason = reason.to_string();
+                    }
+
+                    if let Some(tc_array) = choice["delta"]["tool_calls"].as_array() {
+                        for tc in tc_array {
+                            let index = tc["index"].as_u64().unwrap_or(0) as usize;
+                            while tool_calls.len() <= index {
+                                tool_calls.push(ChatCompletionsToolCallAccumulator {
+                                    id: String::new(),
+                                    name: String::new(),
+                                    arguments: String::new(),
+                                });
+                            }
+                            if let Some(id) = tc["id"].as_str() {
+                                tool_calls[index].id = id.to_string();
+                            }
+                            if let Some(name) = tc["function"]["name"].as_str() {
+                                tool_calls[index].name = name.to_string();
+                            }
+                            if let Some(args) = tc["function"]["arguments"].as_str() {
+                                tool_calls[index].arguments.push_str(args);
+                            }
+                        }
+                    }
+
+                    if let Some(content) = choice["delta"]["content"].as_str() {
                         if content.is_empty() {
                             continue;
                         }
@@ -798,9 +794,40 @@ pub async fn local_bundled_chat_stream(
             .map_err(|e| format!("Failed to emit final chunk: {}", e))?;
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // Emit any accumulated tool calls, then signal the frontend to execute them.
+    let has_tool_calls = tool_calls.iter().any(|tc| !tc.name.is_empty());
+    if has_tool_calls {
+        for tc in &tool_calls {
+            if tc.name.is_empty() {
+                continue;
+            }
+            // Arguments accumulate as a JSON string across deltas; parse to a Value.
+            // If parsing fails (truncated stream, malformed), fall back to Null so the
+            // frontend still receives the call and can surface the error.
+            let arguments: serde_json::Value = serde_json::from_str(&tc.arguments)
+                .unwrap_or(serde_json::Value::Null);
+            let id = if tc.id.is_empty() {
+                format!("local-{}", super::tool_execution::uuid_v4())
+            } else {
+                tc.id.clone()
+            };
+            window.emit("ai-tool-call", serde_json::json!({
+                "id": id,
+                "name": tc.name,
+                "arguments": arguments
+            })).map_err(|e| format!("Failed to emit tool call: {}", e))?;
+        }
+    }
+
+    if has_tool_calls || finish_reason == "tool_calls" {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
 }
@@ -1033,8 +1060,12 @@ pub fn build_server_args(
 mod tests {
     /// Verify the bundled llama.cpp version pin is at least b9000.
     ///
-    /// This test fails on the old b8648 pin and passes once the file is bumped
-    /// to a recent stable tagged release (b9000+). Format must be `b{number}`.
+    /// b9000+ contains the toolParser compatibility layer (llama.cpp PR #16531)
+    /// that makes streaming + tool calling work together — the foundation that
+    /// `local_bundled_chat_stream` depends on after dropping the non-streaming
+    /// fallback. Downgrading below b9000 would re-introduce the bug where tool
+    /// calls either error or land in the `reasoning` field instead of
+    /// `tool_calls`. Format must be `b{number}`.
     #[test]
     fn llama_cpp_version_is_at_least_b9000() {
         let version = include_str!("../../binaries/LLAMA_CPP_VERSION").trim();

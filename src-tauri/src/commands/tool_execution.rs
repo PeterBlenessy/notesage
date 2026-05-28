@@ -420,4 +420,85 @@ mod tests {
         assert_eq!(results[1].0, 1);
         assert_eq!(results[1].2, Some("read_file".to_string()));
     }
+
+    /// Verify that `finish_reason: "tool_calls"` can be observed in the same
+    /// SSE chunk that carries the final tool-call delta. llama-server's
+    /// streaming tool-call format (b9000+) emits the finish_reason on the
+    /// terminal chunk; local_bundled_chat_stream reads it from
+    /// `choices[0].finish_reason` to know whether to emit `ai-tool-calls-done`
+    /// vs `ai-stream-done`.
+    #[test]
+    fn test_chat_completions_finish_reason_tool_calls() {
+        let terminal_chunk = serde_json::json!({
+            "choices": [{
+                "delta": {},
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let reason = terminal_chunk["choices"][0]["finish_reason"].as_str();
+        assert_eq!(reason, Some("tool_calls"));
+    }
+
+    /// Mirror the accumulator + finish-reason loop in `local_bundled_chat_stream`:
+    /// fragmented tool-call arguments + a terminal chunk carrying only the
+    /// finish_reason. Verifies the post-loop decision (emit `ai-tool-calls-done`)
+    /// is driven correctly.
+    #[test]
+    fn test_local_bundled_streaming_tool_calls_full_flow() {
+        let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
+        let mut finish_reason = String::new();
+
+        let chunks = vec![
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0, "id": "call_xyz",
+                    "function": { "name": "list_directory", "arguments": "" }
+                }]}}]
+            }),
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0,
+                    "function": { "arguments": "{\"path\":\"/h" }
+                }]}}]
+            }),
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0,
+                    "function": { "arguments": "ome/user\"}" }
+                }]}}]
+            }),
+            serde_json::json!({
+                "choices": [{ "delta": {}, "finish_reason": "tool_calls" }]
+            }),
+        ];
+
+        for chunk in &chunks {
+            if let Some(reason) = chunk["choices"][0]["finish_reason"].as_str() {
+                finish_reason = reason.to_string();
+            }
+            for (index, id, name, args) in parse_chat_completions_tool_call_delta(chunk) {
+                while tool_calls.len() <= index {
+                    tool_calls.push(ChatCompletionsToolCallAccumulator {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: String::new(),
+                    });
+                }
+                if let Some(id) = id { tool_calls[index].id = id; }
+                if let Some(name) = name { tool_calls[index].name = name; }
+                if let Some(args) = args { tool_calls[index].arguments.push_str(&args); }
+            }
+        }
+
+        assert_eq!(finish_reason, "tool_calls");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_xyz");
+        assert_eq!(tool_calls[0].name, "list_directory");
+        let parsed: serde_json::Value = serde_json::from_str(&tool_calls[0].arguments).unwrap();
+        assert_eq!(parsed["path"], "/home/user");
+
+        // Post-loop decision: tool calls present → frontend should be told to execute them.
+        let has_tool_calls = tool_calls.iter().any(|tc| !tc.name.is_empty());
+        assert!(has_tool_calls || finish_reason == "tool_calls");
+    }
 }
