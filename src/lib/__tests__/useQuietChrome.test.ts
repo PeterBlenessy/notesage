@@ -30,6 +30,8 @@ const state: MockSettings = {
     docHead: true,
     sidebar: false,
     orb: false,
+    titlebar: false,
+    cmdbar: false,
   },
 };
 
@@ -55,6 +57,8 @@ function getAttrs(root: HTMLElement) {
     docHead: root.getAttribute("data-quiet-chrome-dochead"),
     sidebar: root.getAttribute("data-quiet-chrome-sidebar"),
     orb: root.getAttribute("data-quiet-chrome-orb"),
+    titlebar: root.getAttribute("data-quiet-chrome-titlebar"),
+    cmdbar: root.getAttribute("data-quiet-chrome-cmdbar"),
   };
 }
 
@@ -67,11 +71,16 @@ describe("useQuietChrome", () => {
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     };
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
+    // The hook also writes `data-quiet-chrome-cmdbar` to <html> for the
+    // portal'd FloatingCommandBar — clean it up between tests.
+    document.documentElement.removeAttribute("data-quiet-chrome-cmdbar");
   });
 
   it('writes "fade" for every target when preset is "aggressive"', () => {
@@ -83,6 +92,8 @@ describe("useQuietChrome", () => {
       docHead: true,
       sidebar: true,
       orb: true,
+      titlebar: true,
+      cmdbar: true,
     };
 
     renderHook(() => useQuietChrome());
@@ -93,10 +104,12 @@ describe("useQuietChrome", () => {
       docHead: "fade",
       sidebar: "fade",
       orb: "fade",
+      titlebar: "fade",
+      cmdbar: "fade",
     });
   });
 
-  it('writes the default mapping when preset is "default" (sidebar/orb stay)', () => {
+  it('writes the default mapping when preset is "default" (titlebar/cmdbar/sidebar/orb stay)', () => {
     const root = mountRoot();
     state.quietChromePreset = "default";
 
@@ -108,6 +121,8 @@ describe("useQuietChrome", () => {
       docHead: "fade",
       sidebar: "stay",
       orb: "stay",
+      titlebar: "stay",
+      cmdbar: "stay",
     });
   });
 
@@ -123,6 +138,8 @@ describe("useQuietChrome", () => {
       docHead: "stay",
       sidebar: "stay",
       orb: "stay",
+      titlebar: "stay",
+      cmdbar: "stay",
     });
   });
 
@@ -135,12 +152,16 @@ describe("useQuietChrome", () => {
       docHead: true,
       sidebar: true,
       orb: true,
+      titlebar: true,
+      cmdbar: true,
     };
 
     const { rerender } = renderHook(() => useQuietChrome());
     expect(getAttrs(root).sidebar).toBe("fade");
+    expect(getAttrs(root).titlebar).toBe("fade");
+    expect(getAttrs(root).cmdbar).toBe("fade");
 
-    // Flip preset to relaxed — sidebar should switch back to stay.
+    // Flip preset to relaxed — sidebar/titlebar/cmdbar should switch back.
     state.quietChromePreset = "relaxed";
     rerender();
 
@@ -150,7 +171,40 @@ describe("useQuietChrome", () => {
       docHead: "stay",
       sidebar: "stay",
       orb: "stay",
+      titlebar: "stay",
+      cmdbar: "stay",
     });
+  });
+
+  it('mirrors data-quiet-chrome-cmdbar to <html> so the portal\'d cmd bar can match', () => {
+    // The FloatingCommandBar portals to document.body and is a sibling of
+    // [data-quiet-layout-root]. A selector keyed on `.app[data-quiet-chrome-cmdbar]`
+    // cannot reach a sibling — so the hook ALSO writes the attribute to
+    // <html> for the cmd bar's CSS rule to consume.
+    mountRoot();
+    state.quietChromePreset = "aggressive";
+    state.quietChromeOverrides = {
+      toolbar: true,
+      status: true,
+      docHead: true,
+      sidebar: true,
+      orb: true,
+      titlebar: true,
+      cmdbar: true,
+    };
+
+    renderHook(() => useQuietChrome());
+
+    expect(document.documentElement.getAttribute("data-quiet-chrome-cmdbar")).toBe(
+      "fade",
+    );
+
+    // Flipping to a preset that disables the cmd bar fade flips the html mirror.
+    state.quietChromePreset = "default";
+    renderHook(() => useQuietChrome());
+    expect(document.documentElement.getAttribute("data-quiet-chrome-cmdbar")).toBe(
+      "stay",
+    );
   });
 
   it('writes overrides verbatim when preset is "custom"', () => {
@@ -162,6 +216,8 @@ describe("useQuietChrome", () => {
       docHead: false,
       sidebar: true,
       orb: false,
+      titlebar: true,
+      cmdbar: false,
     };
 
     renderHook(() => useQuietChrome());
@@ -172,6 +228,8 @@ describe("useQuietChrome", () => {
       docHead: "stay",
       sidebar: "fade",
       orb: "stay",
+      titlebar: "fade",
+      cmdbar: "stay",
     });
   });
 });

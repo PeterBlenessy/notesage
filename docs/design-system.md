@@ -305,32 +305,42 @@ The companion overlay `<FocusPill />` (`src/components/editor/FocusPill.tsx`) is
 
 ## Fade-on-Type Pattern
 
-While the user is typing, the QuietLayout fades a configurable subset of chrome targets to ~0 opacity, restoring full opacity 1.2 s after the last keystroke or as soon as the user moves the mouse, scrolls, or shifts focus. The pulse is the basis of the "quiet" in Quiet Composer: chrome stays out of the way during writing but never disappears for good.
+While the user is typing, the QuietLayout fades a configurable subset of chrome targets to ~0 opacity. Full opacity is restored when the user moves the mouse — and, depending on the active preset, optionally also when they scroll, shift focus, or simply pause for ~1.2 s. The pulse is the basis of the "quiet" in Quiet Composer: chrome stays out of the way during writing but never disappears for good.
 
 **Mechanism:**
 
 - `useFadeOnType` (`src/hooks/useFadeOnType.ts`) toggles a `.typing` class on the QuietLayout root (`[data-quiet-layout-root]`) — DOM is the read path; no React re-renders per keystroke.
-- Typing events (`keydown`, `keypress`, `input` — capture phase) add the class; cancel events (`mousemove`, `wheel`, `scroll`, `focusin`) remove it; a 1200 ms inactivity timer auto-removes it as a fallback.
-- Targets inside `[data-cmd-bar]` are excluded from typing signals — the user may be typing the chat prompt itself, which must stay fully visible. **The command bar never fades. No CSS rule should target `.app.typing [data-cmd-bar]`.**
+- Typing events (`keydown`, `keypress`, `input` — capture phase) add the class. Cancel events remove it, and the cancel-signal set is **preset-aware**:
+  - **Relaxed / Default / Custom:** `mousemove`, `wheel`, `scroll`, `focusin` cancel; a 1200 ms inactivity timer auto-removes the class as a fallback.
+  - **Aggressive:** ONLY `mousemove` cancels. The inactivity timer is skipped, and `wheel`/`scroll`/`focusin` are not registered. The user can pause to think or scroll to re-read without the chrome flashing back in — reaching for the mouse is the explicit re-engage signal.
+- Targets inside `[data-cmd-bar]` are excluded from typing signals — the user may be typing the chat prompt, and the composer must never fade itself out while typing.
 
 **Per-element opt-in (`useQuietChrome`):**
 
 Components opt into the fade by carrying a stable data attribute, and `useQuietChrome` (`src/lib/quiet-chrome.ts`) writes a `data-quiet-chrome-<target>="fade" | "stay"` attribute onto the root for each target. CSS rules key off both the `.typing` class AND the per-element attribute — a target only fades when the preset says so.
 
-| Target | Component attribute | Root attribute |
-| --- | --- | --- |
-| `toolbar` | `data-quiet-toolbar` | `data-quiet-chrome-toolbar` |
-| `status` | `data-quiet-status` | `data-quiet-chrome-status` |
-| `docHead` | _(none — inert since #131)_ | `data-quiet-chrome-dochead` |
-| `sidebar` | `nav[aria-label="Workspace sidebar"]` | `data-quiet-chrome-sidebar` |
-| `orb` | `[data-testid="agent-orb"]` | `data-quiet-chrome-orb` |
+| Target | Component attribute | Root attribute | Fade level | Extra gating in CSS |
+| --- | --- | --- | --- | --- |
+| `toolbar` | `data-quiet-toolbar` | `data-quiet-chrome-toolbar` | opacity → 0 | — |
+| `status` | `data-quiet-status` | `data-quiet-chrome-status` | opacity → 0 | — |
+| `docHead` | _(none — inert since #131)_ | `data-quiet-chrome-dochead` | — | — |
+| `titlebar` | `data-quiet-titlebar` | `data-quiet-chrome-titlebar` | opacity → 0 | — |
+| `cmdbar` | `data-cmd-bar` (already on the FloatingCommandBar) | `data-quiet-chrome-cmdbar` | opacity → 0 | **Minimized only:** `[data-expanded="false"][data-cmd-bar-pinned="false"]`. Expanded and pinned states never fade. |
+| `sidebar` | `nav[aria-label="Workspace sidebar"]` | `data-quiet-chrome-sidebar` | opacity → 0.4 (dim) | — |
+| `orb` | `[data-testid="agent-orb"]` | `data-quiet-chrome-orb` | opacity → 0.3 (dim) | — |
 
-**Three presets** (Settings > General > Quiet chrome):
+**Command-bar gating in detail.** The cmd bar's three runtime states are distinguished by the `data-expanded` and `data-cmd-bar-pinned` attributes the component already writes. The fade selector matches ONLY the collapsed pill (both attributes `"false"`); the moment the user expands or pins the bar — or focuses it, or hovers it — the selector stops matching and the bar stays fully opaque. This preserves the ability to read live agent output in pinned-panel mode while still letting Aggressive users banish the floating pill while writing.
 
-- **Relaxed** — toolbar + status only ("hide minimum")
-- **Default** — toolbar + status (recommended; the DocHead option is legacy since #131)
-- **Aggressive** — everything including sidebar dim and orb dim ("hide all")
-- **Custom** — per-element overrides from settings; the resolver returns overrides as-is
+**Reach-through for the portal'd composer.** The FloatingCommandBar `createPortal`s to `document.body`, so it is a SIBLING of `[data-quiet-layout-root]` rather than a descendant. To gate its fade from CSS, `useFadeOnType` mirrors the `.typing` class onto `<html>` and `useQuietChrome` mirrors `data-quiet-chrome-cmdbar` onto `<html>` — the cmd-bar fade rule is the only one keyed on `:root` (`:root.typing[data-quiet-chrome-cmdbar="fade"] [data-cmd-bar][data-expanded="false"][data-cmd-bar-pinned="false"]:not(:hover):not(:focus-within)`). Every other fade rule stays scoped to `.app` because those targets all live inside the layout subtree. Earlier docs noted that the `.app` scoping intentionally kept the cmd bar bright; that decision is replaced here for the Aggressive preset.
+
+**Presets** (Settings > Appearance > Quiet chrome):
+
+| Preset | toolbar | status | titlebar | cmdbar | sidebar | orb | Cancel signals |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Relaxed | fade | fade | stay | stay | stay | stay | mousemove + wheel + scroll + focusin + 1.2 s timer |
+| Default | fade | fade | stay | stay | stay | stay | mousemove + wheel + scroll + focusin + 1.2 s timer |
+| Aggressive | fade | fade | fade | fade (when minimized) | fade (dim) | fade (dim) | **mousemove only** |
+| Custom | per-element overrides from settings | same cancel-signal set as non-Aggressive presets |
 
 **Reduced motion:** when `prefers-reduced-motion: reduce` is set, `useFadeOnType` is a no-op (no listeners installed, `.typing` never added). The CSS transition duration is also zeroed under the same media query as defence-in-depth, so any other code that mutates opacity still renders without animation. A `matchMedia` change listener re-enables the hook if the user toggles the OS preference at runtime.
 

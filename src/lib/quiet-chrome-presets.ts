@@ -17,6 +17,11 @@ export type QuietChromePreset = "relaxed" | "default" | "aggressive";
 /**
  * Per-element fade toggles. `true` → the element fades under `.app.typing`;
  * `false` → it stays fully visible regardless of typing.
+ *
+ * Note: `cmdbar` only fades when the FloatingCommandBar is BOTH minimized
+ * (collapsed pill, not expanded, not pinned) AND unfocused — that gating
+ * lives in the CSS selector, not here. The `:not(:hover):not(:focus-within)`
+ * guard is standard for every target.
  */
 export interface QuietChromeTargets {
   toolbar: boolean;
@@ -24,14 +29,19 @@ export interface QuietChromeTargets {
   docHead: boolean;
   sidebar: boolean;
   orb: boolean;
+  titlebar: boolean;
+  cmdbar: boolean;
 }
 
 /**
- * The preset table from PRD `2026-04-21-ui-refresh`:
+ * The preset table. Living spec lives in `docs/design-system.md` →
+ * "Fade-on-Type Pattern".
  *
  * - Relaxed    → minimal fade (toolbar + status only)
  * - Default    → recommended (toolbar + status + doc-head)
- * - Aggressive → deep focus (everything including sidebar dim and orb dim)
+ * - Aggressive → deep focus (everything including title bar dim, minimized
+ *   command bar fade, sidebar dim, orb dim — and a narrower cancel-signal
+ *   set in `useFadeOnType` that requires actual mouse movement to unfade)
  *
  * Focus mode is NOT a preset — `Cmd+.` is owned by task #56 and operates at
  * a different layer.
@@ -43,6 +53,8 @@ export const QUIET_CHROME_PRESETS: Record<QuietChromePreset, QuietChromeTargets>
     docHead: false,
     sidebar: false,
     orb: false,
+    titlebar: false,
+    cmdbar: false,
   },
   default: {
     toolbar: true,
@@ -50,6 +62,8 @@ export const QUIET_CHROME_PRESETS: Record<QuietChromePreset, QuietChromeTargets>
     docHead: true,
     sidebar: false,
     orb: false,
+    titlebar: false,
+    cmdbar: false,
   },
   aggressive: {
     toolbar: true,
@@ -57,6 +71,8 @@ export const QUIET_CHROME_PRESETS: Record<QuietChromePreset, QuietChromeTargets>
     docHead: true,
     sidebar: true,
     orb: true,
+    titlebar: true,
+    cmdbar: true,
   },
 };
 

@@ -1,6 +1,24 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+
+// Mock the settings-store module — `useFadeOnType` only reads
+// `quietChromePreset` from it, so we expose a swappable getter that's safe
+// to read and write from tests without going through the real persist
+// middleware (jsdom's localStorage isn't initialised at the right point in
+// this suite's lifecycle).
+let mockPreset: "relaxed" | "default" | "aggressive" | "custom" = "default";
+vi.mock("@/stores/settings-store", () => {
+  return {
+    useSettingsStore: Object.assign(
+      vi.fn(<T,>(selector: (s: { quietChromePreset: typeof mockPreset }) => T) =>
+        selector({ quietChromePreset: mockPreset }),
+      ),
+      { getState: () => ({ quietChromePreset: mockPreset }) },
+    ),
+  };
+});
+
 import { useFadeOnType } from "../useFadeOnType";
 
 // ---------------------------------------------------------------------------
@@ -96,6 +114,10 @@ describe("useFadeOnType", () => {
     // Fresh DOM for every test so previous `.typing` state doesn't leak.
     document.body.innerHTML = "";
     installMatchMedia(makeMql(false));
+    // Default preset for tests is "default" (non-Aggressive cancel-signal
+    // set). Aggressive-mode tests opt in explicitly via reassigning the
+    // module-scope `mockPreset` variable.
+    mockPreset = "default";
   });
 
   afterEach(() => {
@@ -106,6 +128,10 @@ describe("useFadeOnType", () => {
       value: originalMatchMedia,
     });
     document.body.innerHTML = "";
+    // The hook mirrors `.typing` to <html> for the portal'd cmd bar — wipe
+    // it between tests so a leftover class doesn't poison later assertions.
+    document.documentElement.classList.remove("typing");
+    mockPreset = "default";
   });
 
   it("does not add `.typing` to the root on mount", () => {
@@ -266,6 +292,26 @@ describe("useFadeOnType", () => {
     expect(root.classList.contains("typing")).toBe(false);
   });
 
+  it("also mirrors `.typing` to <html> for the portal'd cmd bar", () => {
+    // The FloatingCommandBar portals to document.body, so a selector keyed
+    // off `[data-quiet-layout-root].typing` can never match it. The hook
+    // mirrors the class to <html> for that case.
+    mountRoot();
+    renderHook(() => useFadeOnType());
+
+    expect(document.documentElement.classList.contains("typing")).toBe(false);
+
+    act(() => {
+      fireKeydown(document.body);
+    });
+    expect(document.documentElement.classList.contains("typing")).toBe(true);
+
+    act(() => {
+      fireMousemove();
+    });
+    expect(document.documentElement.classList.contains("typing")).toBe(false);
+  });
+
   it("falls back to document.body when the root attribute is missing", () => {
     // Intentionally do NOT mount `[data-quiet-layout-root]`.
     renderHook(() => useFadeOnType());
@@ -278,5 +324,79 @@ describe("useFadeOnType", () => {
 
     // Cleanup so later tests aren't affected.
     document.body.classList.remove("typing");
+  });
+
+  // ----- Aggressive-mode cancel-signal narrowing (2026-05-28) ----------------
+  // In Aggressive mode, ONLY `mousemove` cancels the pulse. The 1200 ms
+  // inactivity timer is skipped, and `wheel`/`scroll`/`focusin` are not
+  // registered as cancel listeners. This lets the user pause to think or
+  // scroll to re-read without the chrome flashing back in.
+
+  describe("Aggressive preset — mouse-only cancel", () => {
+    beforeEach(() => {
+      mockPreset = "aggressive";
+    });
+
+    it("still cancels on mousemove", () => {
+      const root = mountRoot();
+      renderHook(() => useFadeOnType());
+
+      act(() => {
+        fireKeydown(document.body);
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+
+      act(() => {
+        fireMousemove();
+      });
+      expect(root.classList.contains("typing")).toBe(false);
+    });
+
+    it("does NOT cancel on wheel", () => {
+      const root = mountRoot();
+      renderHook(() => useFadeOnType());
+
+      act(() => {
+        fireKeydown(document.body);
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+
+      act(() => {
+        fireWheel();
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+    });
+
+    it("does NOT cancel on focusin", () => {
+      const root = mountRoot();
+      renderHook(() => useFadeOnType());
+
+      act(() => {
+        fireKeydown(document.body);
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+
+      act(() => {
+        fireFocusin();
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+    });
+
+    it("does NOT auto-remove after 1200 ms of inactivity", () => {
+      vi.useFakeTimers();
+      const root = mountRoot();
+      renderHook(() => useFadeOnType());
+
+      act(() => {
+        fireKeydown(document.body);
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+
+      // Advance well past the legacy 1200 ms boundary — class must persist.
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(root.classList.contains("typing")).toBe(true);
+    });
   });
 });
