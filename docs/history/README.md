@@ -133,3 +133,4 @@ Chronological log of major implementation milestones and changes.
 | 127 | [Release v0.46.0-alpha.2](127-release-v0.46.0-alpha.2.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 128 | [Release v0.46.0-alpha.3](128-release-v0.46.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 129 | [Release v0.46.0-alpha.4](129-release-v0.46.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 130 | [Release v0.46.0-alpha.5](130-release-v0.46.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
