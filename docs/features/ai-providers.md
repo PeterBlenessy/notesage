@@ -135,12 +135,16 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 
 **Model management:**
 
-- Curated model catalog (18 models) embedded at compile time (`model-catalog.json`) with per-model capability metadata (`category`, `supports_tool_calling`, `supports_thinking`, `thinking_tags`, `supports_vision`, `multilingual`, `recommended_for`)
+- Curated model catalog (18 models) embedded at compile time (`model-catalog.json`) with per-model capability metadata (`category`, `supports_tool_calling`, `supports_thinking`, `thinking_tags`, `supports_vision`, `multilingual`, `recommended_for`, `draft_model_id`)
 - Models downloaded from Hugging Face in GGUF format to `~/.notesage/models/llm/`
 - Download progress via Tauri events, concurrent downloads with cancel support
 - System RAM detection for model recommendations per tier (8GB, 16GB, 32GB, 64GB)
 - Settings → Local AI tab with model cards, capability badges (Tools, Think, FIM, Vision, Multi), category filter tabs (All, General, Code, Reasoning, Downloaded), sort dropdown (Name, Size, RAM)
 - Custom model support via `~/.notesage/models/llm/custom-models.json`
+
+**Speculative decoding:**
+
+Catalog entries can pair a main model with a smaller `draft_model_id` from the same family. When both files are downloaded, `start_local_server` passes `--model-draft <path>` to llama-server — the draft generates candidate tokens that the main model verifies in parallel for a 1.5-2x speedup on long outputs. Current pairings: Qwen3 8B/14B → Qwen3 1.7B, Qwen2.5-Coder 7B → Qwen2.5-Coder 1.5B, DeepSeek-R1-Distill 7B/14B → DeepSeek-R1-Distill 1.5B. Auto-enabled silently when the draft is present; never auto-downloaded (extra RAM/VRAM cost is an opt-in by the user installing the draft from Settings → Local AI). The `catalog_draft_model_ids_resolve_to_compatible_models` test enforces that every pairing's draft exists in the catalog and shares the main's architecture.
 - Model metadata enrichment: GGUF header parsing, HF API metadata, runtime `/v1/models` — merged with hover tooltips
 
 **Ollama thinking/reasoning model support:**

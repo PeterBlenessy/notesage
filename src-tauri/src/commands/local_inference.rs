@@ -218,6 +218,32 @@ pub async fn start_local_server(
         log::debug!(target: "notesage::local_ai", "Enabling --jinja for model '{}' (supports tool calling)", model_id);
     }
 
+    // Speculative decoding: if the catalog pairs this model with a smaller
+    // draft from the same family AND the draft file is downloaded, llama-server
+    // verifies its tokens in parallel for a 1.5-2x speedup on long outputs.
+    // Silently skip when the draft isn't on disk — we don't auto-download
+    // because the draft adds significant RAM/VRAM pressure, and the user
+    // should opt in by downloading it from Settings → Local AI.
+    if let Some(ref draft_id) = entry.draft_model_id {
+        if let Some(draft_entry) = find_model_entry(&state.models_dir, draft_id) {
+            let draft_path = state.models_dir.join(&draft_entry.filename);
+            if draft_path.exists() {
+                cmd.args(["--model-draft", draft_path.to_str().unwrap_or("")]);
+                log::info!(
+                    target: "notesage::local_ai",
+                    "Enabling speculative decoding: main='{}' draft='{}'",
+                    model_id, draft_id
+                );
+            } else {
+                log::debug!(
+                    target: "notesage::local_ai",
+                    "Speculative decoding available for '{}' (draft '{}') but draft file not downloaded — skipping",
+                    model_id, draft_id
+                );
+            }
+        }
+    }
+
     // Pass multimodal projector file for vision models.
     // llama-server requires --mmproj to process image inputs.
     // If the mmproj file is missing (model was downloaded before vision support), download it now.
@@ -1035,6 +1061,11 @@ pub async fn local_bundled_fim(
 
 /// Build the llama-server command arguments for a given model entry.
 /// Used by `start_local_server` and extracted here for testability.
+///
+/// `draft_model_path` enables speculative decoding (llama.cpp `--model-draft`).
+/// When `Some`, the small draft model generates candidate tokens that the main
+/// model verifies in parallel — typically 1.5-2x speedup on long outputs. The
+/// draft model MUST share the same tokenizer as the main model.
 #[allow(dead_code)]
 pub fn build_server_args(
     model_path: &str,
@@ -1042,6 +1073,7 @@ pub fn build_server_args(
     ctx_len: u32,
     gpu_layers: i32,
     supports_tool_calling: bool,
+    draft_model_path: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![
         "--model".to_string(), model_path.to_string(),
@@ -1053,11 +1085,17 @@ pub fn build_server_args(
     if supports_tool_calling {
         args.push("--jinja".to_string());
     }
+    if let Some(draft_path) = draft_model_path {
+        args.push("--model-draft".to_string());
+        args.push(draft_path.to_string());
+    }
     args
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Verify the bundled llama.cpp version pin is at least b9000.
     ///
     /// b9000+ contains the toolParser compatibility layer (llama.cpp PR #16531)
@@ -1080,5 +1118,80 @@ mod tests {
             build_num >= 9000,
             "LLAMA_CPP_VERSION must be at least b9000 for this bump; currently pinned to {version}"
         );
+    }
+
+    #[test]
+    fn build_server_args_omits_model_draft_when_none() {
+        let args = build_server_args("/tmp/main.gguf", 8090, 4096, -1, false, None);
+        assert!(!args.iter().any(|a| a == "--model-draft"));
+    }
+
+    #[test]
+    fn build_server_args_appends_model_draft_with_path() {
+        let args = build_server_args(
+            "/tmp/main.gguf",
+            8090,
+            4096,
+            -1,
+            false,
+            Some("/tmp/draft.gguf"),
+        );
+        // Flag + path appear consecutively at the tail.
+        let flag_idx = args.iter().position(|a| a == "--model-draft");
+        assert!(flag_idx.is_some(), "--model-draft missing from args: {args:?}");
+        let i = flag_idx.unwrap();
+        assert_eq!(args[i + 1], "/tmp/draft.gguf");
+    }
+
+    #[test]
+    fn build_server_args_speculative_and_jinja_coexist() {
+        // Regression: both --jinja (for tool calling) and --model-draft (for
+        // speculative decoding) must land in the same arg list. Earlier drafts
+        // of this change accidentally mutually excluded them.
+        let args = build_server_args(
+            "/tmp/main.gguf",
+            8090,
+            4096,
+            -1,
+            /* supports_tool_calling */ true,
+            Some("/tmp/draft.gguf"),
+        );
+        assert!(args.iter().any(|a| a == "--jinja"));
+        assert!(args.iter().any(|a| a == "--model-draft"));
+    }
+
+    /// All `draft_model_id` references in the bundled catalog must resolve to
+    /// a real model in the same architecture (same tokenizer is implied by same
+    /// arch + same family). A typo or arch mismatch would either crash
+    /// llama-server at spawn or produce gibberish output.
+    #[test]
+    fn catalog_draft_model_ids_resolve_to_compatible_models() {
+        use std::collections::HashMap;
+        let catalog: Vec<super::super::model_management::CatalogEntry> =
+            serde_json::from_str(include_str!("../../model-catalog.json"))
+                .expect("model-catalog.json is valid JSON");
+
+        let by_id: HashMap<&str, &super::super::model_management::CatalogEntry> =
+            catalog.iter().map(|e| (e.id.as_str(), e)).collect();
+
+        let mut pairings_checked = 0;
+        for entry in &catalog {
+            if let Some(draft_id) = &entry.draft_model_id {
+                let draft = by_id.get(draft_id.as_str()).unwrap_or_else(|| {
+                    panic!(
+                        "catalog entry '{}' references draft_model_id '{}' which does not exist",
+                        entry.id, draft_id
+                    )
+                });
+                assert_eq!(
+                    entry.architecture, draft.architecture,
+                    "draft model '{}' arch ({:?}) must match main model '{}' arch ({:?})",
+                    draft.id, draft.architecture, entry.id, entry.architecture
+                );
+                pairings_checked += 1;
+            }
+        }
+        // Guard against silent regression where every draft pairing got dropped.
+        assert!(pairings_checked >= 5, "expected at least 5 draft pairings, found {pairings_checked}");
     }
 }
