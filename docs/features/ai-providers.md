@@ -217,6 +217,21 @@ Two-layer network filtering for agent subprocesses: kernel-level enforcement via
 - Connection cards show Sandbox / Network / Managed badges
 - Network restriction toggle enables/disables the proxy for each connection
 
+## Structured Output (Schema-Constrained Generation)
+
+Callers can pass an OpenAI-style `response_format` envelope to `ai_chat_stream` to constrain output against a JSON schema. The frontend helper `generateStructured()` in `src/lib/ai/structured.ts` wraps the call and returns a parsed object.
+
+| Provider | Backend | Guarantee |
+| --- | --- | --- |
+| `local_bundled` (llama-server) | Schema → GBNF grammar; invalid tokens get `-inf` logits | 100% schema-valid output |
+| `openai_compatible` | Forwarded verbatim to upstream `/v1/chat/completions` | Depends on upstream (XGrammar, Outlines, etc.) |
+| `ollama` | Schema unwrapped to Ollama's bare-schema `format` field (or the literal string `"json"` for `json_object`) via `ollama_response_format` | Constrained via XGrammar |
+| `anthropic`, `openai` | Ignored (different envelope shapes; not wired yet) | Best-effort prompt engineering |
+
+`response_format` is not sent alongside `tools` for `local_bundled` — llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Use one or the other per request.
+
+Use cases: skill scripts that need typed output, intent classification before tool dispatch, metadata extraction from documents, agentic planning steps that must emit a specific shape.
+
 ## Tool Calling
 
 Client-side tool calling for all direct API providers (Anthropic, OpenAI, Ollama, local bundled). Models can autonomously call tools and receive results in a multi-turn execution loop.
@@ -390,6 +405,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/uri-scope.ts` | `isUriInScope(uri, scope)` — used by Copilot LSP doc sync, inline completion gate, active-tab auto-attach |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` error + `getProjectLock` / `findLockConflict` utilities |
 | `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
+| `src/lib/ai/structured.ts` | `generateStructured()` + `buildJsonSchemaResponseFormat()` for schema-constrained generation |
 
 ## Future Enhancements
 

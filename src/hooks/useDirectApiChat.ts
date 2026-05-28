@@ -394,6 +394,7 @@ export function useDirectApiChat({
             temperature: resolved.config?.temperature ?? null,
             maxTokens: resolved.config?.maxTokens ?? null,
             baseUrl: resolved.config?.baseUrl ?? null,
+            responseFormat: null,
           });
         };
 
@@ -543,6 +544,7 @@ export function useDirectApiChat({
           temperature: resolved.config?.temperature ?? null,
           maxTokens: resolved.config?.maxTokens ?? null,
           baseUrl: resolved.config?.baseUrl ?? null,
+          responseFormat: null,
         });
       } catch (error) {
         clearInterval(flushInterval);

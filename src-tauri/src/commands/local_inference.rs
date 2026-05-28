@@ -443,6 +443,7 @@ pub async fn local_bundled_chat_stream(
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
+    response_format: &Option<serde_json::Value>,
 ) -> Result<(), String> {
     let port = state.port.lock().await
         .ok_or("Local AI server is not running. Start it from Settings → Local AI.")?;
@@ -581,6 +582,18 @@ pub async fn local_bundled_chat_stream(
             body["tools"] = serde_json::Value::Array(
                 super::ai_streaming::tools_to_openai_format(tool_defs)
             );
+        }
+    }
+
+    // Schema-constrained output via llama-server's response_format. The server
+    // converts the JSON schema to a GBNF grammar internally — invalid tokens
+    // get -inf logits, so output is guaranteed to satisfy the schema.
+    // Not sent together with tools: llama-server treats them as mutually
+    // exclusive grammar sources and the tool autoparser already constrains
+    // tool-call output via the model's Jinja template.
+    if !has_tools {
+        if let Some(rf) = response_format {
+            body["response_format"] = rf.clone();
         }
     }
 

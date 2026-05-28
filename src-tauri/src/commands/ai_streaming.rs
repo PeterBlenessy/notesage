@@ -19,6 +19,24 @@ fn tools_to_anthropic_format(tools: &[ToolDefinition]) -> Vec<serde_json::Value>
     }).collect()
 }
 
+/// Map an OpenAI-style `response_format` value into the shape Ollama's `format`
+/// field expects.
+///
+/// Callers send the OpenAI envelope: `{ "type": "json_schema", "json_schema": { "schema": {...} } }`
+/// or `{ "type": "json_object" }`. Ollama wants the bare schema object — or the
+/// literal string `"json"` for "any valid JSON". Anything else passes through.
+pub fn ollama_response_format(rf: &serde_json::Value) -> serde_json::Value {
+    match rf.get("type").and_then(|v| v.as_str()) {
+        Some("json_schema") => rf
+            .get("json_schema")
+            .and_then(|js| js.get("schema"))
+            .cloned()
+            .unwrap_or_else(|| rf.clone()),
+        Some("json_object") => serde_json::Value::String("json".into()),
+        _ => rf.clone(),
+    }
+}
+
 /// Convert tool definitions to OpenAI function-calling format
 /// (used by OpenAI, Ollama, OpenAI-compatible, and local bundled providers).
 pub fn tools_to_openai_format(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
@@ -658,6 +676,7 @@ pub async fn ollama_chat_stream(
     temperature: Option<f64>,
     _max_tokens: Option<u32>,
     base_url: &Option<String>,
+    response_format: &Option<serde_json::Value>,
 ) -> Result<(), String> {
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
@@ -733,6 +752,11 @@ pub async fn ollama_chat_stream(
         if !tool_defs.is_empty() {
             body["tools"] = serde_json::Value::Array(tools_to_openai_format(tool_defs));
         }
+    }
+
+    // Ollama uses a `format` field instead of OpenAI's `response_format`.
+    if let Some(rf) = response_format {
+        body["format"] = ollama_response_format(rf);
     }
 
     if let Some(temp) = temperature {
@@ -919,6 +943,7 @@ pub async fn openai_compatible_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: &Option<String>,
+    response_format: &Option<serde_json::Value>,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("API key is required")?;
     let base_url = base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
@@ -996,6 +1021,10 @@ pub async fn openai_compatible_chat_stream(
         if !tool_defs.is_empty() {
             body["tools"] = serde_json::Value::Array(tools_to_openai_format(tool_defs));
         }
+    }
+
+    if let Some(rf) = response_format {
+        body["response_format"] = rf.clone();
     }
 
     let response = client
@@ -1180,5 +1209,50 @@ mod tests {
         });
         let stop_reason = json["delta"]["stop_reason"].as_str().unwrap_or("");
         assert_eq!(stop_reason, "end_turn");
+    }
+
+    // --- Ollama response_format mapping ---
+
+    #[test]
+    fn test_ollama_response_format_unwraps_json_schema_envelope() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": { "title": { "type": "string" } },
+            "required": ["title"]
+        });
+        let openai_envelope = serde_json::json!({
+            "type": "json_schema",
+            "json_schema": { "name": "Note", "schema": schema.clone() }
+        });
+        assert_eq!(ollama_response_format(&openai_envelope), schema);
+    }
+
+    #[test]
+    fn test_ollama_response_format_json_object_to_string() {
+        let envelope = serde_json::json!({ "type": "json_object" });
+        assert_eq!(
+            ollama_response_format(&envelope),
+            serde_json::Value::String("json".into())
+        );
+    }
+
+    #[test]
+    fn test_ollama_response_format_passes_through_bare_schema() {
+        // If a caller already sends Ollama's native shape (a bare schema object
+        // with no `type: "json_schema"` wrapper), don't mangle it.
+        let bare = serde_json::json!({
+            "type": "object",
+            "properties": { "x": { "type": "number" } }
+        });
+        assert_eq!(ollama_response_format(&bare), bare);
+    }
+
+    #[test]
+    fn test_ollama_response_format_unwrap_falls_back_when_schema_missing() {
+        // Defensive: if a caller sends {"type": "json_schema"} without the inner
+        // schema, don't drop the value — pass it through so the server can error
+        // with a clear message instead of silently sending null.
+        let malformed = serde_json::json!({ "type": "json_schema" });
+        assert_eq!(ollama_response_format(&malformed), malformed);
     }
 }

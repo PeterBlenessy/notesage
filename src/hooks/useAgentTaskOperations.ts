@@ -766,6 +766,7 @@ async function startDirectApiTask(
     temperature: config?.temperature ?? null,
     maxTokens: config?.maxTokens ?? null,
     baseUrl: config?.baseUrl ?? null,
+    responseFormat: null,
   })
     .catch((error) => {
       const t = tasksMap.get(taskId);
