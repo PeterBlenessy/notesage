@@ -684,7 +684,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 20,
+      version: 21,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -874,6 +874,26 @@ export const useSettingsStore = create<SettingsStore>()(
           // Forms without scripts are inert in a sanitised div, so the setting is
           // dropped. Delete the persisted key so the name is free for future reuse.
           delete state.htmlViewerAllowForms;
+        }
+        if (version < 21) {
+          // Quiet-chrome extension (2026-05-28) — add `titlebar` and `cmdbar`
+          // keys to `quietChromeOverrides` so a Custom-mode user gets sane
+          // defaults the first time they see the new rows. Existing preset
+          // values (`relaxed`/`default`/`aggressive`) bake the new keys in
+          // via `QUIET_CHROME_PRESETS`; this branch only matters for
+          // persisted Custom-mode overrides.
+          if (
+            state.quietChromeOverrides &&
+            typeof state.quietChromeOverrides === 'object'
+          ) {
+            const overrides = state.quietChromeOverrides as Record<string, unknown>;
+            if (typeof overrides.titlebar !== 'boolean') {
+              overrides.titlebar = false;
+            }
+            if (typeof overrides.cmdbar !== 'boolean') {
+              overrides.cmdbar = false;
+            }
+          }
         }
         return state;
       },

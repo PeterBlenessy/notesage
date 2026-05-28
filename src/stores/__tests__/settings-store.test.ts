@@ -160,6 +160,8 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
     docHead: true,
     sidebar: false,
     orb: false,
+    titlebar: false,
+    cmdbar: false,
   },
   sidebarRecentCap: 5,
   sidebarTagsCap: 5,
@@ -1075,7 +1077,7 @@ describe('v18 → v19 migration (Classic layout removal)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.uiPreview).toBeUndefined();
     expect(parsed.state.chatPanelOpen).toBeUndefined();
     expect(parsed.state.previewInvitationShownAt).toBeUndefined();
@@ -1221,7 +1223,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1360,6 +1362,8 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
 
     // Persisted JSON should reflect bumped version and new fields so the
@@ -1367,7 +1371,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBe(21);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1432,6 +1436,8 @@ describe('quiet-chrome setters', () => {
       docHead: true,
       sidebar: true,
       orb: true,
+      titlebar: true,
+      cmdbar: true,
     });
 
     setQuietChromePreset('relaxed');
@@ -1443,6 +1449,8 @@ describe('quiet-chrome setters', () => {
       docHead: false,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
   });
 
@@ -1686,7 +1694,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1791,7 +1799,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -1862,7 +1870,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -1984,7 +1992,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2006,7 +2014,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2032,7 +2040,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2174,7 +2182,7 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 });
 
@@ -2213,7 +2221,7 @@ describe('v15 migration: htmlViewerAllowForms (field removed in v20)', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 });
 
@@ -2247,7 +2255,7 @@ describe('v20 migration: htmlViewerAllowForms deletion', () => {
     expect(parsed.state.htmlViewerAllowForms).toBeUndefined();
   });
 
-  it('bumps persisted version to 20', async () => {
+  it('bumps persisted version forward', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV19State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2255,7 +2263,10 @@ describe('v20 migration: htmlViewerAllowForms deletion', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    // Latest persist version — re-bumped to 21 by the quiet-chrome
+    // titlebar/cmdbar extension (2026-05-28). Whatever the current version
+    // is, an older state should rehydrate up to it in one pass.
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 
   it('preserves unrelated settings during migration', async () => {
@@ -2311,7 +2322,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 });
 
@@ -2362,7 +2373,7 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
     expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(true);
   });
 
-  it('bumps persisted version to 18 after migration', async () => {
+  it('bumps persisted version forward after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV16State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2370,6 +2381,83 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(20);
+    // Re-bumped to 21 by the quiet-chrome extension (2026-05-28). Asserting
+    // ≥ 20 so future bumps don't churn this test for free.
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
+  });
+});
+
+// ===========================================================================
+// v21 migration — quiet-chrome titlebar/cmdbar backfill (2026-05-28)
+// ===========================================================================
+//
+// The 2026-05-28 quiet-chrome extension added `titlebar` and `cmdbar` keys
+// to `QuietChromeTargets`. Users on a named preset see no impact (the preset
+// table bakes the new keys in), but Custom-mode users with persisted
+// overrides need the new keys backfilled or the Advanced switches in
+// Settings would render an undefined checkbox state.
+
+describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
+  function buildV20State(overridesPatch: Record<string, unknown> = {}): string {
+    const state = {
+      theme: 'system',
+      logLevel: 'warn',
+      autoCheckUpdates: true,
+      releaseChannel: 'stable',
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+      quietChromePreset: 'custom',
+      quietChromeOverrides: {
+        toolbar: true,
+        status: true,
+        docHead: true,
+        sidebar: true,
+        orb: false,
+        // Intentionally missing titlebar + cmdbar — the v20 shape.
+        ...overridesPatch,
+      },
+    };
+    return JSON.stringify({ state, version: 20 });
+  }
+
+  it('backfills titlebar=false and cmdbar=false on a v20 Custom-mode state', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromeOverrides.titlebar).toBe(false);
+    expect(s.quietChromeOverrides.cmdbar).toBe(false);
+    // Existing overrides are preserved verbatim.
+    expect(s.quietChromeOverrides.sidebar).toBe(true);
+    expect(s.quietChromeOverrides.orb).toBe(false);
+  });
+
+  it('does not overwrite an explicit titlebar/cmdbar value already in the persisted state', async () => {
+    // A user could already have these keys (e.g. they downgraded once and
+    // re-upgraded). The migration must be idempotent.
+    localStorageMock.setItem(
+      STORAGE_KEY,
+      buildV20State({ titlebar: true, cmdbar: true }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromeOverrides.titlebar).toBe(true);
+    expect(s.quietChromeOverrides.cmdbar).toBe(true);
+  });
+
+  it('bumps persisted version to 21', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(21);
   });
 });

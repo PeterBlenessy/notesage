@@ -11,10 +11,12 @@
  * "stay"`, etc.) and the stylesheet keys off them in combination with
  * `.app.typing` — zero React re-renders per keystroke.
  *
- * Hard rule (PRD `2026-04-21-ui-refresh`, line 562): the command bar never
- * fades. No data attribute in this module ever targets the composer — the
- * fade-on-type hook already excludes `[data-cmd-bar]` from typing signals,
- * and no CSS rule under `.app.typing [data-cmd-bar]` exists.
+ * Command-bar fade rule (see `docs/design-system.md` →
+ * "Fade-on-Type Pattern" for the living spec): the FloatingCommandBar
+ * fades ONLY while it is minimized (collapsed pill, not expanded, not
+ * pinned) AND unfocused AND unhovered. The selector lives in
+ * `globals.css`; the typing-signal exclusion for `[data-cmd-bar]` still
+ * applies (typing inside the composer never triggers a fade pulse).
  *
  * Types and the preset table live in `quiet-chrome-presets.ts` so the
  * settings-store can import them without pulling React in and causing a
@@ -36,7 +38,7 @@ export {
 } from "./quiet-chrome-presets";
 
 /**
- * The five chrome-target keys and the data attribute suffix CSS matches on.
+ * The chrome-target keys and the data attribute suffix CSS matches on.
  * Kept next to the hook so adding a new target means touching one place.
  */
 const TARGET_ATTRS: ReadonlyArray<readonly [keyof QuietChromeTargets, string]> = [
@@ -45,6 +47,8 @@ const TARGET_ATTRS: ReadonlyArray<readonly [keyof QuietChromeTargets, string]> =
   ["docHead", "data-quiet-chrome-dochead"],
   ["sidebar", "data-quiet-chrome-sidebar"],
   ["orb", "data-quiet-chrome-orb"],
+  ["titlebar", "data-quiet-chrome-titlebar"],
+  ["cmdbar", "data-quiet-chrome-cmdbar"],
 ];
 
 /**
@@ -58,6 +62,12 @@ const TARGET_ATTRS: ReadonlyArray<readonly [keyof QuietChromeTargets, string]> =
  * Falls back to `document.body` if the QuietLayout root is not mounted yet
  * (e.g. legacy layout). In that case the attributes are no-ops because the
  * CSS selectors anchor on `.app`.
+ *
+ * The `cmdbar` attribute is ALSO mirrored to `<html>` so the FloatingCommandBar
+ * (which portals to `document.body` and is therefore a sibling of the layout
+ * root, not a descendant) can be reached by a `:root[data-quiet-chrome-cmdbar="fade"]`
+ * selector. Every other target lives inside the layout subtree and is matched
+ * via `.app[data-quiet-chrome-…]` as before.
  */
 function applyTargets(targets: QuietChromeTargets): void {
   if (typeof document === "undefined") return;
@@ -68,6 +78,11 @@ function applyTargets(targets: QuietChromeTargets): void {
   for (const [key, attr] of TARGET_ATTRS) {
     root.setAttribute(attr, targets[key] ? "fade" : "stay");
   }
+  // Mirror just the cmdbar gate to `<html>` for the portal'd command bar.
+  document.documentElement.setAttribute(
+    "data-quiet-chrome-cmdbar",
+    targets.cmdbar ? "fade" : "stay",
+  );
 }
 
 /**
