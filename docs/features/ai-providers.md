@@ -268,6 +268,10 @@ Script-bearing skills are automatically converted to first-class tool definition
 
 `localSystemMessage` in `useAIContext` appends a short tool-use protocol (`src/lib/ai/react-prompt.ts`) when `toolCallingEnabled` is true. It tells the model to reason in one sentence before each tool call, reflect on the result before the next step, vary its approach on errors, and prefer one well-chosen call over speculative chains. Gated to `local_bundled` only — frontier cloud models plan well naturally, and the prompt would just burn their tokens. For thinking-capable models the reasoning naturally lands inside `<think>` tags via the streaming tag parser; non-thinking models put it in visible text as a short audit trail.
 
+**Self-correction on tool failure (`src/lib/ai/tool-feedback.ts`):**
+
+When a tool call errors or the user denies permission, `buildToolResultContent` wraps the raw error with a ReAct-aligned directive ("reason about why this failed; do not retry the same call with the same arguments") before it's fed back to the model. The underlying error stays in full so the model can use the cause (path, permission, ENOENT) to choose a different approach. A per-turn `ToolCallHistory` tracks which `(tool, args)` shapes have already failed; the second identical failure prepends a stronger anti-loop directive that offers concrete alternatives (different arguments, different tool, or respond with text). Applies to all providers — the wrap is cheap enough that consistency beats per-provider gating.
+
 **Provider-specific format handling:**
 
 - **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
@@ -415,6 +419,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
 | `src/lib/ai/structured.ts` | `generateStructured()` + `buildJsonSchemaResponseFormat()` for schema-constrained generation |
 | `src/lib/ai/react-prompt.ts` | `REACT_GUIDANCE` + `buildReActAddendum()` — tool-use protocol appended to `localSystemMessage` |
+| `src/lib/ai/tool-feedback.ts` | `ToolCallHistory` + `buildToolResultContent()` — wraps tool errors with reasoning guidance, escalates on repeated identical failures |
 
 ## Future Enhancements
 

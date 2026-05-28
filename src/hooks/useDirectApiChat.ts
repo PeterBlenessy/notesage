@@ -14,6 +14,7 @@ import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { friendlyAIError } from '@/lib/ai/errors';
 import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
+import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -176,6 +177,10 @@ export function useDirectApiChat({
         // Tool call state — scoped to this streaming session
         const pendingToolCalls: PendingToolCall[] = [];
         let toolCallCount = 0;
+        // Per-session self-correction history. Tracks which (tool, args) have
+        // already failed so the next attempt with the same shape gets an
+        // anti-loop directive instead of just the wrapped error.
+        const toolCallHistory = new ToolCallHistory();
 
         // Segment tracking for thinking blocks
         let thinkingSegmentIndex = -1;
@@ -290,7 +295,13 @@ export function useDirectApiChat({
                 } as ToolCallSegment);
                 toolResultMessages.push({
                   role: 'tool' as const,
-                  content: `Permission denied for tool: ${call.name}`,
+                  content: buildToolResultContent({
+                    toolName: call.name,
+                    args: call.arguments,
+                    rawContent: `Permission denied for tool: ${call.name}`,
+                    isError: true,
+                    history: toolCallHistory,
+                  }),
                   toolCallId: call.id,
                 });
                 continue;
@@ -367,7 +378,13 @@ export function useDirectApiChat({
 
             toolResultMessages.push({
               role: 'tool' as const,
-              content: result.content,
+              content: buildToolResultContent({
+                toolName: call.name,
+                args: call.arguments,
+                rawContent: result.content,
+                isError: result.is_error,
+                history: toolCallHistory,
+              }),
               toolCallId: call.id,
             });
           }
