@@ -11,10 +11,12 @@ import type { ResolvedCredentials } from '@/lib/ai/credentials';
 import { executeToolCall } from '@/lib/tool-executor';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { log } from '@/lib/logger';
+import { log, PERF } from '@/lib/logger';
 import { friendlyAIError } from '@/lib/ai/errors';
 import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
 import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback';
+import { trimMessagesToBudget, localBundledTrimBudget } from '@/lib/ai/context-trim';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,6 +183,27 @@ export function useDirectApiChat({
         // already failed so the next attempt with the same shape gets an
         // anti-loop directive instead of just the wrapped error.
         const toolCallHistory = new ToolCallHistory();
+
+        // Sliding-window trim for the local_bundled provider. 4K-32K context
+        // windows fill quickly during multi-turn tool loops; without trimming
+        // the server returns a truncation error or silently drops the oldest
+        // content in a way that breaks the tool_calls/tool_result pairing.
+        // Returns the (possibly trimmed) message list ready for ai_chat_stream.
+        const trimForProvider = (msgs: ChatMessage[]): ChatMessage[] => {
+          if (resolved?.provider !== 'local_bundled') return msgs;
+          const ctxLen = useLocalAIStore.getState().contextLength;
+          const budget = localBundledTrimBudget(ctxLen);
+          const result = trimMessagesToBudget(msgs, budget);
+          if (result.dropped > 0) {
+            log.info(PERF.context, 'trim', {
+              dropped: result.dropped,
+              kept: result.messages.length,
+              budgetTokens: budget,
+              estimatedTokens: result.estimatedTokens,
+            });
+          }
+          return result.messages;
+        };
 
         // Segment tracking for thinking blocks
         let thinkingSegmentIndex = -1;
@@ -401,7 +424,7 @@ export function useDirectApiChat({
 
           // Re-invoke ai_chat_stream with full history including tool results
           await invoke('ai_chat_stream', {
-            messages: mapMessagesForRust(conversationMessages),
+            messages: mapMessagesForRust(trimForProvider(conversationMessages)),
             provider: resolved.provider,
             connectionId: resolved.connectionId,
             ollamaUrl: resolved.ollamaUrl,
@@ -551,7 +574,7 @@ export function useDirectApiChat({
         }
 
         await invoke('ai_chat_stream', {
-          messages: mapMessagesForRust(conversationMessages),
+          messages: mapMessagesForRust(trimForProvider(conversationMessages)),
           provider: resolved.provider,
           connectionId: resolved.connectionId,
           ollamaUrl: resolved.ollamaUrl,

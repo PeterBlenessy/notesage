@@ -44,6 +44,7 @@ export const PERF = {
   treeOverlay: 'perf:tree-overlay',
   sidebar: 'perf:sidebar',
   focus: 'perf:focus',
+  context: 'perf:context',
 } as const;
 
 export type PerfCategory = typeof PERF[keyof typeof PERF];

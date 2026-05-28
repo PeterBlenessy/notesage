@@ -272,6 +272,10 @@ Script-bearing skills are automatically converted to first-class tool definition
 
 When a tool call errors or the user denies permission, `buildToolResultContent` wraps the raw error with a ReAct-aligned directive ("reason about why this failed; do not retry the same call with the same arguments") before it's fed back to the model. The underlying error stays in full so the model can use the cause (path, permission, ENOENT) to choose a different approach. A per-turn `ToolCallHistory` tracks which `(tool, args)` shapes have already failed; the second identical failure prepends a stronger anti-loop directive that offers concrete alternatives (different arguments, different tool, or respond with text). Applies to all providers — the wrap is cheap enough that consistency beats per-provider gating.
 
+**Sliding-window context trimming (`src/lib/ai/context-trim.ts`):**
+
+`local_bundled` chats apply `trimMessagesToBudget` before every `ai_chat_stream` send (initial + tool-loop continuation). The budget is `useLocalAIStore.contextLength × 0.75` — the 25% reserve is the model's room to actually answer. Trimming drops the oldest complete rounds (user → assistant → tool_call/tool_result chain) so the `tool_calls`/`tool_result` pairing invariant is preserved automatically. The leading system message and the final round are always kept; if even the final round exceeds the budget alone, the API rejection is more useful than silently dropping the user's most recent prompt. Token counts are estimated via `chars / 4` (OpenAI cookbook heuristic) with a flat 2000-token-per-image budget so a 2MB base64 attachment doesn't trigger gratuitous trims. Trim events log to `[perf:context]`. Cloud providers (Anthropic, OpenAI) skip trimming — their windows are large enough that runaway conversations remain a UX problem, not a hard failure.
+
 **Provider-specific format handling:**
 
 - **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
@@ -420,6 +424,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/structured.ts` | `generateStructured()` + `buildJsonSchemaResponseFormat()` for schema-constrained generation |
 | `src/lib/ai/react-prompt.ts` | `REACT_GUIDANCE` + `buildReActAddendum()` — tool-use protocol appended to `localSystemMessage` |
 | `src/lib/ai/tool-feedback.ts` | `ToolCallHistory` + `buildToolResultContent()` — wraps tool errors with reasoning guidance, escalates on repeated identical failures |
+| `src/lib/ai/context-trim.ts` | `trimMessagesToBudget()` + `localBundledTrimBudget()` — sliding-window trim for local_bundled, preserves tool_call/tool_result pairing |
 
 ## Future Enhancements
 
