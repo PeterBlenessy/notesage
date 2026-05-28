@@ -260,6 +260,10 @@ Script-bearing skills are automatically converted to first-class tool definition
 5. Result is fed back as a `role: "tool"` message and the model continues generating
 6. Loop repeats until the model responds with text only or the 20-call-per-turn limit is reached
 
+**ReAct-style protocol for local models:**
+
+`localSystemMessage` in `useAIContext` appends a short tool-use protocol (`src/lib/ai/react-prompt.ts`) when `toolCallingEnabled` is true. It tells the model to reason in one sentence before each tool call, reflect on the result before the next step, vary its approach on errors, and prefer one well-chosen call over speculative chains. Gated to `local_bundled` only — frontier cloud models plan well naturally, and the prompt would just burn their tokens. For thinking-capable models the reasoning naturally lands inside `<think>` tags via the streaming tag parser; non-thinking models put it in visible text as a short audit trail.
+
 **Provider-specific format handling:**
 
 - **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
@@ -406,6 +410,7 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` error + `getProjectLock` / `findLockConflict` utilities |
 | `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
 | `src/lib/ai/structured.ts` | `generateStructured()` + `buildJsonSchemaResponseFormat()` for schema-constrained generation |
+| `src/lib/ai/react-prompt.ts` | `REACT_GUIDANCE` + `buildReActAddendum()` — tool-use protocol appended to `localSystemMessage` |
 
 ## Future Enhancements
 
