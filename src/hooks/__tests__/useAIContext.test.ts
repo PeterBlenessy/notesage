@@ -440,3 +440,46 @@ describe('useAIContext — file-tree injection scope (Task #27)', () => {
     expect(msg).not.toContain('## Project Files');
   });
 });
+
+describe('useAIContext — ReAct guidance in localSystemMessage', () => {
+  beforeEach(() => {
+    resetAll();
+  });
+
+  it('includes the tool-use protocol when tool calling is enabled (default)', () => {
+    // Default state: toolCallingEnabled === true; localSystemMessage should
+    // carry the ReAct addendum so small local models reason step-by-step.
+    seedActiveConversation(['/projects/A']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.localSystemMessage;
+
+    expect(msg).toMatch(/Tool use protocol/i);
+    expect(msg).toMatch(/before each tool call/i);
+    expect(msg).toMatch(/after each result/i);
+  });
+
+  it('omits the protocol when tool calling is disabled', () => {
+    // Wasting tokens on guidance for a feature the model can't reach is
+    // the failure mode this gate exists to prevent.
+    useSettingsStore.setState({ toolCallingEnabled: false });
+    seedActiveConversation(['/projects/A']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.localSystemMessage;
+
+    expect(msg).not.toMatch(/Tool use protocol/i);
+  });
+
+  it('does not bleed the protocol into the composed (direct API) system message', () => {
+    // composedSystemMessage feeds Anthropic / OpenAI / Ollama / openai_compatible.
+    // ReAct guidance is only valuable for local-tier models and would just
+    // burn tokens on frontier ones, so it must stay local-only.
+    seedActiveConversation(['/projects/A']);
+
+    const { result } = renderHook(() => useAIContext());
+    const msg = result.current.composedSystemMessage;
+
+    expect(msg).not.toMatch(/Tool use protocol/i);
+  });
+});

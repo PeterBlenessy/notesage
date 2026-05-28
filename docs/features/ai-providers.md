@@ -97,6 +97,7 @@ interface AIProvider {
 - Process cleanup: `LocalInferenceState::stop_sync()` via `RunEvent::Exit` hook; `pkill llama-server` at startup for crash recovery
 - Chat streaming via `/v1/chat/completions` (OpenAI-compatible SSE)
 - Inline completions via `/infill` (FIM) with `/v1/chat/completions` instructed chat fallback for non-FIM models
+- Optional second server process for FIM (`start_completion_server` / `stop_completion_server` / `get_completion_server_status`) — resolves the `--jinja`/FIM conflict by running a dedicated llama-server WITHOUT `--jinja` on port 8190+. When running, `local_bundled_fim` routes there via `resolve_fim_port`; otherwise it falls back to the main server's `/infill` → chat chain. Lets users keep tool calling (which needs `--jinja`) on the main chat model AND get fast native FIM from a code-specialist like Qwen2.5-Coder at the same time. Pays a second model's worth of RAM/VRAM — opt-in only, no auto-start. UI lives in `CompletionServerSection` (Settings → Local AI), backed by the `completionModelId` / `completionServerStatus` / `completionServerPort` slice of `local-ai-store`. The store listens for `local-completion-server-status` events so out-of-band start/stop (e.g. `RunEvent::Exit`) stays in sync. `completionModelId` is persisted; the runtime status fields are not.
 - Model catalog embedded at compile time from `model-catalog.json`; 18 curated models across 4 categories (general, code, reasoning, compact) with capability metadata (FIM, tool calling, thinking tags, vision, multilingual, RAM-tier recommendations)
 - Health checks every 30s via `/health` endpoint
 
@@ -135,12 +136,16 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 
 **Model management:**
 
-- Curated model catalog (18 models) embedded at compile time (`model-catalog.json`) with per-model capability metadata (`category`, `supports_tool_calling`, `supports_thinking`, `thinking_tags`, `supports_vision`, `multilingual`, `recommended_for`)
+- Curated model catalog (18 models) embedded at compile time (`model-catalog.json`) with per-model capability metadata (`category`, `supports_tool_calling`, `supports_thinking`, `thinking_tags`, `supports_vision`, `multilingual`, `recommended_for`, `draft_model_id`)
 - Models downloaded from Hugging Face in GGUF format to `~/.notesage/models/llm/`
 - Download progress via Tauri events, concurrent downloads with cancel support
 - System RAM detection for model recommendations per tier (8GB, 16GB, 32GB, 64GB)
 - Settings → Local AI tab with model cards, capability badges (Tools, Think, FIM, Vision, Multi), category filter tabs (All, General, Code, Reasoning, Downloaded), sort dropdown (Name, Size, RAM)
 - Custom model support via `~/.notesage/models/llm/custom-models.json`
+
+**Speculative decoding:**
+
+Catalog entries can pair a main model with a smaller `draft_model_id` from the same family. When both files are downloaded, `start_local_server` passes `--model-draft <path>` to llama-server — the draft generates candidate tokens that the main model verifies in parallel for a 1.5-2x speedup on long outputs. Current pairings: Qwen3 8B/14B → Qwen3 1.7B, Qwen2.5-Coder 7B → Qwen2.5-Coder 1.5B, DeepSeek-R1-Distill 7B/14B → DeepSeek-R1-Distill 1.5B. Auto-enabled silently when the draft is present; never auto-downloaded (extra RAM/VRAM cost is an opt-in by the user installing the draft from Settings → Local AI). The `catalog_draft_model_ids_resolve_to_compatible_models` test enforces that every pairing's draft exists in the catalog and shares the main's architecture.
 - Model metadata enrichment: GGUF header parsing, HF API metadata, runtime `/v1/models` — merged with hover tooltips
 
 **Ollama thinking/reasoning model support:**
@@ -217,6 +222,21 @@ Two-layer network filtering for agent subprocesses: kernel-level enforcement via
 - Connection cards show Sandbox / Network / Managed badges
 - Network restriction toggle enables/disables the proxy for each connection
 
+## Structured Output (Schema-Constrained Generation)
+
+Callers can pass an OpenAI-style `response_format` envelope to `ai_chat_stream` to constrain output against a JSON schema. The frontend helper `generateStructured()` in `src/lib/ai/structured.ts` wraps the call and returns a parsed object.
+
+| Provider | Backend | Guarantee |
+| --- | --- | --- |
+| `local_bundled` (llama-server) | Schema → GBNF grammar; invalid tokens get `-inf` logits | 100% schema-valid output |
+| `openai_compatible` | Forwarded verbatim to upstream `/v1/chat/completions` | Depends on upstream (XGrammar, Outlines, etc.) |
+| `ollama` | Schema unwrapped to Ollama's bare-schema `format` field (or the literal string `"json"` for `json_object`) via `ollama_response_format` | Constrained via XGrammar |
+| `anthropic`, `openai` | Ignored (different envelope shapes; not wired yet) | Best-effort prompt engineering |
+
+`response_format` is not sent alongside `tools` for `local_bundled` — llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Use one or the other per request.
+
+Use cases: skill scripts that need typed output, intent classification before tool dispatch, metadata extraction from documents, agentic planning steps that must emit a specific shape.
+
 ## Tool Calling
 
 Client-side tool calling for all direct API providers (Anthropic, OpenAI, Ollama, local bundled). Models can autonomously call tools and receive results in a multi-turn execution loop.
@@ -245,12 +265,24 @@ Script-bearing skills are automatically converted to first-class tool definition
 5. Result is fed back as a `role: "tool"` message and the model continues generating
 6. Loop repeats until the model responds with text only or the 20-call-per-turn limit is reached
 
+**ReAct-style protocol for local models:**
+
+`localSystemMessage` in `useAIContext` appends a short tool-use protocol (`src/lib/ai/react-prompt.ts`) when `toolCallingEnabled` is true. It tells the model to reason in one sentence before each tool call, reflect on the result before the next step, vary its approach on errors, and prefer one well-chosen call over speculative chains. Gated to `local_bundled` only — frontier cloud models plan well naturally, and the prompt would just burn their tokens. For thinking-capable models the reasoning naturally lands inside `<think>` tags via the streaming tag parser; non-thinking models put it in visible text as a short audit trail.
+
+**Self-correction on tool failure (`src/lib/ai/tool-feedback.ts`):**
+
+When a tool call errors or the user denies permission, `buildToolResultContent` wraps the raw error with a ReAct-aligned directive ("reason about why this failed; do not retry the same call with the same arguments") before it's fed back to the model. The underlying error stays in full so the model can use the cause (path, permission, ENOENT) to choose a different approach. A per-turn `ToolCallHistory` tracks which `(tool, args)` shapes have already failed; the second identical failure prepends a stronger anti-loop directive that offers concrete alternatives (different arguments, different tool, or respond with text). Applies to all providers — the wrap is cheap enough that consistency beats per-provider gating.
+
+**Sliding-window context trimming (`src/lib/ai/context-trim.ts`):**
+
+`local_bundled` chats apply `trimMessagesToBudget` before every `ai_chat_stream` send (initial + tool-loop continuation). The budget is `useLocalAIStore.contextLength × 0.75` — the 25% reserve is the model's room to actually answer. Trimming drops the oldest complete rounds (user → assistant → tool_call/tool_result chain) so the `tool_calls`/`tool_result` pairing invariant is preserved automatically. The leading system message and the final round are always kept; if even the final round exceeds the budget alone, the API rejection is more useful than silently dropping the user's most recent prompt. Token counts are estimated via `chars / 4` (OpenAI cookbook heuristic) with a flat 2000-token-per-image budget so a 2MB base64 attachment doesn't trigger gratuitous trims. Trim events log to `[perf:context]`. Cloud providers (Anthropic, OpenAI) skip trimming — their windows are large enough that runaway conversations remain a UX problem, not a hard failure.
+
 **Provider-specific format handling:**
 
 - **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
 - **OpenAI:** Tools wrapped in `{ type: "function", function: { ... } }`. Tool calls detected via `delta.tool_calls` in streamed chunks.
 - **Ollama:** Same format as OpenAI. Requires models with function calling support (Qwen3, Llama 3.1+, Mistral).
-- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Uses non-streaming fallback when tools are present due to llama-server streaming limitations with tool calls.
+- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Tool calls stream incrementally in `delta.tool_calls` (requires llama.cpp b9000+ via the toolParser compatibility layer from PR #16531). The version pin is enforced by `llama_cpp_version_is_at_least_b9000`; downgrading would re-introduce the bug where tool calls error or land in the `reasoning` field instead of `tool_calls`.
 
 **Permission model:**
 
@@ -390,6 +422,10 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/uri-scope.ts` | `isUriInScope(uri, scope)` — used by Copilot LSP doc sync, inline completion gate, active-tab auto-attach |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` error + `getProjectLock` / `findLockConflict` utilities |
 | `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
+| `src/lib/ai/structured.ts` | `generateStructured()` + `buildJsonSchemaResponseFormat()` for schema-constrained generation |
+| `src/lib/ai/react-prompt.ts` | `REACT_GUIDANCE` + `buildReActAddendum()` — tool-use protocol appended to `localSystemMessage` |
+| `src/lib/ai/tool-feedback.ts` | `ToolCallHistory` + `buildToolResultContent()` — wraps tool errors with reasoning guidance, escalates on repeated identical failures |
+| `src/lib/ai/context-trim.ts` | `trimMessagesToBudget()` + `localBundledTrimBudget()` — sliding-window trim for local_bundled, preserves tool_call/tool_result pairing |
 
 ## Future Enhancements
 

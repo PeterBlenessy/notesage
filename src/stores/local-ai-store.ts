@@ -20,12 +20,20 @@ interface LocalAIStore {
   gpuLayers: number;
   dismissedFirstRun: boolean;
   hiddenModelIds: string[];
+  /** Last completion-server model the user picked. Persisted so the panel
+   *  remembers the choice across restarts even when the server isn't running. */
+  completionModelId: string | null;
 
   // Runtime (non-persisted)
   serverStatus: ServerStatus;
   serverError: string | null;
   serverStatusReason: string | null;
   serverPort: number | null;
+  /** Dedicated FIM server lifecycle (item #8 of the agentic stack).
+   *  Mirrors the main server's status/port/error fields. */
+  completionServerStatus: ServerStatus;
+  completionServerPort: number | null;
+  completionServerError: string | null;
   models: LocalModelInfo[];
   downloads: Record<string, DownloadState>;
   systemMemory: SystemMemoryInfo | null;
@@ -65,6 +73,11 @@ interface LocalAIStore {
   restoreDefaults: () => void;
   checkBinary: () => Promise<BinaryStatus>;
   startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
+  // Completion-server lifecycle
+  setCompletionModelId: (modelId: string | null) => void;
+  startCompletionServer: (modelId: string, contextLength?: number, gpuLayers?: number) => Promise<void>;
+  stopCompletionServer: () => Promise<void>;
+  refreshCompletionServerStatus: () => Promise<void>;
 }
 
 // RAF-throttled progress updates to avoid render storms
@@ -106,12 +119,16 @@ export const useLocalAIStore = create<LocalAIStore>()(
         gpuLayers: -1,
         dismissedFirstRun: false,
         hiddenModelIds: [],
+        completionModelId: null,
 
         // Runtime defaults
         serverStatus: 'stopped',
         serverError: null,
         serverStatusReason: null,
         serverPort: null,
+        completionServerStatus: 'stopped',
+        completionServerPort: null,
+        completionServerError: null,
         models: [],
         downloads: {},
         systemMemory: null,
@@ -250,6 +267,53 @@ export const useLocalAIStore = create<LocalAIStore>()(
             toast.error(`Failed to start Local AI: ${errorMsg}`);
           }
         },
+
+        setCompletionModelId: (modelId) => set({ completionModelId: modelId }),
+
+        startCompletionServer: async (modelId, contextLength, gpuLayers) => {
+          set({ completionServerStatus: 'starting', completionServerError: null });
+          try {
+            const port = await tauriApi.startCompletionServer(modelId, contextLength, gpuLayers);
+            set({
+              completionServerStatus: 'running',
+              completionServerPort: port,
+              completionModelId: modelId,
+              completionServerError: null,
+            });
+          } catch (err) {
+            const errorMsg = String(err);
+            set({
+              completionServerStatus: 'error',
+              completionServerPort: null,
+              completionServerError: errorMsg,
+            });
+            toast.error(`Failed to start completion server: ${errorMsg}`);
+          }
+        },
+
+        stopCompletionServer: async () => {
+          try {
+            await tauriApi.stopCompletionServer();
+          } catch (err) {
+            // Best-effort — even if the backend stop fails, surface the local
+            // state as stopped so the UI doesn't get wedged.
+            console.warn('[LocalAI] stop_completion_server errored:', err);
+          }
+          set({ completionServerStatus: 'stopped', completionServerPort: null, completionServerError: null });
+        },
+
+        refreshCompletionServerStatus: async () => {
+          try {
+            const status = await tauriApi.getCompletionServerStatus();
+            set({
+              completionServerStatus: status.running ? 'running' : 'stopped',
+              completionServerPort: status.port,
+              completionModelId: status.model ?? get().completionModelId,
+            });
+          } catch (err) {
+            console.warn('[LocalAI] refreshCompletionServerStatus failed:', err);
+          }
+        },
       };
     },
     {
@@ -260,7 +324,27 @@ export const useLocalAIStore = create<LocalAIStore>()(
         gpuLayers: state.gpuLayers,
         dismissedFirstRun: state.dismissedFirstRun,
         hiddenModelIds: state.hiddenModelIds,
+        completionModelId: state.completionModelId,
       }),
     },
   ),
 );
+
+// Listen for completion-server status events emitted by the Rust backend.
+// Mirror of the main server's event listener pattern — the store stays in
+// sync even when start/stop fires from somewhere else (e.g. RunEvent::Exit).
+listen<{ running: boolean; port: number | null; model: string | null }>(
+  'local-completion-server-status',
+  (event) => {
+    const { running, port, model } = event.payload;
+    useLocalAIStore.setState((prev) => ({
+      completionServerStatus: running ? 'running' : 'stopped',
+      completionServerPort: port,
+      // Only adopt the backend's model when running — a stop event would clear
+      // the user's persisted choice otherwise.
+      completionModelId: running && model ? model : prev.completionModelId,
+    }));
+  },
+).catch((e) => {
+  console.warn('[LocalAI] Failed to register local-completion-server-status listener:', e);
+});

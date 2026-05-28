@@ -5,6 +5,7 @@ import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { AddCustomModelDialog } from './AddCustomModelDialog';
+import { CompletionServerSection } from './CompletionServerSection';
 import { ModelCard } from './ModelCard';
 import { Button } from '@/components/ui/button';
 import {
@@ -416,6 +417,9 @@ export function LocalAISettings() {
             {filteredModels.map(renderModelCard)}
           </TooltipProvider>
         </div>
+
+        {/* Dedicated FIM completion server (item #8 — `--jinja`/FIM conflict) */}
+        <CompletionServerSection />
 
         <div className="flex items-center gap-1.5">
           {hiddenModelIds.length > 0 && (

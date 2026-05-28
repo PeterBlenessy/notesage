@@ -336,6 +336,7 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:tree-overlay]` | `TreeOverlay` | Slide-in, expand/collapse |
 | `[perf:sidebar]` | `Sidebar` | Sidebar render, type-to-filter |
 | `[perf:focus]` | Focus mode | Focus mode enter/exit transition timing |
+| `[perf:context]` | `useDirectApiChat.ts` | Sliding-window message trim for `local_bundled` (dropped count, surviving message count, budget, estimated tokens) |
 
 Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.cmdbar`, `PERF.orb`, etc.) — call sites should reference the constant rather than the raw `'perf:foo'` string literal so typos surface at typecheck time.
 
