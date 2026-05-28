@@ -683,7 +683,9 @@ body {
 .app [data-quiet-toolbar],
 .app [data-quiet-status],
 .app nav[aria-label="Workspace sidebar"],
-.app [data-testid="agent-orb"] {
+.app [data-testid="agent-orb"],
+.app [data-quiet-titlebar],
+.app [data-cmd-bar] {
   transition-property: opacity;
   transition-duration: 340ms;
   transition-timing-function: ease-in-out;
@@ -711,11 +713,44 @@ body {
   opacity: 0.3;
 }
 
+/*
+ * Title bar fade — full fade-to-0, mirroring toolbar/status. The hover /
+ * focus-within guards keep the close-document button reachable the moment
+ * the user reaches for it. Living spec: `docs/design-system.md` →
+ * "Fade-on-Type Pattern".
+ */
+.app.typing[data-quiet-chrome-titlebar="fade"] [data-quiet-titlebar]:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
+/*
+ * Command-bar fade — ONLY when the FloatingCommandBar is minimized
+ * (collapsed pill: not expanded AND not pinned) AND unfocused AND
+ * unhovered. The state attributes are written by `FloatingCommandBar.tsx`
+ * (`data-expanded`, `data-cmd-bar-pinned`). When the user expands the bar,
+ * pins it as a side panel, focuses its input, or hovers it, the selector
+ * stops matching and the bar stays fully opaque. Typing inside the bar
+ * separately never triggers `.typing` at all (see `useFadeOnType` —
+ * `[data-cmd-bar]` is excluded from typing signals).
+ *
+ * Rooted on `:root` (not `.app`) because the FloatingCommandBar portals
+ * to `document.body` and is therefore a sibling of `[data-quiet-layout-root]`,
+ * not a descendant. `useFadeOnType` mirrors `.typing` to `<html>` for this
+ * single case; `useQuietChrome` mirrors `data-quiet-chrome-cmdbar` for the
+ * matching gate. Every other target stays scoped to `.app`.
+ */
+:root.typing[data-quiet-chrome-cmdbar="fade"]
+  [data-cmd-bar][data-expanded="false"][data-cmd-bar-pinned="false"]:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app [data-quiet-toolbar],
   .app [data-quiet-status],
   .app nav[aria-label="Workspace sidebar"],
-  .app [data-testid="agent-orb"] {
+  .app [data-testid="agent-orb"],
+  .app [data-quiet-titlebar],
+  .app [data-cmd-bar] {
     transition-duration: 0ms;
   }
 }

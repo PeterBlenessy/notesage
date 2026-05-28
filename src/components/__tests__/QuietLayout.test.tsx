@@ -98,6 +98,8 @@ vi.mock('@/stores/settings-store', () => {
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     },
   };
   return {
