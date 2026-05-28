@@ -20,6 +20,18 @@ pub struct LocalInferenceState {
     /// Cached thinking tags detected from /props chat_template for the active model.
     /// Set after model load; cleared on model switch.
     detected_thinking_tags: tokio::sync::Mutex<Option<Option<(String, String)>>>,
+    /// Dedicated FIM (`/infill`) server. Resolves the `--jinja`/FIM conflict
+    /// (item #8 of the local-LLM agentic-behavior stack): when the main chat
+    /// model has tool calling enabled, `--jinja` breaks the `/infill`
+    /// endpoint, forcing a degraded chat-based fallback for inline
+    /// completions. Running a second llama-server WITHOUT `--jinja` and
+    /// pointed at a FIM-capable model (e.g. Qwen2.5-Coder) gives users
+    /// simultaneous tool calling AND fast native FIM. Slot stays unset
+    /// (and `local_bundled_fim` falls back to the main server) until the
+    /// user explicitly starts a completion server.
+    completion_server_pid: std::sync::Mutex<Option<u32>>,
+    completion_port: tokio::sync::Mutex<Option<u16>>,
+    completion_model: tokio::sync::Mutex<Option<String>>,
 }
 
 impl LocalInferenceState {
@@ -36,28 +48,35 @@ impl LocalInferenceState {
             models_dir,
             download_cancels: std::sync::Mutex::new(HashMap::new()),
             detected_thinking_tags: tokio::sync::Mutex::new(None),
+            completion_server_pid: std::sync::Mutex::new(None),
+            completion_port: tokio::sync::Mutex::new(None),
+            completion_model: tokio::sync::Mutex::new(None),
         }
     }
 
     /// Blocking stop — called from RunEvent::Exit
     pub fn stop_sync(&self) {
-        if let Ok(mut pid_guard) = self.server_pid.lock() {
-            if let Some(pid) = pid_guard.take() {
-                // SIGTERM first
-                let _ = std::process::Command::new("kill")
-                    .args(["-15", &pid.to_string()])
-                    .output();
-                // Give it a moment, then SIGKILL
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
-                log::info!(target: "notesage::local_ai", "Stopped local inference server (pid {})", pid);
+        // Stop both the main chat server and the completion server.
+        // SIGTERM → 500ms → SIGKILL for each, then clean up PID files.
+        for (slot, label, pid_filename) in [
+            (&self.server_pid, "chat", ".server.pid"),
+            (&self.completion_server_pid, "completion", ".completion.pid"),
+        ] {
+            if let Ok(mut pid_guard) = slot.lock() {
+                if let Some(pid) = pid_guard.take() {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-15", &pid.to_string()])
+                        .output();
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let _ = std::process::Command::new("kill")
+                        .args(["-9", &pid.to_string()])
+                        .output();
+                    log::info!(target: "notesage::local_ai", "Stopped {} server (pid {})", label, pid);
+                }
             }
+            let pid_file = self.models_dir.join(pid_filename);
+            let _ = std::fs::remove_file(&pid_file);
         }
-        // Clean up PID file
-        let pid_file = self.models_dir.join(".server.pid");
-        let _ = std::fs::remove_file(&pid_file);
     }
 
     /// Returns (running, port) for diagnostic reporting.
@@ -438,17 +457,217 @@ pub fn kill_orphaned_servers() {
         .join(".notesage")
         .join("models")
         .join("llm");
-    let pid_file = models_dir.join(".server.pid");
+    // Both the main chat server and the completion server (item #8) leave
+    // their PID on disk for crash recovery — clean up either if found.
+    for (label, pid_filename) in [
+        ("chat", ".server.pid"),
+        ("completion", ".completion.pid"),
+    ] {
+        let pid_file = models_dir.join(pid_filename);
+        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-15", &pid.to_string()])
+                    .output();
+                log::info!(target: "notesage::local_ai", "Killed orphaned {} llama-server (pid {})", label, pid);
+            }
+            let _ = std::fs::remove_file(&pid_file);
+        }
+    }
+}
 
-    if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+// ---------------------------------------------------------------------------
+// Completion server (item #8 — `--jinja` / FIM coexistence)
+//
+// llama-server has a hard rule: `--jinja` is required for tool calling but
+// breaks the `/infill` FIM endpoint. With a single server, users have to
+// pick: tool calling in chat OR fast FIM in completions. The completion
+// server is a second llama-server process spawned WITHOUT `--jinja`,
+// dedicated to FIM. `local_bundled_fim` prefers it when running and falls
+// back to the main server's `/infill` → chat fallback chain otherwise.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn start_completion_server(
+    app: AppHandle,
+    state: State<'_, LocalInferenceState>,
+    model_id: String,
+    context_length: Option<u32>,
+    gpu_layers: Option<i32>,
+) -> Result<u16, String> {
+    // Stop any existing completion server first.
+    kill_completion_server_process(&state);
+    *state.completion_port.lock().await = None;
+    *state.completion_model.lock().await = None;
+
+    let entry = find_model_entry(&state.models_dir, &model_id)
+        .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+
+    let model_path = state.models_dir.join(&entry.filename);
+    if !model_path.exists() {
+        return Err(format!(
+            "Model file not found: {}. Download it first.",
+            entry.filename
+        ));
+    }
+
+    // Use a different port range from the main server (8090-8189) so the
+    // two never collide. 8190-8289 is reserved here.
+    let port = find_available_port(8190)
+        .ok_or("Could not find an available port in range 8190-8289")?;
+
+    let ctx_len = context_length.unwrap_or(4096);
+    let gpu = gpu_layers.unwrap_or(-1);
+
+    let binary_path = resolve_llama_server_binary()?;
+
+    let mut cmd = tokio::process::Command::new(&binary_path);
+    cmd.args([
+        "--model", model_path.to_str().unwrap_or(""),
+        "--port", &port.to_string(),
+        "--ctx-size", &ctx_len.to_string(),
+        "--n-gpu-layers", &gpu.to_string(),
+        "--host", "127.0.0.1",
+    ]);
+
+    // NB: deliberately NO `--jinja` here, even when the model's catalog
+    // entry has `supports_tool_calling: true`. The whole point of this
+    // server is to keep `/infill` working — `--jinja` breaks it.
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    if let Some(shell_path) = super::shell_path::get_shell_path() {
+        cmd.env("PATH", shell_path);
+    }
+
+    if let Some(binary_dir) = binary_path.parent() {
+        let lib_dir = binary_dir.join("lib");
+        if lib_dir.exists() {
+            #[cfg(target_os = "macos")]
+            cmd.env("DYLD_LIBRARY_PATH", &lib_dir);
+            #[cfg(target_os = "linux")]
+            cmd.env("LD_LIBRARY_PATH", &lib_dir);
+        }
+    }
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start completion server: {}", e))?;
+
+    let pid = child.id().unwrap_or(0);
+    {
+        let mut pid_guard = state.completion_server_pid.lock().unwrap();
+        *pid_guard = Some(pid);
+    }
+    let pid_file = state.models_dir.join(".completion.pid");
+    let _ = std::fs::write(&pid_file, pid.to_string());
+
+    tokio::spawn(async move {
+        let output = child.wait_with_output().await;
+        if let Ok(out) = output {
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                log::warn!(
+                    target: "notesage::llama_server",
+                    "Completion server exited with {}: {}",
+                    out.status, stderr
+                );
+            }
+        }
+    });
+
+    // Health check with the same 30-second budget as the main server.
+    let health_url = format!("http://127.0.0.1:{}/health", port);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let mut healthy = false;
+    for _ in 0..60 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if let Ok(resp) = client.get(&health_url).send().await {
+            if resp.status().is_success() {
+                healthy = true;
+                break;
+            }
+        }
+    }
+
+    if !healthy {
+        kill_completion_server_process(&state);
+        return Err("Completion server failed to become healthy within 30 seconds".to_string());
+    }
+
+    *state.completion_port.lock().await = Some(port);
+    *state.completion_model.lock().await = Some(model_id.clone());
+
+    let _ = app.emit(
+        "local-completion-server-status",
+        serde_json::json!({
+            "running": true,
+            "port": port,
+            "model": model_id
+        }),
+    );
+
+    log::info!(
+        target: "notesage::local_ai",
+        "Started completion server on port {} with model '{}' (pid {})",
+        port, model_id, pid
+    );
+    Ok(port)
+}
+
+#[tauri::command]
+pub async fn stop_completion_server(
+    app: AppHandle,
+    state: State<'_, LocalInferenceState>,
+) -> Result<(), String> {
+    kill_completion_server_process(&state);
+    *state.completion_port.lock().await = None;
+    *state.completion_model.lock().await = None;
+
+    let _ = app.emit(
+        "local-completion-server-status",
+        serde_json::json!({ "running": false, "port": null, "model": null }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_completion_server_status(
+    state: State<'_, LocalInferenceState>,
+) -> Result<ServerStatus, String> {
+    let pid_present = state
+        .completion_server_pid
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+    let port = *state.completion_port.lock().await;
+    let model = state.completion_model.lock().await.clone();
+    Ok(ServerStatus {
+        running: pid_present && port.is_some(),
+        port,
+        model,
+    })
+}
+
+/// Kill the completion server process by stored PID (SIGTERM only —
+/// `stop_sync` is the SIGKILL path used at app exit).
+fn kill_completion_server_process(state: &LocalInferenceState) {
+    if let Ok(mut pid_guard) = state.completion_server_pid.lock() {
+        if let Some(pid) = pid_guard.take() {
             let _ = std::process::Command::new("kill")
                 .args(["-15", &pid.to_string()])
                 .output();
-            log::info!(target: "notesage::local_ai", "Killed orphaned llama-server (pid {})", pid);
         }
-        let _ = std::fs::remove_file(&pid_file);
     }
+    let pid_file = state.models_dir.join(".completion.pid");
+    let _ = std::fs::remove_file(&pid_file);
 }
 
 // ---------------------------------------------------------------------------
@@ -954,8 +1173,10 @@ pub async fn local_bundled_generate(
 }
 
 /// FIM (Fill-in-the-Middle) completion through local llama-server.
-/// Tries the native `/infill` endpoint first (code models with FIM tokens).
-/// Falls back to chat-based completion for general chat models.
+/// Prefers the dedicated completion server (no `--jinja`, FIM-capable
+/// model) when running; otherwise falls back to the main chat server's
+/// `/infill` → instructed-chat fallback chain. This is the user-facing
+/// resolution of item #8's `--jinja`/FIM conflict.
 #[tauri::command]
 pub async fn local_bundled_fim(
     state: tauri::State<'_, LocalInferenceState>,
@@ -964,8 +1185,13 @@ pub async fn local_bundled_fim(
     _model: Option<String>,
     max_tokens: Option<u32>,
 ) -> Result<String, String> {
-    let port = state.port.lock().await
-        .ok_or("Local AI server is not running")?;
+    // Prefer the dedicated completion server when it's up — that's the
+    // whole point of running it. Fall back to the main chat server's port
+    // so a missing completion server doesn't silently break FIM for
+    // existing users.
+    let completion = *state.completion_port.lock().await;
+    let main = *state.port.lock().await;
+    let port = resolve_fim_port(completion, main)?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -1057,6 +1283,20 @@ pub async fn local_bundled_fim(
         .to_string();
 
     Ok(content)
+}
+
+/// Pick the port for FIM requests: prefer the dedicated completion server
+/// when running, fall back to the main chat server's port. Extracted here
+/// so the tie-breaking behaviour (which is the user-visible resolution of
+/// item #8) can be unit-tested without spawning real servers.
+pub fn resolve_fim_port(
+    completion: Option<u16>,
+    main: Option<u16>,
+) -> Result<u16, String> {
+    if let Some(p) = completion {
+        return Ok(p);
+    }
+    main.ok_or_else(|| "Local AI server is not running".to_string())
 }
 
 /// Build the llama-server command arguments for a given model entry.
@@ -1193,5 +1433,49 @@ mod tests {
         }
         // Guard against silent regression where every draft pairing got dropped.
         assert!(pairings_checked >= 5, "expected at least 5 draft pairings, found {pairings_checked}");
+    }
+
+    // --- FIM port resolution (item #8: --jinja/FIM conflict) ---
+
+    #[test]
+    fn resolve_fim_port_prefers_completion_server() {
+        // The whole point of the completion server is to take FIM traffic off
+        // the --jinja-loaded chat server. Even if both ports are running,
+        // the completion port must win.
+        let result = super::resolve_fim_port(Some(8190), Some(8090));
+        assert_eq!(result, Ok(8190));
+    }
+
+    #[test]
+    fn resolve_fim_port_falls_back_to_main_when_completion_unset() {
+        // Backwards compat: users who haven't started a completion server
+        // still get FIM via the main server's /infill → chat fallback chain.
+        let result = super::resolve_fim_port(None, Some(8090));
+        assert_eq!(result, Ok(8090));
+    }
+
+    #[test]
+    fn resolve_fim_port_errors_when_neither_is_running() {
+        let result = super::resolve_fim_port(None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    /// The completion server is useless without at least one FIM-capable
+    /// model in the catalog to point it at. If a future edit drops the last
+    /// `supports_fim: true` entry, this test fails before the regression
+    /// lands in a release.
+    #[test]
+    fn catalog_has_at_least_one_fim_capable_model() {
+        let catalog: Vec<super::super::model_management::CatalogEntry> =
+            serde_json::from_str(include_str!("../../model-catalog.json"))
+                .expect("model-catalog.json is valid JSON");
+
+        let fim_count = catalog.iter().filter(|e| e.supports_fim).count();
+        assert!(
+            fim_count > 0,
+            "expected at least one model with supports_fim: true — the \
+             completion server (item #8) has nothing to load otherwise"
+        );
     }
 }

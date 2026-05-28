@@ -265,6 +265,9 @@ pub fn run() {
             start_local_server,
             stop_local_server,
             get_local_server_status,
+            start_completion_server,
+            stop_completion_server,
+            get_completion_server_status,
             check_llama_server_available,
             // Model metadata
             get_model_metadata,
