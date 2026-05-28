@@ -105,6 +105,10 @@ export function TitleBar(props: TitleBarProps) {
       // The attribute is now constant ("quiet") since Classic Layout
       // removal left QuietLayout as the only consumer.
       data-titlebar-mode="quiet"
+      // Fade-on-type target — Aggressive preset (and Custom users who opt
+      // in via Settings > Appearance > Quiet chrome) fade the title bar
+      // under `.app.typing`. The CSS rule lives in `globals.css`.
+      data-quiet-titlebar=""
     >
       {/* Center: document title (drag region) */}
       <div

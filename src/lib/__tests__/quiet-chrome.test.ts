@@ -29,6 +29,8 @@ describe("QUIET_CHROME_PRESETS", () => {
       docHead: false,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
   });
 
@@ -39,16 +41,20 @@ describe("QUIET_CHROME_PRESETS", () => {
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
   });
 
-  it("aggressive fades everything including sidebar and orb", () => {
+  it("aggressive fades everything including title bar, cmd bar, sidebar, and orb", () => {
     expect(QUIET_CHROME_PRESETS.aggressive).toEqual<QuietChromeTargets>({
       toolbar: true,
       status: true,
       docHead: true,
       sidebar: true,
       orb: true,
+      titlebar: true,
+      cmdbar: true,
     });
   });
 });
@@ -63,6 +69,8 @@ describe("resolveQuietChromeTargets", () => {
     docHead: true,
     sidebar: true,
     orb: false,
+    titlebar: true,
+    cmdbar: false,
   };
 
   it('returns PRESETS.relaxed for preset "relaxed", ignoring overrides', () => {
