@@ -71,6 +71,10 @@ pub struct LocalModelInfo {
     pub multilingual: bool,
     #[serde(default)]
     pub recommended_for: Vec<String>,
+    /// Optional ID of a smaller model in the same family that can serve as a
+    /// speculative-decoding draft. See `CatalogEntry::draft_model_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_model_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -129,6 +133,15 @@ pub struct CatalogEntry {
     pub multilingual: bool,
     #[serde(default)]
     pub recommended_for: Vec<String>,
+    /// Optional ID of a smaller model in the same family that can serve as a
+    /// speculative-decoding draft (llama.cpp `--model-draft`). The draft model
+    /// generates candidate tokens that the main model verifies in parallel,
+    /// giving a 1.5-2x speedup on long outputs. The draft MUST share the same
+    /// tokenizer as the main model (so practically: same family, same
+    /// architecture). Only populated for pairings where the speedup is worth
+    /// the extra RAM — typically main ≥ 7B paired with a ≤ 2B draft.
+    #[serde(default)]
+    pub draft_model_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -261,6 +274,7 @@ pub async fn list_local_models(
                 mmproj_size_bytes: entry.mmproj_size_bytes,
                 multilingual: entry.multilingual,
                 recommended_for: entry.recommended_for,
+                draft_model_id: entry.draft_model_id,
             }
         })
         .collect();
@@ -560,6 +574,7 @@ pub async fn add_custom_local_model(
         mmproj_size_bytes: None,
         multilingual: multilingual.unwrap_or(false),
         recommended_for: vec![],
+        draft_model_id: None,
     };
 
     let mut custom = load_custom_models(models_dir);
@@ -598,6 +613,7 @@ pub async fn add_custom_local_model(
         mmproj_size_bytes: entry.mmproj_size_bytes,
         multilingual: entry.multilingual,
         recommended_for: entry.recommended_for,
+        draft_model_id: entry.draft_model_id,
     })
 }
 
@@ -648,7 +664,7 @@ mod tests {
     #[test]
     fn test_jinja_flag_added_when_tool_calling_supported() {
         let args = super::super::local_inference::build_server_args(
-            "/path/to/model.gguf", 8090, 4096, -1, true,
+            "/path/to/model.gguf", 8090, 4096, -1, true, None,
         );
         assert!(
             args.contains(&"--jinja".to_string()),
@@ -659,7 +675,7 @@ mod tests {
     #[test]
     fn test_jinja_flag_omitted_when_tool_calling_not_supported() {
         let args = super::super::local_inference::build_server_args(
-            "/path/to/model.gguf", 8090, 4096, -1, false,
+            "/path/to/model.gguf", 8090, 4096, -1, false, None,
         );
         assert!(
             !args.contains(&"--jinja".to_string()),
@@ -671,7 +687,7 @@ mod tests {
     fn test_build_server_args_base_always_present() {
         for supports_tc in [true, false] {
             let args = super::super::local_inference::build_server_args(
-                "/model.gguf", 8091, 2048, 32, supports_tc,
+                "/model.gguf", 8091, 2048, 32, supports_tc, None,
             );
             assert!(args.contains(&"--model".to_string()));
             assert!(args.contains(&"/model.gguf".to_string()));

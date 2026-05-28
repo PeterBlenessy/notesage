@@ -1199,6 +1199,29 @@ export const tauriApi = {
     return await invoke<LocalServerStatus>("get_local_server_status");
   },
 
+  // Dedicated FIM (`/infill`) server — runs alongside the main chat server
+  // without `--jinja` so tool calling on chat AND fast native FIM on
+  // completions can coexist. See item #8 in `docs/features/ai-providers.md`.
+  async startCompletionServer(
+    modelId: string,
+    contextLength?: number,
+    gpuLayers?: number,
+  ): Promise<number> {
+    return await invoke<number>("start_completion_server", {
+      modelId,
+      contextLength: contextLength ?? null,
+      gpuLayers: gpuLayers ?? null,
+    });
+  },
+
+  async stopCompletionServer(): Promise<void> {
+    await invoke("stop_completion_server");
+  },
+
+  async getCompletionServerStatus(): Promise<LocalServerStatus> {
+    return await invoke<LocalServerStatus>("get_completion_server_status");
+  },
+
   async checkLlamaServerAvailable(): Promise<BinaryStatus> {
     return await invoke<BinaryStatus>("check_llama_server_available");
   },

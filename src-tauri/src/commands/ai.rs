@@ -187,6 +187,7 @@ pub async fn ai_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: Option<String>,
+    response_format: Option<serde_json::Value>,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
@@ -197,10 +198,10 @@ pub async fn ai_chat_stream(
     match provider {
         AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
         AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
+        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
         AIProviderType::LocalBundled => {
-            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens).await
+            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format).await
         }
     }
 }

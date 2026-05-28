@@ -20,6 +20,18 @@ pub struct LocalInferenceState {
     /// Cached thinking tags detected from /props chat_template for the active model.
     /// Set after model load; cleared on model switch.
     detected_thinking_tags: tokio::sync::Mutex<Option<Option<(String, String)>>>,
+    /// Dedicated FIM (`/infill`) server. Resolves the `--jinja`/FIM conflict
+    /// (item #8 of the local-LLM agentic-behavior stack): when the main chat
+    /// model has tool calling enabled, `--jinja` breaks the `/infill`
+    /// endpoint, forcing a degraded chat-based fallback for inline
+    /// completions. Running a second llama-server WITHOUT `--jinja` and
+    /// pointed at a FIM-capable model (e.g. Qwen2.5-Coder) gives users
+    /// simultaneous tool calling AND fast native FIM. Slot stays unset
+    /// (and `local_bundled_fim` falls back to the main server) until the
+    /// user explicitly starts a completion server.
+    completion_server_pid: std::sync::Mutex<Option<u32>>,
+    completion_port: tokio::sync::Mutex<Option<u16>>,
+    completion_model: tokio::sync::Mutex<Option<String>>,
 }
 
 impl LocalInferenceState {
@@ -36,28 +48,35 @@ impl LocalInferenceState {
             models_dir,
             download_cancels: std::sync::Mutex::new(HashMap::new()),
             detected_thinking_tags: tokio::sync::Mutex::new(None),
+            completion_server_pid: std::sync::Mutex::new(None),
+            completion_port: tokio::sync::Mutex::new(None),
+            completion_model: tokio::sync::Mutex::new(None),
         }
     }
 
     /// Blocking stop — called from RunEvent::Exit
     pub fn stop_sync(&self) {
-        if let Ok(mut pid_guard) = self.server_pid.lock() {
-            if let Some(pid) = pid_guard.take() {
-                // SIGTERM first
-                let _ = std::process::Command::new("kill")
-                    .args(["-15", &pid.to_string()])
-                    .output();
-                // Give it a moment, then SIGKILL
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
-                log::info!(target: "notesage::local_ai", "Stopped local inference server (pid {})", pid);
+        // Stop both the main chat server and the completion server.
+        // SIGTERM → 500ms → SIGKILL for each, then clean up PID files.
+        for (slot, label, pid_filename) in [
+            (&self.server_pid, "chat", ".server.pid"),
+            (&self.completion_server_pid, "completion", ".completion.pid"),
+        ] {
+            if let Ok(mut pid_guard) = slot.lock() {
+                if let Some(pid) = pid_guard.take() {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-15", &pid.to_string()])
+                        .output();
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    let _ = std::process::Command::new("kill")
+                        .args(["-9", &pid.to_string()])
+                        .output();
+                    log::info!(target: "notesage::local_ai", "Stopped {} server (pid {})", label, pid);
+                }
             }
+            let pid_file = self.models_dir.join(pid_filename);
+            let _ = std::fs::remove_file(&pid_file);
         }
-        // Clean up PID file
-        let pid_file = self.models_dir.join(".server.pid");
-        let _ = std::fs::remove_file(&pid_file);
     }
 
     /// Returns (running, port) for diagnostic reporting.
@@ -216,6 +235,32 @@ pub async fn start_local_server(
     if entry.supports_tool_calling {
         cmd.arg("--jinja");
         log::debug!(target: "notesage::local_ai", "Enabling --jinja for model '{}' (supports tool calling)", model_id);
+    }
+
+    // Speculative decoding: if the catalog pairs this model with a smaller
+    // draft from the same family AND the draft file is downloaded, llama-server
+    // verifies its tokens in parallel for a 1.5-2x speedup on long outputs.
+    // Silently skip when the draft isn't on disk — we don't auto-download
+    // because the draft adds significant RAM/VRAM pressure, and the user
+    // should opt in by downloading it from Settings → Local AI.
+    if let Some(ref draft_id) = entry.draft_model_id {
+        if let Some(draft_entry) = find_model_entry(&state.models_dir, draft_id) {
+            let draft_path = state.models_dir.join(&draft_entry.filename);
+            if draft_path.exists() {
+                cmd.args(["--model-draft", draft_path.to_str().unwrap_or("")]);
+                log::info!(
+                    target: "notesage::local_ai",
+                    "Enabling speculative decoding: main='{}' draft='{}'",
+                    model_id, draft_id
+                );
+            } else {
+                log::debug!(
+                    target: "notesage::local_ai",
+                    "Speculative decoding available for '{}' (draft '{}') but draft file not downloaded — skipping",
+                    model_id, draft_id
+                );
+            }
+        }
     }
 
     // Pass multimodal projector file for vision models.
@@ -412,17 +457,217 @@ pub fn kill_orphaned_servers() {
         .join(".notesage")
         .join("models")
         .join("llm");
-    let pid_file = models_dir.join(".server.pid");
+    // Both the main chat server and the completion server (item #8) leave
+    // their PID on disk for crash recovery — clean up either if found.
+    for (label, pid_filename) in [
+        ("chat", ".server.pid"),
+        ("completion", ".completion.pid"),
+    ] {
+        let pid_file = models_dir.join(pid_filename);
+        if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                let _ = std::process::Command::new("kill")
+                    .args(["-15", &pid.to_string()])
+                    .output();
+                log::info!(target: "notesage::local_ai", "Killed orphaned {} llama-server (pid {})", label, pid);
+            }
+            let _ = std::fs::remove_file(&pid_file);
+        }
+    }
+}
 
-    if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+// ---------------------------------------------------------------------------
+// Completion server (item #8 — `--jinja` / FIM coexistence)
+//
+// llama-server has a hard rule: `--jinja` is required for tool calling but
+// breaks the `/infill` FIM endpoint. With a single server, users have to
+// pick: tool calling in chat OR fast FIM in completions. The completion
+// server is a second llama-server process spawned WITHOUT `--jinja`,
+// dedicated to FIM. `local_bundled_fim` prefers it when running and falls
+// back to the main server's `/infill` → chat fallback chain otherwise.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn start_completion_server(
+    app: AppHandle,
+    state: State<'_, LocalInferenceState>,
+    model_id: String,
+    context_length: Option<u32>,
+    gpu_layers: Option<i32>,
+) -> Result<u16, String> {
+    // Stop any existing completion server first.
+    kill_completion_server_process(&state);
+    *state.completion_port.lock().await = None;
+    *state.completion_model.lock().await = None;
+
+    let entry = find_model_entry(&state.models_dir, &model_id)
+        .ok_or_else(|| format!("Unknown model: {}", model_id))?;
+
+    let model_path = state.models_dir.join(&entry.filename);
+    if !model_path.exists() {
+        return Err(format!(
+            "Model file not found: {}. Download it first.",
+            entry.filename
+        ));
+    }
+
+    // Use a different port range from the main server (8090-8189) so the
+    // two never collide. 8190-8289 is reserved here.
+    let port = find_available_port(8190)
+        .ok_or("Could not find an available port in range 8190-8289")?;
+
+    let ctx_len = context_length.unwrap_or(4096);
+    let gpu = gpu_layers.unwrap_or(-1);
+
+    let binary_path = resolve_llama_server_binary()?;
+
+    let mut cmd = tokio::process::Command::new(&binary_path);
+    cmd.args([
+        "--model", model_path.to_str().unwrap_or(""),
+        "--port", &port.to_string(),
+        "--ctx-size", &ctx_len.to_string(),
+        "--n-gpu-layers", &gpu.to_string(),
+        "--host", "127.0.0.1",
+    ]);
+
+    // NB: deliberately NO `--jinja` here, even when the model's catalog
+    // entry has `supports_tool_calling: true`. The whole point of this
+    // server is to keep `/infill` working — `--jinja` breaks it.
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    if let Some(shell_path) = super::shell_path::get_shell_path() {
+        cmd.env("PATH", shell_path);
+    }
+
+    if let Some(binary_dir) = binary_path.parent() {
+        let lib_dir = binary_dir.join("lib");
+        if lib_dir.exists() {
+            #[cfg(target_os = "macos")]
+            cmd.env("DYLD_LIBRARY_PATH", &lib_dir);
+            #[cfg(target_os = "linux")]
+            cmd.env("LD_LIBRARY_PATH", &lib_dir);
+        }
+    }
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start completion server: {}", e))?;
+
+    let pid = child.id().unwrap_or(0);
+    {
+        let mut pid_guard = state.completion_server_pid.lock().unwrap();
+        *pid_guard = Some(pid);
+    }
+    let pid_file = state.models_dir.join(".completion.pid");
+    let _ = std::fs::write(&pid_file, pid.to_string());
+
+    tokio::spawn(async move {
+        let output = child.wait_with_output().await;
+        if let Ok(out) = output {
+            if !out.status.success() {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                log::warn!(
+                    target: "notesage::llama_server",
+                    "Completion server exited with {}: {}",
+                    out.status, stderr
+                );
+            }
+        }
+    });
+
+    // Health check with the same 30-second budget as the main server.
+    let health_url = format!("http://127.0.0.1:{}/health", port);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let mut healthy = false;
+    for _ in 0..60 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if let Ok(resp) = client.get(&health_url).send().await {
+            if resp.status().is_success() {
+                healthy = true;
+                break;
+            }
+        }
+    }
+
+    if !healthy {
+        kill_completion_server_process(&state);
+        return Err("Completion server failed to become healthy within 30 seconds".to_string());
+    }
+
+    *state.completion_port.lock().await = Some(port);
+    *state.completion_model.lock().await = Some(model_id.clone());
+
+    let _ = app.emit(
+        "local-completion-server-status",
+        serde_json::json!({
+            "running": true,
+            "port": port,
+            "model": model_id
+        }),
+    );
+
+    log::info!(
+        target: "notesage::local_ai",
+        "Started completion server on port {} with model '{}' (pid {})",
+        port, model_id, pid
+    );
+    Ok(port)
+}
+
+#[tauri::command]
+pub async fn stop_completion_server(
+    app: AppHandle,
+    state: State<'_, LocalInferenceState>,
+) -> Result<(), String> {
+    kill_completion_server_process(&state);
+    *state.completion_port.lock().await = None;
+    *state.completion_model.lock().await = None;
+
+    let _ = app.emit(
+        "local-completion-server-status",
+        serde_json::json!({ "running": false, "port": null, "model": null }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_completion_server_status(
+    state: State<'_, LocalInferenceState>,
+) -> Result<ServerStatus, String> {
+    let pid_present = state
+        .completion_server_pid
+        .lock()
+        .map(|g| g.is_some())
+        .unwrap_or(false);
+    let port = *state.completion_port.lock().await;
+    let model = state.completion_model.lock().await.clone();
+    Ok(ServerStatus {
+        running: pid_present && port.is_some(),
+        port,
+        model,
+    })
+}
+
+/// Kill the completion server process by stored PID (SIGTERM only —
+/// `stop_sync` is the SIGKILL path used at app exit).
+fn kill_completion_server_process(state: &LocalInferenceState) {
+    if let Ok(mut pid_guard) = state.completion_server_pid.lock() {
+        if let Some(pid) = pid_guard.take() {
             let _ = std::process::Command::new("kill")
                 .args(["-15", &pid.to_string()])
                 .output();
-            log::info!(target: "notesage::local_ai", "Killed orphaned llama-server (pid {})", pid);
         }
-        let _ = std::fs::remove_file(&pid_file);
     }
+    let pid_file = state.models_dir.join(".completion.pid");
+    let _ = std::fs::remove_file(&pid_file);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,9 +677,11 @@ pub fn kill_orphaned_servers() {
 /// Stream chat completions through the local llama-server.
 /// Uses the OpenAI-compatible `/v1/chat/completions` endpoint with SSE.
 ///
-/// **llama-server limitation:** streaming + tools cannot be used together.
-/// When tools are provided, falls back to a non-streaming request and emits
-/// the response as events to maintain the same frontend interface.
+/// Tool calls stream incrementally in `delta.tool_calls` (llama.cpp b9000+
+/// via the toolParser compatibility layer added in PR #16531). The single
+/// SSE loop interleaves content deltas, thinking-tag parsing, and tool-call
+/// accumulation — no non-streaming fallback. The version pin is enforced by
+/// `llama_cpp_version_is_at_least_b9000` to keep this invariant.
 pub async fn local_bundled_chat_stream(
     window: &tauri::Window,
     messages: &[super::ChatMessage],
@@ -443,6 +690,7 @@ pub async fn local_bundled_chat_stream(
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
+    response_format: &Option<serde_json::Value>,
 ) -> Result<(), String> {
     let port = state.port.lock().await
         .ok_or("Local AI server is not running. Start it from Settings → Local AI.")?;
@@ -563,7 +811,7 @@ pub async fn local_bundled_chat_stream(
     let mut body = serde_json::json!({
         "model": model_name,
         "messages": api_messages,
-        "stream": !has_tools,
+        "stream": true,
         "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
@@ -584,6 +832,18 @@ pub async fn local_bundled_chat_stream(
         }
     }
 
+    // Schema-constrained output via llama-server's response_format. The server
+    // converts the JSON schema to a GBNF grammar internally — invalid tokens
+    // get -inf logits, so output is guaranteed to satisfy the schema.
+    // Not sent together with tools: llama-server treats them as mutually
+    // exclusive grammar sources and the tool autoparser already constrains
+    // tool-call output via the model's Jinja template.
+    if !has_tools {
+        if let Some(rf) = response_format {
+            body["response_format"] = rf.clone();
+        }
+    }
+
     let response = client
         .post(format!("{}/v1/chat/completions", base_url))
         .header("content-type", "application/json")
@@ -597,55 +857,14 @@ pub async fn local_bundled_chat_stream(
         return Err(format!("Local AI error: {}", error_text));
     }
 
-    // --- Non-streaming path: tools present, parse full JSON response ---
-    if has_tools {
-        let json: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse local AI response: {}", e))?;
-
-        // Extract text content
-        if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
-            if !content.is_empty() {
-                window.emit("ai-stream-chunk", content)
-                    .map_err(|e| format!("Failed to emit chunk: {}", e))?;
-            }
-        }
-
-        // Extract tool calls
-        let mut has_tool_calls = false;
-        if let Some(tool_calls) = json["choices"][0]["message"]["tool_calls"].as_array() {
-            for tc in tool_calls {
-                has_tool_calls = true;
-                let id = tc["id"].as_str().unwrap_or("").to_string();
-                let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
-                let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
-                let arguments: serde_json::Value = serde_json::from_str(args_str)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                if !name.is_empty() {
-                    window.emit("ai-tool-call", serde_json::json!({
-                        "id": id,
-                        "name": name,
-                        "arguments": arguments
-                    })).map_err(|e| format!("Failed to emit tool call: {}", e))?;
-                }
-            }
-        }
-
-        if has_tool_calls {
-            window.emit("ai-tool-calls-done", ())
-                .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
-        } else {
-            window.emit("ai-stream-done", ())
-                .map_err(|e| format!("Failed to emit done: {}", e))?;
-        }
-
-        return Ok(());
-    }
-
-    // --- Streaming path: no tools, use SSE ---
+    // --- Streaming SSE path (handles both content and tool calls) ---
+    //
+    // llama-server b9000+ supports streaming + tool calls together via the
+    // toolParser compatibility layer (llama.cpp PR #16531). The single SSE
+    // loop below handles content deltas (with thinking-tag parsing) AND
+    // incrementally-streamed tool calls in `delta.tool_calls`.
     use futures::StreamExt;
+    use super::tool_execution::ChatCompletionsToolCallAccumulator;
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -677,6 +896,13 @@ pub async fn local_bundled_chat_stream(
     let mut tag_buf = String::new();
     let mut in_thinking_tag: Option<&str> = None; // closing tag we're looking for
 
+    // Tool call accumulation. Each SSE chunk may carry partial tool-call data:
+    //   first chunk for an index → id + function.name
+    //   subsequent chunks       → function.arguments (concatenated)
+    // Mirror of the openai_compatible_chat_stream pattern.
+    let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
+    let mut finish_reason = String::new();
+
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&bytes);
@@ -696,7 +922,35 @@ pub async fn local_bundled_chat_stream(
                 }
 
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
+                    let choice = &json["choices"][0];
+
+                    if let Some(reason) = choice["finish_reason"].as_str() {
+                        finish_reason = reason.to_string();
+                    }
+
+                    if let Some(tc_array) = choice["delta"]["tool_calls"].as_array() {
+                        for tc in tc_array {
+                            let index = tc["index"].as_u64().unwrap_or(0) as usize;
+                            while tool_calls.len() <= index {
+                                tool_calls.push(ChatCompletionsToolCallAccumulator {
+                                    id: String::new(),
+                                    name: String::new(),
+                                    arguments: String::new(),
+                                });
+                            }
+                            if let Some(id) = tc["id"].as_str() {
+                                tool_calls[index].id = id.to_string();
+                            }
+                            if let Some(name) = tc["function"]["name"].as_str() {
+                                tool_calls[index].name = name.to_string();
+                            }
+                            if let Some(args) = tc["function"]["arguments"].as_str() {
+                                tool_calls[index].arguments.push_str(args);
+                            }
+                        }
+                    }
+
+                    if let Some(content) = choice["delta"]["content"].as_str() {
                         if content.is_empty() {
                             continue;
                         }
@@ -785,9 +1039,40 @@ pub async fn local_bundled_chat_stream(
             .map_err(|e| format!("Failed to emit final chunk: {}", e))?;
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // Emit any accumulated tool calls, then signal the frontend to execute them.
+    let has_tool_calls = tool_calls.iter().any(|tc| !tc.name.is_empty());
+    if has_tool_calls {
+        for tc in &tool_calls {
+            if tc.name.is_empty() {
+                continue;
+            }
+            // Arguments accumulate as a JSON string across deltas; parse to a Value.
+            // If parsing fails (truncated stream, malformed), fall back to Null so the
+            // frontend still receives the call and can surface the error.
+            let arguments: serde_json::Value = serde_json::from_str(&tc.arguments)
+                .unwrap_or(serde_json::Value::Null);
+            let id = if tc.id.is_empty() {
+                format!("local-{}", super::tool_execution::uuid_v4())
+            } else {
+                tc.id.clone()
+            };
+            window.emit("ai-tool-call", serde_json::json!({
+                "id": id,
+                "name": tc.name,
+                "arguments": arguments
+            })).map_err(|e| format!("Failed to emit tool call: {}", e))?;
+        }
+    }
+
+    if has_tool_calls || finish_reason == "tool_calls" {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
 }
@@ -888,8 +1173,10 @@ pub async fn local_bundled_generate(
 }
 
 /// FIM (Fill-in-the-Middle) completion through local llama-server.
-/// Tries the native `/infill` endpoint first (code models with FIM tokens).
-/// Falls back to chat-based completion for general chat models.
+/// Prefers the dedicated completion server (no `--jinja`, FIM-capable
+/// model) when running; otherwise falls back to the main chat server's
+/// `/infill` → instructed-chat fallback chain. This is the user-facing
+/// resolution of item #8's `--jinja`/FIM conflict.
 #[tauri::command]
 pub async fn local_bundled_fim(
     state: tauri::State<'_, LocalInferenceState>,
@@ -898,8 +1185,13 @@ pub async fn local_bundled_fim(
     _model: Option<String>,
     max_tokens: Option<u32>,
 ) -> Result<String, String> {
-    let port = state.port.lock().await
-        .ok_or("Local AI server is not running")?;
+    // Prefer the dedicated completion server when it's up — that's the
+    // whole point of running it. Fall back to the main chat server's port
+    // so a missing completion server doesn't silently break FIM for
+    // existing users.
+    let completion = *state.completion_port.lock().await;
+    let main = *state.port.lock().await;
+    let port = resolve_fim_port(completion, main)?;
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -993,8 +1285,27 @@ pub async fn local_bundled_fim(
     Ok(content)
 }
 
+/// Pick the port for FIM requests: prefer the dedicated completion server
+/// when running, fall back to the main chat server's port. Extracted here
+/// so the tie-breaking behaviour (which is the user-visible resolution of
+/// item #8) can be unit-tested without spawning real servers.
+pub fn resolve_fim_port(
+    completion: Option<u16>,
+    main: Option<u16>,
+) -> Result<u16, String> {
+    if let Some(p) = completion {
+        return Ok(p);
+    }
+    main.ok_or_else(|| "Local AI server is not running".to_string())
+}
+
 /// Build the llama-server command arguments for a given model entry.
 /// Used by `start_local_server` and extracted here for testability.
+///
+/// `draft_model_path` enables speculative decoding (llama.cpp `--model-draft`).
+/// When `Some`, the small draft model generates candidate tokens that the main
+/// model verifies in parallel — typically 1.5-2x speedup on long outputs. The
+/// draft model MUST share the same tokenizer as the main model.
 #[allow(dead_code)]
 pub fn build_server_args(
     model_path: &str,
@@ -1002,6 +1313,7 @@ pub fn build_server_args(
     ctx_len: u32,
     gpu_layers: i32,
     supports_tool_calling: bool,
+    draft_model_path: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![
         "--model".to_string(), model_path.to_string(),
@@ -1013,15 +1325,25 @@ pub fn build_server_args(
     if supports_tool_calling {
         args.push("--jinja".to_string());
     }
+    if let Some(draft_path) = draft_model_path {
+        args.push("--model-draft".to_string());
+        args.push(draft_path.to_string());
+    }
     args
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     /// Verify the bundled llama.cpp version pin is at least b9000.
     ///
-    /// This test fails on the old b8648 pin and passes once the file is bumped
-    /// to a recent stable tagged release (b9000+). Format must be `b{number}`.
+    /// b9000+ contains the toolParser compatibility layer (llama.cpp PR #16531)
+    /// that makes streaming + tool calling work together — the foundation that
+    /// `local_bundled_chat_stream` depends on after dropping the non-streaming
+    /// fallback. Downgrading below b9000 would re-introduce the bug where tool
+    /// calls either error or land in the `reasoning` field instead of
+    /// `tool_calls`. Format must be `b{number}`.
     #[test]
     fn llama_cpp_version_is_at_least_b9000() {
         let version = include_str!("../../binaries/LLAMA_CPP_VERSION").trim();
@@ -1035,6 +1357,125 @@ mod tests {
         assert!(
             build_num >= 9000,
             "LLAMA_CPP_VERSION must be at least b9000 for this bump; currently pinned to {version}"
+        );
+    }
+
+    #[test]
+    fn build_server_args_omits_model_draft_when_none() {
+        let args = build_server_args("/tmp/main.gguf", 8090, 4096, -1, false, None);
+        assert!(!args.iter().any(|a| a == "--model-draft"));
+    }
+
+    #[test]
+    fn build_server_args_appends_model_draft_with_path() {
+        let args = build_server_args(
+            "/tmp/main.gguf",
+            8090,
+            4096,
+            -1,
+            false,
+            Some("/tmp/draft.gguf"),
+        );
+        // Flag + path appear consecutively at the tail.
+        let flag_idx = args.iter().position(|a| a == "--model-draft");
+        assert!(flag_idx.is_some(), "--model-draft missing from args: {args:?}");
+        let i = flag_idx.unwrap();
+        assert_eq!(args[i + 1], "/tmp/draft.gguf");
+    }
+
+    #[test]
+    fn build_server_args_speculative_and_jinja_coexist() {
+        // Regression: both --jinja (for tool calling) and --model-draft (for
+        // speculative decoding) must land in the same arg list. Earlier drafts
+        // of this change accidentally mutually excluded them.
+        let args = build_server_args(
+            "/tmp/main.gguf",
+            8090,
+            4096,
+            -1,
+            /* supports_tool_calling */ true,
+            Some("/tmp/draft.gguf"),
+        );
+        assert!(args.iter().any(|a| a == "--jinja"));
+        assert!(args.iter().any(|a| a == "--model-draft"));
+    }
+
+    /// All `draft_model_id` references in the bundled catalog must resolve to
+    /// a real model in the same architecture (same tokenizer is implied by same
+    /// arch + same family). A typo or arch mismatch would either crash
+    /// llama-server at spawn or produce gibberish output.
+    #[test]
+    fn catalog_draft_model_ids_resolve_to_compatible_models() {
+        use std::collections::HashMap;
+        let catalog: Vec<super::super::model_management::CatalogEntry> =
+            serde_json::from_str(include_str!("../../model-catalog.json"))
+                .expect("model-catalog.json is valid JSON");
+
+        let by_id: HashMap<&str, &super::super::model_management::CatalogEntry> =
+            catalog.iter().map(|e| (e.id.as_str(), e)).collect();
+
+        let mut pairings_checked = 0;
+        for entry in &catalog {
+            if let Some(draft_id) = &entry.draft_model_id {
+                let draft = by_id.get(draft_id.as_str()).unwrap_or_else(|| {
+                    panic!(
+                        "catalog entry '{}' references draft_model_id '{}' which does not exist",
+                        entry.id, draft_id
+                    )
+                });
+                assert_eq!(
+                    entry.architecture, draft.architecture,
+                    "draft model '{}' arch ({:?}) must match main model '{}' arch ({:?})",
+                    draft.id, draft.architecture, entry.id, entry.architecture
+                );
+                pairings_checked += 1;
+            }
+        }
+        // Guard against silent regression where every draft pairing got dropped.
+        assert!(pairings_checked >= 5, "expected at least 5 draft pairings, found {pairings_checked}");
+    }
+
+    // --- FIM port resolution (item #8: --jinja/FIM conflict) ---
+
+    #[test]
+    fn resolve_fim_port_prefers_completion_server() {
+        // The whole point of the completion server is to take FIM traffic off
+        // the --jinja-loaded chat server. Even if both ports are running,
+        // the completion port must win.
+        let result = super::resolve_fim_port(Some(8190), Some(8090));
+        assert_eq!(result, Ok(8190));
+    }
+
+    #[test]
+    fn resolve_fim_port_falls_back_to_main_when_completion_unset() {
+        // Backwards compat: users who haven't started a completion server
+        // still get FIM via the main server's /infill → chat fallback chain.
+        let result = super::resolve_fim_port(None, Some(8090));
+        assert_eq!(result, Ok(8090));
+    }
+
+    #[test]
+    fn resolve_fim_port_errors_when_neither_is_running() {
+        let result = super::resolve_fim_port(None, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not running"));
+    }
+
+    /// The completion server is useless without at least one FIM-capable
+    /// model in the catalog to point it at. If a future edit drops the last
+    /// `supports_fim: true` entry, this test fails before the regression
+    /// lands in a release.
+    #[test]
+    fn catalog_has_at_least_one_fim_capable_model() {
+        let catalog: Vec<super::super::model_management::CatalogEntry> =
+            serde_json::from_str(include_str!("../../model-catalog.json"))
+                .expect("model-catalog.json is valid JSON");
+
+        let fim_count = catalog.iter().filter(|e| e.supports_fim).count();
+        assert!(
+            fim_count > 0,
+            "expected at least one model with supports_fim: true — the \
+             completion server (item #8) has nothing to load otherwise"
         );
     }
 }

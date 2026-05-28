@@ -656,6 +656,7 @@ pub async fn ai_chat_stream(
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
     tools: Option<Vec<ToolDefinition>>,
+    response_format: Option<serde_json::Value>,
 ) -> Result<(), String>
 ```
 
@@ -668,6 +669,7 @@ pub async fn ai_chat_stream(
 - `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
 - `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
 - `tools`: Optional array of tool definitions for client-side tool calling
+- `response_format`: Optional OpenAI-style structured-output envelope, e.g. `{ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }`. Forwarded verbatim to `local_bundled` (llama-server converts the schema to GBNF — invalid tokens get `-inf` logits, so output is guaranteed to satisfy the schema) and `openai_compatible`. Unwrapped to Ollama's bare-schema `format` field by `ollama_response_format`. Ignored for `anthropic` / `openai` (the OpenAI Responses API uses a different envelope and Anthropic has no equivalent). Not sent together with `tools` for `local_bundled`: llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Frontend callers should use the `generateStructured()` helper in `src/lib/ai/structured.ts` rather than building the envelope by hand.
 
 **Returns:**
 

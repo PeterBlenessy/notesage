@@ -8,6 +8,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { buildGoalsContext, buildProjectHeader, buildFileTreeContext } from '@/lib/ai/context';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
+import { buildReActAddendum } from '@/lib/ai/react-prompt';
 import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
@@ -168,6 +169,8 @@ export function useAIContext(): UseAIContextReturn {
   // Memoized version for non-chat callers (generateText, bubble menu actions)
   const composedSystemMessage = useMemo(() => buildComposedSystemMessage(), [buildComposedSystemMessage]);
 
+  const toolCallingEnabled = useSettingsStore((s) => s.toolCallingEnabled);
+
   // System message for local models — minimal context, tools handle discovery.
   // Only provides the project root and active file. The model uses list_directory
   // to explore files on demand rather than front-loading the entire tree.
@@ -201,8 +204,13 @@ export function useAIContext(): UseAIContextReturn {
     // Tool guidance
     parts.push('You have tools to read files, write files, and list directories. Use list_directory to discover files before reading them. Always use absolute paths. Start from the project root above.');
 
+    // ReAct-style step-by-step protocol — only when tool calling is on, since
+    // the guidance would otherwise spend tokens on a feature the model can't use.
+    const reactAddendum = buildReActAddendum(toolCallingEnabled);
+    if (reactAddendum) parts.push(reactAddendum);
+
     return parts.join('\n\n');
-  }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTab, activeTabInScope, metadataMap]);
+  }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTab, activeTabInScope, metadataMap, toolCallingEnabled]);
 
   // ACP-specific system message builder — no agent role injection;
   // ACP agents manage their own subagent system via @agent-name pass-through.
