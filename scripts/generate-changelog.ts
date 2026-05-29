@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
+import { pathToFileURL } from 'url';
 
 interface ReleaseEntry {
   version: string;
@@ -10,6 +11,12 @@ interface ReleaseEntry {
     fixes?: string[];
     improvements?: string[];
   };
+  // Verbatim merged-PR dump from the history file's "## Under the hood"
+  // section. Populated ONLY for prerelease (alpha) entries so the alpha
+  // changelog feed shows what landed in each auto-cut. Stable entries never
+  // carry it — `main()` filters prereleases out of the stable feed, and
+  // `parseReleaseFile` only attaches it when the version has a `-` segment.
+  underTheHood?: string[];
 }
 
 interface Changelog {
@@ -33,7 +40,28 @@ function parseVersion(filename: string): string | null {
   return match ? match[1] : null;
 }
 
-function parseReleaseFile(filepath: string): ReleaseEntry | null {
+/**
+ * Extract the bullet list from the "## Under the hood" section.
+ *
+ * The section also carries a descriptive lead paragraph ("Auto-generated dump
+ * of merged Tier-A/B PRs…") which is intentionally dropped — only `- ` list
+ * items (the merged-PR lines) are returned.
+ */
+export function parseUnderTheHood(content: string): string[] {
+  const match = content.match(/##\s+Under the hood\s*\n([\s\S]*?)(?=\n## |$)/);
+  if (!match) return [];
+
+  const items: string[] = [];
+  for (const line of match[1].split('\n')) {
+    const itemMatch = line.match(/^- (.+)/);
+    if (itemMatch) {
+      items.push(itemMatch[1].trim());
+    }
+  }
+  return items;
+}
+
+export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   const content = readFileSync(filepath, 'utf-8');
   const filename = basename(filepath);
   const version = parseVersion(filename);
@@ -71,12 +99,22 @@ function parseReleaseFile(filepath: string): ReleaseEntry | null {
     }
   }
 
-  // Skip releases with no sections
-  if (!sections.features && !sections.fixes && !sections.improvements) {
+  // Prerelease (alpha) entries surface the verbatim merged-PR dump so the
+  // alpha changelog shows what made the cut. Stable entries never do — the
+  // `/release` flow rewrites that detail into curated prose.
+  const isPrerelease = version.includes('-');
+  const uth = isPrerelease ? parseUnderTheHood(content) : [];
+  const underTheHood = uth.length > 0 ? uth : undefined;
+
+  // Skip releases with nothing to show. For alphas, an "Under the hood" dump
+  // counts as content even when the curated sections are empty — otherwise
+  // auto-cut alphas (which have no curated sections yet) would vanish from the
+  // feed entirely.
+  if (!sections.features && !sections.fixes && !sections.improvements && !underTheHood) {
     return null;
   }
 
-  return { version, date, previousVersion, sections };
+  return { version, date, previousVersion, sections, underTheHood };
 }
 
 /**
@@ -236,4 +274,8 @@ function main() {
   );
 }
 
-main();
+// Run only when executed directly (via `tsx scripts/generate-changelog.ts`),
+// not when imported by unit tests for the pure parse helpers above.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

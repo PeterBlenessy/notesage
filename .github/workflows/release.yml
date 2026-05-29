@@ -54,15 +54,30 @@ jobs:
             exit 1
           fi
 
-          # Extract user-facing content: everything between "## Changes" and
-          # "## Under the hood" (or end of file). The stop condition fires ONLY
-          # on "## Under the hood" — sections like "## Known issues" and
-          # "## Known limitations" are user-facing and must be included.
-          awk '
-            /^## Changes/{found=1; next}
-            found && /^## Under the hood/{exit}
-            found{print}
-          ' "$HISTORY_FILE" > /tmp/release_notes.md
+          # Release-note body depends on the channel:
+          #
+          #   Stable (no `-` in the version): user-facing content only —
+          #   everything between "## Changes" and "## Under the hood". The stop
+          #   fires ONLY on "## Under the hood"; sections like "## Known issues"
+          #   and "## Known limitations" are user-facing and must be included.
+          #
+          #   Alpha (prerelease, e.g. `0.46.0-alpha.5`): include "## Under the
+          #   hood" too, so the merged-PR dump is visible on the GitHub Release
+          #   page — that's what made the cut. Auto-cut alphas have no curated
+          #   "## Changes" yet, so without this the body reads only
+          #   "_No user-visible changes._".
+          if [[ "$VERSION" == *-* ]]; then
+            awk '
+              /^## Changes/{found=1; next}
+              found{print}
+            ' "$HISTORY_FILE" > /tmp/release_notes.md
+          else
+            awk '
+              /^## Changes/{found=1; next}
+              found && /^## Under the hood/{exit}
+              found{print}
+            ' "$HISTORY_FILE" > /tmp/release_notes.md
+          fi
 
           # Set as output using delimiter
           echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT

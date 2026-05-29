@@ -1,6 +1,73 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.7",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(release): surface merged-PR dump in alpha release notes (#385)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.6",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(ai): plumb response_format for schema-constrained local LLM output (#383)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.5",
+      "date": "2026-05-28",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(quiet-chrome): extend Aggressive preset with title bar + cmd bar fade and mouse-only unfade (#381)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.4",
+      "date": "2026-05-27",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(ci): exclude release PRs from alpha cut to prevent infinite loop (#374)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.3",
+      "date": "2026-05-27",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(html-viewer): fix 10 bugs from v0.46.0 code review (#375) (#377)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.2",
+      "date": "2026-05-26",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "chore: release v0.46.0-alpha.1 (#372)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.1",
+      "date": "2026-05-26",
+      "previousVersion": "0.45.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(ci): bump minor (not patch) when starting new alpha series (#367)",
+        "fix(ci): auto-label untiered merged PRs as tier:B in alpha cut (#365)",
+        "chore: release v0.45.0-alpha.6 (#364)",
+        "fix(viewer): replace HtmlViewer static toolbar with floating pill (#363)",
+        "fix(html-viewer): enforce blockExternal on all three render paths (#360) (#362)"
+      ]
+    },
+    {
       "version": "0.45.0",
       "date": "2026-05-24",
       "previousVersion": "0.44.0",
@@ -21,6 +88,16 @@
       }
     },
     {
+      "version": "0.45.0-alpha.6",
+      "date": "2026-05-26",
+      "previousVersion": "0.45.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(viewer): replace HtmlViewer static toolbar with floating pill (#363)",
+        "fix(html-viewer): enforce blockExternal on all three render paths (#360) (#362)"
+      ]
+    },
+    {
       "version": "0.45.0-alpha.5",
       "date": "2026-05-24",
       "previousVersion": "0.45.0",
@@ -35,6 +112,27 @@
       }
     },
     {
+      "version": "0.45.0-alpha.4",
+      "date": "2026-05-22",
+      "previousVersion": "0.45.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(release): generator writes honest placeholder; fix alpha-3 notes (#323)",
+        "chore: release v0.45.0-alpha.3 (#322)"
+      ]
+    },
+    {
+      "version": "0.45.0-alpha.3",
+      "date": "2026-05-22",
+      "previousVersion": "0.45.0",
+      "sections": {},
+      "underTheHood": [
+        "Corrected the alpha.2 release notes to remove placeholder text and add honest user-facing prose. (#320)",
+        "Documented the agentic-workflow release half in `docs/agentic-workflow.md` and fixed a Mermaid syntax error. (#319)",
+        "Split `docs/agentic-workflow.md` into an operational reference and a companion rationale file (`docs/agentic-workflow-rationale.md`) to keep session context lean. (#321)"
+      ]
+    },
+    {
       "version": "0.45.0-alpha.2",
       "date": "2026-05-21",
       "previousVersion": "0.45.0",
@@ -42,7 +140,11 @@
         "improvements": [
           "**Infrastructure-only release.** No user-visible changes vs. alpha.1 — same features, same behaviour. This alpha ships the CI plumbing that makes future auto-cuts actually work, plus two routine dependency patches."
         ]
-      }
+      },
+      "underTheHood": [
+        "`openssl` 0.10.79 → 0.10.80 (Rust transitive, security patch) — #314.",
+        "`ws` 8.19.0 → 8.20.1 inside the `bundled-skills/download-webpage` Node script — `npm audit fix` (#313)."
+      ]
     },
     {
       "version": "0.45.0-alpha.1",
@@ -141,7 +243,13 @@
           "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
           "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
         ]
-      }
+      },
+      "underTheHood": [
+        "`isLeaveAlphaDowngrade(current, manifest)` checks: current is prerelease AND manifest is stable AND the X.Y.Z triple of the manifest is strictly less than the triple of the current.",
+        "`checkStableChannel()` passes `allowDowngrades: true` to `check()` only when the running binary is a prerelease.",
+        "`UpdateInfo.isLeaveAlphaDowngrade?: boolean` is the discriminator that drives the dialog's switched copy.",
+        "`useAutoUpdate` adds a `useEffect` that re-runs `checkForUpdate()` when `releaseChannel` changes."
+      ]
     },
     {
       "version": "0.44.0-alpha.2",
@@ -170,7 +278,13 @@
           "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character. *(Originally in alpha.0.)*",
           "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n` separator, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file. *(Originally in alpha.0.)*"
         ]
-      }
+      },
+      "underTheHood": [
+        "**#187 (`aw-pipeline`)** — every stage now reads human comments since the latest `refined` marker. Before this fix, override comments on issues only reached `aw-review`; `aw-refine` / `aw-slice` / `aw-tdd` worked from the body alone and silently dropped corrections, producing PRs that ignored explicit user feedback. Closes the \"I said that twice and the agent ignored it\" loop.",
+        "**#193 (`aw-review`)** — branch-prefix filter now matches `claude/*` instead of PR author. After the `WORKFLOW_PAT` switch, bot-authored PRs are authored by the PAT owner (not `claude[bot]`), so the old author-based filter rejected every bot PR and `aw-review` silently skipped them.",
+        "**#194 (PRD docs)** — the `aw-ci-repair` PRD + tasks breakdown land before the implementation, so the AW pipeline has filesystem references to read.",
+        "**#202 (`aw-ci-repair`)** — new pipeline addition that auto-fixes recurring CI perf-budget flakes. Two pieces compose: (a) a vitest regression-lock test (`no-bare-perf-budget.test.ts`) that fails when a perf assertion uses a bare numeric literal as its budget; (b) a new `aw-ci-repair` skill + workflow triggered by `workflow_run.completed: failure` on bot-authored draft PRs, auto-patching the same `PERF_BUDGET_MULTIPLIER` wrap on tests missing it. Comments-and-exits on snapshot drift / DOM-changed / anything else outside the documented pattern set. One repair attempt per PR."
+      ]
     },
     {
       "version": "0.44.0-alpha.1",
@@ -180,7 +294,11 @@
         "fixes": [
           "**Release pipeline unblocked.** Removed the obsolete"
         ]
-      }
+      },
+      "underTheHood": [
+        "`src/perf/status-tray.perf.test.ts` — segmented-picker benchmark deleted.",
+        "`package.json` — bumped to `0.44.0-alpha.1`."
+      ]
     },
     {
       "version": "0.44.0-alpha.0",
@@ -204,7 +322,21 @@
           "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character; Nordic `Shift+7` fallback for true `Cmd+/` preserved.",
           "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n`, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file."
         ]
-      }
+      },
+      "underTheHood": [
+        "`0da4b00f` chart/drawing/link-preview block-size persistence + worker shim fix (#173)",
+        "`0d5ba65` zoom chord scope, Swedish keyboard collision, embedded-block breathing room (#188)",
+        "`33e1ef59` HtmlViewer rewrite — sanitised inline render via DOMPurify (#169)",
+        "`799582ae` StatusTray completion picker → dropdown (#181)",
+        "`408f1894` image block-size hover controls + persistence (later partially reverted for perf)",
+        "`f1548d4e` image alignment auto-default width",
+        "`c2d6f55` unified alignment via TextAlign expansion (later reverted for perf)",
+        "`ad8d1362` perf: conditional CSS zoom + image vanilla DOM revert",
+        "`2c9eb9f1` scroll-restore-from-saved-ratio fix",
+        "`ba4fe785` revert TextAlign expansion (perf bisect — confirmed cause of 494 KB book slowdown)",
+        "`19b9fdb5` revert image React NodeView restore (perf bisect — confirmed contribution to slowdown)",
+        "`20707bdc` image markdown serializer adds trailing block separator"
+      ]
     },
     {
       "version": "0.43.1",
