@@ -116,10 +116,22 @@ jobs:
 
           # 2b. Tier-A or Tier-B PRs merged since previous_tag?
           echo "Looking for tier:A/B PRs merged since $since_iso"
-          pr_numbers=$(gh pr list \
+          searched_prs=$(gh pr list \
             --state merged --base main \
             --search "merged:>$since_iso label:tier:A,tier:B" \
-            --json number,title --jq "[.[] | $release_filter | .number] | join(\",\")")
+            --json number,title --jq ".[] | $release_filter | .number")
+
+          # Union the search hits with the PRs we just auto-labelled in 2a.
+          # GitHub's search index lags label writes by a few seconds, so a PR
+          # labelled tier:B moments ago in 2a does NOT reliably appear in this
+          # search yet. Without the union, an alpha triggered right after a
+          # human-merged (untiered) PR sees "nothing to ship" and skips even
+          # though real work landed — exactly the race that no-op'd the cut
+          # after PR #385 merged. The freshly-labelled set is already
+          # release-PR-filtered (the 2a query used $release_filter), so it is
+          # safe to fold in verbatim.
+          pr_numbers=$(printf '%s\n%s\n' "$searched_prs" "$unclassified_prs" \
+            | grep -E '^[0-9]+$' | sort -n -u | paste -sd, -)
 
           if [[ -z "$pr_numbers" ]]; then
             echo "No Tier-A/B PRs merged since $previous_tag — nothing to ship."
