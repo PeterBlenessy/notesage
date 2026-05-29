@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.7",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(release): surface merged-PR dump in alpha release notes (#385)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.6",
       "date": "2026-05-29",
       "previousVersion": "0.46.0",
