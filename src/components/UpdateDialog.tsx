@@ -1,4 +1,4 @@
-import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
+import { ArrowUpCircle, Sparkles, Bug, Zap, Wrench, ChevronDown } from "lucide-react";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -41,7 +41,8 @@ function VersionRelease({ release }: { release: Release }) {
   const hasMultipleSections =
     (release.sections.features?.length ?? 0) +
       (release.sections.fixes?.length ?? 0) +
-      (release.sections.improvements?.length ?? 0) >
+      (release.sections.improvements?.length ?? 0) +
+      (release.underTheHood?.length ?? 0) >
     0;
 
   if (!hasMultipleSections) return null;
@@ -82,6 +83,10 @@ function VersionRelease({ release }: { release: Release }) {
           <SectionItems
             icon={Zap}
             items={release.sections.improvements}
+          />
+          <SectionItems
+            icon={Wrench}
+            items={release.underTheHood}
           />
         </div>
       )}

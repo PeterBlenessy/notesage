@@ -173,7 +173,16 @@ Fifteen workflow files. One *pipeline* + one *sweep* + four *standalones* + one 
 | `aw-alpha-prep.yml` | `pull_request.ready_for_review`, `pull_request.opened` | Tier classifier. Labels bot PRs `tier:A` / `tier:B` / `tier:C` based on issue labels (hitl/visual), touched paths (load-bearing list), and diff size. `chore(deps):` PRs with prod_additions < 50 fast-path to Tier A. Single source of truth for the release routing decision. |
 | `aw-merge.yml` | `pull_request.labeled` (filter `tier:A` + `claude/*` head ref), `workflow_dispatch` | Enables GitHub native auto-merge (squash) on Tier-A bot PRs. Merge fires when CI green + required reviews satisfied. Tier B/C are NOT touched here. |
 | `aw-rebase.yml` | cron `*/15`, `workflow_dispatch` | Queue-collision recovery: when a Tier-A merge knocks other auto-merge PRs BEHIND main, this sweep calls `update-branch` (clean three-way merge). DIRTY conflicts or lockfile conflicts → disable auto-merge, add `needs-human`, post comment. |
-| `aw-alpha-cut.yml` | cron `0 */6 * * *`, `workflow_dispatch`, `pull_request.closed` (head ref `release/v*`) | Two-job release cutter. `cut` (cron + dispatch): bumps `package.json`, generates `docs/history/NNN-release-vX.Y.Z-alpha.M.md`, regenerates `public/changelog-alpha.json`, pushes to `release/v${NEXT_VERSION}`, opens an auto-merge PR. `tag-after-merge` (PR closed): tags the merge commit `v${NEXT_VERSION}` and pushes the tag, which fires `release.yml`. |
+| `aw-alpha-cut.yml` | cron `0 */6 * * *`, `workflow_dispatch`, `pull_request.closed` (head ref `release/v*`) | Two-job release cutter. `cut` (cron + dispatch): bumps `package.json`, generates `docs/history/NNN-release-vX.Y.Z-alpha.M.md` (merged PRs dumped verbatim under `## Under the hood`), regenerates `public/changelog-alpha.json`, pushes to `release/v${NEXT_VERSION}`, opens an auto-merge PR. `tag-after-merge` (PR closed): tags the merge commit `v${NEXT_VERSION}` and pushes the tag, which fires `release.yml`. |
+
+### Alpha release notes surface the merged-PR dump
+
+Auto-cut alphas have no curated `## Changes` yet, so their user-facing notes would otherwise read only "_No user-visible changes._". To let alpha testers see what made each cut, the `## Under the hood` PR dump is surfaced for **prerelease** versions only:
+
+- `scripts/generate-changelog.ts` attaches the dump to the entry as `underTheHood[]`; the in-app Changelog (alpha channel) renders it as an "Under the hood" section. The stable feed (`changelog.json`) strips prerelease entries entirely, so stable never carries it.
+- `release.yml` includes the `## Under the hood` section in the GitHub Release body when the tag is a prerelease; stable tags stop at `## Under the hood` exactly as before.
+
+Promotion to stable (the `release` skill) still rewrites the dump into curated prose — the raw PR list never reaches stable release notes.
 
 Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
 

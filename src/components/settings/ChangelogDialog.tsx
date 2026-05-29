@@ -1,4 +1,4 @@
-import { Sparkles, Bug, Zap, ChevronDown } from 'lucide-react';
+import { Sparkles, Bug, Zap, Wrench, ChevronDown } from 'lucide-react';
 import { renderInlineMarkdown } from '@/lib/render-inline-markdown';
 import {
   Dialog,
@@ -97,6 +97,11 @@ function ReleaseCard({ release }: { release: Release }) {
             title="Improvements"
             icon={Zap}
             items={release.sections.improvements ?? []}
+          />
+          <ReleaseSection
+            title="Under the hood"
+            icon={Wrench}
+            items={release.underTheHood ?? []}
           />
         </div>
       )}
