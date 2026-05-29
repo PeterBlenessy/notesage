@@ -11,6 +11,9 @@ export interface Release {
     fixes?: string[];
     improvements?: string[];
   };
+  // Merged-PR dump, present only on alpha (prerelease) entries. Lets the
+  // in-app changelog show what landed in each auto-cut alpha. Absent on stable.
+  underTheHood?: string[];
 }
 
 export interface Changelog {

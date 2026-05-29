@@ -34,7 +34,7 @@ Bump the version, generate a changelog, and create a release history entry.
 
 6. **Create a release history entry** at `docs/history/NNN-release-vX.Y.Z.md`.
 
-   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json`, which is shipped to end users as the in-app "What's new". Write those bullets for a non-technical user scrolling through versions. Any other `###` heading (like `Under the hood`) is **not** extracted — put task numbers, file paths, commit hashes, and implementation jargon there.
+   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json`, which is shipped to end users as the in-app "What's new". Write those bullets for a non-technical user scrolling through versions. For **stable** releases, any other `###` heading (like `Under the hood`) is **not** extracted — put task numbers, file paths, commit hashes, and implementation jargon there. (For **alpha** prereleases, `## Under the hood` IS surfaced — see §"User-facing copy vs Under the hood" for the exception.)
 
    **Before writing,** open the two most recent prior `docs/history/*.md` files and match their tone. Describe what the user will notice or can now do, not what file changed or which subsystem moved.
 
@@ -126,6 +126,17 @@ This monitoring should run in the background so it does not block other work.
 ## User-facing copy vs Under the hood
 
 The `### Features`, `### Improvements`, and `### Fixes` sections in every release history file are extracted by `scripts/generate-changelog.ts` and shipped to end users as the in-app "What's new" feed. A non-technical user scrolling through versions must be able to understand every bullet in those three sections without knowing what a crate, Dependabot alert, classDef, or IPC is.
+
+### Alpha exception — `## Under the hood` IS surfaced for prereleases
+
+For **stable** releases (no `-` in the version), `## Under the hood` is private — never extracted, never shown to users. This is where you put task numbers, file paths, and jargon.
+
+For **alpha** releases (prerelease versions like `0.46.0-alpha.5`), `## Under the hood` IS surfaced, in two places:
+
+- `scripts/generate-changelog.ts` attaches its bullet list to the entry as `underTheHood[]`, which the in-app Changelog renders as an "Under the hood" section (alpha channel only — the stable feed strips prerelease entries entirely).
+- `release.yml` includes the `## Under the hood` section in the GitHub Release body for prerelease tags.
+
+This is deliberate: alpha testers want to see exactly which merged PRs made each auto-cut, and `aw-alpha-cut` writes those PRs into `## Under the hood` verbatim. **When you promote an alpha to stable via this skill, you still must rewrite that dump into curated user-facing prose** — the stable release notes never carry the raw PR list.
 
 ### Forbidden in user-facing bullets (Features / Improvements / Fixes)
 
