@@ -12,9 +12,14 @@
  *     achievable: `setSidebarRecentCap` clamps to [3, 15] (min 3). Only the
  *     Tags/Mentions caps go to 0. The criterion conflated Recent with those.
  *
- * External-delete pruning (a file deleted outside the app drops out of Recent
- * on the next watcher tick) is covered in `sidebar-external-delete.test.ts`
- * (issue #391) — it was a real gap, now fixed in `useFileWatcher`.
+ * External-delete pruning (a file/folder deleted outside the app drops out of
+ * Recent and Pinned) was a real gap, now fixed in `useFileWatcher` (issue
+ * #391). It is verified by the deterministic unit tests in
+ * `useFileWatcher.test.ts` ("external delete prunes Recent and Pinned"). It is
+ * NOT asserted in real-E2E: it depends on the macOS watcher firing real delete
+ * events within a timeout, which is timing-dependent and (with the create/
+ * delete churn the test needs) destabilised the WebDriver session — too flaky
+ * to gate CI on.
  *
  * Run manually:
  *   Terminal 1: pnpm tauri:test
