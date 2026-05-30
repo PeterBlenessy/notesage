@@ -1,7 +1,7 @@
 {
   "name": "notesage",
   "private": true,
-  "version": "0.46.0-alpha.7",
+  "version": "0.46.0-alpha.8",
   "license": "MIT",
   "author": "Peter Blenessy",
   "type": "module",
@@ -11,7 +11,7 @@
     "generate-changelog": "pnpm dlx tsx scripts/generate-changelog.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:test": "tauri dev --features e2e-testing",
+    "tauri:test": "tauri dev --features e2e-testing --config src-tauri/tauri.e2e.conf.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
