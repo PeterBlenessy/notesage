@@ -47,7 +47,7 @@
  */
 import * as path from 'path';
 
-import { waitForElement, pressShortcut, openFile } from '../helpers/actions';
+import { waitForElement, pressShortcut, openFile, clearEditor } from '../helpers/actions';
 import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 
 const TEST_PROJECT_PATH = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
@@ -186,26 +186,27 @@ describe('Input-fidelity spike (tauri-plugin-webdriver 0.2.1 / WKWebView)', () =
 
     describe('B. React-controlled input (find bar)', () => {
         it('1. send keys into the find bar input', async () => {
-            // Open the find bar (⌘F). Then locate whatever input received focus.
+            // Remove the leftover plain <input> from target A first. Without
+            // this, a "first visible input" fallback could mis-target it and
+            // report a plain-input result mislabelled as the React find bar.
+            await browser.execute((id: string) => {
+                document.getElementById(id)?.remove();
+            }, PLAIN_INPUT_ID);
+
+            // Open the find bar (⌘F), then accept ONLY the input that actually
+            // received focus — no broad fallback. If the find bar didn't open or
+            // didn't focus an input, report n/a rather than measure the wrong node.
             await pressShortcut(['Meta', 'f']);
             await browser.pause(400);
 
-            const tagged = await browser.execute((mark: string) => {
+            const tagged = await browser.execute((mark: string, plainId: string) => {
                 const ae = document.activeElement as HTMLElement | null;
-                if (ae && ae.tagName === 'INPUT') {
+                if (ae && ae.tagName === 'INPUT' && ae.id !== plainId) {
                     ae.setAttribute(mark, '1');
                     return true;
                 }
-                // Fallback: first visible text input on screen.
-                const candidate = Array.from(document.querySelectorAll('input'))
-                    .find((i) => (i as HTMLInputElement).type === 'text' || !(i as HTMLInputElement).type);
-                if (candidate) {
-                    candidate.setAttribute(mark, '1');
-                    (candidate as HTMLInputElement).focus();
-                    return true;
-                }
                 return false;
-            }, FIND_INPUT_MARK);
+            }, FIND_INPUT_MARK, PLAIN_INPUT_ID);
 
             if (!tagged) {
                 results['B1 react-input / sendKeys'] = { landed: 'n/a', isTrusted: 'n/a', note: 'find input not found' };
@@ -236,6 +237,10 @@ describe('Input-fidelity spike (tauri-plugin-webdriver 0.2.1 / WKWebView)', () =
         async function freshEditor() {
             await openFile('empty.md', TEST_PROJECT_PATH);
             const editor = await waitForElement('.ProseMirror');
+            // empty.md ships as `# Empty Note`, and the per-tab EditorState cache
+            // can restore a prior cell's doc on reopen — clear to a true blank so
+            // each cell's landed/isTrusted reading is isolated.
+            await clearEditor();
             await editor.click();
             return editor;
         }

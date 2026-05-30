@@ -322,12 +322,75 @@ export async function typeInEditor(text: string): Promise<TimedResult<void>> {
     await editor.click();
 
     return measureAction(async () => {
-        // WebDriver keys() doesn't reliably work with ProseMirror's contenteditable
-        // in WKWebView. Use execCommand('insertText') which ProseMirror handles natively.
+        // Default bulk-text path. execCommand('insertText') produces trusted
+        // beforeinput/input events that ProseMirror handles natively — reliable
+        // and WebKit-version-independent for entering text where keystroke
+        // realism doesn't matter.
+        //
+        // NOTE: the older "WebDriver keys() doesn't work in WKWebView" claim is
+        // only true of the *Actions API* (browser.keys() / pressShortcut), which
+        // delivers synthetic keydowns the contenteditable ignores (see C2 in
+        // input-fidelity-spike.test.ts). The *send-keys* endpoint
+        // (element.addValue) DOES drive ProseMirror with trusted input — use
+        // typeViaSendKeys() when a test needs the real WebDriver typing path or
+        // needs to trigger input rules (slash menu, markdown autoformat).
         await browser.execute((t: string) => {
             document.execCommand('insertText', false, t);
         }, text);
     });
+}
+
+/**
+ * Types text into the ProseMirror editor via the WebDriver "send keys" endpoint
+ * (element.addValue) — the standards-track typing path that goes through the
+ * real WebDriver protocol rather than an in-page JS shim.
+ *
+ * Established by input-fidelity-spike.test.ts (macOS/WKWebView,
+ * tauri-plugin-webdriver 0.2.1): this endpoint delivers TRUSTED
+ * `beforeinput`+`input` events to the contenteditable, so ProseMirror honours
+ * the input and text lands — and text *input rules* (e.g. "## " → heading,
+ * "- " → bullet list, "/" → slash menu) fire.
+ *
+ * IMPORTANT — what this path does NOT do:
+ *   - It emits NO `keydown`. ProseMirror *keymap* behaviour (Enter to split a
+ *     block, Tab to nest, Mod-B for bold) will NOT fire here — use
+ *     pressShortcut() (Actions API) for those; it dispatches keydown.
+ *   - The driver inserts the whole string as a single insertText. To trigger an
+ *     input rule whose trigger is a trailing character, send the trigger in its
+ *     own call, e.g. `typeViaSendKeys('## ')` then `typeViaSendKeys('Heading')`.
+ *
+ * @param text - The text to insert at the current selection
+ * @returns TimedResult with the duration in ms
+ */
+export async function typeViaSendKeys(text: string): Promise<TimedResult<void>> {
+    const editor = await waitForElement('.ProseMirror');
+    await editor.click();
+
+    return measureAction(async () => {
+        await editor.addValue(text);
+    });
+}
+
+/**
+ * Empties the ProseMirror editor (select-all + delete) and waits until its
+ * text content is blank. Useful as a per-test reset when a fixture file ships
+ * with content (e.g. empty.md is actually `# Empty Note`) or when the per-tab
+ * EditorState cache restores a prior doc on reopen.
+ */
+export async function clearEditor(): Promise<void> {
+    const editor = await waitForElement('.ProseMirror');
+    await editor.click();
+    await browser.execute(() => {
+        const el = document.querySelector('.ProseMirror') as HTMLElement | null;
+        el?.focus();
+        // ProseMirror intercepts both and collapses the doc to an empty paragraph.
+        document.execCommand('selectAll', false);
+        document.execCommand('delete', false);
+    });
+    await browser.waitUntil(
+        async () => (await editor.getText()).trim().length === 0,
+        { timeout: 5000, timeoutMsg: 'Editor did not clear within 5000ms', interval: 100 },
+    );
 }
 
 /**
