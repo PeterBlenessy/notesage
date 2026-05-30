@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.9",
+      "date": "2026-05-30",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(sidebar): prune Recent and Pinned on external file delete (#392)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.8",
       "date": "2026-05-29",
       "previousVersion": "0.46.0",
