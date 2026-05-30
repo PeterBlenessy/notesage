@@ -67,7 +67,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Add comment | `⌘⇧M` | Create inline comment on selected text. **Wired through Tiptap, not through `useKeyboardShortcuts`** — see Implementation Notes |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
-| Toggle recording | `⌘⇧R` | Start/stop meeting recording |
+| Toggle meeting recording | `⌘⇧R` | Start/stop meeting recording (capture audio → background transcription on stop) |
 
 ## Document Navigation
 

@@ -283,22 +283,41 @@ export interface AcpSpawnResult {
 // Transcription types
 // ---------------------------------------------------------------------------
 
-export interface TranscriptionSegment {
+/**
+ * A timestamped transcript segment from the whole-file transcription command
+ * (`transcribe_file`). Mirrors the Rust `TranscriptSegment` struct in
+ * `src-tauri/src/commands/transcription.rs`. That struct has no
+ * `#[serde(rename_all)]` attribute, so the JSON keys are the verbatim
+ * snake_case Rust field names. `speaker_id` / `speaker_name` are reserved for a
+ * future diarization + naming pass and are always `null` in v1.
+ */
+export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
-  speaker?: string;
+  speaker_id: string | null;
+  speaker_name: string | null;
 }
 
-export interface TranscriptionResultData {
-  segments: TranscriptionSegment[];
+/**
+ * Result of `transcribe_file` — ordered timestamped segments for a whole audio
+ * file. Mirrors the Rust `TranscriptionResult` struct (no serde rename, so the
+ * `duration_secs` key is snake_case).
+ */
+export interface TranscriptionResult {
+  segments: TranscriptSegment[];
   duration_secs: number;
   language: string;
 }
 
-export interface AudioBufferInfo {
+/**
+ * Result of `stop_recording` — the finalized WAV path plus signal metadata for
+ * the frontend's silence-detection warning. Mirrors the Rust `RecordingResult`
+ * struct (no serde rename, so `duration_secs` / `sample_rate` are snake_case).
+ */
+export interface RecordingResult {
+  path: string;
   duration_secs: number;
-  sample_count: number;
   sample_rate: number;
   source: string;
   rms: number;
@@ -1090,20 +1109,21 @@ export const tauriApi = {
     await invoke("start_recording", { source });
   },
 
-  async stopRecording(): Promise<AudioBufferInfo> {
-    return await invoke<AudioBufferInfo>("stop_recording");
+  async stopRecording(): Promise<RecordingResult> {
+    return await invoke<RecordingResult>("stop_recording");
   },
 
-  async transcribe(model: string, language?: string): Promise<TranscriptionResultData> {
-    return await invoke<TranscriptionResultData>("transcribe", { model, language: language ?? null });
-  },
-
-  async startDictation(language?: string, model?: string): Promise<void> {
-    await invoke("start_dictation", { language: language ?? null, model: model ?? null });
-  },
-
-  async stopDictation(): Promise<void> {
-    await invoke("stop_dictation");
+  /**
+   * Transcribe a finalized audio file in a single whole-file Whisper pass.
+   * Emits `transcription-progress` events keyed by `jobId`.
+   */
+  async transcribeFile(jobId: string, path: string, model: string, language?: string): Promise<TranscriptionResult> {
+    return await invoke<TranscriptionResult>("transcribe_file", {
+      jobId,
+      path,
+      model,
+      language: language ?? null,
+    });
   },
 
   async listWhisperModels(): Promise<WhisperModelInfo[]> {

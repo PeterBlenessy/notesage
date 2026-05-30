@@ -15,7 +15,6 @@ import { toast } from 'sonner';
 function resetStore() {
   useRecordingStore.setState({
     isRecording: false,
-    isDictating: false,
     recordingSource: 'microphone',
     recordingStartTime: null,
     transcriptionProgress: 0,

@@ -69,7 +69,6 @@ function resetAmbientDotStores() {
   });
   useRecordingStore.setState({
     isRecording: false,
-    isDictating: false,
   });
   useSettingsStore.setState({
     inlineCompletionsDisabled: false,
