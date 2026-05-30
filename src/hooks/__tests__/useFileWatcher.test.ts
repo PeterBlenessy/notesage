@@ -84,7 +84,8 @@ function resetStores() {
   useWorkspaceStore.setState({
     explorerFolders: [],
     projects: [],
-  });
+    pinnedFiles: [],
+  } as never);
 
   useSettingsStore.setState({
     gitEnabled: false,
@@ -1330,6 +1331,91 @@ describe('useFileWatcher', () => {
 
       // Modify events do not trigger refreshFileTree — only create/delete do
       expect(mockRefreshFileTree).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // External delete → Recent / Pinned pruning (issue #391)
+  // ==========================================================================
+
+  describe('external delete prunes Recent and Pinned', () => {
+    it('removes a recently-accessed file from recentFiles when deleted externally', () => {
+      // Seed a recent file
+      useEditorStore.setState({
+        recentFiles: [
+          { path: '/project/notes/victim.md', name: 'victim.md', lastAccessedAt: Date.now() },
+          { path: '/project/notes/survivor.md', name: 'survivor.md', lastAccessedAt: Date.now() - 1000 },
+        ],
+      });
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/victim.md', 'delete');
+
+      vi.advanceTimersByTime(500);
+
+      const recent = useEditorStore.getState().recentFiles;
+      expect(recent.some((r) => r.path === '/project/notes/victim.md')).toBe(false);
+      // Survivor must remain
+      expect(recent.some((r) => r.path === '/project/notes/survivor.md')).toBe(true);
+    });
+
+    it('removes a pinned file from pinnedFiles when deleted externally', () => {
+      // Seed a pinned file
+      useWorkspaceStore.setState({ pinnedFiles: ['/project/notes/pinned.md', '/project/notes/other-pinned.md'] } as never);
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/pinned.md', 'delete');
+
+      vi.advanceTimersByTime(500);
+
+      const pinned = useWorkspaceStore.getState().pinnedFiles;
+      expect(pinned).not.toContain('/project/notes/pinned.md');
+      // Other pinned file must remain
+      expect(pinned).toContain('/project/notes/other-pinned.md');
+    });
+
+    it('removes all Recent entries under a deleted folder (prefix-aware)', () => {
+      useEditorStore.setState({
+        recentFiles: [
+          { path: '/project/docs/a.md', name: 'a.md', lastAccessedAt: Date.now() },
+          { path: '/project/docs/sub/b.md', name: 'b.md', lastAccessedAt: Date.now() - 1000 },
+          { path: '/project/other/c.md', name: 'c.md', lastAccessedAt: Date.now() - 2000 },
+        ],
+      });
+
+      renderHook(() => useFileWatcher());
+      // Delete the /project/docs folder
+      emitFileChanged('/project/docs', 'delete');
+
+      vi.advanceTimersByTime(500);
+
+      const recent = useEditorStore.getState().recentFiles;
+      // Both entries under /project/docs must be gone
+      expect(recent.some((r) => r.path === '/project/docs/a.md')).toBe(false);
+      expect(recent.some((r) => r.path === '/project/docs/sub/b.md')).toBe(false);
+      // Entry in /project/other must survive
+      expect(recent.some((r) => r.path === '/project/other/c.md')).toBe(true);
+    });
+
+    it('removes all Pinned entries under a deleted folder (prefix-aware)', () => {
+      useWorkspaceStore.setState({
+        pinnedFiles: [
+          '/project/docs/pinned-a.md',
+          '/project/docs/sub/pinned-b.md',
+          '/project/other/pinned-c.md',
+        ],
+      } as never);
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/docs', 'delete');
+
+      vi.advanceTimersByTime(500);
+
+      const pinned = useWorkspaceStore.getState().pinnedFiles;
+      expect(pinned).not.toContain('/project/docs/pinned-a.md');
+      expect(pinned).not.toContain('/project/docs/sub/pinned-b.md');
+      // Outside the folder must survive
+      expect(pinned).toContain('/project/other/pinned-c.md');
     });
   });
 

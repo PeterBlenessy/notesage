@@ -6,19 +6,20 @@
  * `editor-store.recentFiles` (capped at MAX_RECENT_FILES = 5, most-recent
  * first) and rendered as `[aria-label="Recent"] [role="button"]` rows.
  *
- * Two criteria from the original issue are intentionally NOT tested, with
- * rationale:
+ * One criterion from the original issue is intentionally NOT tested here:
  *
  *   - "Setting sidebarRecentCap to 0 hides the Recent section" — not
  *     achievable: `setSidebarRecentCap` clamps to [3, 15] (min 3). Only the
  *     Tags/Mentions caps go to 0. The criterion conflated Recent with those.
- *   - "Externally-deleted file removed from Recent on the next watcher tick" —
- *     not wired: `removeRecent` is only called by app-initiated delete
- *     (`useFileOperations.deletePath`); the filesystem watcher
- *     (`useFileWatcher`) refreshes the tree on external delete but does not
- *     prune Recent. Asserting removal would test behaviour that does not
- *     exist. The wired path (removeRecent) has unit coverage in
- *     editor-store.test.ts. Flagged as a gap in the PR.
+ *
+ * External-delete pruning (a file/folder deleted outside the app drops out of
+ * Recent and Pinned) was a real gap, now fixed in `useFileWatcher` (issue
+ * #391). It is verified by the deterministic unit tests in
+ * `useFileWatcher.test.ts` ("external delete prunes Recent and Pinned"). It is
+ * NOT asserted in real-E2E: it depends on the macOS watcher firing real delete
+ * events within a timeout, which is timing-dependent and (with the create/
+ * delete churn the test needs) destabilised the WebDriver session — too flaky
+ * to gate CI on.
  *
  * Run manually:
  *   Terminal 1: pnpm tauri:test
