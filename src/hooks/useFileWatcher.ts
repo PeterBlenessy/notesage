@@ -105,6 +105,22 @@ export function useFileWatcher() {
         }, 300);
       }
 
+      // External delete: prune dangling entries from Recent and Pinned so
+      // the sidebar never shows dead rows that 404 on click (issue #391).
+      // This mirrors what useFileOperations.deletePath does for app-initiated
+      // deletes — but for the external-delete path (watcher only refreshes
+      // the tree and never pruned the sidebar lists until now).
+      if (kind === "delete") {
+        const normalizedDeletedPath = normalizePath(path);
+        const ws = useWorkspaceStore.getState();
+        for (const pinned of [...ws.pinnedFiles]) {
+          if (pinned === normalizedDeletedPath || pinned.startsWith(normalizedDeletedPath + "/")) {
+            ws.unpinFile(pinned);
+          }
+        }
+        useEditorStore.getState().removeRecent(normalizedDeletedPath);
+      }
+
       // Runtime iCloud project discovery — detect new projects synced from other machines
       if (kind === "create") {
         const icloudPath = useSettingsStore.getState().icloudNotesagePath;
