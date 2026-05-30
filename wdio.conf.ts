@@ -23,6 +23,15 @@ export const config: Options.Testrunner = {
 
     logLevel: 'warn',
 
+    // Bound how long a single WebDriver request waits. The default (120s) means
+    // a wedged tauri-plugin-webdriver session makes the FIRST failing spec hang
+    // two full minutes before failing. 60s halves that while staying well above
+    // any legitimate command (in-test waitUntil ceilings are ≤15s, and the app
+    // is already running before wdio connects). The run-real-e2e.sh
+    // restart-on-failure logic is what actually prevents the cascade; this just
+    // makes the initial detection quicker.
+    connectionRetryTimeout: 60000,
+
     framework: 'mocha',
     mochaOpts: {
         ui: 'bdd',
