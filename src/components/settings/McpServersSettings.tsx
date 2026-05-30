@@ -443,7 +443,9 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
   // Check which sources are available on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    invoke<string[]>('mcp_check_import_sources').then(setAvailableSources).catch(() => {});
+    invoke<string[]>('mcp_check_import_sources')
+      .then((sources) => setAvailableSources(sources ?? []))
+      .catch(() => {});
   }, []);
 
   const handleSelectSource = async (sourceId: string) => {
