@@ -79,7 +79,7 @@ struct AgentConfig {
 }
 
 enum AssetNaming {
-    /// `{name}-{os}-{arch}.{ext}` (claude-agent-acp, copilot)
+    /// `{name}-{os}-{arch}.{ext}` (copilot)
     Simple { name: &'static str },
     /// `{name}-{version}-{rust-triple}.{ext}` (codex-acp)
     RustTriple { name: &'static str },
@@ -89,14 +89,6 @@ enum AssetNaming {
 
 fn agent_config(agent_id: &str) -> Option<AgentConfig> {
     match agent_id {
-        "claude-agent-acp" => Some(AgentConfig {
-            repo: "zed-industries/claude-agent-acp",
-            naming: AssetNaming::Simple {
-                name: "claude-agent-acp",
-            },
-            archive_ext_mac: "zip",
-            archive_ext_linux: "tar.gz",
-        }),
         "codex-acp" => Some(AgentConfig {
             repo: "zed-industries/codex-acp",
             naming: AssetNaming::RustTriple { name: "codex-acp" },
@@ -116,6 +108,37 @@ fn agent_config(agent_id: &str) -> Option<AgentConfig> {
             },
             archive_ext_mac: "zip",
             archive_ext_linux: "zip",
+        }),
+        _ => None,
+    }
+}
+
+// npm-distributed agents. These publish to the npm registry rather than
+// attaching prebuilt platform binaries to GitHub releases, so they install via
+// `npm install` into a managed lib dir + a symlink in the bin dir (mirrors the
+// Gemini CLI flow). `claude-agent-acp` belongs here: its old GitHub repo
+// (`zed-industries/claude-agent-acp`) ships no binary assets, and the package
+// was renamed to the `@agentclientprotocol` scope.
+struct NpmAgentConfig {
+    /// npm package name to install.
+    package: &'static str,
+    /// Executable name exposed in the package's `bin` (under `node_modules/.bin/`).
+    bin_name: &'static str,
+    /// Upstream repo, recorded in versions.json for display/update purposes.
+    repo: &'static str,
+}
+
+fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
+    match agent_id {
+        "claude-agent-acp" => Some(NpmAgentConfig {
+            package: "@agentclientprotocol/claude-agent-acp",
+            bin_name: "claude-agent-acp",
+            repo: "agentclientprotocol/claude-agent-acp",
+        }),
+        "gemini" => Some(NpmAgentConfig {
+            package: "@google/gemini-cli",
+            bin_name: "gemini",
+            repo: "google-gemini/gemini-cli",
         }),
         _ => None,
     }
@@ -701,9 +724,10 @@ pub async fn agent_install(
 }
 
 async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<String>, String> {
-    // Gemini CLI has a special install flow (requires Node.js)
-    if agent_id == "gemini" {
-        return do_gemini_install(app).await;
+    // npm-distributed agents (Claude Code ACP, Gemini CLI) install via npm —
+    // they don't publish prebuilt binaries on GitHub releases.
+    if let Some(npm_config) = npm_agent_config(agent_id) {
+        return do_npm_install(app, agent_id, &npm_config).await;
     }
 
     let config = agent_config(agent_id)
@@ -987,7 +1011,14 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
+/// Install an npm-distributed agent into the managed lib dir and symlink its
+/// executable into the bin dir. Shared by the Claude Code ACP adapter and the
+/// Gemini CLI — both ship via npm rather than prebuilt GitHub-release binaries.
+async fn do_npm_install(
+    app: &AppHandle,
+    agent_id: &str,
+    config: &NpmAgentConfig,
+) -> Result<Option<String>, String> {
     ensure_agent_dirs()?;
 
     // Step 1: Ensure Node.js is available
@@ -998,22 +1029,22 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
     let _ = app.emit(
         "agent-install-progress",
         AgentInstallProgress {
-            agent_id: "gemini".to_string(),
+            agent_id: agent_id.to_string(),
             phase: "configuring".to_string(),
             progress: 0,
             total: 1,
-            message: "Installing Gemini CLI via npm...".to_string(),
+            message: format!("Installing {} via npm...", config.package),
         },
     );
 
-    // Step 2: npm install --prefix ~/.notesage/agents/lib/ @google/gemini-cli
+    // Step 2: npm install --prefix ~/.notesage/agents/lib/ <package>
     let npm = get_npm_binary();
     let lib_dir = agents_lib_dir();
 
     let output = Command::new(&npm)
         .args(["install", "--prefix"])
         .arg(lib_dir.to_string_lossy().as_ref())
-        .arg("@google/gemini-cli")
+        .arg(config.package)
         .output()
         .map_err(|e| format!("npm install failed: {}", e))?;
 
@@ -1022,9 +1053,20 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
         return Err(format!("npm install failed: {}", stderr));
     }
 
-    // Step 3: Create symlink in bin dir
-    let bin_path = agents_bin_dir().join("gemini");
-    let target = lib_dir.join("node_modules/.bin/gemini");
+    // Step 3: Create symlink in bin dir, named after the agent_id so that
+    // binary resolution (`resolve_managed_binary`) finds it at bin/<agent_id>.
+    let bin_path = agents_bin_dir().join(agent_id);
+    let target = lib_dir
+        .join("node_modules/.bin")
+        .join(config.bin_name);
+
+    if !target.exists() {
+        return Err(format!(
+            "npm install succeeded but executable '{}' was not found at {}",
+            config.bin_name,
+            target.display()
+        ));
+    }
 
     // Remove old symlink if exists
     if bin_path.exists() || bin_path.is_symlink() {
@@ -1044,8 +1086,12 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
         .arg("--help")
         .output();
 
-    // Get version from package.json
-    let pkg_json = lib_dir.join("node_modules/@google/gemini-cli/package.json");
+    // Get version from package.json (package name may be scoped, e.g.
+    // `@agentclientprotocol/claude-agent-acp` → node_modules/@.../package.json)
+    let pkg_json = lib_dir
+        .join("node_modules")
+        .join(config.package)
+        .join("package.json");
     let version = if pkg_json.exists() {
         std::fs::read_to_string(&pkg_json)
             .ok()
@@ -1062,12 +1108,12 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
     // Update versions.json
     let mut versions = read_versions();
     versions.agents.insert(
-        "gemini".to_string(),
+        agent_id.to_string(),
         AgentVersionEntry {
             version: version.clone(),
             installed_at: chrono::Utc::now().to_rfc3339(),
             source: "npm".to_string(),
-            repo: Some("google-gemini/gemini-cli".to_string()),
+            repo: Some(config.repo.to_string()),
         },
     );
     write_versions(&versions)?;
@@ -1075,11 +1121,11 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
     let _ = app.emit(
         "agent-install-progress",
         AgentInstallProgress {
-            agent_id: "gemini".to_string(),
+            agent_id: agent_id.to_string(),
             phase: "done".to_string(),
             progress: 1,
             total: 1,
-            message: format!("Installed Gemini CLI v{}", version),
+            message: format!("Installed {} v{}", config.package, version),
         },
     );
 
@@ -1132,6 +1178,37 @@ mod tests {
         builder.append_data(&mut header, file_name, content).unwrap();
         builder.into_inner().unwrap().finish().unwrap();
         buf
+    }
+
+    #[test]
+    fn claude_agent_acp_installs_via_npm_not_github_binary() {
+        // Regression lock for the Claude Code auto-install failure: the old
+        // GitHub repo ships no platform binaries, so claude-agent-acp must route
+        // through the npm install path, not the GitHub-release downloader.
+        assert!(
+            agent_config("claude-agent-acp").is_none(),
+            "claude-agent-acp must NOT be a GitHub-binary agent"
+        );
+        let npm = npm_agent_config("claude-agent-acp")
+            .expect("claude-agent-acp must be an npm-distributed agent");
+        assert_eq!(npm.package, "@agentclientprotocol/claude-agent-acp");
+        assert_eq!(npm.bin_name, "claude-agent-acp");
+    }
+
+    #[test]
+    fn gemini_remains_npm_distributed() {
+        assert!(agent_config("gemini").is_none());
+        let npm = npm_agent_config("gemini").expect("gemini must be npm-distributed");
+        assert_eq!(npm.package, "@google/gemini-cli");
+        assert_eq!(npm.bin_name, "gemini");
+    }
+
+    #[test]
+    fn github_binary_agents_are_not_npm() {
+        for id in ["codex-acp", "copilot", "copilot-language-server"] {
+            assert!(agent_config(id).is_some(), "{id} must be a GitHub-binary agent");
+            assert!(npm_agent_config(id).is_none(), "{id} must not be an npm agent");
+        }
     }
 
     #[test]
