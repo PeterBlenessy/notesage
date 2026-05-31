@@ -194,8 +194,9 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
     installMeta: {
-      githubRepo: 'anthropics/claude-agent-acp',
+      githubRepo: 'agentclientprotocol/claude-agent-acp',
       manualCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.anthropic.com', 'github.com', '*.githubusercontent.com'],
     },
   },
