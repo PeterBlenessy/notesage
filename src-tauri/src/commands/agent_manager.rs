@@ -81,20 +81,12 @@ struct AgentConfig {
 enum AssetNaming {
     /// `{name}-{os}-{arch}.{ext}` (copilot)
     Simple { name: &'static str },
-    /// `{name}-{version}-{rust-triple}.{ext}` (codex-acp)
-    RustTriple { name: &'static str },
     /// `{name}-{os}-{arch}-{version}.{ext}` (copilot-language-server)
     WithVersion { name: &'static str },
 }
 
 fn agent_config(agent_id: &str) -> Option<AgentConfig> {
     match agent_id {
-        "codex-acp" => Some(AgentConfig {
-            repo: "zed-industries/codex-acp",
-            naming: AssetNaming::RustTriple { name: "codex-acp" },
-            archive_ext_mac: "tar.gz",
-            archive_ext_linux: "tar.gz",
-        }),
         "copilot" => Some(AgentConfig {
             repo: "github/copilot-cli",
             naming: AssetNaming::Simple { name: "copilot" },
@@ -139,6 +131,11 @@ fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
             package: "@google/gemini-cli",
             bin_name: "gemini",
             repo: "google-gemini/gemini-cli",
+        }),
+        "codex-acp" => Some(NpmAgentConfig {
+            package: "@agentclientprotocol/codex-acp",
+            bin_name: "codex-acp",
+            repo: "agentclientprotocol/codex-acp",
         }),
         _ => None,
     }
@@ -246,19 +243,6 @@ fn detect_platform() -> Result<(&'static str, &'static str), String> {
     Ok((os, arch))
 }
 
-/// Map (os, arch) to Rust target triple for codex-acp naming
-fn rust_triple(os: &str, arch: &str) -> &'static str {
-    match (os, arch) {
-        ("darwin", "arm64") => "aarch64-apple-darwin",
-        ("darwin", "x64") => "x86_64-apple-darwin",
-        ("linux", "arm64") => "aarch64-unknown-linux-gnu",
-        ("linux", "x64") => "x86_64-unknown-linux-gnu",
-        ("windows", "arm64") => "aarch64-pc-windows-msvc",
-        ("windows", "x64") => "x86_64-pc-windows-msvc",
-        _ => "unknown",
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Binary resolution
 // ---------------------------------------------------------------------------
@@ -358,10 +342,6 @@ fn build_asset_name(config: &AgentConfig, version: &str, os: &str, arch: &str) -
     match &config.naming {
         AssetNaming::Simple { name } => {
             format!("{}-{}-{}.{}", name, os, arch, ext)
-        }
-        AssetNaming::RustTriple { name } => {
-            let triple = rust_triple(os, arch);
-            format!("{}-{}-{}.{}", name, version, triple, ext)
         }
         AssetNaming::WithVersion { name } => {
             format!("{}-{}-{}-{}.{}", name, os, arch, version, ext)
@@ -1204,8 +1184,21 @@ mod tests {
     }
 
     #[test]
+    fn codex_acp_installs_via_npm_not_github_binary() {
+        // Codex ships as an npm package (@agentclientprotocol/codex-acp); it must
+        // route through the npm install path, not the GitHub-release downloader.
+        assert!(
+            agent_config("codex-acp").is_none(),
+            "codex-acp must NOT be a GitHub-binary agent"
+        );
+        let npm = npm_agent_config("codex-acp").expect("codex-acp must be npm-distributed");
+        assert_eq!(npm.package, "@agentclientprotocol/codex-acp");
+        assert_eq!(npm.bin_name, "codex-acp");
+    }
+
+    #[test]
     fn github_binary_agents_are_not_npm() {
-        for id in ["codex-acp", "copilot", "copilot-language-server"] {
+        for id in ["copilot", "copilot-language-server"] {
             assert!(agent_config(id).is_some(), "{id} must be a GitHub-binary agent");
             assert!(npm_agent_config(id).is_none(), "{id} must not be an npm agent");
         }
