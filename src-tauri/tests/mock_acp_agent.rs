@@ -41,12 +41,14 @@ use agent_client_protocol::schema::{
     CloseSessionRequest, CloseSessionResponse, ForkSessionRequest, ForkSessionResponse,
     Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
     ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
-    NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse, ProtocolVersion,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities,
-    SessionForkCapabilities, SessionId, SessionInfo, SessionNotification, SessionResumeCapabilities,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
-    SetSessionModeResponse, StopReason,
+    NewSessionResponse, PermissionOption, PermissionOptionId, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
+    ResumeSessionResponse, SelectedPermissionOutcome, SessionCapabilities,
+    SessionCloseCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionNotification,
+    SessionResumeCapabilities, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
+    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
+    StopReason, ToolCallUpdate, ToolCallUpdateFields,
 };
 use agent_client_protocol::{Channel, ConnectionTo, Responder};
 
@@ -71,6 +73,15 @@ enum CapabilityProfile {
 struct MockAgentState {
     profile: CapabilityProfile,
     sessions: Arc<Mutex<Vec<SessionId>>>,
+    /// When `true`, the `session/prompt` handler first sends an agent-initiated
+    /// `session/request_permission` request to the client and records the
+    /// returned outcome in `permission_outcome`. Default `false` so existing
+    /// prompt-driven tests are unaffected.
+    request_permission_on_prompt: bool,
+    /// Captures the `RequestPermissionOutcome` the client returned to the
+    /// agent's `session/request_permission` request (set by the prompt handler
+    /// when `request_permission_on_prompt` is enabled).
+    permission_outcome: Arc<Mutex<Option<RequestPermissionOutcome>>>,
 }
 
 impl MockAgentState {
@@ -78,6 +89,8 @@ impl MockAgentState {
         Self {
             profile,
             sessions: Arc::new(Mutex::new(Vec::new())),
+            request_permission_on_prompt: false,
+            permission_outcome: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -124,6 +137,7 @@ async fn run_mock_agent(
     let fork_state = state.clone();
     let resume_state = state.clone();
     let close_state = state.clone();
+    let prompt_state = state.clone();
 
     Agent
         .builder()
@@ -207,12 +221,68 @@ async fn run_mock_agent(
             },
             agent_client_protocol::on_receive_request!(),
         )
+        // session/set_model
+        .on_receive_request(
+            move |_req: SetSessionModelRequest,
+                  responder: Responder<SetSessionModelResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(SetSessionModelResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
         // session/prompt
         .on_receive_request(
-            move |_req: PromptRequest,
+            move |req: PromptRequest,
                   responder: Responder<PromptResponse>,
-                  _cx: ConnectionTo<Client>| async move {
-                responder.respond(PromptResponse::new(StopReason::EndTurn))
+                  cx: ConnectionTo<Client>| {
+                let state = prompt_state.clone();
+                async move {
+                    if !state.request_permission_on_prompt {
+                        return responder.respond(PromptResponse::new(StopReason::EndTurn));
+                    }
+
+                    // Exercise the agent-initiated permission round-trip: send a
+                    // `session/request_permission` request *to the client* and
+                    // record the outcome it returns. This is the inbound-request
+                    // path the production client handles via a waiter + Tauri
+                    // event + async `responder.respond`.
+                    //
+                    // The nested request MUST run on a spawned task, not inline
+                    // in the handler: the event loop cannot process the client's
+                    // response while a handler is awaiting, so blocking here would
+                    // deadlock. `cx.spawn` mirrors production's `cx.spawn` +
+                    // async `responder.respond`. The prompt response is only sent
+                    // once the outcome is captured, so the client's `prompt`
+                    // await resolves *after* `permission_outcome` is populated —
+                    // fully deterministic, no sleeps.
+                    let session_id = req.session_id.clone();
+                    cx.spawn({
+                        let cx = cx.clone();
+                        let state = state.clone();
+                        async move {
+                            let perm_req = RequestPermissionRequest::new(
+                                session_id,
+                                ToolCallUpdate::new("tool-call-1", ToolCallUpdateFields::new()),
+                                vec![
+                                    PermissionOption::new(
+                                        "allow-once",
+                                        "Allow once",
+                                        PermissionOptionKind::AllowOnce,
+                                    ),
+                                    PermissionOption::new(
+                                        "reject-once",
+                                        "Reject once",
+                                        PermissionOptionKind::RejectOnce,
+                                    ),
+                                ],
+                            );
+                            let perm_resp = cx.send_request(perm_req).block_task().await?;
+                            *state.permission_outcome.lock().unwrap() = Some(perm_resp.outcome);
+                            responder.respond(PromptResponse::new(StopReason::EndTurn))
+                        }
+                    })?;
+                    Ok(())
+                }
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -304,14 +374,22 @@ where
     Client
         .builder()
         .name("mock-client")
-        // session/request_permission — mirrors NoopClient (always cancel)
+        // session/request_permission — the production client registers a waiter,
+        // emits a Tauri event, and responds asynchronously. Here the mock client
+        // selects the first offered option, exercising the inbound-request →
+        // response round-trip end-to-end.
         .on_receive_request(
-            move |_req: RequestPermissionRequest,
+            move |req: RequestPermissionRequest,
                   responder: Responder<RequestPermissionResponse>,
                   _cx: ConnectionTo<Agent>| async move {
-                responder.respond(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Cancelled,
-                ))
+                // Pick the first offered option if any; otherwise cancel.
+                let outcome = match req.options.first() {
+                    Some(opt) => RequestPermissionOutcome::Selected(
+                        SelectedPermissionOutcome::new(opt.option_id.clone()),
+                    ),
+                    None => RequestPermissionOutcome::Cancelled,
+                };
+                responder.respond(RequestPermissionResponse::new(outcome))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -357,6 +435,37 @@ where
     let (agent_res, client_res) = tokio::join!(agent_fut, client_fut);
     agent_res.expect("mock agent connection failed");
     client_res.expect("mock client scenario failed");
+}
+
+/// Like [`with_agent_and_client`] but enables the agent's
+/// `request_permission_on_prompt` behaviour and returns the
+/// `RequestPermissionOutcome` the client returned to the agent's
+/// agent-initiated `session/request_permission` request.
+async fn with_agent_and_client_capturing_permission<F>(
+    profile: CapabilityProfile,
+    scenario: F,
+) -> Option<RequestPermissionOutcome>
+where
+    F: AsyncFnOnce(ConnectionTo<Agent>) -> Result<(), agent_client_protocol::Error>,
+{
+    let mut state = MockAgentState::new(profile);
+    state.request_permission_on_prompt = true;
+    let outcome_cell = state.permission_outcome.clone();
+
+    let notifications: Notifications = Arc::new(Mutex::new(Vec::new()));
+
+    let (agent_channel, client_channel) = Channel::duplex();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+
+    let agent_fut = run_mock_agent(state, agent_channel, done_rx);
+    let client_fut = run_client(client_channel, notifications, done_tx, scenario);
+
+    let (agent_res, client_res) = tokio::join!(agent_fut, client_fut);
+    agent_res.expect("mock agent connection failed");
+    client_res.expect("mock client scenario failed");
+
+    let outcome = outcome_cell.lock().unwrap().clone();
+    outcome
 }
 
 // ---------------------------------------------------------------------------
@@ -604,4 +713,83 @@ async fn supports_images_extracted_from_initialize_response() {
         },
     )
     .await;
+}
+
+/// `session/set_model` round-trips through the new handler (#5). Covers the
+/// full client→agent operation set previously missing a handler.
+#[tokio::test]
+async fn set_session_model_round_trips() {
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+            .block_task()
+            .await?;
+
+        let new_resp = conn
+            .send_request(NewSessionRequest::new("/tmp"))
+            .block_task()
+            .await?;
+
+        // set_model: returns a SetSessionModelResponse without error.
+        let _resp = conn
+            .send_request(SetSessionModelRequest::new(
+                new_resp.session_id,
+                "mock-model-1",
+            ))
+            .block_task()
+            .await?;
+        Ok(())
+    })
+    .await;
+}
+
+/// Agent-initiated permission round-trip (#4): during `session/prompt` the
+/// mock agent sends a `session/request_permission` request *to the client*.
+/// The client's permission handler selects the first offered option; the
+/// agent captures the returned outcome. This exercises the inbound-request →
+/// response path end-to-end across the 0.12 builder/handler model — the same
+/// path the production client handles via a waiter + Tauri event + async
+/// `responder.respond`. Deterministic: relies entirely on request/response
+/// awaiting, no sleeps.
+#[tokio::test]
+async fn agent_initiated_permission_request_round_trips() {
+    let outcome = with_agent_and_client_capturing_permission(
+        CapabilityProfile::Full,
+        async |conn: ConnectionTo<Agent>| {
+            conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+                .block_task()
+                .await?;
+
+            let new_resp = conn
+                .send_request(NewSessionRequest::new("/tmp"))
+                .block_task()
+                .await?;
+
+            // Sending the prompt triggers the agent to issue a
+            // `session/request_permission` request back to this client; the
+            // client's handler responds before the prompt response returns.
+            let prompt_resp = conn
+                .send_request(PromptRequest::new(new_resp.session_id, vec![]))
+                .block_task()
+                .await?;
+            assert_eq!(prompt_resp.stop_reason, StopReason::EndTurn);
+            Ok(())
+        },
+    )
+    .await;
+
+    // The agent must have received the client's response to its permission
+    // request, and that response must select the first offered option.
+    match outcome {
+        Some(RequestPermissionOutcome::Selected(selected)) => {
+            assert_eq!(
+                selected.option_id,
+                PermissionOptionId::new("allow-once"),
+                "client must have selected the first offered option"
+            );
+        }
+        other => panic!(
+            "expected Selected(allow-once) outcome from the agent-initiated \
+             permission round-trip, got {other:?}"
+        ),
+    }
 }

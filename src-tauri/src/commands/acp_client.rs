@@ -90,9 +90,13 @@ impl ClientContext {
         let request_id = format!("perm-{}", id);
 
         let (tx, rx) = oneshot::channel();
-        if let Ok(mut waiters) = self.permission_waiters.lock() {
-            waiters.insert(request_id.clone(), tx);
-        }
+        // Recover from a poisoned lock (into_inner) rather than silently skipping
+        // the insert — if we dropped `tx` here the handler's `rx` would error and
+        // respond Cancelled for a request the user never saw.
+        self.permission_waiters
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request_id.clone(), tx);
 
         let payload = serde_json::json!({
             "instanceId": self.instance_id,

@@ -467,10 +467,13 @@ fn run_agent_thread(
             }
         }
 
-        // Spawn a task to read and log stderr from the agent process
+        // Spawn a task to read and log stderr from the agent process.
+        // Plain `spawn` (not `spawn_local`): the runtime is a bare
+        // `new_current_thread` with no `LocalSet`, and the captured values
+        // (`String` + `ChildStderr`) are `Send`.
         if let Some(stderr) = child.stderr.take() {
             let stderr_binary = agent_binary.clone();
-            tokio::task::spawn_local(async move {
+            tokio::task::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
@@ -1366,31 +1369,39 @@ pub async fn acp_agent_stop(
     state: State<'_, AcpState>,
     instance_id: String,
 ) -> Result<(), String> {
-    let mut agents = state.agents.lock().await;
-    let mut handle = agents
-        .remove(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    // Remove the handle and DROP the map lock before any `.await`, so concurrent
+    // ACP commands aren't blocked for the whole stop round-trip (which can be as
+    // long as an in-flight prompt). Holding `agents` across the send/reply/join
+    // below would serialize every other command behind this one.
+    let mut handle = {
+        let mut agents = state.agents.lock().await;
+        agents
+            .remove(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?
+    };
 
+    let thread_handle = handle.thread_handle.take();
+
+    // Best-effort graceful stop. On any failure we still join the OS thread
+    // below so we never leak a zombie (dropping `handle` releases `cmd_tx`, and
+    // `kill_on_drop` tears down the child).
     let (reply_tx, reply_rx) = oneshot::channel();
+    let result = match handle.cmd_tx.send(AgentCmd::Stop { reply: reply_tx }).await {
+        Ok(()) => reply_rx
+            .await
+            .map_err(|_| "Agent thread did not respond to stop".to_string())
+            .and_then(|r| r),
+        Err(_) => Err("Agent thread is no longer running".to_string()),
+    };
 
-    // Send stop command to the agent thread
-    handle
-        .cmd_tx
-        .send(AgentCmd::Stop { reply: reply_tx })
-        .await
-        .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    // Wait for stop confirmation
-    reply_rx
-        .await
-        .map_err(|_| "Agent thread did not respond to stop".to_string())??;
-
-    // Wait for the OS thread to finish
-    if let Some(th) = handle.thread_handle.take() {
-        let _ = th.join();
+    // Drop the handle (releases cmd_tx → the command loop ends), then join the
+    // OS thread on a blocking-safe task so we don't park the async executor.
+    drop(handle);
+    if let Some(th) = thread_handle {
+        let _ = tokio::task::spawn_blocking(move || th.join()).await;
     }
 
-    Ok(())
+    result
 }
 
 /// Kill a hung agent, respawn with the same config, re-authenticate, and load the session.
