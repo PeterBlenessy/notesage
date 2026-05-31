@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
@@ -56,63 +56,6 @@ pub struct VersionsFile {
     pub agents: std::collections::HashMap<String, AgentVersionEntry>,
 }
 
-// GitHub Release API types
-#[derive(Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    assets: Vec<GitHubAsset>,
-}
-
-#[derive(Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
-}
-
-// Agent registry — maps agent_id to GitHub repo + naming strategy
-struct AgentConfig {
-    repo: &'static str,
-    naming: AssetNaming,
-    archive_ext_mac: &'static str,
-    archive_ext_linux: &'static str,
-}
-
-enum AssetNaming {
-    /// `{name}-{os}-{arch}.{ext}` (copilot)
-    Simple { name: &'static str },
-    /// `{name}-{version}-{rust-triple}.{ext}` (codex-acp)
-    RustTriple { name: &'static str },
-    /// `{name}-{os}-{arch}-{version}.{ext}` (copilot-language-server)
-    WithVersion { name: &'static str },
-}
-
-fn agent_config(agent_id: &str) -> Option<AgentConfig> {
-    match agent_id {
-        "codex-acp" => Some(AgentConfig {
-            repo: "zed-industries/codex-acp",
-            naming: AssetNaming::RustTriple { name: "codex-acp" },
-            archive_ext_mac: "tar.gz",
-            archive_ext_linux: "tar.gz",
-        }),
-        "copilot" => Some(AgentConfig {
-            repo: "github/copilot-cli",
-            naming: AssetNaming::Simple { name: "copilot" },
-            archive_ext_mac: "tar.gz",
-            archive_ext_linux: "tar.gz",
-        }),
-        "copilot-language-server" => Some(AgentConfig {
-            repo: "github/copilot-language-server-release",
-            naming: AssetNaming::WithVersion {
-                name: "copilot-language-server",
-            },
-            archive_ext_mac: "zip",
-            archive_ext_linux: "zip",
-        }),
-        _ => None,
-    }
-}
-
 // npm-distributed agents. These publish to the npm registry rather than
 // attaching prebuilt platform binaries to GitHub releases, so they install via
 // `npm install` into a managed lib dir + a symlink in the bin dir (mirrors the
@@ -139,6 +82,21 @@ fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
             package: "@google/gemini-cli",
             bin_name: "gemini",
             repo: "google-gemini/gemini-cli",
+        }),
+        "codex-acp" => Some(NpmAgentConfig {
+            package: "@agentclientprotocol/codex-acp",
+            bin_name: "codex-acp",
+            repo: "agentclientprotocol/codex-acp",
+        }),
+        "copilot" => Some(NpmAgentConfig {
+            package: "@github/copilot",
+            bin_name: "copilot",
+            repo: "github/copilot-cli",
+        }),
+        "copilot-language-server" => Some(NpmAgentConfig {
+            package: "@github/copilot-language-server",
+            bin_name: "copilot-language-server",
+            repo: "github/copilot-language-server-release",
         }),
         _ => None,
     }
@@ -246,19 +204,6 @@ fn detect_platform() -> Result<(&'static str, &'static str), String> {
     Ok((os, arch))
 }
 
-/// Map (os, arch) to Rust target triple for codex-acp naming
-fn rust_triple(os: &str, arch: &str) -> &'static str {
-    match (os, arch) {
-        ("darwin", "arm64") => "aarch64-apple-darwin",
-        ("darwin", "x64") => "x86_64-apple-darwin",
-        ("linux", "arm64") => "aarch64-unknown-linux-gnu",
-        ("linux", "x64") => "x86_64-unknown-linux-gnu",
-        ("windows", "arm64") => "aarch64-pc-windows-msvc",
-        ("windows", "x64") => "x86_64-pc-windows-msvc",
-        _ => "unknown",
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Binary resolution
 // ---------------------------------------------------------------------------
@@ -341,318 +286,6 @@ fn resolve_system_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// GitHub Release download
-// ---------------------------------------------------------------------------
-
-fn build_asset_name(config: &AgentConfig, version: &str, os: &str, arch: &str) -> String {
-    let ext = if os == "darwin" || os == "linux" {
-        if os == "linux" {
-            config.archive_ext_linux
-        } else {
-            config.archive_ext_mac
-        }
-    } else {
-        "zip"
-    };
-
-    match &config.naming {
-        AssetNaming::Simple { name } => {
-            format!("{}-{}-{}.{}", name, os, arch, ext)
-        }
-        AssetNaming::RustTriple { name } => {
-            let triple = rust_triple(os, arch);
-            format!("{}-{}-{}.{}", name, version, triple, ext)
-        }
-        AssetNaming::WithVersion { name } => {
-            format!("{}-{}-{}-{}.{}", name, os, arch, version, ext)
-        }
-    }
-}
-
-async fn fetch_latest_release(repo: &str) -> Result<GitHubRelease, String> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "notesage")
-        .header("Accept", "application/vnd.github.v3+json")
-        .send()
-        .await
-        .map_err(|e| format!("GitHub API request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned {}", resp.status()));
-    }
-
-    resp.json::<GitHubRelease>()
-        .await
-        .map_err(|e| format!("Failed to parse GitHub release: {}", e))
-}
-
-async fn download_and_extract(
-    app: &AppHandle,
-    agent_id: &str,
-    asset: &GitHubAsset,
-    archive_ext: &str,
-) -> Result<(), String> {
-    use futures::StreamExt;
-
-    // Download with progress
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&asset.browser_download_url)
-        .header("User-Agent", "notesage")
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Download returned {}", resp.status()));
-    }
-
-    let total = resp.content_length().unwrap_or(asset.size);
-    let mut stream = resp.bytes_stream();
-    let mut data = Vec::with_capacity(total as usize);
-    let mut downloaded: u64 = 0;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download stream error: {}", e))?;
-        downloaded += chunk.len() as u64;
-        data.extend_from_slice(&chunk);
-
-        let _ = app.emit(
-            "agent-install-progress",
-            AgentInstallProgress {
-                agent_id: agent_id.to_string(),
-                phase: "downloading".to_string(),
-                progress: downloaded,
-                total,
-                message: format!(
-                    "Downloading... {:.1} MB / {:.1} MB",
-                    downloaded as f64 / 1_048_576.0,
-                    total as f64 / 1_048_576.0
-                ),
-            },
-        );
-    }
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "extracting".to_string(),
-            progress: 0,
-            total: 1,
-            message: "Extracting...".to_string(),
-        },
-    );
-
-    // Extract
-    let bin_dir = agents_bin_dir();
-
-    if archive_ext == "zip" {
-        extract_zip(&data, agent_id, &bin_dir)?;
-    } else {
-        // tar.gz
-        extract_tar_gz(&data, agent_id, &bin_dir)?;
-    }
-
-    // Remove quarantine on macOS
-    #[cfg(target_os = "macos")]
-    {
-        let bin_path = bin_dir.join(agent_id);
-        let _ = Command::new("xattr")
-            .args(["-d", "com.apple.quarantine"])
-            .arg(&bin_path)
-            .output();
-    }
-
-    // Set executable permissions on unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let bin_path = bin_dir.join(agent_id);
-        if bin_path.exists() {
-            let perms = std::fs::Permissions::from_mode(0o755);
-            std::fs::set_permissions(&bin_path, perms)
-                .map_err(|e| format!("chmod failed: {}", e))?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Mark a file as executable (owner + group + other).  No-op on non-Unix targets.
-#[cfg(unix)]
-fn set_executable_bit(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o755);
-    std::fs::set_permissions(path, perms)
-        .map_err(|e| format!("chmod +x {}: {}", path.display(), e))
-}
-
-fn extract_zip(data: &[u8], agent_id: &str, bin_dir: &Path) -> Result<(), String> {
-    let cursor = std::io::Cursor::new(data);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|e| format!("Failed to open zip: {}", e))?;
-
-    // Look for the binary file in the archive
-    let mut found = false;
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| format!("Zip entry error: {}", e))?;
-
-        let name = file.name().to_string();
-
-        // Find the actual binary — it could be at the root or in a subdirectory
-        let is_target = name == agent_id
-            || name.ends_with(&format!("/{}", agent_id))
-            || name.ends_with(&format!("\\{}", agent_id));
-
-        if is_target && !file.is_dir() {
-            let dest = bin_dir.join(agent_id);
-            let mut outfile = std::fs::File::create(&dest)
-                .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
-            std::io::copy(&mut file, &mut outfile)
-                .map_err(|e| format!("Extract failed: {}", e))?;
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        // If exact binary name not found, extract the first executable-looking file
-        // (some archives have differently named binaries)
-        for i in 0..archive.len() {
-            let mut file = archive
-                .by_index(i)
-                .map_err(|e| format!("Zip entry error: {}", e))?;
-
-            if file.is_dir() {
-                continue;
-            }
-
-            let name = file.name().to_string();
-            // Skip directories and non-binary files
-            if name.ends_with('/') || name.contains('.') {
-                continue;
-            }
-
-            // Extract as the target binary name
-            let dest = bin_dir.join(agent_id);
-            let mut outfile = std::fs::File::create(&dest)
-                .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
-            std::io::copy(&mut file, &mut outfile)
-                .map_err(|e| format!("Extract failed: {}", e))?;
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        return Err(format!(
-            "Binary '{}' not found in archive. Contents: {:?}",
-            agent_id,
-            (0..archive.len())
-                .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
-                .collect::<Vec<_>>()
-        ));
-    }
-
-    #[cfg(unix)]
-    set_executable_bit(&bin_dir.join(agent_id))?;
-
-    Ok(())
-}
-
-fn extract_tar_gz(data: &[u8], agent_id: &str, bin_dir: &Path) -> Result<(), String> {
-    use flate2::read::GzDecoder;
-    use tar::Archive;
-
-    let gz = GzDecoder::new(std::io::Cursor::new(data));
-    let mut archive = Archive::new(gz);
-
-    let mut found = false;
-    for entry in archive
-        .entries()
-        .map_err(|e| format!("Failed to read tar: {}", e))?
-    {
-        let mut entry = entry.map_err(|e| format!("Tar entry error: {}", e))?;
-        let path = entry
-            .path()
-            .map_err(|e| format!("Tar path error: {}", e))?
-            .to_path_buf();
-
-        let file_name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        if file_name == agent_id && !entry.header().entry_type().is_dir() {
-            let dest = bin_dir.join(agent_id);
-            let mut outfile = std::fs::File::create(&dest)
-                .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
-            std::io::copy(&mut entry, &mut outfile)
-                .map_err(|e| format!("Extract failed: {}", e))?;
-            found = true;
-            break;
-        }
-    }
-
-    if !found {
-        // Re-read archive to list contents for error
-        let gz2 = GzDecoder::new(std::io::Cursor::new(data));
-        let mut archive2 = Archive::new(gz2);
-        let names: Vec<String> = archive2
-            .entries()
-            .ok()
-            .map(|entries| {
-                entries
-                    .filter_map(|e| {
-                        e.ok()
-                            .and_then(|e| e.path().ok().map(|p| p.to_string_lossy().to_string()))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Try extracting the first non-directory file
-        let gz3 = GzDecoder::new(std::io::Cursor::new(data));
-        let mut archive3 = Archive::new(gz3);
-        for entry in archive3.entries().map_err(|e| e.to_string())? {
-            let mut entry = entry.map_err(|e| e.to_string())?;
-            if entry.header().entry_type().is_dir() {
-                continue;
-            }
-            let path = entry.path().map_err(|e| e.to_string())?.to_path_buf();
-            let name = path.to_string_lossy().to_string();
-            if name.contains('.') {
-                continue; // Skip files with extensions
-            }
-            let dest = bin_dir.join(agent_id);
-            let mut outfile =
-                std::fs::File::create(&dest).map_err(|e| format!("Create: {}", e))?;
-            std::io::copy(&mut entry, &mut outfile).map_err(|e| format!("Extract: {}", e))?;
-            found = true;
-            break;
-        }
-
-        if !found {
-            return Err(format!(
-                "Binary '{}' not found in archive. Contents: {:?}",
-                agent_id, names
-            ));
-        }
-    }
-
-    #[cfg(unix)]
-    set_executable_bit(&bin_dir.join(agent_id))?;
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 
@@ -724,96 +357,20 @@ pub async fn agent_install(
 }
 
 async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<String>, String> {
-    // npm-distributed agents (Claude Code ACP, Gemini CLI) install via npm —
-    // they don't publish prebuilt binaries on GitHub releases.
-    if let Some(npm_config) = npm_agent_config(agent_id) {
-        return do_npm_install(app, agent_id, &npm_config).await;
-    }
-
-    let config = agent_config(agent_id)
-        .ok_or_else(|| format!("Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini", agent_id))?;
-
-    ensure_agent_dirs()?;
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "downloading".to_string(),
-            progress: 0,
-            total: 0,
-            message: "Fetching latest release...".to_string(),
-        },
-    );
-
-    // Fetch latest release
-    let release = fetch_latest_release(config.repo).await?;
-    let version = release.tag_name.trim_start_matches('v').to_string();
-
-    // Determine asset name
-    let (os, arch) = detect_platform()?;
-    let asset_name = build_asset_name(&config, &version, os, arch);
-
-    // Find matching asset
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == asset_name)
-        .ok_or_else(|| {
-            let available: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
-            format!(
-                "Asset '{}' not found in release. Available: {:?}",
-                asset_name, available
-            )
-        })?;
-
-    let archive_ext = if os == "linux" {
-        config.archive_ext_linux
-    } else {
-        config.archive_ext_mac
-    };
-
-    // Download and extract
-    download_and_extract(app, agent_id, asset, archive_ext).await?;
-
-    // Verify binary exists
-    let bin_path = agents_bin_dir().join(agent_id);
-    if !bin_path.exists() {
-        return Err(format!(
-            "Binary not found at {} after extraction",
-            bin_path.display()
-        ));
-    }
-
-    // Update versions.json
-    let mut versions = read_versions();
-    versions.agents.insert(
-        agent_id.to_string(),
-        AgentVersionEntry {
-            version: version.clone(),
-            installed_at: chrono::Utc::now().to_rfc3339(),
-            source: "github-release".to_string(),
-            repo: Some(config.repo.to_string()),
-        },
-    );
-    write_versions(&versions)?;
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "done".to_string(),
-            progress: 1,
-            total: 1,
-            message: format!("Installed {} v{}", agent_id, version),
-        },
-    );
-
-    Ok(Some(version))
+    // Every supported agent now installs via npm — Claude Code, Codex, Copilot
+    // CLI/LSP, and Gemini all publish to the npm registry rather than attaching
+    // prebuilt platform binaries to GitHub releases.
+    let npm_config = npm_agent_config(agent_id).ok_or_else(|| {
+        format!(
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini",
+            agent_id
+        )
+    })?;
+    do_npm_install(app, agent_id, &npm_config).await
 }
 
 // ---------------------------------------------------------------------------
-// Node.js runtime + Gemini CLI install
+// Node.js runtime + npm-based agent install
 // ---------------------------------------------------------------------------
 
 fn node_runtime_dir() -> PathBuf {
@@ -1011,9 +568,36 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Query the npm registry for a package's latest published version.
+/// Used by update checking now that every agent installs from npm.
+async fn fetch_npm_latest_version(package: &str) -> Result<String, String> {
+    let url = format!("https://registry.npmjs.org/{}/latest", package);
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "notesage")
+        .send()
+        .await
+        .map_err(|e| format!("npm registry request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("npm registry returned {}", resp.status()));
+    }
+
+    let meta: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse npm metadata: {}", e))?;
+
+    meta["version"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "npm metadata missing version field".to_string())
+}
+
 /// Install an npm-distributed agent into the managed lib dir and symlink its
-/// executable into the bin dir. Shared by the Claude Code ACP adapter and the
-/// Gemini CLI — both ship via npm rather than prebuilt GitHub-release binaries.
+/// executable into the bin dir. Every supported agent (Claude Code, Codex,
+/// Copilot CLI/LSP, Gemini) ships via npm rather than prebuilt GitHub binaries.
 async fn do_npm_install(
     app: &AppHandle,
     agent_id: &str,
@@ -1145,114 +729,48 @@ pub async fn agent_install_node_runtime(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
-    fn make_zip_archive(file_name: &str, content: &[u8]) -> Vec<u8> {
-        use std::io::Write;
-        use zip::write::SimpleFileOptions;
-
-        let buf = Vec::new();
-        let mut cursor = std::io::Cursor::new(buf);
-        let mut zip = zip::ZipWriter::new(&mut cursor);
-        // Intentionally use default options (no Unix execute bit) to simulate a
-        // downloaded archive that lacks the execute attribute.
-        let options = SimpleFileOptions::default();
-        zip.start_file(file_name, options).unwrap();
-        zip.write_all(content).unwrap();
-        zip.finish().unwrap();
-        cursor.into_inner()
-    }
-
-    #[cfg(unix)]
-    fn make_tar_gz_archive(file_name: &str, content: &[u8]) -> Vec<u8> {
-        use flate2::{write::GzEncoder, Compression};
-
-        let mut buf = Vec::new();
-        let enc = GzEncoder::new(&mut buf, Compression::default());
-        let mut builder = tar::Builder::new(enc);
-
-        let mut header = tar::Header::new_gnu();
-        header.set_size(content.len() as u64);
-        // Explicitly set non-executable mode to simulate a "bare" archive entry.
-        header.set_mode(0o644);
-        header.set_cksum();
-        builder.append_data(&mut header, file_name, content).unwrap();
-        builder.into_inner().unwrap().finish().unwrap();
-        buf
-    }
+    // Every supported agent installs via npm — these lock the package name and
+    // the executable bin name for each so a registry edit can't silently break
+    // installation. claude-agent-acp + codex-acp were both moved off broken /
+    // binary GitHub-release paths; copilot CLI + LSP followed.
 
     #[test]
-    fn claude_agent_acp_installs_via_npm_not_github_binary() {
-        // Regression lock for the Claude Code auto-install failure: the old
-        // GitHub repo ships no platform binaries, so claude-agent-acp must route
-        // through the npm install path, not the GitHub-release downloader.
-        assert!(
-            agent_config("claude-agent-acp").is_none(),
-            "claude-agent-acp must NOT be a GitHub-binary agent"
-        );
+    fn claude_agent_acp_installs_via_npm() {
         let npm = npm_agent_config("claude-agent-acp")
-            .expect("claude-agent-acp must be an npm-distributed agent");
+            .expect("claude-agent-acp must be npm-distributed");
         assert_eq!(npm.package, "@agentclientprotocol/claude-agent-acp");
         assert_eq!(npm.bin_name, "claude-agent-acp");
     }
 
     #[test]
-    fn gemini_remains_npm_distributed() {
-        assert!(agent_config("gemini").is_none());
+    fn codex_acp_installs_via_npm() {
+        let npm = npm_agent_config("codex-acp").expect("codex-acp must be npm-distributed");
+        assert_eq!(npm.package, "@agentclientprotocol/codex-acp");
+        assert_eq!(npm.bin_name, "codex-acp");
+    }
+
+    #[test]
+    fn copilot_agents_install_via_npm() {
+        let cli = npm_agent_config("copilot").expect("copilot must be npm-distributed");
+        assert_eq!(cli.package, "@github/copilot");
+        assert_eq!(cli.bin_name, "copilot");
+
+        let lsp = npm_agent_config("copilot-language-server")
+            .expect("copilot-language-server must be npm-distributed");
+        assert_eq!(lsp.package, "@github/copilot-language-server");
+        assert_eq!(lsp.bin_name, "copilot-language-server");
+    }
+
+    #[test]
+    fn gemini_installs_via_npm() {
         let npm = npm_agent_config("gemini").expect("gemini must be npm-distributed");
         assert_eq!(npm.package, "@google/gemini-cli");
         assert_eq!(npm.bin_name, "gemini");
     }
 
     #[test]
-    fn github_binary_agents_are_not_npm() {
-        for id in ["codex-acp", "copilot", "copilot-language-server"] {
-            assert!(agent_config(id).is_some(), "{id} must be a GitHub-binary agent");
-            assert!(npm_agent_config(id).is_none(), "{id} must not be an npm agent");
-        }
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn extract_zip_produces_executable_binary() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let bin_dir = dir.path().to_path_buf();
-        let data = make_zip_archive("fake-agent", b"MZ fake binary");
-
-        extract_zip(&data, "fake-agent", &bin_dir).unwrap();
-
-        let bin_path = bin_dir.join("fake-agent");
-        assert!(bin_path.exists(), "binary must exist after zip extraction");
-
-        let mode = std::fs::metadata(&bin_path).unwrap().permissions().mode();
-        assert!(
-            mode & 0o111 != 0,
-            "binary extracted from zip must have execute bit set (got mode {:#o})",
-            mode
-        );
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn extract_tar_gz_produces_executable_binary() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let bin_dir = dir.path().to_path_buf();
-        let data = make_tar_gz_archive("fake-agent", b"ELF fake binary");
-
-        extract_tar_gz(&data, "fake-agent", &bin_dir).unwrap();
-
-        let bin_path = bin_dir.join("fake-agent");
-        assert!(bin_path.exists(), "binary must exist after tar.gz extraction");
-
-        let mode = std::fs::metadata(&bin_path).unwrap().permissions().mode();
-        assert!(
-            mode & 0o111 != 0,
-            "binary extracted from tar.gz must have execute bit set (got mode {:#o})",
-            mode
-        );
+    fn unknown_agent_has_no_npm_config() {
+        assert!(npm_agent_config("not-a-real-agent").is_none());
     }
 }
 
@@ -1290,14 +808,13 @@ pub async fn agent_check_updates(app: AppHandle, force: Option<bool>) -> Result<
     let mut updates = Vec::new();
 
     for (agent_id, entry) in &versions.agents {
-        let config = match agent_config(agent_id) {
+        let config = match npm_agent_config(agent_id) {
             Some(c) => c,
             None => continue,
         };
 
-        match fetch_latest_release(config.repo).await {
-            Ok(release) => {
-                let latest = release.tag_name.trim_start_matches('v').to_string();
+        match fetch_npm_latest_version(config.package).await {
+            Ok(latest) => {
                 if latest != entry.version {
                     updates.push(AgentUpdateInfo {
                         agent_id: agent_id.clone(),
