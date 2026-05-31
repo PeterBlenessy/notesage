@@ -239,6 +239,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-cli',
       manualCommand: 'npm install -g @github/copilot',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -252,6 +253,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-language-server-release',
       manualCommand: 'npm install -g @github/copilot-language-server',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
