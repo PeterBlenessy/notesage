@@ -217,6 +217,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'agentclientprotocol/codex-acp',
       manualCommand: 'npm install -g @agentclientprotocol/codex-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
     },
   },
