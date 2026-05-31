@@ -1,16 +1,30 @@
-//! Integration tests for the mock ACP agent.
+//! Integration tests for a mock ACP agent on agent-client-protocol 0.12.1.
 //!
-//! These tests use the ACP crate's own `ClientSideConnection` and a
-//! `MockAgent` (implementing the `Agent` trait) connected via in-memory
-//! `tokio::io::duplex` channels.  No external binary spawn, no `AppHandle`,
-//! and — critically — ACP crate types are used directly throughout.  An ACP
-//! crate version bump that renames or reshapes `InitializeRequest`,
-//! `NewSessionRequest`, `PromptRequest`, etc. will cause compile errors here,
-//! giving immediate protocol-regression feedback.
+//! These tests stand up a **mock agent** (built with `Agent.builder()` and a
+//! request handler per client→agent method) and a **mock client** (built with
+//! `Client.builder()`), wire them together over the crate's own in-memory
+//! [`Channel::duplex`] transport, and drive real ACP round-trips between them.
 //!
-//! Because all `unstable_*` features are unconditionally enabled for this
-//! crate in `Cargo.toml`, there is no feature-gating inside these tests:
-//! all code paths are always compiled and exercised.
+//! Because the ACP crate types (`InitializeRequest`, `NewSessionRequest`,
+//! `PromptRequest`, the capability structs, etc.) are used directly throughout,
+//! an ACP crate version bump that renames or reshapes any of them causes a
+//! compile error here — immediate protocol-regression feedback.
+//!
+//! ## How the harness works
+//!
+//! - `Channel::duplex()` returns a paired pair of in-memory endpoints. One half
+//!   is handed to the agent's `connect_with`, the other to the client's. Both
+//!   `connect_with` futures run concurrently via `tokio::join!`; the messages
+//!   each side emits arrive on the other side's channel.
+//! - The client's driving closure (`main_fn`) performs the requests and the
+//!   assertions, then signals `done` so the agent's driving closure returns and
+//!   its connection shuts down cleanly.
+//! - The mock agent's behaviour (which capabilities it advertises, what session
+//!   IDs it mints) is configured via [`CapabilityProfile`] and shared
+//!   `Arc<Mutex<…>>` state that the handlers read/write.
+//!
+//! All `unstable_*` features are unconditionally enabled for this crate in
+//! `Cargo.toml`, so there is no feature-gating inside these tests.
 //!
 //! ## Running
 //!
@@ -18,31 +32,30 @@
 //! cd src-tauri
 //! cargo test --test mock_acp_agent
 //! ```
-//!
-//! These tests do **not** require `--include-ignored`; they run as part of
-//! the standard `cargo test` suite.
 
 use std::sync::{Arc, Mutex};
 
-use agent_client_protocol::{
-    Agent, AgentCapabilities, AgentSideConnection, AuthenticateRequest, AuthenticateResponse,
-    CancelNotification, Client, ClientSideConnection, CloseSessionRequest, CloseSessionResponse,
-    ForkSessionRequest, ForkSessionResponse, Implementation, InitializeRequest, InitializeResponse,
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    NewSessionRequest, NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse,
-    ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+use agent_client_protocol::role::acp::{Agent, Client};
+use agent_client_protocol::schema::{
+    AgentCapabilities, AuthenticateRequest, AuthenticateResponse, CancelNotification,
+    CloseSessionRequest, CloseSessionResponse, ForkSessionRequest, ForkSessionResponse,
+    Implementation, InitializeRequest, InitializeResponse, ListSessionsRequest,
+    ListSessionsResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
+    NewSessionResponse, PromptCapabilities, PromptRequest, PromptResponse, ProtocolVersion,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities,
-    SessionForkCapabilities, SessionId, SessionInfo, SessionNotification,
-    SessionResumeCapabilities, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse, StopReason,
+    SessionForkCapabilities, SessionId, SessionInfo, SessionNotification, SessionResumeCapabilities,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason,
 };
+use agent_client_protocol::{Channel, ConnectionTo, Responder};
 
 // ---------------------------------------------------------------------------
-// MockAgent — configurable ACP agent for in-memory testing
+// MockAgent — configurable ACP agent state for in-memory testing
 // ---------------------------------------------------------------------------
 
 /// Capability profile for the mock agent.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum CapabilityProfile {
     /// Full capabilities: fork, resume, close, images.
     Full,
@@ -50,32 +63,27 @@ enum CapabilityProfile {
     Minimal,
 }
 
-/// Recorded prompt requests for post-test inspection.
-type PromptRecord = (SessionId, Vec<agent_client_protocol::ContentBlock>);
-
+/// Mutable mock-agent state shared across all the request handlers.
+///
+/// `Arc<Mutex<…>>` (rather than the pre-0.12 `&self` trait methods) because the
+/// 0.12 builder handlers are `Send` closures that may run on any task.
 #[derive(Clone)]
-struct MockAgent {
+struct MockAgentState {
     profile: CapabilityProfile,
     sessions: Arc<Mutex<Vec<SessionId>>>,
-    prompts: Arc<Mutex<Vec<PromptRecord>>>,
 }
 
-impl MockAgent {
+impl MockAgentState {
     fn new(profile: CapabilityProfile) -> Self {
         Self {
             profile,
             sessions: Arc::new(Mutex::new(Vec::new())),
-            prompts: Arc::new(Mutex::new(Vec::new())),
         }
     }
-}
 
-#[async_trait::async_trait(?Send)]
-impl Agent for MockAgent {
-    async fn initialize(
-        &self,
-        req: InitializeRequest,
-    ) -> agent_client_protocol::Result<InitializeResponse> {
+    /// Build the `InitializeResponse` for this profile. Mirrors the production
+    /// agent's capability advertisement (read by `acp.rs`).
+    fn initialize_response(&self, protocol_version: ProtocolVersion) -> InitializeResponse {
         let supports_images = matches!(self.profile, CapabilityProfile::Full);
         let prompt_caps = PromptCapabilities::new().image(supports_images);
 
@@ -91,195 +99,264 @@ impl Agent for MockAgent {
             .prompt_capabilities(prompt_caps)
             .session_capabilities(session_caps);
 
-        Ok(InitializeResponse::new(req.protocol_version)
+        InitializeResponse::new(protocol_version)
             .agent_capabilities(caps)
-            .agent_info(Implementation::new("mock-agent", "0.0.0")))
-    }
-
-    async fn authenticate(
-        &self,
-        _req: AuthenticateRequest,
-    ) -> agent_client_protocol::Result<AuthenticateResponse> {
-        Ok(AuthenticateResponse::new())
-    }
-
-    async fn new_session(
-        &self,
-        _req: NewSessionRequest,
-    ) -> agent_client_protocol::Result<NewSessionResponse> {
-        let id = SessionId::new("mock-session-1");
-        self.sessions.lock().unwrap().push(id.clone());
-        Ok(NewSessionResponse::new(id))
-    }
-
-    async fn load_session(
-        &self,
-        _req: LoadSessionRequest,
-    ) -> agent_client_protocol::Result<LoadSessionResponse> {
-        Ok(LoadSessionResponse::new())
-    }
-
-    async fn list_sessions(
-        &self,
-        _req: ListSessionsRequest,
-    ) -> agent_client_protocol::Result<ListSessionsResponse> {
-        let sessions: Vec<SessionInfo> = self
-            .sessions
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|id| SessionInfo::new(id.clone(), "/tmp"))
-            .collect();
-        Ok(ListSessionsResponse::new(sessions))
-    }
-
-    async fn set_session_mode(
-        &self,
-        _req: SetSessionModeRequest,
-    ) -> agent_client_protocol::Result<SetSessionModeResponse> {
-        Ok(SetSessionModeResponse::new())
-    }
-
-    async fn set_session_config_option(
-        &self,
-        _req: SetSessionConfigOptionRequest,
-    ) -> agent_client_protocol::Result<SetSessionConfigOptionResponse> {
-        Ok(SetSessionConfigOptionResponse::new(vec![]))
-    }
-
-    async fn prompt(
-        &self,
-        req: PromptRequest,
-    ) -> agent_client_protocol::Result<PromptResponse> {
-        self.prompts
-            .lock()
-            .unwrap()
-            .push((req.session_id, req.prompt));
-        Ok(PromptResponse::new(StopReason::EndTurn))
-    }
-
-    async fn cancel(
-        &self,
-        _req: CancelNotification,
-    ) -> agent_client_protocol::Result<()> {
-        Ok(())
-    }
-
-    // All unstable_* features are enabled in Cargo.toml — no cfg guards needed.
-
-    async fn fork_session(
-        &self,
-        req: ForkSessionRequest,
-    ) -> agent_client_protocol::Result<ForkSessionResponse> {
-        let new_id = SessionId::new(format!("fork-of-{}", req.session_id.0.as_ref()));
-        self.sessions.lock().unwrap().push(new_id.clone());
-        Ok(ForkSessionResponse::new(new_id))
-    }
-
-    async fn resume_session(
-        &self,
-        req: ResumeSessionRequest,
-    ) -> agent_client_protocol::Result<ResumeSessionResponse> {
-        if !self.sessions.lock().unwrap().contains(&req.session_id) {
-            return Err(agent_client_protocol::Error::invalid_params());
-        }
-        Ok(ResumeSessionResponse::new())
-    }
-
-    async fn close_session(
-        &self,
-        req: CloseSessionRequest,
-    ) -> agent_client_protocol::Result<CloseSessionResponse> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .retain(|id| id != &req.session_id);
-        Ok(CloseSessionResponse::new())
+            .agent_info(Implementation::new("mock-agent", "0.0.0"))
     }
 }
 
-// ---------------------------------------------------------------------------
-// NoopClient — minimal Client impl for the agent side
-// ---------------------------------------------------------------------------
+/// Build a mock-agent connection builder with handlers registered for every
+/// request type the client may send (plus the cancel notification), then run
+/// `driver` as the agent's `main_fn`.
+///
+/// `driver` receives the agent-side [`ConnectionTo<Client>`], which it can use
+/// to push `session/update` notifications. Here the driver simply awaits the
+/// `done` signal so the connection stays alive for the client's whole run.
+async fn run_mock_agent(
+    state: MockAgentState,
+    transport: Channel,
+    done_rx: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), agent_client_protocol::Error> {
+    // Each handler clones the bits of state it needs.
+    let init_state = state.clone();
+    let new_state = state.clone();
+    let list_state = state.clone();
+    let fork_state = state.clone();
+    let resume_state = state.clone();
+    let close_state = state.clone();
 
-#[derive(Clone)]
-struct NoopClient {
-    notifications: Arc<Mutex<Vec<SessionNotification>>>,
+    Agent
+        .builder()
+        .name("mock-agent")
+        // session/initialize
+        .on_receive_request(
+            move |req: InitializeRequest,
+                  responder: Responder<InitializeResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = init_state.clone();
+                async move { responder.respond(state.initialize_response(req.protocol_version)) }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/authenticate
+        .on_receive_request(
+            move |_req: AuthenticateRequest,
+                  responder: Responder<AuthenticateResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(AuthenticateResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/new
+        .on_receive_request(
+            move |_req: NewSessionRequest,
+                  responder: Responder<NewSessionResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = new_state.clone();
+                async move {
+                    let id = SessionId::new("mock-session-1");
+                    state.sessions.lock().unwrap().push(id.clone());
+                    responder.respond(NewSessionResponse::new(id))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/load
+        .on_receive_request(
+            move |_req: LoadSessionRequest,
+                  responder: Responder<LoadSessionResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(LoadSessionResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/list
+        .on_receive_request(
+            move |_req: ListSessionsRequest,
+                  responder: Responder<ListSessionsResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = list_state.clone();
+                async move {
+                    let sessions: Vec<SessionInfo> = state
+                        .sessions
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|id| SessionInfo::new(id.clone(), "/tmp"))
+                        .collect();
+                    responder.respond(ListSessionsResponse::new(sessions))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/set_mode
+        .on_receive_request(
+            move |_req: SetSessionModeRequest,
+                  responder: Responder<SetSessionModeResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(SetSessionModeResponse::new())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/set_config_option
+        .on_receive_request(
+            move |_req: SetSessionConfigOptionRequest,
+                  responder: Responder<SetSessionConfigOptionResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(SetSessionConfigOptionResponse::new(vec![]))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/prompt
+        .on_receive_request(
+            move |_req: PromptRequest,
+                  responder: Responder<PromptResponse>,
+                  _cx: ConnectionTo<Client>| async move {
+                responder.respond(PromptResponse::new(StopReason::EndTurn))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/fork
+        .on_receive_request(
+            move |req: ForkSessionRequest,
+                  responder: Responder<ForkSessionResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = fork_state.clone();
+                async move {
+                    let new_id =
+                        SessionId::new(format!("fork-of-{}", req.session_id.0.as_ref()));
+                    state.sessions.lock().unwrap().push(new_id.clone());
+                    responder.respond(ForkSessionResponse::new(new_id))
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/resume
+        .on_receive_request(
+            move |req: ResumeSessionRequest,
+                  responder: Responder<ResumeSessionResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = resume_state.clone();
+                async move {
+                    let known = state.sessions.lock().unwrap().contains(&req.session_id);
+                    if known {
+                        responder.respond(ResumeSessionResponse::new())
+                    } else {
+                        responder
+                            .respond_with_error(agent_client_protocol::Error::invalid_params())
+                    }
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/close
+        .on_receive_request(
+            move |req: CloseSessionRequest,
+                  responder: Responder<CloseSessionResponse>,
+                  _cx: ConnectionTo<Client>| {
+                let state = close_state.clone();
+                async move {
+                    state
+                        .sessions
+                        .lock()
+                        .unwrap()
+                        .retain(|id| id != &req.session_id);
+                    responder.respond(CloseSessionResponse::new())
+                }
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/cancel (notification — fire-and-forget)
+        .on_receive_notification(
+            move |_n: CancelNotification, _cx: ConnectionTo<Client>| async move { Ok(()) },
+            agent_client_protocol::on_receive_notification!(),
+        )
+        .connect_with(transport, async move |_conn: ConnectionTo<Client>| {
+            // Keep the agent connection alive until the client is done.
+            let _ = done_rx.await;
+            Ok(())
+        })
+        .await
 }
 
-impl NoopClient {
-    fn new() -> Self {
-        Self {
-            notifications: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl Client for NoopClient {
-    async fn request_permission(
-        &self,
-        _req: RequestPermissionRequest,
-    ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-        Ok(RequestPermissionResponse::new(
-            RequestPermissionOutcome::Cancelled,
-        ))
-    }
-
-    async fn session_notification(
-        &self,
-        args: SessionNotification,
-    ) -> agent_client_protocol::Result<()> {
-        self.notifications.lock().unwrap().push(args);
-        Ok(())
-    }
-}
-
 // ---------------------------------------------------------------------------
-// In-memory connection factory
+// NoopClient handlers — minimal Client-side responders
 // ---------------------------------------------------------------------------
 
-/// Creates a paired `ClientSideConnection` (client view) and a future that
-/// drives both IO loops.  Call this inside a `tokio::task::LocalSet`.
-fn make_connection(
-    agent: MockAgent,
-) -> (ClientSideConnection, impl std::future::Future<Output = ()>) {
-    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+/// Captured session notifications, for tests that want to inspect them.
+type Notifications = Arc<Mutex<Vec<SessionNotification>>>;
 
-    // Two duplex channels cross-wired:
-    //   client_conn reads from agent_writer, writes to agent_reader
-    //   agent_conn  reads from client_writer, writes to client_reader
-    let (client_reader, agent_writer) = tokio::io::duplex(65536);
-    let (agent_reader, client_writer) = tokio::io::duplex(65536);
+/// Run the mock client: register the permission + session-notification handlers,
+/// then execute `scenario` (the per-test round-trips/assertions) as the client's
+/// `main_fn`. Signals `done` when `scenario` returns so the agent shuts down.
+async fn run_client<F>(
+    transport: Channel,
+    notifications: Notifications,
+    done_tx: tokio::sync::oneshot::Sender<()>,
+    scenario: F,
+) -> Result<(), agent_client_protocol::Error>
+where
+    F: AsyncFnOnce(ConnectionTo<Agent>) -> Result<(), agent_client_protocol::Error>,
+{
+    let notif_for_handler = notifications.clone();
+    let done_cell = Arc::new(Mutex::new(Some(done_tx)));
 
-    let noop_client = NoopClient::new();
+    Client
+        .builder()
+        .name("mock-client")
+        // session/request_permission — mirrors NoopClient (always cancel)
+        .on_receive_request(
+            move |_req: RequestPermissionRequest,
+                  responder: Responder<RequestPermissionResponse>,
+                  _cx: ConnectionTo<Agent>| async move {
+                responder.respond(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                ))
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        // session/update — record notifications
+        .on_receive_notification(
+            move |n: SessionNotification, _cx: ConnectionTo<Agent>| {
+                let notifs = notif_for_handler.clone();
+                async move {
+                    notifs.lock().unwrap().push(n);
+                    Ok(())
+                }
+            },
+            agent_client_protocol::on_receive_notification!(),
+        )
+        .connect_with(transport, async move |conn: ConnectionTo<Agent>| {
+            let result = scenario(conn).await;
+            // Tell the agent it can shut down now that the scenario is done.
+            if let Some(tx) = done_cell.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            result
+        })
+        .await
+}
 
-    let (client_conn, client_io) = ClientSideConnection::new(
-        noop_client,
-        agent_writer.compat_write(),
-        agent_reader.compat(),
-        |fut| {
-            tokio::task::spawn_local(fut);
-        },
-    );
+/// Spin up a paired mock agent + mock client over an in-memory `Channel::duplex`
+/// transport, run `scenario` against the live `ConnectionTo<Agent>`, and join
+/// both ends. Panics with the scenario's error if it failed.
+async fn with_agent_and_client<F>(profile: CapabilityProfile, scenario: F)
+where
+    F: AsyncFnOnce(ConnectionTo<Agent>) -> Result<(), agent_client_protocol::Error>,
+{
+    let state = MockAgentState::new(profile);
+    let notifications: Notifications = Arc::new(Mutex::new(Vec::new()));
 
-    let (_agent_conn, agent_io) = AgentSideConnection::new(
-        agent,
-        client_writer.compat_write(),
-        client_reader.compat(),
-        |fut| {
-            tokio::task::spawn_local(fut);
-        },
-    );
+    // Paired in-memory endpoints: messages sent on one arrive on the other.
+    let (agent_channel, client_channel) = Channel::duplex();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
 
-    let combined = async move {
-        tokio::join!(
-            async { client_io.await.ok(); },
-            async { agent_io.await.ok(); },
-        );
-    };
+    let agent_fut = run_mock_agent(state, agent_channel, done_rx);
+    let client_fut = run_client(client_channel, notifications, done_tx, scenario);
 
-    (client_conn, combined)
+    let (agent_res, client_res) = tokio::join!(agent_fut, client_fut);
+    agent_res.expect("mock agent connection failed");
+    client_res.expect("mock client scenario failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -290,121 +367,101 @@ fn make_connection(
 /// Verifies the happy-path sequence with strongly-typed ACP crate values.
 #[tokio::test]
 async fn full_lifecycle_initialize_new_prompt_close() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Full);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        // initialize
+        let init_resp = conn
+            .send_request(
+                InitializeRequest::new(ProtocolVersion::V1)
+                    .client_info(Implementation::new("notesage-test", "0.0.0")),
+            )
+            .block_task()
+            .await?;
+        assert_eq!(init_resp.protocol_version, ProtocolVersion::V1);
 
-            // initialize
-            let init_resp = conn
-                .initialize(
-                    InitializeRequest::new(ProtocolVersion::V1)
-                        .client_info(Implementation::new("notesage-test", "0.0.0")),
-                )
-                .await
-                .expect("initialize failed");
-            assert_eq!(init_resp.protocol_version, ProtocolVersion::V1);
+        // session/new
+        let new_resp = conn
+            .send_request(NewSessionRequest::new("/tmp"))
+            .block_task()
+            .await?;
+        assert_eq!(new_resp.session_id, SessionId::new("mock-session-1"));
 
-            // session/new
-            let new_resp = conn
-                .new_session(NewSessionRequest::new("/tmp"))
-                .await
-                .expect("new_session failed");
-            assert_eq!(new_resp.session_id, SessionId::new("mock-session-1"));
+        // session/prompt
+        let prompt_resp = conn
+            .send_request(PromptRequest::new(new_resp.session_id.clone(), vec![]))
+            .block_task()
+            .await?;
+        assert_eq!(prompt_resp.stop_reason, StopReason::EndTurn);
 
-            // session/prompt
-            let prompt_resp = conn
-                .prompt(PromptRequest::new(new_resp.session_id.clone(), vec![]))
-                .await
-                .expect("prompt failed");
-            assert_eq!(prompt_resp.stop_reason, StopReason::EndTurn);
-
-            // session/close
-            let _close_resp = conn
-                .close_session(CloseSessionRequest::new(new_resp.session_id))
-                .await
-                .expect("close_session failed");
-        })
-        .await;
+        // session/close
+        let _close_resp = conn
+            .send_request(CloseSessionRequest::new(new_resp.session_id))
+            .block_task()
+            .await?;
+        Ok(())
+    })
+    .await;
 }
 
 /// Full capability profile: initialize response advertises image support
 /// and all session capabilities (fork, resume, close).
 #[tokio::test]
 async fn full_profile_advertises_all_capabilities() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Full);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        let init_resp = conn
+            .send_request(InitializeRequest::new(ProtocolVersion::V1))
+            .block_task()
+            .await?;
 
-            let init_resp = conn
-                .initialize(InitializeRequest::new(ProtocolVersion::V1))
-                .await
-                .expect("initialize failed");
-
-            // Mirrors `acp.rs`: `resp.agent_capabilities.prompt_capabilities.image`
-            assert!(
-                init_resp.agent_capabilities.prompt_capabilities.image,
-                "Full profile must advertise image support (mirrors acp.rs)"
-            );
-
-            assert!(
-                init_resp
-                    .agent_capabilities
-                    .session_capabilities
-                    .fork
-                    .is_some(),
-                "Full profile must advertise fork capability"
-            );
-
-            assert!(
-                init_resp
-                    .agent_capabilities
-                    .session_capabilities
-                    .resume
-                    .is_some(),
-                "Full profile must advertise resume capability"
-            );
-
-            assert!(
-                init_resp
-                    .agent_capabilities
-                    .session_capabilities
-                    .close
-                    .is_some(),
-                "Full profile must advertise close capability"
-            );
-        })
-        .await;
+        // Mirrors `acp.rs`: `resp.agent_capabilities.prompt_capabilities.image`
+        assert!(
+            init_resp.agent_capabilities.prompt_capabilities.image,
+            "Full profile must advertise image support (mirrors acp.rs)"
+        );
+        assert!(
+            init_resp
+                .agent_capabilities
+                .session_capabilities
+                .fork
+                .is_some(),
+            "Full profile must advertise fork capability"
+        );
+        assert!(
+            init_resp
+                .agent_capabilities
+                .session_capabilities
+                .resume
+                .is_some(),
+            "Full profile must advertise resume capability"
+        );
+        assert!(
+            init_resp
+                .agent_capabilities
+                .session_capabilities
+                .close
+                .is_some(),
+            "Full profile must advertise close capability"
+        );
+        Ok(())
+    })
+    .await;
 }
 
 /// Minimal capability profile: initialize response does NOT advertise image
 /// support or session fork/resume/close.
 #[tokio::test]
 async fn minimal_profile_advertises_no_optional_capabilities() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Minimal);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
-
+    with_agent_and_client(
+        CapabilityProfile::Minimal,
+        async |conn: ConnectionTo<Agent>| {
             let init_resp = conn
-                .initialize(InitializeRequest::new(ProtocolVersion::V1))
-                .await
-                .expect("initialize failed");
+                .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                .block_task()
+                .await?;
 
-            // No images
             assert!(
                 !init_resp.agent_capabilities.prompt_capabilities.image,
                 "Minimal profile must NOT advertise image support"
             );
-
-            // No fork/resume/close
             assert!(
                 init_resp
                     .agent_capabilities
@@ -413,7 +470,6 @@ async fn minimal_profile_advertises_no_optional_capabilities() {
                     .is_none(),
                 "Minimal profile must NOT advertise fork"
             );
-
             assert!(
                 init_resp
                     .agent_capabilities
@@ -422,7 +478,6 @@ async fn minimal_profile_advertises_no_optional_capabilities() {
                     .is_none(),
                 "Minimal profile must NOT advertise resume"
             );
-
             assert!(
                 init_resp
                     .agent_capabilities
@@ -431,146 +486,122 @@ async fn minimal_profile_advertises_no_optional_capabilities() {
                     .is_none(),
                 "Minimal profile must NOT advertise close"
             );
-        })
-        .await;
+            Ok(())
+        },
+    )
+    .await;
 }
 
 /// Session listing via `session/list` returns the newly created session.
 #[tokio::test]
 async fn list_sessions_returns_created_session() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Minimal);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
+    with_agent_and_client(
+        CapabilityProfile::Minimal,
+        async |conn: ConnectionTo<Agent>| {
+            conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+                .block_task()
+                .await?;
 
-            conn.initialize(InitializeRequest::new(ProtocolVersion::V1))
-                .await
-                .expect("initialize failed");
-
-            conn.new_session(NewSessionRequest::new("/tmp"))
-                .await
-                .expect("new_session failed");
+            conn.send_request(NewSessionRequest::new("/tmp"))
+                .block_task()
+                .await?;
 
             let list_resp = conn
-                .list_sessions(ListSessionsRequest::new())
-                .await
-                .expect("list_sessions failed");
+                .send_request(ListSessionsRequest::new())
+                .block_task()
+                .await?;
 
             assert_eq!(list_resp.sessions.len(), 1);
             assert_eq!(
                 list_resp.sessions[0].session_id,
                 SessionId::new("mock-session-1")
             );
-        })
-        .await;
+            Ok(())
+        },
+    )
+    .await;
 }
 
 /// Fork session (full profile) creates a new session ID derived from the
 /// original session's ID — verifying the fork code path.
 #[tokio::test]
 async fn fork_session_full_profile() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Full);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+            .block_task()
+            .await?;
 
-            conn.initialize(InitializeRequest::new(ProtocolVersion::V1))
-                .await
-                .expect("initialize failed");
+        let new_resp = conn
+            .send_request(NewSessionRequest::new("/tmp"))
+            .block_task()
+            .await?;
 
-            let new_resp = conn
-                .new_session(NewSessionRequest::new("/tmp"))
-                .await
-                .expect("new_session failed");
+        let fork_resp = conn
+            .send_request(ForkSessionRequest::new(new_resp.session_id.clone(), "/tmp"))
+            .block_task()
+            .await?;
 
-            let fork_resp = conn
-                .fork_session(ForkSessionRequest::new(new_resp.session_id.clone(), "/tmp"))
-                .await
-                .expect("fork_session failed");
-
-            // Fork ID must differ from original
-            assert_ne!(fork_resp.session_id, new_resp.session_id);
-        })
-        .await;
+        // Fork ID must differ from original
+        assert_ne!(fork_resp.session_id, new_resp.session_id);
+        Ok(())
+    })
+    .await;
 }
 
 /// Resume session (full profile) succeeds for an existing session.
 #[tokio::test]
 async fn resume_session_full_profile_existing_session() {
-    let local = tokio::task::LocalSet::new();
-    local
-        .run_until(async {
-            let agent = MockAgent::new(CapabilityProfile::Full);
-            let (conn, io) = make_connection(agent);
-            tokio::task::spawn_local(io);
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
+            .block_task()
+            .await?;
 
-            conn.initialize(InitializeRequest::new(ProtocolVersion::V1))
-                .await
-                .expect("initialize failed");
+        let new_resp = conn
+            .send_request(NewSessionRequest::new("/tmp"))
+            .block_task()
+            .await?;
 
-            let new_resp = conn
-                .new_session(NewSessionRequest::new("/tmp"))
-                .await
-                .expect("new_session failed");
-
-            // Resume the same session — should succeed
-            conn.resume_session(ResumeSessionRequest::new(new_resp.session_id, "/tmp"))
-                .await
-                .expect("resume_session failed");
-        })
-        .await;
+        // Resume the same session — should succeed
+        conn.send_request(ResumeSessionRequest::new(new_resp.session_id, "/tmp"))
+            .block_task()
+            .await?;
+        Ok(())
+    })
+    .await;
 }
 
-/// `supports_images` extracted from `initialize` response matches the Full
-/// profile.  This is the exact field read by `acp.rs`:
+/// `supports_images` extracted from `initialize` response matches the profile.
+/// This is the exact field read by `acp.rs`:
 /// `resp.agent_capabilities.prompt_capabilities.image`.
 #[tokio::test]
 async fn supports_images_extracted_from_initialize_response() {
     // --- Full profile: supports_images = true ---
-    {
-        let local = tokio::task::LocalSet::new();
-        local
-            .run_until(async {
-                let agent = MockAgent::new(CapabilityProfile::Full);
-                let (conn, io) = make_connection(agent);
-                tokio::task::spawn_local(io);
-
-                let resp = conn
-                    .initialize(InitializeRequest::new(ProtocolVersion::V1))
-                    .await
-                    .expect("initialize failed");
-
-                // This is the exact field read by production acp.rs
-                let supports_images: bool = resp.agent_capabilities.prompt_capabilities.image;
-                assert!(supports_images, "Full profile: supports_images must be true");
-            })
-            .await;
-    }
+    with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
+        let resp = conn
+            .send_request(InitializeRequest::new(ProtocolVersion::V1))
+            .block_task()
+            .await?;
+        let supports_images: bool = resp.agent_capabilities.prompt_capabilities.image;
+        assert!(supports_images, "Full profile: supports_images must be true");
+        Ok(())
+    })
+    .await;
 
     // --- Minimal profile: supports_images = false ---
-    {
-        let local = tokio::task::LocalSet::new();
-        local
-            .run_until(async {
-                let agent = MockAgent::new(CapabilityProfile::Minimal);
-                let (conn, io) = make_connection(agent);
-                tokio::task::spawn_local(io);
-
-                let resp = conn
-                    .initialize(InitializeRequest::new(ProtocolVersion::V1))
-                    .await
-                    .expect("initialize failed");
-
-                let supports_images: bool = resp.agent_capabilities.prompt_capabilities.image;
-                assert!(
-                    !supports_images,
-                    "Minimal profile: supports_images must be false"
-                );
-            })
-            .await;
-    }
+    with_agent_and_client(
+        CapabilityProfile::Minimal,
+        async |conn: ConnectionTo<Agent>| {
+            let resp = conn
+                .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                .block_task()
+                .await?;
+            let supports_images: bool = resp.agent_capabilities.prompt_capabilities.image;
+            assert!(
+                !supports_images,
+                "Minimal profile: supports_images must be false"
+            );
+            Ok(())
+        },
+    )
+    .await;
 }
