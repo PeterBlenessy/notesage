@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.11",
+      "date": "2026-05-31",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(transcription): meeting recording with background transcription (#398)",
+        "Fix Claude Code agent auto-install by routing through npm (#399)",
+        "Route OpenAI Codex agent install through npm (#400)",
+        "Route Copilot CLI + LSP through npm and remove the GitHub-binary installer (#401)",
+        "Add opt-in smoke test for the managed agent install flow (#402)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.10",
       "date": "2026-05-30",
       "previousVersion": "0.46.0",
