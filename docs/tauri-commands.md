@@ -1142,13 +1142,13 @@ const results = await tauriApi.searchResearch(
 );
 ```
 
-## Voice Transcription Operations
+## Meeting Recording & Transcription Operations
 
 Located in `src-tauri/src/commands/transcription.rs`
 
 ### start_recording
 
-Starts audio capture from the specified source. Spawns a dedicated recording thread (cpal `Stream` is `!Send`). Audio is captured at the device's native sample rate and channel count.
+Starts microphone capture, streaming samples to a WAV file in the recordings inbox (`~/Notesage/Recordings/Meeting <YYYY-MM-DD HH-MM-SS>/audio.wav`). A single capture-owner thread owns the `cpal` stream (which is `!Send`) and the WAV writer; only one recording may be active at a time. Emits `recording-level` events while capturing.
 
 ```rust
 #[tauri::command]
@@ -1161,49 +1161,53 @@ pub async fn start_recording(
 
 **Parameters:**
 
-- `source`: Audio source — `"microphone"` (only supported value currently)
+- `source`: Audio source — `"microphone"` (only supported value; `"system"`/`"both"` are not yet implemented)
 
 **Returns:**
 
-- `Ok(())`: Recording started
-- `Err(String)`: Error if already recording or device unavailable
+- `Ok(())`: Recording started (WAV file created)
+- `Err(String)`: Error if already recording or no microphone available
 
 ### stop_recording
 
-Stops audio capture, resamples the buffer to 16kHz mono, and returns metadata about the recording.
+Stops capture and **awaits full teardown** — the capture thread drops the `cpal` stream and finalizes the WAV file before this returns, so a rapid stop→start can never overlap two CoreAudio streams (the root cause of the old dictation hang, #264). Returns the finalized WAV path plus capture metadata.
 
 ```rust
 #[tauri::command]
 pub async fn stop_recording(
     state: State<'_, TranscriptionState>,
-) -> Result<AudioBufferInfo, String>
+) -> Result<RecordingResult, String>
 ```
 
 **Returns:**
 
-- `Ok(AudioBufferInfo)`: Recording metadata (duration, sample count, sample rate, source)
+- `Ok(RecordingResult)`: Finalized WAV path + metadata (`rms`/`peak` let the frontend warn on silence)
 - `Err(String)`: Error if not currently recording
 
-**AudioBufferInfo struct:**
+**RecordingResult struct** (serializes with snake_case field names):
 
 ```rust
-pub struct AudioBufferInfo {
+pub struct RecordingResult {
+    pub path: String,
     pub duration_secs: f64,
-    pub sample_count: usize,
     pub sample_rate: u32,
     pub source: String,
+    pub rms: f32,
+    pub peak: f32,
 }
 ```
 
-### transcribe
+### transcribe_file
 
-Runs Whisper transcription on the last recorded audio buffer. Emits `transcription-progress` events during processing.
+Transcribes a finalized audio file in a single whole-file Whisper pass (no real-time chunking — quality over latency). Reads the WAV at `path`, resamples to 16kHz mono, and returns ordered timestamped segments. Emits `transcription-progress` events carrying `jobId` so concurrent jobs can be told apart.
 
 ```rust
 #[tauri::command]
-pub async fn transcribe(
+pub async fn transcribe_file(
     app: AppHandle,
     state: State<'_, TranscriptionState>,
+    job_id: String,
+    path: String,
     model: String,
     language: Option<String>,
 ) -> Result<TranscriptionResult, String>
@@ -1211,65 +1215,36 @@ pub async fn transcribe(
 
 **Parameters:**
 
+- `job_id`: Caller-generated id echoed back in progress events (`jobId` over IPC)
+- `path`: Absolute path to the finalized WAV (from `stop_recording`)
 - `model`: Whisper model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
 - `language`: Optional language code (e.g., `"en"`, `"sv"`, `"fr"`). `None` for auto-detection.
 
 **Returns:**
 
 - `Ok(TranscriptionResult)`: Segments with timestamps, duration, and detected language
-- `Err(String)`: Error if no audio buffer or model not found
+- `Err(String)`: Error if the file cannot be read or the model is not found
 
 **Events emitted:**
 
-- `transcription-progress` (`{ percent: number, segment?: string }`): Progress updates during transcription
+- `transcription-progress` (`{ jobId: string, percent: number, segment?: string }`): Progress updates during transcription
 
-**TranscriptionResult struct:**
+**TranscriptionResult struct** (serializes with snake_case field names):
 
 ```rust
 pub struct TranscriptionResult {
-    pub segments: Vec<TranscriptionSegment>,
+    pub segments: Vec<TranscriptSegment>,
     pub duration_secs: f64,
     pub language: String,
 }
 
-pub struct TranscriptionSegment {
+pub struct TranscriptSegment {
     pub start: f64,
     pub end: f64,
     pub text: String,
-    pub speaker: Option<String>,
+    pub speaker_id: Option<String>,   // reserved for future diarization; None in v1
+    pub speaker_name: Option<String>, // reserved for future naming pass; None in v1
 }
-```
-
-### start_dictation
-
-Starts live dictation — captures audio in ~3-second chunks, transcribes each chunk through Whisper, and streams results as events. Includes silence detection, hallucination filtering, and consecutive duplicate removal.
-
-```rust
-#[tauri::command]
-pub async fn start_dictation(
-    app: AppHandle,
-    state: State<'_, TranscriptionState>,
-    language: Option<String>,
-) -> Result<(), String>
-```
-
-**Parameters:**
-
-- `language`: Optional language code for Whisper. `None` for auto-detection.
-
-**Events emitted:**
-
-- `dictation-result` (`{ text: string, is_final: boolean, error?: string }`): Transcribed text chunks. `is_final: true` signals dictation has ended.
-
-### stop_dictation
-
-Stops an active dictation session.
-
-```rust
-#[tauri::command]
-pub async fn stop_dictation(
-    state: State<'_, TranscriptionState>,
-) -> Result<(), String>
 ```
 
 ### list_whisper_models
@@ -1368,18 +1343,15 @@ listen<{ model: string; percent: number }>('model-download-progress', (event) =>
 // Cancel a download
 await tauriApi.cancelModelDownload('small');
 
-// Record and transcribe
+// Record a meeting, then transcribe the finalized file as a background job
 await tauriApi.startRecording('microphone');
-// ... user speaks ...
-const info = await tauriApi.stopRecording();
-const result = await tauriApi.transcribe('small', 'en');
-
-// Live dictation
-await tauriApi.startDictation('en');
-listen<{ text: string; is_final: boolean }>('dictation-result', (event) => {
-  if (event.payload.text) insertText(event.payload.text);
+// ... meeting happens ...
+const rec = await tauriApi.stopRecording();   // { path, duration_secs, ... }
+const jobId = crypto.randomUUID();
+listen<{ jobId: string; percent: number }>('transcription-progress', (event) => {
+  if (event.payload.jobId === jobId) updateProgress(event.payload.percent);
 });
-await tauriApi.stopDictation();
+const result = await tauriApi.transcribeFile(jobId, rec.path, 'small', 'en');
 ```
 
 ### TranscriptionState (Managed State)
@@ -1387,9 +1359,8 @@ await tauriApi.stopDictation();
 ```rust
 pub struct TranscriptionState {
     models_dir: PathBuf,
-    recording: Mutex<Option<RecordingHandle>>,
-    last_recording_buffer: Mutex<Option<(Vec<f32>, String, u32)>>,
-    dictation_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    recordings_dir: PathBuf,
+    capture: Mutex<Option<CaptureOwner>>,
     download_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 ```
@@ -1397,9 +1368,8 @@ pub struct TranscriptionState {
 **Fields:**
 
 - `models_dir`: Path to `~/.notesage/whisper-models/`
-- `recording`: Active recording handle (stop signal, buffer, thread)
-- `last_recording_buffer`: Audio data from last recording (samples, source, sample rate)
-- `dictation_cancel`: Cancel signal for active dictation session
+- `recordings_dir`: Path to `~/Notesage/Recordings/` (the recording-bundle inbox)
+- `capture`: The single active capture owner (`cpal` stream + WAV writer + stop signal + join handle); `Some` only while a recording is in progress. Taking it out of the mutex enforces one stream at a time and is the synchronization point for the awaited teardown
 - `download_cancels`: Per-model cancel signals for concurrent downloads
 
 ## Error Handling

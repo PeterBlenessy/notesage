@@ -37,6 +37,7 @@ import { useLocalAIStore } from "@/stores/local-ai-store";
 import type { Comment } from "@/stores/comment-store";
 import { useActionStore } from "@/stores/action-store";
 import type { ViewMode } from "@/lib/file-utils";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { MicButton } from "./toolbar/MicButton";
 import { CommentList } from "./CommentListPopover";
 
@@ -127,9 +128,9 @@ export interface StatusTrayProps {
   initialExpandedGroup?: StatusTrayGroup;
 
   /**
-   * Active editor instance. When provided, the tray hosts the dictation
-   * `MicButton` (⌘⇧R, moved off the pill toolbar in #110). Pass `null`
-   * (or omit) when there is no editor — the row hides itself.
+   * Active editor instance. When provided, the tray hosts the meeting-
+   * recording `MicButton` (⌘⇧R, moved off the pill toolbar in #110). Pass
+   * `null` (or omit) when there is no editor — the row hides itself.
    */
   editor?: Editor | null;
 
@@ -148,8 +149,8 @@ export interface StatusTrayProps {
 // Editor tools group — hosts MicButton + view-mode toggle (#110).
 // These previously lived on the inline Toolbar; the pill variant omits them
 // because the pill is intentionally tiny. The keyboard shortcuts (⌘⇧R for
-// dictation, no chord for view-mode) continue to work app-wide regardless of
-// where the affordance lives.
+// meeting recording, no chord for view-mode) continue to work app-wide
+// regardless of where the affordance lives.
 // ---------------------------------------------------------------------------
 
 function EditorToolsGroup({
@@ -292,10 +293,10 @@ function CompletionsGroup() {
                   className={cn(
                     "h-1.5 w-1.5 rounded-full shrink-0",
                     conn.status === "connected"
-                      ? "bg-green-500"
+                      ? "bg-foreground/60"
                       : conn.status === "error"
                         ? "bg-destructive"
-                        : "bg-muted-foreground",
+                        : "bg-foreground/40",
                   )}
                 />
                 {conn.label}
@@ -536,22 +537,25 @@ function SessionGroup() {
   const setActiveModel = useLocalAIStore((s) => s.setActiveModel);
   const models = useLocalAIStore((s) => s.models);
   const connections = useConnectionsStore((s) => s.connections);
+  const reducedMotion = useReducedMotion();
 
   const hasConnection = connections.some(
     (c) => c.provider === "local_ai" && c.authMethod === "local_bundled",
   );
   if (!hasConnection) return null;
 
-  // Server-state-driven dot. Same green/amber/red/muted semantics used
-  // by the QuietStatusBar's left dot — keep the two surfaces in sync.
+  // Server-state-driven dot. Strict-neutral palette: running → neutral
+  // foreground, starting → dimmer foreground (transitional) with a pulse
+  // gated on reduced motion, error → destructive, stopped → faint muted.
+  // States stay distinguishable via opacity + the tooltip/label below.
   const dot =
     serverStatus === "running"
-      ? "bg-green-500"
+      ? "bg-foreground/60"
       : serverStatus === "starting"
-        ? "bg-amber-500 animate-pulse"
+        ? cn("bg-foreground/40", !reducedMotion && "animate-pulse")
         : serverStatus === "error"
-          ? "bg-red-500"
-          : "bg-muted-foreground/30";
+          ? "bg-destructive"
+          : "bg-foreground/20";
 
   const statusLabel =
     serverStatus === "running"

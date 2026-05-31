@@ -877,7 +877,6 @@ function useStatusDotsState(): {
   const connections = useConnectionsStore((s) => s.connections);
 
   const isRecording = useRecordingStore((s) => s.isRecording);
-  const isDictating = useRecordingStore((s) => s.isDictating);
 
   // The local-AI dot mirrors `LocalAIIndicator`'s popover exactly. It
   // appears whenever a `local_bundled` connection exists (regardless of
@@ -895,7 +894,7 @@ function useStatusDotsState(): {
           ? "red"
           : "muted";
 
-  const showRecording = isRecording || isDictating;
+  const showRecording = isRecording;
 
   return { localAiTone, showRecording };
 }

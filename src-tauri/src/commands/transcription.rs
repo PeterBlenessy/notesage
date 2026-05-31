@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::io::{Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
@@ -11,17 +12,24 @@ use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TranscriptionResult {
-    pub segments: Vec<TranscriptionSegment>,
+    pub segments: Vec<TranscriptSegment>,
     pub duration_secs: f64,
     pub language: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct TranscriptionSegment {
+/// A timestamped transcript segment. `speaker_id` / `speaker_name` are reserved
+/// for a future diarization + naming pass and are always `None` in v1.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TranscriptSegment {
+    /// Seconds from recording start.
     pub start: f64,
+    /// Seconds from recording start.
     pub end: f64,
     pub text: String,
-    pub speaker: Option<String>,
+    /// Reserved for diarization; `None` in v1.
+    pub speaker_id: Option<String>,
+    /// Reserved for the naming pass; `None` in v1.
+    pub speaker_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -44,57 +52,502 @@ pub struct ModelInfo {
     pub hf_repo_id: Option<String>,
 }
 
+/// Returned by `stop_recording`. Carries the finalized WAV path plus enough
+/// signal metadata for the frontend's silence-detection warning.
 #[derive(Serialize, Deserialize, Clone)]
-pub struct AudioBufferInfo {
+pub struct RecordingResult {
+    /// Absolute path to the finalized WAV file on disk.
+    pub path: String,
     pub duration_secs: f64,
-    pub sample_count: usize,
     pub sample_rate: u32,
     pub source: String,
-    /// RMS amplitude of the recorded audio (0.0 = silence)
+    /// RMS amplitude of the recorded audio (0.0 = silence).
     pub rms: f32,
-    /// Peak amplitude of the recorded audio (0.0 = silence)
+    /// Peak amplitude of the recorded audio (0.0 = silence).
     pub peak: f32,
 }
 
 // ---------------------------------------------------------------------------
-// Recording handle — lives on a dedicated thread, managed via Arc signals
+// WAV writer — minimal 16-bit PCM writer (avoids a new dependency)
 // ---------------------------------------------------------------------------
 
-struct RecordingHandle {
-    mic_buffer: Arc<Mutex<Vec<f32>>>,
+/// Streaming WAV writer for 16-bit PCM. Writes a placeholder header up front,
+/// appends samples incrementally, and patches the RIFF/data sizes on finalize.
+/// `finalize()` MUST be called (and is, by the capture owner) before the file
+/// is considered valid.
+struct WavWriter {
+    file: std::fs::File,
+    /// Total number of i16 samples written (across all channels).
+    samples_written: u64,
+}
+
+impl WavWriter {
+    fn create(path: &Path, sample_rate: u32, channels: u16) -> Result<Self, String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create recording directory: {}", e))?;
+        }
+        let mut file = std::fs::File::create(path)
+            .map_err(|e| format!("Failed to create WAV file: {}", e))?;
+
+        // Write a 44-byte canonical header with placeholder sizes (0). These
+        // are patched in `finalize()` once the sample count is known.
+        let header = wav_header(sample_rate, channels, 0);
+        file.write_all(&header)
+            .map_err(|e| format!("Failed to write WAV header: {}", e))?;
+
+        Ok(Self {
+            file,
+            samples_written: 0,
+        })
+    }
+
+    /// Append a block of f32 samples (interleaved if multi-channel), clamping
+    /// to [-1.0, 1.0] and converting to 16-bit PCM.
+    fn write_f32(&mut self, data: &[f32]) -> Result<(), String> {
+        let mut bytes = Vec::with_capacity(data.len() * 2);
+        for &s in data {
+            let clamped = s.clamp(-1.0, 1.0);
+            let v = (clamped * i16::MAX as f32) as i16;
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        self.file
+            .write_all(&bytes)
+            .map_err(|e| format!("Failed to write WAV samples: {}", e))?;
+        self.samples_written += data.len() as u64;
+        Ok(())
+    }
+
+    /// Patch the RIFF chunk size and data chunk size, then flush. Consumes self.
+    fn finalize(mut self) -> Result<(), String> {
+        let data_bytes = self.samples_written * 2; // 16-bit
+        let riff_size = 36 + data_bytes;
+
+        // RIFF chunk size at offset 4 (u32 LE)
+        self.file
+            .seek(SeekFrom::Start(4))
+            .map_err(|e| format!("WAV seek error: {}", e))?;
+        self.file
+            .write_all(&(riff_size as u32).to_le_bytes())
+            .map_err(|e| format!("WAV write error: {}", e))?;
+
+        // data chunk size at offset 40 (u32 LE)
+        self.file
+            .seek(SeekFrom::Start(40))
+            .map_err(|e| format!("WAV seek error: {}", e))?;
+        self.file
+            .write_all(&(data_bytes as u32).to_le_bytes())
+            .map_err(|e| format!("WAV write error: {}", e))?;
+
+        self.file
+            .flush()
+            .map_err(|e| format!("WAV flush error: {}", e))?;
+        Ok(())
+    }
+}
+
+/// Build a 44-byte canonical WAV header for 16-bit PCM.
+fn wav_header(sample_rate: u32, channels: u16, data_bytes: u32) -> Vec<u8> {
+    let bits_per_sample: u16 = 16;
+    let byte_rate = sample_rate * channels as u32 * (bits_per_sample as u32 / 8);
+    let block_align = channels * (bits_per_sample / 8);
+    let riff_size = 36 + data_bytes;
+
+    let mut h = Vec::with_capacity(44);
+    h.extend_from_slice(b"RIFF");
+    h.extend_from_slice(&riff_size.to_le_bytes());
+    h.extend_from_slice(b"WAVE");
+    h.extend_from_slice(b"fmt ");
+    h.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+    h.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    h.extend_from_slice(&channels.to_le_bytes());
+    h.extend_from_slice(&sample_rate.to_le_bytes());
+    h.extend_from_slice(&byte_rate.to_le_bytes());
+    h.extend_from_slice(&block_align.to_le_bytes());
+    h.extend_from_slice(&bits_per_sample.to_le_bytes());
+    h.extend_from_slice(b"data");
+    h.extend_from_slice(&data_bytes.to_le_bytes());
+    h
+}
+
+/// Read a 16-bit PCM WAV file into (samples_f32, sample_rate, channels).
+/// Minimal parser: handles the canonical layout produced by `WavWriter` and
+/// tolerates extra chunks before `data`.
+fn read_wav_f32(path: &Path) -> Result<(Vec<f32>, u32, u16), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read WAV file: {}", e))?;
+    if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("Not a valid WAV file".into());
+    }
+
+    let mut channels: u16 = 1;
+    let mut sample_rate: u32 = 16000;
+    let mut bits_per_sample: u16 = 16;
+    let mut data: Option<(usize, usize)> = None; // (offset, len)
+
+    // Walk chunks starting after the 12-byte RIFF/WAVE header.
+    let mut pos = 12usize;
+    while pos + 8 <= bytes.len() {
+        let id = &bytes[pos..pos + 4];
+        let size = u32::from_le_bytes([
+            bytes[pos + 4],
+            bytes[pos + 5],
+            bytes[pos + 6],
+            bytes[pos + 7],
+        ]) as usize;
+        let body = pos + 8;
+        if id == b"fmt " && body + 16 <= bytes.len() {
+            channels = u16::from_le_bytes([bytes[body + 2], bytes[body + 3]]);
+            sample_rate = u32::from_le_bytes([
+                bytes[body + 4],
+                bytes[body + 5],
+                bytes[body + 6],
+                bytes[body + 7],
+            ]);
+            bits_per_sample = u16::from_le_bytes([bytes[body + 14], bytes[body + 15]]);
+        } else if id == b"data" {
+            let end = (body + size).min(bytes.len());
+            data = Some((body, end - body));
+            break;
+        }
+        // Chunks are word-aligned (padded to even length).
+        pos = body + size + (size & 1);
+    }
+
+    let (offset, len) = data.ok_or("WAV file missing data chunk")?;
+    if bits_per_sample != 16 {
+        return Err(format!(
+            "Unsupported WAV bit depth: {} (only 16-bit PCM supported)",
+            bits_per_sample
+        ));
+    }
+
+    let mut samples = Vec::with_capacity(len / 2);
+    let mut i = offset;
+    while i + 2 <= offset + len {
+        let v = i16::from_le_bytes([bytes[i], bytes[i + 1]]);
+        samples.push(v as f32 / i16::MAX as f32);
+        i += 2;
+    }
+
+    Ok((samples, sample_rate, channels))
+}
+
+// ---------------------------------------------------------------------------
+// Capture owner — single mic-stream owner with awaited teardown
+// ---------------------------------------------------------------------------
+
+/// Owns exactly one mic stream + the WAV file it writes to. The `cpal::Stream`
+/// (which is `!Send`) lives entirely on the capture thread, so the owner is
+/// `Send` and can be parked in managed state.
+///
+/// CRITICAL INVARIANT (#264): `stop()` signals the capture thread to stop, then
+/// **joins** it — the thread drops the stream and finalizes the WAV before it
+/// exits, so by the time `stop()` returns CoreAudio has fully released the
+/// device. No second stream can open while a previous owner is alive because
+/// the owner sits in a mutex-guarded `Option` and is only `take()`-n by `stop`.
+struct CaptureOwner {
     source: String,
+    path: PathBuf,
     sample_rate: u32,
     channels: u16,
     start_time: std::time::Instant,
     stop_signal: Arc<AtomicBool>,
-    // Thread that owns the cpal::Stream (not Send, so lives on its own thread)
-    _audio_thread: std::thread::JoinHandle<()>,
+    /// Result reported back from the capture thread on teardown (rms, peak).
+    stats: Arc<Mutex<Option<CaptureStats>>>,
+    /// `WavWriter::finalize()` result reported back from the capture thread.
+    /// `None` until the thread finishes finalizing; `Some(Ok(()))` on success,
+    /// `Some(Err(..))` if the RIFF/data-size patch or flush failed. `stop()`
+    /// surfaces the `Err` so a corrupt/incomplete WAV is never scheduled for
+    /// transcription.
+    finalize_result: Arc<Mutex<Option<Result<(), String>>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
-// RecordingHandle is Send because cpal::Stream lives inside _audio_thread,
-// and everything else is Send-safe (Arc, AtomicBool, etc.)
+#[derive(Clone, Copy, Default, Debug)]
+struct CaptureStats {
+    rms: f32,
+    peak: f32,
+}
+
+impl CaptureOwner {
+    /// Signal stop, await full teardown (stream dropped + thread joined), and
+    /// return capture stats. Idempotent-ish: a second call after the thread is
+    /// already joined returns default stats.
+    fn stop(&mut self) -> Result<CaptureStats, String> {
+        self.stop_signal.store(true, Ordering::Relaxed);
+
+        // Await thread teardown — the stream is dropped and the WAV finalized
+        // INSIDE the thread before it returns. This join is the load-bearing
+        // synchronization point for #264.
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .map_err(|_| "Capture thread panicked during teardown".to_string())?;
+        }
+
+        // Surface a WAV finalize failure as an error — the file on disk is
+        // corrupt/incomplete and must not be handed to transcription. `None`
+        // means the thread was already joined on a prior `stop()` call; we keep
+        // the prior contract of re-reporting stats in that case.
+        if let Some(result) = self
+            .finalize_result
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?
+            .take()
+        {
+            result?;
+        }
+
+        let stats = self
+            .stats
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?
+            .unwrap_or_default();
+        Ok(stats)
+    }
+}
+
+impl Drop for CaptureOwner {
+    fn drop(&mut self) {
+        // Defensive: if an owner is dropped without an explicit stop (e.g. app
+        // exit), still tear down the stream and join the thread so CoreAudio is
+        // released and the WAV is finalized.
+        self.stop_signal.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Spawn the single cpal input stream on a dedicated thread that streams
+/// samples to `path` (a WAV file). Returns the owner once the stream is
+/// confirmed playing. The thread owns the `cpal::Stream` and the `WavWriter`,
+/// finalizing the WAV on stop.
+fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<CaptureOwner, String> {
+    let stop_signal = Arc::new(AtomicBool::new(false));
+    let stats: Arc<Mutex<Option<CaptureStats>>> = Arc::new(Mutex::new(None));
+    let finalize_result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
+
+    let stop = stop_signal.clone();
+    let stats_t = stats.clone();
+    let finalize_t = finalize_result.clone();
+    let path_t = path.clone();
+
+    // Setup barrier — the thread reports (sample_rate, channels) on success or
+    // an error string on failure. We block on this ONCE during start (not in
+    // the stop path), which is acceptable: it returns immediately once the
+    // stream is built.
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(u32, u16), String>>();
+
+    let thread = std::thread::spawn(move || {
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+        let host = cpal::default_host();
+        let device = match host.default_input_device() {
+            Some(d) => d,
+            None => {
+                let _ = tx.send(Err("No microphone available".into()));
+                return;
+            }
+        };
+
+        let default_config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(Err(format!("Failed to get default audio config: {}", e)));
+                return;
+            }
+        };
+
+        let config = cpal::StreamConfig {
+            channels: default_config.channels(),
+            sample_rate: default_config.sample_rate(),
+            buffer_size: cpal::BufferSize::Default,
+        };
+        let actual_rate = config.sample_rate;
+        let actual_channels = config.channels;
+
+        log::info!(
+            target: "notesage::transcription",
+            "Audio input: {}Hz, {} channel(s) → {}",
+            actual_rate, actual_channels, path_t.display()
+        );
+
+        // Create the WAV writer for this capture. The stream callback can't own
+        // it directly (it must finalize after the stream stops), so we share it
+        // via a mutex with the callback.
+        let writer = match WavWriter::create(&path_t, actual_rate, actual_channels) {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = tx.send(Err(e));
+                return;
+            }
+        };
+        let writer = Arc::new(Mutex::new(Some(writer)));
+
+        // Running signal accumulators for the final stats.
+        let sum_sq = Arc::new(Mutex::new(0.0f64));
+        let count = Arc::new(Mutex::new(0u64));
+        let peak = Arc::new(Mutex::new(0.0f32));
+
+        let writer_cb = writer.clone();
+        let sum_sq_cb = sum_sq.clone();
+        let count_cb = count.clone();
+        let peak_cb = peak.clone();
+        let app_cb = app.clone();
+        let ch = actual_channels as usize;
+
+        let err_fn = |err: cpal::StreamError| {
+            log::error!(target: "notesage::transcription", "Audio stream error: {}", err);
+        };
+
+        let stream = match device.build_input_stream(
+            &config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                // Write to disk.
+                if let Ok(mut guard) = writer_cb.lock() {
+                    if let Some(w) = guard.as_mut() {
+                        let _ = w.write_f32(data);
+                    }
+                }
+                // Accumulate stats + emit a level event for the UI.
+                if data.is_empty() {
+                    return;
+                }
+                let mut block_sq = 0.0f64;
+                let mut block_peak = 0.0f32;
+                for &s in data {
+                    block_sq += (s * s) as f64;
+                    let a = s.abs();
+                    if a > block_peak {
+                        block_peak = a;
+                    }
+                }
+                if let Ok(mut g) = sum_sq_cb.lock() {
+                    *g += block_sq;
+                }
+                if let Ok(mut g) = count_cb.lock() {
+                    *g += data.len() as u64;
+                }
+                if let Ok(mut g) = peak_cb.lock() {
+                    if block_peak > *g {
+                        *g = block_peak;
+                    }
+                }
+                // Mono-mixed RMS for the level meter.
+                let frames = (data.len() / ch.max(1)).max(1);
+                let rms = (block_sq / data.len() as f64).sqrt() as f32;
+                let _ = frames;
+                let _ = app_cb.emit(
+                    "recording-level",
+                    serde_json::json!({ "mic": rms, "system": 0.0_f32 }),
+                );
+            },
+            err_fn,
+            None,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = tx.send(Err(format!("Failed to build audio stream: {}", e)));
+                return;
+            }
+        };
+
+        if let Err(e) = stream.play() {
+            let _ = tx.send(Err(format!("Failed to start audio stream: {}", e)));
+            return;
+        }
+
+        // Stream is live — report success.
+        let _ = tx.send(Ok((actual_rate, actual_channels)));
+
+        // Park until told to stop.
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // Teardown: drop the stream FIRST so no more callbacks fire, then
+        // finalize the WAV. Order matters — finalizing while callbacks still
+        // run would race the writer mutex.
+        drop(stream);
+
+        if let Ok(mut guard) = writer.lock() {
+            if let Some(w) = guard.take() {
+                let result = w.finalize();
+                if let Err(e) = &result {
+                    log::error!(target: "notesage::transcription", "Failed to finalize WAV: {}", e);
+                }
+                // Report the finalize outcome so `stop()` can fail the command
+                // when the WAV is corrupt instead of scheduling a bad file.
+                if let Ok(mut g) = finalize_t.lock() {
+                    *g = Some(result);
+                }
+            }
+        }
+
+        // Compute final stats.
+        let total_sq = *sum_sq.lock().unwrap_or_else(|e| e.into_inner());
+        let total_count = *count.lock().unwrap_or_else(|e| e.into_inner());
+        let total_peak = *peak.lock().unwrap_or_else(|e| e.into_inner());
+        let rms = if total_count > 0 {
+            (total_sq / total_count as f64).sqrt() as f32
+        } else {
+            0.0
+        };
+        if let Ok(mut g) = stats_t.lock() {
+            *g = Some(CaptureStats {
+                rms,
+                peak: total_peak,
+            });
+        }
+    });
+
+    // Block briefly for stream setup (returns as soon as the stream is built).
+    let (actual_rate, actual_channels) = rx
+        .recv()
+        .map_err(|_| "Audio thread died during setup".to_string())??;
+
+    Ok(CaptureOwner {
+        source,
+        path,
+        sample_rate: actual_rate,
+        channels: actual_channels,
+        start_time: std::time::Instant::now(),
+        stop_signal,
+        stats,
+        finalize_result,
+        thread: Some(thread),
+    })
+}
 
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
 
 pub struct TranscriptionState {
-    recording: Mutex<Option<RecordingHandle>>,
-    dictation_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    /// The single active capture owner, if any. Guarding this in a mutex is
+    /// what enforces "exactly one mic stream owner at a time".
+    capture: Mutex<Option<CaptureOwner>>,
+    /// Set `true` while a `stop_recording` is mid-teardown — i.e. the owner has
+    /// been taken out of `capture` but its cpal stream/thread is still draining.
+    /// `start_recording` rejects when this is set, closing the window (#264)
+    /// between `take()` and the awaited join where `capture` is momentarily
+    /// `None` but a stream is still alive. Always read/written under the
+    /// `capture` mutex so the check-and-set is atomic against `start_recording`.
+    stopping: AtomicBool,
     whisper_ctx: Arc<Mutex<Option<(String, whisper_rs::WhisperContext)>>>,
     models_dir: PathBuf,
-    /// Audio buffer shared between recording and transcription
-    last_recording_buffer: Mutex<Option<(Vec<f32>, String, u32)>>,
-    /// Cancel signals for in-progress model downloads
+    /// Root directory for recording bundles (`~/Notesage/Recordings`).
+    recordings_dir: PathBuf,
+    /// Cancel signals for in-progress model downloads.
     download_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl TranscriptionState {
     pub fn new() -> Self {
-        let models_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".notesage")
-            .join("whisper-models");
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let models_dir = home.join(".notesage").join("whisper-models");
+        let recordings_dir = home.join("Notesage").join("Recordings");
 
         // Ensure models directory exists on startup
         if let Err(e) = std::fs::create_dir_all(&models_dir) {
@@ -114,19 +567,34 @@ impl TranscriptionState {
         }
 
         Self {
-            recording: Mutex::new(None),
-            dictation_cancel: Mutex::new(None),
+            capture: Mutex::new(None),
+            stopping: AtomicBool::new(false),
             whisper_ctx: Arc::new(Mutex::new(None)),
             models_dir,
-            last_recording_buffer: Mutex::new(None),
+            recordings_dir,
             download_cancels: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The `start_recording` admission guard, factored out so production code
+    /// and the #264 regression test exercise the SAME predicate. Returns `Ok(())`
+    /// if a new capture may be opened, or `Err` if a recording is already active
+    /// OR a stop is mid-teardown (`stopping` set). MUST be called while holding
+    /// the `capture` lock so the check is atomic against `stop_recording`'s
+    /// take-and-set-stopping step.
+    fn check_can_start(capture_is_some: bool, stopping: bool) -> Result<(), String> {
+        if capture_is_some || stopping {
+            return Err("Recording already in progress".into());
+        }
+        Ok(())
     }
 
     /// Collect diagnostic info for the diagnostics export.
     pub fn collect_diagnostics(&self) -> WhisperDiagnostics {
         let models_dir_exists = self.models_dir.exists();
-        let cached_model = self.whisper_ctx.lock()
+        let cached_model = self
+            .whisper_ctx
+            .lock()
             .ok()
             .and_then(|ctx| ctx.as_ref().map(|(name, _)| name.clone()));
 
@@ -139,7 +607,10 @@ impl TranscriptionState {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
 
-                    if name.ends_with(".downloading") || name.ends_with(".tmp") || name.ends_with(".part") {
+                    if name.ends_with(".downloading")
+                        || name.ends_with(".tmp")
+                        || name.ends_with(".part")
+                    {
                         stale_files.push(super::model_management::DiagnosticFile {
                             name: name.clone(),
                             size_bytes: size,
@@ -154,8 +625,7 @@ impl TranscriptionState {
             }
         }
 
-        let is_recording = self.recording.lock().map(|r| r.is_some()).unwrap_or(false);
-        let is_dictating = self.dictation_cancel.lock().map(|d| d.is_some()).unwrap_or(false);
+        let is_recording = self.capture.lock().map(|r| r.is_some()).unwrap_or(false);
 
         WhisperDiagnostics {
             models_dir: self.models_dir.to_string_lossy().to_string(),
@@ -164,7 +634,6 @@ impl TranscriptionState {
             stale_files,
             cached_model,
             is_recording,
-            is_dictating,
         }
     }
 }
@@ -177,7 +646,6 @@ pub struct WhisperDiagnostics {
     pub stale_files: Vec<super::model_management::DiagnosticFile>,
     pub cached_model: Option<String>,
     pub is_recording: bool,
-    pub is_dictating: bool,
 }
 
 // Known Whisper models with metadata
@@ -197,18 +665,6 @@ const KNOWN_MODELS: &[WhisperModelMeta] = &[
     WhisperModelMeta { name: "medium", size_bytes: 1_533_763_059, parameters: "769M", description: "High accuracy, slower" },
     WhisperModelMeta { name: "large-v3", size_bytes: 3_095_033_483, parameters: "1550M", description: "Best accuracy, slowest" },
 ];
-
-/// Find any downloaded Whisper model in the models directory, preferring smaller models.
-fn find_any_downloaded_model(models_dir: &std::path::Path) -> Option<(String, PathBuf)> {
-    // Prefer smaller models for dictation (faster inference)
-    for meta in KNOWN_MODELS {
-        let path = models_dir.join(format!("ggml-{}.bin", meta.name));
-        if path.exists() {
-            return Some((meta.name.to_string(), path));
-        }
-    }
-    None
-}
 
 fn model_download_url(size: &str) -> String {
     let filename = format!("ggml-{}.bin", size);
@@ -250,138 +706,22 @@ fn resample_to_16k_mono(data: &[f32], from_rate: u32, channels: u16) -> Vec<f32>
     output
 }
 
-/// Start a cpal input stream on a dedicated thread (because cpal::Stream is !Send).
-/// Returns the stop signal, shared buffer, actual sample rate, and channel count.
-fn start_mic_on_thread(
-    app: AppHandle,
-) -> Result<(Arc<Mutex<Vec<f32>>>, Arc<AtomicBool>, u32, u16, std::thread::JoinHandle<()>), String>
-{
-    let mic_buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let stop_signal = Arc::new(AtomicBool::new(false));
-
-    let buf = mic_buffer.clone();
-    let stop = stop_signal.clone();
-
-    // Barrier to wait for stream setup to complete — sends (sample_rate, channels) on success
-    let (tx, rx) = std::sync::mpsc::channel::<Result<(u32, u16), String>>();
-
-    let thread = std::thread::spawn(move || {
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-
-        let host = cpal::default_host();
-        let device = match host.default_input_device() {
-            Some(d) => d,
-            None => {
-                let _ = tx.send(Err("No microphone available".into()));
-                return;
-            }
-        };
-
-        // Use the device's default config — don't assume 16kHz mono is supported
-        let default_config = match device.default_input_config() {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = tx.send(Err(format!("Failed to get default audio config: {}", e)));
-                return;
-            }
-        };
-
-        let config = cpal::StreamConfig {
-            channels: default_config.channels(),
-            sample_rate: default_config.sample_rate(),
-            buffer_size: cpal::BufferSize::Default,
-        };
-
-        let actual_rate = config.sample_rate;
-        let actual_channels = config.channels;
-
-        log::info!(
-            target: "notesage::transcription",
-            "Audio input: {}Hz, {} channel(s)",
-            actual_rate,
-            actual_channels
-        );
-
-        let buf_clone = buf.clone();
-        let err_fn = |err: cpal::StreamError| {
-            log::error!(target: "notesage::transcription", "Audio stream error: {}", err);
-        };
-
-        let stream = match device.build_input_stream(
-            &config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buffer) = buf_clone.lock() {
-                    buffer.extend_from_slice(data);
-                }
-            },
-            err_fn,
-            None,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = tx.send(Err(format!("Failed to build audio stream: {}", e)));
-                return;
-            }
-        };
-
-        if let Err(e) = stream.play() {
-            let _ = tx.send(Err(format!("Failed to start audio stream: {}", e)));
-            return;
-        }
-
-        // Signal success with actual format info
-        let _ = tx.send(Ok((actual_rate, actual_channels)));
-
-        // Keep thread alive, emitting audio levels at ~10 Hz.
-        // NOTE: std::thread::sleep is intentional here — this runs on a dedicated OS thread
-        // (not the Tokio runtime) because cpal::Stream is !Send and requires a real thread.
-        let mut last_len = 0usize;
-        while !stop.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if let Ok(buffer) = buf.lock() {
-                let current_len = buffer.len();
-                if current_len > last_len {
-                    let recent = &buffer[last_len..current_len];
-                    // RMS over mono-mixed samples for level display
-                    let ch = actual_channels as usize;
-                    let rms = if ch > 1 {
-                        let mono_rms: f32 = recent
-                            .chunks(ch)
-                            .map(|frame| {
-                                let avg = frame.iter().sum::<f32>() / ch as f32;
-                                avg * avg
-                            })
-                            .sum::<f32>()
-                            / (recent.len() as f32 / ch as f32);
-                        mono_rms.sqrt()
-                    } else {
-                        (recent.iter().map(|s| s * s).sum::<f32>() / recent.len() as f32).sqrt()
-                    };
-                    last_len = current_len;
-                    let _ = app.emit(
-                        "recording-level",
-                        serde_json::json!({ "mic": rms, "system": 0.0_f32 }),
-                    );
-                }
-            }
-        }
-
-        // stream is dropped here, stopping audio capture
-    });
-
-    // Wait for stream setup
-    let (actual_rate, actual_channels) = rx
-        .recv()
-        .map_err(|_| "Audio thread died during setup".to_string())??;
-
-    Ok((mic_buffer, stop_signal, actual_rate, actual_channels, thread))
+/// Build the default WAV path for a new recording bundle:
+/// `~/Notesage/Recordings/Meeting <YYYY-MM-DD HH-MM-SS>/audio.wav`.
+fn new_recording_path(recordings_dir: &Path) -> PathBuf {
+    let stamp = chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string();
+    recordings_dir
+        .join(format!("Meeting {}", stamp))
+        .join("audio.wav")
 }
 
 // ---------------------------------------------------------------------------
-// Commands
+// Commands — capture
 // ---------------------------------------------------------------------------
 
-/// Start recording audio from the specified source.
+/// Start recording audio from the specified source, streaming samples to a WAV
+/// file in the `~/Notesage/Recordings` inbox. Exactly one capture owner may be
+/// active at a time.
 #[tauri::command]
 pub async fn start_recording(
     app: AppHandle,
@@ -389,269 +729,256 @@ pub async fn start_recording(
     source: String,
 ) -> Result<(), String> {
     {
-        let recording = state
-            .recording
+        let capture = state
+            .capture
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
-        if recording.is_some() {
-            return Err("Recording already in progress".into());
-        }
+        // Reject if a recording is active OR a stop is mid-teardown. The
+        // `stopping` flag is set under this same lock by `stop_recording`, so
+        // the moment `capture` reads `None` (owner taken) `stopping` is already
+        // `true` — there is no window in which a second stream can open while
+        // the previous owner's cpal stream is still draining (#264).
+        TranscriptionState::check_can_start(
+            capture.is_some(),
+            state.stopping.load(Ordering::Relaxed),
+        )?;
     }
 
-    // System audio capture — not yet implemented
+    // System audio capture — not yet implemented (microphone only in v1).
     if source == "system" {
         return Err(
             "System audio capture is not yet available. Use microphone recording instead.".into(),
         );
     }
-
-    if source == "system" || source == "both" {
+    if source == "both" {
         log::warn!(target: "notesage::transcription", "System audio capture not yet implemented — recording mic only");
     }
 
-    let (mic_buffer, stop_signal, actual_rate, actual_channels, audio_thread) =
-        start_mic_on_thread(app)?;
+    let path = new_recording_path(&state.recordings_dir);
+    let owner = spawn_capture(app, source.clone(), path.clone())?;
 
-    let handle = RecordingHandle {
-        mic_buffer,
-        source: source.clone(),
-        sample_rate: actual_rate,
-        channels: actual_channels,
-        start_time: std::time::Instant::now(),
-        stop_signal,
-        _audio_thread: audio_thread,
-    };
-
-    let mut recording = state
-        .recording
+    let mut capture = state
+        .capture
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
-    *recording = Some(handle);
+    *capture = Some(owner);
 
-    log::info!(target: "notesage::transcription", "Recording started (source: {})", source);
+    log::info!(target: "notesage::transcription", "Recording started (source: {}) → {}", source, path.display());
     Ok(())
 }
 
-/// Stop recording and return buffer metadata.
+/// Stop recording: signal stop, **await** stream teardown + thread join,
+/// finalize the WAV, and return the finalized file path plus signal metadata.
 #[tauri::command]
 pub async fn stop_recording(
     state: State<'_, TranscriptionState>,
-) -> Result<AudioBufferInfo, String> {
-    let handle = {
-        let mut recording = state
-            .recording
+) -> Result<RecordingResult, String> {
+    // Take the owner out of state AND set the `stopping` flag under the same
+    // lock. The flag stays set across the (unlocked) blocking join, so a
+    // concurrent `start_recording` — which checks `stopping` under this lock —
+    // cannot open a second stream while the old one is still draining (#264).
+    let mut owner = {
+        let mut capture = state
+            .capture
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
-        recording.take().ok_or("No recording in progress")?
+        let owner = capture.take().ok_or("No recording in progress")?;
+        state.stopping.store(true, Ordering::Relaxed);
+        owner
     };
 
-    // Signal stop
-    handle.stop_signal.store(true, Ordering::Relaxed);
+    let duration = owner.start_time.elapsed().as_secs_f64();
+    let source = owner.source.clone();
+    let path = owner.path.clone();
+    let sample_rate = owner.sample_rate;
+    let channels = owner.channels;
 
-    let duration = handle.start_time.elapsed().as_secs_f64();
-    let raw_data = {
-        let buf = handle
-            .mic_buffer
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        buf.clone()
-    };
-
-    // Resample to 16kHz mono (what Whisper expects)
-    let audio_data = resample_to_16k_mono(&raw_data, handle.sample_rate, handle.channels);
-    let sample_count = audio_data.len();
-
-    // Check audio signal level — detect if microphone was blocked by macOS TCC
-    let rms = if audio_data.is_empty() {
-        0.0
-    } else {
-        (audio_data.iter().map(|s| s * s).sum::<f32>() / audio_data.len() as f32).sqrt()
-    };
-    let peak = audio_data.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    // Awaited teardown: this joins the capture thread, which drops the stream
+    // and finalizes the WAV before returning. Runs on a blocking thread so we
+    // never park the async runtime on the join. Clear `stopping` afterwards
+    // regardless of outcome so a finalize error doesn't wedge recording forever.
+    let stats_result = tokio::task::spawn_blocking(move || owner.stop()).await;
+    state.stopping.store(false, Ordering::Relaxed);
+    let stats = stats_result.map_err(|e| format!("Teardown task panicked: {}", e))??;
 
     log::info!(
         target: "notesage::transcription",
-        "Recording stopped ({:.1}s, {} raw samples @ {}Hz {}ch → {} samples @ 16kHz mono, rms={:.6}, peak={:.6})",
-        duration, raw_data.len(), handle.sample_rate, handle.channels, sample_count, rms, peak
+        "Recording stopped ({:.1}s @ {}Hz {}ch, rms={:.6}, peak={:.6}) → {}",
+        duration, sample_rate, channels, stats.rms, stats.peak, path.display()
     );
 
-    if sample_count > 0 && peak < 0.0001 {
+    if stats.peak < 0.0001 {
         log::warn!(
             target: "notesage::transcription",
-            "Recording appears to be silence (peak={:.6}). Microphone access may be blocked by macOS privacy settings. \
-             Check System Settings > Privacy & Security > Microphone and ensure Notesage is allowed.",
-            peak
+            "Recording appears to be silence (peak={:.6}). Microphone access may be blocked by macOS privacy settings.",
+            stats.peak
         );
     }
 
-    // Save resampled buffer for transcription (always 16kHz mono)
-    {
-        let mut last = state
-            .last_recording_buffer
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        *last = Some((audio_data, handle.source.clone(), 16000));
-    }
-
-    Ok(AudioBufferInfo {
+    Ok(RecordingResult {
+        path: path.to_string_lossy().to_string(),
         duration_secs: duration,
-        sample_count,
-        sample_rate: 16000,
-        source: handle.source,
-        rms,
-        peak,
+        sample_rate,
+        source,
+        rms: stats.rms,
+        peak: stats.peak,
     })
 }
 
-/// Transcribe the last recorded audio buffer using a Whisper model.
+// ---------------------------------------------------------------------------
+// Commands — whole-file transcription
+// ---------------------------------------------------------------------------
+
+/// Transcribe a finalized audio file (whole-file, single Whisper pass).
+///
+/// Reads the WAV at `path`, resamples to 16kHz mono, runs Whisper once over the
+/// entire file, and returns ordered timestamped segments. Emits
+/// `transcription-progress` events carrying `jobId` so the orb can distinguish
+/// concurrent jobs.
 #[tauri::command]
-pub async fn transcribe(
+pub async fn transcribe_file(
     app: AppHandle,
     state: State<'_, TranscriptionState>,
+    job_id: String,
+    path: String,
     model: String,
     language: Option<String>,
 ) -> Result<TranscriptionResult, String> {
-    let (audio_data, source, sample_rate) = {
-        let last = state
-            .last_recording_buffer
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        last.clone()
-            .ok_or("No audio data available. Record audio first.")?
-    };
-
-    if audio_data.is_empty() {
-        return Err("No audio data recorded".into());
+    let audio_path = PathBuf::from(&path);
+    if !audio_path.exists() {
+        return Err(format!("Audio file not found: {}", path));
     }
 
     let model_path = state.models_dir.join(format!("ggml-{}.bin", model));
-    log::info!(target: "notesage::transcription", "Transcribe requested: model={}, path={}, exists={}", model, model_path.display(), model_path.exists());
+    log::info!(target: "notesage::transcription", "transcribe_file: job={}, model={}, path={}, exists={}", job_id, model, model_path.display(), model_path.exists());
 
     if !model_path.exists() {
-        log::error!(target: "notesage::transcription", "Model file not found: {}", model_path.display());
         return Err(format!(
             "Model '{}' not downloaded. Download it from Settings > Transcription.",
             model
         ));
     }
 
-    let model_size = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
-    log::info!(target: "notesage::transcription", "Model file size: {} bytes, audio samples: {}, sample_rate: {}", model_size, audio_data.len(), sample_rate);
-
-    let model_path_str = model_path
-        .to_str()
-        .ok_or("Invalid model path")?
-        .to_string();
+    let model_path_str = model_path.to_str().ok_or("Invalid model path")?.to_string();
 
     let _ = app.emit(
         "transcription-progress",
-        serde_json::json!({ "percent": 5, "segment": "Loading model..." }),
+        serde_json::json!({ "jobId": job_id, "percent": 2, "segment": "Loading audio..." }),
     );
 
-    // Get a reference to the whisper context mutex for the blocking task
+    // Load + resample the WAV.
+    let (raw, file_rate, file_channels) = read_wav_f32(&audio_path)?;
+    let audio_data = resample_to_16k_mono(&raw, file_rate, file_channels);
+    if audio_data.is_empty() {
+        return Err("Audio file contains no samples".into());
+    }
+    let sample_rate = 16000u32;
+
+    let _ = app.emit(
+        "transcription-progress",
+        serde_json::json!({ "jobId": job_id, "percent": 5, "segment": "Loading model..." }),
+    );
+
     let whisper_ctx = state.whisper_ctx.clone();
     let lang = language.unwrap_or_else(|| "en".to_string());
-    let lang_result = lang.clone(); // Clone for use in result after closure
+    let lang_result = lang.clone();
+    let job_id_task = job_id.clone();
+    let model_task = model.clone();
+    let app_final = app.clone();
 
-    // Run model load + transcription on a blocking thread to avoid starving the async runtime
-    let result = tokio::task::spawn_blocking(move || -> Result<(Vec<TranscriptionSegment>, f64), String> {
-        // Load whisper context (cached if same model)
-        {
-            let mut ctx_lock = whisper_ctx
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
-
-            let needs_reload = match &*ctx_lock {
-                Some((cached_model, _)) => cached_model != &model,
-                None => true,
-            };
-
-            if needs_reload {
-                log::info!(target: "notesage::transcription", "Loading Whisper model: {} ({})", model, model_path_str);
-                let load_start = std::time::Instant::now();
-                let params = whisper_rs::WhisperContextParameters::default();
-                let ctx = whisper_rs::WhisperContext::new_with_params(&model_path_str, params)
-                    .map_err(|e| {
-                        log::error!(target: "notesage::transcription", "Failed to load Whisper model '{}': {}", model, e);
-                        format!("Failed to load Whisper model: {}", e)
-                    })?;
-                log::info!(target: "notesage::transcription", "Model loaded in {:.1}s", load_start.elapsed().as_secs_f64());
-                *ctx_lock = Some((model.clone(), ctx));
-            } else {
-                log::debug!(target: "notesage::transcription", "Reusing cached Whisper context for model: {}", model);
+    // Model load + whole-file transcription on a blocking thread so it never
+    // contends with a live capture (which lives on its own dedicated thread).
+    let result = tokio::task::spawn_blocking(
+        move || -> Result<(Vec<TranscriptSegment>, f64), String> {
+            // Load (or reuse cached) whisper context.
+            {
+                let mut ctx_lock = whisper_ctx
+                    .lock()
+                    .map_err(|e| format!("Lock error: {}", e))?;
+                let needs_reload = match &*ctx_lock {
+                    Some((cached_model, _)) => cached_model != &model_task,
+                    None => true,
+                };
+                if needs_reload {
+                    log::info!(target: "notesage::transcription", "Loading Whisper model: {} ({})", model_task, model_path_str);
+                    let load_start = std::time::Instant::now();
+                    let params = whisper_rs::WhisperContextParameters::default();
+                    let ctx =
+                        whisper_rs::WhisperContext::new_with_params(&model_path_str, params)
+                            .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
+                    log::info!(target: "notesage::transcription", "Model loaded in {:.1}s", load_start.elapsed().as_secs_f64());
+                    *ctx_lock = Some((model_task.clone(), ctx));
+                }
             }
-        }
 
-        let _ = app.emit(
-            "transcription-progress",
-            serde_json::json!({ "percent": 15, "segment": "Transcribing..." }),
-        );
-
-        // Run transcription
-        let ctx_lock = whisper_ctx
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let (_, ctx) = ctx_lock.as_ref().ok_or("Whisper context not loaded")?;
-
-        let mut params =
-            whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        params.set_language(Some(&lang));
-
-        let mut whisper_state = ctx
-            .create_state()
-            .map_err(|e| format!("Failed to create Whisper state: {}", e))?;
-
-        whisper_state
-            .full(params, &audio_data)
-            .map_err(|e| format!("Transcription failed: {}", e))?;
-
-        let num_segments = whisper_state.full_n_segments();
-
-        let mut segments = Vec::new();
-        for i in 0..num_segments {
-            let seg = whisper_state
-                .get_segment(i)
-                .ok_or_else(|| format!("Segment {} out of bounds", i))?;
-
-            let start = seg.start_timestamp();
-            let end = seg.end_timestamp();
-            let text = seg
-                .to_str_lossy()
-                .map_err(|e| format!("Failed to get segment text: {}", e))?
-                .to_string();
-
-            let speaker = if source == "both" {
-                Some("You".to_string())
-            } else {
-                None
-            };
-
-            let trimmed = text.trim().to_string();
-            segments.push(TranscriptionSegment {
-                start: start as f64 / 100.0,
-                end: end as f64 / 100.0,
-                text: trimmed.clone(),
-                speaker,
-            });
-
-            let percent = 15 + (85 * (i + 1) as u32 / num_segments.max(1) as u32);
             let _ = app.emit(
                 "transcription-progress",
-                serde_json::json!({ "percent": percent, "segment": trimmed }),
+                serde_json::json!({ "jobId": job_id_task, "percent": 15, "segment": "Transcribing..." }),
             );
-        }
 
-        let duration_secs = audio_data.len() as f64 / sample_rate as f64;
-        Ok((segments, duration_secs))
-    })
+            let ctx_lock = whisper_ctx
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            let (_, ctx) = ctx_lock.as_ref().ok_or("Whisper context not loaded")?;
+
+            let mut params =
+                whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+            params.set_print_progress(false);
+            params.set_print_realtime(false);
+            params.set_print_timestamps(false);
+            params.set_language(Some(&lang));
+
+            let mut whisper_state = ctx
+                .create_state()
+                .map_err(|e| format!("Failed to create Whisper state: {}", e))?;
+
+            whisper_state
+                .full(params, &audio_data)
+                .map_err(|e| format!("Transcription failed: {}", e))?;
+
+            let num_segments = whisper_state.full_n_segments();
+            let mut segments = Vec::new();
+            for i in 0..num_segments {
+                let seg = whisper_state
+                    .get_segment(i)
+                    .ok_or_else(|| format!("Segment {} out of bounds", i))?;
+                let start = seg.start_timestamp();
+                let end = seg.end_timestamp();
+                let text = seg
+                    .to_str_lossy()
+                    .map_err(|e| format!("Failed to get segment text: {}", e))?
+                    .trim()
+                    .to_string();
+
+                segments.push(TranscriptSegment {
+                    start: start as f64 / 100.0,
+                    end: end as f64 / 100.0,
+                    text: text.clone(),
+                    speaker_id: None,
+                    speaker_name: None,
+                });
+
+                let percent = 15 + (85 * (i + 1) as u32 / num_segments.max(1) as u32);
+                let _ = app.emit(
+                    "transcription-progress",
+                    serde_json::json!({ "jobId": job_id_task, "percent": percent, "segment": text }),
+                );
+            }
+
+            let duration_secs = audio_data.len() as f64 / sample_rate as f64;
+            Ok((segments, duration_secs))
+        },
+    )
     .await
     .map_err(|e| format!("Transcription task panicked: {}", e))??;
 
     let (segments, duration_secs) = result;
-    log::info!(target: "notesage::transcription", "Transcription complete: {} segments, {:.1}s", segments.len(), duration_secs);
+    log::info!(target: "notesage::transcription", "transcribe_file complete (job={}): {} segments, {:.1}s", job_id, segments.len(), duration_secs);
+
+    let _ = app_final.emit(
+        "transcription-progress",
+        serde_json::json!({ "jobId": job_id, "percent": 100, "segment": "Done" }),
+    );
 
     Ok(TranscriptionResult {
         segments,
@@ -660,271 +987,9 @@ pub async fn transcribe(
     })
 }
 
-/// Check if transcribed text is a Whisper hallucination (silence markers, repeated noise).
-fn is_hallucination(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    // Common Whisper hallucinations on silence/noise
-    let hallucination_patterns = [
-        "[silence]",
-        "[blank_audio]",
-        "[blank audio]",
-        "[music]",
-        "[applause]",
-        "[laughter]",
-        "(silence)",
-        "(blank audio)",
-        "thank you for watching",
-        "thanks for watching",
-        "please subscribe",
-        "thank you.",
-        "you",
-        // Single punctuation or whitespace
-    ];
-    for pat in &hallucination_patterns {
-        if lower.trim() == *pat {
-            return true;
-        }
-    }
-    // Text that's only brackets/parens content
-    let stripped = lower.trim();
-    if (stripped.starts_with('[') && stripped.ends_with(']'))
-        || (stripped.starts_with('(') && stripped.ends_with(')'))
-    {
-        return true;
-    }
-    // Very short text that's just punctuation
-    if stripped.len() <= 2 && stripped.chars().all(|c| c.is_ascii_punctuation() || c.is_whitespace())
-    {
-        return true;
-    }
-    false
-}
-
-/// Start streaming dictation (mic capture + real-time whisper-rs transcription).
-#[tauri::command]
-pub async fn start_dictation(
-    app: AppHandle,
-    state: State<'_, TranscriptionState>,
-    language: Option<String>,
-    model: Option<String>,
-) -> Result<(), String> {
-    {
-        let dictation = state
-            .dictation_cancel
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        if dictation.is_some() {
-            return Err("Dictation already in progress".into());
-        }
-    }
-
-    // Use requested model, fall back to "base"
-    let model_name = model.unwrap_or_else(|| "base".to_string());
-    let model_path = state.models_dir.join(format!("ggml-{}.bin", model_name));
-    log::info!(target: "notesage::transcription", "Dictation start requested: model={}, model_path={}, exists={}, models_dir={}", model_name, model_path.display(), model_path.exists(), state.models_dir.display());
-
-    // If requested model not found, try any downloaded model as fallback
-    let model_path = if !model_path.exists() {
-        if let Some((_fb_name, fb_path)) = find_any_downloaded_model(&state.models_dir) {
-            log::warn!(target: "notesage::transcription", "Requested model '{}' not found, falling back to '{}'", model_name, _fb_name);
-            fb_path
-        } else {
-            log::error!(target: "notesage::transcription", "No Whisper model found for dictation (requested: {}, models_dir: {})", model_name, state.models_dir.display());
-            return Err(
-                "No Whisper model available for dictation. Download a model in Settings > Transcription."
-                    .into(),
-            );
-        }
-    } else {
-        model_path
-    };
-
-    let model_size = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
-    log::info!(target: "notesage::transcription", "Dictation using model: {} ({} bytes)", model_path.display(), model_size);
-
-    let (mic_buffer, stop_signal, native_rate, native_channels, _audio_thread) =
-        start_mic_on_thread(app.clone())?;
-    log::info!(target: "notesage::transcription", "Mic started: rate={}, channels={}", native_rate, native_channels);
-
-    // Store cancel signal
-    {
-        let mut dictation = state
-            .dictation_cancel
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        *dictation = Some(stop_signal.clone());
-    }
-
-    let model_path_str = model_path.to_str().unwrap_or("").to_string();
-    let cancel = stop_signal;
-    let lang = language.unwrap_or_else(|| "en".to_string());
-
-    // Background transcription loop on a std::thread (whisper-rs is CPU-bound)
-    std::thread::spawn(move || {
-        let params = whisper_rs::WhisperContextParameters::default();
-        let ctx = match whisper_rs::WhisperContext::new_with_params(&model_path_str, params) {
-            Ok(ctx) => ctx,
-            Err(e) => {
-                log::error!(target: "notesage::transcription", "Failed to load dictation model: {}", e);
-                let _ = app.emit(
-                    "dictation-result",
-                    serde_json::json!({ "text": "", "is_final": true, "error": format!("Failed to load model: {}", e) }),
-                );
-                return;
-            }
-        };
-
-        // ~3 seconds of raw samples at native rate/channels
-        let raw_chunk_size = native_rate as usize * native_channels as usize * 3;
-        // Track last emitted text to avoid duplicates
-        let mut last_emitted = String::new();
-        // Consecutive error counter — break after 3
-        let mut consecutive_errors: u32 = 0;
-        // RMS silence threshold — below this, skip transcription entirely
-        const SILENCE_RMS_THRESHOLD: f32 = 0.005;
-
-        while !cancel.load(Ordering::Relaxed) {
-            // NOTE: std::thread::sleep is intentional here — this runs on a dedicated OS thread
-            // (not the Tokio runtime) because whisper-rs inference is CPU-bound and would
-            // block async tasks. The 3s sleep accumulates audio for the next transcription chunk.
-            std::thread::sleep(std::time::Duration::from_secs(3));
-
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
-
-            let audio_chunk: Vec<f32> = {
-                let mut buffer = match mic_buffer.lock() {
-                    Ok(b) => b,
-                    Err(_) => continue,
-                };
-                if buffer.len() < raw_chunk_size {
-                    log::debug!(target: "notesage::transcription", "Dictation: buffer {} < chunk size {}, waiting", buffer.len(), raw_chunk_size);
-                    continue;
-                }
-                let raw = buffer.clone();
-                buffer.clear();
-                // Resample to 16kHz mono for Whisper
-                resample_to_16k_mono(&raw, native_rate, native_channels)
-            };
-
-            if audio_chunk.is_empty() {
-                log::debug!(target: "notesage::transcription", "Dictation: empty audio chunk after resample");
-                continue;
-            }
-
-            // Skip silent chunks — avoids Whisper hallucinating on silence
-            let rms = (audio_chunk.iter().map(|s| s * s).sum::<f32>()
-                / audio_chunk.len() as f32)
-                .sqrt();
-            log::debug!(target: "notesage::transcription", "Dictation: chunk {} samples, RMS {:.4}", audio_chunk.len(), rms);
-            if rms < SILENCE_RMS_THRESHOLD {
-                log::debug!(target: "notesage::transcription", "Dictation: skipping silent chunk (RMS {:.4} < {})", rms, SILENCE_RMS_THRESHOLD);
-                continue;
-            }
-
-            let lang_str = lang.clone();
-            let mut wparams =
-                whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
-            wparams.set_print_progress(false);
-            wparams.set_print_realtime(false);
-            wparams.set_print_timestamps(false);
-            wparams.set_language(Some(&lang_str));
-            wparams.set_no_context(true);
-
-            let mut ws = match ctx.create_state() {
-                Ok(s) => s,
-                Err(e) => {
-                    log::error!(target: "notesage::transcription", "Dictation: failed to create Whisper state: {}", e);
-                    consecutive_errors += 1;
-                    if consecutive_errors >= 3 {
-                        log::error!(target: "notesage::transcription", "Dictation: 3 consecutive errors, stopping");
-                        let _ = app.emit(
-                            "dictation-result",
-                            serde_json::json!({ "text": "", "is_final": true, "error": "Transcription engine failed repeatedly" }),
-                        );
-                        break;
-                    }
-                    continue;
-                }
-            };
-
-            match ws.full(wparams, &audio_chunk) {
-                Ok(_) => {
-                    consecutive_errors = 0; // Reset on success
-                    let n = ws.full_n_segments();
-                    log::debug!(target: "notesage::transcription", "Dictation: whisper returned {} segments", n);
-                    let mut text = String::new();
-                    for i in 0..n {
-                        if let Some(seg) = ws.get_segment(i) {
-                            if let Ok(t) = seg.to_str_lossy() {
-                                let segment_text = t.trim();
-                                if is_hallucination(segment_text) {
-                                    log::debug!(target: "notesage::transcription", "Dictation: filtered hallucination: {:?}", segment_text);
-                                } else {
-                                    text.push_str(segment_text);
-                                    text.push(' ');
-                                }
-                            }
-                        }
-                    }
-                    let trimmed = text.trim().to_string();
-                    if trimmed.is_empty() {
-                        log::debug!(target: "notesage::transcription", "Dictation: empty result after filtering");
-                    } else if trimmed == last_emitted {
-                        log::debug!(target: "notesage::transcription", "Dictation: duplicate, skipping: {:?}", trimmed);
-                    } else {
-                        log::info!(target: "notesage::transcription", "Dictation: emitting: {:?}", trimmed);
-                        last_emitted = trimmed.clone();
-                        let _ = app.emit(
-                            "dictation-result",
-                            serde_json::json!({ "text": trimmed, "is_final": false }),
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::error!(target: "notesage::transcription", "Dictation: whisper inference failed: {}", e);
-                    consecutive_errors += 1;
-                    if consecutive_errors >= 3 {
-                        log::error!(target: "notesage::transcription", "Dictation: 3 consecutive inference errors, stopping");
-                        let _ = app.emit(
-                            "dictation-result",
-                            serde_json::json!({ "text": "", "is_final": true, "error": "Transcription engine failed repeatedly" }),
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        let _ = app.emit(
-            "dictation-result",
-            serde_json::json!({ "text": "", "is_final": true }),
-        );
-    });
-
-    log::info!(target: "notesage::transcription", "Dictation started");
-    Ok(())
-}
-
-/// Stop streaming dictation.
-#[tauri::command]
-pub async fn stop_dictation(
-    state: State<'_, TranscriptionState>,
-) -> Result<(), String> {
-    let cancel = {
-        let mut dictation = state
-            .dictation_cancel
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        dictation.take().ok_or("No dictation in progress")?
-    };
-
-    cancel.store(true, Ordering::Relaxed);
-
-    log::info!(target: "notesage::transcription", "Dictation stopped");
-    Ok(())
-}
+// ---------------------------------------------------------------------------
+// Commands — model management (unchanged)
+// ---------------------------------------------------------------------------
 
 /// List available Whisper models (both downloaded and not).
 #[tauri::command]
@@ -979,7 +1044,9 @@ pub async fn download_whisper_model(
     // Register cancel signal for this download
     let cancel = Arc::new(AtomicBool::new(false));
     {
-        let mut cancels = state.download_cancels.lock()
+        let mut cancels = state
+            .download_cancels
+            .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         if cancels.contains_key(&size) {
             return Err(format!("Model '{}' is already being downloaded", size));
@@ -1030,10 +1097,7 @@ async fn download_model_inner(
         .map_err(|e| format!("Download failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with status: {}",
-            response.status()
-        ));
+        return Err(format!("Download failed with status: {}", response.status()));
     }
 
     let total = response.content_length().unwrap_or(0);
@@ -1052,7 +1116,6 @@ async fn download_model_inner(
         }
 
         let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
-        use std::io::Write;
         file.write_all(&chunk)
             .map_err(|e| format!("Write error: {}", e))?;
 
@@ -1078,7 +1141,9 @@ pub async fn cancel_model_download(
     state: State<'_, TranscriptionState>,
     size: String,
 ) -> Result<(), String> {
-    let cancels = state.download_cancels.lock()
+    let cancels = state
+        .download_cancels
+        .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
     if let Some(cancel) = cancels.get(&size) {
         cancel.store(true, Ordering::Relaxed);
@@ -1117,4 +1182,243 @@ pub async fn delete_whisper_model(
 
     log::info!(target: "notesage::transcription", "Model '{}' deleted", size);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering as O};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    /// Build a real `CaptureOwner` backed by a parking thread (no cpal). The
+    /// thread increments `live` on entry and decrements it on stop, so a test
+    /// can prove the stream is still "alive" mid-teardown. `finalize_result` is
+    /// pre-seeded with `Ok(())` so `stop()` returns cleanly.
+    fn fake_owner(live: Arc<AtomicUsize>) -> CaptureOwner {
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        let stats: Arc<Mutex<Option<CaptureStats>>> = Arc::new(Mutex::new(None));
+        let finalize_result: Arc<Mutex<Option<Result<(), String>>>> =
+            Arc::new(Mutex::new(None));
+
+        let stop = stop_signal.clone();
+        let stats_t = stats.clone();
+        let finalize_t = finalize_result.clone();
+        live.fetch_add(1, O::SeqCst);
+        let live_t = live.clone();
+        let thread = thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            *stats_t.lock().unwrap() = Some(CaptureStats { rms: 0.1, peak: 0.2 });
+            *finalize_t.lock().unwrap() = Some(Ok(()));
+            // "Release the device" only after the join completes its work.
+            live_t.fetch_sub(1, O::SeqCst);
+        });
+
+        CaptureOwner {
+            source: "microphone".into(),
+            path: PathBuf::from("/tmp/notesage-test-audio.wav"),
+            sample_rate: 16000,
+            channels: 1,
+            start_time: std::time::Instant::now(),
+            stop_signal,
+            stats,
+            finalize_result,
+            thread: Some(thread),
+        }
+    }
+
+    /// #264 regression: while a stop is mid-teardown — the owner has been taken
+    /// out of `capture` (so it reads `None`) but the cpal stream/thread is still
+    /// alive — a `start_recording` admission attempt MUST be refused, and only
+    /// after teardown completes may a start succeed.
+    ///
+    /// This drives the REAL `TranscriptionState` fields and the REAL
+    /// `check_can_start` guard used by `start_recording`, reproducing exactly
+    /// the steps `stop_recording` performs under (and after) the capture lock.
+    /// It FAILS against a guard that only checks `capture.is_some()` (the old
+    /// take-then-join-without-`stopping` logic): with the owner taken, `capture`
+    /// is `None`, so an `is_some()`-only guard would admit a second stream while
+    /// the first is still draining. It PASSES once the `stopping` flag closes
+    /// the window.
+    #[test]
+    fn start_is_refused_while_stop_is_in_progress() {
+        let state = TranscriptionState::new();
+        let live = Arc::new(AtomicUsize::new(0));
+
+        // --- start_recording: install an owner under the capture lock. ---
+        {
+            let mut cap = state.capture.lock().unwrap();
+            TranscriptionState::check_can_start(
+                cap.is_some(),
+                state.stopping.load(Ordering::Relaxed),
+            )
+            .expect("first start should be admitted");
+            *cap = Some(fake_owner(live.clone()));
+        }
+        assert_eq!(live.load(O::SeqCst), 1, "stream should be live after start");
+
+        // --- stop_recording, phase 1: under the lock, take the owner AND set
+        // `stopping`. This is the exact transition stop_recording performs. ---
+        let mut owner = {
+            let mut cap = state.capture.lock().unwrap();
+            let owner = cap.take().expect("owner present");
+            state.stopping.store(true, Ordering::Relaxed);
+            owner
+        };
+
+        // The stream is STILL ALIVE here (thread hasn't been joined) even though
+        // `capture` now reads `None`. A start attempt MUST be refused. An
+        // `is_some()`-only guard would (wrongly) admit here — that is the #264
+        // overlap this test locks against.
+        assert_eq!(live.load(O::SeqCst), 1, "stream still alive mid-teardown");
+        {
+            let cap = state.capture.lock().unwrap();
+            let admitted = TranscriptionState::check_can_start(
+                cap.is_some(),
+                state.stopping.load(Ordering::Relaxed),
+            )
+            .is_ok();
+            assert!(
+                !admitted,
+                "start admitted while a stop was in progress — second stream would overlap (#264)"
+            );
+        }
+
+        // --- stop_recording, phase 2: awaited teardown (join), then clear
+        // `stopping`. After this the device is released. ---
+        owner.stop().expect("stop should succeed");
+        state.stopping.store(false, Ordering::Relaxed);
+        assert_eq!(live.load(O::SeqCst), 0, "stream still live after stop returned");
+
+        // --- A start AFTER teardown completes must now be admitted. ---
+        {
+            let cap = state.capture.lock().unwrap();
+            TranscriptionState::check_can_start(
+                cap.is_some(),
+                state.stopping.load(Ordering::Relaxed),
+            )
+            .expect("start after teardown should be admitted");
+        }
+    }
+
+    /// The real `CaptureOwner::stop` invariant in isolation: signalling stop
+    /// joins the owning thread, and `finished` flips to true before stop
+    /// returns. Uses a hand-built owner with a parking thread (no cpal/hardware).
+    #[test]
+    fn capture_owner_stop_awaits_thread_join() {
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
+        let stats: Arc<Mutex<Option<CaptureStats>>> = Arc::new(Mutex::new(None));
+
+        let finalize_result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
+
+        let stop = stop_signal.clone();
+        let finished_t = finished.clone();
+        let stats_t = stats.clone();
+        let finalize_t = finalize_result.clone();
+        let thread = thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            *stats_t.lock().unwrap() = Some(CaptureStats { rms: 0.1, peak: 0.2 });
+            *finalize_t.lock().unwrap() = Some(Ok(()));
+            finished_t.store(true, Ordering::Relaxed);
+        });
+
+        let mut owner = CaptureOwner {
+            source: "microphone".into(),
+            path: PathBuf::from("/tmp/notesage-test-audio.wav"),
+            sample_rate: 16000,
+            channels: 1,
+            start_time: std::time::Instant::now(),
+            stop_signal,
+            stats,
+            finalize_result,
+            thread: Some(thread),
+        };
+
+        assert!(!finished.load(Ordering::Relaxed), "finished before stop");
+        let s = owner.stop().expect("stop failed");
+        // After stop returns the thread has joined, so finished MUST be set and
+        // stats MUST be reported.
+        assert!(finished.load(Ordering::Relaxed), "thread not joined by stop");
+        assert!((s.peak - 0.2).abs() < 1e-6);
+        // Second stop is a no-op for the (already-joined) thread and simply
+        // re-reports the stored stats — it must not hang or panic.
+        let s2 = owner.stop().expect("second stop failed");
+        assert!((s2.peak - 0.2).abs() < 1e-6);
+    }
+
+    /// Fix 3 regression: a WAV finalize failure reported by the capture thread
+    /// MUST surface as an `Err` from `CaptureOwner::stop()`, so `stop_recording`
+    /// never returns a path to a corrupt/incomplete file.
+    #[test]
+    fn stop_propagates_wav_finalize_error() {
+        let stop_signal = Arc::new(AtomicBool::new(false));
+        let stats: Arc<Mutex<Option<CaptureStats>>> = Arc::new(Mutex::new(None));
+        let finalize_result: Arc<Mutex<Option<Result<(), String>>>> =
+            Arc::new(Mutex::new(None));
+
+        let stop = stop_signal.clone();
+        let finalize_t = finalize_result.clone();
+        let thread = thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            // Simulate a failed WavWriter::finalize() (e.g. seek failure).
+            *finalize_t.lock().unwrap() = Some(Err("WAV seek error: boom".into()));
+        });
+
+        let mut owner = CaptureOwner {
+            source: "microphone".into(),
+            path: PathBuf::from("/tmp/notesage-test-bad.wav"),
+            sample_rate: 16000,
+            channels: 1,
+            start_time: std::time::Instant::now(),
+            stop_signal,
+            stats,
+            finalize_result,
+            thread: Some(thread),
+        };
+
+        let err = owner.stop().expect_err("stop must fail when finalize failed");
+        assert!(err.contains("WAV seek error"), "error not propagated: {}", err);
+    }
+
+    #[test]
+    fn wav_round_trips_through_writer_and_reader() {
+        let dir = std::env::temp_dir().join(format!("notesage-wav-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("audio.wav");
+
+        let mut w = WavWriter::create(&path, 16000, 1).unwrap();
+        let input: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.001).sin() * 0.5).collect();
+        w.write_f32(&input).unwrap();
+        w.finalize().unwrap();
+
+        let (samples, rate, channels) = read_wav_f32(&path).unwrap();
+        assert_eq!(rate, 16000);
+        assert_eq!(channels, 1);
+        assert_eq!(samples.len(), input.len());
+        // 16-bit quantization tolerance.
+        for (a, b) in input.iter().zip(samples.iter()) {
+            assert!((a - b).abs() < 1e-3, "sample drift too large: {} vs {}", a, b);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resample_passthrough_at_16k() {
+        let data = vec![0.1, 0.2, 0.3, 0.4];
+        let out = resample_to_16k_mono(&data, 16000, 1);
+        assert_eq!(out, data);
+    }
 }

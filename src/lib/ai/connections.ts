@@ -194,8 +194,9 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
     installMeta: {
-      githubRepo: 'anthropics/claude-agent-acp',
+      githubRepo: 'agentclientprotocol/claude-agent-acp',
       manualCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.anthropic.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -216,6 +217,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'agentclientprotocol/codex-acp',
       manualCommand: 'npm install -g @agentclientprotocol/codex-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -237,6 +239,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-cli',
       manualCommand: 'npm install -g @github/copilot',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -250,6 +253,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-language-server-release',
       manualCommand: 'npm install -g @github/copilot-language-server',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },

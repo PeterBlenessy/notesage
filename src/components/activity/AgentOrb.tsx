@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, Mic } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -76,8 +76,37 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   const isActive = runningCount > 0;
   const shouldPulse = isActive && !reducedMotion;
 
-  const ariaLabel =
-    runningCount === 1
+  // Recording state — the orb narrates the live-capture leg of the
+  // Recording → Transcribing → Ready story. We surface the EARLIEST active
+  // recording's elapsed time (there is normally just one) as an `MM:SS`
+  // stopwatch driven by a 1 s text tick. This is plain text, not an
+  // animation, so it does not interact with the reduced-motion gate on the
+  // CSS pulse — it stays correct regardless of the motion preference.
+  const activeRecordingStart = tasks
+    .filter((t) => t.kind === 'recording' && t.status === 'running')
+    .map((t) => t.recordingStartedAt ?? t.startedAt)
+    .sort((a, b) => a - b)[0];
+  const isRecording = activeRecordingStart !== undefined;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isRecording) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRecording]);
+
+  const recordingElapsed = isRecording
+    ? (() => {
+        const totalSeconds = Math.max(0, Math.floor((now - activeRecordingStart!) / 1000));
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      })()
+    : null;
+
+  const ariaLabel = isRecording
+    ? `Recording — ${recordingElapsed}`
+    : runningCount === 1
       ? 'Agent — 1 task running'
       : `Agent — ${runningCount} tasks running`;
 
@@ -172,7 +201,23 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               shouldPulse && 'orb-pulsing',
             )}
           >
-            {isActive ? (
+            {isRecording ? (
+              // Recording leg — a mic glyph + the live elapsed time so the orb
+              // reads as "I'm capturing" rather than a generic running count.
+              <span
+                data-testid="agent-orb-recording"
+                className="flex flex-col items-center justify-center gap-0.5 leading-none"
+              >
+                <Mic
+                  className="h-3.5 w-3.5 text-[var(--color-accent-primary)]"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+                <span className="font-mono text-[8px] font-medium tabular-nums text-[var(--color-accent-primary)]">
+                  {recordingElapsed}
+                </span>
+              </span>
+            ) : isActive ? (
               <span
                 data-testid="agent-orb-badge"
                 className="font-mono text-[10px] font-medium leading-none tabular-nums"
@@ -187,7 +232,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               // and flips to white on hover (paired with `group` on the outer
               // button) so the affordance has a stronger interactive lift.
               <Bot
-                className="h-5 w-5 opacity-60 transition-colors duration-[220ms] ease-out group-hover:text-[oklch(100%_0_0)] group-hover:opacity-100"
+                className="h-5 w-5 opacity-60 transition-colors duration-[220ms] ease-out group-hover:text-popover-foreground group-hover:opacity-100"
                 strokeWidth={1.5}
                 aria-hidden="true"
               />

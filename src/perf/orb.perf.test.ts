@@ -145,6 +145,7 @@ import { AgentOrb } from "@/components/activity/AgentOrb";
 function makeTask(id: string, status: AgentTask["status"]): AgentTask {
   return {
     id,
+    kind: "agent",
     type: "chat",
     label: `Task ${id}`,
     status,
@@ -202,7 +203,7 @@ describe("AgentOrb panel open", () => {
           // there before unmounting so we're measuring the open-to-rendered
           // cost, not just the click dispatch.
           const region = utils.queryByRole("region", {
-            name: /agent tasks/i,
+            name: /activity/i,
           });
           if (!region) throw new Error("Panel did not render after click");
           utils.unmount();

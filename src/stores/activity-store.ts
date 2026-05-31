@@ -11,8 +11,21 @@ const TASK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export type AgentTaskType = 'comment' | 'chat' | 'workflow';
 export type AgentTaskStatus = 'running' | 'done' | 'error' | 'cancelled';
 
+/**
+ * Discriminates the three categories the orb's activity panel renders.
+ * Existing persisted tasks (pre-v2) lack this field; the v1→v2 migration
+ * backfills `'agent'` so they render with the unchanged agent treatment.
+ */
+export type AgentTaskKind = 'agent' | 'transcription' | 'recording';
+
 export interface AgentTask {
   id: string;
+  /**
+   * Category discriminator. Defaults to `'agent'` for any task created via
+   * `addTask` (and for legacy tasks rehydrated without it). Transcription and
+   * recording lifecycle items set this explicitly.
+   */
+  kind: AgentTaskKind;
   type: AgentTaskType;
   label: string;
   status: AgentTaskStatus;
@@ -26,13 +39,64 @@ export interface AgentTask {
   partialOutput?: string;
   finalOutput?: string;
   thinkingOutput?: string;
+
+  // --- transcription-job fields (kind === 'transcription') ---
+  /** Source audio file being transcribed. */
+  audioPath?: string;
+  /** Output transcript note path, set when the job completes. */
+  transcriptPath?: string;
+  /** Whole-file transcription progress, 0–100. */
+  progress?: number;
+
+  // --- recording-item fields (kind === 'recording') ---
+  /** ms-epoch when capture began, for the live elapsed-time affordance. */
+  recordingStartedAt?: number;
+
+  /**
+   * Set on a completed transcription job once its bundle has been relocated
+   * into a project (kind === 'transcription'). When true, the "Move to project"
+   * action is hidden — the bundle has already been filed.
+   */
+  moved?: boolean;
 }
 
 interface ActivityStore {
   tasks: AgentTask[];
 
-  addTask(task: Omit<AgentTask, 'activities' | 'startedAt'>): void;
+  /**
+   * Add an agent task. `kind` is optional and defaults to `'agent'`, keeping
+   * existing call sites byte-identical in behavior.
+   */
+  addTask(task: Omit<AgentTask, 'activities' | 'startedAt' | 'kind'> & { kind?: AgentTaskKind }): void;
   removeTask(id: string): void;
+
+  // --- transcription job lifecycle (kind === 'transcription') ---
+  /** Create a running transcription job for a finalized audio file. */
+  addTranscriptionJob(job: {
+    id: string;
+    label: string;
+    audioPath: string;
+    documentId?: string;
+  }): void;
+  /** Update a transcription job's progress (0–100). */
+  setTranscriptionProgress(id: string, percent: number): void;
+  /** Mark a transcription job done and record the output transcript path. */
+  setTranscriptionDone(id: string, transcriptPath: string): void;
+  /** Mark a transcription job as failed (re-runnable from the inbox). */
+  setTranscriptionError(id: string): void;
+  /**
+   * Record that a completed transcription job's bundle has been moved into a
+   * project. Sets `moved: true` (hides the "Move to project" action) and
+   * repoints `transcriptPath` at the relocated note so click-to-open still
+   * resolves. No-op if the job is not a transcription.
+   */
+  setTranscriptionMoved(id: string, newTranscriptPath: string): void;
+
+  // --- recording item lifecycle (kind === 'recording') ---
+  /** Create a running recording item representing live capture. */
+  addRecordingItem(item: { id: string; label: string; recordingStartedAt?: number }): void;
+  /** Remove a recording item (e.g. when it transitions to a transcription job). */
+  removeRecordingItem(id: string): void;
   resetTaskForContinuation(id: string): void;
   updateTaskStatus(id: string, status: AgentTaskStatus): void;
   appendActivity(id: string, activity: DelegationActivity): void;
@@ -63,6 +127,7 @@ export const useActivityStore = create<ActivityStore>()(
 
       addTask: (partial) => {
         const task: AgentTask = {
+          kind: 'agent',
           ...partial,
           activities: [],
           startedAt: Date.now(),
@@ -86,6 +151,97 @@ export const useActivityStore = create<ActivityStore>()(
       removeTask: (id) => {
         set((state) => ({
           tasks: state.tasks.filter((t) => t.id !== id),
+        }));
+      },
+
+      addTranscriptionJob: ({ id, label, audioPath, documentId }) => {
+        const task: AgentTask = {
+          id,
+          kind: 'transcription',
+          type: 'workflow',
+          label,
+          status: 'running',
+          audioPath,
+          documentId,
+          progress: 0,
+          activities: [],
+          startedAt: Date.now(),
+        };
+        set((state) => {
+          const updated = [task, ...state.tasks];
+          const completed = updated.filter((t) => t.status !== 'running');
+          if (completed.length > MAX_COMPLETED_TASKS) {
+            const toRemove = new Set(
+              completed.slice(MAX_COMPLETED_TASKS).map((t) => t.id)
+            );
+            return { tasks: updated.filter((t) => !toRemove.has(t.id)) };
+          }
+          return { tasks: updated };
+        });
+      },
+
+      setTranscriptionProgress: (id, percent) => {
+        const clamped = Math.max(0, Math.min(100, percent));
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id ? { ...t, progress: clamped } : t
+          ),
+        }));
+      },
+
+      setTranscriptionDone: (id, transcriptPath) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  status: 'done' as const,
+                  progress: 100,
+                  transcriptPath,
+                  completedAt: Date.now(),
+                }
+              : t
+          ),
+        }));
+      },
+
+      setTranscriptionError: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? { ...t, status: 'error' as const, completedAt: Date.now() }
+              : t
+          ),
+        }));
+      },
+
+      setTranscriptionMoved: (id, newTranscriptPath) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id && t.kind === 'transcription'
+              ? { ...t, moved: true, transcriptPath: newTranscriptPath }
+              : t
+          ),
+        }));
+      },
+
+      addRecordingItem: ({ id, label, recordingStartedAt }) => {
+        const task: AgentTask = {
+          id,
+          kind: 'recording',
+          type: 'workflow',
+          label,
+          status: 'running',
+          recordingStartedAt: recordingStartedAt ?? Date.now(),
+          activities: [],
+          startedAt: Date.now(),
+        };
+        set((state) => ({ tasks: [task, ...state.tasks] }));
+      },
+
+      removeRecordingItem: (id) => {
+        set((state) => ({
+          tasks: state.tasks.filter((t) => !(t.id === id && t.kind === 'recording')),
         }));
       },
 
@@ -223,16 +379,35 @@ export const useActivityStore = create<ActivityStore>()(
     {
       name: 'notesage-activity',
       storage: createTauriStorage(),
-      version: 1,
+      version: 2,
+      // v1 → v2: the `kind` discriminator was introduced for the meeting-recording
+      // feature. Backfill `kind: 'agent'` on any persisted task that predates it
+      // so existing tasks keep the unchanged agent rendering. Idempotent — leaves
+      // tasks that already carry a `kind` untouched.
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as { tasks?: AgentTask[] } | undefined;
+        if (state && Array.isArray(state.tasks) && version < 2) {
+          state.tasks = state.tasks.map((t) =>
+            t.kind ? t : { ...t, kind: 'agent' as const }
+          );
+        }
+        return state as ActivityStore;
+      },
       // Exclude transient streaming fields from persistence to avoid
       // excessive writes during token-by-token streaming updates.
+      // `recording` items represent live in-progress capture — they are never
+      // resumable across a restart, and persisting one would leave a stale
+      // errored "Recording" entry after a crash mid-capture. Strip them here
+      // (transcription + agent tasks stay persisted).
       partialize: (state) => ({
         ...state,
-        tasks: state.tasks.map((t) => ({
-          ...t,
-          partialOutput: '',
-          thinkingOutput: '',
-        })),
+        tasks: state.tasks
+          .filter((t) => t.kind !== 'recording')
+          .map((t) => ({
+            ...t,
+            partialOutput: '',
+            thinkingOutput: '',
+          })),
       }),
       // On rehydration, mark any previously-running tasks as interrupted
       // and clear transient streaming state
@@ -240,6 +415,10 @@ export const useActivityStore = create<ActivityStore>()(
         if (!state) return;
         const now = Date.now();
         state.tasks = state.tasks
+          // Defensive backfill: any task missing the `kind` discriminator
+          // (legacy persisted state that bypassed the v1→v2 migrate path)
+          // defaults to 'agent' so it renders unchanged.
+          .map((t) => (t.kind ? t : { ...t, kind: 'agent' as const }))
           .map((t) => {
             if (t.status === 'running') {
               return {
