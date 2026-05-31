@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import type { Editor } from "@tiptap/react";
 import { Mic, MicOff } from "lucide-react";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { useMeetingRecording } from "@/hooks/useMeetingRecording";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -20,26 +20,16 @@ export function MicButton({
    */
   showTooltip?: boolean;
 }) {
-  const { startDictation, stopDictation, isDictating, finalText } = useSpeechRecognition();
-  const prevFinalTextRef = useRef(finalText);
-
-  // Insert final dictation text at cursor
-  useEffect(() => {
-    if (finalText && finalText !== prevFinalTextRef.current && editor) {
-      editor.chain().focus().insertContent(finalText).run();
-    }
-    prevFinalTextRef.current = finalText;
-  }, [finalText, editor]);
+  // Meeting recording (not dictation): click starts a mic recording, click
+  // again stops it and kicks off the background transcription job. See
+  // `useMeetingRecording` for the full start → record → transcribe flow.
+  const { toggleRecording, isRecording } = useMeetingRecording();
 
   const handleToggle = useCallback(async () => {
-    if (isDictating) {
-      await stopDictation();
-    } else {
-      await startDictation();
-    }
-  }, [isDictating, startDictation, stopDictation]);
+    await toggleRecording();
+  }, [toggleRecording]);
 
-  const label = isDictating ? "Stop dictation" : "Start dictation";
+  const label = isRecording ? "Stop recording" : "Start recording";
 
   const button = (
     <Button
@@ -48,23 +38,21 @@ export function MicButton({
       onClick={handleToggle}
       disabled={!editor}
       aria-label={label}
-      aria-pressed={isDictating}
+      aria-pressed={isRecording}
       className={cn(
         "active:scale-90",
         // Live-test 2026-04-25 — use the user's accent colour while
-        // dictating instead of hardcoded red. Falls back to
+        // recording instead of hardcoded red. Falls back to
         // --color-primary (neutral grey) when no accent is selected,
         // so existing users see no chromatic surprise. The icon also
         // keeps `animate-pulse` to make the "recording" state
-        // unmistakable. A separate Recording row in the StatusTray
-        // popover used to convey this state textually — that row was
-        // removed because the icon now communicates it on its own.
-        isDictating
+        // unmistakable.
+        isRecording
           ? "animate-pulse text-[var(--color-accent-primary)]"
           : "text-muted-foreground",
       )}
     >
-      {isDictating ? (
+      {isRecording ? (
         <MicOff className="size-4" strokeWidth={1.5} />
       ) : (
         <Mic className="size-4" strokeWidth={1.5} />

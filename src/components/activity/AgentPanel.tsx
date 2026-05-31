@@ -33,7 +33,7 @@ export function AgentPanel({ onCancelTask, onClickTask }: AgentPanelProps) {
           id="agent-panel-heading"
           className="text-xs font-medium text-foreground whitespace-nowrap"
         >
-          Agent Tasks
+          Activity
         </span>
       </div>
 
@@ -50,10 +50,10 @@ export function AgentPanel({ onCancelTask, onClickTask }: AgentPanelProps) {
               aria-hidden="true"
             />
             <span className="text-xs text-muted-foreground">
-              No agent tasks yet
+              Nothing happening yet
             </span>
             <span className="text-xs text-muted-foreground/60">
-              Open Chat (Cmd+Shift+C) to get started
+              Agent tasks, recordings, and transcriptions show up here
             </span>
           </div>
         ) : (

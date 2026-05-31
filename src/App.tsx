@@ -35,6 +35,7 @@ import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
+import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
 import { useAccent } from "@/hooks/useAccent";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -136,6 +137,12 @@ function App() {
   useTraySync();
   useApprovalMigrationToast();
   useRecentDocumentCycle();
+  // Meeting recording — background transcription orchestrator (PRD
+  // 2026-05-30-meeting-recording, task #10). Listens for the decoupled
+  // `notesage:start-transcription` event fired when a capture finishes and
+  // drives the whole-file transcription → note-render → bundle-write pipeline.
+  // A hook defined but not mounted never runs (see "Startup Hooks in App.tsx").
+  useTranscriptionJob();
   // Live-test 2026-04-25 #144 — without this mount the accent radio in
   // Settings > Appearance writes to settings-store but the DOM never
   // gets the `.accent-orange` / `.accent-blue` / `.accent-system`

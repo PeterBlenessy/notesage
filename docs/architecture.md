@@ -52,7 +52,7 @@ note-sage/
 │   │   │   ├── store.rs    # Key-value store operations
 │   │   │   ├── sync.rs     # iCloud sync settings
 │   │   │   ├── shell_path.rs # Shell PATH resolution
-│   │   │   ├── transcription.rs # Voice recording, Whisper transcription, dictation, model management
+│   │   │   ├── transcription.rs # Mic capture-to-WAV (single stream owner, awaited teardown), whole-file Whisper transcription (transcribe_file → segments), Whisper model management (no live dictation)
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
@@ -237,8 +237,8 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `mcp-store` | MCP server registry (`{ global, byProject }` with `projectRoot` per entry); scope-gated `getActiveServers` / `getActiveTools` | Partial (enabled overrides) |
 | `epub-store` | EPUB view mode + bookmarks | Full |
 | ~~`tag-store`~~ | ~~Workspace tag index~~ | Removed — replaced by SQLite document index |
-| `activity-store` | Agent task registry | Full |
-| `recording-store` | Whisper models, downloads, language | Partial (`speechLanguage`, `defaultModel`) |
+| `activity-store` | Agent / transcription / recording task registry, discriminated by `kind` (`agent \| transcription \| recording`) | Full |
+| `recording-store` | Meeting-recording state, Whisper models + downloads, transcription model + recording language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |
 | `local-ai-store` | Local AI server state, models | Partial (`enabled`, `activeModelId`, etc.) |
 | `action-store` | Actions dashboard (task/goal scanning, comments, agent tasks) | Partial (`actionCache`, `filter` only) |

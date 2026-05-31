@@ -14,7 +14,6 @@ import {
 import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
 import { ContextPill } from "@/components/chat/ContextPill";
 import { useChatContext } from "@/hooks/useChatContext";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { FILE_DRAG_MIME } from "@/components/sidebar/quiet/file-drag";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { useRoutingStore } from "@/stores/routing-store";
@@ -28,8 +27,6 @@ import {
   Hash,
   ImagePlus,
   MessageSquare,
-  Mic,
-  MicOff,
   Plus,
   Square,
   User,
@@ -314,29 +311,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     attachExplicit,
   } = useChatContext();
 
-  // #133 — dictation. The hook tries Web Speech first and falls back
-  // to whisper-rs in WKWebView. `finalText` accumulates as transcription
-  // completes; `interimText` is the live "still hearing you" preview
-  // shown as a placeholder while dictating.
-  const {
-    startDictation,
-    stopDictation,
-    isDictating,
-    interimText,
-    finalText,
-  } = useSpeechRecognition();
-  const handleMicToggle = useCallback(async () => {
-    if (isDictating) await stopDictation();
-    else await startDictation();
-  }, [isDictating, startDictation, stopDictation]);
-
-  // Append `finalText` to the composer input as the dictation engine
-  // finalises each chunk. Same append shape ChatInput uses (a single
-  // space separator so the user can keep typing in between).
-  useEffect(() => {
-    if (!finalText) return;
-    setInputValue((prev) => (prev ? `${prev} ${finalText}` : finalText));
-  }, [finalText]);
+  // Voice input was removed from the command bar with the voice-subsystem
+  // rewrite (PRD 2026-05-30-meeting-recording). The composer has no
+  // microphone affordance — meeting recording lives on the StatusTray mic.
 
   // #127 parity — connection + routing state for the cross-provider
   // resend/edit dialog (minus the per-project `ai.provider` override
@@ -777,8 +754,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // Caps at 160 px (~6 lines) so the bar can't push past the doc area;
   // beyond that the textarea scrolls internally. Called from
   // `handleInputChange` AND from a `useEffect` on `inputValue` so
-  // programmatic value changes (prefix replacement, dictation append)
-  // resize the textarea too.
+  // programmatic value changes (e.g. prefix replacement) resize the
+  // textarea too.
   const autoResize = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -1578,9 +1555,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onDismissContext={dismissItem}
           explicitAttachOffer={explicitAttachOffer}
           onAttachExplicit={attachExplicit}
-          isDictating={isDictating}
-          interimText={interimText}
-          onMicToggle={handleMicToggle}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -2138,12 +2112,6 @@ interface ExpandedContentProps {
   explicitAttachOffer: import("@/hooks/useChatContext").ExplicitAttachOffer | null;
   /** #134 — accept the explicit-attach offer. */
   onAttachExplicit: (path: string, label: string) => void;
-  /** #133 — dictation active state (drives Mic vs MicOff icon). */
-  isDictating: boolean;
-  /** #133 — live transcription preview shown as the input placeholder. */
-  interimText: string;
-  /** #133 — toggle dictation. */
-  onMicToggle: () => void;
 }
 
 function ExpandedContent({
@@ -2192,9 +2160,6 @@ function ExpandedContent({
   onDismissContext,
   explicitAttachOffer,
   onAttachExplicit,
-  isDictating,
-  interimText,
-  onMicToggle,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -2569,34 +2534,6 @@ function ExpandedContent({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={onMicToggle}
-                  aria-label={isDictating ? "Stop dictation" : "Start dictation"}
-                  className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                    "transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    isDictating
-                      ? "text-destructive animate-pulse"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                  )}
-                >
-                  {isDictating ? (
-                    <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  ) : (
-                    <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs max-w-[220px]">
-                {isDictating ? "Stop dictation" : "Start dictation"}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
           <textarea
             ref={inputRef}
             rows={1}
@@ -2617,9 +2554,7 @@ function ExpandedContent({
                 ? "Resolve project context change first…"
                 : pendingAgentSwitch
                   ? "Resolve provider change first…"
-                  : isDictating && interimText
-                    ? interimText
-                    : "Ask, search, or type / for skills…"
+                  : "Ask, search, or type / for skills…"
             }
             className={cn(
               "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",

@@ -189,32 +189,36 @@ Research workflow built on the Skills & Agents Platform.
 
 **Citing:** Three citation formats (inline links, footnotes, academic). Citation format persisted per-project.
 
-## Voice Transcription & Dictation
+## Meeting Recording & Transcription
 
-On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — fully offline.
+On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — fully offline. There is no live dictation and no command-bar voice input: the only voice feature is **record a meeting, then transcribe the whole file in the background**. Capture and transcription are two decoupled phases — capture writes audio to disk and does nothing else, transcription is a separate background job that reads the finished file (PRD `2026-05-30-meeting-recording.md`, motivated by #264).
 
-**Dictation (live):**
+**Lifecycle — one artifact, four states (narrated by the AgentOrb):**
 
-- Real-time speech-to-text inserted at cursor position
-- Web Speech API tried first; auto-falls back to whisper-rs in WKWebView
-- Language selection from 99 supported languages
-- Hallucination filtering removes Whisper artifacts
-- RMS silence detection skips empty audio chunks
-- Keyboard shortcut: Cmd+Shift+R to toggle recording
+```
+⏺ Recording (02:14)  →  ⟳ Transcribing…  →  ✓ Ready to file  →  📁 Moved to project
+```
 
-**Meeting recording & transcription:**
+1. **Record.** The StatusTray microphone (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/<Meeting timestamp>/` inbox folder. The orb shows a `recording` item with elapsed time. Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription.
+2. **Stop.** A second click (or `⌘⇧R`) signals the stream owner to stop; teardown (stream drop + thread join) is awaited before the command returns and the WAV is finalized. A rapid stop→start is safe because the new stream can only open after the previous owner has fully released CoreAudio.
+3. **Transcribe.** A background **transcription job** (tracked in `activity-store`, surfaced in the orb / `AgentPanel`) runs whole-file Whisper once with the configured model and produces timestamped segments. Progress streams into the activity item via `transcription-progress` events.
+4. **File it.** On completion the panel offers "Move to project"; picking one relocates the whole bundle (audio + transcript note) into that project. No pick leaves it in the inbox, re-openable and re-runnable.
 
-- Record audio from microphone with visual recording indicator
-- Stop recording opens transcription dialog with model selection
-- Full transcription with timestamped segments and progress tracking
+**Data model — segments, not a blob:**
+
+The transcript is stored as an ordered list of `TranscriptSegment` (`start`, `end`, `text`, `speakerId: string | null`, `speakerName: string | null`). `speakerId` / `speakerName` are reserved for a future diarization + naming pass and are `null` in v1. The renderer (`src/lib/transcription/render-transcript.ts`) collapses segments into readable paragraphs for the note body and persists the raw segment array in the note's YAML frontmatter, so a later diarization pass can reconstruct structure and re-render speaker-grouped (`**Alice:** …`) without re-recording. The retained `audio.wav` makes that upgrade re-processable.
+
+**The artifact bundle:** each recording is a folder under the inbox (and later the chosen project) holding `audio.wav` (finalized capture) + `transcript.md` (note rendered from segments). The folder keeps the pair together so "move to project" is a single atomic move (`src/lib/transcription/bundle.ts`, reusing `rename_path` / `copy_directory`).
+
+**The orb / activity model:** `activity-store` carries a `kind: 'agent' | 'transcription' | 'recording'` discriminator so the `AgentPanel` renders the three distinctly — `agent` is the existing AI-delegation treatment, `recording` shows elapsed time + a stop affordance, `transcription` shows a distinct icon + progress and the "Move to project" action on completion. The orb pulses for any in-flight item, giving one continuous indicator across recording → transcribing → ready.
 
 **Whisper model management:**
 
 - 5 model sizes: Tiny (39M), Base (74M), Small (244M), Medium (769M), Large v3 (1550M)
 - Models downloaded from Hugging Face in GGML format
 - Concurrent downloads with per-model progress bars and cancel buttons
-- Model management in Settings > Transcription tab
-- Auto-download: Whisper base model downloaded automatically on first dictation if no model is available
+- Model management in Settings > Voice (the legacy `TranscriptionSettings` panel)
+- The selected **transcription model** (`recording-store.defaultModel`) and **recording language** (`recording-store.speechLanguage`) drive the whole-file `transcribe_file` job
 
 ## Chronological Message Segments
 
@@ -270,9 +274,11 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/hooks/useCommentDelegation.ts` | Comment → agent delegation flow |
 | `src/hooks/useAgentTaskOperations.ts` | Background agent task management |
 | `src/hooks/useSkillOperations.ts` | Skill/agent discovery |
-| `src/hooks/useRecording.ts` | Audio recording lifecycle |
-| `src/hooks/useTranscription.ts` | Whisper transcription with progress |
-| `src/hooks/useSpeechRecognition.ts` | Live dictation |
+| `src/hooks/useRecording.ts` | Mic capture lifecycle (start/stop → WAV file, elapsed timer, `recording-level` events) |
+| `src/hooks/useMeetingRecording.ts` | StatusTray mic / `⌘⇧R` start-stop trigger for a meeting recording |
+| `src/hooks/useTranscriptionJob.ts` | Background transcription-job orchestrator (mounted in `App.tsx`) — capture stop → whole-file transcribe → render note → bundle → "Move to project" |
+| `src/lib/transcription/render-transcript.ts` | `TranscriptSegment[]` → transcript note (paragraphs + segments in frontmatter) |
+| `src/lib/transcription/bundle.ts` | Recording-bundle folder creation + move-to-project |
 | `src/stores/chat-store.ts` | Chat conversation state, branching, `sliceThreadBySegment`, scoped approvals migration |
 | `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
@@ -284,9 +290,9 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/image-compress.ts` | Client-side image compression pipeline |
 | `src/stores/skill-store.ts` | Skills registry, agents, instructions |
 | `src/stores/comment-store.ts` | Comments, replies, delegation |
-| `src/stores/activity-store.ts` | Agent task registry |
-| `src/stores/recording-store.ts` | Voice recording state |
-| `src-tauri/src/commands/transcription.rs` | Voice recording, Whisper, model management |
+| `src/stores/activity-store.ts` | Agent / transcription / recording task registry (`kind` discriminator) |
+| `src/stores/recording-store.ts` | Meeting-recording state, transcription model + recording language defaults, Whisper model catalog |
+| `src-tauri/src/commands/transcription.rs` | Mic capture-to-WAV (`start_recording`/`stop_recording`), whole-file `transcribe_file`, Whisper model management |
 | `src-tauri/src/commands/skills.rs` | Skill/agent discovery, script execution |
 | `src-tauri/src/commands/mcp.rs` | MCP client |
 

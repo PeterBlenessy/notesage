@@ -26,7 +26,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Editing Features
 
-- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, subscript, superscript, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
+- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, subscript, superscript, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing)
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Right-click "Add to chat" on images and drawing blocks sends the image to the FloatingCommandBar as an attachment (via `SendToAI` ProseMirror plugin and vision event bus)
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table

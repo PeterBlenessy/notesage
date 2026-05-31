@@ -26,7 +26,6 @@ export interface DownloadState {
 interface RecordingStore {
   // Runtime state (not persisted)
   isRecording: boolean;
-  isDictating: boolean;
   recordingSource: RecordingSource;
   recordingStartTime: number | null;
   transcriptionProgress: number;
@@ -42,8 +41,6 @@ interface RecordingStore {
   // Actions
   startRecording: (source: RecordingSource) => void;
   stopRecording: () => void;
-  startDictating: () => void;
-  stopDictating: () => void;
   setTranscriptionProgress: (progress: number) => void;
   setAvailableModels: (models: ModelInfo[]) => void;
   setDefaultModel: (model: string) => void;
@@ -90,7 +87,6 @@ export const useRecordingStore = create<RecordingStore>()(
       return {
         // Runtime state
         isRecording: false,
-        isDictating: false,
         recordingSource: 'microphone',
         recordingStartTime: null,
         transcriptionProgress: 0,
@@ -117,10 +113,6 @@ export const useRecordingStore = create<RecordingStore>()(
             isRecording: false,
             recordingStartTime: null,
           }),
-
-        startDictating: () => set({ isDictating: true }),
-
-        stopDictating: () => set({ isDictating: false }),
 
         setTranscriptionProgress: (progress) =>
           set({ transcriptionProgress: progress }),

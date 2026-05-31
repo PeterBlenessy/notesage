@@ -245,9 +245,7 @@ pub fn run() {
             // Voice transcription
             start_recording,
             stop_recording,
-            transcribe,
-            start_dictation,
-            stop_dictation,
+            transcribe_file,
             list_whisper_models,
             download_whisper_model,
             cancel_model_download,

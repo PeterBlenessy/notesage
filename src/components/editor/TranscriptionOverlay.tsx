@@ -1,84 +1,59 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { RecordingBar } from "@/components/recording/RecordingBar";
-import { TranscriptionDialog } from "@/components/recording/TranscriptionDialog";
 import { useRecording } from "@/hooks/useRecording";
-import type { AudioBufferInfo } from "@/lib/tauri";
+import { useMeetingRecording } from "@/hooks/useMeetingRecording";
 
 interface TranscriptionOverlayProps {
-  /** Project path for saving transcription as a note */
-  projectPath: string | null;
-  /** Insert transcribed text at cursor position in the editor */
+  /**
+   * Project path — retained for call-site compatibility. The transcript now
+   * lands in the global `~/Notesage` recordings inbox and is moved to a
+   * project from the AgentOrb panel after transcription completes, so this
+   * is no longer read here.
+   */
+  projectPath?: string | null;
+  /**
+   * Retained for call-site compatibility. Meeting recording no longer
+   * inserts transcribed text at the cursor — the transcript becomes a note.
+   */
   onInsertAtCursor?: (text: string) => void;
 }
 
 /**
- * Manages recording UI (RecordingBar) and the transcription dialog.
- * Listens for the global `notesage:toggle-recording` event (Cmd+Shift+R).
+ * Hosts the live recording indicator (RecordingBar) and wires the global
+ * `notesage:toggle-recording` event (⌘⇧R) to meeting recording.
+ *
+ * Recording is capture-only: starting/stopping is delegated to
+ * `useMeetingRecording`, which on stop fires the background transcription
+ * job (surfaced through the AgentOrb). There is no synchronous transcription
+ * dialog and no dictation — both were removed with the voice-subsystem
+ * rewrite (PRD 2026-05-30-meeting-recording).
  */
-export function TranscriptionOverlay({ projectPath, onInsertAtCursor }: TranscriptionOverlayProps) {
+export function TranscriptionOverlay(_props: TranscriptionOverlayProps) {
   const recording = useRecording();
-  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
-  const [lastBufferInfo, setLastBufferInfo] = useState<AudioBufferInfo | null>(null);
+  const { toggleRecording } = useMeetingRecording();
 
-  // Toggle recording via global keyboard shortcut event
+  // Toggle meeting recording via the global ⌘⇧R event.
   useEffect(() => {
     const handleToggleRecording = () => {
-      if (recording.isRecording) {
-        recording.stopRecording().then((info) => {
-          if (info) {
-            setLastBufferInfo(info);
-            setTranscriptionDialogOpen(true);
-          }
-        });
-      } else {
-        recording.startRecording("microphone");
-      }
+      void toggleRecording();
     };
     window.addEventListener("notesage:toggle-recording", handleToggleRecording);
-    return () => window.removeEventListener("notesage:toggle-recording", handleToggleRecording);
-  }, [recording]);
+    return () =>
+      window.removeEventListener("notesage:toggle-recording", handleToggleRecording);
+  }, [toggleRecording]);
 
-  const handleStop = useCallback(async () => {
-    const info = await recording.stopRecording();
-    if (info) {
-      setLastBufferInfo(info);
-      setTranscriptionDialogOpen(true);
-    }
-  }, [recording]);
+  const handleStop = useCallback(() => {
+    void toggleRecording();
+  }, [toggleRecording]);
 
-  const handleSaveAsNote = useCallback(async (content: string, title: string) => {
-    if (projectPath) {
-      const fileName = `${title.replace(/[^a-zA-Z0-9 —-]/g, '').replace(/ /g, '-').toLowerCase()}.md`;
-      const filePath = `${projectPath}/${fileName}`;
-      try {
-        const { tauriApi: api } = await import('@/lib/tauri');
-        await api.writeFile(filePath, content);
-        const { toast } = await import('sonner');
-        toast.success(`Saved: ${fileName}`);
-      } catch (err) {
-        const { toast } = await import('sonner');
-        toast.error(`Failed to save: ${err}`);
-      }
-    }
-  }, [projectPath]);
+  if (!recording.isRecording) return null;
 
   return (
-    <>
-      {recording.isRecording && (
-        <RecordingBar
-          elapsedTime={recording.elapsedTime}
-          source={recording.source}
-          micLevel={recording.micLevel}
-          onStop={handleStop}
-        />
-      )}
-      <TranscriptionDialog
-        open={transcriptionDialogOpen}
-        onOpenChange={setTranscriptionDialogOpen}
-        bufferInfo={lastBufferInfo}
-        onSaveAsNote={handleSaveAsNote}
-        onInsertAtCursor={onInsertAtCursor}
-      />
-    </>
+    <RecordingBar
+      elapsedTime={recording.elapsedTime}
+      source={recording.source}
+      micLevel={recording.micLevel}
+      onStop={handleStop}
+    />
   );
 }

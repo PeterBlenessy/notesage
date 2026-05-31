@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   MessageCircle,
   Loader2,
@@ -13,17 +14,30 @@ import {
   BotMessageSquare,
   Brain,
   User,
+  ScrollText,
+  Mic,
+  FolderInput,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
+import { Progress } from '@/components/ui/progress';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { DiffContentView } from '@/components/chat/segments/DiffContentView';
 import { TextContentView } from '@/components/chat/segments/TextContentView';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useCommentStore } from '@/stores/comment-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActivityStore } from '@/stores/activity-store';
 import type { AgentTask } from '@/stores/activity-store';
 import type { ActivityApprovalMode } from '@/lib/ai/types';
+import { dirname, basename as pathBasename, moveBundleToProject, transcriptPathForAudio } from '@/lib/transcription/bundle';
 
 /**
  * Small badge next to each activity row signalling *how* the tool call was
@@ -45,18 +59,20 @@ function ApprovalBadge({ mode }: { mode: ActivityApprovalMode }) {
         ? 'bg-foreground/10 text-foreground'
         : 'bg-destructive/15 text-destructive';
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-[1px] text-[9px] font-medium leading-none transition-colors duration-150 ${cls}`}
-        >
-          {label}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="left" sideOffset={4}>
-        <p className="text-xs">{tooltip}</p>
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-[1px] text-[10px] font-medium leading-none transition-colors duration-150 ${cls}`}
+          >
+            {label}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" sideOffset={4}>
+          <p className="text-xs">{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -73,6 +89,209 @@ function basename(filePath: string): string {
   return filePath.split('/').pop() ?? filePath;
 }
 
+/** Stopwatch format (`MM:SS`) for the live recording elapsed time. */
+function formatStopwatch(startedAt: number, now: number): string {
+  const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Display name for a project root — the trailing path component. */
+function projectDisplayName(projectRoot: string): string {
+  return pathBasename(projectRoot) || projectRoot;
+}
+
+/**
+ * "Move to project" action shown on a completed transcription job. Lists the
+ * open projects from `workspace-store`; picking one relocates the whole bundle
+ * (audio + transcript) into that project via `moveBundleToProject`, toasts
+ * success, and records the move in the store (which hides this action).
+ */
+function MoveToProjectMenu({ task }: { task: AgentTask }) {
+  const projects = useWorkspaceStore((s) => s.projects);
+  const setTranscriptionMoved = useActivityStore((s) => s.setTranscriptionMoved);
+  const [moving, setMoving] = useState(false);
+
+  // The bundle dir is the folder holding the transcript/audio.
+  const anchorPath = task.transcriptPath ?? task.audioPath;
+  if (!anchorPath) return null;
+  const bundleDir = dirname(anchorPath);
+
+  const handleMove = async (projectRoot: string) => {
+    setMoving(true);
+    try {
+      const newBundleDir = await moveBundleToProject(bundleDir, projectRoot);
+      // The transcript keeps its filename inside the relocated bundle folder;
+      // derive the new note path from the audio filename convention.
+      const movedAudio = `${newBundleDir}/${basename(task.audioPath ?? '')}`;
+      const newTranscriptPath = task.audioPath
+        ? transcriptPathForAudio(movedAudio)
+        : `${newBundleDir}/${basename(task.transcriptPath ?? '')}`;
+      setTranscriptionMoved(task.id, newTranscriptPath);
+      toast.success(`Moved to ${projectDisplayName(projectRoot)}`);
+    } catch (err) {
+      toast.error(`Failed to move recording: ${err}`);
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="xs"
+          disabled={moving || projects.length === 0}
+          onClick={(e) => e.stopPropagation()}
+          className="h-5 px-1.5 gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {moving ? (
+            <Loader2 className="h-2.5 w-2.5 animate-spin" strokeWidth={1.5} />
+          ) : (
+            <FolderInput className="h-2.5 w-2.5" strokeWidth={1.5} />
+          )}
+          Move to project
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {projects.length === 0 ? (
+          <DropdownMenuItem disabled>No open projects</DropdownMenuItem>
+        ) : (
+          projects.map((p) => (
+            <DropdownMenuItem
+              key={p.path}
+              onSelect={() => { void handleMove(p.path); }}
+            >
+              {projectDisplayName(p.path)}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Transcription-job card (kind === 'transcription'). Distinct ScrollText icon
+ * + label; a shadcn `Progress` bar while running (a spinner stands in when
+ * progress is 0/unknown); a "Move to project" action on completion; the shared
+ * error treatment on failure.
+ */
+function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemove?: (id: string) => void }) {
+  const isRunning = task.status === 'running';
+  const progress = task.progress ?? 0;
+  const showSpinner = isRunning && progress === 0;
+
+  return (
+    <div className="group/card px-3 py-2.5 space-y-1.5 min-w-0 overflow-hidden">
+      <div className="flex items-start gap-2">
+        <div className="shrink-0 mt-0.5">
+          {task.status === 'error' ? (
+            <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />
+          ) : task.status === 'done' ? (
+            <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+          ) : (
+            <ScrollText className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate" title={task.label}>
+            {task.label}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {task.status === 'error'
+              ? 'Transcription failed — re-runnable from the inbox'
+              : task.status === 'done'
+                ? 'Transcript ready'
+                : 'Transcribing…'}
+          </p>
+        </div>
+        {!isRunning && onRemove && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
+            className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+            title="Remove task"
+          >
+            <X className="h-3 w-3" strokeWidth={1.5} />
+          </Button>
+        )}
+      </div>
+
+      {/* Progress affordance while running */}
+      {isRunning && (
+        <div className="pl-5">
+          {showSpinner ? (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+              <span>Starting…</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Progress value={progress} className="h-1.5 flex-1" />
+              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                {Math.round(progress)}%
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Move-to-project action on completion (hidden once moved) */}
+      {task.status === 'done' && !task.moved && (
+        <div className="pl-5">
+          <MoveToProjectMenu task={task} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Live-recording card (kind === 'recording'). Recording glyph + a stopwatch
+ * elapsed time driven by a 1 s interval. No cancel affordance — capture is
+ * stopped from the StatusTray mic button.
+ */
+function RecordingCard({ task }: { task: AgentTask }) {
+  const startedAt = task.recordingStartedAt ?? task.startedAt;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (task.status !== 'running') return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [task.status]);
+
+  return (
+    <div className="group/card px-3 py-2.5 min-w-0 overflow-hidden">
+      <div className="flex items-center gap-2">
+        <Mic
+          className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-foreground truncate" title={task.label}>
+            {task.label}
+          </p>
+          <p className="text-xs text-muted-foreground">Recording…</p>
+        </div>
+        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+          {formatStopwatch(startedAt, now)}
+        </span>
+      </div>
+      {/* Stopping happens from the mic button in the status bar, not here —
+          tell users so the orb-only path isn't a dead end. */}
+      <p className="mt-1 pl-[1.375rem] text-[11px] text-muted-foreground/80">
+        Stop from the mic in the status bar.
+      </p>
+    </div>
+  );
+}
+
 interface ActivityTaskCardProps {
   task: AgentTask;
   onCancel?: (taskId: string) => void;
@@ -80,7 +299,19 @@ interface ActivityTaskCardProps {
   onClick?: (task: AgentTask) => void;
 }
 
-export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: ActivityTaskCardProps) {
+export function ActivityTaskCard(props: ActivityTaskCardProps) {
+  // Branch by kind. Transcription + recording have their own self-contained
+  // cards (each manages its own hooks); the `agent` path below is unchanged.
+  if (props.task.kind === 'transcription') {
+    return <TranscriptionCard task={props.task} onRemove={props.onRemove} />;
+  }
+  if (props.task.kind === 'recording') {
+    return <RecordingCard task={props.task} />;
+  }
+  return <AgentTaskCardInner {...props} />;
+}
+
+function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: ActivityTaskCardProps) {
   // Provider logo: stored on task, or fall back to current agent_tasks routing
   const routedAgentConnection = useRoutingStore((s) => s.getConnectionForUseCase('agent_tasks'));
   const providerForLogo = task.connectionProvider ?? routedAgentConnection?.provider;
