@@ -84,7 +84,7 @@ export function TranscriptionSettings() {
       <div className="space-y-3">
         <h3 className="text-sm font-medium">Whisper Models</h3>
         <p className="text-xs text-muted-foreground">
-          OpenAI Whisper models for on-device transcription — your audio never leaves your machine. Models are downloaded from{' '}
+          OpenAI Whisper models used to transcribe meeting recordings on-device — your audio never leaves your machine. Models are downloaded from{' '}
           <a
             href="https://huggingface.co/ggerganov/whisper.cpp"
             target="_blank"
@@ -206,9 +206,9 @@ export function TranscriptionSettings() {
         {/* Default model */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Default model</Label>
+            <Label className="text-sm font-medium">Transcription model</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Whisper model used for transcription
+              Whisper model used to transcribe meeting recordings in the background
             </p>
           </div>
           <Select
@@ -232,9 +232,9 @@ export function TranscriptionSettings() {
         {/* Speech language */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Speech language</Label>
+            <Label className="text-sm font-medium">Recording language</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Language for speech recognition
+              Spoken language of your recordings (leave on auto-detect if unsure)
             </p>
           </div>
           <Select value={speechLanguage} onValueChange={setSpeechLanguage}>

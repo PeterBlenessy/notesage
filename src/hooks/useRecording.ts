@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { tauriApi, type AudioBufferInfo } from '@/lib/tauri';
+import { tauriApi, type RecordingResult } from '@/lib/tauri';
 import { useRecordingStore, type RecordingSource } from '@/stores/recording-store';
 import { toast } from 'sonner';
 
 interface RecordingHook {
   startRecording: (source: RecordingSource) => Promise<void>;
-  stopRecording: () => Promise<AudioBufferInfo | null>;
+  stopRecording: () => Promise<RecordingResult | null>;
   isRecording: boolean;
   elapsedTime: number;
   source: RecordingSource;
@@ -83,12 +83,12 @@ export function useRecording(): RecordingHook {
     }
   }, [storeStart]);
 
-  const stopRecording = useCallback(async (): Promise<AudioBufferInfo | null> => {
+  const stopRecording = useCallback(async (): Promise<RecordingResult | null> => {
     try {
       const info = await tauriApi.stopRecording();
       storeStop();
       // Warn if recording appears to be silence (microphone may be blocked)
-      if (info.peak < 0.0001 && info.sample_count > 0) {
+      if (info.peak < 0.0001 && info.duration_secs > 0) {
         toast.warning('No audio detected — check that Notesage has microphone permission in System Settings > Privacy & Security > Microphone.', {
           duration: 8000,
         });
