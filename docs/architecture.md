@@ -64,7 +64,7 @@ note-sage/
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
-│   │   │   ├── acp_client.rs   # ACP Client trait impl (Tauri event forwarding, permission channels)
+│   │   │   ├── acp_client.rs   # ACP inbound handlers (on_receive_request/notification → Tauri event forwarding, permission channels)
 │   │   │   ├── agent_manager.rs # Agent binary installation, versioning, progress tracking
 │   │   │   ├── model_management.rs # Local LLM model lifecycle (catalog, download, custom models)
 │   │   │   ├── model_providers/   # Extracted from model_management
