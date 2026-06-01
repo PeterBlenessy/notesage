@@ -1,6 +1,5 @@
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::oneshot;
 
@@ -23,44 +22,82 @@ pub(super) struct PermissionReply {
     pub option_id: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// ACP Client implementation with Tauri event forwarding
-// ---------------------------------------------------------------------------
+/// Shared map of pending permission requests, keyed by request id.
+///
+/// The inbound `request_permission` handler inserts a waiter here and forwards
+/// the request to the frontend as an `acp-permission-request` Tauri event; the
+/// command loop's `PermissionRespond` / `Cancel` arms resolve or clear waiters.
+///
+/// Uses `Arc<std::sync::Mutex<…>>` (rather than the old `Rc<RefCell<…>>`) because
+/// the 0.12 `ConnectionTo<Agent>` handle is `Send + Clone` — handlers and the
+/// command loop now run on tokio tasks that may move across threads. The lock is
+/// only ever held for the duration of a `HashMap` insert/remove/clear, so there
+/// is no risk of holding it across an `.await`.
+pub(super) type PermissionWaiters =
+    Arc<Mutex<HashMap<String, oneshot::Sender<PermissionReply>>>>;
 
-/// Notesage's implementation of the ACP Client trait.
-/// Forwards session notifications as `acp-session-update` Tauri events
-/// and handles permission requests by emitting `acp-permission-request`
-/// events and waiting for frontend responses via the command channel.
-pub(super) struct NotesageClient {
+/// Shared client-side context captured by the inbound ACP handlers.
+///
+/// Cloned into both the `on_receive_request` (permission) and
+/// `on_receive_notification` (session update) closures registered on the
+/// connection builder. Everything here is `Send + Sync + Clone` so the handlers
+/// satisfy the 0.12 builder bounds.
+#[derive(Clone)]
+pub(super) struct ClientContext {
     pub app: AppHandle,
     pub instance_id: String,
-    pub permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>>,
-    pub next_request_id: Cell<u64>,
+    pub permission_waiters: PermissionWaiters,
+    /// Monotonic counter for generating unique permission request ids.
+    pub next_request_id: Arc<std::sync::atomic::AtomicU64>,
 }
 
-#[async_trait::async_trait(?Send)]
-impl agent_client_protocol::Client for NotesageClient {
-    async fn request_permission(
-        &self,
-        args: agent_client_protocol::RequestPermissionRequest,
-    ) -> agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse> {
-        use agent_client_protocol::{
-            PermissionOptionId, RequestPermissionOutcome, RequestPermissionResponse,
-            SelectedPermissionOutcome,
-        };
+impl ClientContext {
+    pub fn new(app: AppHandle, instance_id: String, permission_waiters: PermissionWaiters) -> Self {
+        Self {
+            app,
+            instance_id,
+            permission_waiters,
+            next_request_id: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        }
+    }
 
-        // Generate a unique request ID
-        let id = self.next_request_id.get();
-        self.next_request_id.set(id + 1);
+    /// Forward a `SessionNotification` to the frontend as an `acp-session-update`
+    /// Tauri event. Payload shape is identical to the pre-0.12 client:
+    /// `{ instanceId, sessionId, update }`.
+    pub fn emit_session_update(
+        &self,
+        notification: &agent_client_protocol::schema::SessionNotification,
+    ) {
+        let payload = serde_json::json!({
+            "instanceId": self.instance_id,
+            "sessionId": notification.session_id.to_string(),
+            "update": serde_json::to_value(&notification.update).unwrap_or_default(),
+        });
+        let _ = self.app.emit("acp-session-update", payload);
+    }
+
+    /// Register a permission waiter and emit the `acp-permission-request` event.
+    /// Returns the receiver the handler awaits for the user's decision. Payload
+    /// shape is identical to the pre-0.12 client:
+    /// `{ instanceId, sessionId, requestId, toolCall, options }`.
+    pub fn begin_permission_request(
+        &self,
+        args: &agent_client_protocol::schema::RequestPermissionRequest,
+    ) -> oneshot::Receiver<PermissionReply> {
+        let id = self
+            .next_request_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let request_id = format!("perm-{}", id);
 
-        // Create the response channel
         let (tx, rx) = oneshot::channel();
+        // Recover from a poisoned lock (into_inner) rather than silently skipping
+        // the insert — if we dropped `tx` here the handler's `rx` would error and
+        // respond Cancelled for a request the user never saw.
         self.permission_waiters
-            .borrow_mut()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(request_id.clone(), tx);
 
-        // Emit permission request to frontend
         let payload = serde_json::json!({
             "instanceId": self.instance_id,
             "sessionId": args.session_id.to_string(),
@@ -70,40 +107,7 @@ impl agent_client_protocol::Client for NotesageClient {
         });
         let _ = self.app.emit("acp-permission-request", payload);
 
-        // Wait for the frontend to respond
-        match rx.await {
-            Ok(reply) => match reply.option_id {
-                Some(oid) => Ok(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        PermissionOptionId::new(oid),
-                    )),
-                )),
-                None => Ok(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Cancelled,
-                )),
-            },
-            Err(_) => {
-                // Waiter dropped (agent stopped) — cancel
-                Ok(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Cancelled,
-                ))
-            }
-        }
-    }
-
-    async fn session_notification(
-        &self,
-        args: agent_client_protocol::SessionNotification,
-    ) -> agent_client_protocol::Result<()> {
-        // Serialize the full update and emit as a single event type.
-        // The frontend dispatches based on the `sessionUpdate` tag in the JSON.
-        let payload = serde_json::json!({
-            "instanceId": self.instance_id,
-            "sessionId": args.session_id.to_string(),
-            "update": serde_json::to_value(&args.update).unwrap_or_default(),
-        });
-        let _ = self.app.emit("acp-session-update", payload);
-        Ok(())
+        rx
     }
 }
 

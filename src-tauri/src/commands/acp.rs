@@ -1,13 +1,12 @@
 use serde::{Deserialize, Serialize};
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use super::acp_binary::resolve_agent_binary;
-use super::acp_client::{InitInfo, JsonLineFilter, NotesageClient, PermissionReply};
+use super::acp_client::{ClientContext, InitInfo, JsonLineFilter, PermissionReply, PermissionWaiters};
 use super::shell_path::get_shell_path;
 
 // ---------------------------------------------------------------------------
@@ -320,11 +319,17 @@ enum AgentCmd {
 
 
 // ---------------------------------------------------------------------------
-// Agent thread: owns the !Send ClientSideConnection
+// Agent thread: owns the (now Send) ConnectionTo<Agent>
 // ---------------------------------------------------------------------------
 
-/// Runs on a dedicated OS thread with a single-threaded tokio runtime + LocalSet.
-/// This is necessary because ClientSideConnection is !Send (uses LocalBoxFuture).
+/// Runs on a dedicated OS thread with a single-threaded tokio runtime.
+///
+/// As of agent-client-protocol 0.12 the connection handle (`ConnectionTo<Agent>`)
+/// is `Send + Clone`, so the old `!Send` `LocalSet` isolation is no longer
+/// required. We still run on a dedicated OS thread so that `AgentHandle` can hold
+/// a `std::thread::JoinHandle` (used by liveness checks and `stop_all_sync`), and
+/// so the child process / cleanup all live on one runtime. A `current_thread`
+/// runtime is sufficient.
 fn run_agent_thread(
     app: AppHandle,
     instance_id: String,
@@ -336,12 +341,13 @@ fn run_agent_thread(
     sandbox_writable_paths: Vec<String>,
     network_config: Option<super::network_proxy::NetworkSandboxConfig>,
     kernel_network_deny: bool,
-    mut cmd_rx: mpsc::Receiver<AgentCmd>,
+    cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
     // Shared PID cell — written after spawn, readable from AgentHandle for SIGKILL
     captured_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
 ) {
-    use agent_client_protocol::*;
+    use agent_client_protocol::schema::*;
+    use agent_client_protocol::{ByteStreams, ConnectionTo};
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
     // Clone for cleanup after the command loop exits
@@ -362,25 +368,23 @@ fn run_agent_thread(
         }
     };
 
-    let local = tokio::task::LocalSet::new();
-
-    local.block_on(&rt, async move {
+    rt.block_on(async move {
         // Flag to distinguish intentional Stop from unexpected process exit
         let stopped_intentionally = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-        // Shared permission waiters for client ↔ command loop communication
-        let permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        // Shared permission waiters for inbound handler ↔ command loop communication.
+        // Send + Sync now that the connection is Send.
+        let permission_waiters: PermissionWaiters =
+            Arc::new(StdMutex::new(HashMap::new()));
 
         let sandbox_instance_id = instance_id.clone();
         let exit_app = app.clone();
         let exit_instance_id = instance_id.clone();
-        let client = NotesageClient {
-            app,
-            instance_id,
-            permission_waiters: Rc::clone(&permission_waiters),
-            next_request_id: Cell::new(0),
-        };
+        // Context shared into the inbound ACP handlers (permission + session update).
+        let client_ctx =
+            ClientContext::new(app.clone(), instance_id.clone(), Arc::clone(&permission_waiters));
+        // Used for sandbox-monitor registration before the connection is built.
+        let monitor_app = app.clone();
 
         // Spawn agent process — optionally wrapped in OS-level sandbox
         // Inject login shell PATH so the agent (and child processes) can find tools
@@ -438,9 +442,9 @@ fn run_agent_thread(
             if sandbox_enabled {
                 #[cfg(target_os = "macos")]
                 {
-                    let monitor_state = client.app.state::<super::sandbox_monitor::SandboxMonitorState>();
+                    let monitor_state = monitor_app.state::<super::sandbox_monitor::SandboxMonitorState>();
                     monitor_state.register_and_start(
-                        &client.app,
+                        &monitor_app,
                         sandbox_instance_id.clone(),
                         agent_binary.clone(),
                         pid,
@@ -463,10 +467,13 @@ fn run_agent_thread(
             }
         }
 
-        // Spawn a task to read and log stderr from the agent process
+        // Spawn a task to read and log stderr from the agent process.
+        // Plain `spawn` (not `spawn_local`): the runtime is a bare
+        // `new_current_thread` with no `LocalSet`, and the captured values
+        // (`String` + `ChildStderr`) are `Send`.
         if let Some(stderr) = child.stderr.take() {
             let stderr_binary = agent_binary.clone();
-            tokio::task::spawn_local(async move {
+            tokio::task::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
@@ -475,9 +482,9 @@ fn run_agent_thread(
             });
         }
 
-        // Bridge tokio IO → futures IO for ACP
+        // Bridge tokio IO → futures IO for ACP.
         // Wrap stdout in a filter that strips non-JSON lines — some agents
-        // (e.g., Gemini CLI) write interactive prompts to stdout in ACP mode
+        // (e.g., Gemini CLI) write interactive prompts to stdout in ACP mode.
         let stdin = match child.stdin.take() {
             Some(s) => s.compat_write(),
             None => {
@@ -494,124 +501,160 @@ fn run_agent_thread(
         };
         let stdout = JsonLineFilter::new(raw_stdout).compat();
 
-        let (conn, io_task) = ClientSideConnection::new(
-            client,
-            stdin,  // outgoing: client writes to agent's stdin
-            stdout, // incoming: client reads from agent's stdout
-            |fut| {
-                tokio::task::spawn_local(fut);
-            },
-        );
+        // Transport: the child's stdio. `ByteStreams::new(outgoing_write, incoming_read)`
+        // — we write to the agent's stdin and read from its (filtered) stdout.
+        let transport = ByteStreams::new(stdin, stdout);
 
-        // Wrap connection in Rc so prompt can run via spawn_local while
-        // the command loop stays responsive for cancel/permission commands.
-        let conn = Rc::new(conn);
+        // Inbound handler context, cloned into each registered handler closure.
+        let notif_ctx = client_ctx.clone();
+        let perm_ctx = client_ctx.clone();
 
-        // Spawn the I/O task on the LocalSet
-        let io_binary = agent_binary.clone();
-        tokio::task::spawn_local(async move {
-            match io_task.await {
-                Ok(_) => {
-                    log::info!(target: "notesage::acp", "[{}] IO task completed normally", io_binary);
-                }
-                Err(e) => {
-                    log::error!(
-                        target: "notesage::acp",
-                        "[{}] IO task error (agent may have crashed or closed its stdio): {}",
-                        io_binary, e,
-                    );
-                }
-            }
-        });
+        // The command loop and initialize handshake live inside `connect_with`'s
+        // closure — the future returned by `connect_with` drives the connection for
+        // the closure's lifetime, then shuts it down when the closure returns.
+        let stopped_for_loop = std::sync::Arc::clone(&stopped_intentionally);
+        let loop_binary = agent_binary.clone();
+        let perm_waiters_loop = Arc::clone(&permission_waiters);
 
-        // Initialize handshake
-        log::info!(target: "notesage::acp", "Sending ACP initialize for {}", agent_binary);
-        let init_req = InitializeRequest::new(ProtocolVersion::V1).client_info(
-            Implementation::new("Notesage", env!("CARGO_PKG_VERSION")),
-        );
-
-        // Store auth methods from init response for later use — variant-aware so the
-        // authenticate command can look up EnvVar vs Agent methods without a second
-        // round-trip to the agent.
-        let auth_methods_info: Vec<AuthMethodInfo>;
-
-        match conn.initialize(init_req).await {
-            Ok(resp) => {
-                log::info!(
-                    target: "notesage::acp",
-                    "ACP initialize succeeded for {}: agent={:?}, auth_methods={:?}",
-                    agent_binary,
-                    resp.agent_info.as_ref().map(|i| format!("{} {}", i.name, i.version)),
-                    resp.auth_methods.iter().map(|m| format!("{}({})", m.id(), m.name())).collect::<Vec<_>>(),
+        let connect_result = agent_client_protocol::Client
+            .builder()
+            .name(format!("notesage-acp:{}", agent_binary))
+            // Inbound: session updates → `acp-session-update` Tauri event.
+            .on_receive_notification(
+                move |notification: SessionNotification, _cx: ConnectionTo<agent_client_protocol::Agent>| {
+                    let ctx = notif_ctx.clone();
+                    async move {
+                        ctx.emit_session_update(&notification);
+                        Ok(())
+                    }
+                },
+                agent_client_protocol::on_receive_notification!(),
+            )
+            // Inbound: permission requests → `acp-permission-request` event + await user.
+            // The round-trip to the user must not block the event loop, so the wait +
+            // response is offloaded to `cx.spawn`.
+            .on_receive_request(
+                move |request: RequestPermissionRequest,
+                      responder: agent_client_protocol::Responder<RequestPermissionResponse>,
+                      cx: ConnectionTo<agent_client_protocol::Agent>| {
+                    let ctx = perm_ctx.clone();
+                    async move {
+                        let rx = ctx.begin_permission_request(&request);
+                        cx.spawn(async move {
+                            let outcome = match rx.await {
+                                Ok(reply) => match reply.option_id {
+                                    Some(oid) => RequestPermissionOutcome::Selected(
+                                        SelectedPermissionOutcome::new(PermissionOptionId::new(oid)),
+                                    ),
+                                    None => RequestPermissionOutcome::Cancelled,
+                                },
+                                // Waiter dropped (agent stopped / cancelled) — cancel.
+                                Err(_) => RequestPermissionOutcome::Cancelled,
+                            };
+                            responder.respond(RequestPermissionResponse::new(outcome))?;
+                            Ok(())
+                        })?;
+                        Ok(())
+                    }
+                },
+                agent_client_protocol::on_receive_request!(),
+            )
+            .connect_with(transport, async move |conn: ConnectionTo<agent_client_protocol::Agent>| {
+                // Initialize handshake
+                log::info!(target: "notesage::acp", "Sending ACP initialize for {}", loop_binary);
+                let init_req = InitializeRequest::new(ProtocolVersion::V1).client_info(
+                    Implementation::new("Notesage", env!("CARGO_PKG_VERSION")),
                 );
-                auth_methods_info = resp
-                    .auth_methods
-                    .iter()
-                    .map(|m| match m {
-                        AuthMethod::EnvVar(e) => AuthMethodInfo::EnvVar {
-                            id: e.id.to_string(),
-                            name: e.name.clone(),
-                            description: e.description.clone(),
-                            vars: e
-                                .vars
-                                .iter()
-                                .map(|v| super::acp::AuthEnvVar {
-                                    name: v.name.clone(),
-                                    label: v.label.clone(),
-                                    secret: v.secret,
-                                    optional: v.optional,
-                                })
-                                .collect(),
-                            link: e.link.clone(),
-                        },
-                        AuthMethod::Terminal(_) => {
-                            // Terminal variant support is Batch F territory — surface it as
-                            // a plain `Agent`-style info block so the UI still shows the ID/name.
-                            AuthMethodInfo::Agent {
-                                id: m.id().to_string(),
-                                name: m.name().to_string(),
-                                description: m.description().map(|s| s.to_string()),
-                            }
-                        }
-                        AuthMethod::Agent(_) => AuthMethodInfo::Agent {
-                            id: m.id().to_string(),
-                            name: m.name().to_string(),
-                            description: m.description().map(|s| s.to_string()),
-                        },
-                        // Non-exhaustive guard: any future ACP variant surfaces as Agent.
-                        _ => AuthMethodInfo::Agent {
-                            id: m.id().to_string(),
-                            name: m.name().to_string(),
-                            description: m.description().map(|s| s.to_string()),
-                        },
-                    })
-                    .collect();
 
-                let supports_images_flag = resp.agent_capabilities.prompt_capabilities.image;
-                log::info!(
-                    target: "notesage::acp",
-                    "Agent {} supports_images={}",
-                    agent_binary, supports_images_flag,
-                );
-                let capabilities_json = serde_json::to_value(&resp.agent_capabilities).ok();
-                let info = InitInfo {
-                    agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
-                    agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
-                    auth_methods: auth_methods_info.clone(),
-                    supports_images: supports_images_flag,
-                    capabilities: capabilities_json,
-                };
-                let _ = init_tx.send(Ok(info));
-            }
-            Err(e) => {
-                let _ = init_tx.send(Err(format!("ACP initialize failed: {}", e)));
-                let _ = child.kill().await;
-                return;
-            }
-        }
+                // Store auth methods from init response for later use — variant-aware so the
+                // authenticate command can look up EnvVar vs Agent methods without a second
+                // round-trip to the agent.
+                let auth_methods_info: Vec<AuthMethodInfo>;
 
-        // Command loop — process commands from Tauri
-        while let Some(cmd) = cmd_rx.recv().await {
+                match conn.send_request(init_req).block_task().await {
+                    Ok(resp) => {
+                        log::info!(
+                            target: "notesage::acp",
+                            "ACP initialize succeeded for {}: agent={:?}, auth_methods={:?}",
+                            loop_binary,
+                            resp.agent_info.as_ref().map(|i| format!("{} {}", i.name, i.version)),
+                            resp.auth_methods.iter().map(|m| format!("{}({})", m.id(), m.name())).collect::<Vec<_>>(),
+                        );
+                        auth_methods_info = resp
+                            .auth_methods
+                            .iter()
+                            .map(|m| match m {
+                                AuthMethod::EnvVar(e) => AuthMethodInfo::EnvVar {
+                                    id: e.id.to_string(),
+                                    name: e.name.clone(),
+                                    description: e.description.clone(),
+                                    vars: e
+                                        .vars
+                                        .iter()
+                                        .map(|v| super::acp::AuthEnvVar {
+                                            name: v.name.clone(),
+                                            label: v.label.clone(),
+                                            secret: v.secret,
+                                            optional: v.optional,
+                                        })
+                                        .collect(),
+                                    link: e.link.clone(),
+                                },
+                                AuthMethod::Terminal(_) => {
+                                    // Terminal variant support is Batch F territory — surface it as
+                                    // a plain `Agent`-style info block so the UI still shows the ID/name.
+                                    AuthMethodInfo::Agent {
+                                        id: m.id().to_string(),
+                                        name: m.name().to_string(),
+                                        description: m.description().map(|s| s.to_string()),
+                                    }
+                                }
+                                AuthMethod::Agent(_) => AuthMethodInfo::Agent {
+                                    id: m.id().to_string(),
+                                    name: m.name().to_string(),
+                                    description: m.description().map(|s| s.to_string()),
+                                },
+                                // Non-exhaustive guard: any future ACP variant surfaces as Agent.
+                                _ => AuthMethodInfo::Agent {
+                                    id: m.id().to_string(),
+                                    name: m.name().to_string(),
+                                    description: m.description().map(|s| s.to_string()),
+                                },
+                            })
+                            .collect();
+
+                        let supports_images_flag = resp.agent_capabilities.prompt_capabilities.image;
+                        log::info!(
+                            target: "notesage::acp",
+                            "Agent {} supports_images={}",
+                            loop_binary, supports_images_flag,
+                        );
+                        let capabilities_json = serde_json::to_value(&resp.agent_capabilities).ok();
+                        let info = InitInfo {
+                            agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
+                            agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
+                            auth_methods: auth_methods_info.clone(),
+                            supports_images: supports_images_flag,
+                            capabilities: capabilities_json,
+                        };
+                        let _ = init_tx.send(Ok(info));
+                    }
+                    Err(e) => {
+                        let _ = init_tx.send(Err(format!("ACP initialize failed: {}", e)));
+                        let _ = child.kill().await;
+                        return Ok(());
+                    }
+                }
+
+                // Bind the moved values so the existing command-loop body compiles
+                // unchanged (it references these names).
+                let agent_binary = loop_binary;
+                let permission_waiters = perm_waiters_loop;
+                let stopped_intentionally = stopped_for_loop;
+                let mut cmd_rx = cmd_rx;
+
+                // Command loop — process commands from Tauri
+                while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 AgentCmd::Authenticate { method_id, reply } => {
                     // If agent has no auth methods, it handles auth internally
@@ -656,7 +699,7 @@ fn run_agent_thread(
                     let auth_req = AuthenticateRequest::new(AuthMethodId::new(
                         selected_id.clone(),
                     ));
-                    match conn.authenticate(auth_req).await {
+                    match conn.send_request(auth_req).block_task().await {
                         Ok(resp) => {
                             log::info!(
                                 target: "notesage::acp",
@@ -686,7 +729,7 @@ fn run_agent_thread(
                     reply,
                 } => {
                     let req = NewSessionRequest::new(PathBuf::from(cwd));
-                    match conn.new_session(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let mut current_model = None;
                             let mut available_models = Vec::new();
@@ -733,7 +776,7 @@ fn run_agent_thread(
                         SessionId::new(sid.clone()),
                         PathBuf::from(cwd),
                     );
-                    match conn.load_session(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let mut current_model = None;
                             let mut available_models = Vec::new();
@@ -778,13 +821,16 @@ fn run_agent_thread(
                     message_id,
                     reply,
                 } => {
-                    // Run prompt in a spawn_local so the command loop remains
-                    // responsive for Cancel and PermissionRespond commands
-                    // while the agent processes the prompt.
-                    let conn = Rc::clone(&conn);
+                    // Run prompt in a background task so the command loop remains
+                    // responsive for Cancel and PermissionRespond commands while the
+                    // agent processes the prompt. `ConnectionTo` is Send + Clone, so a
+                    // plain tokio task suffices; using `tokio::spawn` (rather than
+                    // `conn.spawn`) keeps a prompt error from tearing down the whole
+                    // connection.
+                    let conn = conn.clone();
                     let prompt_binary = agent_binary.clone();
                     let prompt_sid = sid.clone();
-                    tokio::task::spawn_local(async move {
+                    tokio::task::spawn(async move {
                         log::info!(
                             target: "notesage::acp",
                             "[{}] Prompt started (session={}, content_len={}, images={}, has_message_id={})",
@@ -810,7 +856,7 @@ fn run_agent_thread(
                         if let Some(mid) = message_id {
                             req = req.message_id(mid);
                         }
-                        match conn.prompt(req).await {
+                        match conn.send_request(req).block_task().await {
                             Ok(_) => {
                                 log::info!(
                                     target: "notesage::acp",
@@ -836,10 +882,15 @@ fn run_agent_thread(
                     reply,
                 } => {
                     // ACP spec: when sending cancel, the client MUST respond Cancelled
-                    // to all pending session/request_permission requests
-                    permission_waiters.borrow_mut().clear();
+                    // to all pending session/request_permission requests. Dropping the
+                    // waiter senders makes the in-flight permission handler tasks resolve
+                    // to `Cancelled` (their `rx.await` returns `Err`).
+                    if let Ok(mut waiters) = permission_waiters.lock() {
+                        waiters.clear();
+                    }
+                    // Cancel is a notification (fire-and-forget) in ACP.
                     let req = CancelNotification::new(SessionId::new(sid));
-                    match conn.cancel(req).await {
+                    match conn.send_notification(req) {
                         Ok(_) => {
                             let _ = reply.send(Ok(()));
                         }
@@ -853,9 +904,11 @@ fn run_agent_thread(
                     request_id,
                     option_id,
                 } => {
-                    if let Some(tx) =
-                        permission_waiters.borrow_mut().remove(&request_id)
-                    {
+                    let tx = permission_waiters
+                        .lock()
+                        .ok()
+                        .and_then(|mut w| w.remove(&request_id));
+                    if let Some(tx) = tx {
                         let _ = tx.send(PermissionReply { option_id });
                     }
                 }
@@ -868,7 +921,7 @@ fn run_agent_thread(
                         SessionId::new(sid),
                         SessionModeId::new(mode_id),
                     );
-                    match conn.set_session_mode(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(_) => { let _ = reply.send(Ok(())); }
                         Err(e) => { let _ = reply.send(Err(format!("set_mode failed: {}", e))); }
                     }
@@ -884,7 +937,7 @@ fn run_agent_thread(
                         SessionConfigId::new(option_id),
                         SessionConfigValueId::new(value_id),
                     );
-                    match conn.set_session_config_option(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(_) => { let _ = reply.send(Ok(())); }
                         Err(e) => { let _ = reply.send(Err(format!("set_config_option failed: {}", e))); }
                     }
@@ -898,7 +951,7 @@ fn run_agent_thread(
                         SessionId::new(sid),
                         ModelId::new(model_id),
                     );
-                    match conn.set_session_model(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(_) => { let _ = reply.send(Ok(())); }
                         Err(e) => { let _ = reply.send(Err(format!("set_model failed: {}", e))); }
                     }
@@ -908,7 +961,7 @@ fn run_agent_thread(
                     reply,
                 } => {
                     let req = CloseSessionRequest::new(SessionId::new(sid));
-                    match conn.close_session(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(_) => { let _ = reply.send(Ok(())); }
                         Err(e) => { let _ = reply.send(Err(format!("close_session failed: {}", e))); }
                     }
@@ -917,7 +970,7 @@ fn run_agent_thread(
                     let mut req = ListSessionsRequest::new();
                     if let Some(c) = cwd { req = req.cwd(Some(PathBuf::from(c))); }
                     if let Some(c) = cursor { req = req.cursor(Some(c)); }
-                    match conn.list_sessions(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let sessions: Vec<crate::commands::acp::AcpSessionInfo> =
                                 resp.sessions.iter().map(|s| crate::commands::acp::AcpSessionInfo {
@@ -941,7 +994,7 @@ fn run_agent_thread(
                         SessionId::new(sid.clone()),
                         PathBuf::from(cwd),
                     );
-                    match conn.resume_session(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let mut current_model = None;
                             let mut available_models = Vec::new();
@@ -981,7 +1034,7 @@ fn run_agent_thread(
                         SessionId::new(sid),
                         PathBuf::from(cwd),
                     );
-                    match conn.fork_session(req).await {
+                    match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let mut current_model = None;
                             let mut available_models = Vec::new();
@@ -1015,25 +1068,41 @@ fn run_agent_thread(
                 AgentCmd::Stop { reply } => {
                     stopped_intentionally.store(true, std::sync::atomic::Ordering::Relaxed);
                     // Clear any pending permission waiters so they cancel
-                    permission_waiters.borrow_mut().clear();
+                    if let Ok(mut waiters) = permission_waiters.lock() {
+                        waiters.clear();
+                    }
                     let _ = child.kill().await;
                     let _ = reply.send(Ok(()));
                     break;
                 }
+                }
             }
-        }
 
-        // Emit exit event if the agent died unexpectedly (not via Stop command)
-        if !stopped_intentionally.load(std::sync::atomic::Ordering::Relaxed) {
-            let exit_code = child.try_wait().ok().flatten().map(|s| s.code()).flatten();
-            let _ = exit_app.emit("acp-agent-exited", AgentExitedPayload {
-                instance_id: exit_instance_id.clone(),
-                exit_code,
-            });
-            log::warn!(
+            // Emit exit event if the agent died unexpectedly (not via Stop command).
+            // `child` and `stopped_intentionally` live in this closure, so the
+            // detection happens here before `connect_with` returns.
+            if !stopped_intentionally.load(std::sync::atomic::Ordering::Relaxed) {
+                let exit_code = child.try_wait().ok().flatten().map(|s| s.code()).flatten();
+                let _ = exit_app.emit("acp-agent-exited", AgentExitedPayload {
+                    instance_id: exit_instance_id.clone(),
+                    exit_code,
+                });
+                log::warn!(
+                    target: "notesage::acp",
+                    "Agent {} exited unexpectedly (code: {:?})",
+                    exit_instance_id, exit_code,
+                );
+            }
+
+            Ok(())
+        })
+        .await;
+
+        if let Err(e) = connect_result {
+            log::error!(
                 target: "notesage::acp",
-                "Agent {} exited unexpectedly (code: {:?})",
-                exit_instance_id, exit_code,
+                "[{}] ACP connection ended with error: {}",
+                agent_binary, e,
             );
         }
     });
@@ -1300,31 +1369,39 @@ pub async fn acp_agent_stop(
     state: State<'_, AcpState>,
     instance_id: String,
 ) -> Result<(), String> {
-    let mut agents = state.agents.lock().await;
-    let mut handle = agents
-        .remove(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    // Remove the handle and DROP the map lock before any `.await`, so concurrent
+    // ACP commands aren't blocked for the whole stop round-trip (which can be as
+    // long as an in-flight prompt). Holding `agents` across the send/reply/join
+    // below would serialize every other command behind this one.
+    let mut handle = {
+        let mut agents = state.agents.lock().await;
+        agents
+            .remove(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?
+    };
 
+    let thread_handle = handle.thread_handle.take();
+
+    // Best-effort graceful stop. On any failure we still join the OS thread
+    // below so we never leak a zombie (dropping `handle` releases `cmd_tx`, and
+    // `kill_on_drop` tears down the child).
     let (reply_tx, reply_rx) = oneshot::channel();
+    let result = match handle.cmd_tx.send(AgentCmd::Stop { reply: reply_tx }).await {
+        Ok(()) => reply_rx
+            .await
+            .map_err(|_| "Agent thread did not respond to stop".to_string())
+            .and_then(|r| r),
+        Err(_) => Err("Agent thread is no longer running".to_string()),
+    };
 
-    // Send stop command to the agent thread
-    handle
-        .cmd_tx
-        .send(AgentCmd::Stop { reply: reply_tx })
-        .await
-        .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    // Wait for stop confirmation
-    reply_rx
-        .await
-        .map_err(|_| "Agent thread did not respond to stop".to_string())??;
-
-    // Wait for the OS thread to finish
-    if let Some(th) = handle.thread_handle.take() {
-        let _ = th.join();
+    // Drop the handle (releases cmd_tx → the command loop ends), then join the
+    // OS thread on a blocking-safe task so we don't park the async executor.
+    drop(handle);
+    if let Some(th) = thread_handle {
+        let _ = tokio::task::spawn_blocking(move || th.join()).await;
     }
 
-    Ok(())
+    result
 }
 
 /// Kill a hung agent, respawn with the same config, re-authenticate, and load the session.
@@ -1821,7 +1898,7 @@ pub async fn acp_permission_respond(
 #[cfg(test)]
 mod tests {
     use super::{AuthEnvVar, AuthMethodInfo};
-    use agent_client_protocol::{ContentBlock, PromptRequest, SessionId, TextContent};
+    use agent_client_protocol::schema::{ContentBlock, PromptRequest, SessionId, TextContent};
 
     /// `AuthMethodInfo::EnvVar` must round-trip through serde so the frontend receives
     /// the full `{ vars, link }` payload. Tagged as `{ "type": "env_var", ... }`.
