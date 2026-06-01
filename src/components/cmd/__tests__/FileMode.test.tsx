@@ -273,10 +273,18 @@ describe('FileMode — selection (#8)', () => {
     ]);
     renderWithProviders(<FileMode filter="notes" />);
     await screen.findByRole('option', { name: /notes\.md/i });
+    // The Enter handler is a document-level keydown listener that FileMode
+    // rebinds in a useEffect keyed on the async-populated `rows`, and it
+    // early-returns while `rows` is empty. `findByRole` can resolve on the
+    // committed option node *before* that passive effect flushes, leaving the
+    // listener bound to the stale empty-rows closure — pressing Enter then
+    // no-ops and `openedFiles` stays `[]` (the CI flake). Flush pending effects
+    // so the listener is rebound against the populated rows before we press Enter.
+    await act(async () => {});
     act(() => {
       fireEvent.keyDown(document, { key: 'Enter' });
     });
-    expect(openedFiles).toEqual(['/p/alpha/notes.md']);
+    await waitFor(() => expect(openedFiles).toEqual(['/p/alpha/notes.md']));
   });
 
   // -------------------------------------------------------------------------
