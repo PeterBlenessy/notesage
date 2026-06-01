@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.12",
+      "date": "2026-06-01",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): bump tar from 0.4.45 to 0.4.46 in /src-tauri in the cargo group across 1 directory (#403)",
+        "refactor(acp): migrate to agent-client-protocol 0.12.1 builder API (#405)",
+        "test(cmd): fix flaky FileMode Enter-key test (#406)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.11",
       "date": "2026-05-31",
       "previousVersion": "0.46.0",
