@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { Search, Globe, TerminalSquare, ExternalLink, Plus, Boxes } from 'lucide-react';
+import { Search, Globe, TerminalSquare, ExternalLink, Plus, Boxes, ShieldCheck, KeyRound } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -135,11 +135,18 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
 
 function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () => void }) {
   const isRemote = item.transport === 'http';
+  const noKey = item.required_env.length === 0;
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-sm font-medium truncate">{item.name}</span>
+          {item.official && (
+            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px] font-normal">
+              <ShieldCheck className="h-2.5 w-2.5" strokeWidth={1.5} />
+              Official
+            </Badge>
+          )}
           <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px] font-normal">
             {isRemote ? (
               <Globe className="h-2.5 w-2.5" strokeWidth={1.5} />
@@ -155,6 +162,24 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.description}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {noKey ? (
+            <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground">
+              No API key
+            </Badge>
+          ) : (
+            item.required_env.map((e) => (
+              <Badge
+                key={e.key}
+                variant="outline"
+                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground"
+              >
+                <KeyRound className="h-2.5 w-2.5" strokeWidth={1.5} />
+                {e.label || e.key}
+              </Badge>
+            ))
+          )}
+        </div>
         {item.homepage && (
           <button
             type="button"

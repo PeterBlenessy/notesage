@@ -36,6 +36,8 @@ export interface McpCatalogItem {
   description: string;
   category?: string | null;
   homepage?: string | null;
+  /** True for curated entries from a trusted source (drives the "Official" badge). */
+  official?: boolean;
   transport: McpTransport;
   url?: string | null;
   command?: string | null;

@@ -13,6 +13,7 @@ const LOCAL_ITEM: McpCatalogItem = {
   description: 'Read and write files in a directory',
   category: 'Files',
   homepage: 'https://example.com',
+  official: true,
   transport: 'stdio',
   url: null,
   command: 'npx',
@@ -53,6 +54,15 @@ describe('McpCatalog', () => {
     const addButton = await screen.findByRole('button', { name: /add/i });
     fireEvent.click(addButton);
     expect(onSelectItem).toHaveBeenCalledWith(LOCAL_ITEM);
+  });
+
+  it('shows an Official badge and "No API key" for official no-key entries', async () => {
+    setMockInvokeHandler('mcp_catalog_list', () => [LOCAL_ITEM]);
+    renderWithProviders(<McpCatalog open onOpenChange={() => {}} onSelectItem={() => {}} />);
+
+    await screen.findByText('Filesystem');
+    expect(screen.getByText('Official')).toBeTruthy();
+    expect(screen.getByText('No API key')).toBeTruthy();
   });
 
   it('disables Add for remote entries (remote transport not yet supported)', async () => {

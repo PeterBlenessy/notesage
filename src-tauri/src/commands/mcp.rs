@@ -597,6 +597,10 @@ pub struct McpCatalogItem {
     pub category: Option<String>,
     #[serde(default)]
     pub homepage: Option<String>,
+    /// True for entries from a trusted, curated source (e.g. Anthropic's
+    /// `modelcontextprotocol/servers` reference repo) — drives an "Official" badge.
+    #[serde(default)]
+    pub official: bool,
     #[serde(default)]
     pub transport: McpTransport,
     #[serde(default)]
@@ -1110,6 +1114,25 @@ mod tests {
                 ),
             }
         }
+    }
+
+    #[test]
+    fn catalog_ships_official_reference_servers() {
+        let catalog = mcp_catalog_list().expect("catalog parses");
+        // The seeded catalog is the official MCP reference set.
+        assert_eq!(catalog.len(), 7, "expected the 7 official reference servers");
+        for item in &catalog {
+            assert!(item.official, "seeded entry {} should be marked official", item.id);
+            assert_eq!(item.transport, McpTransport::Stdio);
+            assert!(item.command.is_some(), "{} needs a command", item.id);
+            assert!(item.homepage.is_some(), "{} should link to its source", item.id);
+            assert!(
+                item.required_env.is_empty(),
+                "{} is expected to need no API key",
+                item.id
+            );
+        }
+        assert!(catalog.iter().any(|i| i.id == "filesystem"));
     }
 
     #[test]
