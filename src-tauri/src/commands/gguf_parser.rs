@@ -168,7 +168,17 @@ fn read_gguf_string(r: &mut impl Read) -> Result<String, String> {
     String::from_utf8(buf).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
 
-fn read_gguf_value(r: &mut impl Read, vtype: u32) -> Result<GgufValue, String> {
+/// Max GGUF array nesting depth. Legitimate GGUF metadata is flat (token lists)
+/// or nests one level at most; a crafted custom model (custom-models.json lets
+/// users point at arbitrary files) could otherwise nest arrays-of-arrays
+/// without bound and stack-overflow the parser — an uncatchable abort (audit
+/// rust M5). 16 is far above any real file.
+const MAX_GGUF_ARRAY_DEPTH: u32 = 16;
+
+fn read_gguf_value(r: &mut impl Read, vtype: u32, depth: u32) -> Result<GgufValue, String> {
+    if depth > MAX_GGUF_ARRAY_DEPTH {
+        return Err(format!("GGUF array nesting exceeds depth {}", MAX_GGUF_ARRAY_DEPTH));
+    }
     match vtype {
         GGUF_TYPE_UINT8 => Ok(GgufValue::Uint8(read_u8(r)?)),
         GGUF_TYPE_INT8 => Ok(GgufValue::Int8(read_i8(r)?)),
@@ -188,7 +198,7 @@ fn read_gguf_value(r: &mut impl Read, vtype: u32) -> Result<GgufValue, String> {
             }
             let mut items = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
-                items.push(read_gguf_value(r, elem_type)?);
+                items.push(read_gguf_value(r, elem_type, depth + 1)?);
             }
             Ok(GgufValue::Array(items))
         }
@@ -249,7 +259,7 @@ pub fn parse_gguf_kv(r: &mut impl Read, tolerant: bool) -> Result<GgufHeaderRaw,
             }
             Err(e) => return Err(e),
         };
-        let value = match read_gguf_value(r, vtype) {
+        let value = match read_gguf_value(r, vtype, 0) {
             Ok(v) => v,
             Err(_) if tolerant => {
                 truncated = true;
