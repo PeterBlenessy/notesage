@@ -176,6 +176,7 @@ export function LinkButton({ editor }: { editor: Editor }) {
             value={url}
             onChange={(e) => { setUrl(e.target.value); setSelectedIndex(0); }}
             onKeyDown={handleKeyDown}
+            aria-label="Link URL or document search"
             placeholder="Search documents or paste URL..."
             className="flex-1 h-7 px-2 text-xs rounded-md border border-input bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             autoFocus

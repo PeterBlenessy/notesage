@@ -69,9 +69,29 @@ describe('tauri asset protocol scope', () => {
       expect(entry).not.toBe('**');
       expect(entry).not.toBe('*');
       expect(entry).not.toBe('/');
-      // Scope must be rooted under a Tauri path variable ($HOME, $APPDATA,
+      // Scope must be rooted under a Tauri path variable ($APPDATA, $RESOURCE,
       // etc.) — a bare "/**" would be equivalent to "**".
       expect(entry.startsWith('$')).toBe(true);
+    }
+  });
+
+  it('does NOT statically expose the home directory (security H1)', () => {
+    // `$HOME/**` (or any $HOME-rooted glob) re-opens the ENTIRE home dir to the
+    // asset protocol — `.ssh`, `.aws`, `.env`, browser profiles, other
+    // projects — and those asset reads are NOT gated by the agent Seatbelt
+    // profile. User-content roots (the Notesage library, opened projects,
+    // explorer folders) are now granted at runtime via the `allow_asset_dir`
+    // command in `useStartWatchers`, NOT blanket-allowed here. The old test
+    // only rejected a literal `**`, so `$HOME/**` slipped through and gave
+    // false assurance that the v1 exfil surface was closed.
+    const conf = loadTauriConf();
+    const allow = conf.app?.security?.assetProtocol?.scope?.allow ?? [];
+    expect(allow).not.toContain('$HOME/**');
+    for (const entry of allow) {
+      expect(
+        entry.startsWith('$HOME'),
+        `asset scope entry "${entry}" is $HOME-rooted — grant user roots at runtime via allow_asset_dir instead`,
+      ).toBe(false);
     }
   });
 });

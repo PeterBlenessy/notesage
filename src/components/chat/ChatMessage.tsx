@@ -735,7 +735,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
               <div className="mt-1 max-h-60 overflow-y-auto thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 italic">
                 <MarkdownContent content={message.thinking!} className="text-xs text-muted-foreground" />
                 {isActivelyStreaming && isThinkingOnly && (
-                  <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+                  <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse motion-reduce:animate-none bg-muted-foreground" />
                 )}
               </div>
             )}
@@ -761,15 +761,15 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
           <SegmentRenderer segments={message.segments!} isActivelyStreaming={isActivelyStreaming} />
         ) : isStreaming ? (
           <div className="flex items-center gap-1.5 py-1">
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse bg-muted-foreground" />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:150ms] bg-muted-foreground" />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:300ms] bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none [animation-delay:150ms] bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none [animation-delay:300ms] bg-muted-foreground" />
           </div>
         ) : (
           <div>
             <MarkdownContent content={message.content} className="text-sm" />
             {isActivelyStreaming && (
-              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse motion-reduce:animate-none bg-muted-foreground" />
             )}
           </div>
         )}

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { AIProviderType } from './types';
+import { streamEvent, newStreamId } from './stream-events';
 
 /**
  * JSON Schema object passed to `generateStructured`. Kept as `Record<string, unknown>`
@@ -58,6 +59,10 @@ export async function generateStructured<T = unknown>(
 ): Promise<T> {
   const responseFormat = buildJsonSchemaResponseFormat(options.schema, options.schemaName);
 
+  // Unique per-call correlation id so a concurrent chat/agent stream can't leak
+  // its chunks into `collected` (and vice-versa). See stream-events.ts.
+  const streamId = newStreamId();
+
   let collected = '';
   let resolved = false;
   let resolve: (value: T) => void;
@@ -68,11 +73,11 @@ export async function generateStructured<T = unknown>(
     reject = rej;
   });
 
-  const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
+  const unlistenChunk = await listen<string>(streamEvent('ai-stream-chunk', streamId), (event) => {
     collected += event.payload;
   });
 
-  const unlistenDone = await listen('ai-stream-done', () => {
+  const unlistenDone = await listen(streamEvent('ai-stream-done', streamId), () => {
     if (resolved) return;
     resolved = true;
     try {
@@ -101,6 +106,7 @@ export async function generateStructured<T = unknown>(
       maxTokens: options.maxTokens ?? null,
       baseUrl: options.baseUrl ?? null,
       responseFormat,
+      streamId,
     });
     return await done;
   } finally {

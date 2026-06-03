@@ -535,7 +535,13 @@ pub struct TranscriptionState {
     /// `None` but a stream is still alive. Always read/written under the
     /// `capture` mutex so the check-and-set is atomic against `start_recording`.
     stopping: AtomicBool,
-    whisper_ctx: Arc<Mutex<Option<(String, whisper_rs::WhisperContext)>>>,
+    // parking_lot::Mutex (not std) on purpose: this lock is held for the entire
+    // whole-file Whisper inference (minutes), and an FFI panic in whisper_rs
+    // under the guard would *permanently poison* a std::sync::Mutex — every
+    // later transcribe_file would then fail at .lock() until app restart. Audit
+    // rust H2. parking_lot never poisons, so a panicked job can't brick the
+    // feature.
+    whisper_ctx: Arc<parking_lot::Mutex<Option<(String, whisper_rs::WhisperContext)>>>,
     models_dir: PathBuf,
     /// Root directory for recording bundles (`~/Notesage/Recordings`).
     recordings_dir: PathBuf,
@@ -569,7 +575,7 @@ impl TranscriptionState {
         Self {
             capture: Mutex::new(None),
             stopping: AtomicBool::new(false),
-            whisper_ctx: Arc::new(Mutex::new(None)),
+            whisper_ctx: Arc::new(parking_lot::Mutex::new(None)),
             models_dir,
             recordings_dir,
             download_cancels: Mutex::new(HashMap::new()),
@@ -595,8 +601,8 @@ impl TranscriptionState {
         let cached_model = self
             .whisper_ctx
             .lock()
-            .ok()
-            .and_then(|ctx| ctx.as_ref().map(|(name, _)| name.clone()));
+            .as_ref()
+            .map(|(name, _)| name.clone());
 
         let mut models_on_disk = Vec::new();
         let mut stale_files = Vec::new();
@@ -892,9 +898,7 @@ pub async fn transcribe_file(
         move || -> Result<(Vec<TranscriptSegment>, f64), String> {
             // Load (or reuse cached) whisper context.
             {
-                let mut ctx_lock = whisper_ctx
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+                let mut ctx_lock = whisper_ctx.lock();
                 let needs_reload = match &*ctx_lock {
                     Some((cached_model, _)) => cached_model != &model_task,
                     None => true,
@@ -916,9 +920,7 @@ pub async fn transcribe_file(
                 serde_json::json!({ "jobId": job_id_task, "percent": 15, "segment": "Transcribing..." }),
             );
 
-            let ctx_lock = whisper_ctx
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
+            let ctx_lock = whisper_ctx.lock();
             let (_, ctx) = ctx_lock.as_ref().ok_or("Whisper context not loaded")?;
 
             let mut params =
@@ -1167,10 +1169,7 @@ pub async fn delete_whisper_model(
 
     // Clear cached context if it was using this model
     {
-        let mut ctx_lock = state
-            .whisper_ctx
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut ctx_lock = state.whisper_ctx.lock();
         if let Some((cached_model, _)) = &*ctx_lock {
             if cached_model == &size {
                 *ctx_lock = None;

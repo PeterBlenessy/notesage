@@ -32,7 +32,6 @@
         "enable": true,
         "scope": {
           "allow": [
-            "$HOME/**",
             "$APPDATA/**",
             "$APPLOCALDATA/**",
             "$APPCACHE/**",
