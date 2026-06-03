@@ -14,6 +14,35 @@ export type McpConfigSource =
 
 export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 
+/** Transport an MCP server speaks. `http` (remote) is added by later tasks. */
+export type McpTransport = 'stdio' | 'http';
+
+/** A required env var / secret a catalog server needs (rendered in the Add form). */
+export interface McpCatalogRequiredEnv {
+  key: string;
+  label: string;
+  secret: boolean;
+  help_url?: string | null;
+}
+
+/**
+ * One curated catalog entry — a template the "Add" flow pre-fills. Mirrors the
+ * Rust `McpCatalogItem` from `mcp_catalog_list`. The catalog ships empty for now
+ * (PRD 2026-06-03); populate `src-tauri/mcp-catalog.json` to surface entries.
+ */
+export interface McpCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  category?: string | null;
+  homepage?: string | null;
+  transport: McpTransport;
+  url?: string | null;
+  command?: string | null;
+  args: string[];
+  required_env: McpCatalogRequiredEnv[];
+}
+
 export interface McpToolInfo {
   name: string;
   description: string | null;

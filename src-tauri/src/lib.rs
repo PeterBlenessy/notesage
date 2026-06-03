@@ -228,6 +228,7 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
+            mcp_catalog_list,
             // Logging & diagnostics
             log_frontend,
             get_log_path,

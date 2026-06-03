@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
-  ChevronDown, Download, Wrench, Trash2,
+  ChevronDown, Download, Wrench, Trash2, Boxes,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -30,8 +30,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMcpStore, type McpServerEntry, type McpToolInfo } from '@/stores/mcp-store';
+import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpCatalogItem } from '@/stores/mcp-store';
 import { useMcpOperations } from '@/hooks/useMcpOperations';
+import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -237,13 +238,23 @@ function ToolRow({ tool }: { tool: McpToolInfo }) {
 // Add / Edit Server Dialog
 // ---------------------------------------------------------------------------
 
+/** Pre-filled values when adding a server from the catalog. */
+export interface CatalogPrefill {
+  name: string;
+  command: string;
+  args: string[];
+  env: { key: string; value: string }[];
+}
+
 interface AddEditServerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editServer?: McpServerEntry;
+  /** When adding from the catalog, seed the form with these values. */
+  prefill?: CatalogPrefill;
 }
 
-function AddEditServerDialog({ open, onOpenChange, editServer }: AddEditServerDialogProps) {
+function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEditServerDialogProps) {
   const [command, setCommand] = useState(editServer?.command ?? '');
   const [args, setArgs] = useState(editServer?.args.join(' ') ?? '');
   const [name, setName] = useState(editServer?.name ?? '');
@@ -253,6 +264,23 @@ function AddEditServerDialog({ open, onOpenChange, editServer }: AddEditServerDi
       : []
   );
   const [saving, setSaving] = useState(false);
+
+  // The "Add" dialog is mounted once and reused, so seed its fields whenever it
+  // (re)opens — from the edited server, a catalog prefill, or empty.
+  useEffect(() => {
+    if (!open) return;
+    if (editServer) {
+      setCommand(editServer.command);
+      setArgs(editServer.args.join(' '));
+      setName(editServer.name);
+      setEnvPairs(Object.entries(editServer.env).map(([key, value]) => ({ key, value })));
+    } else if (prefill) {
+      setCommand(prefill.command);
+      setArgs(prefill.args.join(' '));
+      setName(prefill.name);
+      setEnvPairs(prefill.env);
+    }
+  }, [open, editServer, prefill]);
 
   const { requestRescan } = useMcpStore();
 
@@ -658,6 +686,8 @@ export function McpServersSettings() {
   const { servers } = useMcpStore();
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [prefill, setPrefill] = useState<CatalogPrefill | undefined>(undefined);
   const [rescanSpinning, setRescanSpinning] = useState(false);
 
   const handleRescan = () => {
@@ -666,17 +696,38 @@ export function McpServersSettings() {
     setTimeout(() => setRescanSpinning(false), 600);
   };
 
+  // Catalog pick → close catalog, seed the Add dialog with the entry's template.
+  const handleCatalogSelect = (item: McpCatalogItem) => {
+    setPrefill({
+      name: item.name,
+      command: item.command ?? '',
+      args: item.args,
+      env: item.required_env.map((e) => ({ key: e.key, value: '' })),
+    });
+    setCatalogOpen(false);
+    setAddOpen(true);
+  };
+
+  const handleAddOpenChange = (open: boolean) => {
+    setAddOpen(open);
+    if (!open) setPrefill(undefined);
+  };
+
   return (
     <div className="space-y-4">
       <div>
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold">MCP Servers</Label>
           <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => setCatalogOpen(true)}>
+              <Boxes className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+              Catalog
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
               <Download className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
               Import
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}>
+            <Button variant="ghost" size="sm" onClick={() => { setPrefill(undefined); setAddOpen(true); }}>
               <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
               Add
             </Button>
@@ -694,7 +745,7 @@ export function McpServersSettings() {
         <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
           <p className="text-sm text-muted-foreground">No MCP servers configured</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Add a server or import from Claude Desktop, Cursor, or VS Code
+            Browse the catalog, add a server manually, or import from Claude Desktop, Cursor, or VS Code
           </p>
         </div>
       ) : (
@@ -705,8 +756,9 @@ export function McpServersSettings() {
         </div>
       )}
 
-      <AddEditServerDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddEditServerDialog open={addOpen} onOpenChange={handleAddOpenChange} prefill={prefill} />
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
+      <McpCatalog open={catalogOpen} onOpenChange={setCatalogOpen} onSelectItem={handleCatalogSelect} />
     </div>
   );
 }

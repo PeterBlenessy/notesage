@@ -1,0 +1,4 @@
+{
+  "_comment": "Curated MCP server catalog for the in-app 'Browse catalog' picker. Intentionally empty for now. To add an entry, append an object to `servers`. stdio (local) example: { \"id\": \"filesystem\", \"name\": \"Filesystem\", \"description\": \"Read/write files in a directory\", \"category\": \"Files\", \"homepage\": \"https://github.com/modelcontextprotocol/servers\", \"transport\": \"stdio\", \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\"], \"required_env\": [] }. http (remote) example: { \"id\": \"example\", \"name\": \"Example\", \"description\": \"...\", \"transport\": \"http\", \"url\": \"https://mcp.example.com\", \"required_env\": [{ \"key\": \"API_KEY\", \"label\": \"API key\", \"secret\": true, \"help_url\": \"https://example.com/keys\" }] }. See docs/prds/2026-06-03-mcp-registration-ux.md.",
+  "servers": []
+}

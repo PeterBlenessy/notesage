@@ -556,6 +556,78 @@ pub struct McpConfigFile {
     mcp_servers: HashMap<String, McpConfigEntry>,
 }
 
+// ---------------------------------------------------------------------------
+// Catalog — curated, browseable list of MCP servers (PRD 2026-06-03)
+//
+// The manifest (`src-tauri/mcp-catalog.json`) ships EMPTY for now: the support
+// code is in place so the catalog can be populated later without touching the
+// transport/lifecycle code. Each entry is a template the "Add" flow pre-fills.
+// ---------------------------------------------------------------------------
+
+/// Transport a catalog entry uses. Mirrored on the frontend as a string union.
+/// (Reused by the broader transport work in task #1 when it lands.)
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Http,
+}
+
+/// A required environment variable / secret a catalog server needs, with a
+/// human label and an optional "where to get it" link rendered in the Add form.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpCatalogRequiredEnv {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub secret: bool,
+    #[serde(default)]
+    pub help_url: Option<String>,
+}
+
+/// One curated catalog entry. `command`/`args` are used for `stdio` entries;
+/// `url` is used for `http` (remote) entries.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpCatalogItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub transport: McpTransport,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub required_env: Vec<McpCatalogRequiredEnv>,
+}
+
+/// On-disk catalog manifest shape. Unknown top-level keys (e.g. a `_comment`
+/// authoring note) are ignored by serde.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct McpCatalogFile {
+    #[serde(default)]
+    servers: Vec<McpCatalogItem>,
+}
+
+/// Embedded curated catalog, parsed at compile time. Empty until populated.
+const MCP_CATALOG_JSON: &str = include_str!("../../mcp-catalog.json");
+
+/// Return the curated MCP server catalog. Currently empty — see the PRD.
+#[tauri::command]
+pub fn mcp_catalog_list() -> Result<Vec<McpCatalogItem>, String> {
+    let file: McpCatalogFile = serde_json::from_str(MCP_CATALOG_JSON)
+        .map_err(|e| format!("Failed to parse mcp-catalog.json: {e}"))?;
+    Ok(file.servers)
+}
+
 fn source_prefix(source: &McpConfigSource) -> &'static str {
     match source {
         McpConfigSource::NotesageGlobal => "global",
@@ -1014,5 +1086,39 @@ mod tests {
         assert_eq!(deserialized.env, original.env);
         assert_eq!(deserialized.source, original.source);
         assert_eq!(deserialized.enabled, original.enabled);
+    }
+
+    #[test]
+    fn catalog_manifest_parses_and_entries_are_well_formed() {
+        // The embedded manifest must always be valid JSON in the expected shape.
+        let catalog = mcp_catalog_list().expect("mcp-catalog.json should parse");
+
+        // Empty to start; this guards every future entry's shape too.
+        for item in &catalog {
+            assert!(!item.id.is_empty(), "catalog entry needs an id");
+            assert!(!item.name.is_empty(), "catalog entry {} needs a name", item.id);
+            match item.transport {
+                McpTransport::Http => assert!(
+                    item.url.is_some(),
+                    "http catalog entry {} must have a url",
+                    item.id
+                ),
+                McpTransport::Stdio => assert!(
+                    item.command.is_some(),
+                    "stdio catalog entry {} must have a command",
+                    item.id
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_transport_defaults_to_stdio() {
+        // Entries that omit `transport` should parse as stdio.
+        let item: McpCatalogItem = serde_json::from_str(
+            r#"{ "id": "x", "name": "X", "description": "d", "command": "node" }"#,
+        )
+        .expect("parse");
+        assert_eq!(item.transport, McpTransport::Stdio);
     }
 }
