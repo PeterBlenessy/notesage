@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import type { McpCatalogItem } from '@/stores/mcp-store';
 
 interface McpCatalogProps {
@@ -96,7 +97,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
           />
         </div>
 
-        <div className="max-h-[22rem] overflow-y-auto -mx-1 px-1">
+        <div className="max-h-96 overflow-y-auto -mx-1 px-1">
           {loading ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading catalog…</p>
           ) : error ? (
@@ -136,18 +137,19 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
 function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () => void }) {
   const isRemote = item.transport === 'http';
   const noKey = item.required_env.length === 0;
+  const badgeClass = 'h-4 gap-1 px-1.5 text-xs font-normal';
   return (
     <div className="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-sm font-medium truncate">{item.name}</span>
           {item.official && (
-            <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px] font-normal">
+            <Badge variant="secondary" className={badgeClass}>
               <ShieldCheck className="h-2.5 w-2.5" strokeWidth={1.5} />
               Official
             </Badge>
           )}
-          <Badge variant="secondary" className="h-4 gap-1 px-1.5 text-[10px] font-normal">
+          <Badge variant="secondary" className={badgeClass}>
             {isRemote ? (
               <Globe className="h-2.5 w-2.5" strokeWidth={1.5} />
             ) : (
@@ -156,24 +158,20 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
             {isRemote ? 'Remote' : 'Local'}
           </Badge>
           {item.category && (
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <Badge variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
               {item.category}
-            </span>
+            </Badge>
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.description}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1">
           {noKey ? (
-            <Badge variant="outline" className="h-4 px-1.5 text-[10px] font-normal text-muted-foreground">
+            <Badge variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
               No API key
             </Badge>
           ) : (
             item.required_env.map((e) => (
-              <Badge
-                key={e.key}
-                variant="outline"
-                className="h-4 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground"
-              >
+              <Badge key={e.key} variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
                 <KeyRound className="h-2.5 w-2.5" strokeWidth={1.5} />
                 {e.label || e.key}
               </Badge>
@@ -181,17 +179,17 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
           )}
         </div>
         {item.homepage && (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            className="mt-1 h-auto gap-1 p-0 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => openUrl(item.homepage!).catch(() => {})}
-            className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           >
             <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
             Learn more
-          </button>
+          </Button>
         )}
         {isRemote && (
-          <p className="text-[11px] text-muted-foreground mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Remote servers need the upcoming remote-transport update.
           </p>
         )}
@@ -202,7 +200,6 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
         className="h-7 shrink-0"
         onClick={onSelect}
         disabled={isRemote}
-        title={isRemote ? 'Remote servers are coming soon' : undefined}
       >
         <Plus className="h-3 w-3 mr-1" strokeWidth={1.5} />
         Add
