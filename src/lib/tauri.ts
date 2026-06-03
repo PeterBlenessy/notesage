@@ -652,6 +652,13 @@ export const tauriApi = {
     return await invoke<WorktreeInfo[]>("git_worktree_list", { repoPath });
   },
 
+  // Grant the WebView asset-protocol read access to a user-opened workspace
+  // root (replaces the removed blanket `$HOME/**` static asset scope — security
+  // H1). Called for every root in `useStartWatchers`.
+  async allowAssetDir(path: string): Promise<void> {
+    await invoke("allow_asset_dir", { path });
+  },
+
   // Filesystem watcher operations
   async watchDirectory(path: string): Promise<void> {
     await invoke("watch_directory", { path });

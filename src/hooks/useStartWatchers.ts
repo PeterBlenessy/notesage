@@ -47,6 +47,16 @@ export function useStartWatchers() {
       tauriApi.watchDirectory(path).catch((err) => {
         console.error(`Failed to watch ${path}:`, err);
       });
+      // Grant the WebView asset-protocol read access to this user-opened root
+      // so images / drawing SVGs / viewer files render. This replaces the
+      // removed blanket `$HOME/**` asset scope (security H1): only roots the
+      // user has actually opened become asset-readable, so agent-authored
+      // markdown can't point an <img> at arbitrary home-dir files. Idempotent
+      // on the Rust side, and the effect re-runs when projects/folders change,
+      // so freshly-opened roots are granted too.
+      tauriApi.allowAssetDir(path).catch((err) => {
+        console.error(`Failed to allow asset dir ${path}:`, err);
+      });
     }
 
     // Watch ~/.notesage/ for skill/agent changes (created by agents or manually)

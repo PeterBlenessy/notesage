@@ -102,6 +102,7 @@ pub fn run() {
             rename_path,
             delete_path,
             path_exists,
+            allow_asset_dir,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
