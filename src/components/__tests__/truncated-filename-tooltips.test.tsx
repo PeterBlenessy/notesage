@@ -19,7 +19,6 @@
  *   9. DocumentOutline — heading text span
  *  10. FolderPeek — folder name span AND file name span
  *  11. FilePreview — filename span in header
- *  12. SymbolSearchResults — item name span AND occurrence filename span
  *
  * FileTreeItem already has a tooltip (added earlier); it is not re-tested here
  * but its delayDuration is aligned to 300ms as a separate assertion below.
@@ -37,8 +36,6 @@ import {
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { Hash } from 'lucide-react';
-import { Command } from '@/components/ui/command';
 
 // ---------------------------------------------------------------------------
 // Shared store resets
@@ -456,46 +453,4 @@ describe('FilePreview — truncated filename header tooltip', () => {
     );
     expectTooltipTrigger(nameSpan);
   }, 2000);
-});
-
-// ===========================================================================
-// 12. SymbolSearchResults — item name AND occurrence filename tooltips
-// ===========================================================================
-
-describe('SymbolSearchResults — truncated name tooltips', () => {
-  beforeEach(() => {
-    registerDefaultHandlers();
-  });
-
-  it('wraps item name spans in Tooltip triggers', async () => {
-    const { SymbolSearchResults } = await import('@/components/SymbolSearchResults');
-
-    // Build a minimal SymbolSearchConfig for the tags mode
-    const config = {
-      prefix: '#',
-      label: 'Tags',
-      labelSingular: 'Tag',
-      icon: Hash,
-      fetchItems: vi.fn().mockResolvedValue([
-        { name: 'my-very-long-symbol-name', fileCount: 1 },
-      ]),
-      findOccurrences: vi.fn().mockResolvedValue([]),
-    };
-
-    // SymbolSearchResults uses CommandGroup/CommandItem which require a
-    // cmdk <Command> ancestor for their React context.
-    const { findByText } = renderWithProviders(
-      <Command>
-        <SymbolSearchResults
-          config={config}
-          query=""
-          open={true}
-          onSelect={vi.fn()}
-        />
-      </Command>,
-    );
-
-    const nameEl = await findByText('my-very-long-symbol-name', {}, { timeout: 3000 });
-    expectTooltipTrigger(nameEl);
-  });
 });
