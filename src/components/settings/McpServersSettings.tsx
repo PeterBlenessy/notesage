@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -42,11 +43,11 @@ import { cn } from '@/lib/utils';
 function statusDot(status: McpServerEntry['status']) {
   switch (status) {
     case 'running':
-      return 'bg-green-500';
+      return 'bg-foreground';
     case 'starting':
-      return 'bg-yellow-500 animate-pulse';
+      return 'bg-muted-foreground animate-pulse';
     case 'error':
-      return 'bg-red-500';
+      return 'bg-destructive';
     default:
       return 'bg-muted-foreground/40';
   }
@@ -191,7 +192,7 @@ function McpServerCard({ server }: { server: McpServerEntry }) {
         {/* Expandable tool list */}
         {server.tools.length > 0 && (
           <Collapsible open={toolsExpanded} onOpenChange={setToolsExpanded}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 pb-2 focus-visible:outline-none">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-3 pb-2 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !toolsExpanded && '-rotate-90')}
                 strokeWidth={1.5}
@@ -584,7 +585,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
                       onClick={() => available && handleSelectSource(source.id)}
                       disabled={!available}
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border text-left transition-colors',
+                        'flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                         available
                           ? 'hover:border-muted-foreground cursor-pointer'
                           : 'opacity-40 cursor-not-allowed',
@@ -639,11 +640,9 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
                     key={server.id}
                     className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border hover:border-muted-foreground transition-colors cursor-pointer"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedIds.has(server.id)}
-                      onChange={() => toggleId(server.id)}
-                      className="accent-foreground"
+                      onCheckedChange={() => toggleId(server.id)}
                     />
                     <div className="min-w-0 flex-1">
                       <span className="text-sm font-medium">{server.name}</span>
@@ -731,8 +730,14 @@ export function McpServersSettings() {
               <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
               Add
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleRescan} disabled={rescanSpinning}>
-              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', rescanSpinning && 'animate-spin')} strokeWidth={1.5} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRescan}
+              disabled={rescanSpinning}
+              aria-label="Refresh servers"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', rescanSpinning && 'animate-spin')} strokeWidth={1.5} />
             </Button>
           </div>
         </div>
