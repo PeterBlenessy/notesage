@@ -59,6 +59,9 @@ interface SettingsStore {
    */
   completionsOnOutOfScope: boolean;
   chatHistoryLimit: number;
+  /** Planning context (tokens) used by the local model-fit memory estimate.
+   *  Not the model's max context — the size llama-server is launched with. */
+  localPlanningContext: number;
   skillManagement: boolean;
   /** Global toggle — controls whether tools are sent with direct API chat requests */
   toolCallingEnabled: boolean;
@@ -220,6 +223,7 @@ interface SettingsStore {
   setInlineCompletionsDisabled: (disabled: boolean) => void;
   setCompletionsOnOutOfScope: (enabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
+  setLocalPlanningContext: (ctx: number) => void;
   setSkillManagement: (enabled: boolean) => void;
   setToolCallingEnabled: (enabled: boolean) => void;
   setRequireAllToolConfirmations: (enabled: boolean) => void;
@@ -346,6 +350,7 @@ export const useSettingsStore = create<SettingsStore>()(
       inlineCompletionsDisabled: false,
       completionsOnOutOfScope: false,
       chatHistoryLimit: 0,
+      localPlanningContext: 8192,
       skillManagement: false,
       toolCallingEnabled: true,
       requireAllToolConfirmations: false,
@@ -468,6 +473,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setChatHistoryLimit: (limit: number) => {
         set({ chatHistoryLimit: limit });
+      },
+
+      setLocalPlanningContext: (ctx: number) => {
+        set({ localPlanningContext: ctx });
       },
 
       setSkillManagement: (enabled: boolean) => {
