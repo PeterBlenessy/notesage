@@ -31,6 +31,7 @@ A spike (`scripts/spikes/model-fit-spike.mjs`) proved the approach end-to-end ag
 3. Apply the same verdict to **both catalog models and live HuggingFace search results**, so the recommendation extends beyond the curated list.
 4. **Never silently hide** an unrunnable model — show it disabled, with a plain-language reason ("needs ~42 GB", "~3 tok/s — too slow on this Mac", "no FIM support").
 5. Demote the catalog from "trusted source" to a **curated discovery list** — its quality signal becomes the verified facts, not its hand-authored flags.
+6. **Ground the engine constants empirically** before the estimator ships any number to a user, via a one-off **calibration harness** that measures real tok/s + peak RAM on actual hardware and tunes the constant tables — so v1 estimates are validated, not blindly ported from whichllm.
 
 **Non-Goals**
 
@@ -78,6 +79,17 @@ Pure, unit-testable functions (cargo-tested). Constants ported from `Andyyyy64/w
 - **Fit classification**: `fits` / `tight` / `wont-fit` against usable unified memory (total × ~0.75, reserving for OS + the editor).
 - **Speed classification**: `fast` / `ok` / `sluggish` / `unusable`.
 - **Verdict per routing slot**: runnable (`fit ∈ {fits, tight}` AND tok/s ≥ floor) AND has the slot's required mechanism (FIM for completions, tool template for agents).
+
+### 4. Calibration harness (`scripts/calibrate-model-fit.ts` + `model_fit/calibration.rs`)
+
+The constants in `engine.rs` are ported from whichllm and are **un-calibrated guesses** until proven on real hardware. Shipping un-grounded tok/s figures to users would violate the "honesty" UX goal. The harness closes that gap **before** v1 ships, as a developer/CI tool (not a user-facing feature):
+
+- **Input**: a manifest of already-downloaded models spanning the relevant axes — dense vs MoE, a few quant levels (Q4_K_M, Q5/Q6, Q8), and a small/medium/large size — plus the host's `HardwareProfile`.
+- **Measure**: for each model, start the real bundled `llama-server`, run a fixed decode workload (warm-up + N tokens at the default planning context), and capture **actual decode tok/s** (from llama-server's timing output) and **peak resident memory** (sampled during the run). A new `measure_model_runtime(model_path, workload)` command in `calibration.rs` drives this, reusing the existing `local_inference.rs` server lifecycle.
+- **Compare & tune**: the harness diffs measured vs estimated for memory and speed, reports per-model and aggregate error, and proposes adjusted constants (quant-efficiency factors, Metal backend factor, KV/overhead coefficients) that minimize error across the sample. Output is a human-readable calibration report committed under `docs/audits/` plus a suggested diff to the constant tables — a human applies it, the harness never auto-writes constants.
+- **Re-runnable**: the same harness becomes the validation tool for Phase 2's automatic loop and for future Apple chips. It is opt-in (`pnpm calibrate:model-fit`), never part of the normal build, and requires the operator to have the sample models downloaded.
+
+This is a **one-shot, operator-driven** calibration — distinct from the Phase 2 *automatic, per-run* self-correction loop, which is still out of scope (see below). The harness grounds the shipped constants once; Phase 2 keeps them grounded continuously from real usage.
 
 ### Data flow
 
@@ -153,7 +165,21 @@ pub struct ModelFitResult {
 #[tauri::command] async fn detect_hardware_profile() -> Result<HardwareProfile, String>;
 #[tauri::command] async fn read_gguf_capabilities(resolve_url: Option<String>, local_path: Option<String>) -> Result<GgufCapabilities, String>;
 #[tauri::command] async fn estimate_model_fit(candidates: Vec<ModelFitInput>, profile: HardwareProfile, planning_ctx: u32) -> Result<Vec<ModelFitResult>, String>;
+
+// Calibration harness only — drives a real llama-server decode and reports measured perf.
+#[tauri::command] async fn measure_model_runtime(model_path: String, decode_tokens: u32, planning_ctx: u32) -> Result<RuntimeMeasurement, String>;
 ```
+
+```rust
+pub struct RuntimeMeasurement {
+    pub model_path: String,
+    pub measured_tok_per_sec: f32,
+    pub peak_ram_bytes: u64,
+    pub decode_tokens: u32,
+}
+```
+
+The harness script (`scripts/calibrate-model-fit.ts`) calls `measure_model_runtime` per manifest entry, calls `estimate_model_fit` for the same inputs, and writes the comparison report. `measure_model_runtime` is registered behind a dev/debug gate and is not invoked by any user-facing surface.
 
 **Frontend** — `local-ai-store` gains `hardwareProfile` + a `Map<modelId, ModelFitResult>` and `Map<modelId, GgufCapabilities>` (non-persisted, recomputed per session). New TS interfaces mirror the Rust structs in `src/lib/tauri.ts`. `settings-store` gains `localPlanningContext` (default 8192).
 
@@ -175,6 +201,12 @@ pub struct ModelFitResult {
 - [ ] HF search results receive the same verdict treatment as catalog entries.
 - [ ] Capability-read failure degrades gracefully (catalog flag + "unverified" marker), never blocks the list.
 
+**Calibration**
+
+- [ ] `pnpm calibrate:model-fit` runs the sample manifest end-to-end on real hardware, producing a committed calibration report (measured vs estimated tok/s + RAM, per-model and aggregate error).
+- [ ] After applying the harness's proposed constants, the engine's estimated tok/s is within an agreed error band (target: ±25% median) of measured on the calibration sample — and **no shipped estimate is presented as measured**.
+- [ ] The harness is opt-in and excluded from the normal build/CI test run; `measure_model_runtime` is unreachable from user-facing surfaces.
+
 **Testing**
 
 - [ ] `cargo test` covers the engine (memory estimate, tok/s, fit/speed classification, MoE path) and the GGUF-header parser (incl. `truncated` handling) with fixture headers.
@@ -189,7 +221,7 @@ pub struct ModelFitResult {
 
 ## Out of Scope
 
-- **Phase 2 — Empirical self-correction**: capture real tok/s from llama-server runtime metadata after a model runs, store per (model, hardware), override the estimate, and use deltas to recalibrate the engine constants. (Notesage already reads runtime metadata, so this is a natural follow-up.)
+- **Phase 2 — Automatic empirical self-correction**: capture real tok/s from llama-server runtime metadata on *every* user run, store per (model, hardware), override the per-model estimate in the UI, and feed deltas back to recalibrate the engine constants continuously. This is the *automatic, always-on* loop. It is distinct from the v1 **calibration harness** (in scope above), which is a *one-shot, operator-driven* grounding of the shipped constants on a fixed sample. The harness measures-and-tunes once before release; Phase 2 measures-and-tunes forever from live usage. The harness's `measure_model_runtime` command and report format are the reusable foundation Phase 2 builds on.
 - **Capability *competence* probing**: a one-shot tool-call / infill request after download to confirm the model is *good* at the feature (v1 verifies the mechanism exists, not its quality).
 - **Benchmark-based quality ranking** (whichllm's scorer, multi-source benchmark merge, evidence-confidence tiers).
 - **Discrete-GPU / multi-vendor modeling** (NVIDIA/AMD/Intel VRAM, partial-offload layer-count math, CPU AVX feature detection).
