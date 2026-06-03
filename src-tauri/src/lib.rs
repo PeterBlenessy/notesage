@@ -9,6 +9,9 @@ mod tray;
 pub use commands::sandbox;
 pub use commands::sandbox_monitor;
 pub use commands::watcher;
+// Exposed for the `calibrate_model_fit` example, which links the engine
+// directly so the fit/speed math stays single-source (no JS reimplementation).
+pub use commands::model_fit;
 
 use commands::*;
 use index::IndexState;
@@ -272,6 +275,11 @@ pub fn run() {
             fetch_hf_metadata,
             parse_gguf_metadata,
             get_runtime_model_metadata,
+            // Hardware-aware model recommendation
+            model_fit::hardware::detect_hardware_profile,
+            model_fit::estimate_model_fit,
+            model_fit::read_gguf_capabilities,
+            get_local_server_rss,
             // Actions dashboard
             scan_actions,
             // Network sandboxing proxy

@@ -1,0 +1,39 @@
+{
+  "_note": "Calibration manifest TEMPLATE. The operator MUST replace every `model_path` with an absolute path to a real downloaded .gguf file (e.g. under ~/.notesage/models/llm/) and fill the `hardware` block with this machine's real values. The harness spawns the real bundled llama-server against each model, so it requires real models + real Apple hardware and cannot run in CI. file_size_bytes/params_b/active_params_b/quant should match the model catalog entry. decode_tokens defaults to 128 if omitted; planning_ctx defaults to 8192 if omitted.",
+  "hardware": {
+    "total_ram_bytes": 38654705664,
+    "available_ram_bytes": 28991029248,
+    "chip_name": "Apple M3 Pro",
+    "bandwidth_gbs": 150.0,
+    "is_unified": true,
+    "backend": "metal"
+  },
+  "planning_ctx": 8192,
+  "models": [
+    {
+      "id": "qwen3-4b-q4",
+      "model_path": "/Users/REPLACE_ME/.notesage/models/llm/qwen3-4b-Q4_K_M.gguf",
+      "file_size_bytes": 2500000000,
+      "params_b": 4.0,
+      "quant": "Q4_K_M",
+      "decode_tokens": 128
+    },
+    {
+      "id": "qwen2.5-coder-7b-q4",
+      "model_path": "/Users/REPLACE_ME/.notesage/models/llm/qwen2.5-coder-7b-Q4_K_M.gguf",
+      "file_size_bytes": 4700000000,
+      "params_b": 7.0,
+      "quant": "Q4_K_M",
+      "decode_tokens": 128
+    },
+    {
+      "id": "gemma3-moe-27b-a4b-q4",
+      "model_path": "/Users/REPLACE_ME/.notesage/models/llm/gemma3-27b-a4b-Q4_K_M.gguf",
+      "file_size_bytes": 16800000000,
+      "params_b": 27.0,
+      "active_params_b": 4.0,
+      "quant": "Q4_K_M",
+      "decode_tokens": 128
+    }
+  ]
+}

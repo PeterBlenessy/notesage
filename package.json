@@ -19,6 +19,7 @@
     "test:all": "vitest run && playwright test",
     "typecheck": "tsc --noEmit",
     "audit:contrast": "pnpm dlx tsx scripts/contrast-audit.ts",
+    "calibrate:model-fit": "pnpm dlx tsx scripts/calibrate-model-fit.ts",
     "coverage:check": "bash scripts/coverage-check.sh",
     "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js",
     "test:perf": "vitest run --config vitest.perf.config.ts",

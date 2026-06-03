@@ -1,6 +1,8 @@
 import type { LocalModelInfo } from '@/lib/tauri';
-import type { ModelMetadata } from '@/lib/tauri';
+import type { ModelMetadata, ModelFitResult, GgufCapabilities } from '@/lib/tauri';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
+import { fitDisplay } from '@/lib/ai/model-fit';
+import type { RuntimeMeasurement } from '@/stores/model-fit-measurement-store';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -15,9 +17,26 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
-function CapabilityBadge({ label }: { label: string }) {
+/**
+ * A capability chip. `verified` chips (read from the GGUF header) use the
+ * solid `bg-muted` treatment; unverified-fallback chips (catalog flag, header
+ * not read yet / read failed) dim to `opacity-60` and carry a "unverified"
+ * title so the distinction is legible without adding chrome colour.
+ */
+function CapabilityBadge({
+  label,
+  verified = true,
+}: {
+  label: string;
+  verified?: boolean;
+}) {
   return (
-    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+    <span
+      title={verified ? undefined : 'Unverified — from catalog metadata, not the model header'}
+      className={`text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground ${
+        verified ? '' : 'opacity-60 border border-dotted border-border-strong'
+      }`}
+    >
       {label}
     </span>
   );
@@ -26,9 +45,18 @@ function CapabilityBadge({ label }: { label: string }) {
 interface ModelCardProps {
   model: LocalModelInfo;
   isActive: boolean;
-  isRecommendedDefault: boolean;
+  /** @deprecated tier-based default star — no longer set (computed verdicts
+   *  replaced the hand-authored RAM tiers). Kept optional for compatibility. */
+  isRecommendedDefault?: boolean;
   download: { progress: number } | undefined;
   metadata: ModelMetadata | null | undefined;
+  fit?: ModelFitResult;
+  caps?: GgufCapabilities;
+  capsLoading?: boolean;
+  /** Phase 2: a real measurement for this model on this Mac, if one exists. */
+  measurement?: RuntimeMeasurement;
+  /** Phase 2: per-host speed correction applied to (unmeasured) estimates. */
+  hostScale?: number;
   onSetActive: () => void;
   onDownload: () => void;
   onCancelDownload: () => void;
@@ -43,6 +71,11 @@ export function ModelCard({
   isRecommendedDefault,
   download,
   metadata,
+  fit,
+  caps,
+  capsLoading,
+  measurement,
+  hostScale = 1,
   onSetActive,
   onDownload,
   onCancelDownload,
@@ -50,9 +83,26 @@ export function ModelCard({
   onRemoveCustom,
   onHide,
 }: ModelCardProps) {
+  const display = fitDisplay(fit, measurement, hostScale);
+  const verdict = display?.label ?? null;
+  // Disable only undownloaded models that the engine says won't run.
+  const blocked = !model.downloaded && fit != null && !fit.runnable;
+  // Verified flags from the GGUF header (when present) supersede catalog flags.
+  const toolsCap = caps ? caps.has_tool_template : model.supports_tool_calling;
+  const thinkCap = caps ? caps.has_thinking : model.supports_thinking;
+  const fimCap = caps ? caps.has_fim_tokens : model.supports_fim;
+  const capsVerified = caps != null;
+  // While the hardware profile / capability read is still pending we show a
+  // subtle "Checking…" line instead of a (possibly misleading) verdict.
+  const checking = !fit && capsLoading;
+
   return (
     <ModelMetadataTooltip metadata={metadata} modelType="llm" side="left">
-      <div className="relative rounded-md border px-3 py-2.5">
+      <div
+        className={`relative rounded-md border px-3 py-2.5 ${
+          blocked ? 'opacity-60' : ''
+        }`}
+      >
         {/* Action buttons — top right */}
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {download ? (
@@ -145,16 +195,23 @@ export function ModelCard({
             <div className="flex items-center gap-0.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={onDownload}
-                  >
-                    <Download className="h-3 w-3" />
-                  </Button>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={blocked}
+                      onClick={onDownload}
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent side="top">Download model</TooltipContent>
+                <TooltipContent side="top">
+                  {blocked
+                    ? fit?.reasons[0] ?? "Won't run on this Mac"
+                    : 'Download model'}
+                </TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -194,13 +251,48 @@ export function ModelCard({
               <CapabilityBadge label="Custom" />
             )}
           </div>
+          {/* Hardware-fit verdict line — sits just under the size line. */}
+          {checking ? (
+            <div className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/60">
+              Checking…
+            </div>
+          ) : verdict ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] tabular-nums text-muted-foreground">
+                    {verdict}
+                  </span>
+                  {blocked && (
+                    <span
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-destructive/10 text-destructive"
+                    >
+                      {fit?.reasons[0] ?? "Won't run"}
+                    </span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[260px]">
+                <p className="text-xs">
+                  {display?.detail ?? 'Estimated before download — sharpens once the model runs.'}
+                </p>
+                {blocked && fit && fit.reasons.length > 0 && (
+                  <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-3.5 space-y-0.5">
+                    {fit.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
             {model.description}
           </p>
           <div className="flex items-center gap-1 mt-1 flex-wrap">
-            {model.supports_tool_calling && <CapabilityBadge label="Tools" />}
-            {model.supports_thinking && <CapabilityBadge label="Think" />}
-            {model.supports_fim && <CapabilityBadge label="FIM" />}
+            {toolsCap && <CapabilityBadge label="Tools" verified={capsVerified} />}
+            {thinkCap && <CapabilityBadge label="Think" verified={capsVerified} />}
+            {fimCap && <CapabilityBadge label="FIM" verified={capsVerified} />}
             {model.supports_vision && <CapabilityBadge label="Vision" />}
             {model.multilingual && <CapabilityBadge label="Multi" />}
           </div>
