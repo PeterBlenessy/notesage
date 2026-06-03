@@ -17,6 +17,24 @@ export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 /** Transport an MCP server speaks. `http` (remote) is added by later tasks. */
 export type McpTransport = 'stdio' | 'http';
 
+/**
+ * An MCP env var value as stored in `mcp.json`. A bare string is an inline
+ * plaintext value; `{ secret: true }` is a reference to a value kept in the OS
+ * keychain (under `notesage:mcp:<serverId>:<KEY>`). Secret values never appear
+ * in this shape — only the reference does.
+ */
+export type McpEnvValue = string | { secret: boolean };
+
+/** True when an env value is a keychain secret reference rather than plaintext. */
+export function isSecretEnvValue(v: McpEnvValue): v is { secret: boolean } {
+  return typeof v === 'object' && v !== null && 'secret' in v;
+}
+
+/** Keychain service name for an MCP server's secret env var. */
+export function mcpSecretService(serverId: string, key: string): string {
+  return `notesage:mcp:${serverId}:${key}`;
+}
+
 /** A required env var / secret a catalog server needs (rendered in the Add form). */
 export interface McpCatalogRequiredEnv {
   key: string;
@@ -57,7 +75,7 @@ export interface McpServerEntry {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: McpConfigSource;
   enabled: boolean;
   status: McpServerStatus;

@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useMcpStore, type McpServerEntry, type McpToolInfo } from '@/stores/mcp-store';
+import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpEnvValue } from '@/stores/mcp-store';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 
@@ -16,7 +16,7 @@ interface McpServerConfig {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
   enabled: boolean;
   transport?: 'stdio' | 'http';
@@ -28,7 +28,7 @@ interface McpServerInfo {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
   enabled: boolean;
   status: 'stopped' | 'starting' | 'running' | 'error';

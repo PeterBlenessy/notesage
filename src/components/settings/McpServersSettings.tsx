@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
   ChevronDown, Download, Wrench, Trash2, Boxes,
-  Loader2, CheckCircle2, AlertCircle,
+  Loader2, CheckCircle2, AlertCircle, Lock,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -32,7 +32,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpCatalogItem, type McpTransport } from '@/stores/mcp-store';
+import {
+  useMcpStore,
+  isSecretEnvValue,
+  mcpSecretService,
+  type McpServerEntry,
+  type McpToolInfo,
+  type McpCatalogItem,
+  type McpTransport,
+  type McpEnvValue,
+} from '@/stores/mcp-store';
 import { useMcpOperations, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
 import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
@@ -100,6 +109,16 @@ function McpServerCard({ server }: { server: McpServerEntry }) {
       await stopServer(server.id);
     }
     removeServer(server.id);
+    // Delete any keychain-stored secrets for this server.
+    for (const [key, value] of Object.entries(server.env)) {
+      if (isSecretEnvValue(value)) {
+        try {
+          await invoke('delete_credential', { service: mcpSecretService(server.id, key) });
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
     // Remove from config file on disk
     try {
       const home = await invoke<string>('get_home_dir');
@@ -251,9 +270,30 @@ export interface CatalogPrefill {
   name: string;
   command: string;
   args: string[];
-  env: { key: string; value: string }[];
+  env: EnvRow[];
   transport?: McpTransport;
   url?: string | null;
+}
+
+/**
+ * One editable env-var row. `secret` marks it for keychain storage (the value
+ * is written to the keychain, only a `{ secret: true }` reference to mcp.json).
+ * `stored` flags a secret loaded from an existing server but not yet revealed.
+ */
+interface EnvRow {
+  key: string;
+  value: string;
+  secret?: boolean;
+  stored?: boolean;
+}
+
+/** Convert a stored env map into editable rows (secrets start masked + stored). */
+function envToRows(env: Record<string, McpEnvValue>): EnvRow[] {
+  return Object.entries(env).map(([key, value]) =>
+    isSecretEnvValue(value)
+      ? { key, value: '', secret: true, stored: true }
+      : { key, value: value as string, secret: false }
+  );
 }
 
 interface AddEditServerDialogProps {
@@ -276,10 +316,8 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
   const [name, setName] = useState(editServer?.name ?? '');
   const [transport, setTransport] = useState<McpTransport>(editServer?.transport ?? 'stdio');
   const [url, setUrl] = useState(editServer?.url ?? '');
-  const [envPairs, setEnvPairs] = useState<{ key: string; value: string }[]>(
-    editServer
-      ? Object.entries(editServer.env).map(([key, value]) => ({ key, value }))
-      : []
+  const [envPairs, setEnvPairs] = useState<EnvRow[]>(
+    editServer ? envToRows(editServer.env) : []
   );
   const [saving, setSaving] = useState(false);
   // Validation dry-run state — drives the tool preview / error panel and gates
@@ -299,7 +337,7 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       setCommand(editServer.command);
       setArgs(editServer.args.join(' '));
       setName(editServer.name);
-      setEnvPairs(Object.entries(editServer.env).map(([key, value]) => ({ key, value })));
+      setEnvPairs(envToRows(editServer.env));
       setTransport(editServer.transport ?? 'stdio');
       setUrl(editServer.url ?? '');
     } else if (prefill) {
@@ -319,6 +357,34 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       setUrl('');
     }
   }, [open, editServer, prefill]);
+
+  // On edit, reveal stored secret values from the keychain so the user can
+  // re-validate / re-save without re-typing them. Best-effort: a missing
+  // entry just leaves the row blank.
+  useEffect(() => {
+    if (!open || !editServer) return;
+    let cancelled = false;
+    (async () => {
+      const revealed = await Promise.all(
+        envToRows(editServer.env).map(async (row) => {
+          if (!row.secret) return row;
+          try {
+            const value = await invoke<string | null>('get_credential', {
+              service: mcpSecretService(editServer.id, row.key),
+            });
+            if (value) return { ...row, value, stored: false };
+          } catch {
+            // keep masked/stored
+          }
+          return row;
+        })
+      );
+      if (!cancelled) setEnvPairs(revealed);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editServer]);
 
   // Any edit to the config invalidates a prior test result so a stale "ok"
   // can never let a changed config skip validation.
@@ -379,7 +445,6 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
     try {
       const input = buildInput();
       const serverName = input.name;
-      const env = input.env;
 
       // Validate before writing. Reuse a prior successful test for the
       // current config (field edits reset validation to idle), otherwise run a
@@ -397,11 +462,33 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
         return;
       }
 
+      // Persist env: secret values go to the OS keychain (mcp.json gets only a
+      // `{ secret: true }` reference); plaintext values stay inline. The server
+      // id must match the one discovery will assign (`global:<name>`) so the
+      // backend resolves the same keychain entry at spawn.
+      const serverId = editServer?.id ?? `global:${serverName}`;
+      const envForDisk: Record<string, unknown> = {};
+      for (const row of envPairs) {
+        const key = row.key.trim();
+        if (!key) continue;
+        if (row.secret) {
+          if (row.value) {
+            await invoke('store_credential', {
+              service: mcpSecretService(serverId, key),
+              key: row.value,
+            });
+          }
+          envForDisk[key] = { secret: true };
+        } else {
+          envForDisk[key] = row.value;
+        }
+      }
+
       // Build config to save — http servers store transport + url, stdio
       // servers keep the legacy command/args shape (transport defaults to stdio).
       const configEntry: Record<string, unknown> = isRemote
-        ? { transport: 'http', url: input.url, env }
-        : { command: input.command, args: input.args, env };
+        ? { transport: 'http', url: input.url, env: envForDisk }
+        : { command: input.command, args: input.args, env: envForDisk };
 
       // Save to global config
       const home = await invoke<string>('get_home_dir');
@@ -536,15 +623,34 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
                 />
                 <span className="text-muted-foreground">=</span>
                 <Input
+                  type={pair.secret ? 'password' : 'text'}
                   value={pair.value}
                   onChange={(e) => {
                     const next = [...envPairs];
-                    next[i] = { ...next[i], value: e.target.value };
+                    next[i] = { ...next[i], value: e.target.value, stored: false };
                     setEnvPairs(next);
                   }}
-                  placeholder="value"
+                  placeholder={pair.stored ? '•••••• (stored)' : pair.secret ? 'secret value' : 'value'}
                   className="font-mono text-xs flex-1"
                 />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-6 w-6 p-0 shrink-0',
+                    pair.secret ? 'text-foreground' : 'text-muted-foreground'
+                  )}
+                  aria-label={pair.secret ? 'Stored in keychain' : 'Store in keychain'}
+                  aria-pressed={!!pair.secret}
+                  title={pair.secret ? 'Secret — stored in the OS keychain' : 'Store this value in the OS keychain'}
+                  onClick={() => {
+                    const next = [...envPairs];
+                    next[i] = { ...next[i], secret: !next[i].secret, stored: false };
+                    setEnvPairs(next);
+                  }}
+                >
+                  <Lock className="h-3 w-3" strokeWidth={1.5} />
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -719,7 +825,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       const selected = discoveredServers.filter((s) => selectedIds.has(s.id));
 
       // Build config entries for saving
-      const configs: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+      const configs: Record<string, { command: string; args: string[]; env: Record<string, unknown> }> = {};
       for (const server of selected) {
         configs[server.name] = {
           command: server.command,
@@ -731,7 +837,7 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       // Read existing global config
       const home = await invoke<string>('get_home_dir');
       const configPath = `${home}/.notesage/mcp.json`;
-      let existing: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+      let existing: Record<string, { command: string; args: string[]; env: Record<string, unknown> }> = {};
       try {
         const content = await invoke<string>('read_file', { path: configPath });
         const parsed = JSON.parse(content);
@@ -899,7 +1005,7 @@ export function McpServersSettings() {
       name: item.name,
       command: item.command ?? '',
       args: item.args,
-      env: item.required_env.map((e) => ({ key: e.key, value: '' })),
+      env: item.required_env.map((e) => ({ key: e.key, value: '', secret: e.secret })),
       transport: item.transport,
       url: item.url ?? null,
     });
