@@ -4,9 +4,11 @@ description: Audit for unused exports, dead code, unused dependencies, and depre
 user-invocable: true
 ---
 
-# Audit: Dead Code & Dependency Health
+# Audit: Dead Code
 
-Find unused code and problematic dependencies. This is a research-only audit — do not modify any code.
+Find unused and dead code. This is a research-only audit — do not modify any code.
+
+Dependency health (unused, outdated, heavy, vulnerable dependencies) is covered by `/audit-dependencies` — do not duplicate it here.
 
 ## What to Search For
 
@@ -32,37 +34,6 @@ Exclude: `src/components/ui/` (shadcn/ui — may be used on-demand), `.d.ts` fil
 - Find conditions that are always true/false (e.g., checking a type that's already narrowed)
 - Find `if (false)` or feature flags that are permanently off
 
-### Unused Dependencies (npm)
-
-1. Read `package.json` dependencies and devDependencies
-2. For each dependency, search for imports of that package across `src/` and config files
-3. Flag packages that are never imported
-
-**Common false positives to exclude:**
-- Tailwind plugins (used in config, not imported)
-- Vite plugins (used in `vite.config.ts`)
-- Type packages (`@types/*` — used implicitly)
-- PostCSS plugins
-- Tauri CLI packages
-
-### Unused Dependencies (Cargo)
-
-1. Read `src-tauri/Cargo.toml` dependencies
-2. For each crate, search for `use <crate>` or `<crate>::` across `.rs` files
-3. Flag crates that appear unused
-
-**Common false positives:** proc-macro crates (used via `#[derive]`), `serde` features, build dependencies.
-
-### Outdated Dependencies
-
-If `pnpm outdated` or `cargo outdated` is available, run it and report:
-- Major version updates (breaking changes — flag as MEDIUM)
-- Security-sensitive packages with updates (flag as HIGH)
-
-### Heavy Transitive Dependencies
-
-Check if any direct dependency pulls in a disproportionately large dependency tree. Look at `pnpm ls --depth=1` or `cargo tree --depth=1` for packages with many transitive deps.
-
 ## Output Format
 
 ```markdown
@@ -71,13 +42,9 @@ Check if any direct dependency pulls in a disproportionately large dependency tr
 | Export | File | Type |
 | --- | --- | --- |
 | `formatDate` | `src/lib/utils.ts:45` | function |
-
-### Unused Dependencies
-
-| Package | In | Notes |
-| --- | --- | --- |
-| `lodash` | package.json | No imports found |
 ```
+
+End with a `### Confirmed Good Patterns` section.
 
 ## Example Finding
 

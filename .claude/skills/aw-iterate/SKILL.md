@@ -44,7 +44,7 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 1. **Read the PR.** `gh pr view $PR_NUMBER --json title,body,labels,files,headRefName,author`
    - Verify author is `github-actions[bot]` or legacy `claude[bot]` / `app/claude`. If not, exit silently (we don't iterate on human PRs).
    - Verify state is `OPEN` and `isDraft == true`. If merged or non-draft, exit silently.
-2. **Read the issue** linked from the PR body (`Implements #N`). Need the original acceptance criteria for context.
+2. **Read the issue** linked from the PR body's auto-close line (`Fixes #N` / `Resolves #N` / `Closes #N`; legacy: `Implements #N`). Need the original acceptance criteria for context.
 3. **Read the feedback comment** + any prior review comments on the PR.
 
 ## Decide: iterate or defer

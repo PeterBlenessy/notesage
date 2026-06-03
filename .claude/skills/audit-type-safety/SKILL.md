@@ -67,6 +67,8 @@ For each finding:
 
 Include counts: "Found N `any` usages, M type assertions, K suppressed errors."
 
+End with a `### Confirmed Good Patterns` section.
+
 ## Example Finding
 
 ### MEDIUM: `as any` in AI streaming response handler

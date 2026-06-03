@@ -57,13 +57,17 @@ For the full release flow use `/release` — it orchestrates the gates and versi
 
 ## CI Pipeline
 
-`.github/workflows/test.yml` — three parallel jobs, all must pass for merge:
+`.github/workflows/test.yml` is the source of truth — read it for exact runners,
+multipliers, and steps (they drift). At time of writing: a `Detect changed paths`
+gate skips the test jobs for docs-only PRs, then four jobs run **all on macOS**:
 
-| Job | Runner | Runs |
-|---|---|---|
-| Frontend Tests & Coverage | ubuntu-latest | typecheck, `test:coverage`, perf (1.5× multiplier), coverage regression check (PR only) |
-| Playwright E2E | ubuntu-latest | Chromium install + `test:e2e` |
-| Rust Backend | macos-latest | `cargo test` in `src-tauri/` |
+- **Frontend Tests & Coverage** — typecheck, contrast audit, `test:coverage`, perf benchmarks, coverage regression check (PR only)
+- **Playwright E2E** — installs `chromium` + `webkit`, runs `test:e2e`
+- **Rust Backend** — `cargo test` in `src-tauri/`
+- **Real Tauri E2E** — `tauri-webdriver` driving the live app (`test:e2e-real-full`)
+
+All non-skipped jobs must pass for merge. Check the workflow file before relying on
+any specific runner image or budget multiplier.
 
 ## Reference
 

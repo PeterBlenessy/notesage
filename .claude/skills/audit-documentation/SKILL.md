@@ -75,6 +75,8 @@ For each finding:
 
 Group findings by document for easier correction.
 
+End with a `### Confirmed Good Patterns` section.
+
 ## Example Finding
 
 ### LOW: architecture.md lists removed store

@@ -22,7 +22,7 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
 
 1. **Read the merged PR.**
    - `gh pr view $PR_NUMBER --json title,body,additions,deletions,files,commits,reviews,comments`
-   - Identify the linked issue from `Implements #N` in the PR body, or the `closes #N` keywords.
+   - Identify the linked issue from the PR body's auto-close line (`Fixes #N` / `Resolves #N` / `Closes #N`; legacy: `Implements #N`).
 
 2. **Read the linked issue.**
    - `gh issue view $ISSUE_NUMBER --json title,body,labels,comments`

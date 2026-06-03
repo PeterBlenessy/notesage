@@ -50,9 +50,7 @@ Find all SQL query construction in `src-tauri/src/index/`. Verify:
 
 ### Dependency Vulnerabilities
 
-- Run `pnpm audit` (if available) and report any HIGH/CRITICAL findings
-- Run `cargo audit` (if available) and report findings
-- Check if any dependencies are unmaintained (no releases in 2+ years)
+Dependency vulnerability scanning (`pnpm audit`, `cargo audit`, unmaintained-package checks) is covered by `/audit-dependencies` — defer to that audit rather than duplicating the scan here.
 
 ## Output Format
 

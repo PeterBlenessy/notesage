@@ -34,16 +34,16 @@ Identify oversized files that hurt maintainability and suggest decomposition. Th
 
 ## Output Format
 
-Report findings as a table for overview, then detailed entries for the largest files:
+Report findings as a table for overview, then detailed entries for the largest files. The numbers below are illustrative — always report the actual `wc -l` count you measured:
 
 ```markdown
 ### Files Over Threshold
 
 | File | Lines | Threshold | Responsibilities |
 | --- | --- | --- | --- |
-| `Editor.tsx` | 1,822 | 400 | 15+ (editor, viewers, comments, AI, shortcuts...) |
+| `Editor.tsx` | 1,089 | 400 | 10+ (editor, viewers, comments, AI, shortcuts...) |
 
-### HIGH: Editor.tsx — 1,822 lines, 15+ responsibilities
+### HIGH: Editor.tsx — 1,089 lines, 10+ responsibilities
 
 **File:** `src/components/editor/Editor.tsx`
 
@@ -59,24 +59,24 @@ Report findings as a table for overview, then detailed entries for the largest f
 | --- | --- | --- |
 | `EditorViewerContainer.tsx` | File type routing | 200-300 |
 | `useEditorKeyBindings.ts` | Keyboard shortcuts | 100-150 |
-| `Editor.tsx` (remaining) | Thin orchestrator | ~600 |
+| `Editor.tsx` (remaining) | Thin orchestrator | ~500 |
 ```
 
-End with a section listing files that are large but **acceptable** (specialized viewers, type definition files, declarative toolbar configs) to avoid flagging them in future audits.
+End with a `### Confirmed Good Patterns` section listing files that are large but **acceptable** (specialized viewers, type definition files, declarative toolbar configs) to avoid flagging them in future audits.
 
 ## Example Finding
 
-### HIGH: ConnectionsSettings — 1,685 lines with 468-line nested component
+### MEDIUM: ConnectionsSettings — 626 lines with large nested components
 
 **File:** `src/components/settings/ConnectionsSettings.tsx`
 
-Contains `ConnectAgent` (468 lines) and `ConnectCopilotLsp` (384 lines) defined inline. Each manages a complete auth flow that could be tested independently.
+Contains auth-flow components (e.g. `ConnectAgent`, `ConnectCopilotLsp`) defined inline. Each manages a complete auth flow that could be tested independently. (Line counts here are illustrative — measure the real file before reporting.)
 
 **Recommended extraction:**
 
 | Extract to | Lines | Responsibility |
 | --- | --- | --- |
-| `ConnectAgent.tsx` | 468 | Agent install guides + auth flow |
-| `ConnectCopilotLsp.tsx` | 384 | Device code flow + browser integration |
-| `SetupGuideView.tsx` | 156 | Shared setup guide UI |
-| `ConnectionsSettings.tsx` (remaining) | ~400 | Connection list + add flow orchestration |
+| `ConnectAgent.tsx` | ~200 | Agent install guides + auth flow |
+| `ConnectCopilotLsp.tsx` | ~150 | Device code flow + browser integration |
+| `SetupGuideView.tsx` | ~80 | Shared setup guide UI |
+| `ConnectionsSettings.tsx` (remaining) | ~200 | Connection list + add flow orchestration |

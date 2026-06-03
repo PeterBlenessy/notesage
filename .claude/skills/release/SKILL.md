@@ -34,20 +34,9 @@ Bump the version, generate a changelog, and create a release history entry.
 
 6. **Create a release history entry** at `docs/history/NNN-release-vX.Y.Z.md`.
 
-   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json`, which is shipped to end users as the in-app "What's new". Write those bullets for a non-technical user scrolling through versions. For **stable** releases, any other `###` heading (like `Under the hood`) is **not** extracted — put task numbers, file paths, commit hashes, and implementation jargon there. (For **alpha** prereleases, `## Under the hood` IS surfaced — see §"User-facing copy vs Under the hood" for the exception.)
+   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json` and shipped to end users as the in-app "What's new". Write those bullets for a non-technical user. The full rules — what's forbidden, the required bullet shape, before/after examples, the spot-check, and the alpha exception where `## Under the hood` IS surfaced — live in §"User-facing copy vs Under the hood" below. Read that section before writing the entry; it is the single authoritative spot for the copy guidance.
 
    **Before writing,** open the two most recent prior `docs/history/*.md` files and match their tone. Describe what the user will notice or can now do, not what file changed or which subsystem moved.
-
-   **Avoid in Features / Fixes / Improvements bullets:**
-   - Task numbers (`#12`, `#23`, etc.) — internal
-   - File paths (`useAIContext.ts`, `ChatFooter.tsx`) — internal
-   - Commit hashes, store names, type names, migration versions — internal
-   - Architecture jargon (`ScopedApproval triples`, `LCA walk`, `$HOME deny-by-default`, `Bucket C`) — opaque to users
-
-   **Prefer:**
-   - Verb-first user-visible behavior (`Lock a project to a specific AI provider…`, `Resend an older message…`)
-   - Where something lives, named by its menu path (`Settings → Privacy → Approvals`, `Settings → Advanced`)
-   - Concrete consequences (`No more stale prompts from an agent that's been restarted`, `Filenames from unselected projects no longer appear in the model's context`)
 
    Template:
 
@@ -82,7 +71,7 @@ Bump the version, generate a changelog, and create a release history entry.
    - N files changed across M commits (+/- line counts if notable)
    ```
 
-   **Spot-check before confirming:** read each bullet in Features / Fixes / Improvements and ask "would a non-technical user understand this?" If no, rewrite. If the bullet requires a task number or file path to make sense, move it to `Under the hood`.
+   Before confirming, apply the spot-check from §"User-facing copy vs Under the hood".
 
 7. **Update `docs/history/README.md`** with the new entry. The one-line summary there should also read as user-visible — the same tone rules apply.
 
