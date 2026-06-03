@@ -41,7 +41,7 @@ const GGUF_TYPE_FLOAT64: u32 = 12;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-enum GgufValue {
+pub enum GgufValue {
     Uint8(u8),
     Int8(i8),
     Uint16(u16),
@@ -58,14 +58,14 @@ enum GgufValue {
 }
 
 impl GgufValue {
-    fn as_string(&self) -> Option<String> {
+    pub fn as_string(&self) -> Option<String> {
         match self {
             GgufValue::String(s) => Some(s.clone()),
             _ => None,
         }
     }
 
-    fn as_u64(&self) -> Option<u64> {
+    pub fn as_u64(&self) -> Option<u64> {
         match self {
             GgufValue::Uint64(v) => Some(*v),
             GgufValue::Uint32(v) => Some(*v as u64),
@@ -79,7 +79,7 @@ impl GgufValue {
         }
     }
 
-    fn as_u32(&self) -> Option<u32> {
+    pub fn as_u32(&self) -> Option<u32> {
         match self {
             GgufValue::Uint32(v) => Some(*v),
             GgufValue::Uint16(v) => Some(*v as u32),
@@ -199,42 +199,82 @@ fn read_gguf_value(r: &mut impl Read, vtype: u32) -> Result<GgufValue, String> {
     }
 }
 
+/// Raw parsed GGUF metadata header: version + KV map. Shared entry point for
+/// both the local-file metadata path and the remote header-capability reader.
+pub struct GgufHeaderRaw {
+    pub version: u32,
+    pub kv: HashMap<String, GgufValue>,
+    /// True when the reader ran out of bytes mid-parse (only possible in
+    /// `tolerant` mode, e.g. a Range-limited remote header).
+    pub truncated: bool,
+}
+
+/// Read the GGUF magic + version + KV metadata pairs from any reader.
+///
+/// When `tolerant` is true, a read error during the KV loop (e.g. the buffer
+/// from a Range request ends mid-value) stops parsing and returns the partial
+/// map with `truncated: true`, instead of erroring. The header itself (magic,
+/// version, counts) must always be fully readable.
+pub fn parse_gguf_kv(r: &mut impl Read, tolerant: bool) -> Result<GgufHeaderRaw, String> {
+    let magic = read_u32(r)?;
+    if magic != 0x46475547 {
+        return Err(format!("Not a GGUF file (magic: 0x{:08X})", magic));
+    }
+    let version = read_u32(r)?;
+    if version < 2 || version > 3 {
+        return Err(format!("Unsupported GGUF version: {}", version));
+    }
+    let _tensor_count = read_u64(r)?;
+    let metadata_kv_count = read_u64(r)?;
+    if metadata_kv_count > 100_000 {
+        return Err("Too many metadata KV pairs".to_string());
+    }
+
+    let mut kv: HashMap<String, GgufValue> = HashMap::new();
+    let mut truncated = false;
+    for _ in 0..metadata_kv_count {
+        let key = match read_gguf_string(r) {
+            Ok(k) => k,
+            Err(_) if tolerant => {
+                truncated = true;
+                break;
+            }
+            Err(e) => return Err(e),
+        };
+        let vtype = match read_u32(r) {
+            Ok(t) => t,
+            Err(_) if tolerant => {
+                truncated = true;
+                break;
+            }
+            Err(e) => return Err(e),
+        };
+        let value = match read_gguf_value(r, vtype) {
+            Ok(v) => v,
+            Err(_) if tolerant => {
+                truncated = true;
+                break;
+            }
+            Err(e) => return Err(e),
+        };
+        kv.insert(key, value);
+    }
+
+    Ok(GgufHeaderRaw {
+        version,
+        kv,
+        truncated,
+    })
+}
+
 /// Parse a GGUF file header and extract display-relevant metadata.
 /// Only reads the metadata section — stops before tensor data.
 pub fn parse_gguf_header(file_path: &Path) -> Result<GgufMetadata, String> {
     let mut file = std::fs::File::open(file_path)
         .map_err(|e| format!("Failed to open GGUF file: {}", e))?;
 
-    // Read magic number
-    let magic = read_u32(&mut file)?;
-    if magic != 0x46475547 {
-        return Err(format!("Not a GGUF file (magic: 0x{:08X})", magic));
-    }
-
-    // Read version
-    let version = read_u32(&mut file)?;
-    if version < 2 || version > 3 {
-        return Err(format!("Unsupported GGUF version: {}", version));
-    }
-
-    // Read tensor count and metadata KV count
-    let _tensor_count = read_u64(&mut file)?;
-    let metadata_kv_count = read_u64(&mut file)?;
-
-    // Safety limit
-    if metadata_kv_count > 100_000 {
-        return Err("Too many metadata KV pairs".to_string());
-    }
-
-    // First pass: read all KV pairs, looking for architecture first
-    let mut kv_pairs: HashMap<String, GgufValue> = HashMap::new();
-
-    for _ in 0..metadata_kv_count {
-        let key = read_gguf_string(&mut file)?;
-        let vtype = read_u32(&mut file)?;
-        let value = read_gguf_value(&mut file, vtype)?;
-        kv_pairs.insert(key, value);
-    }
+    let raw = parse_gguf_kv(&mut file, false)?;
+    let kv_pairs = raw.kv;
 
     // Extract architecture first (needed to find arch-specific keys)
     let arch = kv_pairs.get("general.architecture")

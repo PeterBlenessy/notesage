@@ -457,6 +457,51 @@ export interface SystemMemoryInfo {
   available_bytes: number;
 }
 
+// ---------------------------------------------------------------------------
+// Hardware-aware model recommendation types
+// (mirror src-tauri/src/commands/model_fit/types.rs)
+// ---------------------------------------------------------------------------
+
+export interface HardwareProfile {
+  total_ram_bytes: number;
+  available_ram_bytes: number;
+  chip_name: string;
+  bandwidth_gbs: number;
+  is_unified: boolean;
+  backend: string; // "metal" | "cpu"
+}
+
+export interface GgufCapabilities {
+  architecture: string | null;
+  context_length: number | null;
+  has_fim_tokens: boolean;
+  has_tool_template: boolean;
+  has_thinking: boolean;
+  gguf_version: number;
+  truncated: boolean;
+}
+
+export interface ModelFitInput {
+  id: string;
+  file_size_bytes: number;
+  params_b: number;
+  active_params_b?: number | null;
+  quant: string;
+}
+
+export type Fit = 'fits' | 'tight' | 'wont-fit';
+export type Speed = 'fast' | 'ok' | 'sluggish' | 'unusable';
+
+export interface ModelFitResult {
+  id: string;
+  est_ram_bytes: number;
+  fit: Fit;
+  est_tok_per_sec: number;
+  speed: Speed;
+  runnable: boolean;
+  reasons: string[];
+}
+
 export interface LocalServerStatus {
   running: boolean;
   port: number | null;
@@ -1295,5 +1340,31 @@ export const tauriApi = {
 
   copilotLspDidOpen(uri: string, content: string, version: number) {
     return invoke<void>('copilot_lsp_did_open', { uri, content, version });
+  },
+
+  // --- Hardware-aware model recommendation ---
+  detectHardwareProfile(): Promise<HardwareProfile> {
+    return invoke<HardwareProfile>('detect_hardware_profile');
+  },
+
+  readGgufCapabilities(
+    resolveUrl: string | null,
+    localPath: string | null,
+  ): Promise<GgufCapabilities> {
+    return invoke<GgufCapabilities>('read_gguf_capabilities', { resolveUrl, localPath });
+  },
+
+  estimateModelFit(
+    candidates: ModelFitInput[],
+    profile: HardwareProfile,
+    planningCtx: number,
+  ): Promise<ModelFitResult[]> {
+    return invoke<ModelFitResult[]>('estimate_model_fit', { candidates, profile, planningCtx });
+  },
+
+  // Current RSS (bytes) of the running bundled chat server — used by the
+  // Phase 2 runtime calibration loop to track peak RAM during a generation.
+  getLocalServerRss(): Promise<number> {
+    return invoke<number>('get_local_server_rss');
   },
 };
