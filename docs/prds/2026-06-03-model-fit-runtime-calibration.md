@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | The pre-download model recommendations stop being permanent guesses: once a user actually runs a local model, the app learns its true speed + memory on *their* Mac, shows measured numbers instead of estimates, and sharpens the estimates for every model they haven't downloaded yet — all on-device. An optional, consent-forward path lets willing users contribute their measurement to a public community dataset that improves the shipped defaults for everyone. |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [model-fit-runtime-calibration-tasks](../tasks/2026-06-03-model-fit-runtime-calibration-tasks.md) |
 | **Phase** | Local AI |
 | **Follows** | [hardware-aware-model-recommendation](2026-06-02-hardware-aware-model-recommendation.md) (Phase 1) |
 
