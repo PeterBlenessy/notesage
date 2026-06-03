@@ -1403,6 +1403,107 @@ pub struct TranscriptionState {
 - `capture`: The single active capture owner (`cpal` stream + WAV writer + stop signal + join handle); `Some` only while a recording is in progress. Taking it out of the mutex enforces one stream at a time and is the synchronization point for the awaited teardown
 - `download_cancels`: Per-model cancel signals for concurrent downloads
 
+## Alpha Update Operations
+
+Located in `src-tauri/src/commands/alpha_update.rs`
+
+The app ships on an alpha pre-release channel. Tauri's `tauri-plugin-updater` `check()` JS API has no per-call `url` override, so the alpha channel is driven from Rust via `UpdaterBuilder::endpoints(...)` against a runtime-supplied endpoint. The pubkey from `tauri.conf.json` still verifies manifest signatures regardless of which endpoint produced them.
+
+### alpha_check
+
+Checks the alpha-channel update endpoint and, if an update is available, inserts the `Update` into Tauri's resource table so the frontend can wrap it (`new Update(metadata)`) and call `.downloadAndInstall(...)` — which routes back to the plugin's stock signature-verified `download` / `install` handlers via the returned `rid`.
+
+```rust
+#[tauri::command]
+pub async fn alpha_check<R: Runtime>(
+    webview: Webview<R>,
+    url: String,
+) -> Result<Option<AlphaUpdateMetadata>, String>
+```
+
+**Parameters:**
+
+- `webview`: Tauri webview handle (injected automatically)
+- `url`: The alpha update manifest endpoint URL
+
+**Returns:**
+
+- `Ok(Some(AlphaUpdateMetadata))`: An update is available
+- `Ok(None)`: Already up to date
+- `Err(String)`: Invalid URL, updater config/build failure, or check failure
+
+**AlphaUpdateMetadata struct** (serializes with camelCase field names):
+
+```rust
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlphaUpdateMetadata {
+    rid: ResourceId,            // resource-table handle for `new Update(metadata)`
+    current_version: String,
+    version: String,
+    date: Option<String>,       // RFC3339
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+```
+
+**Frontend usage:**
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+import { Update } from '@tauri-apps/plugin-updater';
+
+const metadata = await invoke<AlphaUpdateMetadata | null>('alpha_check', {
+  url: ALPHA_UPDATE_ENDPOINT,
+});
+if (metadata) {
+  const update = new Update(metadata);
+  await update.downloadAndInstall();
+}
+```
+
+## Preview Operations
+
+Located in `src-tauri/src/commands/preview.rs`
+
+Backs the large-file instant-load pipeline (`docs/prds/2026-05-03-large-file-instant-load.md`). Renders a markdown file to an HTML body fragment so the frontend can show an instant preview inside a `.ProseMirror` wrapper before the Tiptap editor finishes hydrating.
+
+### render_markdown_preview
+
+Reads a markdown file, strips leading YAML frontmatter (mirroring `src/lib/frontmatter.ts:parseFrontmatter`), and runs the comrak pipeline (`crate::export::markdown_to_html`) to produce an HTML body fragment.
+
+```rust
+#[tauri::command]
+pub async fn render_markdown_preview(
+    path: String,
+    project_root: Option<String>,
+    theme: String,
+) -> Result<String, String>
+```
+
+**Parameters:**
+
+- `path`: Absolute path to the markdown file
+- `project_root`: Optional project root path for resolving relative resources
+- `theme`: `"light"` or `"dark"` — controls syntax-highlighting theme
+
+**Returns:**
+
+- `Ok(String)`: HTML body fragment
+- `Err(String)`: Error message if the file cannot be read
+
+**Notes:** Embedded SVGs (drawings/charts) are intentionally not resolved here — they render as syntax-highlighted code blocks during the brief preview window and are replaced by their real node-views once the editor hydrates, keeping first-paint within the latency budget.
+
+**Frontend usage:**
+
+```typescript
+const bodyHtml = await invoke<string>('render_markdown_preview', {
+  path: '/path/to/large-note.md',
+  projectRoot: null,
+  theme: 'light',
+});
+```
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

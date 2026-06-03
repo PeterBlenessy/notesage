@@ -40,7 +40,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Document Switching Surface
 
-QuietLayout (`src/components/QuietLayout.tsx`) renders no tab bar and no breadcrumb row — the active document's filename surfaces in the macOS window title and the `TitleBar` (`src/components/TitleBar.tsx`), which also shows a dirty dot + close-document × button when a document is active. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`). Document switching happens via the `QuietSidebar`, the `TreeOverlay` (⌘⇧E), the recent-document cycle (⌃Tab / ⌃⇧Tab), or the command bar.
+QuietLayout (`src/components/QuietLayout.tsx`) renders no tab bar and no breadcrumb row — the active document's filename surfaces in the macOS window title and the `TitleBar` (`src/components/TitleBar.tsx`), which also shows a dirty dot + close-document × button when a document is active. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`). Document switching happens via the `QuietSidebar` (including the inline `→`-expand one-level peek on a focused project/folder row), the recent-document cycle (⌃Tab / ⌃⇧Tab), or the command bar.
 
 Quiet Composer is a single-document shell — opening a new document evicts the prior one. State lives in `editor-store.openDocuments` (the array name retains "Documents" plural for migration compatibility, but in practice it holds at most one entry).
 

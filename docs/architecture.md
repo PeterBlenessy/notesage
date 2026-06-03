@@ -62,6 +62,8 @@ note-sage/
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   │   ├── web_search.rs   # DuckDuckGo web search (no API key required)
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
+│   │   │   ├── alpha_update.rs  # Alpha-channel update check via runtime-URL UpdaterBuilder (`alpha_check`)
+│   │   │   ├── preview.rs       # Markdown → HTML body fragment for large-file instant-load preview (`render_markdown_preview`)
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
 │   │   │   ├── acp_client.rs   # ACP inbound handlers (on_receive_request/notification → Tauri event forwarding, permission channels)
@@ -123,7 +125,7 @@ note-sage/
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
-│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
+│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, FoldersSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── settings/       # ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
 │   │   ├── chat/           # ChatMessage, ChatInput, ChatMessageList, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, AttachmentStrip, ResendProviderDialog, ChatHistoryView, segments/, etc. — all consumed by FloatingCommandBar / CommandBarStream / CommandBarContext (Quiet Composer is the only shell)
@@ -131,7 +133,7 @@ note-sage/
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useCommandBarShortcuts, useDoubleTapCmd, useRecentDocumentCycle, etc.)
-│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, tree-overlay, quiet-sidebar, etc.)
+│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
 │   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
@@ -246,10 +248,10 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-styles-store` | Editor font family, size, line height, paragraph spacing | Disk file (`editor-styles.json`) |
 | `git-store` | Git repo state per path (branch, file statuses, loading) | None |
 | `pdf-store` | PDF viewer preferences (zoom, fit mode, bookmarks) | Full |
-| `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
+| _(no store)_ | iCloud sync settings (enabled flag, synced projects) live in the Rust backend (`commands/sync.rs`) + a settings JSON disk file — there is no dedicated Zustand store | Disk file (settings JSON) |
 | `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
 | `agent-status-store` | ACP agent unresponsive/exited banner state | None |
-| `tree-overlay-store` | Quiet Composer TreeOverlay open/closed state + optional `focusedPath` for FolderPeek footer link (PRD 2026-04-21-ui-refresh) | None |
+| `folder-appearance-store` | Per-folder appearance overrides (custom icon + color) for explorer/external folders in the Folders section; keyed by absolute path. Project folders store appearance in `.notesage/project.json` instead | None (not persisted — external paths are ephemeral) |
 | `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project under notes root) | None |
 
 ### Styling
@@ -276,7 +278,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-04-07):** 99 unit test files, 5 Playwright E2E specs, 7 real E2E specs. ~2160 total test cases.
+**Test inventory (2026-06-03):** 304 unit test files, 18 Playwright E2E specs, 11 real-e2e specs. Run `pnpm test` for the current case count.
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 
@@ -333,7 +335,6 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:orb]` | `AgentOrb` | Panel open, pulse cost |
 | `[perf:status]` | `StatusBar`, `StatusTray` | StatusBar render, StatusTray popover open |
 | `[perf:peek]` | `FolderPeek` | Hover popover unfurl |
-| `[perf:tree-overlay]` | `TreeOverlay` | Slide-in, expand/collapse |
 | `[perf:sidebar]` | `Sidebar` | Sidebar render, type-to-filter |
 | `[perf:focus]` | Focus mode | Focus mode enter/exit transition timing |
 | `[perf:context]` | `useDirectApiChat.ts` | Sliding-window message trim for `local_bundled` (dropped count, surviving message count, budget, estimated tokens) |
