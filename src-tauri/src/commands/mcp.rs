@@ -573,21 +573,30 @@ fn map_config_entries(
     entries
         .into_iter()
         .map(|(name, entry)| {
-            // Project-scoped MCP servers default to disabled for security —
-            // prevents auto-execution of commands from cloned repos
-            let enabled = if source == McpConfigSource::NotesageProject {
-                false
-            } else {
-                !entry.disabled
-            };
+            // All discovered MCP servers default to disabled for security,
+            // regardless of source. A sandboxed agent can write its own entry
+            // into ~/.notesage/mcp.json (the one $HOME dir it is always allowed
+            // to write), and MCP servers are spawned UNSANDBOXED — so an
+            // enabled-by-default global/external entry would be a kernel-sandbox
+            // escape. Requiring an explicit user toggle (persisted as an
+            // enabledOverride in mcp-store) before the first spawn closes that
+            // path. The frontend merge in mcp-store applies the user's override
+            // on top of this default, so previously user-enabled servers are
+            // preserved while never-toggled ones stay off.
+            let McpConfigEntry {
+                command,
+                args,
+                env,
+                disabled: _,
+            } = entry;
             McpServerConfig {
                 id: format!("{}:{}", source_prefix(&source), name),
                 name,
-                command: entry.command,
-                args: entry.args,
-                env: entry.env,
+                command,
+                args,
+                env,
                 source: source.clone(),
-                enabled,
+                enabled: false,
             }
         })
         .collect()
@@ -827,7 +836,9 @@ mod tests {
         assert_eq!(cfg.name, "my-server");
         assert_eq!(cfg.command, "node");
         assert_eq!(cfg.args, vec!["server.js"]);
-        assert!(cfg.enabled);
+        // All discovered servers default to disabled for security, regardless of
+        // source — the user re-enables via a persisted override (see map closure).
+        assert!(!cfg.enabled);
         assert_eq!(cfg.source, McpConfigSource::NotesageGlobal);
     }
 
@@ -912,7 +923,9 @@ mod tests {
         assert_eq!(alpha.id, "global:alpha");
         assert_eq!(alpha.command, "node");
         assert_eq!(alpha.args, vec!["a.js"]);
-        assert!(alpha.enabled);
+        // Disabled by default for all sources (security hardening) even though
+        // the entry does not set `disabled`.
+        assert!(!alpha.enabled);
 
         let beta = result.iter().find(|c| c.name == "beta").unwrap();
         assert!(!beta.enabled, "beta has disabled: true");
