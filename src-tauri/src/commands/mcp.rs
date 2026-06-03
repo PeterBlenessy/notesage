@@ -29,7 +29,7 @@ pub struct McpServerConfig {
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
-    pub env: HashMap<String, String>,
+    pub env: HashMap<String, McpEnvValue>,
     pub source: McpConfigSource,
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -44,6 +44,61 @@ pub struct McpServerConfig {
 
 fn default_true() -> bool {
     true
+}
+
+/// A value for an MCP server env var as stored in `mcp.json`. A bare JSON
+/// string is an inline plaintext value; the object `{ "secret": true }` is a
+/// reference to a value kept in the OS keychain under
+/// `notesage:mcp:<server_id>:<KEY>`. Secret values are never written to disk
+/// and never sent to the frontend — they are resolved only at spawn time.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(untagged)]
+pub enum McpEnvValue {
+    Plain(String),
+    Secret(McpSecretRef),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct McpSecretRef {
+    pub secret: bool,
+}
+
+/// Resolve env references into a concrete process environment. Plain values
+/// pass through; secret references are looked up via `resolver` (keyed by the
+/// `mcp:<server_id>:<KEY>` connection id). Missing secrets are dropped. Pure so
+/// it can be unit-tested with a mock resolver.
+fn resolve_env_with<F>(
+    server_id: &str,
+    env: &HashMap<String, McpEnvValue>,
+    mut resolver: F,
+) -> HashMap<String, String>
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    let mut out = HashMap::new();
+    for (key, val) in env {
+        match val {
+            McpEnvValue::Plain(s) => {
+                out.insert(key.clone(), s.clone());
+            }
+            McpEnvValue::Secret(r) if r.secret => {
+                if let Some(v) = resolver(&format!("mcp:{}:{}", server_id, key)) {
+                    out.insert(key.clone(), v);
+                }
+            }
+            McpEnvValue::Secret(_) => {}
+        }
+    }
+    out
+}
+
+/// Resolve env references against the real OS keychain.
+fn resolve_env(server_id: &str, env: &HashMap<String, McpEnvValue>) -> HashMap<String, String> {
+    resolve_env_with(server_id, env, |conn_id| {
+        super::credentials::get_credential_internal(conn_id)
+            .ok()
+            .flatten()
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -71,7 +126,7 @@ pub struct McpServerInfo {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
-    pub env: HashMap<String, String>,
+    pub env: HashMap<String, McpEnvValue>,
     pub source: McpConfigSource,
     pub enabled: bool,
     pub status: McpServerStatus,
@@ -630,8 +685,8 @@ pub async fn mcp_start_server(
             if let Some(shell_path) = get_shell_path() {
                 spawn_cmd.env("PATH", shell_path);
             }
-            // Inject configured environment variables
-            for (key, val) in &config.env {
+            // Inject configured environment variables (secrets resolved from keychain)
+            for (key, val) in resolve_env(&config.id, &config.env) {
                 spawn_cmd.env(key, val);
             }
 
@@ -822,7 +877,7 @@ pub async fn mcp_validate_server(
     if let Some(shell_path) = get_shell_path() {
         spawn_cmd.env("PATH", shell_path);
     }
-    for (key, val) in &config.env {
+    for (key, val) in resolve_env(&config.id, &config.env) {
         spawn_cmd.env(key, val);
     }
 
@@ -1009,7 +1064,7 @@ pub struct McpConfigEntry {
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
-    env: HashMap<String, String>,
+    env: HashMap<String, McpEnvValue>,
     #[serde(default)]
     disabled: bool,
     #[serde(default)]
@@ -1424,8 +1479,8 @@ mod tests {
     #[test]
     fn map_config_entries_preserves_env_vars() {
         let mut env = HashMap::new();
-        env.insert("API_KEY".to_string(), "secret".to_string());
-        env.insert("DEBUG".to_string(), "true".to_string());
+        env.insert("API_KEY".to_string(), McpEnvValue::Plain("secret".to_string()));
+        env.insert("DEBUG".to_string(), McpEnvValue::Plain("true".to_string()));
 
         let mut entries = HashMap::new();
         entries.insert(
@@ -1442,8 +1497,8 @@ mod tests {
 
         let result = map_config_entries(entries, McpConfigSource::Cursor);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].env.get("API_KEY").unwrap(), "secret");
-        assert_eq!(result[0].env.get("DEBUG").unwrap(), "true");
+        assert_eq!(result[0].env.get("API_KEY").unwrap(), &McpEnvValue::Plain("secret".to_string()));
+        assert_eq!(result[0].env.get("DEBUG").unwrap(), &McpEnvValue::Plain("true".to_string()));
         assert_eq!(result[0].id, "cursor:env-server");
     }
 
@@ -1547,7 +1602,7 @@ mod tests {
     #[test]
     fn mcp_server_config_serialization_round_trip() {
         let mut env = HashMap::new();
-        env.insert("TOKEN".to_string(), "abc123".to_string());
+        env.insert("TOKEN".to_string(), McpEnvValue::Plain("abc123".to_string()));
 
         let original = McpServerConfig {
             id: "global:roundtrip".to_string(),
@@ -1687,6 +1742,59 @@ mod tests {
     fn parse_http_response_empty_stream_is_error() {
         let err = parse_jsonrpc_http_response("text/event-stream", "", 7).unwrap_err();
         assert!(err.contains("No matching"));
+    }
+
+    #[test]
+    fn mcp_env_value_deserializes_plain_and_secret() {
+        let plain: McpEnvValue = serde_json::from_str("\"hello\"").expect("plain");
+        assert_eq!(plain, McpEnvValue::Plain("hello".to_string()));
+
+        let secret: McpEnvValue = serde_json::from_str(r#"{"secret":true}"#).expect("secret");
+        assert_eq!(secret, McpEnvValue::Secret(McpSecretRef { secret: true }));
+    }
+
+    #[test]
+    fn mcp_env_value_round_trips() {
+        let plain = McpEnvValue::Plain("v".to_string());
+        assert_eq!(serde_json::to_string(&plain).unwrap(), "\"v\"");
+        let secret = McpEnvValue::Secret(McpSecretRef { secret: true });
+        assert_eq!(serde_json::to_string(&secret).unwrap(), r#"{"secret":true}"#);
+    }
+
+    #[test]
+    fn resolve_env_passes_plain_and_resolves_secrets() {
+        let mut env = HashMap::new();
+        env.insert("PLAIN".to_string(), McpEnvValue::Plain("p".to_string()));
+        env.insert("API_KEY".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+
+        let resolved = resolve_env_with("global:srv", &env, |conn_id| {
+            // The keychain is keyed by `mcp:<server_id>:<KEY>`.
+            assert_eq!(conn_id, "mcp:global:srv:API_KEY");
+            Some("resolved-secret".to_string())
+        });
+
+        assert_eq!(resolved.get("PLAIN").map(String::as_str), Some("p"));
+        assert_eq!(resolved.get("API_KEY").map(String::as_str), Some("resolved-secret"));
+    }
+
+    #[test]
+    fn resolve_env_drops_missing_secrets() {
+        let mut env = HashMap::new();
+        env.insert("GONE".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+        let resolved = resolve_env_with("id", &env, |_| None);
+        assert!(resolved.is_empty(), "a missing secret must not appear in the process env");
+    }
+
+    #[test]
+    fn config_entry_with_secret_env_parses() {
+        // A persisted mcp.json entry mixing a plaintext and a secret-ref env var.
+        let json = r#"{ "command": "node", "env": { "PORT": "8080", "TOKEN": { "secret": true } } }"#;
+        let entry: McpConfigEntry = serde_json::from_str(json).expect("parse");
+        assert_eq!(entry.env.get("PORT").unwrap(), &McpEnvValue::Plain("8080".to_string()));
+        assert_eq!(
+            entry.env.get("TOKEN").unwrap(),
+            &McpEnvValue::Secret(McpSecretRef { secret: true })
+        );
     }
 
     #[test]
