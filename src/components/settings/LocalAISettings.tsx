@@ -35,23 +35,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
-function getRamTier(totalBytes: number): string {
-  const gb = totalBytes / 1_000_000_000;
-  if (gb <= 8) return '8gb';
-  if (gb <= 16) return '16gb';
-  if (gb <= 32) return '32gb';
-  return '64gb';
-}
-
-function getDefaultModelId(ramTier: string): string {
-  switch (ramTier) {
-    case '8gb': return 'qwen3-1.7b';
-    case '16gb': return 'qwen3-4b';
-    case '32gb': return 'qwen3-8b';
-    default: return 'qwen3-14b';
-  }
-}
-
 const CATEGORY_TABS: { value: ModelCategory; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'general', label: 'General' },
@@ -116,12 +99,7 @@ export function LocalAISettings() {
   }, [refreshModels, checkBinary]);
 
   const activeModel = models.find((m) => m.id === activeModelId);
-  const totalMemGB = systemMemory ? (systemMemory.total_bytes / 1_000_000_000).toFixed(0) : '?';
   const hasDownloadedModels = models.some((m) => m.downloaded);
-
-  // RAM-based recommendations
-  const ramTier = systemMemory ? getRamTier(systemMemory.total_bytes) : null;
-  const defaultModelId = ramTier ? getDefaultModelId(ramTier) : null;
 
   const sortModels = (list: LocalModelInfo[]) => {
     const byPreference = (a: LocalModelInfo, b: LocalModelInfo) => {
@@ -143,14 +121,6 @@ export function LocalAISettings() {
       return byPreference(a, b);
     });
   };
-
-  const recommendedModels = useMemo(() => {
-    if (!ramTier) return [];
-    return sortModels(
-      models.filter((m) => m.recommended_for?.includes(ramTier))
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, ramTier, sortBy, fitById]);
 
   const filteredModels = useMemo(() => {
     let filtered: LocalModelInfo[];
@@ -239,7 +209,6 @@ export function LocalAISettings() {
       key={model.id}
       model={model}
       isActive={model.id === activeModelId}
-      isRecommendedDefault={model.id === defaultModelId}
       download={downloads[model.id]}
       metadata={metadataMap[model.id]}
       fit={fitById[model.id]}
@@ -428,23 +397,9 @@ export function LocalAISettings() {
           </DropdownMenu>
         </div>
 
-        {/* Recommended models section */}
-        {recommendedModels.length > 0 && categoryFilter === 'all' && sortBy === 'ram' && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Recommended for your Mac ({totalMemGB} GB):
-            </p>
-            <TooltipProvider delayDuration={300}>
-              {recommendedModels.map(renderModelCard)}
-            </TooltipProvider>
-          </div>
-        )}
-
-        {/* All models */}
+        {/* All models — sorted runnable-first (computed verdict), unrunnable
+            disabled and pushed below. No hand-authored RAM-tier filtering. */}
         <div className="space-y-2">
-          {categoryFilter === 'all' && sortBy === 'ram' && recommendedModels.length > 0 && (
-            <p className="text-xs text-muted-foreground pt-2">All models:</p>
-          )}
           <TooltipProvider delayDuration={300}>
             {filteredModels.map(renderModelCard)}
           </TooltipProvider>

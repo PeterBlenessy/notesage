@@ -45,7 +45,9 @@ function CapabilityBadge({
 interface ModelCardProps {
   model: LocalModelInfo;
   isActive: boolean;
-  isRecommendedDefault: boolean;
+  /** @deprecated tier-based default star — no longer set (computed verdicts
+   *  replaced the hand-authored RAM tiers). Kept optional for compatibility. */
+  isRecommendedDefault?: boolean;
   download: { progress: number } | undefined;
   metadata: ModelMetadata | null | undefined;
   fit?: ModelFitResult;
