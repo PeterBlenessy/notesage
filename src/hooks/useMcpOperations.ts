@@ -19,6 +19,8 @@ interface McpServerConfig {
   env: Record<string, string>;
   source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
   enabled: boolean;
+  transport?: 'stdio' | 'http';
+  url?: string | null;
 }
 
 interface McpServerInfo {
@@ -32,6 +34,8 @@ interface McpServerInfo {
   status: 'stopped' | 'starting' | 'running' | 'error';
   error: string | null;
   tools: McpToolInfo[];
+  transport?: 'stdio' | 'http';
+  url?: string | null;
 }
 
 interface McpStatusEvent {
@@ -58,6 +62,10 @@ export interface McpValidateInput {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /** Defaults to `stdio` when omitted. */
+  transport?: 'stdio' | 'http';
+  /** Required when `transport` is `http`. */
+  url?: string | null;
 }
 
 // Map Rust snake_case source to frontend kebab-case
@@ -83,6 +91,8 @@ function configToEntry(config: McpServerConfig): McpServerEntry {
     enabled: config.enabled,
     status: 'stopped',
     tools: [],
+    transport: config.transport ?? 'stdio',
+    url: config.url ?? null,
   };
 }
 
@@ -236,6 +246,8 @@ export function useMcpOperations() {
           env: entry.env,
           source: sourceToRust(entry.source),
           enabled: entry.enabled,
+          transport: entry.transport ?? 'stdio',
+          url: entry.url ?? null,
         },
       });
       const store = useMcpStore.getState();
@@ -290,12 +302,14 @@ export function useMcpOperations() {
       return invoke<McpValidationResult>('mcp_validate_server', {
         config: {
           id: '__validate__',
-          name: input.name || input.command,
+          name: input.name || input.command || input.url || 'server',
           command: input.command,
           args: input.args,
           env: input.env,
           source: 'notesage_global',
           enabled: true,
+          transport: input.transport ?? 'stdio',
+          url: input.url ?? null,
         },
       });
     },

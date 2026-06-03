@@ -63,6 +63,10 @@ export interface McpServerEntry {
   status: McpServerStatus;
   error?: string;
   tools: McpToolInfo[];
+  /** Transport this server speaks. Missing/`stdio` for local command servers. */
+  transport?: McpTransport;
+  /** Endpoint URL for `http` (remote) servers. Absent for stdio. */
+  url?: string | null;
   /**
    * Project root this server was discovered under. `null` (or missing) means
    * the server is global — either from `~/.notesage/mcp.json` or imported from

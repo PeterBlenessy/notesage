@@ -25,10 +25,8 @@ interface McpCatalogProps {
 /**
  * "Browse catalog" picker — a searchable grid of curated MCP servers.
  *
- * The catalog ships EMPTY for now (PRD 2026-06-03): this component renders the
- * empty state until `src-tauri/mcp-catalog.json` is populated. Remote (`http`)
- * entries are shown but not yet addable — the remote transport lands in a later
- * task — so their button is disabled with an explanatory note.
+ * Both local (`stdio`) and remote (`http`) entries are addable — selecting one
+ * pre-fills the Add dialog, which validates before writing the config.
  */
 export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps) {
   const [items, setItems] = useState<McpCatalogItem[]>([]);
@@ -188,18 +186,12 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
             Learn more
           </Button>
         )}
-        {isRemote && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Remote servers need the upcoming remote-transport update.
-          </p>
-        )}
       </div>
       <Button
         size="sm"
         variant="outline"
         className="h-7 shrink-0"
         onClick={onSelect}
-        disabled={isRemote}
       >
         <Plus className="h-3 w-3 mr-1" strokeWidth={1.5} />
         Add

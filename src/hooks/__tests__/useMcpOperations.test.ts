@@ -54,6 +54,44 @@ describe('useMcpOperations.validateServer', () => {
     });
   });
 
+  it('forwards transport + url for remote (http) configs', async () => {
+    const captured: { config?: Record<string, unknown> } = {};
+    setMockInvokeHandler('mcp_validate_server', (args) => {
+      captured.config = (args as { config: Record<string, unknown> }).config;
+      return { ok: true, tools: [], server_info: null, error: null, error_kind: null, stderr_tail: null };
+    });
+
+    const { result } = renderHook(() => useMcpOperations());
+    await result.current.validateServer({
+      name: 'Remote',
+      command: '',
+      args: [],
+      env: {},
+      transport: 'http',
+      url: 'https://example.com/mcp',
+    });
+
+    expect(captured.config).toMatchObject({
+      transport: 'http',
+      url: 'https://example.com/mcp',
+      command: '',
+    });
+  });
+
+  it('defaults transport to stdio and url to null when omitted', async () => {
+    const captured: { config?: Record<string, unknown> } = {};
+    setMockInvokeHandler('mcp_validate_server', (args) => {
+      captured.config = (args as { config: Record<string, unknown> }).config;
+      return { ok: true, tools: [], server_info: null, error: null, error_kind: null, stderr_tail: null };
+    });
+
+    const { result } = renderHook(() => useMcpOperations());
+    await result.current.validateServer({ name: 'x', command: 'node', args: [], env: {} });
+
+    expect(captured.config?.transport).toBe('stdio');
+    expect(captured.config?.url).toBeNull();
+  });
+
   it('falls back to the command as the name when none is provided', async () => {
     const captured: { config?: Record<string, unknown> } = {};
     setMockInvokeHandler('mcp_validate_server', (args) => {

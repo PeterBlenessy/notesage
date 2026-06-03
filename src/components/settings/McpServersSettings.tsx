@@ -32,8 +32,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpCatalogItem } from '@/stores/mcp-store';
-import { useMcpOperations, type McpValidationResult } from '@/hooks/useMcpOperations';
+import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpCatalogItem, type McpTransport } from '@/stores/mcp-store';
+import { useMcpOperations, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
 import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
 
@@ -119,7 +119,10 @@ function McpServerCard({ server }: { server: McpServerEntry }) {
     toast.success(`Removed MCP server "${server.name}"`);
   }, [server, stopServer, removeServer]);
 
-  const commandDisplay = [server.command, ...server.args].join(' ');
+  const isRemote = server.transport === 'http';
+  const commandDisplay = isRemote
+    ? (server.url ?? 'remote')
+    : [server.command, ...server.args].join(' ');
 
   return (
     <>
@@ -142,6 +145,9 @@ function McpServerCard({ server }: { server: McpServerEntry }) {
               )}
               <Badge variant="outline" className="text-xs px-1.5 py-0">
                 {sourceLabel(server.source)}
+              </Badge>
+              <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                {isRemote ? 'Remote' : 'Local'}
               </Badge>
             </div>
             {server.error && (
@@ -246,6 +252,8 @@ export interface CatalogPrefill {
   command: string;
   args: string[];
   env: { key: string; value: string }[];
+  transport?: McpTransport;
+  url?: string | null;
 }
 
 interface AddEditServerDialogProps {
@@ -266,6 +274,8 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
   const [command, setCommand] = useState(editServer?.command ?? '');
   const [args, setArgs] = useState(editServer?.args.join(' ') ?? '');
   const [name, setName] = useState(editServer?.name ?? '');
+  const [transport, setTransport] = useState<McpTransport>(editServer?.transport ?? 'stdio');
+  const [url, setUrl] = useState(editServer?.url ?? '');
   const [envPairs, setEnvPairs] = useState<{ key: string; value: string }[]>(
     editServer
       ? Object.entries(editServer.env).map(([key, value]) => ({ key, value }))
@@ -278,6 +288,9 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
 
   const { validateServer } = useMcpOperations();
 
+  const isRemote = transport === 'http';
+  const hasRequiredFields = isRemote ? !!url.trim() : !!command.trim();
+
   // The "Add" dialog is mounted once and reused, so seed its fields whenever it
   // (re)opens — from the edited server, a catalog prefill, or empty.
   useEffect(() => {
@@ -287,11 +300,23 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       setArgs(editServer.args.join(' '));
       setName(editServer.name);
       setEnvPairs(Object.entries(editServer.env).map(([key, value]) => ({ key, value })));
+      setTransport(editServer.transport ?? 'stdio');
+      setUrl(editServer.url ?? '');
     } else if (prefill) {
       setCommand(prefill.command);
       setArgs(prefill.args.join(' '));
       setName(prefill.name);
       setEnvPairs(prefill.env);
+      setTransport(prefill.transport ?? 'stdio');
+      setUrl(prefill.url ?? '');
+    } else {
+      // Fresh manual add — clear any state left over from a prior session.
+      setCommand('');
+      setArgs('');
+      setName('');
+      setEnvPairs([]);
+      setTransport('stdio');
+      setUrl('');
     }
   }, [open, editServer, prefill]);
 
@@ -299,25 +324,37 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
   // can never let a changed config skip validation.
   useEffect(() => {
     setValidation({ status: 'idle' });
-  }, [command, args, envPairs]);
+  }, [command, args, envPairs, transport, url]);
 
   const { requestRescan } = useMcpStore();
 
-  const buildInput = useCallback(() => {
-    const serverName = name.trim() || command.trim().split('/').pop()?.replace(/^@/, '') || 'server';
-    const argsArray = args.trim() ? args.trim().split(/\s+/) : [];
+  const buildInput = useCallback((): McpValidateInput => {
+    const fallback = isRemote
+      ? url.trim() || 'server'
+      : command.trim().split('/').pop()?.replace(/^@/, '') || 'server';
+    const serverName = name.trim() || fallback;
+    const argsArray = !isRemote && args.trim() ? args.trim().split(/\s+/) : [];
     const env: Record<string, string> = {};
     for (const pair of envPairs) {
       if (pair.key.trim()) {
         env[pair.key.trim()] = pair.value;
       }
     }
-    return { name: serverName, command: command.trim(), args: argsArray, env };
-  }, [name, command, args, envPairs]);
+    return {
+      name: serverName,
+      command: isRemote ? '' : command.trim(),
+      args: argsArray,
+      env,
+      transport,
+      url: isRemote ? url.trim() : null,
+    };
+  }, [name, command, args, envPairs, transport, url, isRemote]);
+
+  const requiredFieldError = isRemote ? 'Server URL is required' : 'Command is required';
 
   const handleTest = async () => {
-    if (!command.trim()) {
-      toast.error('Command is required');
+    if (!hasRequiredFields) {
+      toast.error(requiredFieldError);
       return;
     }
     setValidation({ status: 'testing' });
@@ -333,8 +370,8 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
   };
 
   const handleSave = async () => {
-    if (!command.trim()) {
-      toast.error('Command is required');
+    if (!hasRequiredFields) {
+      toast.error(requiredFieldError);
       return;
     }
 
@@ -360,19 +397,18 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
         return;
       }
 
-      // Build config to save
-      const configEntry = {
-        command: input.command,
-        args: input.args,
-        env,
-      };
+      // Build config to save — http servers store transport + url, stdio
+      // servers keep the legacy command/args shape (transport defaults to stdio).
+      const configEntry: Record<string, unknown> = isRemote
+        ? { transport: 'http', url: input.url, env }
+        : { command: input.command, args: input.args, env };
 
       // Save to global config
       const home = await invoke<string>('get_home_dir');
       const configPath = `${home}/.notesage/mcp.json`;
 
       // Read existing config, merge, save
-      let existingConfigs: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+      let existingConfigs: Record<string, Record<string, unknown>> = {};
       try {
         const content = await invoke<string>('read_file', { path: configPath });
         const parsed = JSON.parse(content);
@@ -399,42 +435,80 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editServer ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
-          <DialogDescription>Configure the command, arguments, and environment for the MCP server.</DialogDescription>
+          <DialogDescription>Configure how Notesage connects to the MCP server.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Command</Label>
-            <Input
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="npx -y @modelcontextprotocol/server-filesystem"
-              className="font-mono text-sm"
-            />
+            <Label className="text-xs text-muted-foreground">Transport</Label>
+            <div className="inline-flex rounded-lg border border-border p-0.5">
+              {(['stdio', 'http'] as const).map((t) => {
+                const active = transport === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTransport(t)}
+                    className={cn(
+                      'px-3 py-1 text-xs rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                      active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {t === 'stdio' ? 'Local (command)' : 'Remote (URL)'}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Arguments</Label>
-            <Input
-              value={args}
-              onChange={(e) => setArgs(e.target.value)}
-              placeholder="/path/to/directory"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">Space-separated arguments</p>
-          </div>
+          {isRemote ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Server URL</Label>
+              <Input
+                value={url ?? ''}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/mcp"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">Streamable HTTP endpoint</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Command</Label>
+                <Input
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="npx -y @modelcontextprotocol/server-filesystem"
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Arguments</Label>
+                <Input
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder="/path/to/directory"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Space-separated arguments</p>
+              </div>
+            </>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Display Name</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Auto-derived from command"
+              placeholder={isRemote ? 'Auto-derived from URL' : 'Auto-derived from command'}
               className="text-sm"
             />
           </div>
 
-          {/* Environment Variables */}
+          {/* Environment Variables — stdio only (http MVP is no-auth) */}
+          {!isRemote && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground">Environment Variables</Label>
@@ -482,6 +556,7 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
               </div>
             ))}
           </div>
+          )}
 
           {/* Validation result — tool preview on success, actionable error on failure */}
           {validation.status === 'testing' && (
@@ -543,7 +618,7 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
             variant="ghost"
             size="sm"
             onClick={handleTest}
-            disabled={saving || validation.status === 'testing' || !command.trim()}
+            disabled={saving || validation.status === 'testing' || !hasRequiredFields}
           >
             {validation.status === 'testing' ? (
               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
@@ -556,7 +631,7 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || !command.trim()}>
+            <Button onClick={handleSave} disabled={saving || !hasRequiredFields}>
               {saving ? 'Saving...' : editServer ? 'Update' : 'Add Server'}
             </Button>
           </div>
@@ -825,6 +900,8 @@ export function McpServersSettings() {
       command: item.command ?? '',
       args: item.args,
       env: item.required_env.map((e) => ({ key: e.key, value: '' })),
+      transport: item.transport,
+      url: item.url ?? null,
     });
     setCatalogOpen(false);
     setAddOpen(true);

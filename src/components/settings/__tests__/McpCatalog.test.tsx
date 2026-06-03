@@ -65,15 +65,15 @@ describe('McpCatalog', () => {
     expect(screen.getByText('No API key')).toBeTruthy();
   });
 
-  it('disables Add for remote entries (remote transport not yet supported)', async () => {
+  it('lets remote (http) entries be added', async () => {
     setMockInvokeHandler('mcp_catalog_list', () => [REMOTE_ITEM]);
     const onSelectItem = vi.fn();
     renderWithProviders(<McpCatalog open onOpenChange={() => {}} onSelectItem={onSelectItem} />);
 
     const addButton = (await screen.findByRole('button', { name: /add/i })) as HTMLButtonElement;
-    expect(addButton.disabled).toBe(true);
+    expect(addButton.disabled).toBe(false);
     fireEvent.click(addButton);
-    expect(onSelectItem).not.toHaveBeenCalled();
+    expect(onSelectItem).toHaveBeenCalledWith(REMOTE_ITEM);
   });
 
   it('filters entries by the search query', async () => {
