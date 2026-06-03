@@ -603,8 +603,12 @@ describe('useDirectApiChat — backend cancel (audit C2)', () => {
   });
 
   it('cancelDirectChat invokes ai_chat_stream_cancel with the active streamId', async () => {
-    // Stream that never auto-completes — stays open until cancelled.
-    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
+    // Stream stays open until cancelled. Intentionally does NOT touch the shared
+    // lastStreamId: this test reads the id from the invoke args, and leaving the
+    // global untouched means a stray `ai-stream-done` timer leaked from a prior
+    // test can't land on THIS stream's channel and trip cleanup mid-test (the
+    // CI flake this test originally hit).
+    setMockInvokeHandler('ai_chat_stream', async () => {});
     setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
 
     const { result } = renderDirectApiChat();

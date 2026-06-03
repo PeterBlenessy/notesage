@@ -967,7 +967,8 @@ mod tests {
         assert_eq!(server.args, vec!["server.js"]);
         assert_eq!(server.source, McpConfigSource::ClaudeDesktop);
         assert_eq!(server.id, "claude:test");
-        assert!(server.enabled);
+        // Disabled by default for all sources (security hardening); user re-enables.
+        assert!(!server.enabled);
     }
 
     #[test]
@@ -992,7 +993,8 @@ mod tests {
         assert_eq!(server.args, vec!["-y", "@mcp/server"]);
         assert_eq!(server.source, McpConfigSource::VsCode);
         assert_eq!(server.id, "vscode:test");
-        assert!(server.enabled);
+        // Disabled by default for all sources (security hardening); user re-enables.
+        assert!(!server.enabled);
     }
 
     #[test]
