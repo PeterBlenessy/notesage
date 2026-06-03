@@ -5,12 +5,12 @@
 | **Date** | 2026-06-03 |
 | **Status** | Not started |
 | **PRD** | [mcp-registration-ux](../prds/2026-06-03-mcp-registration-ux.md) |
-| **Total** | 22 tasks: 5S, 11M, 6L |
+| **Total** | 22 tasks: 5S, 12M, 5L |
 | **Suggested order** | Foundation (#1–#4) → Keychain (#5–#7) → HTTP transport (#8–#11) → OAuth (#12–#14) → Validate-on-add (#15–#16) → Catalog & deeplinks (#17–#20) → Docs & regression (#21–#22) |
 
 ## Risks & open questions
 
-- **OAuth crate vs hand-roll** (#12): the `oauth2` crate pulls a dependency tree; ACP/Copilot hand-roll browser auth today. Decision needed before #12 — leaning hand-rolled PKCE to stay consistent and dependency-light.
+- **OAuth: use the `oauth2` crate, do not hand-roll** (#12): Copilot/ACP do *not* hand-roll OAuth — they delegate it to their subprocess (`copilot_lsp.rs` only scrapes the device code + opens a browser). A remote MCP server has no subprocess, so this is the first real OAuth client in the codebase. Use `oauth2` (ramosbugs/oauth2-rs) for the auth-code + PKCE + token + refresh core; hand-write only the non-secret discovery (RFC 9728/8414) + dynamic client registration (RFC 7591) glue as plain `reqwest` JSON. Decision resolved — no hand-rolled crypto.
 - **Streamable HTTP vs legacy HTTP+SSE** (#8): the MCP spec has two HTTP transports. Implement Streamable HTTP first, detect-and-fallback to legacy two-endpoint SSE only if a target server needs it. Defer legacy if time-boxed.
 - **Loopback callback port** (#13): transient `127.0.0.1:<port>` listener must not collide with the network-sandbox proxy or llama-server ports; pick from an ephemeral range and pass `redirect_uri` accordingly.
 - **Capability surface** (#19, #21): `notesage://` deep-link registration and any catalog-refresh HTTP endpoint must NOT widen `fs:` permissions — the 2026-04-19 hardening + `tauri-capability-surface.test.ts` regression lock apply. Catalog ships bundled (offline) first; remote refresh is optional.
@@ -89,9 +89,9 @@
 ## OAuth 2.1
 
 ### 12. OAuth discovery + PKCE token exchange (Rust)
-- **Description:** New `mcp_oauth.rs`: on `401` + `WWW-Authenticate`, fetch `/.well-known/oauth-protected-resource` → AS metadata, do dynamic client registration if supported, build authorization-code + PKCE request. Implement token exchange + refresh. (Decision: hand-roll PKCE unless planning chooses `oauth2`.) Acceptance: unit tests for discovery parsing, PKCE challenge/verifier, and token-response parsing.
-- **Complexity:** L · **Category:** backend · **Depends on:** #8
-- **Files:** `src-tauri/src/commands/mcp_oauth.rs` (new), `src-tauri/src/lib.rs`
+- **Description:** Add the `oauth2` crate. New `mcp_oauth.rs`: hand-write only the non-secret MCP glue — on `401` + `WWW-Authenticate`, fetch `/.well-known/oauth-protected-resource` (RFC 9728) → AS metadata (RFC 8414), and dynamic client registration (RFC 7591) if supported. Feed the discovered endpoints + client id into `oauth2` for the authorization-code + PKCE request, token exchange, and refresh — do NOT hand-roll crypto/token handling. Acceptance: unit tests for discovery + registration JSON parsing (our code); rely on `oauth2`'s own tests for PKCE/token correctness; an integration smoke against a real OAuth MCP server.
+- **Complexity:** M · **Category:** backend · **Depends on:** #8
+- **Files:** `src-tauri/Cargo.toml` (add `oauth2`), `src-tauri/src/commands/mcp_oauth.rs` (new), `src-tauri/src/lib.rs`
 
 ### 13. Browser auth + loopback callback + commands (Rust)
 - **Description:** `mcp_oauth_begin(server_id, url)` opens the system browser to the auth URL and starts a transient `127.0.0.1:<ephemeral>/callback` listener to capture the code; exchange → store tokens in keychain (`notesage:mcp:<id>:oauth`). Add `mcp_oauth_status`. Auto-refresh on expiry at request time. Acceptance: emits a pending/result event; tokens persist across restart (manual against a real OAuth MCP server).

@@ -61,11 +61,12 @@ Today `mcp.rs` has a single `spawn_mcp_transport(stdin, stdout, …)` path built
 
 ### 2. OAuth 2.1 (Rust + frontend)
 
-Mirror the existing browser/device auth flows (Copilot LSP `copilot_lsp_finish_auth`, ACP `authenticate`):
+**Important:** unlike Copilot LSP and ACP — which *delegate* OAuth to their subprocess (`copilot_lsp.rs` only scrapes the device code and opens a browser; the LSP does the crypto/token/refresh) — a **remote MCP server has no subprocess to delegate to**. This is the first place Notesage must be a real OAuth client, so we **do not hand-roll** it.
 
-- On `401` with a `WWW-Authenticate` challenge, perform MCP's OAuth discovery (`/.well-known/oauth-protected-resource` → authorization server metadata), dynamic client registration if supported, then the **authorization code + PKCE** flow.
-- Open the system browser to the authorization URL; capture the redirect on a transient `http://127.0.0.1:<port>/callback` loopback listener (same idea as other desktop OAuth tools). Exchange the code for tokens.
-- **Tokens stored in keychain** (see §3), auto-refreshed on expiry. A re-authenticate affordance on the server card mirrors the connection-card key-icon pattern in Settings > Connections.
+- Use the **`oauth2` crate** (the de-facto Rust standard, also the base of `openidconnect`) for the security-sensitive core: authorization-code + PKCE, the token exchange, refresh, and CSRF/state handling. We do **not** write our own PKCE/token client.
+- Hand-write only the thin, non-secret MCP glue the crate doesn't cover: on `401` + `WWW-Authenticate`, fetch protected-resource metadata (RFC 9728, `/.well-known/oauth-protected-resource`) → authorization-server metadata (RFC 8414), and do dynamic client registration (RFC 7591) if the server supports it. These are plain `reqwest` JSON fetches whose results are fed into `oauth2` as endpoints/client id — no crypto.
+- Open the system browser to the authorization URL; capture the redirect on a transient `http://127.0.0.1:<port>/callback` loopback listener. `oauth2` exchanges the code for tokens.
+- **Tokens stored in keychain** (see §3), auto-refreshed on expiry via the crate's refresh-token grant. A re-authenticate affordance on the server card mirrors the connection-card key-icon pattern in Settings > Connections.
 
 ### 3. Keychain for secrets (Rust + frontend)
 
@@ -205,7 +206,7 @@ pub struct McpValidationResult {
 - **`reqwest`** — already a dependency; reuse for Streamable HTTP/SSE. May add `eventsource`-style SSE parsing (or hand-roll, as `copilot_protocol.rs` already frames streams).
 - **`tauri-plugin-deep-link`** — new, for the `notesage://` scheme.
 - **`keyring`** via existing `credentials.rs` — no new crate.
-- **`oauth2`/PKCE** — small crate or hand-rolled (the flow is simple; ACP/Copilot already do browser auth without a heavy dependency). Decide during planning.
+- **`oauth2`** (ramosbugs/oauth2-rs) — battle-tested Rust OAuth client; owns the authorization-code + PKCE + token + refresh + CSRF/state core. Chosen over hand-rolling: Copilot/ACP delegate OAuth to a subprocess and never implement a client, so remote MCP is the first real OAuth client in the codebase — not somewhere to DIY crypto. We add only thin `reqwest` JSON glue for MCP's discovery (RFC 9728 / RFC 8414) and dynamic client registration (RFC 7591), which `oauth2` doesn't cover.
 - Catalog manifest authoring (curated list of ~15–25 popular servers).
 - Capability surface: confirm `capabilities/default.json` / `tauri.conf.json` allow the deep-link scheme and any catalog-refresh HTTP endpoint without widening `fs:` permissions (per the 2026-04-19 hardening).
 
