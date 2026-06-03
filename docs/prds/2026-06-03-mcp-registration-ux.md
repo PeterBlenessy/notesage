@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | High |
 | **Impact** | Make adding an MCP server feel like Claude Desktop's connector flow — add a remote server by URL with OAuth, pick from a curated catalog with one click, keep secrets out of plaintext, and never commit a broken server to config |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [mcp-registration-ux-tasks](../tasks/2026-06-03-mcp-registration-ux-tasks.md) |
 | **Phase** | Skills & Agents Platform — MCP v2 |
 
 ## Problem
