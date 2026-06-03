@@ -41,6 +41,25 @@ interface McpStatusEvent {
   tools?: McpToolInfo[];
 }
 
+/** Result of a `mcp_validate_server` dry run (mirrors the Rust struct). */
+export interface McpValidationResult {
+  ok: boolean;
+  tools: McpToolInfo[];
+  server_info: unknown | null;
+  error: string | null;
+  /** "binary_not_found" | "spawn_failed" | "init_failed" | "timeout" */
+  error_kind: string | null;
+  stderr_tail: string | null;
+}
+
+/** Candidate config for validation, before it has a real id/source. */
+export interface McpValidateInput {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
 // Map Rust snake_case source to frontend kebab-case
 function mapSource(source: string): McpServerEntry['source'] {
   const mapping: Record<string, McpServerEntry['source']> = {
@@ -261,5 +280,27 @@ export function useMcpOperations() {
     []
   );
 
-  return { startServer, stopServer, restartServer, callTool };
+  /**
+   * Dry-run a candidate config (spawn → initialize → tools/list → stop) without
+   * registering it. Used by the Add/Edit dialog to preview tools and surface
+   * actionable errors before the config is written to disk.
+   */
+  const validateServer = useCallback(
+    async (input: McpValidateInput): Promise<McpValidationResult> => {
+      return invoke<McpValidationResult>('mcp_validate_server', {
+        config: {
+          id: '__validate__',
+          name: input.name || input.command,
+          command: input.command,
+          args: input.args,
+          env: input.env,
+          source: 'notesage_global',
+          enabled: true,
+        },
+      });
+    },
+    []
+  );
+
+  return { startServer, stopServer, restartServer, callTool, validateServer };
 }

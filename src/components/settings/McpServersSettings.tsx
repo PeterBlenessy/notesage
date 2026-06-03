@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
   ChevronDown, Download, Wrench, Trash2, Boxes,
+  Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -32,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpCatalogItem } from '@/stores/mcp-store';
-import { useMcpOperations } from '@/hooks/useMcpOperations';
+import { useMcpOperations, type McpValidationResult } from '@/hooks/useMcpOperations';
 import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
 
@@ -255,6 +256,12 @@ interface AddEditServerDialogProps {
   prefill?: CatalogPrefill;
 }
 
+type ValidationState =
+  | { status: 'idle' }
+  | { status: 'testing' }
+  | { status: 'ok'; result: McpValidationResult }
+  | { status: 'error'; result: McpValidationResult };
+
 function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEditServerDialogProps) {
   const [command, setCommand] = useState(editServer?.command ?? '');
   const [args, setArgs] = useState(editServer?.args.join(' ') ?? '');
@@ -265,6 +272,11 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       : []
   );
   const [saving, setSaving] = useState(false);
+  // Validation dry-run state — drives the tool preview / error panel and gates
+  // the write (config is only persisted after a successful start → handshake).
+  const [validation, setValidation] = useState<ValidationState>({ status: 'idle' });
+
+  const { validateServer } = useMcpOperations();
 
   // The "Add" dialog is mounted once and reused, so seed its fields whenever it
   // (re)opens — from the edited server, a catalog prefill, or empty.
@@ -283,7 +295,42 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
     }
   }, [open, editServer, prefill]);
 
+  // Any edit to the config invalidates a prior test result so a stale "ok"
+  // can never let a changed config skip validation.
+  useEffect(() => {
+    setValidation({ status: 'idle' });
+  }, [command, args, envPairs]);
+
   const { requestRescan } = useMcpStore();
+
+  const buildInput = useCallback(() => {
+    const serverName = name.trim() || command.trim().split('/').pop()?.replace(/^@/, '') || 'server';
+    const argsArray = args.trim() ? args.trim().split(/\s+/) : [];
+    const env: Record<string, string> = {};
+    for (const pair of envPairs) {
+      if (pair.key.trim()) {
+        env[pair.key.trim()] = pair.value;
+      }
+    }
+    return { name: serverName, command: command.trim(), args: argsArray, env };
+  }, [name, command, args, envPairs]);
+
+  const handleTest = async () => {
+    if (!command.trim()) {
+      toast.error('Command is required');
+      return;
+    }
+    setValidation({ status: 'testing' });
+    try {
+      const result = await validateServer(buildInput());
+      setValidation({ status: result.ok ? 'ok' : 'error', result });
+    } catch (err) {
+      setValidation({
+        status: 'error',
+        result: { ok: false, tools: [], server_info: null, error: String(err), error_kind: null, stderr_tail: null },
+      });
+    }
+  };
 
   const handleSave = async () => {
     if (!command.trim()) {
@@ -293,19 +340,30 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
 
     setSaving(true);
     try {
-      const serverName = name.trim() || command.trim().split('/').pop()?.replace(/^@/, '') || 'server';
-      const argsArray = args.trim() ? args.trim().split(/\s+/) : [];
-      const env: Record<string, string> = {};
-      for (const pair of envPairs) {
-        if (pair.key.trim()) {
-          env[pair.key.trim()] = pair.value;
-        }
+      const input = buildInput();
+      const serverName = input.name;
+      const env = input.env;
+
+      // Validate before writing. Reuse a prior successful test for the
+      // current config (field edits reset validation to idle), otherwise run a
+      // fresh dry run now. A failure blocks the write.
+      let result: McpValidationResult;
+      if (validation.status === 'ok') {
+        result = validation.result;
+      } else {
+        setValidation({ status: 'testing' });
+        result = await validateServer(input);
+        setValidation({ status: result.ok ? 'ok' : 'error', result });
+      }
+      if (!result.ok) {
+        toast.error(result.error ?? 'The server failed to start — fix the config and try again');
+        return;
       }
 
       // Build config to save
       const configEntry = {
-        command: command.trim(),
-        args: argsArray,
+        command: input.command,
+        args: input.args,
         env,
       };
 
@@ -425,18 +483,83 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
             ))}
           </div>
 
+          {/* Validation result — tool preview on success, actionable error on failure */}
+          {validation.status === 'testing' && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+              Testing connection…
+            </div>
+          )}
+          {validation.status === 'ok' && (
+            <div className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                Connected — {validation.result.tools.length} tool{validation.result.tools.length !== 1 ? 's' : ''}
+              </div>
+              {validation.result.tools.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {validation.result.tools.slice(0, 12).map((t) => (
+                    <Badge key={t.name} variant="secondary" className="h-4 px-1.5 text-xs font-normal font-mono">
+                      {t.name}
+                    </Badge>
+                  ))}
+                  {validation.result.tools.length > 12 && (
+                    <span className="text-xs text-muted-foreground self-center">
+                      +{validation.result.tools.length - 12} more
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {validation.status === 'error' && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 space-y-1.5">
+              <div className="flex items-start gap-1.5 text-xs font-medium text-destructive">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.5} />
+                <span>{validation.result.error ?? 'The server failed to start'}</span>
+              </div>
+              {validation.result.stderr_tail && (
+                <Collapsible>
+                  <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                    Show details
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
+                      {validation.result.stderr_tail}
+                    </pre>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground">
             Saved to ~/.notesage/mcp.json (global)
           </p>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleTest}
+            disabled={saving || validation.status === 'testing' || !command.trim()}
+          >
+            {validation.status === 'testing' ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+            ) : (
+              <Wrench className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+            )}
+            Test
           </Button>
-          <Button onClick={handleSave} disabled={saving || !command.trim()}>
-            {saving ? 'Saving...' : editServer ? 'Update' : 'Add Server'}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !command.trim()}>
+              {saving ? 'Saving...' : editServer ? 'Update' : 'Add Server'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

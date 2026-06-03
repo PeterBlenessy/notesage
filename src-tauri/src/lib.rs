@@ -219,6 +219,7 @@ pub fn run() {
             read_agent_content,
             cleanup_bundled_agents,
             mcp_start_server,
+            mcp_validate_server,
             mcp_stop_server,
             mcp_restart_server,
             mcp_list_tools,

@@ -82,6 +82,24 @@ pub struct McpToolResult {
     pub is_error: bool,
 }
 
+/// Result of a dry-run validation (`mcp_validate_server`). Reports whether a
+/// candidate config could start, complete the MCP handshake, and list its
+/// tools — without ever registering the server. On failure, `error_kind` is a
+/// stable machine-readable cause the frontend maps to actionable copy.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpValidationResult {
+    pub ok: bool,
+    #[serde(default)]
+    pub tools: Vec<McpToolInfo>,
+    /// The server's `serverInfo` block from the `initialize` response, if any.
+    pub server_info: Option<Value>,
+    pub error: Option<String>,
+    /// One of: "binary_not_found", "spawn_failed", "init_failed", "timeout".
+    pub error_kind: Option<String>,
+    /// Last lines of the process stderr, surfaced for debugging.
+    pub stderr_tail: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct McpContent {
     #[serde(rename = "type")]
@@ -446,6 +464,167 @@ pub async fn mcp_start_server(
     );
 
     Ok(info)
+}
+
+/// Overall budget for a validation dry run. Shorter than the reader loop's
+/// per-message timeout so a silent server fails fast instead of hanging the
+/// dialog.
+const MCP_VALIDATE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Map an OS spawn failure to a stable `error_kind` + human-readable message.
+/// Pure so it can be unit-tested without a live process.
+fn map_spawn_error(err: &std::io::Error, command: &str) -> (&'static str, String) {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        (
+            "binary_not_found",
+            format!(
+                "Command not found: '{}'. Make sure it is installed and on your PATH.",
+                command
+            ),
+        )
+    } else {
+        ("spawn_failed", format!("Failed to start '{}': {}", command, err))
+    }
+}
+
+fn validation_error(kind: &str, msg: String, stderr_tail: Option<String>) -> McpValidationResult {
+    McpValidationResult {
+        ok: false,
+        tools: Vec::new(),
+        server_info: None,
+        error: Some(msg),
+        error_kind: Some(kind.to_string()),
+        stderr_tail,
+    }
+}
+
+/// Drain the child's stderr and return the last ~20 lines (the child must
+/// already be killed/awaited, otherwise reading to EOF could block).
+async fn read_stderr_tail(stderr: Option<tokio::process::ChildStderr>) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let mut stderr = stderr?;
+    let mut buf = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_millis(500), stderr.read_to_end(&mut buf)).await;
+    if buf.is_empty() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(20);
+    let tail = lines[start..].join("\n");
+    if tail.trim().is_empty() {
+        None
+    } else {
+        Some(tail)
+    }
+}
+
+/// Dry-run a candidate MCP server config: spawn → initialize → tools/list →
+/// stop, without ever inserting it into `McpState`. Returns a structured
+/// result so the Add/Edit dialog can preview tools (on success) or show an
+/// actionable cause (on failure) before the config is written to disk.
+#[tauri::command]
+pub async fn mcp_validate_server(
+    app: AppHandle,
+    config: McpServerConfig,
+) -> Result<McpValidationResult, String> {
+    // Ephemeral id — never inserted into state. The reader loop may emit a
+    // status event under this id when we kill the child; the frontend ignores
+    // unknown ids, so no phantom server appears.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let ephemeral_id = format!("__validate__{}", nanos);
+
+    let mut spawn_cmd = tokio::process::Command::new(&config.command);
+    spawn_cmd
+        .args(&config.args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(shell_path) = get_shell_path() {
+        spawn_cmd.env("PATH", shell_path);
+    }
+    for (key, val) in &config.env {
+        spawn_cmd.env(key, val);
+    }
+
+    let mut child = match spawn_cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let (kind, msg) = map_spawn_error(&e, &config.command);
+            return Ok(validation_error(kind, msg, None));
+        }
+    };
+
+    let child_pid = child.id();
+    let stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.start_kill();
+            return Ok(validation_error(
+                "spawn_failed",
+                "Failed to capture server stdin".to_string(),
+                None,
+            ));
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.start_kill();
+            return Ok(validation_error(
+                "spawn_failed",
+                "Failed to capture server stdout".to_string(),
+                None,
+            ));
+        }
+    };
+    let stderr = child.stderr.take();
+
+    let transport = spawn_mcp_transport(stdin, stdout, child_pid, ephemeral_id.clone(), app.clone());
+
+    // Initialize + list tools under one overall budget.
+    let probe = async {
+        let caps = mcp_initialize(&transport).await?;
+        let tools = mcp_list_tools_from_server(&transport, &ephemeral_id)
+            .await
+            .unwrap_or_default();
+        Ok::<(Value, Vec<McpToolInfo>), String>((caps, tools))
+    };
+    let outcome = tokio::time::timeout(MCP_VALIDATE_TIMEOUT, probe).await;
+
+    // Always tear down — validation servers are never kept alive.
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    drop(transport);
+    let stderr_tail = read_stderr_tail(stderr).await;
+
+    match outcome {
+        Ok(Ok((caps, tools))) => Ok(McpValidationResult {
+            ok: true,
+            tools,
+            server_info: caps.get("serverInfo").cloned(),
+            error: None,
+            error_kind: None,
+            stderr_tail,
+        }),
+        Ok(Err(e)) => Ok(validation_error(
+            "init_failed",
+            format!("The server started but did not complete the MCP handshake: {}", e),
+            stderr_tail,
+        )),
+        Err(_) => Ok(validation_error(
+            "timeout",
+            format!(
+                "Timed out after {}s waiting for the server to respond.",
+                MCP_VALIDATE_TIMEOUT.as_secs()
+            ),
+            stderr_tail,
+        )),
+    }
 }
 
 #[tauri::command]
@@ -1133,6 +1312,44 @@ mod tests {
             );
         }
         assert!(catalog.iter().any(|i| i.id == "filesystem"));
+    }
+
+    #[test]
+    fn map_spawn_error_classifies_missing_binary() {
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "No such file");
+        let (kind, msg) = map_spawn_error(&not_found, "definitely-not-a-real-cmd");
+        assert_eq!(kind, "binary_not_found");
+        assert!(msg.contains("definitely-not-a-real-cmd"));
+        assert!(msg.contains("PATH"));
+    }
+
+    #[test]
+    fn map_spawn_error_classifies_other_failures() {
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let (kind, msg) = map_spawn_error(&denied, "node");
+        assert_eq!(kind, "spawn_failed");
+        assert!(msg.contains("node"));
+    }
+
+    #[test]
+    fn validation_error_builds_failed_result() {
+        let r = validation_error("timeout", "took too long".to_string(), Some("boom".to_string()));
+        assert!(!r.ok);
+        assert!(r.tools.is_empty());
+        assert!(r.server_info.is_none());
+        assert_eq!(r.error_kind.as_deref(), Some("timeout"));
+        assert_eq!(r.error.as_deref(), Some("took too long"));
+        assert_eq!(r.stderr_tail.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn validation_result_serializes_camel_case_fields() {
+        // Frontend expects snake_case keys matching the McpValidationResult interface.
+        let r = validation_error("binary_not_found", "missing".to_string(), None);
+        let json = serde_json::to_value(&r).expect("serialize");
+        assert_eq!(json["ok"], serde_json::json!(false));
+        assert_eq!(json["error_kind"], serde_json::json!("binary_not_found"));
+        assert!(json.get("tools").is_some());
     }
 
     #[test]
