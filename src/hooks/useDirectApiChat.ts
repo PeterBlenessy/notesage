@@ -16,6 +16,7 @@ import { friendlyAIError } from '@/lib/ai/errors';
 import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
 import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback';
 import { trimMessagesToBudget, localBundledTrimBudget } from '@/lib/ai/context-trim';
+import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,11 @@ export function useDirectApiChat({
         let streamedContent = '';
         let streamedThinking = '';
         const collectedCitations: Citation[] = [];
+        // Unique correlation id for this turn (reused across tool-continuation
+        // re-invokes). Events are listened on `<event>:<streamId>` so a
+        // concurrent structured/agent stream can't bleed into this message —
+        // and stale chunks from a cancelled turn land on a dead channel.
+        const streamId = newStreamId();
 
         let contentDirty = false;
         let thinkingDirty = false;
@@ -435,6 +441,7 @@ export function useDirectApiChat({
             maxTokens: resolved.config?.maxTokens ?? null,
             baseUrl: resolved.config?.baseUrl ?? null,
             responseFormat: null,
+            streamId,
           });
         };
 
@@ -455,13 +462,13 @@ export function useDirectApiChat({
           unlistenToolCallsDone,
           unlistenDone,
         ] = await Promise.all([
-          listen<string>('ai-stream-chunk', (event) => {
+          listen<string>(streamEvent('ai-stream-chunk', streamId), (event) => {
             if (cancelled) return;
             streamedContent += event.payload;
             contentDirty = true;
             appendTextSegment(assistantMessageId, event.payload);
           }),
-          listen<string>('ai-stream-thinking-chunk', (event) => {
+          listen<string>(streamEvent('ai-stream-thinking-chunk', streamId), (event) => {
             if (cancelled) return;
             if (!streamedThinking) {
               log.debug('ai', 'Thinking content detected');
@@ -487,7 +494,7 @@ export function useDirectApiChat({
               });
             }
           }),
-          listen<{ data: string; mimeType: string }>('ai-stream-image', (event) => {
+          listen<{ data: string; mimeType: string }>(streamEvent('ai-stream-image', streamId), (event) => {
             if (cancelled) return;
             pushSegment(assistantMessageId, {
               type: 'image',
@@ -496,25 +503,25 @@ export function useDirectApiChat({
               timestamp: Date.now(),
             });
           }),
-          listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
+          listen<{ tool: string; status: string }>(streamEvent('ai-tool-use', streamId), (event) => {
             if (cancelled) return;
             if (event.payload.status === 'start') {
               setActiveTool(event.payload.tool);
             }
           }),
-          listen<{ url: string; title: string; cited_text: string }>('ai-citation', (event) => {
+          listen<{ url: string; title: string; cited_text: string }>(streamEvent('ai-citation', streamId), (event) => {
             if (cancelled) return;
             const { url, title, cited_text } = event.payload;
             if (!collectedCitations.some((c) => c.url === url)) {
               collectedCitations.push({ url, title, citedText: cited_text });
             }
           }),
-          listen<PendingToolCall>('ai-tool-call', (event) => {
+          listen<PendingToolCall>(streamEvent('ai-tool-call', streamId), (event) => {
             if (cancelled) return;
             log.debug('ai', `Tool call received: ${event.payload.name}`);
             pendingToolCalls.push(event.payload);
           }),
-          listen('ai-tool-calls-done', () => {
+          listen(streamEvent('ai-tool-calls-done', streamId), () => {
             if (cancelled) return;
             // All tool calls for this turn have been emitted — execute and continue
             log.debug('ai', `Processing ${pendingToolCalls.length} tool calls`);
@@ -532,7 +539,7 @@ export function useDirectApiChat({
               setActiveTool(null);
             });
           }),
-          listen('ai-stream-done', () => {
+          listen(streamEvent('ai-stream-done', streamId), () => {
             if (cancelled) return;
             cleanup();
           }),
@@ -585,6 +592,7 @@ export function useDirectApiChat({
           maxTokens: resolved.config?.maxTokens ?? null,
           baseUrl: resolved.config?.baseUrl ?? null,
           responseFormat: null,
+          streamId,
         });
       } catch (error) {
         clearInterval(flushInterval);

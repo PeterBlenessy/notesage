@@ -188,20 +188,25 @@ pub async fn ai_chat_stream(
     max_tokens: Option<u32>,
     base_url: Option<String>,
     response_format: Option<serde_json::Value>,
+    stream_id: Option<String>,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
 
     let search = web_search_enabled.unwrap_or(false);
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
+    // Per-request correlation id. Events are emitted on `<event>:<stream_id>` so
+    // concurrent direct-API generations never cross-contaminate the global bus.
+    // Empty (caller passed none) falls back to the legacy global event names.
+    let sid = stream_id.as_deref().unwrap_or("");
 
     match provider {
-        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
-        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
+        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
+        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
         AIProviderType::LocalBundled => {
-            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format).await
+            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format, sid).await
         }
     }
 }

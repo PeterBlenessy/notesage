@@ -657,6 +657,7 @@ pub async fn ai_chat_stream(
     web_search_enabled: Option<bool>,
     tools: Option<Vec<ToolDefinition>>,
     response_format: Option<serde_json::Value>,
+    stream_id: Option<String>,
 ) -> Result<(), String>
 ```
 
@@ -670,13 +671,14 @@ pub async fn ai_chat_stream(
 - `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
 - `tools`: Optional array of tool definitions for client-side tool calling
 - `response_format`: Optional OpenAI-style structured-output envelope, e.g. `{ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }`. Forwarded verbatim to `local_bundled` (llama-server converts the schema to GBNF — invalid tokens get `-inf` logits, so output is guaranteed to satisfy the schema) and `openai_compatible`. Unwrapped to Ollama's bare-schema `format` field by `ollama_response_format`. Ignored for `anthropic` / `openai` (the OpenAI Responses API uses a different envelope and Anthropic has no equivalent). Not sent together with `tools` for `local_bundled`: llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Frontend callers should use the `generateStructured()` helper in `src/lib/ai/structured.ts` rather than building the envelope by hand.
+- `stream_id`: Optional per-request correlation id. When present, every event below is emitted on the **suffixed** name `<event>:<stream_id>` (e.g. `ai-stream-chunk:6f2c…`) instead of the bare global name. Each frontend caller (`useDirectApiChat`, `generateStructured`, `useAgentTaskOperations`) generates a unique id and listens only on its own suffixed channel, so concurrent generations can't cross-contaminate the global event bus (a structured/intent call firing during a chat stream, two background agent tasks, etc.). Omitted/empty → legacy global names. Backend mirror: `stream_event(base, stream_id)` in `ai_streaming.rs`; frontend mirror: `streamEvent()` in `src/lib/ai/stream-events.ts`.
 
 **Returns:**
 
 - `Ok(())`: Stream completed successfully (content delivered via events)
 - `Err(String)`: Error message if streaming fails
 
-**Events emitted:**
+**Events emitted** (each suffixed with `:<stream_id>` when a `stream_id` is supplied — see the `stream_id` parameter above):
 
 - `ai-stream-chunk` (String): Text delta to append
 - `ai-stream-thinking-chunk` (String): Thinking/reasoning delta (for Ollama thinking models). Emitted when the model produces reasoning traces — either via native `message.thinking` field (`think: true`) or via tag-based parsing (`<think>...</think>` and similar tags detected from the model template at runtime)

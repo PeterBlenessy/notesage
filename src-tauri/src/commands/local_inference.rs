@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 use super::constants;
 use super::model_management::{find_model_entry, find_available_port, resolve_llama_server_binary};
 use super::thinking_tags::{get_thinking_tags_for_custom_model, strip_thinking_tags_for_model};
+use super::ai_streaming::stream_event;
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -691,6 +692,7 @@ pub async fn local_bundled_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     response_format: &Option<serde_json::Value>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let port = state.port.lock().await
         .ok_or("Local AI server is not running. Start it from Settings → Local AI.")?;
@@ -963,7 +965,7 @@ pub async fn local_bundled_chat_stream(
                                 if let Some(end) = tag_buf.find(closing) {
                                     let thinking_text = &tag_buf[..end];
                                     if !thinking_text.is_empty() {
-                                        window.emit("ai-stream-thinking-chunk", thinking_text)
+                                        window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), thinking_text)
                                             .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                     }
                                     tag_buf = tag_buf[end + closing.len()..].to_string();
@@ -974,13 +976,13 @@ pub async fn local_bundled_chat_stream(
                                     if let Some(lt) = tag_buf.rfind('<') {
                                         let before = &tag_buf[..lt];
                                         if !before.is_empty() {
-                                            window.emit("ai-stream-thinking-chunk", before)
+                                            window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), before)
                                                 .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                         }
                                         tag_buf = tag_buf[lt..].to_string();
                                     } else {
                                         // No '<' at all — emit everything
-                                        window.emit("ai-stream-thinking-chunk", &tag_buf)
+                                        window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), &tag_buf)
                                             .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                         tag_buf.clear();
                                     }
@@ -1001,7 +1003,7 @@ pub async fn local_bundled_chat_stream(
                                     // Emit content before the tag as regular text
                                     let before = &tag_buf[..pos];
                                     if !before.is_empty() {
-                                        window.emit("ai-stream-chunk", before)
+                                        window.emit(&stream_event("ai-stream-chunk", stream_id), before)
                                             .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                     }
                                     tag_buf = tag_buf[pos + open.len()..].to_string();
@@ -1012,13 +1014,13 @@ pub async fn local_bundled_chat_stream(
                                     if let Some(lt) = tag_buf.rfind('<') {
                                         let before = &tag_buf[..lt];
                                         if !before.is_empty() {
-                                            window.emit("ai-stream-chunk", before)
+                                            window.emit(&stream_event("ai-stream-chunk", stream_id), before)
                                                 .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                         }
                                         tag_buf = tag_buf[lt..].to_string();
                                     } else {
                                         // No '<' at all — emit everything immediately
-                                        window.emit("ai-stream-chunk", &tag_buf)
+                                        window.emit(&stream_event("ai-stream-chunk", stream_id), &tag_buf)
                                             .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                         tag_buf.clear();
                                     }
@@ -1035,7 +1037,7 @@ pub async fn local_bundled_chat_stream(
     // Flush any remaining content in the tag buffer
     if !tag_buf.is_empty() {
         let event = if in_thinking_tag.is_some() { "ai-stream-thinking-chunk" } else { "ai-stream-chunk" };
-        window.emit(event, &tag_buf)
+        window.emit(&stream_event(event, stream_id), &tag_buf)
             .map_err(|e| format!("Failed to emit final chunk: {}", e))?;
     }
 
@@ -1056,7 +1058,7 @@ pub async fn local_bundled_chat_stream(
             } else {
                 tc.id.clone()
             };
-            window.emit("ai-tool-call", serde_json::json!({
+            window.emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                 "id": id,
                 "name": tc.name,
                 "arguments": arguments
@@ -1066,11 +1068,11 @@ pub async fn local_bundled_chat_stream(
 
     if has_tool_calls || finish_reason == "tool_calls" {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 
