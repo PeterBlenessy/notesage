@@ -4,6 +4,8 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
+import { useModelFit } from '@/hooks/useModelFit';
+import { compareByVerdict } from '@/lib/ai/model-fit';
 import { AddCustomModelDialog } from './AddCustomModelDialog';
 import { CompletionServerSection } from './CompletionServerSection';
 import { ModelCard } from './ModelCard';
@@ -93,6 +95,12 @@ export function LocalAISettings() {
   const [healthChecking, setHealthChecking] = useState(false);
   const [sortBy, setSortBy] = useState<ModelSort>('ram');
 
+  // Hardware-aware model-fit verdicts. The hook populates the store maps below;
+  // we subscribe to them reactively so cards re-render as results arrive.
+  const { capsLoading } = useModelFit(models);
+  const fitById = useLocalAIStore((s) => s.fitById);
+  const capsById = useLocalAIStore((s) => s.capsById);
+
   useEffect(() => {
     refreshModels();
     checkBinary();
@@ -110,12 +118,23 @@ export function LocalAISettings() {
   const defaultModelId = ramTier ? getDefaultModelId(ramTier) : null;
 
   const sortModels = (list: LocalModelInfo[]) => {
-    return [...list].sort((a, b) => {
+    const byPreference = (a: LocalModelInfo, b: LocalModelInfo) => {
       switch (sortBy) {
         case 'name': return a.name.localeCompare(b.name);
         case 'size': return a.size_bytes - b.size_bytes;
         case 'ram': return a.ram_required_bytes - b.ram_required_bytes;
       }
+    };
+    return [...list].sort((a, b) => {
+      // Runnable models first, unrunnable pushed below; the user's chosen sort
+      // is the tiebreaker within each partition. compareByVerdict gives the
+      // runnable-first ordering (and tok/s desc, harmless as a tiebreaker).
+      const byVerdict = compareByVerdict(
+        { fit: fitById[a.id] },
+        { fit: fitById[b.id] }
+      );
+      if (byVerdict !== 0) return byVerdict;
+      return byPreference(a, b);
     });
   };
 
@@ -124,7 +143,8 @@ export function LocalAISettings() {
     return sortModels(
       models.filter((m) => m.recommended_for?.includes(ramTier))
     );
-  }, [models, ramTier, sortBy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, ramTier, sortBy, fitById]);
 
   const filteredModels = useMemo(() => {
     let filtered: LocalModelInfo[];
@@ -139,7 +159,8 @@ export function LocalAISettings() {
     const hiddenSet = new Set(hiddenModelIds);
     filtered = filtered.filter((m) => !hiddenSet.has(m.id) || m.downloaded);
     return sortModels(filtered);
-  }, [models, categoryFilter, sortBy, hiddenModelIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, categoryFilter, sortBy, hiddenModelIds, fitById]);
 
   // Batch-fetch metadata for all models when settings panel mounts
   const modelIds = useMemo(() => models.map((m) => ({ id: m.id })), [models]);
@@ -215,6 +236,9 @@ export function LocalAISettings() {
       isRecommendedDefault={model.id === defaultModelId}
       download={downloads[model.id]}
       metadata={metadataMap[model.id]}
+      fit={fitById[model.id]}
+      caps={capsById[model.id]}
+      capsLoading={capsLoading}
       onSetActive={() => handleSetActive(model.id)}
       onDownload={() => downloadModel(model.id)}
       onCancelDownload={() => cancelDownload(model.id)}
