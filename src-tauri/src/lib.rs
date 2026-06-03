@@ -77,6 +77,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(AiStreamState::new())
         .manage(AgentManagerState::new())
         .manage(NetworkProxyState::new())
         .manage(SandboxMonitorState::new())
@@ -104,6 +105,7 @@ pub fn run() {
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            ai_chat_stream_cancel,
             ollama_fim_completion,
             openai_completions_fim,
             local_bundled_fim,

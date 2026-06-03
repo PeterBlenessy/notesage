@@ -698,6 +698,35 @@ Before streaming, the Ollama backend calls `/api/show` to detect thinking suppor
 
 This avoids hardcoding model-specific tag patterns and follows the same detection strategy as Ollama itself (`thinking/template.go` → `InferTags()`).
 
+### ai_chat_stream_cancel
+
+Aborts an in-flight `ai_chat_stream` by its `stream_id`.
+
+```rust
+#[tauri::command]
+pub async fn ai_chat_stream_cancel(
+    stream_id: String,
+    stream_state: tauri::State<'_, AiStreamState>,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `stream_id`: The correlation id passed to the original `ai_chat_stream` call.
+
+**Returns:**
+
+- `Ok(())`: Best-effort and idempotent — returns `Ok` even when the stream already finished or the id is unknown.
+
+**Behavior:** `AiStreamState` keeps a registry of in-flight streams keyed by `stream_id`, each holding a `tokio::sync::Notify`. `ai_chat_stream` races its provider future against `notify.notified()` via `tokio::select!`; cancelling fires the notify, the select drops the streaming future, and the underlying reqwest byte-stream is dropped — closing the connection so the provider stops generating (and billing). No `ai-stream-done` is emitted on cancel (the frontend tears its listeners down itself). This replaces the previous "cancel" that only removed frontend listeners while the backend kept streaming (audit C2).
+
+**Frontend usage:**
+
+```typescript
+// useDirectApiChat.cancelDirectChat — best-effort, fire-and-forget:
+await invoke('ai_chat_stream_cancel', { streamId }).catch(() => {});
+```
+
 ### AIRequest Struct
 
 ```rust

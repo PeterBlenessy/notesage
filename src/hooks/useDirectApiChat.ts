@@ -76,6 +76,9 @@ export function useDirectApiChat({
   const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
   const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
   const cleanupRef = useRef<(() => void) | null>(null);
+  // streamId of the in-flight turn, so cancelDirectChat can abort the backend
+  // stream (ai_chat_stream_cancel) — not just tear down frontend listeners.
+  const currentStreamIdRef = useRef<string | null>(null);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -168,6 +171,7 @@ export function useDirectApiChat({
         // concurrent structured/agent stream can't bleed into this message —
         // and stale chunks from a cancelled turn land on a dead channel.
         const streamId = newStreamId();
+        currentStreamIdRef.current = streamId;
 
         let contentDirty = false;
         let thinkingDirty = false;
@@ -567,6 +571,7 @@ export function useDirectApiChat({
           setLoading(false);
           setActiveTool(null);
           cleanupRef.current = null;
+          currentStreamIdRef.current = null;
         };
 
         cleanupRef.current = cleanup;
@@ -609,6 +614,15 @@ export function useDirectApiChat({
   );
 
   const cancelDirectChat = useCallback(() => {
+    // Abort the backend stream so the provider stops generating (and billing) —
+    // best-effort, before we tear down local listeners. Captured before cleanup
+    // because cleanup clears currentStreamIdRef.
+    const sid = currentStreamIdRef.current;
+    if (sid) {
+      invoke('ai_chat_stream_cancel', { streamId: sid }).catch(() => {
+        // Best-effort: the stream may have already finished server-side.
+      });
+    }
     if (cleanupRef.current) {
       cleanupRef.current();
     }

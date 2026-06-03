@@ -593,3 +593,39 @@ describe('useDirectApiChat — attachment activity log (task #30)', () => {
     expect(userMsg?.activities ?? []).toHaveLength(0);
   });
 });
+
+describe('useDirectApiChat — backend cancel (audit C2)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('cancelDirectChat invokes ai_chat_stream_cancel with the active streamId', async () => {
+    // Stream that never auto-completes — stays open until cancelled.
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      void result.current.sendChatMessage('hello', []);
+    });
+
+    // The streamId the hook generated and passed to ai_chat_stream.
+    const streamCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream');
+    const sid = (streamCall![1] as { streamId?: string }).streamId;
+    expect(sid).toBeTruthy();
+
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // Cancel must reach the backend with the SAME streamId so it aborts the
+    // right in-flight stream (not just tear down frontend listeners).
+    const cancelCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream_cancel');
+    expect(cancelCall).toBeDefined();
+    expect((cancelCall![1] as { streamId?: string }).streamId).toBe(sid);
+  });
+});
