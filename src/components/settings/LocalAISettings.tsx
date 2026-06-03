@@ -5,6 +5,9 @@ import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { useModelFit } from '@/hooks/useModelFit';
+import { useModelFitMeasurementStore } from '@/stores/model-fit-measurement-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { Switch } from '@/components/ui/switch';
 import { compareByVerdict } from '@/lib/ai/model-fit';
 import { AddCustomModelDialog } from './AddCustomModelDialog';
 import { CompletionServerSection } from './CompletionServerSection';
@@ -97,9 +100,12 @@ export function LocalAISettings() {
 
   // Hardware-aware model-fit verdicts. The hook populates the store maps below;
   // we subscribe to them reactively so cards re-render as results arrive.
-  const { capsLoading } = useModelFit(models);
+  const { capsLoading, hostSpeedScale } = useModelFit(models);
   const fitById = useLocalAIStore((s) => s.fitById);
   const capsById = useLocalAIStore((s) => s.capsById);
+  const measurements = useModelFitMeasurementStore((s) => s.measurements);
+  const offerCalibrationShare = useSettingsStore((s) => s.offerCalibrationShare);
+  const setOfferCalibrationShare = useSettingsStore((s) => s.setOfferCalibrationShare);
 
   useEffect(() => {
     refreshModels();
@@ -239,6 +245,8 @@ export function LocalAISettings() {
       fit={fitById[model.id]}
       caps={capsById[model.id]}
       capsLoading={capsLoading}
+      measurement={measurements[model.id]}
+      hostScale={hostSpeedScale}
       onSetActive={() => handleSetActive(model.id)}
       onDownload={() => downloadModel(model.id)}
       onCancelDownload={() => cancelDownload(model.id)}
@@ -444,6 +452,23 @@ export function LocalAISettings() {
 
         {/* Dedicated FIM completion server (item #8 — `--jinja`/FIM conflict) */}
         <CompletionServerSection />
+
+        {/* Opt-in community calibration share (Phase 2) */}
+        <div className="flex items-start justify-between gap-3 pt-1">
+          <div className="min-w-0">
+            <p className="text-xs font-medium">Offer to share calibration data</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+              After you've run a few local models, Notesage can offer to share their
+              measured speed on your Mac to help improve recommendations. Nothing is
+              ever sent automatically — you review and submit it yourself.
+            </p>
+          </div>
+          <Switch
+            checked={offerCalibrationShare}
+            onCheckedChange={setOfferCalibrationShare}
+            aria-label="Offer to share calibration data"
+          />
+        </div>
 
         <div className="flex items-center gap-1.5">
           {hiddenModelIds.length > 0 && (

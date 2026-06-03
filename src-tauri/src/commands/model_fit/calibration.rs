@@ -27,7 +27,7 @@ pub struct RuntimeMeasurement {
 
 /// Sample a process's resident set size (bytes) via `ps`. Returns 0 on failure
 /// (the process may have exited). Avoids depending on the sysinfo process API.
-fn sample_rss_bytes(pid: u32) -> u64 {
+pub fn sample_rss_bytes(pid: u32) -> u64 {
     let out = std::process::Command::new("ps")
         .args(["-o", "rss=", "-p", &pid.to_string()])
         .output();

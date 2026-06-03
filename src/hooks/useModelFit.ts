@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo } from '@/lib/tauri';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useModelFitMeasurementStore } from '@/stores/model-fit-measurement-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { toModelFitInput, capabilitySource } from '@/lib/ai/model-fit';
+import { toModelFitInput, capabilitySource, medianRatioScale } from '@/lib/ai/model-fit';
 
 /**
  * Orchestrates the hardware-aware model-fit verdicts for a set of models:
@@ -105,5 +106,21 @@ export function useModelFit(models: LocalModelInfo[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelsKey]);
 
-  return { hardwareProfile, fitsLoading, capsLoading };
+  // Per-host correction factors from real measurements (Phase 2). Applied to
+  // the estimates of not-yet-measured models so they track this Mac's real
+  // performance. Identity until ≥2 models have been measured.
+  const measurements = useModelFitMeasurementStore((s) => s.measurements);
+  const fitById = useLocalAIStore((s) => s.fitById);
+  const hostSpeedScale = useMemo(
+    () =>
+      medianRatioScale(
+        Object.values(measurements).map((m) => ({
+          measured: m.measuredTokPerSec,
+          estimated: fitById[m.modelId]?.est_tok_per_sec ?? 0,
+        })),
+      ),
+    [measurements, fitById],
+  );
+
+  return { hardwareProfile, fitsLoading, capsLoading, hostSpeedScale };
 }

@@ -1361,4 +1361,10 @@ export const tauriApi = {
   ): Promise<ModelFitResult[]> {
     return invoke<ModelFitResult[]>('estimate_model_fit', { candidates, profile, planningCtx });
   },
+
+  // Current RSS (bytes) of the running bundled chat server — used by the
+  // Phase 2 runtime calibration loop to track peak RAM during a generation.
+  getLocalServerRss(): Promise<number> {
+    return invoke<number>('get_local_server_rss');
+  },
 };

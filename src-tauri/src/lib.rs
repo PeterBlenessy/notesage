@@ -279,6 +279,7 @@ pub fn run() {
             model_fit::hardware::detect_hardware_profile,
             model_fit::estimate_model_fit,
             model_fit::read_gguf_capabilities,
+            get_local_server_rss,
             // Actions dashboard
             scan_actions,
             // Network sandboxing proxy

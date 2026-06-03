@@ -105,6 +105,83 @@ export function compareByVerdict(
   return (b.fit?.est_tok_per_sec ?? 0) - (a.fit?.est_tok_per_sec ?? 0);
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2 — runtime calibration helpers
+// ---------------------------------------------------------------------------
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Per-host correction factor = clamped median of measured/estimated across
+ * models with both numbers. Identity (1.0) until at least 2 measured models
+ * exist (one sample is noise). Clamped to [0.5, 2.0] so an outlier can't make
+ * estimates absurd.
+ */
+export function medianRatioScale(
+  pairs: { measured: number; estimated: number }[],
+  min = 0.5,
+  max = 2.0,
+): number {
+  const valid = pairs.filter((p) => p.measured > 0 && p.estimated > 0);
+  if (valid.length < 2) return 1.0;
+  return clamp(median(valid.map((p) => p.measured / p.estimated)), min, max);
+}
+
+export type FitSource = 'measured' | 'scaled-estimate' | 'estimate';
+
+export interface FitDisplay {
+  label: string;
+  source: FitSource;
+  /** Tooltip elaborating the source. */
+  detail: string;
+}
+
+function fitMark(fit: ModelFitResult['fit']): string {
+  return fit === 'fits' ? '✓ Fits' : fit === 'tight' ? '~ Tight' : '✗ Won’t fit';
+}
+
+/**
+ * The display verdict for a model, preferring (in order): a direct measurement
+ * (no `~`, "measured"), a host-scaled estimate, or the raw estimate.
+ */
+export function fitDisplay(
+  fit: ModelFitResult | undefined,
+  measurement?: { measuredTokPerSec: number; sampleCount: number; measuredAt: string },
+  hostScale = 1,
+): FitDisplay | null {
+  if (measurement && measurement.measuredTokPerSec > 0) {
+    const mark = fit ? fitMark(fit.fit) : '✓ Fits';
+    const when = measurement.measuredAt.slice(0, 10);
+    return {
+      label: `${mark} · ${Math.round(measurement.measuredTokPerSec)} tok/s · measured`,
+      source: 'measured',
+      detail: `Measured on this Mac on ${when} over ${measurement.sampleCount} run${measurement.sampleCount === 1 ? '' : 's'}.`,
+    };
+  }
+  if (!fit) return null;
+  if (fit.fit === 'wont-fit') {
+    return { label: fit.reasons[0] ?? '✗ Won’t fit', source: 'estimate', detail: fit.reasons.join('\n') };
+  }
+  const scaled = hostScale !== 1 ? fit.est_tok_per_sec * hostScale : fit.est_tok_per_sec;
+  const source: FitSource = hostScale !== 1 ? 'scaled-estimate' : 'estimate';
+  return {
+    label: `${fitMark(fit.fit)} · ~${Math.round(scaled)} tok/s`,
+    source,
+    detail:
+      source === 'scaled-estimate'
+        ? 'Estimate, adjusted to your Mac’s measured performance. Sharpens further once you run this model.'
+        : 'Estimated before download — sharpens once the model runs.',
+  };
+}
+
 /** Resolve the best capability source for a model: local file if downloaded,
  *  else the HF resolve URL. Returns the args for `readGgufCapabilities`. */
 export function capabilitySource(model: LocalModelInfo): {

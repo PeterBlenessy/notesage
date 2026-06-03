@@ -62,6 +62,14 @@ interface SettingsStore {
   /** Planning context (tokens) used by the local model-fit memory estimate.
    *  Not the model's max context — the size llama-server is launched with. */
   localPlanningContext: number;
+  /** Phase 2 calibration share: whether to ever surface the opt-in
+   *  "share with the community" prompt. The prompt only opens a reviewable
+   *  GitHub submission — it never sends anything itself. */
+  offerCalibrationShare: boolean;
+  /** Set once the share prompt has been shown (one-time trigger). */
+  calibrationSharePromptedAt: string | null;
+  /** Set when the user picks "Don't ask again". */
+  calibrationShareDismissed: boolean;
   skillManagement: boolean;
   /** Global toggle — controls whether tools are sent with direct API chat requests */
   toolCallingEnabled: boolean;
@@ -224,6 +232,9 @@ interface SettingsStore {
   setCompletionsOnOutOfScope: (enabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
   setLocalPlanningContext: (ctx: number) => void;
+  setOfferCalibrationShare: (enabled: boolean) => void;
+  markCalibrationSharePrompted: () => void;
+  dismissCalibrationShare: () => void;
   setSkillManagement: (enabled: boolean) => void;
   setToolCallingEnabled: (enabled: boolean) => void;
   setRequireAllToolConfirmations: (enabled: boolean) => void;
@@ -351,6 +362,9 @@ export const useSettingsStore = create<SettingsStore>()(
       completionsOnOutOfScope: false,
       chatHistoryLimit: 0,
       localPlanningContext: 8192,
+      offerCalibrationShare: true,
+      calibrationSharePromptedAt: null,
+      calibrationShareDismissed: false,
       skillManagement: false,
       toolCallingEnabled: true,
       requireAllToolConfirmations: false,
@@ -477,6 +491,18 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setLocalPlanningContext: (ctx: number) => {
         set({ localPlanningContext: ctx });
+      },
+
+      setOfferCalibrationShare: (enabled: boolean) => {
+        set({ offerCalibrationShare: enabled });
+      },
+
+      markCalibrationSharePrompted: () => {
+        set({ calibrationSharePromptedAt: new Date().toISOString() });
+      },
+
+      dismissCalibrationShare: () => {
+        set({ calibrationShareDismissed: true });
       },
 
       setSkillManagement: (enabled: boolean) => {

@@ -13,6 +13,8 @@ import {
   isRecommendedForSlot,
   fitSummary,
   compareByVerdict,
+  medianRatioScale,
+  fitDisplay,
 } from '../model-fit';
 import type { ModelFitResult, GgufCapabilities } from '@/lib/tauri';
 
@@ -138,6 +140,69 @@ describe('fitSummary', () => {
   });
   it('null when no fit', () => {
     expect(fitSummary(undefined)).toBeNull();
+  });
+});
+
+describe('medianRatioScale (host correction)', () => {
+  it('is identity with fewer than 2 measured models', () => {
+    expect(medianRatioScale([])).toBe(1.0);
+    expect(medianRatioScale([{ measured: 30, estimated: 20 }])).toBe(1.0);
+  });
+  it('is the median measured/estimated ratio with ≥2', () => {
+    // ratios 1.5, 2.0 → median 1.75
+    expect(medianRatioScale([
+      { measured: 30, estimated: 20 },
+      { measured: 40, estimated: 20 },
+    ])).toBeCloseTo(1.75);
+  });
+  it('clamps to [0.5, 2.0]', () => {
+    expect(medianRatioScale([
+      { measured: 100, estimated: 10 },
+      { measured: 100, estimated: 10 },
+    ])).toBe(2.0);
+    expect(medianRatioScale([
+      { measured: 1, estimated: 100 },
+      { measured: 1, estimated: 100 },
+    ])).toBe(0.5);
+  });
+  it('ignores pairs with non-positive numbers', () => {
+    expect(medianRatioScale([
+      { measured: 30, estimated: 0 },
+      { measured: 0, estimated: 20 },
+    ])).toBe(1.0);
+  });
+});
+
+describe('fitDisplay', () => {
+  const measurement = { measuredTokPerSec: 31, sampleCount: 4, measuredAt: '2026-06-03T00:00:00Z' };
+
+  it('prefers a direct measurement — no ~, marked measured', () => {
+    const d = fitDisplay(fit({ fit: 'fits', est_tok_per_sec: 24 }), measurement, 1)!;
+    expect(d.source).toBe('measured');
+    expect(d.label).toContain('31 tok/s');
+    expect(d.label).toContain('measured');
+    expect(d.label).not.toContain('~');
+  });
+
+  it('applies host scale to an estimate when no measurement', () => {
+    const d = fitDisplay(fit({ fit: 'fits', est_tok_per_sec: 20 }), undefined, 1.5)!;
+    expect(d.source).toBe('scaled-estimate');
+    expect(d.label).toContain('~30 tok/s'); // 20 * 1.5
+  });
+
+  it('plain estimate when host scale is identity', () => {
+    const d = fitDisplay(fit({ fit: 'fits', est_tok_per_sec: 24 }), undefined, 1)!;
+    expect(d.source).toBe('estimate');
+    expect(d.label).toContain('~24 tok/s');
+  });
+
+  it('shows the reason for wont-fit', () => {
+    const d = fitDisplay(fit({ fit: 'wont-fit', runnable: false, reasons: ['Won’t fit — needs ~42 GB'] }), undefined, 1)!;
+    expect(d.label).toContain('Won');
+  });
+
+  it('null when no fit and no measurement', () => {
+    expect(fitDisplay(undefined, undefined, 1)).toBeNull();
   });
 });
 

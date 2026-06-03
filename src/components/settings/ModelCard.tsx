@@ -1,7 +1,8 @@
 import type { LocalModelInfo } from '@/lib/tauri';
 import type { ModelMetadata, ModelFitResult, GgufCapabilities } from '@/lib/tauri';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
-import { fitSummary } from '@/lib/ai/model-fit';
+import { fitDisplay } from '@/lib/ai/model-fit';
+import type { RuntimeMeasurement } from '@/stores/model-fit-measurement-store';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -50,6 +51,10 @@ interface ModelCardProps {
   fit?: ModelFitResult;
   caps?: GgufCapabilities;
   capsLoading?: boolean;
+  /** Phase 2: a real measurement for this model on this Mac, if one exists. */
+  measurement?: RuntimeMeasurement;
+  /** Phase 2: per-host speed correction applied to (unmeasured) estimates. */
+  hostScale?: number;
   onSetActive: () => void;
   onDownload: () => void;
   onCancelDownload: () => void;
@@ -67,6 +72,8 @@ export function ModelCard({
   fit,
   caps,
   capsLoading,
+  measurement,
+  hostScale = 1,
   onSetActive,
   onDownload,
   onCancelDownload,
@@ -74,7 +81,8 @@ export function ModelCard({
   onRemoveCustom,
   onHide,
 }: ModelCardProps) {
-  const verdict = fitSummary(fit);
+  const display = fitDisplay(fit, measurement, hostScale);
+  const verdict = display?.label ?? null;
   // Disable only undownloaded models that the engine says won't run.
   const blocked = !model.downloaded && fit != null && !fit.runnable;
   // Verified flags from the GGUF header (when present) supersede catalog flags.
@@ -264,7 +272,7 @@ export function ModelCard({
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[260px]">
                 <p className="text-xs">
-                  Estimated before download — sharpens once the model runs.
+                  {display?.detail ?? 'Estimated before download — sharpens once the model runs.'}
                 </p>
                 {blocked && fit && fit.reasons.length > 0 && (
                   <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-3.5 space-y-0.5">
