@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Users see which local models will actually run — and run *well* — on their specific Mac, and which genuinely support the feature they need (completions / agents), verified before any download. |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [hardware-aware-model-recommendation-tasks](../tasks/2026-06-02-hardware-aware-model-recommendation-tasks.md) |
 | **Phase** | Local AI |
 
 ## Problem
