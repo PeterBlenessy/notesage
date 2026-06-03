@@ -11,6 +11,7 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability, formatResourceLinkAsMarkdown } from '@/lib/ai/acp-utils';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
@@ -722,8 +723,10 @@ async function startDirectApiTask(
     { role: 'user', content: prompt },
   ];
 
-  // Listen for stream events
-  const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
+  // Listen for stream events. Unique correlation id so concurrent agent tasks
+  // (and foreground chat / structured calls) never cross-contaminate the bus.
+  const streamId = newStreamId();
+  const unlistenChunk = await listen<string>(streamEvent('ai-stream-chunk', streamId), (event) => {
     const current = tasksMap.get(taskId);
     if (!current || current.status !== 'running') return;
 
@@ -732,7 +735,7 @@ async function startDirectApiTask(
     if (track) useActivityStore.getState().appendPartialOutput(taskId, event.payload);
   });
 
-  const unlistenDone = await listen('ai-stream-done', () => {
+  const unlistenDone = await listen(streamEvent('ai-stream-done', streamId), () => {
     const current = tasksMap.get(taskId);
     if (!current || current.status !== 'running') return;
 
@@ -767,6 +770,7 @@ async function startDirectApiTask(
     maxTokens: config?.maxTokens ?? null,
     baseUrl: config?.baseUrl ?? null,
     responseFormat: null,
+    streamId,
   })
     .catch((error) => {
       const t = tasksMap.get(taskId);

@@ -16,8 +16,8 @@ import { MentionsSection } from "./MentionsSection";
  * QuietSidebar — flat-list sidebar shell for the quiet-composer UI refresh
  * (PRD `2026-04-21-ui-refresh`, task #30).
  *
- * Renders five stacked sections in fixed order: Pinned, Projects, Recent,
- * Tags, Mentions. Sections are wired to the workspace-store, editor-store,
+ * Renders six stacked sections in fixed order: Pinned, Projects, Folders,
+ * Recent, Tags, Mentions. Sections are wired to the workspace-store, editor-store,
  * and SQLite index. Tags and Mentions self-hide when their cap is 0 (the
  * slider IS the visibility control — see settings-store v11→v12 migration).
  *
@@ -32,7 +32,7 @@ import { MentionsSection } from "./MentionsSection";
 /**
  * Returns true when the key event originated inside a text-entry surface
  * (<input>, <textarea>, or contenteditable). Used to let nested inputs
- * (e.g. the TreeOverlay search box from #38) keep their keystrokes instead
+ * (e.g. inline rename rows) keep their keystrokes instead
  * of hijacking them for the sidebar filter.
  */
 function isTypingTarget(target: EventTarget | null): boolean {

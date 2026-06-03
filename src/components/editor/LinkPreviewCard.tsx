@@ -154,11 +154,11 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
           </div>
           <div className="flex gap-4">
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-full bg-muted rounded animate-pulse" />
-              <div className="h-3 w-2/3 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-muted rounded animate-pulse motion-reduce:animate-none" />
+              <div className="h-3 w-full bg-muted rounded animate-pulse motion-reduce:animate-none" />
+              <div className="h-3 w-2/3 bg-muted rounded animate-pulse motion-reduce:animate-none" />
             </div>
-            <div className="w-[120px] h-[80px] bg-muted rounded animate-pulse shrink-0" />
+            <div className="w-[120px] h-[80px] bg-muted rounded animate-pulse motion-reduce:animate-none shrink-0" />
           </div>
         </div>
       )}

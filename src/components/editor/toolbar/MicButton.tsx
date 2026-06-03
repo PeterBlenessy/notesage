@@ -48,7 +48,7 @@ export function MicButton({
         // keeps `animate-pulse` to make the "recording" state
         // unmistakable.
         isRecording
-          ? "animate-pulse text-[var(--color-accent-primary)]"
+          ? "animate-pulse motion-reduce:animate-none text-[var(--color-accent-primary)]"
           : "text-muted-foreground",
       )}
     >

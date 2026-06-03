@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.13",
+      "date": "2026-06-03",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "Hardware-aware local model recommendation (Phase 1 + Phase 2 runtime calibration) (#409)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.12",
       "date": "2026-06-01",
       "previousVersion": "0.46.0",

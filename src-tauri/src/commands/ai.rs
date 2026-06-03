@@ -1,8 +1,54 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
+use tokio::sync::Notify;
 use super::constants;
 use super::credentials::get_credential_internal;
+
+/// Registry of in-flight `ai_chat_stream` cancellation handles, keyed by the
+/// frontend's per-request `stream_id`. `ai_chat_stream_cancel` notifies a
+/// handle; the command's `tokio::select!` then drops the streaming future,
+/// which drops the underlying reqwest byte-stream and closes the connection —
+/// so the provider stops billing and the socket is released (audit C2: the old
+/// "cancel" only tore down frontend listeners while the backend kept streaming).
+#[derive(Default)]
+pub struct AiStreamState {
+    cancels: Mutex<HashMap<String, Arc<Notify>>>,
+}
+
+impl AiStreamState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a fresh cancel handle for `stream_id` and return it.
+    fn register(&self, stream_id: &str) -> Arc<Notify> {
+        let notify = Arc::new(Notify::new());
+        self.cancels
+            .lock()
+            .unwrap()
+            .insert(stream_id.to_string(), notify.clone());
+        notify
+    }
+
+    /// Drop the cancel handle for `stream_id` (stream finished or errored).
+    fn unregister(&self, stream_id: &str) {
+        self.cancels.lock().unwrap().remove(stream_id);
+    }
+
+    /// Signal cancellation for an in-flight stream. Returns false if unknown.
+    fn cancel(&self, stream_id: &str) -> bool {
+        if let Some(notify) = self.cancels.lock().unwrap().get(stream_id) {
+            // `notify_one()` stores a permit if the stream's `select!` hasn't
+            // begun awaiting yet — closes the register→await race.
+            notify.notify_one();
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// Typed AI provider enum replacing raw `String` for compile-time safety.
 /// JSON values match the frontend strings: `"anthropic"`, `"openai"`, `"ollama"`,
@@ -188,22 +234,74 @@ pub async fn ai_chat_stream(
     max_tokens: Option<u32>,
     base_url: Option<String>,
     response_format: Option<serde_json::Value>,
+    stream_id: Option<String>,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
+    stream_state: tauri::State<'_, AiStreamState>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
 
     let search = web_search_enabled.unwrap_or(false);
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
+    // Per-request correlation id. Events are emitted on `<event>:<stream_id>` so
+    // concurrent direct-API generations never cross-contaminate the global bus.
+    // Empty (caller passed none) falls back to the legacy global event names.
+    let sid = stream_id.as_deref().unwrap_or("");
 
-    match provider {
-        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
-        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format).await,
-        AIProviderType::LocalBundled => {
-            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format).await
+    // Register a cancel handle so `ai_chat_stream_cancel(stream_id)` can abort
+    // this stream. Legacy callers without an id get no handle (can't be cancelled).
+    let cancel = if sid.is_empty() {
+        None
+    } else {
+        Some(stream_state.register(sid))
+    };
+
+    let run = async {
+        match provider {
+            AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+            AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+            AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
+            AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
+            AIProviderType::LocalBundled => {
+                super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format, sid).await
+            }
         }
+    };
+
+    // When a cancel handle exists, race the stream against the cancel signal.
+    // On cancel, `run` is dropped — closing the provider byte-stream — and we
+    // return Ok without emitting `ai-stream-done` (the frontend already tore
+    // its listeners down on cancel).
+    let result = match cancel {
+        Some(ref notify) => {
+            tokio::select! {
+                r = run => r,
+                _ = notify.notified() => {
+                    log::info!(target: "notesage::ai", "ai_chat_stream cancelled (stream_id={})", sid);
+                    Ok(())
+                }
+            }
+        }
+        None => run.await,
+    };
+
+    if !sid.is_empty() {
+        stream_state.unregister(sid);
     }
+    result
+}
+
+/// Abort an in-flight `ai_chat_stream` by its `stream_id`. Best-effort and
+/// idempotent — returns Ok even when the stream already finished or the id is
+/// unknown. The streaming task observes the notification via `tokio::select!`,
+/// drops the provider byte-stream, and returns without emitting
+/// `ai-stream-done`.
+#[tauri::command]
+pub async fn ai_chat_stream_cancel(
+    stream_id: String,
+    stream_state: tauri::State<'_, AiStreamState>,
+) -> Result<(), String> {
+    stream_state.cancel(&stream_id);
+    Ok(())
 }
 
 #[tauri::command]

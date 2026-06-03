@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 use super::constants;
 use super::model_management::{find_model_entry, find_available_port, resolve_llama_server_binary};
 use super::thinking_tags::{get_thinking_tags_for_custom_model, strip_thinking_tags_for_model};
+use super::ai_streaming::stream_event;
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -449,6 +450,20 @@ pub async fn get_local_server_status(
     })
 }
 
+/// Current resident memory (bytes) of the running bundled chat server, sampled
+/// via `ps`. Returns 0 when no server is running. Used by the Phase 2 runtime
+/// calibration loop to track peak RAM during a generation.
+#[tauri::command]
+pub async fn get_local_server_rss(
+    state: State<'_, LocalInferenceState>,
+) -> Result<u64, String> {
+    let pid = state.server_pid.lock().map(|g| *g).unwrap_or(None);
+    Ok(match pid {
+        Some(pid) => super::model_fit::calibration::sample_rss_bytes(pid),
+        None => 0,
+    })
+}
+
 /// Kill orphaned llama-server processes from previous sessions.
 /// Called at app startup from lib.rs setup.
 pub fn kill_orphaned_servers() {
@@ -691,6 +706,7 @@ pub async fn local_bundled_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     response_format: &Option<serde_json::Value>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let port = state.port.lock().await
         .ok_or("Local AI server is not running. Start it from Settings → Local AI.")?;
@@ -812,6 +828,7 @@ pub async fn local_bundled_chat_stream(
         "model": model_name,
         "messages": api_messages,
         "stream": true,
+        "stream_options": { "include_usage": true },
         "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
@@ -903,6 +920,13 @@ pub async fn local_bundled_chat_stream(
     let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
     let mut finish_reason = String::new();
 
+    // Phase 2 runtime calibration: capture the model's real decode rate +
+    // token count from llama-server's `timings` (and `usage` as fallback) in
+    // the final SSE chunk, so the frontend can replace its estimate with a
+    // measurement. See PRD 2026-06-03-model-fit-runtime-calibration.
+    let mut measured_tok_per_sec: Option<f64> = None;
+    let mut measured_tokens: Option<u64> = None;
+
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&bytes);
@@ -922,6 +946,23 @@ pub async fn local_bundled_chat_stream(
                 }
 
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    // llama-server emits a top-level `timings` object on the
+                    // final chunk; `usage.completion_tokens` is the fallback
+                    // token count when timings are absent.
+                    if let Some(timings) = json.get("timings") {
+                        if let Some(tps) = timings.get("predicted_per_second").and_then(|v| v.as_f64()) {
+                            measured_tok_per_sec = Some(tps);
+                        }
+                        if let Some(n) = timings.get("predicted_n").and_then(|v| v.as_u64()) {
+                            measured_tokens = Some(n);
+                        }
+                    }
+                    if measured_tokens.is_none() {
+                        if let Some(n) = json["usage"]["completion_tokens"].as_u64() {
+                            measured_tokens = Some(n);
+                        }
+                    }
+
                     let choice = &json["choices"][0];
 
                     if let Some(reason) = choice["finish_reason"].as_str() {
@@ -963,7 +1004,7 @@ pub async fn local_bundled_chat_stream(
                                 if let Some(end) = tag_buf.find(closing) {
                                     let thinking_text = &tag_buf[..end];
                                     if !thinking_text.is_empty() {
-                                        window.emit("ai-stream-thinking-chunk", thinking_text)
+                                        window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), thinking_text)
                                             .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                     }
                                     tag_buf = tag_buf[end + closing.len()..].to_string();
@@ -974,13 +1015,13 @@ pub async fn local_bundled_chat_stream(
                                     if let Some(lt) = tag_buf.rfind('<') {
                                         let before = &tag_buf[..lt];
                                         if !before.is_empty() {
-                                            window.emit("ai-stream-thinking-chunk", before)
+                                            window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), before)
                                                 .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                         }
                                         tag_buf = tag_buf[lt..].to_string();
                                     } else {
                                         // No '<' at all — emit everything
-                                        window.emit("ai-stream-thinking-chunk", &tag_buf)
+                                        window.emit(&stream_event("ai-stream-thinking-chunk", stream_id), &tag_buf)
                                             .map_err(|e| format!("Failed to emit thinking: {}", e))?;
                                         tag_buf.clear();
                                     }
@@ -1001,7 +1042,7 @@ pub async fn local_bundled_chat_stream(
                                     // Emit content before the tag as regular text
                                     let before = &tag_buf[..pos];
                                     if !before.is_empty() {
-                                        window.emit("ai-stream-chunk", before)
+                                        window.emit(&stream_event("ai-stream-chunk", stream_id), before)
                                             .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                     }
                                     tag_buf = tag_buf[pos + open.len()..].to_string();
@@ -1012,13 +1053,13 @@ pub async fn local_bundled_chat_stream(
                                     if let Some(lt) = tag_buf.rfind('<') {
                                         let before = &tag_buf[..lt];
                                         if !before.is_empty() {
-                                            window.emit("ai-stream-chunk", before)
+                                            window.emit(&stream_event("ai-stream-chunk", stream_id), before)
                                                 .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                         }
                                         tag_buf = tag_buf[lt..].to_string();
                                     } else {
                                         // No '<' at all — emit everything immediately
-                                        window.emit("ai-stream-chunk", &tag_buf)
+                                        window.emit(&stream_event("ai-stream-chunk", stream_id), &tag_buf)
                                             .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                         tag_buf.clear();
                                     }
@@ -1035,7 +1076,7 @@ pub async fn local_bundled_chat_stream(
     // Flush any remaining content in the tag buffer
     if !tag_buf.is_empty() {
         let event = if in_thinking_tag.is_some() { "ai-stream-thinking-chunk" } else { "ai-stream-chunk" };
-        window.emit(event, &tag_buf)
+        window.emit(&stream_event(event, stream_id), &tag_buf)
             .map_err(|e| format!("Failed to emit final chunk: {}", e))?;
     }
 
@@ -1056,7 +1097,7 @@ pub async fn local_bundled_chat_stream(
             } else {
                 tc.id.clone()
             };
-            window.emit("ai-tool-call", serde_json::json!({
+            window.emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                 "id": id,
                 "name": tc.name,
                 "arguments": arguments
@@ -1066,11 +1107,22 @@ pub async fn local_bundled_chat_stream(
 
     if has_tool_calls || finish_reason == "tool_calls" {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
+        // Emit measured timings (if any) before done so the frontend's
+        // ai-stream-done handler can record the calibration sample.
+        if measured_tok_per_sec.is_some() || measured_tokens.is_some() {
+            let _ = window.emit(
+                "ai-stream-timings",
+                serde_json::json!({
+                    "tokPerSec": measured_tok_per_sec,
+                    "tokens": measured_tokens,
+                }),
+            );
+        }
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 

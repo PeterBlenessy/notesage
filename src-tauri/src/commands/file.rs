@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -307,6 +308,32 @@ pub async fn reveal_in_finder(app: tauri::AppHandle, path: String) -> Result<(),
     app.opener()
         .reveal_item_in_dir(&path)
         .map_err(|e| format!("Failed to reveal {}: {e}", path))
+}
+
+/// Grant the WebView asset-protocol read access to a user-opened workspace root.
+///
+/// Replaces the old blanket `$HOME/**` static asset scope (audit security H1).
+/// The static scope in `tauri.conf.json` now covers only the app's own dirs
+/// (`$APPDATA`, `$APPCACHE`, `$RESOURCE`, `$TEMP`, ...); every *user content*
+/// root — the Notesage library, opened projects, explorer folders — is granted
+/// here at runtime as it is opened (see `useStartWatchers`). Net effect:
+/// agent-authored markdown can no longer point an `<img>` at `~/.ssh/id_rsa`
+/// (or any home-dir file outside an opened root) and have the WebView fetch it
+/// through the `asset:` protocol — the asset reads are NOT covered by the agent
+/// Seatbelt profile, which only constrains the agent subprocess.
+///
+/// Idempotent and recursive: re-granting an already-allowed directory is a
+/// no-op (mirrors the watcher's dedup), and nested images / drawing SVGs /
+/// viewer files under the root resolve.
+#[tauri::command]
+pub fn allow_asset_dir(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let dir = Path::new(&path);
+    if !dir.is_absolute() {
+        return Err(format!("asset dir must be an absolute path: {}", path));
+    }
+    app.asset_protocol_scope()
+        .allow_directory(dir, true)
+        .map_err(|e| format!("Failed to allow asset dir '{}': {}", path, e))
 }
 
 #[cfg(test)]

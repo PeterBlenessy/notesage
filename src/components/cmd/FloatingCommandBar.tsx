@@ -2538,6 +2538,7 @@ function ExpandedContent({
             ref={inputRef}
             rows={1}
             role="combobox"
+            aria-label="Chat and command input"
             aria-haspopup="listbox"
             aria-expanded={Boolean(activePrefix)}
             aria-autocomplete="list"

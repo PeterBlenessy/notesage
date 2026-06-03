@@ -182,14 +182,30 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
 // Content-Length framing — read
 // ---------------------------------------------------------------------------
 
+/// Hard cap on a single framed JSON-RPC message body. The length comes from an
+/// untrusted peer (an MCP/LSP subprocess — including agent-spawned or
+/// third-party servers). Without a cap, a `Content-Length: 99999999999` header
+/// drives a multi-GB `vec![0u8; n]` allocation that aborts the process *before*
+/// any read timeout fires (audit rust H1). 64 MiB is far above any legitimate
+/// LSP/MCP message while keeping a hostile header from exhausting memory.
+pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Hard cap on the cumulative size of the header section. A peer that never
+/// sends the terminating blank line would otherwise grow the line buffer
+/// without bound (audit rust M3/M4).
+const MAX_HEADER_BYTES: usize = 64 * 1024;
+
 /// Read the Content-Length value from the header section of a framed message.
 ///
 /// Reads lines until an empty line (`\r\n`) is encountered, extracting the
-/// `Content-Length` value. Returns `Err` on EOF or missing header.
+/// `Content-Length` value. Returns `Err` on EOF, a missing header, a header
+/// section larger than [`MAX_HEADER_BYTES`], or a body length larger than
+/// [`MAX_MESSAGE_BYTES`].
 pub async fn read_content_length<R: AsyncBufRead + Unpin>(
     reader: &mut R,
 ) -> Result<usize, String> {
     let mut content_length: Option<usize> = None;
+    let mut header_bytes: usize = 0;
 
     loop {
         let mut line = String::new();
@@ -200,6 +216,14 @@ pub async fn read_content_length<R: AsyncBufRead + Unpin>(
 
         if bytes_read == 0 {
             return Err("EOF while reading headers (process exited)".to_string());
+        }
+
+        header_bytes = header_bytes.saturating_add(bytes_read);
+        if header_bytes > MAX_HEADER_BYTES {
+            return Err(format!(
+                "JSON-RPC header section exceeds {} bytes — refusing to read further",
+                MAX_HEADER_BYTES
+            ));
         }
 
         let trimmed = line.trim();
@@ -213,7 +237,14 @@ pub async fn read_content_length<R: AsyncBufRead + Unpin>(
         // Ignore other headers (e.g., Content-Type)
     }
 
-    content_length.ok_or_else(|| "Missing Content-Length header".to_string())
+    let len = content_length.ok_or_else(|| "Missing Content-Length header".to_string())?;
+    if len > MAX_MESSAGE_BYTES {
+        return Err(format!(
+            "JSON-RPC message length {} exceeds maximum of {} bytes",
+            len, MAX_MESSAGE_BYTES
+        ));
+    }
+    Ok(len)
 }
 
 /// Read a complete JSON-RPC message from a Content-Length framed stream.
@@ -551,6 +582,39 @@ mod tests {
         let result = read_content_length(&mut reader).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("EOF"));
+    }
+
+    #[tokio::test]
+    async fn test_read_content_length_rejects_oversized_body() {
+        // A hostile peer advertising a multi-GB body must be rejected before we
+        // ever allocate (audit rust H1) — not parsed into a giant Vec.
+        let huge = MAX_MESSAGE_BYTES + 1;
+        let input = format!("Content-Length: {}\r\n\r\n", huge);
+        let mut reader = BufReader::new(input.as_bytes());
+        let result = read_content_length(&mut reader).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum"));
+    }
+
+    #[tokio::test]
+    async fn test_read_content_length_accepts_at_cap() {
+        let input = format!("Content-Length: {}\r\n\r\n", MAX_MESSAGE_BYTES);
+        let mut reader = BufReader::new(input.as_bytes());
+        let len = read_content_length(&mut reader).await.unwrap();
+        assert_eq!(len, MAX_MESSAGE_BYTES);
+    }
+
+    #[tokio::test]
+    async fn test_read_content_length_rejects_unbounded_header() {
+        // No terminating blank line, endless header bytes — must bail rather
+        // than grow the line buffer without bound (audit rust M3/M4).
+        let mut input = Vec::new();
+        input.extend_from_slice(b"X-Junk: ");
+        input.resize(MAX_HEADER_BYTES + 1024, b'a');
+        let mut reader = BufReader::new(&input[..]);
+        let result = read_content_length(&mut reader).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("header section exceeds"));
     }
 
     #[tokio::test]
