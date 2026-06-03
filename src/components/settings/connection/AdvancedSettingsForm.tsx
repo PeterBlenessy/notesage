@@ -105,6 +105,8 @@ export function AdvancedSettingsForm({
               />
               <Button
                 variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                aria-label="Add writable path"
+                title="Add writable path"
                 onClick={() => {
                   if (newWritablePath.trim()) {
                     onExtraWritablePathsChange([...extraWritablePaths, newWritablePath.trim()]);
@@ -245,6 +247,8 @@ export function AdvancedSettingsForm({
                     />
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                      aria-label="Add allowed domain"
+                      title="Add allowed domain"
                       onClick={() => {
                         if (newDomain.trim()) {
                           usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always', null);

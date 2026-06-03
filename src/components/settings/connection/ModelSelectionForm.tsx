@@ -366,7 +366,7 @@ export function ModelSelectionForm({
                     onValueChange={onModelChange}
                     className="flex-1"
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={modelsLoading ? "Loading models" : "Refresh models"} title="Refresh models" onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
                     {modelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </Button>
                 </div>

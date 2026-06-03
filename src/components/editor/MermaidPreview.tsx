@@ -154,6 +154,7 @@ export function MermaidPreview({ node, selected, updateAttributes, editor, getPo
           <textarea
             ref={textareaRef}
             className="mermaid-editor-textarea"
+            aria-label="Mermaid diagram source"
             value={editSource}
             onChange={(e) => setEditSource(e.target.value)}
             onBlur={handleSave}
