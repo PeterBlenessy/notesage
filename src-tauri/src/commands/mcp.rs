@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::BufReader;
@@ -22,17 +23,82 @@ use super::shell_path::get_shell_path;
 pub struct McpServerConfig {
     pub id: String,
     pub name: String,
+    /// Stdio transport: the executable. Empty/ignored for http servers.
+    #[serde(default)]
     pub command: String,
+    #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
-    pub env: HashMap<String, String>,
+    pub env: HashMap<String, McpEnvValue>,
     pub source: McpConfigSource,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Transport discriminant. Defaults to stdio so existing configs (which
+    /// omit the field) keep working unchanged.
+    #[serde(default)]
+    pub transport: McpTransport,
+    /// Endpoint URL for `http` (remote) servers. `None` for stdio.
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// A value for an MCP server env var as stored in `mcp.json`. A bare JSON
+/// string is an inline plaintext value; the object `{ "secret": true }` is a
+/// reference to a value kept in the OS keychain under
+/// `notesage:mcp:<server_id>:<KEY>`. Secret values are never written to disk
+/// and never sent to the frontend — they are resolved only at spawn time.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(untagged)]
+pub enum McpEnvValue {
+    Plain(String),
+    Secret(McpSecretRef),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct McpSecretRef {
+    pub secret: bool,
+}
+
+/// Resolve env references into a concrete process environment. Plain values
+/// pass through; secret references are looked up via `resolver` (keyed by the
+/// `mcp:<server_id>:<KEY>` connection id). Missing secrets are dropped. Pure so
+/// it can be unit-tested with a mock resolver.
+fn resolve_env_with<F>(
+    server_id: &str,
+    env: &HashMap<String, McpEnvValue>,
+    mut resolver: F,
+) -> HashMap<String, String>
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    let mut out = HashMap::new();
+    for (key, val) in env {
+        match val {
+            McpEnvValue::Plain(s) => {
+                out.insert(key.clone(), s.clone());
+            }
+            McpEnvValue::Secret(r) if r.secret => {
+                if let Some(v) = resolver(&format!("mcp:{}:{}", server_id, key)) {
+                    out.insert(key.clone(), v);
+                }
+            }
+            McpEnvValue::Secret(_) => {}
+        }
+    }
+    out
+}
+
+/// Resolve env references against the real OS keychain.
+fn resolve_env(server_id: &str, env: &HashMap<String, McpEnvValue>) -> HashMap<String, String> {
+    resolve_env_with(server_id, env, |conn_id| {
+        super::credentials::get_credential_internal(conn_id)
+            .ok()
+            .flatten()
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,12 +126,14 @@ pub struct McpServerInfo {
     pub name: String,
     pub command: String,
     pub args: Vec<String>,
-    pub env: HashMap<String, String>,
+    pub env: HashMap<String, McpEnvValue>,
     pub source: McpConfigSource,
     pub enabled: bool,
     pub status: McpServerStatus,
     pub error: Option<String>,
     pub tools: Vec<McpToolInfo>,
+    pub transport: McpTransport,
+    pub url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -80,6 +148,24 @@ pub struct McpToolInfo {
 pub struct McpToolResult {
     pub content: Vec<McpContent>,
     pub is_error: bool,
+}
+
+/// Result of a dry-run validation (`mcp_validate_server`). Reports whether a
+/// candidate config could start, complete the MCP handshake, and list its
+/// tools — without ever registering the server. On failure, `error_kind` is a
+/// stable machine-readable cause the frontend maps to actionable copy.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpValidationResult {
+    pub ok: bool,
+    #[serde(default)]
+    pub tools: Vec<McpToolInfo>,
+    /// The server's `serverInfo` block from the `initialize` response, if any.
+    pub server_info: Option<Value>,
+    pub error: Option<String>,
+    /// One of: "binary_not_found", "spawn_failed", "init_failed", "timeout".
+    pub error_kind: Option<String>,
+    /// Last lines of the process stderr, surfaced for debugging.
+    pub stderr_tail: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -168,13 +254,215 @@ async fn mcp_reader_loop(
 }
 
 // ---------------------------------------------------------------------------
+// HTTP (Streamable HTTP) transport
+// ---------------------------------------------------------------------------
+
+/// Streamable HTTP MCP client. Each JSON-RPC request is a POST to the server's
+/// single endpoint; the response arrives either as `application/json` (one
+/// object) or `text/event-stream` (SSE `data:` events). The `Mcp-Session-Id`
+/// header handed back on `initialize` is persisted and echoed on later requests.
+///
+/// MVP scope: request/response only — the optional long-lived GET stream for
+/// server→client messages (and OAuth) land in follow-up slices. Cloneable
+/// handles share the underlying `reqwest::Client` and session-id cell.
+#[derive(Clone)]
+pub struct HttpMcpClient {
+    client: reqwest::Client,
+    url: String,
+    /// Server id used to resolve an OAuth bearer token from the keychain.
+    server_id: String,
+    session_id: Arc<Mutex<Option<String>>>,
+}
+
+impl HttpMcpClient {
+    fn new(url: String, server_id: String) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+        Self {
+            client,
+            url,
+            server_id,
+            session_id: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn post(&self, body: String) -> Result<reqwest::Response, String> {
+        let mut builder = self
+            .client
+            .post(self.url.as_str())
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .body(body);
+        if let Some(sid) = self.session_id.lock().await.clone() {
+            builder = builder.header("Mcp-Session-Id", sid);
+        }
+        // Attach an OAuth bearer token if this server has been authorized.
+        if let Some(token) = super::mcp_oauth::valid_access_token(&self.server_id).await {
+            builder = builder.header("Authorization", format!("Bearer {}", token));
+        }
+        builder
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request to {} failed: {}", self.url, e))
+    }
+
+    async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
+        let id = json_rpc::next_request_id();
+        let req = json_rpc::JsonRpcRequest::new(id, method, params);
+        let body = serde_json::to_string(&req).map_err(|e| e.to_string())?;
+
+        let resp = self.post(body).await?;
+        if !resp.status().is_success() {
+            return Err(format!("Server returned HTTP {}", resp.status()));
+        }
+        // Persist a server-assigned session id (sent on initialize).
+        if let Some(sid) = resp
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+        {
+            *self.session_id.lock().await = Some(sid);
+        }
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+        parse_jsonrpc_http_response(&content_type, &text, id)
+    }
+
+    async fn send_notification(&self, method: &str, params: Option<Value>) -> Result<(), String> {
+        let req = json_rpc::JsonRpcNotification::new(method, params);
+        let body = serde_json::to_string(&req).map_err(|e| e.to_string())?;
+        let resp = self.post(body).await?;
+        // Servers acknowledge notifications with 202 Accepted (any 2xx is fine).
+        if !resp.status().is_success() {
+            return Err(format!("Server returned HTTP {}", resp.status()));
+        }
+        Ok(())
+    }
+}
+
+/// Parse `data:` events out of an SSE response body into JSON values. A blank
+/// line dispatches the accumulated event; multi-line `data:` fields are joined
+/// with `\n` per the SSE spec. Non-JSON data events and other fields
+/// (`event:`, `id:`, `retry:`) are ignored.
+fn parse_sse_data_events(body: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    let mut data_buf: Vec<String> = Vec::new();
+    let flush = |buf: &mut Vec<String>, out: &mut Vec<Value>| {
+        if buf.is_empty() {
+            return;
+        }
+        let joined = buf.join("\n");
+        buf.clear();
+        if let Ok(v) = serde_json::from_str::<Value>(&joined) {
+            out.push(v);
+        }
+    };
+    for line in body.lines() {
+        if let Some(rest) = line.strip_prefix("data:") {
+            data_buf.push(rest.strip_prefix(' ').unwrap_or(rest).to_string());
+        } else if line.is_empty() {
+            flush(&mut data_buf, &mut out);
+        }
+    }
+    flush(&mut data_buf, &mut out);
+    out
+}
+
+/// Extract the JSON-RPC result for `expected_id` from an HTTP response body,
+/// handling both `application/json` and `text/event-stream` content types.
+/// Returns the `result` value, or an error if the server replied with a
+/// JSON-RPC `error` or no matching response was found.
+fn parse_jsonrpc_http_response(
+    content_type: &str,
+    body: &str,
+    expected_id: u64,
+) -> Result<Value, String> {
+    let messages: Vec<Value> = if content_type.contains("text/event-stream") {
+        parse_sse_data_events(body)
+    } else {
+        match serde_json::from_str::<Value>(body) {
+            Ok(v) => vec![v],
+            Err(e) => return Err(format!("Invalid JSON response: {}", e)),
+        }
+    };
+
+    for msg in &messages {
+        if msg.get("id").and_then(|v| v.as_u64()) == Some(expected_id) {
+            if let Some(err) = msg.get("error") {
+                return Err(format!("Server error: {}", err));
+            }
+            return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
+        }
+    }
+    // Tolerate a lone response whose id didn't round-trip as a u64.
+    if messages.len() == 1 {
+        let msg = &messages[0];
+        if let Some(err) = msg.get("error") {
+            return Err(format!("Server error: {}", err));
+        }
+        if let Some(result) = msg.get("result") {
+            return Ok(result.clone());
+        }
+    }
+    Err("No matching JSON-RPC response in server reply".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// MCP connection — transport-agnostic dispatch
+// ---------------------------------------------------------------------------
+
+/// A live MCP connection, abstracting over the stdio child-process transport
+/// and the remote HTTP transport so the protocol helpers (`mcp_initialize`,
+/// `mcp_list_tools_from_server`, `mcp_call_tool_on_server`) work against either.
+enum McpConn {
+    Stdio(JsonRpcTransport),
+    Http(HttpMcpClient),
+}
+
+impl McpConn {
+    async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
+        match self {
+            McpConn::Stdio(t) => t.send_request(method, params).await,
+            McpConn::Http(c) => c.send_request(method, params).await,
+        }
+    }
+
+    async fn send_notification(&self, method: &str, params: Option<Value>) -> Result<(), String> {
+        match self {
+            McpConn::Stdio(t) => t.send_notification(method, params).await,
+            McpConn::Http(c) => c.send_notification(method, params).await,
+        }
+    }
+
+    fn clone_handle(&self) -> McpConn {
+        match self {
+            McpConn::Stdio(t) => McpConn::Stdio(t.clone_handle()),
+            McpConn::Http(c) => McpConn::Http(c.clone()),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MCP Server Handle
 // ---------------------------------------------------------------------------
 
 struct McpServerHandle {
     config: McpServerConfig,
-    child: Child,
-    transport: JsonRpcTransport,
+    /// `Some` for stdio servers (the child process); `None` for http servers.
+    child: Option<Child>,
+    conn: McpConn,
     tools: Vec<McpToolInfo>,
     status: McpServerStatus,
     error: Option<String>,
@@ -193,6 +481,8 @@ impl McpServerHandle {
             status: self.status.clone(),
             error: self.error.clone(),
             tools: self.tools.clone(),
+            transport: self.config.transport.clone(),
+            url: self.config.url.clone(),
         }
     }
 }
@@ -223,22 +513,28 @@ impl McpState {
 
         for (id, mut handle) in servers.drain() {
             log::info!(target: "notesage::mcp", "Stopping server {} on exit", id);
-            // kill_on_drop will handle the process when Child is dropped
-            let _ = handle.child.start_kill();
+            // kill_on_drop will handle the process when Child is dropped.
+            // http servers have no child to kill.
+            if let Some(child) = handle.child.as_mut() {
+                let _ = child.start_kill();
+            }
         }
     }
 
-    /// Check liveness of all MCP server processes.
+    /// Check liveness of all MCP server processes. HTTP servers have no PID;
+    /// they report as alive (a request-based liveness ping is a follow-up).
     pub async fn check_processes(&self) -> Vec<super::health::ProcessStatus> {
         let mut servers = self.servers.lock().await;
         servers
             .iter_mut()
             .map(|(id, handle)| {
-                let pid = handle.child.id();
-                let alive = match handle.child.try_wait() {
-                    Ok(None) => true,
-                    Ok(Some(_)) => false,
-                    Err(_) => false,
+                let (alive, pid) = match handle.child.as_mut() {
+                    Some(child) => {
+                        let pid = child.id();
+                        let alive = matches!(child.try_wait(), Ok(None));
+                        (alive, pid)
+                    }
+                    None => (true, None),
                 };
                 super::health::ProcessStatus {
                     name: id.clone(),
@@ -254,7 +550,7 @@ impl McpState {
 // MCP Protocol Operations
 // ---------------------------------------------------------------------------
 
-async fn mcp_initialize(transport: &JsonRpcTransport) -> Result<Value, String> {
+async fn mcp_initialize(transport: &McpConn) -> Result<Value, String> {
     let init_params = serde_json::json!({
         "protocolVersion": constants::MCP_PROTOCOL_VERSION,
         "capabilities": {},
@@ -277,7 +573,7 @@ async fn mcp_initialize(transport: &JsonRpcTransport) -> Result<Value, String> {
 }
 
 async fn mcp_list_tools_from_server(
-    transport: &JsonRpcTransport,
+    transport: &McpConn,
     server_id: &str,
 ) -> Result<Vec<McpToolInfo>, String> {
     let result = transport
@@ -320,7 +616,7 @@ async fn mcp_list_tools_from_server(
 }
 
 async fn mcp_call_tool_on_server(
-    transport: &JsonRpcTransport,
+    transport: &McpConn,
     tool_name: &str,
     arguments: Value,
 ) -> Result<McpToolResult, String> {
@@ -375,41 +671,54 @@ pub async fn mcp_start_server(
     {
         let mut servers = state.servers.lock().await;
         if let Some(mut existing) = servers.remove(&server_id) {
-            let _ = existing.child.start_kill();
+            if let Some(child) = existing.child.as_mut() {
+                let _ = child.start_kill();
+            }
         }
     }
 
-    // Spawn process and perform initialization outside the lock
-    let mut spawn_cmd = tokio::process::Command::new(&config.command);
-    spawn_cmd
-        .args(&config.args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
+    // Establish the connection per transport, outside the lock.
+    let (child, conn): (Option<Child>, McpConn) = match config.transport {
+        McpTransport::Stdio => {
+            let mut spawn_cmd = tokio::process::Command::new(&config.command);
+            spawn_cmd
+                .args(&config.args)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true);
 
-    // Inject login shell PATH
-    if let Some(shell_path) = get_shell_path() {
-        spawn_cmd.env("PATH", shell_path);
-    }
+            // Inject login shell PATH
+            if let Some(shell_path) = get_shell_path() {
+                spawn_cmd.env("PATH", shell_path);
+            }
+            // Inject configured environment variables (secrets resolved from keychain)
+            for (key, val) in resolve_env(&config.id, &config.env) {
+                spawn_cmd.env(key, val);
+            }
 
-    // Inject configured environment variables
-    for (key, val) in &config.env {
-        spawn_cmd.env(key, val);
-    }
+            let mut child = spawn_cmd
+                .spawn()
+                .map_err(|e| format!("Failed to spawn MCP server '{}': {}", config.name, e))?;
 
-    let mut child = spawn_cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn MCP server '{}': {}", config.name, e))?;
-
-    let child_pid = child.id();
-    let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-
-    let transport = spawn_mcp_transport(stdin, stdout, child_pid, server_id.clone(), app.clone());
+            let child_pid = child.id();
+            let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+            let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+            let transport =
+                spawn_mcp_transport(stdin, stdout, child_pid, server_id.clone(), app.clone());
+            (Some(child), McpConn::Stdio(transport))
+        }
+        McpTransport::Http => {
+            let url = config
+                .url
+                .clone()
+                .ok_or_else(|| format!("HTTP MCP server '{}' is missing a url", config.name))?;
+            (None, McpConn::Http(HttpMcpClient::new(url, config.id.clone())))
+        }
+    };
 
     // Initialize the MCP protocol
-    let _server_caps = mcp_initialize(&transport).await.map_err(|e| {
+    let _server_caps = mcp_initialize(&conn).await.map_err(|e| {
         format!(
             "MCP initialization failed for '{}': {}",
             config.name, e
@@ -417,14 +726,14 @@ pub async fn mcp_start_server(
     })?;
 
     // Discover tools
-    let tools = mcp_list_tools_from_server(&transport, &server_id)
+    let tools = mcp_list_tools_from_server(&conn, &server_id)
         .await
         .unwrap_or_default();
 
     let handle = McpServerHandle {
         config: config.clone(),
         child,
-        transport,
+        conn,
         tools: tools.clone(),
         status: McpServerStatus::Running,
         error: None,
@@ -448,6 +757,219 @@ pub async fn mcp_start_server(
     Ok(info)
 }
 
+/// Overall budget for a validation dry run. Shorter than the reader loop's
+/// per-message timeout so a silent server fails fast instead of hanging the
+/// dialog.
+const MCP_VALIDATE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Map an OS spawn failure to a stable `error_kind` + human-readable message.
+/// Pure so it can be unit-tested without a live process.
+fn map_spawn_error(err: &std::io::Error, command: &str) -> (&'static str, String) {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        (
+            "binary_not_found",
+            format!(
+                "Command not found: '{}'. Make sure it is installed and on your PATH.",
+                command
+            ),
+        )
+    } else {
+        ("spawn_failed", format!("Failed to start '{}': {}", command, err))
+    }
+}
+
+fn validation_error(kind: &str, msg: String, stderr_tail: Option<String>) -> McpValidationResult {
+    McpValidationResult {
+        ok: false,
+        tools: Vec::new(),
+        server_info: None,
+        error: Some(msg),
+        error_kind: Some(kind.to_string()),
+        stderr_tail,
+    }
+}
+
+/// Drain the child's stderr and return the last ~20 lines (the child must
+/// already be killed/awaited, otherwise reading to EOF could block).
+async fn read_stderr_tail(stderr: Option<tokio::process::ChildStderr>) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    let mut stderr = stderr?;
+    let mut buf = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_millis(500), stderr.read_to_end(&mut buf)).await;
+    if buf.is_empty() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let lines: Vec<&str> = text.lines().collect();
+    let start = lines.len().saturating_sub(20);
+    let tail = lines[start..].join("\n");
+    if tail.trim().is_empty() {
+        None
+    } else {
+        Some(tail)
+    }
+}
+
+/// Dry-run a candidate MCP server config: spawn → initialize → tools/list →
+/// stop, without ever inserting it into `McpState`. Returns a structured
+/// result so the Add/Edit dialog can preview tools (on success) or show an
+/// actionable cause (on failure) before the config is written to disk.
+#[tauri::command]
+pub async fn mcp_validate_server(
+    app: AppHandle,
+    config: McpServerConfig,
+) -> Result<McpValidationResult, String> {
+    // Ephemeral id — never inserted into state. The reader loop may emit a
+    // status event under this id when we kill the child; the frontend ignores
+    // unknown ids, so no phantom server appears.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let ephemeral_id = format!("__validate__{}", nanos);
+
+    // HTTP transport: no process to spawn — probe the endpoint directly.
+    if config.transport == McpTransport::Http {
+        let url = match config.url.clone() {
+            Some(u) => u,
+            None => {
+                return Ok(validation_error(
+                    "spawn_failed",
+                    "HTTP transport requires a URL".to_string(),
+                    None,
+                ))
+            }
+        };
+        let conn = McpConn::Http(HttpMcpClient::new(url, config.id.clone()));
+        let probe = async {
+            let caps = mcp_initialize(&conn).await?;
+            let tools = mcp_list_tools_from_server(&conn, &ephemeral_id)
+                .await
+                .unwrap_or_default();
+            Ok::<(Value, Vec<McpToolInfo>), String>((caps, tools))
+        };
+        return match tokio::time::timeout(MCP_VALIDATE_TIMEOUT, probe).await {
+            Ok(Ok((caps, tools))) => Ok(McpValidationResult {
+                ok: true,
+                tools,
+                server_info: caps.get("serverInfo").cloned(),
+                error: None,
+                error_kind: None,
+                stderr_tail: None,
+            }),
+            Ok(Err(e)) => Ok(validation_error(
+                "init_failed",
+                format!("Couldn't complete the MCP handshake with '{}': {}", config.name, e),
+                None,
+            )),
+            Err(_) => Ok(validation_error(
+                "timeout",
+                format!(
+                    "Timed out after {}s waiting for '{}' to respond.",
+                    MCP_VALIDATE_TIMEOUT.as_secs(),
+                    config.name
+                ),
+                None,
+            )),
+        };
+    }
+
+    let mut spawn_cmd = tokio::process::Command::new(&config.command);
+    spawn_cmd
+        .args(&config.args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(shell_path) = get_shell_path() {
+        spawn_cmd.env("PATH", shell_path);
+    }
+    for (key, val) in resolve_env(&config.id, &config.env) {
+        spawn_cmd.env(key, val);
+    }
+
+    let mut child = match spawn_cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            let (kind, msg) = map_spawn_error(&e, &config.command);
+            return Ok(validation_error(kind, msg, None));
+        }
+    };
+
+    let child_pid = child.id();
+    let stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.start_kill();
+            return Ok(validation_error(
+                "spawn_failed",
+                "Failed to capture server stdin".to_string(),
+                None,
+            ));
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.start_kill();
+            return Ok(validation_error(
+                "spawn_failed",
+                "Failed to capture server stdout".to_string(),
+                None,
+            ));
+        }
+    };
+    let stderr = child.stderr.take();
+
+    let conn = McpConn::Stdio(spawn_mcp_transport(
+        stdin,
+        stdout,
+        child_pid,
+        ephemeral_id.clone(),
+        app.clone(),
+    ));
+
+    // Initialize + list tools under one overall budget.
+    let probe = async {
+        let caps = mcp_initialize(&conn).await?;
+        let tools = mcp_list_tools_from_server(&conn, &ephemeral_id)
+            .await
+            .unwrap_or_default();
+        Ok::<(Value, Vec<McpToolInfo>), String>((caps, tools))
+    };
+    let outcome = tokio::time::timeout(MCP_VALIDATE_TIMEOUT, probe).await;
+
+    // Always tear down — validation servers are never kept alive.
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    drop(conn);
+    let stderr_tail = read_stderr_tail(stderr).await;
+
+    match outcome {
+        Ok(Ok((caps, tools))) => Ok(McpValidationResult {
+            ok: true,
+            tools,
+            server_info: caps.get("serverInfo").cloned(),
+            error: None,
+            error_kind: None,
+            stderr_tail,
+        }),
+        Ok(Err(e)) => Ok(validation_error(
+            "init_failed",
+            format!("The server started but did not complete the MCP handshake: {}", e),
+            stderr_tail,
+        )),
+        Err(_) => Ok(validation_error(
+            "timeout",
+            format!(
+                "Timed out after {}s waiting for the server to respond.",
+                MCP_VALIDATE_TIMEOUT.as_secs()
+            ),
+            stderr_tail,
+        )),
+    }
+}
+
 #[tauri::command]
 pub async fn mcp_stop_server(
     app: AppHandle,
@@ -457,7 +979,10 @@ pub async fn mcp_stop_server(
     let mut servers = state.servers.lock().await;
 
     if let Some(mut handle) = servers.remove(&server_id) {
-        let _ = handle.child.start_kill();
+        // Stdio: kill the child. Http: dropping the handle is enough.
+        if let Some(child) = handle.child.as_mut() {
+            let _ = child.start_kill();
+        }
 
         let _ = app.emit(
             "mcp-server-status",
@@ -518,7 +1043,7 @@ pub async fn mcp_call_tool(
         let handle = servers
             .get(&server_id)
             .ok_or_else(|| format!("Server '{}' not found or not running", server_id))?;
-        handle.transport.clone_handle()
+        handle.conn.clone_handle()
     };
 
     mcp_call_tool_on_server(&transport, &tool_name, arguments).await
@@ -540,13 +1065,19 @@ pub async fn mcp_get_server_status(
 /// Config file entry (matches Claude Desktop format)
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct McpConfigEntry {
+    /// Required for stdio entries; absent for http entries.
+    #[serde(default)]
     command: String,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
-    env: HashMap<String, String>,
+    env: HashMap<String, McpEnvValue>,
     #[serde(default)]
     disabled: bool,
+    #[serde(default)]
+    transport: McpTransport,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 /// Config file format
@@ -554,6 +1085,82 @@ pub struct McpConfigEntry {
 pub struct McpConfigFile {
     #[serde(rename = "mcpServers", default)]
     mcp_servers: HashMap<String, McpConfigEntry>,
+}
+
+// ---------------------------------------------------------------------------
+// Catalog — curated, browseable list of MCP servers (PRD 2026-06-03)
+//
+// The manifest (`src-tauri/mcp-catalog.json`) ships EMPTY for now: the support
+// code is in place so the catalog can be populated later without touching the
+// transport/lifecycle code. Each entry is a template the "Add" flow pre-fills.
+// ---------------------------------------------------------------------------
+
+/// Transport a catalog entry uses. Mirrored on the frontend as a string union.
+/// (Reused by the broader transport work in task #1 when it lands.)
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTransport {
+    #[default]
+    Stdio,
+    Http,
+}
+
+/// A required environment variable / secret a catalog server needs, with a
+/// human label and an optional "where to get it" link rendered in the Add form.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpCatalogRequiredEnv {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub secret: bool,
+    #[serde(default)]
+    pub help_url: Option<String>,
+}
+
+/// One curated catalog entry. `command`/`args` are used for `stdio` entries;
+/// `url` is used for `http` (remote) entries.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct McpCatalogItem {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    /// True for entries from a trusted, curated source (e.g. Anthropic's
+    /// `modelcontextprotocol/servers` reference repo) — drives an "Official" badge.
+    #[serde(default)]
+    pub official: bool,
+    #[serde(default)]
+    pub transport: McpTransport,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub required_env: Vec<McpCatalogRequiredEnv>,
+}
+
+/// On-disk catalog manifest shape. Unknown top-level keys (e.g. a `_comment`
+/// authoring note) are ignored by serde.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct McpCatalogFile {
+    #[serde(default)]
+    servers: Vec<McpCatalogItem>,
+}
+
+/// Embedded curated catalog, parsed at compile time. Empty until populated.
+const MCP_CATALOG_JSON: &str = include_str!("../../mcp-catalog.json");
+
+/// Return the curated MCP server catalog. Currently empty — see the PRD.
+#[tauri::command]
+pub fn mcp_catalog_list() -> Result<Vec<McpCatalogItem>, String> {
+    let file: McpCatalogFile = serde_json::from_str(MCP_CATALOG_JSON)
+        .map_err(|e| format!("Failed to parse mcp-catalog.json: {e}"))?;
+    Ok(file.servers)
 }
 
 fn source_prefix(source: &McpConfigSource) -> &'static str {
@@ -588,6 +1195,8 @@ fn map_config_entries(
                 args,
                 env,
                 disabled: _,
+                transport,
+                url,
             } = entry;
             McpServerConfig {
                 id: format!("{}:{}", source_prefix(&source), name),
@@ -597,6 +1206,8 @@ fn map_config_entries(
                 env,
                 source: source.clone(),
                 enabled: false,
+                transport,
+                url,
             }
         })
         .collect()
@@ -825,6 +1436,8 @@ mod tests {
                 args: vec!["server.js".to_string()],
                 env: HashMap::new(),
                 disabled: false,
+                transport: McpTransport::Stdio,
+                url: None,
             },
         );
 
@@ -852,6 +1465,8 @@ mod tests {
                 args: vec![],
                 env: HashMap::new(),
                 disabled: true,
+                transport: McpTransport::Stdio,
+                url: None,
             },
         );
 
@@ -870,6 +1485,8 @@ mod tests {
                 args: vec!["mcp.py".to_string()],
                 env: HashMap::new(),
                 disabled: false, // explicitly not disabled, but project overrides
+                transport: McpTransport::Stdio,
+                url: None,
             },
         );
 
@@ -882,8 +1499,8 @@ mod tests {
     #[test]
     fn map_config_entries_preserves_env_vars() {
         let mut env = HashMap::new();
-        env.insert("API_KEY".to_string(), "secret".to_string());
-        env.insert("DEBUG".to_string(), "true".to_string());
+        env.insert("API_KEY".to_string(), McpEnvValue::Plain("secret".to_string()));
+        env.insert("DEBUG".to_string(), McpEnvValue::Plain("true".to_string()));
 
         let mut entries = HashMap::new();
         entries.insert(
@@ -893,13 +1510,15 @@ mod tests {
                 args: vec![],
                 env,
                 disabled: false,
+                transport: McpTransport::Stdio,
+                url: None,
             },
         );
 
         let result = map_config_entries(entries, McpConfigSource::Cursor);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].env.get("API_KEY").unwrap(), "secret");
-        assert_eq!(result[0].env.get("DEBUG").unwrap(), "true");
+        assert_eq!(result[0].env.get("API_KEY").unwrap(), &McpEnvValue::Plain("secret".to_string()));
+        assert_eq!(result[0].env.get("DEBUG").unwrap(), &McpEnvValue::Plain("true".to_string()));
         assert_eq!(result[0].id, "cursor:env-server");
     }
 
@@ -1007,7 +1626,7 @@ mod tests {
     #[test]
     fn mcp_server_config_serialization_round_trip() {
         let mut env = HashMap::new();
-        env.insert("TOKEN".to_string(), "abc123".to_string());
+        env.insert("TOKEN".to_string(), McpEnvValue::Plain("abc123".to_string()));
 
         let original = McpServerConfig {
             id: "global:roundtrip".to_string(),
@@ -1017,6 +1636,8 @@ mod tests {
             env,
             source: McpConfigSource::NotesageGlobal,
             enabled: true,
+            transport: McpTransport::Stdio,
+            url: None,
         };
 
         let json = serde_json::to_string(&original).expect("serialize");
@@ -1029,5 +1650,194 @@ mod tests {
         assert_eq!(deserialized.env, original.env);
         assert_eq!(deserialized.source, original.source);
         assert_eq!(deserialized.enabled, original.enabled);
+    }
+
+    #[test]
+    fn catalog_manifest_parses_and_entries_are_well_formed() {
+        // The embedded manifest must always be valid JSON in the expected shape.
+        let catalog = mcp_catalog_list().expect("mcp-catalog.json should parse");
+
+        // Empty to start; this guards every future entry's shape too.
+        for item in &catalog {
+            assert!(!item.id.is_empty(), "catalog entry needs an id");
+            assert!(!item.name.is_empty(), "catalog entry {} needs a name", item.id);
+            match item.transport {
+                McpTransport::Http => assert!(
+                    item.url.is_some(),
+                    "http catalog entry {} must have a url",
+                    item.id
+                ),
+                McpTransport::Stdio => assert!(
+                    item.command.is_some(),
+                    "stdio catalog entry {} must have a command",
+                    item.id
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_ships_official_reference_servers() {
+        let catalog = mcp_catalog_list().expect("catalog parses");
+        // The seeded catalog is the official MCP reference set.
+        assert_eq!(catalog.len(), 7, "expected the 7 official reference servers");
+        for item in &catalog {
+            assert!(item.official, "seeded entry {} should be marked official", item.id);
+            assert_eq!(item.transport, McpTransport::Stdio);
+            assert!(item.command.is_some(), "{} needs a command", item.id);
+            assert!(item.homepage.is_some(), "{} should link to its source", item.id);
+            assert!(
+                item.required_env.is_empty(),
+                "{} is expected to need no API key",
+                item.id
+            );
+        }
+        assert!(catalog.iter().any(|i| i.id == "filesystem"));
+    }
+
+    #[test]
+    fn map_spawn_error_classifies_missing_binary() {
+        let not_found = std::io::Error::new(std::io::ErrorKind::NotFound, "No such file");
+        let (kind, msg) = map_spawn_error(&not_found, "definitely-not-a-real-cmd");
+        assert_eq!(kind, "binary_not_found");
+        assert!(msg.contains("definitely-not-a-real-cmd"));
+        assert!(msg.contains("PATH"));
+    }
+
+    #[test]
+    fn map_spawn_error_classifies_other_failures() {
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let (kind, msg) = map_spawn_error(&denied, "node");
+        assert_eq!(kind, "spawn_failed");
+        assert!(msg.contains("node"));
+    }
+
+    #[test]
+    fn validation_error_builds_failed_result() {
+        let r = validation_error("timeout", "took too long".to_string(), Some("boom".to_string()));
+        assert!(!r.ok);
+        assert!(r.tools.is_empty());
+        assert!(r.server_info.is_none());
+        assert_eq!(r.error_kind.as_deref(), Some("timeout"));
+        assert_eq!(r.error.as_deref(), Some("took too long"));
+        assert_eq!(r.stderr_tail.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn parse_json_http_response_extracts_result() {
+        let body = r#"{"jsonrpc":"2.0","id":7,"result":{"tools":[]}}"#;
+        let v = parse_jsonrpc_http_response("application/json", body, 7).expect("ok");
+        assert!(v.get("tools").is_some());
+    }
+
+    #[test]
+    fn parse_json_http_response_surfaces_rpc_error() {
+        let body = r#"{"jsonrpc":"2.0","id":7,"error":{"code":-32601,"message":"no"}}"#;
+        let err = parse_jsonrpc_http_response("application/json", body, 7).unwrap_err();
+        assert!(err.contains("Server error"));
+    }
+
+    #[test]
+    fn parse_sse_http_response_extracts_matching_id() {
+        // Two SSE events; only id=2 matches.
+        let body = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"a\":1}}\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"b\":2}}\n\n";
+        let v = parse_jsonrpc_http_response("text/event-stream; charset=utf-8", body, 2).expect("ok");
+        assert_eq!(v.get("b").and_then(|x| x.as_i64()), Some(2));
+    }
+
+    #[test]
+    fn parse_sse_joins_multiline_data_fields() {
+        // A single event whose JSON is split across two `data:` lines.
+        let body = "data: {\"jsonrpc\":\"2.0\",\"id\":5,\ndata: \"result\":{\"ok\":true}}\n\n";
+        let events = parse_sse_data_events(body);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].get("id").and_then(|x| x.as_u64()), Some(5));
+    }
+
+    #[test]
+    fn parse_http_response_lenient_single_message_fallback() {
+        // A lone response whose id didn't round-trip still resolves to its result.
+        let body = r#"{"jsonrpc":"2.0","id":99,"result":{"ok":true}}"#;
+        let v = parse_jsonrpc_http_response("application/json", body, 7).expect("lenient ok");
+        assert_eq!(v.get("ok").and_then(|x| x.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn parse_http_response_empty_stream_is_error() {
+        let err = parse_jsonrpc_http_response("text/event-stream", "", 7).unwrap_err();
+        assert!(err.contains("No matching"));
+    }
+
+    #[test]
+    fn mcp_env_value_deserializes_plain_and_secret() {
+        let plain: McpEnvValue = serde_json::from_str("\"hello\"").expect("plain");
+        assert_eq!(plain, McpEnvValue::Plain("hello".to_string()));
+
+        let secret: McpEnvValue = serde_json::from_str(r#"{"secret":true}"#).expect("secret");
+        assert_eq!(secret, McpEnvValue::Secret(McpSecretRef { secret: true }));
+    }
+
+    #[test]
+    fn mcp_env_value_round_trips() {
+        let plain = McpEnvValue::Plain("v".to_string());
+        assert_eq!(serde_json::to_string(&plain).unwrap(), "\"v\"");
+        let secret = McpEnvValue::Secret(McpSecretRef { secret: true });
+        assert_eq!(serde_json::to_string(&secret).unwrap(), r#"{"secret":true}"#);
+    }
+
+    #[test]
+    fn resolve_env_passes_plain_and_resolves_secrets() {
+        let mut env = HashMap::new();
+        env.insert("PLAIN".to_string(), McpEnvValue::Plain("p".to_string()));
+        env.insert("API_KEY".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+
+        let resolved = resolve_env_with("global:srv", &env, |conn_id| {
+            // The keychain is keyed by `mcp:<server_id>:<KEY>`.
+            assert_eq!(conn_id, "mcp:global:srv:API_KEY");
+            Some("resolved-secret".to_string())
+        });
+
+        assert_eq!(resolved.get("PLAIN").map(String::as_str), Some("p"));
+        assert_eq!(resolved.get("API_KEY").map(String::as_str), Some("resolved-secret"));
+    }
+
+    #[test]
+    fn resolve_env_drops_missing_secrets() {
+        let mut env = HashMap::new();
+        env.insert("GONE".to_string(), McpEnvValue::Secret(McpSecretRef { secret: true }));
+        let resolved = resolve_env_with("id", &env, |_| None);
+        assert!(resolved.is_empty(), "a missing secret must not appear in the process env");
+    }
+
+    #[test]
+    fn config_entry_with_secret_env_parses() {
+        // A persisted mcp.json entry mixing a plaintext and a secret-ref env var.
+        let json = r#"{ "command": "node", "env": { "PORT": "8080", "TOKEN": { "secret": true } } }"#;
+        let entry: McpConfigEntry = serde_json::from_str(json).expect("parse");
+        assert_eq!(entry.env.get("PORT").unwrap(), &McpEnvValue::Plain("8080".to_string()));
+        assert_eq!(
+            entry.env.get("TOKEN").unwrap(),
+            &McpEnvValue::Secret(McpSecretRef { secret: true })
+        );
+    }
+
+    #[test]
+    fn validation_result_serializes_camel_case_fields() {
+        // Frontend expects snake_case keys matching the McpValidationResult interface.
+        let r = validation_error("binary_not_found", "missing".to_string(), None);
+        let json = serde_json::to_value(&r).expect("serialize");
+        assert_eq!(json["ok"], serde_json::json!(false));
+        assert_eq!(json["error_kind"], serde_json::json!("binary_not_found"));
+        assert!(json.get("tools").is_some());
+    }
+
+    #[test]
+    fn catalog_transport_defaults_to_stdio() {
+        // Entries that omit `transport` should parse as stdio.
+        let item: McpCatalogItem = serde_json::from_str(
+            r#"{ "id": "x", "name": "X", "description": "d", "command": "node" }"#,
+        )
+        .expect("parse");
+        assert_eq!(item.transport, McpTransport::Stdio);
     }
 }

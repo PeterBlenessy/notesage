@@ -41,6 +41,7 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -224,6 +225,7 @@ pub fn run() {
             read_agent_content,
             cleanup_bundled_agents,
             mcp_start_server,
+            mcp_validate_server,
             mcp_stop_server,
             mcp_restart_server,
             mcp_list_tools,
@@ -233,6 +235,10 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
+            mcp_catalog_list,
+            mcp_oauth_status,
+            mcp_oauth_logout,
+            mcp_oauth_authorize,
             // Logging & diagnostics
             log_frontend,
             get_log_path,

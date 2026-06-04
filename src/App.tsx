@@ -6,6 +6,7 @@ import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
+import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
 const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDialogV2").then(m => ({ default: m.SettingsDialogV2 })));
@@ -774,6 +775,7 @@ function App() {
         />
         </Suspense>
       </div>
+      <McpDeepLinkInstaller />
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

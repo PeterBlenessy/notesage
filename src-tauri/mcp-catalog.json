@@ -1,0 +1,89 @@
+{
+  "_comment": "Curated MCP server catalog for the in-app 'Browse catalog' picker. The catalog is a menu of opt-in suggestions — nothing is added to mcp.json or run until the user explicitly picks an entry. The entries below are the official reference servers from Anthropic's modelcontextprotocol/servers repo (all stdio, no API key). npx-based entries need Node; uvx-based entries need uv/uvx installed. To add more entries see the field shapes in src-tauri/src/commands/mcp.rs (McpCatalogItem) and docs/prds/2026-06-03-mcp-registration-ux.md.",
+  "servers": [
+    {
+      "id": "filesystem",
+      "name": "Filesystem",
+      "description": "Secure file operations with configurable access controls. Append one or more allowed directory paths to the arguments before adding.",
+      "category": "Files",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "official": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "required_env": []
+    },
+    {
+      "id": "fetch",
+      "name": "Fetch",
+      "description": "Fetch a web page and convert it to clean markdown for efficient LLM use.",
+      "category": "Web",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "official": true,
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "required_env": []
+    },
+    {
+      "id": "memory",
+      "name": "Memory",
+      "description": "Knowledge-graph-based persistent memory the model can read from and write to across turns.",
+      "category": "Memory",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "official": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "required_env": []
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "description": "Read, search, and manipulate Git repositories. Optionally pass --repository <path> in the arguments.",
+      "category": "Development",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "official": true,
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git"],
+      "required_env": []
+    },
+    {
+      "id": "sequential-thinking",
+      "name": "Sequential Thinking",
+      "description": "Dynamic, reflective problem-solving through a structured sequence of thoughts.",
+      "category": "Reasoning",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "official": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "required_env": []
+    },
+    {
+      "id": "time",
+      "name": "Time",
+      "description": "Time and timezone conversion capabilities.",
+      "category": "Utility",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+      "official": true,
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-time"],
+      "required_env": []
+    },
+    {
+      "id": "everything",
+      "name": "Everything",
+      "description": "Reference/test server that exercises every MCP feature (prompts, resources, tools) — useful for trying things out.",
+      "category": "Reference",
+      "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
+      "official": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"],
+      "required_env": []
+    }
+  ]
+}
