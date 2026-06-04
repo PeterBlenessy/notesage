@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
@@ -10,20 +11,23 @@ interface MarkdownContentProps {
   className?: string;
 }
 
-export function MarkdownContent({ content, className }: MarkdownContentProps) {
-  const openTab = useEditorStore((s) => s.openTab);
-  const projects = useWorkspaceStore((s) => s.projects);
-  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+// Resolve workspace roots + openTab at click time via getState() rather than
+// subscribing. Link clicks are rare, and subscribing forced every rendered chat
+// message to re-render — and ReactMarkdown to re-parse its whole body — whenever
+// the project or explorer-folder lists changed. Reading on demand keeps this
+// component's render a pure function of its props.
+async function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+  e.preventDefault();
+  const { projects, explorerFolders } = useWorkspaceStore.getState();
+  const { openTab } = useEditorStore.getState();
+  const roots = [
+    ...projects.map((p) => p.path),
+    ...explorerFolders.map((f) => f.path),
+  ];
+  await handleLinkNavigation(href, openTab, roots);
+}
 
-  const handleLinkClick = async (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    e.preventDefault();
-    const roots = [
-      ...projects.map((p) => p.path),
-      ...explorerFolders.map((f) => f.path),
-    ];
-    await handleLinkNavigation(href, openTab, roots);
-  };
-
+function MarkdownContentImpl({ content, className }: MarkdownContentProps) {
   return (
     <div
       className={cn(
@@ -51,3 +55,11 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
     </div>
   );
 }
+
+// Memoized on (content, className): markdown parsing via ReactMarkdown is the
+// hot cost in the chat list. Without this, every chat-store change (e.g. the
+// isLoading toggle at the start/end of a send, or a single message streaming)
+// re-rendered ALL rendered messages and re-parsed each one's full markdown.
+// Now an instance only re-parses when its own `content` actually changes — the
+// streaming message updates, the rest stay cached (audit perf B1).
+export const MarkdownContent = memo(MarkdownContentImpl);

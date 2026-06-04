@@ -54,12 +54,10 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | Mermaid | `mermaid.ts` | Node Extension + ReactNodeViewRenderer | Mermaid diagram blocks with live rendering, `` ```mermaid `` fenced code block markdown |
 | PageBreakNode | `page-break-node.ts` | Node Extension | Explicit page break node for Print Layout mode |
 | TableColumnTypes | `table-column-types.ts` | Plugin | Column type inference and locale-aware formatting (number, currency, percentage, date) |
-| TableFormatting | `table-formatting.ts` | Plugin | Table cell formatting decorations (alignment, number formatting) |
 | TypographyOverrides | `typography-overrides.ts` | Plugin | Custom typography rules (smart quotes, em dashes, ellipsis) |
 | TrailingNode | `trailing-node.ts` | Plugin (appendTransaction) | Ensures an empty paragraph at end of document for click-below-last-block UX |
 | DecorationFactory | `decoration-factory.ts` | Utility | Shared `createDecorationPlugin()` factory reducing boilerplate in decoration extensions |
 | ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
-| ~~DragHandle~~ | `drag-handle.ts` | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 
 ## Decoration System
 

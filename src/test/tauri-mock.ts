@@ -140,6 +140,7 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('path_exists', () => true);
   setMockInvokeHandler('watch_directory', () => undefined);
   setMockInvokeHandler('unwatch_directory', () => undefined);
+  setMockInvokeHandler('allow_asset_dir', () => undefined);
   setMockInvokeHandler('mark_self_write', () => undefined);
   setMockInvokeHandler('clear_self_write', () => undefined);
   setMockInvokeHandler('open_folder_dialog', () => null);

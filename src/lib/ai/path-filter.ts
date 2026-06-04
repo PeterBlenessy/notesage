@@ -96,7 +96,10 @@ export function extractPathsFromStructuredInput(rawInput: string): string[] {
  * Acceptable for the "well-behaved agent" threat model.
  */
 export function extractAbsolutePathsFromCommand(command: string): string[] {
-  if (!command) return [];
+  // Defensive: this gates filesystem access, and callers parse `command` out
+  // of untrusted tool-call JSON. A non-string slipping through would throw on
+  // `.matchAll` below (audit types A2) — treat it as "no paths found".
+  if (!command || typeof command !== 'string') return [];
 
   const paths: string[] = [];
   const seen = new Set<string>();
@@ -192,7 +195,13 @@ export function isToolCallAllowed(
     try {
       const parsed = JSON.parse(rawInput);
       if (typeof parsed === 'object' && parsed !== null) {
-        command = (parsed as Record<string, unknown>).command as string ?? rawInput;
+        // Only trust a STRING `command` field. `as string ?? rawInput` would
+        // assert a non-string (number, object, array) as a string and hand it
+        // to extractAbsolutePathsFromCommand, which then crashes on
+        // `.matchAll` — an unchecked shape assertion feeding a security gate
+        // (audit types A2). A non-string command falls back to the raw input.
+        const cmd = (parsed as Record<string, unknown>).command;
+        command = typeof cmd === 'string' ? cmd : rawInput;
       }
     } catch {
       // Expected: rawInput is the command string itself, not JSON

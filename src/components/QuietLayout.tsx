@@ -440,16 +440,28 @@ export function QuietLayout(props: QuietLayoutProps) {
         right-edge side panel and the document area above reserves matching
         padding-right via the CSS variable.
        */}
-      <FloatingCommandBar />
+      {/*
+        ErrorBoundary: the command bar is the app's primary AI surface, fed by
+        untrusted streams (ACP responses, chat-store state, segment views). An
+        unhandled render error here must NOT unmount the whole app and lose
+        unsaved editor content — it degrades to the boundary fallback instead
+        (audit a11y H5).
+       */}
+      <ErrorBoundary name="Command bar">
+        <FloatingCommandBar />
+      </ErrorBoundary>
 
       {/*
         AgentOrb (PRD `2026-04-21-ui-refresh`, task #29). Fixed-position 46 px
         circle at the bottom-right of the workspace — pulses while
         `activity-store` reports running tasks > 0, hidden when the
         FloatingCommandBar is in pinned mode (the right side panel covers
-        the same screen real estate).
+        the same screen real estate). Wrapped in its own ErrorBoundary so a
+        crash while rendering agent task rows can't take down the app (a11y H5).
        */}
-      <AgentOrb onCancelTask={onCancelTask} onClickTask={onClickTask} />
+      <ErrorBoundary name="Agent orb">
+        <AgentOrb onCancelTask={onCancelTask} onClickTask={onClickTask} />
+      </ErrorBoundary>
 
       {/*
         TreeOverlay was REMOVED in sidebar-simplification task #20. The

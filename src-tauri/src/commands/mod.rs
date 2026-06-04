@@ -28,6 +28,7 @@ pub mod transcription;
 pub mod local_inference;
 pub mod model_management;
 pub mod model_providers;
+pub mod model_fit;
 pub mod thinking_tags;
 pub mod gguf_parser;
 pub mod model_metadata;

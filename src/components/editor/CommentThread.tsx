@@ -199,7 +199,7 @@ export function CommentThread({
             )}
           </div>
           <MarkdownContent content={partialReply} className="text-sm" />
-          <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+          <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse motion-reduce:animate-none bg-muted-foreground" />
           <span ref={streamingEndRef} />
           {/* Activity log during streaming */}
           {activities.length > 0 && (

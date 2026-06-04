@@ -349,4 +349,32 @@ describe('isToolCallAllowed', () => {
       expect(isToolCallAllowed('read', input, [], HOME)).toEqual({ allowed: true });
     });
   });
+
+  // Tool-call JSON is untrusted input feeding a filesystem gate. A field that
+  // parses to an unexpected shape must NOT crash the gate (audit types A2).
+  describe('malformed tool input does not crash the gate', () => {
+    it('terminal tool with a non-string command field falls back safely', () => {
+      const num = JSON.stringify({ command: 42 });
+      const obj = JSON.stringify({ command: { nested: '/Users/peter/Development/project-b' } });
+      const arr = JSON.stringify({ command: ['/etc/passwd'] });
+      expect(() => isToolCallAllowed('bash', num, PROJECT, HOME)).not.toThrow();
+      expect(() => isToolCallAllowed('bash', obj, PROJECT, HOME)).not.toThrow();
+      expect(() => isToolCallAllowed('shell', arr, PROJECT, HOME)).not.toThrow();
+      // A numeric command yields no extractable paths → nothing to deny.
+      expect(isToolCallAllowed('bash', num, PROJECT, HOME)).toEqual({ allowed: true });
+    });
+
+    it('extractAbsolutePathsFromCommand returns [] for non-string input', () => {
+      expect(extractAbsolutePathsFromCommand(42 as unknown as string)).toEqual([]);
+      expect(extractAbsolutePathsFromCommand({} as unknown as string)).toEqual([]);
+      expect(extractAbsolutePathsFromCommand(null as unknown as string)).toEqual([]);
+    });
+
+    it('structured tool with non-string path fields is ignored, not thrown', () => {
+      const input = JSON.stringify({ file_path: 123, path: { x: 1 }, paths: [99, '/tmp/ok.txt'] });
+      expect(() => isToolCallAllowed('read', input, PROJECT, HOME)).not.toThrow();
+      // Only the well-formed string path survives extraction.
+      expect(extractPathsFromStructuredInput(input)).toEqual(['/tmp/ok.txt']);
+    });
+  });
 });

@@ -1,7 +1,21 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { tauriApi } from '@/lib/tauri';
-import type { HfModelSearchResult, HfModelFile, HfModelDetails } from '@/lib/tauri';
+import type {
+  HfModelSearchResult,
+  HfModelFile,
+  HfModelDetails,
+  ModelFitInput,
+  ModelFitResult,
+  GgufCapabilities,
+} from '@/lib/tauri';
+import {
+  toModelFitInput,
+  parseParamsB,
+  fitSummary,
+  compareByVerdict,
+} from '@/lib/ai/model-fit';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -11,6 +25,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Download, X, Plus, Link, Loader2, Search } from 'lucide-react';
@@ -19,6 +39,99 @@ import { toast } from 'sonner';
 function formatBytes(bytes: number): string {
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+}
+
+/** Stable per-file id used to key transient fit/caps maps. */
+function fileId(repoId: string, filename: string): string {
+  return `${repoId}/${filename}`;
+}
+
+/**
+ * Derive a billions-of-parameters figure for an HF result. HF search results
+ * rarely carry a clean `parameters` string, so we parse a "<n>B" token out of
+ * the model name first, then fall back to the repo id (which usually embeds
+ * the size, e.g. `bartowski/Qwen2.5-7B-Instruct-GGUF`). Returns null when no
+ * size can be recovered — the row then shows "Can't estimate" instead of a
+ * (misleading) verdict.
+ */
+function deriveParamsB(result: HfModelSearchResult): number | null {
+  return parseParamsB(result.model_name) ?? parseParamsB(result.repo_id);
+}
+
+/**
+ * Pick the representative file for a repo-level verdict: prefer a Q4_K_M build
+ * (the recommended balance), else the smallest GGUF. The per-file picker shows
+ * each file's own verdict; this is only for the collapsed result row.
+ */
+function representativeFile(files: HfModelFile[]): HfModelFile | null {
+  if (files.length === 0) return null;
+  const q4 = files.find((f) => /Q4_K_M/i.test(f.quantization) || /Q4_K_M/i.test(f.filename));
+  if (q4) return q4;
+  return [...files].sort((a, b) => a.size_bytes - b.size_bytes)[0];
+}
+
+/** Compact pre-download verdict line + chips for one file, wrapped in a tooltip. */
+function VerdictLine({
+  fit,
+  caps,
+}: {
+  fit: ModelFitResult | undefined;
+  caps: GgufCapabilities | undefined;
+}) {
+  const verdict = fitSummary(fit);
+  const blocked = fit != null && !fit.runnable;
+  if (!verdict && !caps) {
+    return (
+      <div className="text-[10px] tabular-nums text-muted-foreground/50">
+        Can't estimate — unknown size
+      </div>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {verdict ? (
+            <span className="text-[10px] tabular-nums text-muted-foreground">{verdict}</span>
+          ) : (
+            <span className="text-[10px] tabular-nums text-muted-foreground/50">
+              Can't estimate — unknown size
+            </span>
+          )}
+          {blocked && (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+              {fit?.reasons[0] ?? "Won't run"}
+            </span>
+          )}
+          {caps?.has_fim_tokens && (
+            <span className="text-[9px] font-medium px-1 py-px rounded bg-muted text-muted-foreground">
+              FIM
+            </span>
+          )}
+          {caps?.has_tool_template && (
+            <span className="text-[9px] font-medium px-1 py-px rounded bg-muted text-muted-foreground">
+              Tools
+            </span>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[260px]">
+        <p className="text-xs">Estimated before download — sharpens once the model runs.</p>
+        {blocked && fit && fit.reasons.length > 0 && (
+          <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-3.5 space-y-0.5">
+            {fit.reasons.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        )}
+        {(caps?.has_fim_tokens || caps?.has_tool_template) && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            FIM / Tools verified from the model header.
+          </p>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
@@ -45,6 +158,111 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [loading, setLoading] = useState(false);
   const addCustomModel = useLocalAIStore((s) => s.addCustomModel);
 
+  // --- Hardware-aware fit / capability verdicts for HF results -------------
+  // HF result ids are transient, so we keep fit/caps in LOCAL state keyed by
+  // `${repo_id}/${filename}` rather than polluting the global store.
+  const hardwareProfile = useLocalAIStore((s) => s.hardwareProfile);
+  const planningCtx = useSettingsStore((s) => s.localPlanningContext);
+  const [fitById, setFitById] = useState<Record<string, ModelFitResult>>({});
+  const [capsById, setCapsById] = useState<Record<string, GgufCapabilities>>({});
+  // Files whose GGUF header we've already requested (avoid refetch storms).
+  const capsRequested = useRef<Set<string>>(new Set());
+
+  // Detect the hardware profile once per session (cached in the store).
+  useEffect(() => {
+    if (hardwareProfile) return;
+    let cancelled = false;
+    tauriApi
+      .detectHardwareProfile()
+      .then((p) => {
+        if (!cancelled) useLocalAIStore.getState().setHardwareProfile(p);
+      })
+      .catch((e) => console.warn('[model-fit] hardware detect failed:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [hardwareProfile]);
+
+  // All (result, file) pairs currently visible in the search results.
+  const visibleFiles = useMemo(() => {
+    const pairs: { id: string; result: HfModelSearchResult; file: HfModelFile }[] = [];
+    for (const result of searchResults) {
+      const paramsB = deriveParamsB(result);
+      for (const file of result.files) {
+        pairs.push({ id: fileId(result.repo_id, file.filename), result, file });
+        void paramsB;
+      }
+    }
+    return pairs;
+  }, [searchResults]);
+
+  // Stable key for the visible-file set (drives the estimate/caps effects).
+  const visibleKey = useMemo(
+    () => visibleFiles.map((p) => p.id).join(','),
+    [visibleFiles],
+  );
+
+  // Estimate fit for every visible file (batched in one IPC call).
+  useEffect(() => {
+    if (!hardwareProfile || visibleFiles.length === 0) return;
+    const inputs: ModelFitInput[] = [];
+    for (const { id, result, file } of visibleFiles) {
+      const paramsB = deriveParamsB(result);
+      if (paramsB == null) continue;
+      const input = toModelFitInput({
+        id,
+        size_bytes: file.size_bytes,
+        parameters: `${paramsB}B`,
+        quantization: file.quantization !== 'Unknown' ? file.quantization : undefined,
+        filename: file.filename,
+      });
+      if (input) inputs.push(input);
+    }
+    if (inputs.length === 0) return;
+
+    let cancelled = false;
+    tauriApi
+      .estimateModelFit(inputs, hardwareProfile, planningCtx)
+      .then((results) => {
+        if (cancelled) return;
+        setFitById((prev) => {
+          const next = { ...prev };
+          for (const r of results) next[r.id] = r;
+          return next;
+        });
+      })
+      .catch((e) => console.warn('[model-fit] estimate failed:', e));
+    return () => {
+      cancelled = true;
+    };
+  }, [hardwareProfile, planningCtx, visibleKey, visibleFiles]);
+
+  // Read GGUF capabilities per file, best-effort + deduped. The download_url is
+  // a resolve URL usable directly for a cheap header read; failures are
+  // swallowed (the row just stays "unverified").
+  useEffect(() => {
+    if (visibleFiles.length === 0) return;
+    const toFetch = visibleFiles.filter((p) => !capsRequested.current.has(p.id));
+    if (toFetch.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(
+      toFetch.map(async ({ id, file }) => {
+        capsRequested.current.add(id);
+        if (!file.download_url) return;
+        try {
+          const caps = await tauriApi.readGgufCapabilities(file.download_url, null);
+          if (!cancelled) setCapsById((prev) => ({ ...prev, [id]: caps }));
+        } catch {
+          // Unverified — UI falls back to the catalog flag.
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleKey, visibleFiles]);
+
   const doSearch = useCallback(async (q: string, author?: string | null) => {
     if (q.trim().length < 2) {
       setSearchResults([]);
@@ -62,16 +280,41 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
     }
   }, []);
 
-  // Filtered results based on capability filters (applied client-side)
+  // The representative-file fit for a result row (Q4_K_M build, else smallest).
+  const resultFit = useCallback(
+    (result: HfModelSearchResult): ModelFitResult | undefined => {
+      const rep = representativeFile(result.files);
+      return rep ? fitById[fileId(result.repo_id, rep.filename)] : undefined;
+    },
+    [fitById],
+  );
+  const resultCaps = useCallback(
+    (result: HfModelSearchResult): GgufCapabilities | undefined => {
+      const rep = representativeFile(result.files);
+      return rep ? capsById[fileId(result.repo_id, rep.filename)] : undefined;
+    },
+    [capsById],
+  );
+
+  // Filtered results based on capability filters (applied client-side), then
+  // sorted runnable-first via the representative-file verdict. HF relevance
+  // order is preserved as the tiebreaker (stable sort over the indexed list).
   const filteredResults = useMemo(() => {
-    if (filterCaps.size === 0) return searchResults;
-    return searchResults.filter((r) => {
+    const base = searchResults.filter((r) => {
+      if (filterCaps.size === 0) return true;
       if (filterCaps.has('Vision') && !r.supports_vision) return false;
       if (filterCaps.has('Tools') && !r.supports_tool_calling) return false;
       if (filterCaps.has('Thinking') && !r.supports_thinking) return false;
       return true;
     });
-  }, [searchResults, filterCaps]);
+    return base
+      .map((r, i) => ({ r, i }))
+      .sort((a, b) => {
+        const v = compareByVerdict({ fit: resultFit(a.r) }, { fit: resultFit(b.r) });
+        return v !== 0 ? v : a.i - b.i;
+      })
+      .map((x) => x.r);
+  }, [searchResults, filterCaps, resultFit]);
 
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value);
@@ -182,6 +425,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg overflow-hidden">
+        <TooltipProvider delayDuration={300}>
         <DialogHeader>
           <DialogTitle className="text-sm">Add Model</DialogTitle>
           <DialogDescription className="text-xs">
@@ -287,27 +531,46 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 <ScrollArea className="h-[220px]">
                   <div className="space-y-1 pr-4">
                     {(repoDetails?.files || selectedRepo.files)
-                      .sort((a, b) => a.size_bytes - b.size_bytes)
-                      .map((file) => (
-                        <button
-                          key={file.filename}
-                          onClick={() => handleAddFromSearch(file)}
-                          disabled={loading}
-                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-border/50 text-left hover:bg-muted transition-colors disabled:opacity-50"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-medium truncate">
-                              {file.quantization !== 'Unknown' ? file.quantization : file.filename.replace('.gguf', '')}
+                      .map((file, i) => ({ file, i }))
+                      .sort((a, b) => {
+                        const id = (f: HfModelFile) => fileId(selectedRepo.repo_id, f.filename);
+                        const v = compareByVerdict(
+                          { fit: fitById[id(a.file)] },
+                          { fit: fitById[id(b.file)] },
+                        );
+                        if (v !== 0) return v;
+                        return a.file.size_bytes - b.file.size_bytes;
+                      })
+                      .map(({ file }) => {
+                        const id = fileId(selectedRepo.repo_id, file.filename);
+                        const fit = fitById[id];
+                        const caps = capsById[id];
+                        const blocked = fit != null && !fit.runnable;
+                        return (
+                          <button
+                            key={file.filename}
+                            onClick={() => handleAddFromSearch(file)}
+                            disabled={loading || blocked}
+                            title={blocked ? fit?.reasons[0] ?? "Won't run on this Mac" : undefined}
+                            className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-border/50 text-left hover:bg-muted transition-colors disabled:cursor-not-allowed ${
+                              blocked ? 'opacity-60 hover:bg-transparent' : ''
+                            } ${loading ? 'disabled:opacity-50' : ''}`}
+                          >
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <div className="text-xs font-medium truncate">
+                                {file.quantization !== 'Unknown' ? file.quantization : file.filename.replace('.gguf', '')}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground truncate">
+                                {file.size_bytes > 0 && <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</>}
+                                {file.size_bytes > 0 && file.quantization !== 'Unknown' && <> &middot; </>}
+                                {file.quantization !== 'Unknown' && <span className="opacity-60">{file.filename}</span>}
+                              </div>
+                              <VerdictLine fit={fit} caps={caps} />
                             </div>
-                            <div className="text-[10px] text-muted-foreground truncate">
-                              {file.size_bytes > 0 && <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</>}
-                              {file.size_bytes > 0 && file.quantization !== 'Unknown' && <> &middot; </>}
-                              {file.quantization !== 'Unknown' && <span className="opacity-60">{file.filename}</span>}
-                            </div>
-                          </div>
-                          <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                        </button>
-                      ))}
+                            <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                          </button>
+                        );
+                      })}
                   </div>
                 </ScrollArea>
               </div>
@@ -316,10 +579,16 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               /* Search results list */
               <ScrollArea className="h-[350px]">
                 <div className="space-y-1 pr-4">
-                  {filteredResults.map((result) => (
+                  {filteredResults.map((result) => {
+                    const fit = resultFit(result);
+                    const caps = resultCaps(result);
+                    const blocked = fit != null && !fit.runnable;
+                    return (
                     <div
                       key={result.repo_id}
-                      className="flex items-start gap-2.5 px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted transition-colors overflow-hidden cursor-pointer"
+                      className={`flex items-start gap-2.5 px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted transition-colors overflow-hidden cursor-pointer ${
+                        blocked ? 'opacity-60' : ''
+                      }`}
                       onClick={() => handleSelectRepo(result)}
                     >
                       <div className="min-w-0 flex-1">
@@ -355,9 +624,13 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                             )}
                           </div>
                         )}
+                        <div className="mt-1">
+                          <VerdictLine fit={fit} caps={caps} />
+                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {!searching && query.trim().length >= 2 && filteredResults.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-4">
                       {searchResults.length > 0 ? 'No models match the active filters.' : 'No GGUF models found. Try a different search term.'}
@@ -409,6 +682,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             </Button>
           </div>
         )}
+        </TooltipProvider>
       </DialogContent>
     </Dialog>
   );

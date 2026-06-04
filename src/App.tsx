@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
 import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
 
@@ -37,6 +38,8 @@ import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { useModelFitCapture } from "@/hooks/useModelFitCapture";
+import { useCalibrationSharePrompt } from "@/hooks/useCalibrationSharePrompt";
 import { useAccent } from "@/hooks/useAccent";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -150,6 +153,12 @@ function App() {
   // class on `<html>`, so `--accent` stays unset and the chosen accent
   // never actually applies. The hook owns the class swap effect.
   useAccent();
+  // Phase 2 runtime calibration: records real local-model decode tok/s + peak
+  // RAM from each local generation (on-device only, nothing transmitted).
+  useModelFitCapture();
+  // Opt-in community-share prompt — opens a reviewable GitHub submission once
+  // enough models have been measured. Never sends anything itself.
+  const calibrationShare = useCalibrationSharePrompt();
 
   // Consolidated startup effects and event listeners
   useAppLifecycle();
@@ -690,6 +699,10 @@ function App() {
           onInstall={downloadAndInstall}
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
+        />
+        <CalibrationShareDialog
+          open={calibrationShare.open}
+          onOpenChange={calibrationShare.setOpen}
         />
         <Suspense fallback={null}>
           <KeyboardShortcutsDialogV2

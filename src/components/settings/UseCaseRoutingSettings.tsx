@@ -13,15 +13,35 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Settings2, Loader2, Check } from 'lucide-react';
+import { Settings2, Loader2, Check, Sparkles } from 'lucide-react';
 import type { AICapability, Connection } from '@/lib/ai/connections';
 import { ROUTING_SLOT_LABELS, prettyModelName, getAgentModels } from '@/lib/ai/connections';
 import { AGENT_KNOWN_MODELS } from '@/components/settings/connection/ModelSelectionForm';
 import { tauriApi } from '@/lib/tauri';
+import { useModelFit } from '@/hooks/useModelFit';
+import {
+  isRecommendedForSlot,
+  compareByVerdict,
+  fitSummary,
+  type RoutingSlot,
+} from '@/lib/ai/model-fit';
 import { cn } from '@/lib/utils';
+
+/**
+ * Map a routing use case to the model-fit slot. Only `completion` and `agent`
+ * impose a verified-mechanism requirement (FIM tokens / tool template); the
+ * interactive slot maps to `chat` (no extra capability gate).
+ */
+const USE_CASE_TO_SLOT: Record<AICapability, RoutingSlot> = {
+  interactive: 'chat',
+  inline_completion: 'completion',
+  agent_tasks: 'agent',
+};
 
 const USE_CASES: AICapability[] = ['interactive', 'agent_tasks', 'inline_completion'];
 
@@ -38,10 +58,35 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
 
   // For local_bundled, use downloaded models from local-ai-store
   const localModels = useLocalAIStore((s) => s.models);
-  const localModelNames = useMemo(
-    () => localModels.filter((m) => m.downloaded).map((m) => m.id),
+  const downloadedLocalModels = useMemo(
+    () => localModels.filter((m) => m.downloaded),
     [localModels]
   );
+  const localModelNames = useMemo(
+    () => downloadedLocalModels.map((m) => m.id),
+    [downloadedLocalModels]
+  );
+
+  // Hardware-aware fit verdicts + GGUF capabilities for the downloaded models.
+  // The hook populates `fitById` / `capsById` in the store; reading them back
+  // is what drives the "Recommended for your Mac" shortlist below. Only run it
+  // for the local provider — agent/API slots don't have local fit data.
+  useModelFit(isLocalBundled ? downloadedLocalModels : []);
+  const fitById = useLocalAIStore((s) => s.fitById);
+  const capsById = useLocalAIStore((s) => s.capsById);
+
+  // The model-fit slot this use case maps to. `completion` / `agent` gate on a
+  // verified mechanism (FIM tokens / tool template); `chat` (interactive) has
+  // no extra gate, so we don't show a shortlist for it.
+  const slot = USE_CASE_TO_SLOT[useCase];
+  const showRecommended = isLocalBundled && (slot === 'completion' || slot === 'agent');
+
+  const recommendedModels = useMemo(() => {
+    if (!showRecommended) return [];
+    return downloadedLocalModels
+      .filter((m) => isRecommendedForSlot(fitById[m.id], capsById[m.id], slot))
+      .sort((a, b) => compareByVerdict({ fit: fitById[a.id] }, { fit: fitById[b.id] }));
+  }, [showRecommended, downloadedLocalModels, fitById, capsById, slot]);
 
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<string[]>([]);
@@ -142,13 +187,44 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DropdownMenuContent align="end" className="w-56 max-h-80 overflow-y-auto">
+      <DropdownMenuContent align="end" className="w-64 max-h-80 overflow-y-auto">
         <DropdownMenuItem
           onSelect={() => setUseCaseModel(useCase, undefined)}
         >
           <span className="flex-1 text-muted-foreground">Default</span>
           {!currentModel && <Check className="h-3.5 w-3.5 ml-2 shrink-0" />}
         </DropdownMenuItem>
+        {showRecommended && recommendedModels.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Sparkles className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+              Recommended for your Mac
+            </DropdownMenuLabel>
+            {recommendedModels.map((m) => {
+              const summary = fitSummary(fitById[m.id]);
+              return (
+                <DropdownMenuItem
+                  key={`rec-${m.id}`}
+                  onSelect={() => setUseCaseModel(useCase, m.id)}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <div className="flex w-full items-center">
+                    <span className="flex-1 truncate">{prettyModelName(m.id)}</span>
+                    {currentModel === m.id && <Check className="h-3.5 w-3.5 ml-2 shrink-0" />}
+                  </div>
+                  {summary && (
+                    <span className="text-[11px] text-muted-foreground">{summary}</span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">
+              All downloaded models
+            </DropdownMenuLabel>
+          </>
+        )}
         {loading && (
           <div className="flex items-center justify-center py-2">
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />

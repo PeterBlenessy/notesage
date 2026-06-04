@@ -9,6 +9,9 @@ mod tray;
 pub use commands::sandbox;
 pub use commands::sandbox_monitor;
 pub use commands::watcher;
+// Exposed for the `calibrate_model_fit` example, which links the engine
+// directly so the fit/speed math stays single-source (no JS reimplementation).
+pub use commands::model_fit;
 
 use commands::*;
 use index::IndexState;
@@ -39,7 +42,6 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -78,6 +80,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(AiStreamState::new())
         .manage(AgentManagerState::new())
         .manage(NetworkProxyState::new())
         .manage(SandboxMonitorState::new())
@@ -99,12 +102,14 @@ pub fn run() {
             rename_path,
             delete_path,
             path_exists,
+            allow_asset_dir,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            ai_chat_stream_cancel,
             ollama_fim_completion,
             openai_completions_fim,
             local_bundled_fim,
@@ -278,6 +283,11 @@ pub fn run() {
             fetch_hf_metadata,
             parse_gguf_metadata,
             get_runtime_model_metadata,
+            // Hardware-aware model recommendation
+            model_fit::hardware::detect_hardware_profile,
+            model_fit::estimate_model_fit,
+            model_fit::read_gguf_capabilities,
+            get_local_server_rss,
             // Actions dashboard
             scan_actions,
             // Network sandboxing proxy
