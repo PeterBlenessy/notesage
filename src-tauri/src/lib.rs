@@ -232,6 +232,7 @@ pub fn run() {
             mcp_catalog_list,
             mcp_oauth_status,
             mcp_oauth_logout,
+            mcp_oauth_authorize,
             // Logging & diagnostics
             log_frontend,
             get_log_path,

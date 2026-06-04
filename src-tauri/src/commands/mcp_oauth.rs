@@ -16,9 +16,13 @@
 //! token exchange/refresh, and the `mcp_oauth_authorize` command) lands in a
 //! follow-up; this file establishes the tested core + storage + status/logout.
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tauri_plugin_opener::OpenerExt;
 
 const SERVICE_PREFIX: &str = "notesage";
 
@@ -182,6 +186,24 @@ pub fn build_authorize_url(
     Ok(url.to_string())
 }
 
+/// Build a `<origin>/.well-known/<name>` URL for the origin of `base`.
+/// Falls back to appending if `base` can't be parsed as a URL.
+pub fn well_known(base: &str, name: &str) -> String {
+    match url::Url::parse(base) {
+        Ok(u) => {
+            let port = u.port().map(|p| format!(":{}", p)).unwrap_or_default();
+            format!(
+                "{}://{}{}/.well-known/{}",
+                u.scheme(),
+                u.host_str().unwrap_or(""),
+                port,
+                name
+            )
+        }
+        Err(_) => format!("{}/.well-known/{}", base.trim_end_matches('/'), name),
+    }
+}
+
 /// Current Unix time in seconds.
 pub fn now_unix_secs() -> u64 {
     SystemTime::now()
@@ -236,6 +258,331 @@ pub fn mcp_oauth_status(server_id: String) -> Result<OAuthStatus, String> {
 #[tauri::command]
 pub async fn mcp_oauth_logout(server_id: String) -> Result<(), String> {
     clear_tokens(&server_id).await
+}
+
+// ---------------------------------------------------------------------------
+// Async OAuth flow (discovery → DCR → PKCE → loopback → token exchange)
+// ---------------------------------------------------------------------------
+
+/// RFC 9728 protected-resource metadata (subset).
+#[derive(Deserialize)]
+struct ProtectedResourceMetadata {
+    #[serde(default)]
+    authorization_servers: Vec<String>,
+}
+
+/// RFC 8414 authorization-server metadata (subset).
+#[derive(Deserialize)]
+struct AuthServerMetadata {
+    authorization_endpoint: String,
+    token_endpoint: String,
+    #[serde(default)]
+    registration_endpoint: Option<String>,
+}
+
+/// RFC 7591 dynamic client registration request.
+#[derive(Serialize)]
+struct ClientRegistrationRequest {
+    client_name: &'static str,
+    redirect_uris: Vec<String>,
+    grant_types: Vec<&'static str>,
+    response_types: Vec<&'static str>,
+    token_endpoint_auth_method: &'static str,
+}
+
+#[derive(Deserialize)]
+struct ClientRegistrationResponse {
+    client_id: String,
+    #[serde(default)]
+    client_secret: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
+    token_type: Option<String>,
+    #[serde(default)]
+    expires_in: Option<u64>,
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+fn oauth_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_default()
+}
+
+async fn fetch_json<T: DeserializeOwned>(client: &reqwest::Client, url: &str) -> Result<T, String> {
+    let resp = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("GET {} failed: {}", url, e))?;
+    if !resp.status().is_success() {
+        return Err(format!("GET {} returned HTTP {}", url, resp.status()));
+    }
+    resp.json::<T>()
+        .await
+        .map_err(|e| format!("Invalid JSON from {}: {}", url, e))
+}
+
+/// Discover the authorization-server metadata for a remote MCP `server_url`:
+/// RFC 9728 protected-resource doc → issuer → RFC 8414 AS metadata, with a
+/// fallback to AS metadata served directly at the resource origin.
+async fn discover_metadata(
+    client: &reqwest::Client,
+    server_url: &str,
+) -> Result<AuthServerMetadata, String> {
+    let prm_url = well_known(server_url, "oauth-protected-resource");
+    if let Ok(prm) = fetch_json::<ProtectedResourceMetadata>(client, &prm_url).await {
+        if let Some(issuer) = prm.authorization_servers.into_iter().next() {
+            let asm_url = well_known(&issuer, "oauth-authorization-server");
+            return fetch_json::<AuthServerMetadata>(client, &asm_url).await;
+        }
+    }
+    let asm_url = well_known(server_url, "oauth-authorization-server");
+    fetch_json::<AuthServerMetadata>(client, &asm_url).await
+}
+
+async fn register_client(
+    client: &reqwest::Client,
+    registration_endpoint: &str,
+    redirect_uri: &str,
+) -> Result<ClientRegistrationResponse, String> {
+    let body = ClientRegistrationRequest {
+        client_name: "Notesage",
+        redirect_uris: vec![redirect_uri.to_string()],
+        grant_types: vec!["authorization_code", "refresh_token"],
+        response_types: vec!["code"],
+        token_endpoint_auth_method: "none",
+    };
+    let resp = client
+        .post(registration_endpoint)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Client registration failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Client registration returned HTTP {}", resp.status()));
+    }
+    resp.json()
+        .await
+        .map_err(|e| format!("Invalid client-registration response: {}", e))
+}
+
+/// Bind a loopback listener; returns the redirect URI and the listener.
+async fn bind_loopback() -> Result<(String, TcpListener), String> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind loopback listener: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| e.to_string())?
+        .port();
+    Ok((format!("http://127.0.0.1:{}/callback", port), listener))
+}
+
+/// Accept a single callback request, reply with a friendly page, return params.
+async fn await_callback(listener: TcpListener) -> Result<CallbackParams, String> {
+    let (mut stream, _) = listener
+        .accept()
+        .await
+        .map_err(|e| format!("Callback accept failed: {}", e))?;
+    let mut buf = [0u8; 4096];
+    let n = stream
+        .read(&mut buf)
+        .await
+        .map_err(|e| format!("Callback read failed: {}", e))?;
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let params = parse_callback_request_line(req.lines().next().unwrap_or(""));
+
+    let page = "<!doctype html><html><body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:3rem;color:#222\">\
+<h2>Authentication complete</h2><p>You can close this tab and return to Notesage.</p></body></html>";
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        page.len(),
+        page
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.flush().await;
+    Ok(params)
+}
+
+async fn exchange_code(
+    client: &reqwest::Client,
+    token_endpoint: &str,
+    client_id: &str,
+    client_secret: Option<&str>,
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+) -> Result<TokenResponse, String> {
+    let mut form = vec![
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("redirect_uri", redirect_uri),
+        ("client_id", client_id),
+        ("code_verifier", verifier),
+    ];
+    if let Some(sec) = client_secret {
+        form.push(("client_secret", sec));
+    }
+    let resp = client
+        .post(token_endpoint)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| format!("Token exchange failed: {}", e))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Token endpoint returned HTTP {}: {}", status, text));
+    }
+    resp.json()
+        .await
+        .map_err(|e| format!("Invalid token response: {}", e))
+}
+
+async fn refresh_with(
+    client: &reqwest::Client,
+    tokens: &OAuthTokens,
+    refresh_token: &str,
+) -> Result<OAuthTokens, String> {
+    let mut form = vec![
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", tokens.client_id.as_str()),
+    ];
+    if let Some(sec) = &tokens.client_secret {
+        form.push(("client_secret", sec));
+    }
+    let resp = client
+        .post(&tokens.token_endpoint)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| format!("Token refresh failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("Token refresh returned HTTP {}", resp.status()));
+    }
+    let token: TokenResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid refresh response: {}", e))?;
+    Ok(OAuthTokens {
+        access_token: token.access_token,
+        // Some servers omit refresh_token on refresh — keep the prior one.
+        refresh_token: token.refresh_token.or_else(|| tokens.refresh_token.clone()),
+        token_type: token.token_type.or_else(|| tokens.token_type.clone()),
+        expires_at: token.expires_in.map(|s| now_unix_secs() + s),
+        scope: token.scope.or_else(|| tokens.scope.clone()),
+        token_endpoint: tokens.token_endpoint.clone(),
+        client_id: tokens.client_id.clone(),
+        client_secret: tokens.client_secret.clone(),
+    })
+}
+
+/// Return a usable access token for a server, refreshing if expired. `None`
+/// when the server isn't authorized. Used by the HTTP transport to attach a
+/// Bearer header.
+pub async fn valid_access_token(server_id: &str) -> Option<String> {
+    let tokens = load_tokens(server_id)?;
+    if !tokens.is_expired(now_unix_secs(), 30) {
+        return Some(tokens.access_token);
+    }
+    let refresh = tokens.refresh_token.clone()?;
+    let client = oauth_http_client();
+    match refresh_with(&client, &tokens, &refresh).await {
+        Ok(fresh) => {
+            let _ = store_tokens(server_id, &fresh).await;
+            Some(fresh.access_token)
+        }
+        // Refresh failed — hand back the (expired) token; the server will 401
+        // and the user can re-authorize.
+        Err(_) => Some(tokens.access_token),
+    }
+}
+
+/// Run the full browser-based authorization-code + PKCE flow for a remote MCP
+/// server and persist the resulting tokens. Requires the server to support
+/// dynamic client registration (RFC 7591) — Notesage ships no static client.
+#[tauri::command]
+pub async fn mcp_oauth_authorize(
+    app: tauri::AppHandle,
+    server_id: String,
+    server_url: String,
+    scope: Option<String>,
+) -> Result<OAuthStatus, String> {
+    let client = oauth_http_client();
+
+    let metadata = discover_metadata(&client, &server_url).await?;
+    let registration_endpoint = metadata
+        .registration_endpoint
+        .clone()
+        .ok_or("This server does not advertise dynamic client registration")?;
+
+    let (redirect_uri, listener) = bind_loopback().await?;
+    let reg = register_client(&client, &registration_endpoint, &redirect_uri).await?;
+    let (verifier, challenge) = generate_pkce();
+    let state = uuid::Uuid::new_v4().to_string();
+
+    let auth_url = build_authorize_url(
+        &metadata.authorization_endpoint,
+        &reg.client_id,
+        &redirect_uri,
+        &challenge,
+        &state,
+        scope.as_deref(),
+    )?;
+    app.opener()
+        .open_url(auth_url, None::<String>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    // Wait up to 5 minutes for the user to complete the browser flow.
+    let params = tokio::time::timeout(Duration::from_secs(300), await_callback(listener))
+        .await
+        .map_err(|_| "Timed out waiting for authorization".to_string())??;
+
+    if let Some(err) = params.error {
+        return Err(format!("Authorization was denied: {}", err));
+    }
+    if params.state.as_deref() != Some(state.as_str()) {
+        return Err("Authorization state mismatch — aborting for safety".to_string());
+    }
+    let code = params.code.ok_or("No authorization code was returned")?;
+
+    let token = exchange_code(
+        &client,
+        &metadata.token_endpoint,
+        &reg.client_id,
+        reg.client_secret.as_deref(),
+        &code,
+        &verifier,
+        &redirect_uri,
+    )
+    .await?;
+
+    let tokens = OAuthTokens {
+        access_token: token.access_token,
+        refresh_token: token.refresh_token,
+        token_type: token.token_type,
+        expires_at: token.expires_in.map(|s| now_unix_secs() + s),
+        scope: token.scope,
+        token_endpoint: metadata.token_endpoint,
+        client_id: reg.client_id,
+        client_secret: reg.client_secret,
+    };
+    store_tokens(&server_id, &tokens).await?;
+    Ok(OAuthStatus {
+        authorized: true,
+        expires_at: tokens.expires_at,
+    })
 }
 
 #[cfg(test)]
@@ -375,5 +722,17 @@ mod tests {
     #[test]
     fn oauth_service_id_is_namespaced() {
         assert_eq!(oauth_service("global:github"), "notesage:mcp:global:github:oauth");
+    }
+
+    #[test]
+    fn well_known_uses_origin_only() {
+        assert_eq!(
+            well_known("https://api.example.com/mcp/v1", "oauth-protected-resource"),
+            "https://api.example.com/.well-known/oauth-protected-resource"
+        );
+        assert_eq!(
+            well_known("https://host:8443/path", "oauth-authorization-server"),
+            "https://host:8443/.well-known/oauth-authorization-server"
+        );
     }
 }

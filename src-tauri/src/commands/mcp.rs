@@ -269,11 +269,13 @@ async fn mcp_reader_loop(
 pub struct HttpMcpClient {
     client: reqwest::Client,
     url: String,
+    /// Server id used to resolve an OAuth bearer token from the keychain.
+    server_id: String,
     session_id: Arc<Mutex<Option<String>>>,
 }
 
 impl HttpMcpClient {
-    fn new(url: String) -> Self {
+    fn new(url: String, server_id: String) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -281,6 +283,7 @@ impl HttpMcpClient {
         Self {
             client,
             url,
+            server_id,
             session_id: Arc::new(Mutex::new(None)),
         }
     }
@@ -294,6 +297,10 @@ impl HttpMcpClient {
             .body(body);
         if let Some(sid) = self.session_id.lock().await.clone() {
             builder = builder.header("Mcp-Session-Id", sid);
+        }
+        // Attach an OAuth bearer token if this server has been authorized.
+        if let Some(token) = super::mcp_oauth::valid_access_token(&self.server_id).await {
+            builder = builder.header("Authorization", format!("Bearer {}", token));
         }
         builder
             .send()
@@ -706,7 +713,7 @@ pub async fn mcp_start_server(
                 .url
                 .clone()
                 .ok_or_else(|| format!("HTTP MCP server '{}' is missing a url", config.name))?;
-            (None, McpConn::Http(HttpMcpClient::new(url)))
+            (None, McpConn::Http(HttpMcpClient::new(url, config.id.clone())))
         }
     };
 
@@ -833,7 +840,7 @@ pub async fn mcp_validate_server(
                 ))
             }
         };
-        let conn = McpConn::Http(HttpMcpClient::new(url));
+        let conn = McpConn::Http(HttpMcpClient::new(url, config.id.clone()));
         let probe = async {
             let caps = mcp_initialize(&conn).await?;
             let tools = mcp_list_tools_from_server(&conn, &ephemeral_id)
