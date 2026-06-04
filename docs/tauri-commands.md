@@ -1372,6 +1372,27 @@ pub struct TranscriptionState {
 - `capture`: The single active capture owner (`cpal` stream + WAV writer + stop signal + join handle); `Some` only while a recording is in progress. Taking it out of the mutex enforces one stream at a time and is the synchronization point for the awaited teardown
 - `download_cancels`: Per-model cancel signals for concurrent downloads
 
+## MCP Operations
+
+Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
+
+| Command | Signature (abridged) | Purpose |
+| --- | --- | --- |
+| `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools; register in `McpState`. Resolves secret env refs from the keychain at spawn. |
+| `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout`. |
+| `mcp_stop_server` / `mcp_restart_server` | `(server_id)` | Lifecycle. http servers have no child process. |
+| `mcp_list_tools` / `mcp_call_tool` | `(server_id, …)` | Tools from a running server. |
+| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. |
+| `mcp_catalog_list` | `() -> Vec<McpCatalogItem>` | Curated catalog manifest (embedded `mcp-catalog.json`). |
+| `mcp_discover_configs` / `mcp_import_configs` / `mcp_save_config` / `mcp_check_import_sources` | — | Read/import/write `mcp.json`; import sources (Claude Desktop, Cursor, VS Code). |
+| `mcp_oauth_authorize` | `(server_id, server_url, scope?) -> OAuthStatus` | Full browser OAuth: discovery (RFC 9728→8414) → DCR (RFC 7591) → PKCE → loopback callback → token exchange → keychain store. |
+| `mcp_oauth_status` | `(server_id) -> OAuthStatus` | `{ authorized, expires_at }` — never returns token material. |
+| `mcp_oauth_logout` | `(server_id)` | Clear stored tokens. |
+
+**`McpEnvValue`** (env value in `McpServerConfig`/`McpServerInfo`/`McpConfigEntry`): a bare JSON string is inline plaintext; `{ "secret": true }` is a keychain reference (value at `notesage:mcp:<server_id>:<KEY>`, resolved only at spawn).
+
+**Deep link:** `notesage://mcp/install?...` (scheme via `tauri-plugin-deep-link`) opens the validate-first Add dialog pre-filled — parsed by `src/lib/mcp/deeplink.ts`, surfaced by `McpDeepLinkInstaller`.
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

@@ -33,7 +33,8 @@ note-sage/
 │   │   │   ├── copilot_protocol.rs # JSON-RPC transport, reader loop, server→client handlers
 │   │   │   ├── copilot_signin.rs   # Device code auth helpers (field extraction)
 │   │   │   ├── copilot_models.rs   # CopilotModel type, parser, fallback list
-│   │   │   ├── mcp.rs      # MCP client (JSON-RPC stdio transport, server lifecycle, tool discovery/call)
+│   │   │   ├── mcp.rs      # MCP client (stdio + Streamable-HTTP transports via McpConn, validate-on-add, env-secret resolution, server lifecycle, tool discovery/call, catalog)
+│   │   │   ├── mcp_oauth.rs # MCP OAuth 2.1 (PKCE, RFC 9728/8414 discovery, RFC 7591 DCR, loopback callback, token refresh, keychain storage)
 │   │   │   ├── skills.rs   # Skill discovery, bundled skill extraction, commands
 │   │   │   ├── skills_frontmatter.rs # YAML frontmatter parsing, SkillFrontmatter struct
 │   │   │   ├── skills_tool_parser.rs # Tool definition extraction, usage comment parsing, ArgMapping
@@ -385,7 +386,7 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 
 **Tauri capability surface (hardened 2026-04-19, task #21 in project-data-isolation):**
 
-- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, and `autostart:default`. No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
+- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, `autostart:default`, and `deep-link:default` (the `notesage://` scheme for one-click MCP install). No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
 - `tauri.conf.json`'s `assetProtocol.scope.allow` is a finite list of Tauri path variables (`$HOME`, `$APPDATA`, `$APPLOCALDATA`, `$APPCACHE`, `$RESOURCE`, `$TEMP`) instead of `**`. The asset protocol (used by `convertFileSrc` for images, drawing SVGs, and the PDF/EPUB/DOCX/PPTX viewers) can no longer serve files outside the user's home directory or the app's own sandboxed areas, closing the silent-exfil path where agent-authored markdown could point to `/etc/hosts`, `/private/var/...`, etc.
 - Regression lock: `src/lib/__tests__/tauri-capability-surface.test.ts` asserts the narrowed scope and the absence of `fs:allow-*` permissions; future config tweaks that re-open the hole will fail this test.
 
