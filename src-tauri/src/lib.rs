@@ -41,7 +41,7 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -80,6 +80,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(AiStreamState::new())
         .manage(AgentManagerState::new())
         .manage(NetworkProxyState::new())
         .manage(SandboxMonitorState::new())
@@ -101,12 +102,14 @@ pub fn run() {
             rename_path,
             delete_path,
             path_exists,
+            allow_asset_dir,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            ai_chat_stream_cancel,
             ollama_fim_completion,
             openai_completions_fim,
             local_bundled_fim,
@@ -222,6 +225,7 @@ pub fn run() {
             read_agent_content,
             cleanup_bundled_agents,
             mcp_start_server,
+            mcp_validate_server,
             mcp_stop_server,
             mcp_restart_server,
             mcp_list_tools,
@@ -231,6 +235,10 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
+            mcp_catalog_list,
+            mcp_oauth_status,
+            mcp_oauth_logout,
+            mcp_oauth_authorize,
             // Logging & diagnostics
             log_frontend,
             get_log_path,

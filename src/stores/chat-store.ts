@@ -990,9 +990,15 @@ const EMPTY_SEGMENTS: ConversationSegment[] = [];
  * otherwise Zustand triggers infinite re-renders (new array !== old array).
  */
 export const selectMessages = (() => {
-  // Closure-scoped cache for thread memoization
-  let cachedThread: ChatMessage[] = EMPTY_MESSAGES;
-  let cachedKey = '';
+  // Per-conversation thread memoization. A single shared slot (the previous
+  // design) corrupts the moment two subscribers render different conversations
+  // — each call overwrote the other's cached thread — and would thrash a
+  // hypothetical side-by-side view (audit perf B4). Keying the cache by
+  // conv.id isolates each conversation; the inner key still forces a recompute
+  // on any message/leaf/update change. Bounded so a long session that touches
+  // many conversations can't grow it without limit.
+  const cache = new Map<string, { key: string; thread: ChatMessage[] }>();
+  const MAX_ENTRIES = 32;
 
   return (state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ChatMessage[] => {
     if (!state.activeConversationId) return EMPTY_MESSAGES;
@@ -1001,15 +1007,20 @@ export const selectMessages = (() => {
 
     // If conversation has branching data, return only the active thread
     if (conv.activeLeafId) {
-      // Cache key: conversation id + leaf id + message count + updatedAt
-      // updatedAt changes on every message add/update/delete, ensuring cache invalidation
-      const key = `${conv.id}:${conv.activeLeafId}:${conv.messages.length}:${conv.updatedAt}`;
-      if (key !== cachedKey) {
-        const thread = getThread(conv.messages, conv.activeLeafId);
-        cachedThread = thread.length > 0 ? thread : conv.messages;
-        cachedKey = key;
+      // Cache key: leaf id + message count + updatedAt — changes on every
+      // message add/update/delete, ensuring cache invalidation.
+      const key = `${conv.activeLeafId}:${conv.messages.length}:${conv.updatedAt}`;
+      const entry = cache.get(conv.id);
+      if (entry && entry.key === key) return entry.thread;
+
+      const thread = getThread(conv.messages, conv.activeLeafId);
+      const result = thread.length > 0 ? thread : conv.messages;
+      cache.set(conv.id, { key, thread: result });
+      if (cache.size > MAX_ENTRIES) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
       }
-      return cachedThread;
+      return result;
     }
     // Legacy conversations without activeLeafId: return all messages
     return conv.messages;

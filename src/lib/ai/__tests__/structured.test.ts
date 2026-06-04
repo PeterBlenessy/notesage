@@ -11,6 +11,11 @@ import {
   clearMockInvokeHandlers,
   emitMockEvent,
 } from '@/test/tauri-mock';
+import { streamEvent } from '@/lib/ai/stream-events';
+
+/** Read the per-request streamId the production code threads into ai_chat_stream. */
+const sidOf = (args: unknown): string =>
+  String((args as { streamId?: string })?.streamId ?? '');
 
 describe('buildJsonSchemaResponseFormat', () => {
   it('wraps a schema in the OpenAI envelope', () => {
@@ -39,11 +44,12 @@ describe('generateStructured', () => {
     let received: Record<string, unknown> | undefined;
     setMockInvokeHandler('ai_chat_stream', (args) => {
       received = args as Record<string, unknown>;
+      const sid = sidOf(args);
       // Stream a complete JSON object across two chunks, then signal done.
       queueMicrotask(() => {
-        emitMockEvent('ai-stream-chunk', '{"title":"Hello",');
-        emitMockEvent('ai-stream-chunk', '"tags":["a","b"]}');
-        emitMockEvent('ai-stream-done', undefined);
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '{"title":"Hello",');
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '"tags":["a","b"]}');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
       });
     });
 
@@ -72,10 +78,11 @@ describe('generateStructured', () => {
   });
 
   it('rejects when the streamed output is not valid JSON', async () => {
-    setMockInvokeHandler('ai_chat_stream', () => {
+    setMockInvokeHandler('ai_chat_stream', (args) => {
+      const sid = sidOf(args);
       queueMicrotask(() => {
-        emitMockEvent('ai-stream-chunk', 'not actually json');
-        emitMockEvent('ai-stream-done', undefined);
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), 'not actually json');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
       });
     });
 
@@ -92,9 +99,10 @@ describe('generateStructured', () => {
     let received: Record<string, unknown> | undefined;
     setMockInvokeHandler('ai_chat_stream', (args) => {
       received = args as Record<string, unknown>;
+      const sid = sidOf(args);
       queueMicrotask(() => {
-        emitMockEvent('ai-stream-chunk', '{}');
-        emitMockEvent('ai-stream-done', undefined);
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '{}');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
       });
     });
 
@@ -112,5 +120,33 @@ describe('generateStructured', () => {
     expect(received?.model).toBe('qwen3:4b');
     expect(received?.temperature).toBe(0);
     expect(received?.baseUrl).toBe('http://localhost:11434');
+  });
+
+  // Regression lock for the stream-correlation fix (audit C1): a concurrent
+  // generation's chunks — whether on the legacy global channel or under a
+  // foreign streamId — must NOT leak into this call's collected buffer. Before
+  // the fix, the global-channel noise corrupted `collected` and broke JSON.parse.
+  it('ignores chunks from the global channel and other streams (correlation isolation)', async () => {
+    setMockInvokeHandler('ai_chat_stream', (args) => {
+      const sid = sidOf(args);
+      queueMicrotask(() => {
+        // Noise from a concurrent stream — must be ignored.
+        emitMockEvent('ai-stream-chunk', 'GLOBAL_NOISE');
+        emitMockEvent(streamEvent('ai-stream-chunk', 'some-other-stream'), 'FOREIGN_NOISE');
+        // Our own correlated channel.
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '{"ok":true}');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
+      });
+    });
+
+    const result = await generateStructured<{ ok: boolean }>({
+      schema: { type: 'object' },
+      messages: [{ role: 'user', content: 'hi' }],
+      provider: 'local_bundled',
+    });
+
+    // If noise had leaked, `collected` would be
+    // 'GLOBAL_NOISEFOREIGN_NOISE{"ok":true}' and JSON.parse would throw.
+    expect(result).toEqual({ ok: true });
   });
 });

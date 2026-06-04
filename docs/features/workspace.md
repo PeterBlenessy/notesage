@@ -46,7 +46,7 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 
 ## Sidebar Surface
 
-The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Five stacked sections — Pinned, Projects, Recent, Tags, Mentions — instead of a recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). The full hierarchical workspace tree is reached on demand via the `TreeOverlay` (`src/components/sidebar/quiet/TreeOverlay.tsx`), a focus-trapped slide-in panel triggered by `⌘⇧E` with its own search box, keyboard navigation (arrows, Home/End, Enter/Space, Esc), and per-session expansion state. The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
+The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Six stacked sections — Pinned, Projects, Folders, Recent, Tags, Mentions — instead of a recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand (one-level peek) on a focused project/folder row — the `TreeOverlay` slide-in panel was removed in sidebar-simplification task #20, and `⌘⇧E` now opens the Export dialog. The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
 
 ## Notesage Library & iCloud Sync
 
@@ -136,9 +136,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 | File | Purpose |
 | --- | --- |
-| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Recent / Tags / Mentions) |
-| `src/components/sidebar/quiet/TreeOverlay.tsx` | Slide-in workspace tree (⌘⇧E) |
-| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the overlay) |
+| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Folders / Recent / Tags / Mentions) |
+| `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
+| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the inline peek) |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
