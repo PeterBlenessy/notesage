@@ -230,6 +230,8 @@ pub fn run() {
             mcp_save_config,
             mcp_check_import_sources,
             mcp_catalog_list,
+            mcp_oauth_status,
+            mcp_oauth_logout,
             // Logging & diagnostics
             log_frontend,
             get_log_path,
