@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useMcpStore, type McpServerEntry, type McpToolInfo } from '@/stores/mcp-store';
+import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpEnvValue } from '@/stores/mcp-store';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 
@@ -16,9 +16,11 @@ interface McpServerConfig {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
   enabled: boolean;
+  transport?: 'stdio' | 'http';
+  url?: string | null;
 }
 
 interface McpServerInfo {
@@ -26,12 +28,14 @@ interface McpServerInfo {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
   enabled: boolean;
   status: 'stopped' | 'starting' | 'running' | 'error';
   error: string | null;
   tools: McpToolInfo[];
+  transport?: 'stdio' | 'http';
+  url?: string | null;
 }
 
 interface McpStatusEvent {
@@ -39,6 +43,41 @@ interface McpStatusEvent {
   status: 'starting' | 'running' | 'stopped' | 'error';
   error?: string;
   tools?: McpToolInfo[];
+}
+
+/** Result of a `mcp_validate_server` dry run (mirrors the Rust struct). */
+export interface McpValidationResult {
+  ok: boolean;
+  tools: McpToolInfo[];
+  server_info: unknown | null;
+  error: string | null;
+  /** "binary_not_found" | "spawn_failed" | "init_failed" | "timeout" */
+  error_kind: string | null;
+  stderr_tail: string | null;
+}
+
+/** Candidate config for validation, before it has a real id/source. */
+export interface McpValidateInput {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  /** Defaults to `stdio` when omitted. */
+  transport?: 'stdio' | 'http';
+  /** Required when `transport` is `http`. */
+  url?: string | null;
+  /**
+   * Prospective server id used to resolve an OAuth token from the keychain
+   * during validation (so a just-authorized remote server tests with its
+   * bearer token). Defaults to a throwaway id.
+   */
+  id?: string;
+}
+
+/** OAuth authorization status for a remote MCP server. */
+export interface McpOAuthStatus {
+  authorized: boolean;
+  expires_at: number | null;
 }
 
 // Map Rust snake_case source to frontend kebab-case
@@ -64,6 +103,8 @@ function configToEntry(config: McpServerConfig): McpServerEntry {
     enabled: config.enabled,
     status: 'stopped',
     tools: [],
+    transport: config.transport ?? 'stdio',
+    url: config.url ?? null,
   };
 }
 
@@ -217,6 +258,8 @@ export function useMcpOperations() {
           env: entry.env,
           source: sourceToRust(entry.source),
           enabled: entry.enabled,
+          transport: entry.transport ?? 'stdio',
+          url: entry.url ?? null,
         },
       });
       const store = useMcpStore.getState();
@@ -261,5 +304,58 @@ export function useMcpOperations() {
     []
   );
 
-  return { startServer, stopServer, restartServer, callTool };
+  /**
+   * Dry-run a candidate config (spawn → initialize → tools/list → stop) without
+   * registering it. Used by the Add/Edit dialog to preview tools and surface
+   * actionable errors before the config is written to disk.
+   */
+  const validateServer = useCallback(
+    async (input: McpValidateInput): Promise<McpValidationResult> => {
+      return invoke<McpValidationResult>('mcp_validate_server', {
+        config: {
+          id: input.id || '__validate__',
+          name: input.name || input.command || input.url || 'server',
+          command: input.command,
+          args: input.args,
+          env: input.env,
+          source: 'notesage_global',
+          enabled: true,
+          transport: input.transport ?? 'stdio',
+          url: input.url ?? null,
+        },
+      });
+    },
+    []
+  );
+
+  /** Run the browser OAuth flow for a remote server; resolves when authorized. */
+  const oauthAuthorize = useCallback(
+    async (serverId: string, serverUrl: string, scope?: string): Promise<McpOAuthStatus> => {
+      return invoke<McpOAuthStatus>('mcp_oauth_authorize', {
+        serverId,
+        serverUrl,
+        scope: scope ?? null,
+      });
+    },
+    []
+  );
+
+  const oauthStatus = useCallback(async (serverId: string): Promise<McpOAuthStatus> => {
+    return invoke<McpOAuthStatus>('mcp_oauth_status', { serverId });
+  }, []);
+
+  const oauthLogout = useCallback(async (serverId: string): Promise<void> => {
+    await invoke('mcp_oauth_logout', { serverId });
+  }, []);
+
+  return {
+    startServer,
+    stopServer,
+    restartServer,
+    callTool,
+    validateServer,
+    oauthAuthorize,
+    oauthStatus,
+    oauthLogout,
+  };
 }

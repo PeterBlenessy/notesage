@@ -21,7 +21,10 @@
         "decorations": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay",
-        "trafficLightPosition": { "x": 12, "y": 20 },
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 20
+        },
         "dragDropEnabled": false,
         "visible": false
       }
@@ -49,13 +52,22 @@
       "endpoints": [
         "https://github.com/PeterBlenessy/notesage/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "notesage"
+        ]
+      }
     }
   },
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/llama-server"],
+    "externalBin": [
+      "binaries/llama-server"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -70,7 +82,12 @@
     },
     "fileAssociations": [
       {
-        "ext": ["md", "markdown", "mdown", "mkd"],
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
         "mimeType": "text/markdown",
         "description": "Markdown Document",
         "role": "Editor"
