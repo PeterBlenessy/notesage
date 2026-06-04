@@ -342,7 +342,7 @@ type ValidationState =
   | { status: 'ok'; result: McpValidationResult }
   | { status: 'error'; result: McpValidationResult };
 
-function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEditServerDialogProps) {
+export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEditServerDialogProps) {
   const [command, setCommand] = useState(editServer?.command ?? '');
   const [args, setArgs] = useState(editServer?.args.join(' ') ?? '');
   const [name, setName] = useState(editServer?.name ?? '');

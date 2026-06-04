@@ -128,6 +128,7 @@ cpal = "0.17"
 
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
+tauri-plugin-deep-link = "2.4.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
