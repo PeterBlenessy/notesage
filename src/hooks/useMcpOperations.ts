@@ -180,6 +180,10 @@ export function useMcpDiscovery() {
                   env: entry.env,
                   source: sourceToRust(entry.source),
                   enabled: entry.enabled,
+                  // Carry transport + url so http servers launch over HTTP, not
+                  // silently as stdio (they have no command/args).
+                  transport: entry.transport ?? 'stdio',
+                  url: entry.url ?? null,
                 },
               });
               if (cancelled) return;

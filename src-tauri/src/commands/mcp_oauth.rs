@@ -19,6 +19,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::net::{IpAddr, Ipv6Addr};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -186,6 +187,84 @@ pub fn build_authorize_url(
     Ok(url.to_string())
 }
 
+/// True when an IPv6 address falls in a range we must never reach from an
+/// externally-influenced URL: loopback, unspecified, link-local (`fe80::/10`),
+/// or unique-local (`fc00::/7`). The std lib exposes `is_loopback`/
+/// `is_unspecified` but the latter two ranges have no stable helpers, so we
+/// inspect the leading bits directly.
+fn ipv6_is_dangerous(addr: &Ipv6Addr) -> bool {
+    if addr.is_loopback() || addr.is_unspecified() {
+        return true;
+    }
+    let seg0 = addr.segments()[0];
+    // fe80::/10 — link-local unicast.
+    if seg0 & 0xffc0 == 0xfe80 {
+        return true;
+    }
+    // fc00::/7 — unique-local addresses.
+    if seg0 & 0xfe00 == 0xfc00 {
+        return true;
+    }
+    false
+}
+
+/// SSRF guard for every externally-influenced URL (the MCP `server_url`, the
+/// discovered authorization servers, and the authorization/token endpoints
+/// drawn from attacker-controllable metadata).
+///
+/// Rules:
+/// - must parse as a URL,
+/// - scheme MUST be `https` (rejects `http` and every other scheme),
+/// - if the host is an IP literal, it must NOT be loopback, private,
+///   link-local, unique-local, or unspecified,
+/// - the hostnames `localhost` and `*.localhost` are rejected outright.
+///
+/// Caveat: this does NOT defend against DNS rebinding — a hostname that
+/// resolves to a private IP at request time is not caught here, because we
+/// validate the literal URL, not the resolved address. That requires resolving
+/// and pinning the address at connect time and is out of scope for this fix.
+fn validate_external_url(raw: &str) -> Result<(), String> {
+    let url = url::Url::parse(raw).map_err(|e| format!("Invalid URL {}: {}", raw, e))?;
+
+    if url.scheme() != "https" {
+        return Err(format!(
+            "Refusing to use non-HTTPS URL {} (scheme {:?})",
+            raw,
+            url.scheme()
+        ));
+    }
+
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("URL {} has no host", raw))?;
+
+    // Reject `localhost` / `*.localhost` by name (it resolves to loopback).
+    let lower = host.to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") {
+        return Err(format!("Refusing to use loopback hostname {}", raw));
+    }
+
+    // If the host is an IP literal, block dangerous ranges. `host_str()`
+    // keeps the brackets on an IPv6 literal (`[::1]`), so strip them first.
+    let ip_candidate = lower.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(&lower);
+    if let Ok(ip) = ip_candidate.parse::<IpAddr>() {
+        let dangerous = match ip {
+            IpAddr::V4(v4) => {
+                v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+            }
+            IpAddr::V6(v6) => ipv6_is_dangerous(&v6),
+        };
+        if dangerous {
+            return Err(format!("Refusing to use internal/reserved IP address {}", raw));
+        }
+    }
+
+    Ok(())
+}
+
 /// Build a `<origin>/.well-known/<name>` URL for the origin of `base`.
 /// Falls back to appending if `base` can't be parsed as a URL.
 pub fn well_known(base: &str, name: &str) -> String {
@@ -339,15 +418,37 @@ async fn discover_metadata(
     client: &reqwest::Client,
     server_url: &str,
 ) -> Result<AuthServerMetadata, String> {
+    // The MCP server_url itself is user/attacker-supplied — validate before any fetch.
+    validate_external_url(server_url)?;
+
     let prm_url = well_known(server_url, "oauth-protected-resource");
     if let Ok(prm) = fetch_json::<ProtectedResourceMetadata>(client, &prm_url).await {
         if let Some(issuer) = prm.authorization_servers.into_iter().next() {
+            // `issuer` comes from the (attacker-controlled) protected-resource
+            // metadata — must be validated before we fetch its AS metadata.
+            validate_external_url(&issuer)?;
             let asm_url = well_known(&issuer, "oauth-authorization-server");
-            return fetch_json::<AuthServerMetadata>(client, &asm_url).await;
+            let metadata: AuthServerMetadata = fetch_json(client, &asm_url).await?;
+            validate_endpoints(&metadata)?;
+            return Ok(metadata);
         }
     }
     let asm_url = well_known(server_url, "oauth-authorization-server");
-    fetch_json::<AuthServerMetadata>(client, &asm_url).await
+    let metadata: AuthServerMetadata = fetch_json(client, &asm_url).await?;
+    validate_endpoints(&metadata)?;
+    Ok(metadata)
+}
+
+/// Validate the authorization/token/registration endpoints carried in
+/// attacker-controllable authorization-server metadata before any of them is
+/// opened in a browser or POSTed to.
+fn validate_endpoints(metadata: &AuthServerMetadata) -> Result<(), String> {
+    validate_external_url(&metadata.authorization_endpoint)?;
+    validate_external_url(&metadata.token_endpoint)?;
+    if let Some(reg) = &metadata.registration_endpoint {
+        validate_external_url(reg)?;
+    }
+    Ok(())
 }
 
 async fn register_client(
@@ -355,6 +456,8 @@ async fn register_client(
     registration_endpoint: &str,
     redirect_uri: &str,
 ) -> Result<ClientRegistrationResponse, String> {
+    // The registration endpoint comes from attacker-controllable metadata.
+    validate_external_url(registration_endpoint)?;
     let body = ClientRegistrationRequest {
         client_name: "Notesage",
         redirect_uris: vec![redirect_uri.to_string()],
@@ -423,6 +526,9 @@ async fn exchange_code(
     verifier: &str,
     redirect_uri: &str,
 ) -> Result<TokenResponse, String> {
+    // Defense-in-depth: the token endpoint comes from attacker-controllable
+    // metadata — re-validate immediately before POSTing credentials to it.
+    validate_external_url(token_endpoint)?;
     let mut form = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -454,6 +560,10 @@ async fn refresh_with(
     tokens: &OAuthTokens,
     refresh_token: &str,
 ) -> Result<OAuthTokens, String> {
+    // The token endpoint was persisted from attacker-controllable metadata —
+    // re-validate before POSTing to it (catches tokens stored before this
+    // guard existed, and is cheap defense-in-depth otherwise).
+    validate_external_url(&tokens.token_endpoint)?;
     let mut form = vec![
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
@@ -532,6 +642,8 @@ pub async fn mcp_oauth_authorize(
     let (verifier, challenge) = generate_pkce();
     let state = uuid::Uuid::new_v4().to_string();
 
+    // Re-validate the authorization endpoint before handing it to the browser.
+    validate_external_url(&metadata.authorization_endpoint)?;
     let auth_url = build_authorize_url(
         &metadata.authorization_endpoint,
         &reg.client_id,
@@ -722,6 +834,52 @@ mod tests {
     #[test]
     fn oauth_service_id_is_namespaced() {
         assert_eq!(oauth_service("global:github"), "notesage:mcp:global:github:oauth");
+    }
+
+    #[test]
+    fn validate_external_url_accepts_public_https() {
+        assert!(validate_external_url("https://accounts.google.com").is_ok());
+        assert!(validate_external_url("https://api.example.com/.well-known/x").is_ok());
+        // A public IP literal is fine.
+        assert!(validate_external_url("https://8.8.8.8/token").is_ok());
+    }
+
+    #[test]
+    fn validate_external_url_rejects_non_https() {
+        assert!(validate_external_url("http://example.com").is_err());
+        assert!(validate_external_url("ftp://example.com").is_err());
+        assert!(validate_external_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_external_url_rejects_cloud_metadata_endpoint() {
+        // AWS/GCP/Azure link-local metadata service.
+        assert!(validate_external_url("https://169.254.169.254/latest/meta-data/").is_err());
+    }
+
+    #[test]
+    fn validate_external_url_rejects_localhost() {
+        assert!(validate_external_url("https://localhost/oauth").is_err());
+        assert!(validate_external_url("https://app.localhost/oauth").is_err());
+        assert!(validate_external_url("https://LOCALHOST:8443/x").is_err());
+    }
+
+    #[test]
+    fn validate_external_url_rejects_private_ipv4() {
+        assert!(validate_external_url("https://10.0.0.1").is_err());
+        assert!(validate_external_url("https://172.16.0.1").is_err());
+        assert!(validate_external_url("https://192.168.1.1").is_err());
+        assert!(validate_external_url("https://127.0.0.1:9000/x").is_err());
+        assert!(validate_external_url("https://0.0.0.0").is_err());
+    }
+
+    #[test]
+    fn validate_external_url_rejects_internal_ipv6() {
+        assert!(validate_external_url("https://[::1]").is_err()); // loopback
+        assert!(validate_external_url("https://[::]").is_err()); // unspecified
+        assert!(validate_external_url("https://[fe80::1]").is_err()); // link-local
+        assert!(validate_external_url("https://[fc00::1]").is_err()); // unique-local
+        assert!(validate_external_url("https://[fd12:3456::1]").is_err()); // unique-local
     }
 
     #[test]

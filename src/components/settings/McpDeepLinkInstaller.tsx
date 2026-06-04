@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onOpenUrl, getCurrent } from '@tauri-apps/plugin-deep-link';
+import { toast } from 'sonner';
 import { AddEditServerDialog, type CatalogPrefill } from './McpServersSettings';
 import { parseMcpInstallUrl } from '@/lib/mcp/deeplink';
 
@@ -15,11 +16,16 @@ export function McpDeepLinkInstaller() {
   useEffect(() => {
     const handle = (urls: string[]) => {
       for (const u of urls) {
-        const req = parseMcpInstallUrl(u);
-        if (req) {
-          setPending(req);
+        const res = parseMcpInstallUrl(u);
+        if (!res) continue; // Not an install URL — ignore silently.
+        if (!res.ok) {
+          // Well-formed install URL, but the command isn't allowed. Refuse
+          // loudly and never open the dialog.
+          toast.error(res.reason);
           break;
         }
+        setPending(res.prefill);
+        break;
       }
     };
 
