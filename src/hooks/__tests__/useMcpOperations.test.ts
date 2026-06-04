@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import {
   setMockInvokeHandler,
   clearMockInvokeHandlers,
   registerDefaultHandlers,
 } from '@/test/tauri-mock';
-import { useMcpOperations, type McpValidationResult } from '../useMcpOperations';
+import { useMcpOperations, useMcpDiscovery, type McpValidationResult } from '../useMcpOperations';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
 // The hook is mocked at the @tauri-apps boundary by src/test/tauri-mock.ts
 // (wired globally in vitest setup). We register per-test invoke handlers.
@@ -154,6 +156,31 @@ describe('useMcpOperations.validateServer', () => {
     expect(loggedOut).toMatchObject({ serverId: 'global:r' });
   });
 
+  it('startServer forwards transport + url so http servers launch over HTTP', async () => {
+    const captured: { config?: Record<string, unknown> } = {};
+    setMockInvokeHandler('mcp_start_server', (args) => {
+      captured.config = (args as { config: Record<string, unknown> }).config;
+      return { id: 'global:r', name: 'r', command: '', args: [], env: {}, source: 'notesage_global', enabled: true, status: 'running', error: null, tools: [], transport: 'http', url: 'https://x/mcp' };
+    });
+
+    const { result } = renderHook(() => useMcpOperations());
+    await result.current.startServer({
+      id: 'global:r',
+      name: 'r',
+      command: '',
+      args: [],
+      env: {},
+      source: 'notesage-global',
+      enabled: true,
+      status: 'stopped',
+      tools: [],
+      transport: 'http',
+      url: 'https://x/mcp',
+    });
+
+    expect(captured.config).toMatchObject({ transport: 'http', url: 'https://x/mcp' });
+  });
+
   it('propagates a failed validation result (mapped error) to the caller', async () => {
     const failResult: McpValidationResult = {
       ok: false,
@@ -171,5 +198,52 @@ describe('useMcpOperations.validateServer', () => {
     expect(res.ok).toBe(false);
     expect(res.error_kind).toBe('binary_not_found');
     expect(res.error).toContain('PATH');
+  });
+});
+
+describe('useMcpDiscovery auto-start', () => {
+  beforeEach(() => {
+    clearMockInvokeHandlers();
+    registerDefaultHandlers();
+    useWorkspaceStore.setState({ projects: [] });
+    useSettingsStore.setState({ startupReady: false });
+  });
+
+  it('includes transport + url in the launch-time auto-start payload', async () => {
+    const httpServer = {
+      id: 'global:Remote',
+      name: 'Remote',
+      command: '',
+      args: [],
+      env: {},
+      source: 'notesage_global',
+      enabled: true,
+      transport: 'http',
+      url: 'https://mcp.example.com/mcp',
+    };
+
+    setMockInvokeHandler('mcp_discover_configs', () => [httpServer]);
+
+    const captured: { config?: Record<string, unknown> } = {};
+    setMockInvokeHandler('mcp_start_server', (args) => {
+      captured.config = (args as { config: Record<string, unknown> }).config;
+      return {
+        id: 'global:Remote', name: 'Remote', command: '', args: [], env: {},
+        source: 'notesage_global', enabled: true, status: 'running', error: null,
+        tools: [], transport: 'http', url: 'https://mcp.example.com/mcp',
+      };
+    });
+
+    renderHook(() => useMcpDiscovery());
+    // Discovery is gated on startupReady — flip it to trigger the effect.
+    useSettingsStore.setState({ startupReady: true });
+
+    await waitFor(() => {
+      expect(captured.config).toBeDefined();
+    });
+    expect(captured.config).toMatchObject({
+      transport: 'http',
+      url: 'https://mcp.example.com/mcp',
+    });
   });
 });

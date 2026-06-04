@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
   ChevronDown, Download, Wrench, Trash2, Boxes,
-  Loader2, CheckCircle2, AlertCircle, Lock, LogOut,
+  Loader2, CheckCircle2, AlertCircle, Lock, LogOut, ShieldAlert,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -305,6 +306,13 @@ export interface CatalogPrefill {
   env: EnvRow[];
   transport?: McpTransport;
   url?: string | null;
+  /**
+   * `true` when the prefill came from an attacker-controllable source (a
+   * `notesage://mcp/install` deep link). The Add dialog renders a warning
+   * banner and gates Test/Add behind an explicit acknowledgement when set.
+   * The in-app catalog and manual adds are trusted and leave this unset.
+   */
+  untrusted?: boolean;
 }
 
 /**
@@ -355,6 +363,11 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
   // Validation dry-run state — drives the tool preview / error panel and gates
   // the write (config is only persisted after a successful start → handshake).
   const [validation, setValidation] = useState<ValidationState>({ status: 'idle' });
+  // Untrusted (deep-link-sourced) prefills must be explicitly acknowledged
+  // before Test/Add can spawn the command. Editing or a manual/catalog add is
+  // trusted and never gated.
+  const untrusted = !editServer && !!prefill?.untrusted;
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const { validateServer, oauthAuthorize, oauthStatus } = useMcpOperations();
   const [authorizing, setAuthorizing] = useState(false);
@@ -362,11 +375,16 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
 
   const isRemote = transport === 'http';
   const hasRequiredFields = isRemote ? !!url.trim() : !!command.trim();
+  // Untrusted prefills block Test/Add until the user ticks the acknowledgement.
+  const gateBlocked = untrusted && !acknowledged;
 
   // The "Add" dialog is mounted once and reused, so seed its fields whenever it
   // (re)opens — from the edited server, a catalog prefill, or empty.
   useEffect(() => {
     if (!open) return;
+    // Every (re)open starts unacknowledged — a fresh untrusted prefill must be
+    // reviewed again even if a prior one was acknowledged in this mount.
+    setAcknowledged(false);
     if (editServer) {
       setCommand(editServer.command);
       setArgs(editServer.args.join(' '));
@@ -493,6 +511,10 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
   const requiredFieldError = isRemote ? 'Server URL is required' : 'Command is required';
 
   const handleTest = async () => {
+    if (gateBlocked) {
+      toast.error('Confirm you trust this server before testing it');
+      return;
+    }
     if (!hasRequiredFields) {
       toast.error(requiredFieldError);
       return;
@@ -510,6 +532,10 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
   };
 
   const handleSave = async () => {
+    if (gateBlocked) {
+      toast.error('Confirm you trust this server before adding it');
+      return;
+    }
     if (!hasRequiredFields) {
       toast.error(requiredFieldError);
       return;
@@ -600,6 +626,29 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {untrusted && (
+            <Alert variant="destructive">
+              <ShieldAlert className="h-4 w-4" strokeWidth={1.5} />
+              <AlertTitle>Requested by an external link</AlertTitle>
+              <AlertDescription className="space-y-2">
+                <p>
+                  This MCP server was requested by an external link. MCP servers
+                  run programs on your computer — review the command and arguments
+                  below before continuing. Only add servers from sources you trust.
+                </p>
+                <label className="flex items-start gap-2 text-foreground">
+                  <Checkbox
+                    checked={acknowledged}
+                    onCheckedChange={(c) => setAcknowledged(c === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-xs">
+                    I&apos;ve reviewed this command and trust its source
+                  </span>
+                </label>
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Transport</Label>
             <div className="inline-flex rounded-lg border border-border p-0.5">
@@ -818,7 +867,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             variant="ghost"
             size="sm"
             onClick={handleTest}
-            disabled={saving || validation.status === 'testing' || !hasRequiredFields}
+            disabled={saving || validation.status === 'testing' || !hasRequiredFields || gateBlocked}
           >
             {validation.status === 'testing' ? (
               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
@@ -831,7 +880,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || !hasRequiredFields}>
+            <Button onClick={handleSave} disabled={saving || !hasRequiredFields || gateBlocked}>
               {saving ? 'Saving...' : editServer ? 'Update' : 'Add Server'}
             </Button>
           </div>
