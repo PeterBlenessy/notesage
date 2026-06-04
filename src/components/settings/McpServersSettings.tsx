@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
   ChevronDown, Download, Wrench, Trash2, Boxes,
-  Loader2, CheckCircle2, AlertCircle, Lock,
+  Loader2, CheckCircle2, AlertCircle, Lock, LogOut,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -89,7 +89,26 @@ function sourceLabel(source: McpServerEntry['source']) {
 function McpServerCard({ server }: { server: McpServerEntry }) {
   const toggleServer = useMcpStore((s) => s.toggleServer);
   const removeServer = useMcpStore((s) => s.removeServer);
-  const { startServer, stopServer, restartServer } = useMcpOperations();
+  const { startServer, stopServer, restartServer, oauthAuthorize, oauthLogout } = useMcpOperations();
+
+  const handleReauth = useCallback(async () => {
+    if (!server.url) return;
+    try {
+      await oauthAuthorize(server.id, server.url);
+      toast.success(`Re-authenticated "${server.name}"`);
+    } catch (err) {
+      toast.error(`Authorization failed: ${err}`);
+    }
+  }, [server.id, server.url, server.name, oauthAuthorize]);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await oauthLogout(server.id);
+      toast.success(`Signed out of "${server.name}"`);
+    } catch (err) {
+      toast.error(`Failed to sign out: ${err}`);
+    }
+  }, [server.id, server.name, oauthLogout]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -197,6 +216,19 @@ function McpServerCard({ server }: { server: McpServerEntry }) {
                   <RotateCcw className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                   Restart
                 </DropdownMenuItem>
+                {isRemote && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleReauth} disabled={!server.url}>
+                      <Lock className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                      Re-authenticate
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                      Sign out
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   <Wrench className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
@@ -324,7 +356,9 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
   // the write (config is only persisted after a successful start → handshake).
   const [validation, setValidation] = useState<ValidationState>({ status: 'idle' });
 
-  const { validateServer } = useMcpOperations();
+  const { validateServer, oauthAuthorize, oauthStatus } = useMcpOperations();
+  const [authorizing, setAuthorizing] = useState(false);
+  const [oauthOk, setOauthOk] = useState(false);
 
   const isRemote = transport === 'http';
   const hasRequiredFields = isRemote ? !!url.trim() : !!command.trim();
@@ -392,6 +426,44 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
     setValidation({ status: 'idle' });
   }, [command, args, envPairs, transport, url]);
 
+  // Changing the URL invalidates a prior authorization.
+  useEffect(() => {
+    setOauthOk(false);
+  }, [url]);
+
+  // On opening an existing remote server, reflect its stored OAuth status.
+  useEffect(() => {
+    if (!open || !editServer || editServer.transport !== 'http') return;
+    let cancelled = false;
+    oauthStatus(editServer.id)
+      .then((s) => {
+        if (!cancelled) setOauthOk(s.authorized);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editServer, oauthStatus]);
+
+  const handleAuthorize = async () => {
+    if (!url.trim()) {
+      toast.error('Server URL is required');
+      return;
+    }
+    setAuthorizing(true);
+    try {
+      const status = await oauthAuthorize(buildInput().id ?? `global:server`, url.trim());
+      setOauthOk(status.authorized);
+      if (status.authorized) {
+        toast.success('Authorized — you can now test and add the server');
+      }
+    } catch (err) {
+      toast.error(`Authorization failed: ${err}`);
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const { requestRescan } = useMcpStore();
 
   const buildInput = useCallback((): McpValidateInput => {
@@ -413,8 +485,10 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
       env,
       transport,
       url: isRemote ? url.trim() : null,
+      // The id discovery will assign — also the keychain id for OAuth tokens.
+      id: editServer?.id ?? `global:${serverName}`,
     };
-  }, [name, command, args, envPairs, transport, url, isRemote]);
+  }, [name, command, args, envPairs, transport, url, isRemote, editServer]);
 
   const requiredFieldError = isRemote ? 'Server URL is required' : 'Command is required';
 
@@ -557,7 +631,27 @@ function AddEditServerDialog({ open, onOpenChange, editServer, prefill }: AddEdi
                 placeholder="https://example.com/mcp"
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-muted-foreground">Streamable HTTP endpoint</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Streamable HTTP endpoint. Authorize first if the server requires OAuth.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 shrink-0 gap-1 text-xs"
+                  onClick={handleAuthorize}
+                  disabled={authorizing || !url.trim()}
+                >
+                  {authorizing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+                  ) : oauthOk ? (
+                    <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />
+                  ) : (
+                    <Lock className="h-3 w-3" strokeWidth={1.5} />
+                  )}
+                  {oauthOk ? 'Authorized' : 'Authorize'}
+                </Button>
+              </div>
             </div>
           ) : (
             <>

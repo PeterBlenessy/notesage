@@ -66,6 +66,18 @@ export interface McpValidateInput {
   transport?: 'stdio' | 'http';
   /** Required when `transport` is `http`. */
   url?: string | null;
+  /**
+   * Prospective server id used to resolve an OAuth token from the keychain
+   * during validation (so a just-authorized remote server tests with its
+   * bearer token). Defaults to a throwaway id.
+   */
+  id?: string;
+}
+
+/** OAuth authorization status for a remote MCP server. */
+export interface McpOAuthStatus {
+  authorized: boolean;
+  expires_at: number | null;
 }
 
 // Map Rust snake_case source to frontend kebab-case
@@ -301,7 +313,7 @@ export function useMcpOperations() {
     async (input: McpValidateInput): Promise<McpValidationResult> => {
       return invoke<McpValidationResult>('mcp_validate_server', {
         config: {
-          id: '__validate__',
+          id: input.id || '__validate__',
           name: input.name || input.command || input.url || 'server',
           command: input.command,
           args: input.args,
@@ -316,5 +328,34 @@ export function useMcpOperations() {
     []
   );
 
-  return { startServer, stopServer, restartServer, callTool, validateServer };
+  /** Run the browser OAuth flow for a remote server; resolves when authorized. */
+  const oauthAuthorize = useCallback(
+    async (serverId: string, serverUrl: string, scope?: string): Promise<McpOAuthStatus> => {
+      return invoke<McpOAuthStatus>('mcp_oauth_authorize', {
+        serverId,
+        serverUrl,
+        scope: scope ?? null,
+      });
+    },
+    []
+  );
+
+  const oauthStatus = useCallback(async (serverId: string): Promise<McpOAuthStatus> => {
+    return invoke<McpOAuthStatus>('mcp_oauth_status', { serverId });
+  }, []);
+
+  const oauthLogout = useCallback(async (serverId: string): Promise<void> => {
+    await invoke('mcp_oauth_logout', { serverId });
+  }, []);
+
+  return {
+    startServer,
+    stopServer,
+    restartServer,
+    callTool,
+    validateServer,
+    oauthAuthorize,
+    oauthStatus,
+    oauthLogout,
+  };
 }
