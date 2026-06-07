@@ -24,6 +24,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 - **Naming:** PascalCase (components), camelCase (functions/vars), UPPER_SNAKE (constants)
 - **Files:** One component per file. Filename = component name.
 - **Types:** Prefer interfaces. No `any` (use `unknown`).
+- **Typecheck gate:** `vitest` / `pnpm test` do NOT run `tsc` — a green test run says nothing about types. After editing ANY `.ts`/`.tsx` (including `*.test.ts` and mocks), run `pnpm typecheck` before calling the work done. CI's frontend job runs `tsc --noEmit` over test files too, so a type error in a test (e.g. an untyped `vi.fn()` mock whose `.mock.calls` is an empty tuple) fails the whole job even when every test passes.
 - **Errors:** Tauri returns `Result<T, String>`. Show toast for user errors.
 - **Radix Tooltip:** Every `<Tooltip>` MUST be wrapped in `<TooltipProvider>`. Radix throws at render time without it (see `docs/design-system.md` §"Radix Tooltip — `<TooltipProvider>` is mandatory").
 

@@ -288,7 +288,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 **CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs with three parallel jobs:
 
-1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`
+1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
 2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
 3. **Rust backend:** install stable toolchain → `cargo test` in `src-tauri/`
 
