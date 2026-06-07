@@ -78,7 +78,8 @@ Two independent streams, both sending from Rust, both gated on settings flags.
 Per the design system (shadcn/ui first, neutral palette, no chromatic accent except where the system allows).
 
 - **First-run notice (alpha only):** a non-blocking `sonner` toast or a small dismissible banner on first launch — *"Alpha builds share anonymous usage and crash reports to help stabilize fast-moving features. This is on by default — turn it off in Settings → Privacy. No document content, file contents, or AI prompts are ever sent."* Single "Open Privacy settings" action + dismiss. Shown once (a `telemetryNoticeSeen` flag).
-- **Settings → Privacy** (the Approvals panel already lives here; this is the natural home): a new "Telemetry" group with:
+- **Disclosure at channel selection:** whenever the user *opts into* the alpha channel (today: implicit, since alpha is the only channel; future: an explicit release-channel picker), the same disclosure must be presented at that decision point — choosing alpha *means* accepting default-on telemetry, so the value exchange has to be stated where the choice is made, not only at first run. When a channel picker is added, render an inline note beside it ("Alpha builds share anonymous usage + crash data by default — manage in Settings → Privacy") and re-surface the first-run notice if the user switches stable → alpha. Until a picker exists, the first-run notice carries this role.
+- **Settings → Privacy** (`src/components/settings/v2/` Privacy panel — the Approvals panel already lives here; this is the natural home): a new "Telemetry" group with:
   - Two `switch` rows — **Usage analytics** and **Crash reports** — each with a one-line description.
   - A muted line stating the current channel and what the defaults are ("Alpha builds default to on; stable builds default to off").
   - A "Reset analytics ID" button (regenerates the anonymous install UUID).
@@ -150,6 +151,7 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 
 - [ ] With both flags off, **neither SDK initializes** and no network egress occurs (verified by inspecting that no telemetry endpoint is contacted).
 - [ ] Alpha build: fresh install defaults both flags **on**; the first-run notice appears exactly once.
+- [ ] Switching from stable → alpha (once a channel picker exists) presents the telemetry disclosure at the point of selection.
 - [ ] Stable build (or simulated stable channel): fresh install defaults both flags **off**; no first-run notice.
 - [ ] Toggling either switch in Settings → Privacy immediately stops/starts that stream and persists across restart.
 - [ ] A forced Rust panic, a thrown frontend error caught by `ErrorBoundary`, both appear in Sentry tagged with the correct release version and a merged breadcrumb timeline.
