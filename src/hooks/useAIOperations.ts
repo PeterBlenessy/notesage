@@ -12,11 +12,32 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
+import { track, providerKind, type AiPath } from '@/lib/telemetry';
+import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 export { ProjectLockViolation };
+
+// ---------------------------------------------------------------------------
+// Telemetry — classify which of the four routing paths handles a send. Mirrors
+// the branch order in `sendChatMessage` exactly so the reported `path` matches
+// the path actually taken.
+// ---------------------------------------------------------------------------
+
+function aiPathFor(conn: Connection | null): AiPath {
+  if (
+    conn?.credentials &&
+    'agentBinary' in conn.credentials &&
+    conn.credentials.agentBinary === 'copilot-language-server'
+  ) {
+    return 'copilot_lsp';
+  }
+  if (conn?.authMethod === 'agent_managed') return 'acp';
+  if (conn?.authMethod === 'local_bundled') return 'local_bundled';
+  return 'direct';
+}
 
 // ---------------------------------------------------------------------------
 // Hook — routes AI operations between direct API and ACP paths
@@ -151,6 +172,13 @@ export function useAIOperations() {
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       assertLockAllowsSend();
+      track('ai_chat_sent', {
+        path: aiPathFor(effectiveConnection),
+        provider_kind: providerKind(
+          effectiveConnection?.provider ?? resolved?.provider ?? '',
+          effectiveConnection?.authMethod ?? '',
+        ),
+      });
       if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
         return copilotSendChatMessage(content, messages, opts);
       }
@@ -159,7 +187,7 @@ export function useAIOperations() {
       }
       return directSendChatMessage(content, messages, opts);
     },
-    [effectiveConnection, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
+    [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );
 
   // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed

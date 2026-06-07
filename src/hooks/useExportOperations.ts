@@ -13,6 +13,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { ExportOptions } from "@/components/ExportDialog";
 import type { ChartData, ColorScheme } from "@/lib/chart-types";
 import { COLOR_PALETTES } from "@/lib/chart-types";
+import { track } from "@/lib/telemetry";
 
 /**
  * Collect SVG strings for all inline chart and drawing nodes in document order.
@@ -247,6 +248,12 @@ export function useExportOperations(editor: Editor | null) {
       );
 
       setIsExporting(true);
+
+      track("export_performed", {
+        format: options.format,
+        template:
+          options.format === "pptx" ? options.pptxTemplate : options.template,
+      });
 
       // Resolve project root for image/drawing path resolution
       const projectRoot = useWorkspaceStore
