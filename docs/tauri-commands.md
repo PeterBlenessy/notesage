@@ -1179,7 +1179,7 @@ Located in `src-tauri/src/commands/transcription.rs`
 
 ### start_recording
 
-Starts microphone capture, streaming samples to a WAV file in the recordings inbox (`~/Notesage/Recordings/Meeting <YYYY-MM-DD HH-MM-SS>/audio.wav`). A single capture-owner thread owns the `cpal` stream (which is `!Send`) and the WAV writer; only one recording may be active at a time. Emits `recording-level` events while capturing.
+Starts microphone capture, streaming samples to a WAV file in the recordings inbox (`~/Notesage/Recordings/Recording <YYYY-MM-DD HH-MM-SS>/audio.wav`). A single capture-owner thread owns the `cpal` stream (which is `!Send`) and the WAV writer; only one recording may be active at a time. Emits `recording-level` events while capturing. Capture can be paused/resumed (`pause_recording` / `resume_recording`) without tearing down the stream — paused samples are discarded, so the recorded length is pause-aware.
 
 ```rust
 #[tauri::command]

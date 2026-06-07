@@ -76,8 +76,13 @@ interface FrontmatterFieldProps {
 
 function FrontmatterField({ fieldKey, value, onChange }: FrontmatterFieldProps) {
   const isComplex = typeof value === 'object' && value !== null;
-  const displayValue = Array.isArray(value)
-    ? value.join(", ")
+  // Arrays of PRIMITIVES (tags etc.) display as a comma list. Arrays containing
+  // objects (e.g. a transcript's `segments`) fall through to JSON — `join`
+  // would render every entry as "[object Object]".
+  const isPrimitiveArray =
+    Array.isArray(value) && value.every((v) => typeof v !== 'object' || v === null);
+  const displayValue = isPrimitiveArray
+    ? (value as unknown[]).join(", ")
     : isComplex
       ? JSON.stringify(value)
       : String(value ?? "");
