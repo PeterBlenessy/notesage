@@ -28,6 +28,7 @@
     "notification:allow-request-permission",
     "notification:allow-notify",
     "autostart:default",
-    "deep-link:default"
+    "deep-link:default",
+    "sentry:default"
   ]
 }
