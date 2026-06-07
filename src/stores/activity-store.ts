@@ -48,9 +48,13 @@ export interface AgentTask {
   /** Whole-file transcription progress, 0–100. */
   progress?: number;
 
-  // --- recording-item fields (kind === 'recording') ---
+  // --- recording-item fields (kind === 'recording' / 'transcription') ---
   /** ms-epoch when capture began, for the live elapsed-time affordance. */
   recordingStartedAt?: number;
+  /** ms-epoch when capture stopped (carried onto the transcription job). */
+  recordingStoppedAt?: number;
+  /** Recorded length in seconds, pause-aware (carried onto the transcription job). */
+  recordingDurationSecs?: number;
 
   /**
    * Set on a completed transcription job once its bundle has been relocated
@@ -77,6 +81,12 @@ interface ActivityStore {
     label: string;
     audioPath: string;
     documentId?: string;
+    /** ms-epoch the recording started (for the start–stop · length info row). */
+    recordingStartedAt?: number;
+    /** ms-epoch the recording stopped. */
+    recordingStoppedAt?: number;
+    /** Recorded length in seconds (pause-aware). */
+    recordingDurationSecs?: number;
   }): void;
   /** Update a transcription job's progress (0–100). */
   setTranscriptionProgress(id: string, percent: number): void;
@@ -154,7 +164,15 @@ export const useActivityStore = create<ActivityStore>()(
         }));
       },
 
-      addTranscriptionJob: ({ id, label, audioPath, documentId }) => {
+      addTranscriptionJob: ({
+        id,
+        label,
+        audioPath,
+        documentId,
+        recordingStartedAt,
+        recordingStoppedAt,
+        recordingDurationSecs,
+      }) => {
         const task: AgentTask = {
           id,
           kind: 'transcription',
@@ -163,6 +181,9 @@ export const useActivityStore = create<ActivityStore>()(
           status: 'running',
           audioPath,
           documentId,
+          recordingStartedAt,
+          recordingStoppedAt,
+          recordingDurationSecs,
           progress: 0,
           activities: [],
           startedAt: Date.now(),

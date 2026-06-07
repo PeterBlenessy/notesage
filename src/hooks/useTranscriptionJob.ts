@@ -28,6 +28,12 @@ export interface StartTranscriptionDetail {
   audioPath: string;
   /** Optional originating document id (carried onto the activity item). */
   documentId?: string;
+  /** ms-epoch the recording started (for the start–stop · length info row). */
+  recordingStartedAt?: number;
+  /** ms-epoch the recording stopped. */
+  recordingStoppedAt?: number;
+  /** Recorded length in seconds (pause-aware, from the backend). */
+  recordingDurationSecs?: number;
 }
 
 /** Convenience dispatcher so callers don't hand-build the CustomEvent. */
@@ -45,10 +51,10 @@ interface TranscriptionProgressPayload {
 
 /** Derive a human-readable job label from the audio path's bundle folder. */
 function deriveLabel(audioPath: string): string {
-  // audioPath = .../Meeting 2026-05-30 14-02/audio.wav → "Meeting 2026-05-30 14-02"
+  // audioPath = .../Recording 2026-05-30 14-02/audio.wav → "Recording 2026-05-30 14-02"
   const parts = audioPath.replace(/\/+$/, '').split('/');
   const folder = parts.length >= 2 ? parts[parts.length - 2] : '';
-  return folder || 'Meeting recording';
+  return folder || 'Recording';
 }
 
 /**
@@ -70,7 +76,8 @@ export function useTranscriptionJob(): void {
     let disposed = false;
 
     async function runJob(detail: StartTranscriptionDetail): Promise<void> {
-      const { audioPath, documentId } = detail;
+      const { audioPath, documentId, recordingStartedAt, recordingStoppedAt, recordingDurationSecs } =
+        detail;
       if (!audioPath) return;
 
       const jobId =
@@ -82,7 +89,15 @@ export function useTranscriptionJob(): void {
       const label = deriveLabel(audioPath);
 
       const activity = useActivityStore.getState();
-      activity.addTranscriptionJob({ id: jobId, label, audioPath, documentId });
+      activity.addTranscriptionJob({
+        id: jobId,
+        label,
+        audioPath,
+        documentId,
+        recordingStartedAt,
+        recordingStoppedAt,
+        recordingDurationSecs,
+      });
 
       // Stream progress events scoped to this job id.
       let unlistenProgress: UnlistenFn | null = null;

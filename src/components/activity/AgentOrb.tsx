@@ -12,13 +12,16 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useActivityStore } from '@/stores/activity-store';
+import { useRecordingStore } from '@/stores/recording-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { recordedElapsedMs, formatStopwatchMs } from '@/lib/recording-time';
 import { cn } from '@/lib/utils';
 import { log, PERF } from '@/lib/logger';
 import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
 import type { AgentTask } from '@/stores/activity-store';
 import { AgentPanel } from './AgentPanel';
+import { RecordingRays } from './RecordingRays';
 
 export interface AgentOrbProps {
   /**
@@ -74,7 +77,15 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
 
   const runningCount = tasks.filter((t) => t.status === 'running').length;
   const isActive = runningCount > 0;
-  const shouldPulse = isActive && !reducedMotion;
+  // The box-shadow PULSE is reserved for agent activity. A live recording gets
+  // its own visual language — the seconds-ray ring (RecordingRays) — so the two
+  // states never read alike. Pulse therefore keys off NON-recording running
+  // tasks only; a recording alone shows rays, not a pulse.
+  const runningNonRecordingCount = tasks.filter(
+    (t) => t.status === 'running' && t.kind !== 'recording',
+  ).length;
+  const recordingPausedStore = useRecordingStore((s) => s.isPaused);
+  const shouldPulse = runningNonRecordingCount > 0 && !reducedMotion;
 
   // Recording state — the orb narrates the live-capture leg of the
   // Recording → Transcribing → Ready story. We surface the EARLIEST active
@@ -82,11 +93,17 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   // stopwatch driven by a 1 s text tick. This is plain text, not an
   // animation, so it does not interact with the reduced-motion gate on the
   // CSS pulse — it stays correct regardless of the motion preference.
+  // Pause state comes from recording-store (the live-capture source of
+  // truth): while paused the stopwatch freezes and the resumed time
+  // excludes the paused stretch.
   const activeRecordingStart = tasks
     .filter((t) => t.kind === 'recording' && t.status === 'running')
     .map((t) => t.recordingStartedAt ?? t.startedAt)
     .sort((a, b) => a - b)[0];
   const isRecording = activeRecordingStart !== undefined;
+  const isPaused = recordingPausedStore;
+  const pauseStartedAt = useRecordingStore((s) => s.pauseStartedAt);
+  const pausedTotalMs = useRecordingStore((s) => s.pausedTotalMs);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -95,17 +112,15 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
     return () => clearInterval(id);
   }, [isRecording]);
 
-  const recordingElapsed = isRecording
-    ? (() => {
-        const totalSeconds = Math.max(0, Math.floor((now - activeRecordingStart!) / 1000));
-        const m = Math.floor(totalSeconds / 60);
-        const s = totalSeconds % 60;
-        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      })()
-    : null;
+  const recordingElapsedMs = isRecording
+    ? recordedElapsedMs(activeRecordingStart!, pausedTotalMs, pauseStartedAt, now)
+    : 0;
+  const recordingElapsed = isRecording ? formatStopwatchMs(recordingElapsedMs) : null;
 
   const ariaLabel = isRecording
-    ? `Recording — ${recordingElapsed}`
+    ? isPaused
+      ? `Recording paused — ${recordingElapsed}`
+      : `Recording — ${recordingElapsed}`
     : runningCount === 1
       ? 'Agent — 1 task running'
       : `Agent — ${runningCount} tasks running`;
@@ -201,6 +216,15 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               shouldPulse && 'orb-pulsing',
             )}
           >
+            {/* Recording seconds-ray ring — sits just outside the orb body,
+                distinct from the agent-activity pulse. */}
+            {isRecording && (
+              <RecordingRays
+                elapsedSeconds={recordingElapsedMs / 1000}
+                paused={isPaused}
+                reducedMotion={reducedMotion}
+              />
+            )}
             {isRecording ? (
               // Recording leg — a mic glyph + the live elapsed time so the orb
               // reads as "I'm capturing" rather than a generic running count.
@@ -254,6 +278,11 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
         // Override the popover default (w-72 + p-4) — AgentPanel manages its
         // own width and padding so the list fills the popover cleanly.
         className="w-auto p-0"
+        // Don't auto-focus the first button inside the panel on open — Radix's
+        // default lands focus on e.g. the recording card's pause button, which
+        // paints the accent focus ring (and would auto-open its focus-triggered
+        // tooltip). Focus stays on the orb; Tab still reaches the controls.
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <AgentPanel onCancelTask={onCancelTask} onClickTask={onClickTask} />
       </PopoverContent>
