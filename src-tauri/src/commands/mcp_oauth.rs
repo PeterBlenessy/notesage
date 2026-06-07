@@ -4,8 +4,8 @@
 //! rather than pulling in the `oauth2` crate: the flow we need (authorization
 //! code + PKCE, dynamic client registration, refresh) is small, and keeping it
 //! explicit lets every step be unit-tested. The fiddly pieces — PKCE
-//! generation, `WWW-Authenticate` parsing, the loopback callback query, and the
-//! authorize-URL shape — are pure functions covered by tests below.
+//! generation, the loopback callback query, and the authorize-URL shape — are
+//! pure functions covered by tests below.
 //!
 //! Tokens are persisted as a JSON blob in the OS keychain under
 //! `notesage:mcp:<server_id>:oauth` (the same keyring layer connections use).
@@ -65,15 +65,6 @@ pub struct OAuthStatus {
     pub expires_at: Option<u64>,
 }
 
-/// Parsed `WWW-Authenticate` challenge from a 401 on a protected MCP endpoint.
-#[derive(Debug, Default, PartialEq)]
-pub struct WwwAuthChallenge {
-    /// RFC 9728 `resource_metadata` URL, if advertised.
-    pub resource_metadata: Option<String>,
-    /// `authorization_uri`, if advertised directly.
-    pub authorization_uri: Option<String>,
-}
-
 /// Query params captured from the loopback redirect.
 #[derive(Debug, Default, PartialEq)]
 pub struct CallbackParams {
@@ -119,28 +110,6 @@ pub fn generate_pkce() -> (String, String) {
     let digest = Sha256::digest(verifier.as_bytes());
     let challenge = base64url_nopad(digest.as_slice());
     (verifier, challenge)
-}
-
-/// Parse a `WWW-Authenticate` header for the `resource_metadata` (RFC 9728)
-/// and/or `authorization_uri` params. Tolerant of the `Bearer` scheme prefix
-/// and quoted values; ignores params it doesn't recognize.
-pub fn parse_www_authenticate(header: &str) -> WwwAuthChallenge {
-    let mut out = WwwAuthChallenge::default();
-    for part in header.split(',') {
-        let part = part.trim();
-        let Some((raw_key, raw_val)) = part.split_once('=') else {
-            continue;
-        };
-        // The first param may be prefixed with the auth scheme, e.g. `Bearer key`.
-        let key = raw_key.trim().rsplit(' ').next().unwrap_or("").trim();
-        let val = raw_val.trim().trim_matches('"');
-        match key {
-            "resource_metadata" => out.resource_metadata = Some(val.to_string()),
-            "authorization_uri" => out.authorization_uri = Some(val.to_string()),
-            _ => {}
-        }
-    }
-    out
 }
 
 /// Parse the query of a loopback callback request line
@@ -733,24 +702,6 @@ mod tests {
     #[test]
     fn pkce_pairs_are_unique() {
         assert_ne!(generate_pkce().0, generate_pkce().0);
-    }
-
-    #[test]
-    fn parse_www_authenticate_extracts_resource_metadata() {
-        let c = parse_www_authenticate(
-            r#"Bearer resource_metadata="https://api.example.com/.well-known/oauth-protected-resource", error="invalid_token""#,
-        );
-        assert_eq!(
-            c.resource_metadata.as_deref(),
-            Some("https://api.example.com/.well-known/oauth-protected-resource")
-        );
-    }
-
-    #[test]
-    fn parse_www_authenticate_extracts_authorization_uri() {
-        let c = parse_www_authenticate(r#"Bearer authorization_uri="https://auth.example.com""#);
-        assert_eq!(c.authorization_uri.as_deref(), Some("https://auth.example.com"));
-        assert!(c.resource_metadata.is_none());
     }
 
     #[test]
