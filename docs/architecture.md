@@ -50,6 +50,7 @@ note-sage/
 │   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
 │   │   │   ├── health.rs   # Backend health check
 │   │   │   ├── logging.rs  # Debug logging control
+│   │   │   ├── telemetry.rs # Telemetry consent file + Sentry runtime live-disable + before_send PII scrubber (`telemetry_apply_consent`)
 │   │   │   ├── store.rs    # Key-value store operations
 │   │   │   ├── sync.rs     # iCloud sync settings
 │   │   │   ├── shell_path.rs # Shell PATH resolution
@@ -135,7 +136,7 @@ note-sage/
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useCommandBarShortcuts, useDoubleTapCmd, useRecentDocumentCycle, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -229,7 +230,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
-| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), home directory | Full (except `startupReady`) |
+| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), telemetry consent (`telemetryUsageEnabled`/`telemetryCrashEnabled` tri-state `boolean \| null` — `null` follows the release channel; effective values via `selectEffectiveTelemetryUsage`/`selectEffectiveTelemetryCrash`; `telemetryNoticeSeen`, `telemetryInstallId`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config — predates `routing-store` / `connections-store`; kept for one-time migration of v1 settings and as a fallback when no routing entry exists. Not deprecated for usage, deprecated for new features | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
@@ -408,3 +409,14 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 - `sandbox_monitor.rs` streams macOS unified log for Seatbelt deny entries
 - Filters by registered agent PIDs, deduplicates within 5s windows
 - Violations surface as error entries in the Activity panel alongside tool calls
+
+### Telemetry (Usage & Crash Reporting)
+
+Two opt-out diagnostic streams (PRD `docs/prds/2026-06-07-telemetry.md`). Full user-facing detail — exactly what is and isn't collected — lives in `docs/telemetry.md` (the page the Settings → System → Telemetry "what we collect" link opens).
+
+- **Channel-based consent.** `telemetryUsageEnabled` / `telemetryCrashEnabled` are tri-state (`boolean | null`) in `settings-store`; `null` follows `releaseChannel` (alpha → on, stable → off), an explicit `true`/`false` always wins. Effective values come from `selectEffectiveTelemetryUsage` / `selectEffectiveTelemetryCrash`. The two Settings switches are the single opt-out.
+- **Usage (Aptabase).** `tauri-plugin-aptabase` registered in `lib.rs` when `option_env!("NOTESAGE_APTABASE_KEY")` is present. The frontend funnels every event through `track()` in `src/lib/telemetry.ts`, which **no-ops when the effective usage flag is off** and enforces a fixed, low-cardinality event taxonomy at the type level (exact props only — no PII appended).
+- **Crash (Sentry, DSN-swappable to GlitchTip).** Built in `lib.rs` when `option_env!("NOTESAGE_SENTRY_DSN")` is present: the client is created **once** (panic hook installed once, `release` = app version, `send_default_pii: false`, `before_send` = `telemetry::scrub_event` which clears `server_name`/`user`/`request` and strips `abs_path`/`filename` from every frame). Runtime **live-disable**: `telemetry_apply_consent` binds/unbinds the client on the `Hub` so the crash toggle takes effect immediately, no restart, no second panic hook. `tauri-plugin-sentry` injects `@sentry/browser` and routes frontend errors (`ErrorBoundary` + `window` `error`/`unhandledrejection` in `main.tsx`, gated on the crash flag) through Rust via `invoke`.
+- **Consent file.** `~/.notesage/telemetry-consent.json` (`{ usage, crash }`, the `sync.rs` disk-file pattern) is written by `telemetry_apply_consent` and read synchronously at startup so Sentry can be bound on/off before the frontend loads.
+- **Egress is Rust-only.** Both SDKs send via Rust `reqwest`, which is not governed by the JS `http:default` capability — no widening of the hardened frontend surface. The only capability added is `sentry:default` (the invoke bridge, not network); the `tauri-capability-surface.test.ts` regression lock asserts `http:default` is unchanged and no `fs:allow-*` was granted.
+- **Build-time keys, release-only.** Keys/DSN are injected from GitHub Actions secrets for release builds (`.github/workflows/release.yml`); a build without them (every local/dev build) compiles and runs as a clean telemetry no-op (`option_env!` → `None`).
