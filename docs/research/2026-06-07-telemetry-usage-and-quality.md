@@ -4,7 +4,7 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | — | Not yet planned |
+| PRD | [2026-06-07-telemetry.md](../prds/2026-06-07-telemetry.md) | Drafted |
 
 Notesage ships frequent alpha releases but has no signal beyond the maintainer's manual testing — no view into which features are used, where the app crashes, or how it performs in the wild. This document evaluates **free** telemetry options that respect Notesage's privacy-first positioning, covering both halves of the question: **usage** (product analytics) and **quality** (crash/error reporting). It updates and extends the prior analytics-only survey in [`telemetry-analytics-options.md`](telemetry-analytics-options.md) (2026-03-25), which should be read as the deeper reference on the pure-analytics platforms (PostHog self-hosting footprint, Countly, GA4, Datadog).
 
@@ -177,15 +177,28 @@ How comparable apps handle it, and what fits Notesage:
 | **Claude Code** | **Opt-in**, prompts redacted/scrubbed by default | Accepted as privacy-respecting |
 | **Firefox** | Opt-out for aggregate, opt-in for detailed | Mixed, but transparent |
 
-**Recommendation for Notesage — opt-in, default off:**
+**Recommendation for Notesage — channel-based default (decided 2026-06-07):**
 
-1. **First-run prompt** (one time): a short, honest dialog — "Help improve Notesage? Share anonymous usage and crash reports. No document content, no file contents, no AI prompts are ever sent. Change this anytime in Settings > Privacy." Buttons: *Not now* (default) / *Share anonymous data*.
-2. **Settings > Privacy toggles** (the natural home — the Approvals panel already lives there): two independent switches — **Usage analytics** and **Crash reports** — so a user can opt into crash reports (helps fix *their* bugs) without usage tracking, or neither.
-3. **Persist in `settings-store`** as `telemetryUsageEnabled` / `telemetryCrashEnabled` (default `false`, `Full` persistence). Gate every `trackEvent` / Sentry init on the flag; if both are off, don't initialize the SDKs at all.
-4. **Anonymous, rotating-or-random install ID** — a random UUID generated locally, never tied to identity, used only to compute DAU/retention. No account, no email, no IP storage where avoidable (Aptabase already drops PII; for Sentry set `send_default_pii: false`).
-5. **Honor a global kill switch** — respect `DO_NOT_TRACK`/an env var and the OS-level signals where practical; document it.
+The naive "opt-in, default off everywhere" posture has a fatal flaw for this use case: opt-in telemetry gets **<5% participation**, so on an alpha-only product it would yield almost no data — defeating the purpose. The decision is to tie the default to the **release channel**, treating alpha users as testers in an explicit value exchange (bleeding-edge features ↔ usage/crash signal), while keeping stable conservative:
 
-This posture lets Notesage make the same honest claim as Claude Code while staying clearly to the privacy-respecting side of the VS Code line.
+| Channel | Usage analytics | Crash reports | Escape hatch |
+| --- | --- | --- | --- |
+| **Alpha** | Default **ON** | Default **ON** (PII-scrubbed) | Toggle still present + `DO_NOT_TRACK` / env kill switch honored |
+| **Stable** | Opt-in (default **OFF**) | Opt-in (default **OFF**) | n/a (already off) |
+
+Design rules:
+
+1. **Default-on, but never no-opt-out.** A hard "cannot disable" stance is what draws backlash (not default-on itself) — and it's illusory for an open-source app anyway, since a privacy-conscious user can build from source without it. Keeping a visible toggle costs ~nothing in data (almost nobody flips a default-on switch) and avoids the "they removed my choice" reaction. So alpha is **default-on with the toggle present**, not locked.
+2. **Honest first-run notice** (alpha): a one-time non-blocking banner/toast — "Alpha builds share anonymous usage and crash reports to stabilize fast-moving features. This is on by default; turn it off in Settings > Privacy. No document content, file contents, or AI prompts are ever sent." Transparency is what converts "sneaky" into "fair."
+3. **Settings > Privacy toggles** (the natural home — the Approvals panel already lives there): two independent switches — **Usage analytics** and **Crash reports** — so a user can keep crash reports (helps fix *their* bugs) without usage tracking, or neither.
+4. **Persist in `settings-store`** as `telemetryUsageEnabled` / `telemetryCrashEnabled`. **Defaults are computed from the build channel** (alpha → `true`, stable → `false`) on first run, then user-overridable and persisted. Gate every `trackEvent` / SDK init on the flag; if a stream is off, don't initialize that SDK at all.
+5. **Channel detection** is compile-time/version-string based — Tauri exposes the version (`0.46.0-alpha.x`); a `cfg`/build flag or a parse of the pre-release suffix decides the default. (See "Timing" caveat below.)
+6. **Anonymous random install ID** — a UUID generated locally, never tied to identity, used only for DAU/retention. No account, no email, no IP storage where avoidable (Aptabase already drops PII; for Sentry set `send_default_pii: false`). Offer a "reset analytics ID" button.
+7. **PII risk is asymmetric.** Mandatory-by-default is most defensible for the **anonymous usage stream** (Aptabase, no-PII by design). **Crash reports are riskier** — stack traces/breadcrumbs can incidentally carry file paths containing usernames — so they require solid `beforeSend` scrubbing and the disclosed honest claim before shipping default-on. GDPR applies (maintainer is EU-based); "legitimate interest" is the lawful basis, which is why the toggle + `DO_NOT_TRACK` (a means to object) is not optional.
+
+**Timing caveat:** there is **no stable channel today** — Notesage ships alpha-only (`0.46.0-alpha.12`). So "always on for alpha, off for stable" currently means **on for everyone**. The stable-opt-in half is forward-looking and activates when a stable channel is actually cut; this is an argument *for* keeping the alpha toggle/kill-switch from day one, since every current user is on the default-on side.
+
+This posture lets Notesage make the same honest claim as Claude Code (and stay clearly on the privacy-respecting side of the VS Code line) while actually collecting usable data during the alpha phase.
 
 ---
 
@@ -224,7 +237,7 @@ Keep the taxonomy small, stable, and PII-free. Properties are low-cardinality en
 
 **Phase 2 — Usage.** Add `tauri-plugin-aptabase` (cloud free tier, 20K/mo) with the small event taxonomy above. Gate on `telemetryUsageEnabled`. Reuse the `logger.ts` batch-to-backend mechanism so all egress originates in Rust.
 
-**Phase 3 — Consent UX.** First-run opt-in prompt + Settings > Privacy toggles (two independent switches), default off. Ship this *with* Phase 1/2, not after — collecting before consent is the exact mistake VS Code is criticized for.
+**Phase 3 — Consent UX (channel-based).** Compute the default from the release channel — alpha **on**, stable **off** — with two independent Settings > Privacy toggles and a `DO_NOT_TRACK`/env kill switch. Show an honest one-time first-run notice on alpha. Ship this *with* Phase 1/2, not after, and ensure crash-report PII scrubbing is in place before crash reporting goes default-on.
 
 **Phase 4 — Scale/own the data (only if needed).** If 5K errors/mo is tight or you want full ownership, stand up **GlitchTip** on a 2 GB VPS and swap the Sentry DSN (no code change). If usage outgrows 20K events/mo or you need funnels/cohorts/feature-flags, evaluate **PostHog** (1M free) as a consolidation that can absorb both jobs.
 
