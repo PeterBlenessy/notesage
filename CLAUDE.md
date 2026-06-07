@@ -99,6 +99,19 @@ cd src-tauri && cargo clean && cd .. && pnpm tauri dev
 - Changed Cargo dependencies
 - Unexplained "command not found" errors from the frontend
 
+### Compiling Rust in a headless / Linux / CI environment (no GUI stack)
+
+The app targets macOS, and a full `cargo build` / `cargo test` needs the system GTK/WebKit dev libraries (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `libasound2-dev`, …) that are usually absent in a Linux dev container or cloud session. **Do not burn time trying to `apt install` the whole GUI stack** — for verifying that Rust changes compile, use the committed pkg-config stubs instead:
+
+```bash
+src-tauri/scripts/generate-pkg-config-stubs.sh          # one-time per session; writes src-tauri/.pkg-config-stubs/ (gitignored)
+cd src-tauri && PKG_CONFIG_PATH="$(pwd)/.pkg-config-stubs" cargo check
+```
+
+This makes `cargo check` (compile-only, no linking) succeed without the real libraries, which is enough to catch type/borrow/API errors — the actual risk when editing backend Rust. The dep tree (incl. heavy crates like `sentry`, `typst`, `whisper-rs`) compiles fine this way; the first run is slow (cold target dir), later runs are incremental.
+
+**Limits:** stubs provide pkg-config metadata, not headers or libs — so a full `cargo build`/`cargo test` (which links) still needs the real `-dev` packages and is left to CI (`.github/workflows/test.yml` "Rust Backend Tests" runs `cargo test` on macOS). Locally, treat a green `cargo check` as the backend gate and let CI run `cargo test`.
+
 ## Versioning
 
 The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri.conf.json`) references it via `"version": "../package.json"` — only bump `package.json` when releasing.
