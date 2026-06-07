@@ -887,12 +887,19 @@ body {
  * ========================================================================= */
 /* Sidebar lives at the layout-root level (sibling of the title-bar +
    doc-area column) since live-test 2026-04-25 — the selector no
-   longer descends through `[data-quiet-layout-document-area]`. */
+   longer descends through `[data-quiet-layout-document-area]`.
+
+   Focus mode fully HIDES the sidebar (Quiet Composer is the only shell):
+   a negative left margin equal to its own width collapses the reserved
+   252 px track so the document column reclaims the space, while the nav
+   slides off the left edge (clipped by the layout root's `overflow-hidden`)
+   and fades out. `var(--quiet-sidebar-width)` is published by QuietLayout
+   (252 px when pinned), so the collapse always matches the actual width. */
 .app.focus-mode nav[aria-label="Workspace sidebar"] {
   opacity: 0;
-  transform: translateX(-12px);
+  margin-left: calc(-1 * var(--quiet-sidebar-width, 252px));
   pointer-events: none;
-  transition: opacity 220ms ease-out, transform 220ms ease-out;
+  transition: opacity 220ms ease-out, margin-left 220ms ease-out;
 }
 .app.focus-mode [data-quiet-toolbar],
 .app.focus-mode [data-quiet-status] {
