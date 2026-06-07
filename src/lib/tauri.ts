@@ -1161,6 +1161,16 @@ export const tauriApi = {
     await invoke("start_recording", { source });
   },
 
+  /** Pause the live capture — samples are discarded while the stream stays alive. */
+  async pauseRecording(): Promise<void> {
+    await invoke("pause_recording");
+  },
+
+  /** Resume a paused capture. */
+  async resumeRecording(): Promise<void> {
+    await invoke("resume_recording");
+  },
+
   async stopRecording(): Promise<RecordingResult> {
     return await invoke<RecordingResult>("stop_recording");
   },

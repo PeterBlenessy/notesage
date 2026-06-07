@@ -2,12 +2,17 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { tauriApi, type RecordingResult } from '@/lib/tauri';
 import { useRecordingStore, type RecordingSource } from '@/stores/recording-store';
+import { recordedElapsedMs } from '@/lib/recording-time';
 import { toast } from 'sonner';
 
 interface RecordingHook {
   startRecording: (source: RecordingSource) => Promise<void>;
   stopRecording: () => Promise<RecordingResult | null>;
+  pauseRecording: () => Promise<void>;
+  resumeRecording: () => Promise<void>;
   isRecording: boolean;
+  isPaused: boolean;
+  /** Recorded seconds — pause-aware (frozen while paused). */
   elapsedTime: number;
   source: RecordingSource;
   micLevel: number;
@@ -17,10 +22,15 @@ interface RecordingHook {
 export function useRecording(): RecordingHook {
   const {
     isRecording,
+    isPaused,
+    pauseStartedAt,
+    pausedTotalMs,
     recordingSource,
     recordingStartTime,
     startRecording: storeStart,
     stopRecording: storeStop,
+    pauseRecording: storePause,
+    resumeRecording: storeResume,
   } = useRecordingStore();
 
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -29,12 +39,19 @@ export function useRecording(): RecordingHook {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
-  // Elapsed time counter
+  // Elapsed time counter — pause-aware: while paused the displayed time
+  // freezes at the pause instant; resumed time excludes the paused stretch.
   useEffect(() => {
     if (isRecording && recordingStartTime) {
-      timerRef.current = setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - recordingStartTime) / 1000));
-      }, 1000);
+      const compute = () =>
+        setElapsedTime(
+          Math.floor(
+            recordedElapsedMs(recordingStartTime, pausedTotalMs, pauseStartedAt, Date.now()) /
+              1000,
+          ),
+        );
+      compute();
+      timerRef.current = setInterval(compute, 1000);
       return () => {
         if (timerRef.current) clearInterval(timerRef.current);
       };
@@ -42,7 +59,7 @@ export function useRecording(): RecordingHook {
       setElapsedTime(0);
       if (timerRef.current) clearInterval(timerRef.current);
     }
-  }, [isRecording, recordingStartTime]);
+  }, [isRecording, recordingStartTime, pausedTotalMs, pauseStartedAt]);
 
   // Listen for recording level events
   useEffect(() => {
@@ -83,6 +100,24 @@ export function useRecording(): RecordingHook {
     }
   }, [storeStart]);
 
+  const pauseRecording = useCallback(async () => {
+    try {
+      await tauriApi.pauseRecording();
+      storePause();
+    } catch (err) {
+      toast.error(`Failed to pause recording: ${err}`);
+    }
+  }, [storePause]);
+
+  const resumeRecording = useCallback(async () => {
+    try {
+      await tauriApi.resumeRecording();
+      storeResume();
+    } catch (err) {
+      toast.error(`Failed to resume recording: ${err}`);
+    }
+  }, [storeResume]);
+
   const stopRecording = useCallback(async (): Promise<RecordingResult | null> => {
     try {
       const info = await tauriApi.stopRecording();
@@ -104,7 +139,10 @@ export function useRecording(): RecordingHook {
   return {
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     isRecording,
+    isPaused,
     elapsedTime,
     source: recordingSource,
     micLevel,

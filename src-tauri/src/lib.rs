@@ -328,6 +328,8 @@ pub fn run() {
             health_check,
             // Voice transcription
             start_recording,
+            pause_recording,
+            resume_recording,
             stop_recording,
             transcribe_file,
             list_whisper_models,
