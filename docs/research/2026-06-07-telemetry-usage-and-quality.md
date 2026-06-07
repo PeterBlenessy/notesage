@@ -5,6 +5,7 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | [2026-06-07-telemetry.md](../prds/2026-06-07-telemetry.md) | Drafted |
+| Tasks | [2026-06-07-telemetry-tasks.md](../tasks/2026-06-07-telemetry-tasks.md) | Not started |
 
 Notesage ships frequent alpha releases but has no signal beyond the maintainer's manual testing — no view into which features are used, where the app crashes, or how it performs in the wild. This document evaluates **free** telemetry options that respect Notesage's privacy-first positioning, covering both halves of the question: **usage** (product analytics) and **quality** (crash/error reporting). It updates and extends the prior analytics-only survey in [`telemetry-analytics-options.md`](telemetry-analytics-options.md) (2026-03-25), which should be read as the deeper reference on the pure-analytics platforms (PostHog self-hosting footprint, Countly, GA4, Datadog).
 

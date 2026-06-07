@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | High |
 | **Impact** | Replaces "maintainer's manual testing" with real signal on which features are used and where the app crashes, so alpha releases can be steered by data |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [2026-06-07-telemetry-tasks](../tasks/2026-06-07-telemetry-tasks.md) |
 | **Related** | Research: [telemetry-usage-and-quality](../research/2026-06-07-telemetry-usage-and-quality.md), [telemetry-analytics-options](../research/telemetry-analytics-options.md) |
 
 ## Problem
