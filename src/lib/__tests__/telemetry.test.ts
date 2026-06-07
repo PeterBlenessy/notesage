@@ -20,8 +20,12 @@ vi.mock("@/stores/settings-store", () => ({
     s.telemetryUsageEnabled ?? s.releaseChannel === "alpha",
 }));
 
-const trackEvent = vi.fn(async () => {});
-vi.mock("@aptabase/tauri", () => ({ trackEvent: (...args: unknown[]) => trackEvent(...args) }));
+const trackEvent = vi.fn(
+  (_event: string, _props?: Record<string, string>): Promise<void> => Promise.resolve(),
+);
+vi.mock("@aptabase/tauri", () => ({
+  trackEvent: (event: string, props?: Record<string, string>) => trackEvent(event, props),
+}));
 
 import { track, providerKind } from "../telemetry";
 
@@ -64,10 +68,10 @@ describe("track() gating", () => {
   it("sends exactly the typed props — nothing appended (no PII)", () => {
     mockState.telemetryUsageEnabled = true;
     track("ai_chat_sent", { path: "acp", provider_kind: "agent_managed" });
-    const [, props] = trackEvent.mock.calls[0]!;
+    const props = trackEvent.mock.calls[0]?.[1];
     expect(props).toEqual({ path: "acp", provider_kind: "agent_managed" });
     // Guard: no install id, no path, no content leaked into the payload.
-    expect(Object.keys(props as object).sort()).toEqual(["path", "provider_kind"]);
+    expect(Object.keys(props ?? {}).sort()).toEqual(["path", "provider_kind"]);
   });
 
   it("never throws into the caller even if the SDK rejects", () => {
