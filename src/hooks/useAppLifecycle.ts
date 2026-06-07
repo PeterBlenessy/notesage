@@ -104,7 +104,9 @@ export function useAppLifecycle() {
             }),
           ),
       });
-      settings.setTelemetryNoticeSeen(true);
+      // Read the setter from the live store rather than the captured snapshot,
+      // so this stays correct if the persist storage adapter ever goes async.
+      useSettingsStore.getState().setTelemetryNoticeSeen(true);
     }
   }, []);
 

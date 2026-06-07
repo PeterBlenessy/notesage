@@ -113,14 +113,6 @@ export function toastExternalReload(filePath: string): void {
 // Telemetry first-run / channel-switch notice
 // ---------------------------------------------------------------------------
 
-/**
- * Exact disclosure copy from the PRD (2026-06-07-telemetry). Shared by the
- * first-run notice (useAppLifecycle) and the inline channel note + switch toast
- * (SystemSettings), so the wording stays in one place.
- */
-export const TELEMETRY_ALPHA_DISCLOSURE =
-  "Alpha builds share anonymous usage + crash reports by default to help stabilize fast-moving features. No document content, file contents, or AI prompts are ever sent.";
-
 export interface TelemetryNoticeToastOptions {
   /** Invoked when the user clicks "Open settings". */
   onOpenSettings: () => void;
@@ -137,7 +129,10 @@ export function toastTelemetryNotice(options: TelemetryNoticeToastOptions): void
   // single-sentence disclosure; the elaborating clause goes in `description`.
   toast.info("Alpha builds share anonymous usage + crash reports by default.", {
     id: "telemetry-notice",
-    duration: 10000,
+    // Privacy-relevant notice with an action — give the user time to read it,
+    // and a close button so it doesn't vanish before they decide.
+    duration: 15000,
+    closeButton: true,
     description: "No document content, file contents, or AI prompts are ever sent.",
     action: {
       label: "Open settings",

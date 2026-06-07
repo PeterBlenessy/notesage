@@ -18,14 +18,20 @@ import { getCapabilities } from '@/lib/ai/connections';
 interface ConnectionsStore {
   connections: Connection[];
 
-  addConnection: (conn: {
-    provider: ConnectionProvider;
-    authMethod: AuthMethod;
-    status: ConnectionStatus;
-    label: string;
-    credentials: ConnectionCredentials;
-    config?: ConnectionConfig;
-  }) => string; // returns ID
+  addConnection: (
+    conn: {
+      provider: ConnectionProvider;
+      authMethod: AuthMethod;
+      status: ConnectionStatus;
+      label: string;
+      credentials: ConnectionCredentials;
+      config?: ConnectionConfig;
+    },
+    /** `silent: true` suppresses the `connection_added` telemetry event — used
+     * by the one-time v1→v2 migration so ported connections aren't counted as
+     * new user actions. */
+    opts?: { silent?: boolean },
+  ) => string; // returns ID
   updateConnection: (id: string, updates: Partial<Omit<Connection, 'id' | 'createdAt'>>) => void;
   removeConnection: (id: string) => void;
   getConnection: (id: string) => Connection | undefined;
@@ -38,7 +44,7 @@ export const useConnectionsStore = create<ConnectionsStore>()(
     (set, get) => ({
       connections: [],
 
-      addConnection: (conn) => {
+      addConnection: (conn, opts) => {
         const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const capabilities = getCapabilities(conn.provider, conn.authMethod);
 
@@ -63,7 +69,9 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           connections: [...state.connections, connection],
         }));
         log.info('connections', 'Connection added', { id, provider: conn.provider, authMethod: conn.authMethod, capabilities });
-        track('connection_added', { provider_kind: providerKind(conn.provider, conn.authMethod) });
+        if (!opts?.silent) {
+          track('connection_added', { provider_kind: providerKind(conn.provider, conn.authMethod) });
+        }
         return id;
       },
 

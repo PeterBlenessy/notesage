@@ -140,10 +140,15 @@ pub async fn telemetry_apply_consent(usage: bool, crash: bool) -> Result<(), Str
 /// segment) so trailing project/file names don't survive.
 fn redact_pii(s: &str) -> String {
     let patterns = [
-        // Unix home / temp absolute paths (consume the whole token).
-        r"(?:/Users/|/home/|/private/|/var/folders/)\S*",
+        // Unix absolute paths under a known root (consume the whole token):
+        // user homes, temp dirs, and app/library locations.
+        r"(?:/Users/|/home/|/root/|/private/|/var/folders/|/var/tmp/|/tmp/|/opt/|/srv/|/Library/)\S*",
         // Windows user paths, e.g. C:\Users\name\...
         r"[A-Za-z]:\\[^\s]*",
+        // Relative paths with at least one separator + a file extension,
+        // e.g. ./project/note.md or src/lib/x.ts (a bare "note.md" is left
+        // alone — too many false positives on ordinary prose).
+        r"(?:\./|\.\./)?(?:[\w.-]+/)+[\w.-]+\.\w+",
         // Email addresses.
         r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
     ];
@@ -165,6 +170,12 @@ fn redact_pii(s: &str) -> String {
 /// *function/module* names are kept — they make a crash diagnosable and carry
 /// no user content. Breadcrumb capture is also disabled at the client
 /// (`max_breadcrumbs: 0`); clearing here is defence-in-depth.
+///
+/// `contexts`, `extra`, and `tags` are cleared wholesale rather than redacted:
+/// we never set them deliberately except the React `componentStack` (via
+/// `ErrorBoundary`), which a Vite/WebKit build can render with embedded source
+/// paths. Dropping them keeps a single, easily-audited strip point — the
+/// exception stacktrace's function/module names remain for diagnosis.
 pub fn scrub_event(mut event: sentry::protocol::Event<'static>) -> sentry::protocol::Event<'static> {
     // No hostname.
     event.server_name = None;
@@ -177,12 +188,20 @@ pub fn scrub_event(mut event: sentry::protocol::Event<'static>) -> sentry::proto
     event.breadcrumbs.values.clear();
     event.modules.clear();
     event.transaction = None;
+    // Structured side-channels we don't deliberately populate (and the one we
+    // do — React componentStack — can embed source paths). Drop them entirely.
+    event.contexts.clear();
+    event.extra.clear();
+    event.tags.clear();
+    event.logentry = None;
 
     // Free-text fields that can embed paths/URLs/emails.
     if let Some(msg) = event.message.take() {
         event.message = Some(redact_pii(&msg));
     }
     for exception in event.exception.values.iter_mut() {
+        // The exception *type* string can be a formatted error carrying a path.
+        exception.ty = redact_pii(&exception.ty);
         if let Some(val) = exception.value.take() {
             exception.value = Some(redact_pii(&val));
         }
@@ -280,7 +299,7 @@ mod tests {
             ..Default::default()
         };
 
-        Event {
+        let mut ev = Event {
             server_name: Some(Cow::Borrowed("alices-macbook.local")),
             user: Some(User {
                 email: Some("alice@example.com".into()),
@@ -289,7 +308,7 @@ mod tests {
             }),
             message: Some("startup failed at /Users/alice/Notesage/secret-project".into()),
             exception: vec![Exception {
-                ty: "panic".into(),
+                ty: "Error: ENOENT /Users/alice/Notesage/secret-project/note.md".into(),
                 value: Some(
                     "panic reading /Users/alice/Notesage/secret-project/note.md".into(),
                 ),
@@ -304,7 +323,13 @@ mod tests {
             .into(),
             stacktrace: Some(stacktrace),
             ..Default::default()
-        }
+        };
+        // Structured side-channels the scrubber must clear wholesale.
+        ev.extra
+            .insert("path".to_string(), "/Users/alice/secret/x.md".into());
+        ev.tags
+            .insert("file".to_string(), "/Users/alice/secret/y.md".to_string());
+        ev
     }
 
     #[test]
@@ -314,19 +339,33 @@ mod tests {
             "failed at <redacted> now"
         );
         assert_eq!(redact_pii("/home/bob/x/y.txt"), "<redacted>");
+        // Library / temp / root roots and relative paths.
+        assert_eq!(redact_pii("at /Library/Caches/foo.db end"), "at <redacted> end");
+        assert_eq!(redact_pii("temp /tmp/notesage-sandbox-7/x.sb"), "temp <redacted>");
+        assert!(!redact_pii("failed src/lib/secret.ts here").contains("secret.ts"));
         assert!(!redact_pii("contact bob@example.com please").contains("bob@example.com"));
         assert_eq!(redact_pii("no pii here"), "no pii here");
     }
 
     #[test]
-    fn scrubber_redacts_message_and_exception_value() {
+    fn scrubber_redacts_message_type_and_exception_value() {
         let scrubbed = scrub_event(pii_event());
         assert!(
             !scrubbed.message.unwrap().contains("/Users/alice"),
             "message must be path-redacted"
         );
-        let val = scrubbed.exception.values[0].value.clone().unwrap();
+        let ex = &scrubbed.exception.values[0];
+        assert!(!ex.ty.contains("/Users/alice"), "exception type must be path-redacted");
+        let val = ex.value.clone().unwrap();
         assert!(!val.contains("/Users/alice"), "exception value must be path-redacted");
+    }
+
+    #[test]
+    fn scrubber_clears_structured_side_channels() {
+        let scrubbed = scrub_event(pii_event());
+        assert!(scrubbed.extra.is_empty(), "extra must be cleared");
+        assert!(scrubbed.tags.is_empty(), "tags must be cleared");
+        assert!(scrubbed.contexts.is_empty(), "contexts must be cleared");
     }
 
     #[test]

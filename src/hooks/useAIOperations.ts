@@ -172,12 +172,19 @@ export function useAIOperations() {
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       assertLockAllowsSend();
+      const chatPath = aiPathFor(effectiveConnection);
       track('ai_chat_sent', {
-        path: aiPathFor(effectiveConnection),
-        provider_kind: providerKind(
-          effectiveConnection?.provider ?? resolved?.provider ?? '',
-          effectiveConnection?.authMethod ?? '',
-        ),
+        path: chatPath,
+        // A Copilot LSP connection's authMethod is the generic `agent_managed`,
+        // which providerKind() collapses to "agent_managed" — but the routing
+        // path is copilot_lsp. Report copilot_lsp so path/provider_kind agree.
+        provider_kind:
+          chatPath === 'copilot_lsp'
+            ? 'copilot_lsp'
+            : providerKind(
+                effectiveConnection?.provider ?? resolved?.provider ?? '',
+                effectiveConnection?.authMethod ?? '',
+              ),
       });
       if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
         return copilotSendChatMessage(content, messages, opts);

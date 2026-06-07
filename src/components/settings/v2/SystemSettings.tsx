@@ -319,7 +319,7 @@ export function SystemSettings({
                 }
               }}
             >
-              <SelectTrigger className="w-[120px] h-7 text-[13px]">
+              <SelectTrigger className="w-[120px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -334,6 +334,7 @@ export function SystemSettings({
       <SettingsGroup
         label="Telemetry"
         description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha defaults these on; Stable defaults them off — your choice here overrides the default."
+        searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
       >
         <SettingsRow
           label="Usage analytics"
@@ -344,6 +345,7 @@ export function SystemSettings({
               id="telemetry-usage"
               checked={telemetryUsageEffective}
               onCheckedChange={(v) => setTelemetryUsageEnabled(v)}
+              aria-label="Usage analytics"
             />
           }
         />
@@ -356,6 +358,7 @@ export function SystemSettings({
               id="telemetry-crash"
               checked={telemetryCrashEffective}
               onCheckedChange={(v) => setTelemetryCrashEnabled(v)}
+              aria-label="Crash reports"
             />
           }
         />

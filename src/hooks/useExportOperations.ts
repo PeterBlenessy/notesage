@@ -250,8 +250,10 @@ export function useExportOperations(editor: Editor | null) {
       setIsExporting(true);
 
       // Only emit built-in template names — user-uploaded templates carry
-      // arbitrary, PII-bearing filenames, so collapse anything unknown to
-      // "custom" (keeps the telemetry payload low-cardinality and PII-free).
+      // arbitrary, PII-bearing filenames, so collapse anything unknown (or
+      // absent) to "custom" (keeps the telemetry payload low-cardinality and
+      // PII-free). The event itself fires only on a completed export (below),
+      // not here, so cancelled/failed exports aren't counted.
       const rawTemplate =
         options.format === "pptx" ? options.pptxTemplate : options.template;
       const BUILTIN_TEMPLATES = new Set<ExportTemplate>([
@@ -261,12 +263,10 @@ export function useExportOperations(editor: Editor | null) {
         "simple",
         "business",
       ]);
-      track("export_performed", {
-        format: options.format,
-        template: BUILTIN_TEMPLATES.has(rawTemplate as ExportTemplate)
+      const telemetryTemplate: ExportTemplate =
+        rawTemplate && BUILTIN_TEMPLATES.has(rawTemplate as ExportTemplate)
           ? (rawTemplate as ExportTemplate)
-          : "custom",
-      });
+          : "custom";
 
       // Resolve project root for image/drawing path resolution
       const projectRoot = useWorkspaceStore
@@ -411,6 +411,13 @@ export function useExportOperations(editor: Editor | null) {
             },
           });
         }
+
+        // Reached only after a branch wrote a file to disk — cancelled exports
+        // return early above and failures throw to the catch below.
+        track("export_performed", {
+          format: options.format,
+          template: telemetryTemplate,
+        });
       } catch (error) {
         console.error("Export failed:", error);
         toast.error(`Export failed: ${error}`);
