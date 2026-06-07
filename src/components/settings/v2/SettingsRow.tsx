@@ -4,6 +4,7 @@ import {
   matchesSettingsQuery,
   useSettingsSearchQuery,
 } from './SettingsSearch';
+import { useSettingsGroupKeywordMatch } from './SettingsGroup';
 
 /**
  * Props for the settings row primitive.
@@ -118,7 +119,12 @@ export function SettingsRow({
   // SettingsGroup hides the wrapper when every child row has filtered
   // out, so we don't show empty bordered boxes.
   const query = useSettingsSearchQuery();
-  if (!rowMatchesQuery({ label, description, controlSublabel }, query)) {
+  const groupKeywordMatched = useSettingsGroupKeywordMatch();
+  // When the parent SettingsGroup is visible because a keyword synonym matched
+  // (e.g. "privacy" for a group renamed to "Permission scopes"), broadcast
+  // "show all rows" so individual rows don't self-hide — the keyword is a
+  // "reveal the whole group" signal, not just the group heading.
+  if (!groupKeywordMatched && !rowMatchesQuery({ label, description, controlSublabel }, query)) {
     return null;
   }
 

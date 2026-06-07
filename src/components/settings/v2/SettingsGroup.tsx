@@ -1,7 +1,18 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { rowMatchesQuery, SettingsRow, type SettingsRowProps } from './SettingsRow';
-import { useSettingsSearchQuery } from './SettingsSearch';
+import { matchesSettingsQuery, useSettingsSearchQuery } from './SettingsSearch';
+
+/**
+ * When a group is visible because a keyword synonym matched (rather than a
+ * row's text), it broadcasts that fact so descendant SettingsRows can skip
+ * their own filter — the keyword is a "show all rows in this group" signal.
+ */
+export const SettingsGroupKeywordMatchContext = React.createContext<boolean>(false);
+
+export function useSettingsGroupKeywordMatch(): boolean {
+  return React.useContext(SettingsGroupKeywordMatchContext);
+}
 
 /**
  * Props for the settings group primitive.
@@ -23,6 +34,14 @@ export interface SettingsGroupProps {
    * double-up with the island styling.
    */
   bare?: boolean;
+  /**
+   * Optional search synonyms. When the settings search query matches any
+   * keyword, the group stays visible even when none of its SettingsRow
+   * children individually match. Use this to surface a renamed group under
+   * its old label (e.g. `['privacy']` for a group renamed to "Permission
+   * scopes") so users who remember the previous name still land here.
+   */
+  searchKeywords?: string[];
   children: React.ReactNode;
   className?: string;
 }
@@ -40,8 +59,17 @@ export interface SettingsGroupProps {
 export function groupHasVisibleRows(
   children: React.ReactNode,
   query: string,
+  searchKeywords?: string[],
 ): boolean {
   if (!query) return true;
+  // A keyword synonym match makes the whole group visible — this lets
+  // renamed groups be discoverable under their old names (e.g. "privacy"
+  // finding a group now called "Permission scopes").
+  if (searchKeywords) {
+    for (const kw of searchKeywords) {
+      if (matchesSettingsQuery(kw, query)) return true;
+    }
+  }
   let anyVisibleRow = false;
   let hasAnyRow = false;
   React.Children.forEach(children, (child) => {
@@ -68,11 +96,18 @@ export function SettingsGroup({
   label,
   description,
   bare = false,
+  searchKeywords,
   children,
   className,
 }: SettingsGroupProps) {
   const query = useSettingsSearchQuery();
-  if (!groupHasVisibleRows(children, query)) return null;
+  if (!groupHasVisibleRows(children, query, searchKeywords)) return null;
+  // Determine whether visibility is driven by a keyword match (rather than a
+  // row match) so we can broadcast "show all rows" to SettingsRow children.
+  const keywordMatched = Boolean(
+    query &&
+      searchKeywords?.some((kw) => matchesSettingsQuery(kw, query)),
+  );
 
   return (
     // Live-test 2026-04-26 — tinted-island grouping. Rows now sit on a
@@ -83,25 +118,27 @@ export function SettingsGroup({
     // visual separation. The `bare` opt-out renders rows flat for
     // groups whose inner component already owns its own chrome
     // (legacy tables, bordered card lists).
-    <section className={cn('mb-6 last:mb-0', className)}>
-      {label ? (
-        <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
-          {label}
-        </h3>
-      ) : null}
-      {description ? (
-        <p className="text-[12px] text-muted-foreground mb-2 leading-relaxed">
-          {description}
-        </p>
-      ) : null}
-      <div
-        className={cn(
-          'divide-y divide-border/60',
-          !bare && 'rounded-xl bg-muted/40 px-4',
-        )}
-      >
-        {children}
-      </div>
-    </section>
+    <SettingsGroupKeywordMatchContext.Provider value={keywordMatched}>
+      <section className={cn('mb-6 last:mb-0', className)}>
+        {label ? (
+          <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
+            {label}
+          </h3>
+        ) : null}
+        {description ? (
+          <p className="text-[12px] text-muted-foreground mb-2 leading-relaxed">
+            {description}
+          </p>
+        ) : null}
+        <div
+          className={cn(
+            'divide-y divide-border/60',
+            !bare && 'rounded-xl bg-muted/40 px-4',
+          )}
+        >
+          {children}
+        </div>
+      </section>
+    </SettingsGroupKeywordMatchContext.Provider>
   );
 }
