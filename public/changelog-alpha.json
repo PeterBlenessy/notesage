@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.15",
+      "date": "2026-06-07",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat: rename access/isolation grouping to \"Permission scopes\" in AI settings (#422)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.14",
       "date": "2026-06-04",
       "previousVersion": "0.46.0",
