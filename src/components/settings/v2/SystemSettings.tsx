@@ -46,10 +46,7 @@ import {
   selectEffectiveTelemetryUsage,
   selectEffectiveTelemetryCrash,
 } from '@/stores/settings-store';
-import {
-  TELEMETRY_ALPHA_DISCLOSURE,
-  toastTelemetryNotice,
-} from '@/lib/notifications';
+import { toastTelemetryNotice } from '@/lib/notifications';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -186,9 +183,6 @@ export function SystemSettings({
     (s) => s.setTelemetryCrashEnabled,
   );
   const setTelemetryNoticeSeen = useSettingsStore((s) => s.setTelemetryNoticeSeen);
-  const resetTelemetryInstallId = useSettingsStore(
-    (s) => s.resetTelemetryInstallId,
-  );
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -335,16 +329,11 @@ export function SystemSettings({
             </Select>
           }
         />
-        {(releaseChannel ?? 'stable') === 'alpha' ? (
-          <p className="px-0 pb-3 -mt-1 text-[12px] text-muted-foreground leading-relaxed">
-            {TELEMETRY_ALPHA_DISCLOSURE}
-          </p>
-        ) : null}
       </SettingsGroup>
 
       <SettingsGroup
         label="Telemetry"
-        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent."
+        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha defaults these on; Stable defaults them off — your choice here overrides the default."
       >
         <SettingsRow
           label="Usage analytics"
@@ -371,28 +360,6 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Channel default"
-          description="Alpha defaults these on; Stable defaults them off — your choice here overrides the default."
-        />
-        <SettingsRow
-          label="Reset analytics ID"
-          description="Generate a new anonymous install identifier, unlinking future events from past ones."
-          control={
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                resetTelemetryInstallId();
-                toast.success('Analytics ID reset');
-              }}
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              Reset ID
-            </Button>
-          }
-        />
-        <SettingsRow
           label="What we collect"
           description="Read exactly what is and isn't sent."
           control={
@@ -400,6 +367,7 @@ export function SystemSettings({
               variant="outline"
               size="sm"
               className="h-8 text-xs"
+              aria-label="View what we collect"
               onClick={() => {
                 openUrl(TELEMETRY_DOC_URL).catch(() => {});
               }}

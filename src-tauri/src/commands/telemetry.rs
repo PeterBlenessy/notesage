@@ -133,11 +133,38 @@ pub async fn telemetry_apply_consent(usage: bool, crash: bool) -> Result<(), Str
     Ok(())
 }
 
+/// Redact absolute filesystem paths and email addresses from a free-text string.
+/// Used on panic/exception messages, which routinely embed `/Users/<name>/…`
+/// paths, project/file names, or URLs. Crash events are rare, so compiling the
+/// patterns per call is fine. Whole-path tokens are replaced (not just the user
+/// segment) so trailing project/file names don't survive.
+fn redact_pii(s: &str) -> String {
+    let patterns = [
+        // Unix home / temp absolute paths (consume the whole token).
+        r"(?:/Users/|/home/|/private/|/var/folders/)\S*",
+        // Windows user paths, e.g. C:\Users\name\...
+        r"[A-Za-z]:\\[^\s]*",
+        // Email addresses.
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+    ];
+    let mut out = s.to_string();
+    for p in patterns {
+        if let Ok(re) = regex::Regex::new(p) {
+            out = re.replace_all(&out, "<redacted>").into_owned();
+        }
+    }
+    out
+}
+
 /// `before_send` scrubber — the single auditable PII strip point for the crash
-/// stream. Clears `server_name` (hostname), drops `user` (PII), removes
-/// path-bearing frame fields (`abs_path`, `filename`) from every stacktrace, and
-/// drops `request` (could carry URLs). Stack frame *function/module* names are
-/// kept — they're what makes a crash diagnosable and carry no user content.
+/// stream. Clears `server_name` (hostname), drops `user` (PII) and `request`
+/// (URLs/headers/cookies); removes path-bearing frame fields (`abs_path`,
+/// `filename`) from every stacktrace; drops `breadcrumbs`, `modules`, and
+/// `transaction` (incidental path carriers); and redacts absolute paths/emails
+/// from the top-level `message` and every exception `value`. Stack frame
+/// *function/module* names are kept — they make a crash diagnosable and carry
+/// no user content. Breadcrumb capture is also disabled at the client
+/// (`max_breadcrumbs: 0`); clearing here is defence-in-depth.
 pub fn scrub_event(mut event: sentry::protocol::Event<'static>) -> sentry::protocol::Event<'static> {
     // No hostname.
     event.server_name = None;
@@ -145,6 +172,21 @@ pub fn scrub_event(mut event: sentry::protocol::Event<'static>) -> sentry::proto
     event.user = None;
     // HTTP request data can carry URLs/headers/cookies.
     event.request = None;
+    // Breadcrumbs can capture logged file paths; modules/transaction are
+    // incidental carriers with no diagnostic value the stack frames lack.
+    event.breadcrumbs.values.clear();
+    event.modules.clear();
+    event.transaction = None;
+
+    // Free-text fields that can embed paths/URLs/emails.
+    if let Some(msg) = event.message.take() {
+        event.message = Some(redact_pii(&msg));
+    }
+    for exception in event.exception.values.iter_mut() {
+        if let Some(val) = exception.value.take() {
+            exception.value = Some(redact_pii(&val));
+        }
+    }
 
     let scrub_stacktrace = |st: &mut sentry::protocol::Stacktrace| {
         for frame in st.frames.iter_mut() {
@@ -245,8 +287,12 @@ mod tests {
                 ip_address: None,
                 ..Default::default()
             }),
+            message: Some("startup failed at /Users/alice/Notesage/secret-project".into()),
             exception: vec![Exception {
                 ty: "panic".into(),
+                value: Some(
+                    "panic reading /Users/alice/Notesage/secret-project/note.md".into(),
+                ),
                 stacktrace: Some(stacktrace.clone()),
                 ..Default::default()
             }]
@@ -259,6 +305,28 @@ mod tests {
             stacktrace: Some(stacktrace),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn redact_pii_strips_paths_and_emails() {
+        assert_eq!(
+            redact_pii("failed at /Users/alice/Notesage/secret.md now"),
+            "failed at <redacted> now"
+        );
+        assert_eq!(redact_pii("/home/bob/x/y.txt"), "<redacted>");
+        assert!(!redact_pii("contact bob@example.com please").contains("bob@example.com"));
+        assert_eq!(redact_pii("no pii here"), "no pii here");
+    }
+
+    #[test]
+    fn scrubber_redacts_message_and_exception_value() {
+        let scrubbed = scrub_event(pii_event());
+        assert!(
+            !scrubbed.message.unwrap().contains("/Users/alice"),
+            "message must be path-redacted"
+        );
+        let val = scrubbed.exception.values[0].value.clone().unwrap();
+        assert!(!val.contains("/Users/alice"), "exception value must be path-redacted");
     }
 
     #[test]

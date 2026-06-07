@@ -5,7 +5,7 @@
  * that the payload sent is exactly the typed props (no PII appended), and the
  * `providerKind` low-cardinality mapping.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Mutable state the mocked store returns; each test sets what it needs.
 const mockState: { telemetryUsageEnabled: boolean | null; releaseChannel: "stable" | "alpha" } = {
@@ -27,7 +27,7 @@ vi.mock("@aptabase/tauri", () => ({
   trackEvent: (event: string, props?: Record<string, string>) => trackEvent(event, props),
 }));
 
-import { track, providerKind } from "../telemetry";
+import { track, providerKind, coarseOs } from "../telemetry";
 
 beforeEach(() => {
   trackEvent.mockClear();
@@ -113,5 +113,30 @@ describe("providerKind", () => {
 
   it("falls back to a known kind for anything unrecognized", () => {
     expect(providerKind("mystery", "api_key")).toBe("local");
+  });
+});
+
+describe("coarseOs", () => {
+  const stub = (userAgent: string, platform: string) =>
+    vi.stubGlobal("navigator", { userAgent, platform } as Navigator);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("buckets the three desktop OSes and never returns a raw UA", () => {
+    stub("Mozilla/5.0 (Macintosh; …)", "MacIntel");
+    expect(coarseOs()).toBe("macos");
+    stub("Mozilla/5.0 (Windows NT 10.0; …)", "Win32");
+    expect(coarseOs()).toBe("windows");
+    stub("Mozilla/5.0 (X11; Linux x86_64)", "Linux x86_64");
+    expect(coarseOs()).toBe("linux");
+  });
+
+  it("falls back to 'other' for unknown/empty navigator", () => {
+    stub("SomethingElse/1.0", "");
+    expect(coarseOs()).toBe("other");
+  });
+
+  it("only ever returns one of the four closed buckets", () => {
+    stub("Mozilla/5.0 (Macintosh)", "MacIntel");
+    expect(["macos", "windows", "linux", "other"]).toContain(coarseOs());
   });
 });

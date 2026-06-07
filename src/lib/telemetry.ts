@@ -55,20 +55,33 @@ export type AiAction = "improve" | "summarize" | "expand";
 /** Export targets (export_performed). */
 export type ExportFormat = "pdf" | "docx" | "pptx" | "html";
 
-/** Where a skill / MCP server was sourced from (skill_invoked, mcp_tool_called). */
-export type ItemSource = "bundled" | "user" | "project";
+/**
+ * Built-in export template names (export_performed). Closed set — user-uploaded
+ * templates carry arbitrary, PII-bearing filenames and MUST be collapsed to
+ * `"custom"` at the call site rather than sent verbatim.
+ */
+export type ExportTemplate =
+  | "clean"
+  | "academic"
+  | "report"
+  | "simple"
+  | "business"
+  | "custom";
+
+/**
+ * Where a skill / MCP server was sourced from (skill_invoked, mcp_tool_called).
+ * Only `user` / `project` are distinguishable today — bundled meta-skills are
+ * extracted into the global Notesage dir and report as `user`, so there is no
+ * separate `bundled` signal to emit.
+ */
+export type ItemSource = "user" | "project";
 
 /**
  * Named feature surfaces (feature_used). Closed union by design — extend it
  * deliberately when instrumenting a new surface rather than passing free text.
+ * Only values with a live `track("feature_used", …)` call site belong here.
  */
-export type FeatureName =
-  | "focus_mode"
-  | "cmd_bar_pin"
-  | "recording"
-  | "source_mode"
-  | "print_layout"
-  | "command_bar";
+export type FeatureName = "focus_mode" | "cmd_bar_pin" | "recording";
 
 /**
  * The full telemetry taxonomy: event name → its required, typed props.
@@ -79,7 +92,7 @@ export interface TelemetryEventProps {
   document_opened: { format: DocumentFormat };
   ai_chat_sent: { path: AiPath; provider_kind: ProviderKind };
   ai_action_used: { action: AiAction };
-  export_performed: { format: ExportFormat; template: string };
+  export_performed: { format: ExportFormat; template: ExportTemplate };
   connection_added: { provider_kind: ProviderKind };
   skill_invoked: { source: ItemSource };
   mcp_tool_called: { source: ItemSource };
@@ -88,6 +101,27 @@ export interface TelemetryEventProps {
 
 /** Allowed event names. */
 export type TelemetryEvent = keyof TelemetryEventProps;
+
+/** Coarse OS bucket for `app_launched` — never the full UA string. */
+export type OsBucket = "macos" | "windows" | "linux" | "other";
+
+/**
+ * Derive a coarse, low-cardinality OS bucket from `navigator`. Returns only the
+ * four buckets — never the raw UA string (PII / high-cardinality). Uses
+ * `navigator.platform` (deprecated but still the most reliable coarse signal in
+ * the embedded WebKit view); switch to `navigator.userAgentData.platform` (UACH)
+ * when Tauri's WebKit supports it. Safe in any environment (missing navigator →
+ * "other").
+ */
+export function coarseOs(): OsBucket {
+  const nav: Partial<Navigator> =
+    typeof navigator !== "undefined" ? navigator : {};
+  const ua = `${nav.userAgent ?? ""} ${nav.platform ?? ""}`.toLowerCase();
+  if (ua.includes("mac")) return "macos";
+  if (ua.includes("win")) return "windows";
+  if (ua.includes("linux") || ua.includes("x11")) return "linux";
+  return "other";
+}
 
 /**
  * Map a connection's provider + auth method to a coarse {@link ProviderKind}.
@@ -114,6 +148,9 @@ export function providerKind(
     case "ollama":
       return "ollama";
     default:
+      // Intentional: an unrecognized api_key provider buckets as the generic
+      // `local` kind rather than leaking its raw provider string. If a new
+      // first-class provider is added, give it its own case above.
       return "local";
   }
 }

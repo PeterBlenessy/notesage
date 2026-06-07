@@ -133,9 +133,12 @@ export interface TelemetryNoticeToastOptions {
  * one rather than stacking.
  */
 export function toastTelemetryNotice(options: TelemetryNoticeToastOptions): void {
-  toast.info(TELEMETRY_ALPHA_DISCLOSURE, {
+  // Short title + secondary description reads better in a banner than the full
+  // single-sentence disclosure; the elaborating clause goes in `description`.
+  toast.info("Alpha builds share anonymous usage + crash reports by default.", {
     id: "telemetry-notice",
     duration: 10000,
+    description: "No document content, file contents, or AI prompts are ever sent.",
     action: {
       label: "Open settings",
       onClick: options.onOpenSettings,

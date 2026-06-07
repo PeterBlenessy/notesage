@@ -18,28 +18,9 @@ import { log, setLogLevel } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
-import { track } from "@/lib/telemetry";
+import { track, coarseOs } from "@/lib/telemetry";
 import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
-
-/**
- * Coarse, low-cardinality OS bucket for the `app_launched` telemetry event.
- * Derived from `navigator` rather than a Tauri OS plugin (not a dependency) so
- * no new capability is needed; intentionally returns only the three desktop
- * buckets plus "other" — never a full UA string (PII / high-cardinality).
- */
-function coarseOs(): "macos" | "windows" | "linux" | "other" {
-  const ua = (
-    navigator.userAgent +
-    " " +
-    // navigator.platform is deprecated but still the most reliable coarse signal
-    (navigator.platform ?? "")
-  ).toLowerCase();
-  if (ua.includes("mac")) return "macos";
-  if (ua.includes("win")) return "windows";
-  if (ua.includes("linux") || ua.includes("x11")) return "linux";
-  return "other";
-}
 
 /**
  * Consolidates all App-level startup side effects and event listeners:

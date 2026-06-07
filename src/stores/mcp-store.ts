@@ -20,7 +20,7 @@ export type McpConfigSource =
  */
 export function mcpSourceToItemSource(
   source: McpConfigSource,
-): 'bundled' | 'user' | 'project' {
+): 'user' | 'project' {
   return source === 'notesage-project' ? 'project' : 'user';
 }
 

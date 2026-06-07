@@ -2482,14 +2482,12 @@ describe('telemetry consent', () => {
     } as Record<string, unknown>);
   }
 
-  it('defaults: tri-state null, notice unseen, install id is a non-empty string', () => {
+  it('defaults: tri-state null, notice unseen', () => {
     resetTelemetry();
     const s = useSettingsStore.getState();
     expect(s.telemetryUsageEnabled).toBeNull();
     expect(s.telemetryCrashEnabled).toBeNull();
     expect(s.telemetryNoticeSeen).toBe(false);
-    expect(typeof s.telemetryInstallId).toBe('string');
-    expect(s.telemetryInstallId.length).toBeGreaterThan(0);
   });
 
   it('effective value follows the channel when not overridden', () => {
@@ -2517,15 +2515,6 @@ describe('telemetry consent', () => {
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
     useSettingsStore.getState().setReleaseChannel('alpha');
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
-  });
-
-  it('resetTelemetryInstallId generates a new id', () => {
-    resetTelemetry();
-    const before = useSettingsStore.getState().telemetryInstallId;
-    useSettingsStore.getState().resetTelemetryInstallId();
-    const after = useSettingsStore.getState().telemetryInstallId;
-    expect(after).not.toBe(before);
-    expect(after.length).toBeGreaterThan(0);
   });
 
   it('syncs effective consent to Rust via telemetry_apply_consent on change', () => {

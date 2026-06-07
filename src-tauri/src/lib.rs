@@ -62,6 +62,11 @@ pub fn run() {
             sentry::ClientOptions {
                 release: Some(env!("CARGO_PKG_VERSION").into()),
                 send_default_pii: false,
+                // Disable breadcrumb capture entirely: default integrations
+                // collect log/console breadcrumbs, and Notesage logs absolute
+                // file paths heavily (`[perf:doc-load]`, startup logs, …). With
+                // none collected there is no breadcrumb PII channel to scrub.
+                max_breadcrumbs: 0,
                 before_send: Some(std::sync::Arc::new(|event| {
                     Some(telemetry::scrub_event(event))
                 })),
@@ -75,6 +80,11 @@ pub fn run() {
         // `sentry::init` binds the client ON by default. Honour persisted
         // startup consent: keep it bound only if crash reporting is enabled,
         // otherwise unbind immediately (egress off until the user opts in).
+        //
+        // Ordering note: the panic hook is installed by init() above and consent
+        // is applied here, immediately after. The only gap is this synchronous
+        // `read_consent()` fs read — a panic in that window is a startup crash
+        // worth capturing regardless of saved preference, so the race is benign.
         let consent = telemetry::read_consent();
         telemetry::set_sentry_enabled(consent.crash);
         // Keep the guard alive for the process lifetime — the client is owned by

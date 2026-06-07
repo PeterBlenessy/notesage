@@ -64,3 +64,7 @@ bundled-skills/**/scripts/node_modules/
 
 # Generated pkg-config stubs for headless Linux cargo check
 src-tauri/.pkg-config-stubs/
+
+# Local env files with telemetry keys/DSN (see .env.example) — never commit
+.env
+.env.local

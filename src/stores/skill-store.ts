@@ -374,7 +374,7 @@ function getSourcePriority(source: string): number {
  */
 export function skillSourceToItemSource(
   source: string,
-): 'bundled' | 'user' | 'project' {
+): 'user' | 'project' {
   return source === 'notesage-project' ? 'project' : 'user';
 }
 

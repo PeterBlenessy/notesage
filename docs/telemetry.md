@@ -24,9 +24,9 @@ property is a low-cardinality enum; there is no free text.
 | `document_opened` | format (`md`/`epub`/`pdf`/`docx`/`pptx`/`code`/`image`/`text`) |
 | `ai_chat_sent` | AI path (`direct`/`acp`/`copilot_lsp`/`local_bundled`), provider *kind* |
 | `ai_action_used` | action (`improve`/`summarize`/`expand`) |
-| `export_performed` | format, template name |
+| `export_performed` | format, template (built-in name, or `custom` for user-uploaded) |
 | `connection_added` | provider *kind* |
-| `skill_invoked` / `mcp_tool_called` | source (`bundled`/`user`/`project`) |
+| `skill_invoked` / `mcp_tool_called` | source (`user`/`project`) |
 | `feature_used` | feature name (e.g. `focus_mode`, `recording`, `cmd_bar_pin`) |
 
 **Crash reports** — exception type and message, and a stack trace with
@@ -34,9 +34,9 @@ property is a low-cardinality enum; there is no free text.
 identity are stripped before the report leaves your machine (a single
 `before_send` scrub point), and `send_default_pii` is off.
 
-An anonymous, random **install ID** (a UUID, not tied to any account or device
-fingerprint) is used only to deduplicate daily/monthly active-user counts. You
-can regenerate it any time with **Reset analytics ID**.
+Daily/monthly active-user counts are deduplicated using the analytics SDK's own
+anonymous identifier — not tied to any account or device fingerprint. Notesage
+does not attach its own user or install id to events.
 
 ## What is NEVER sent
 
