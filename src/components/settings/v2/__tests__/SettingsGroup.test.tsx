@@ -119,5 +119,43 @@ describe('SettingsGroup', () => {
       );
       expect(screen.getByText('Custom')).toBeTruthy();
     });
+
+    it('stays visible when query matches a searchKeyword even though no SettingsRow matches', async () => {
+      // Groups that carry SettingsRow children normally hide when no row
+      // matches the query. A `searchKeywords` prop provides an escape hatch
+      // so the group can be discovered via a synonym (e.g. "privacy" for
+      // a group that was renamed to "Permission scopes").
+      const { SettingsSearchContext } = await import(
+        '@/components/settings/v2/SettingsSearch'
+      );
+      renderWithProviders(
+        <SettingsSearchContext.Provider value={{ query: 'privacy' }}>
+          <SettingsGroup label="Permission scopes" searchKeywords={['privacy']}>
+            <SettingsRow label="Enable tool calling" />
+          </SettingsGroup>
+        </SettingsSearchContext.Provider>,
+      );
+      // The group and its row must be visible — keyword matched even though
+      // neither the row label nor description contains "privacy".
+      expect(screen.getByText('Permission scopes')).toBeTruthy();
+      expect(screen.getByText('Enable tool calling')).toBeTruthy();
+    });
+
+    it('hides normally when query does not match any keyword or SettingsRow', async () => {
+      // The keyword escape hatch must not prevent hiding when the query
+      // matches neither the rows nor the keywords.
+      const { SettingsSearchContext } = await import(
+        '@/components/settings/v2/SettingsSearch'
+      );
+      renderWithProviders(
+        <SettingsSearchContext.Provider value={{ query: 'xyzzy' }}>
+          <SettingsGroup label="Permission scopes" searchKeywords={['privacy']}>
+            <SettingsRow label="Enable tool calling" />
+          </SettingsGroup>
+        </SettingsSearchContext.Provider>,
+      );
+      expect(screen.queryByText('Permission scopes')).toBeNull();
+      expect(screen.queryByText('Enable tool calling')).toBeNull();
+    });
   });
 });

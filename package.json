@@ -1,7 +1,7 @@
 {
   "name": "notesage",
   "private": true,
-  "version": "0.46.0-alpha.14",
+  "version": "0.46.0-alpha.15",
   "license": "MIT",
   "author": "Peter Blenessy",
   "type": "module",
