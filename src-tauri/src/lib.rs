@@ -36,8 +36,62 @@ fn set_log_level(level: String) {
     log::info!(target: "notesage::settings", "Log level set to {}", level);
 }
 
+// Build-time telemetry keys. Injected by CI for release builds via GitHub
+// Actions secrets (see `.github/workflows/release.yml` + `.env.example`):
+//   NOTESAGE_SENTRY_DSN     → crash/error reporting (Sentry, DSN-swappable to GlitchTip)
+//   NOTESAGE_APTABASE_KEY   → privacy-first usage analytics (Aptabase)
+// `option_env!` resolves to `None` when the var is unset at compile time, so a
+// no-key local/dev build compiles and runs as a clean telemetry no-op — never
+// `env!` (compile error) and never a runtime panic.
+const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
+const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Build the Sentry client ONCE up front so the panic hook installs exactly
+    // once. The returned guard is `mem::forget`-ed (we keep the client alive for
+    // the whole process via `telemetry::set_sentry_client`); dropping it would
+    // close the client. Crash egress is then gated at runtime by binding /
+    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`), so the
+    // crash toggle takes effect immediately with no second panic-hook install.
+    //
+    // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
+    if let Some(dsn) = SENTRY_DSN {
+        let guard = sentry::init((
+            dsn,
+            sentry::ClientOptions {
+                release: Some(env!("CARGO_PKG_VERSION").into()),
+                send_default_pii: false,
+                // Disable breadcrumb capture entirely: default integrations
+                // collect log/console breadcrumbs, and Notesage logs absolute
+                // file paths heavily (`[perf:doc-load]`, startup logs, …). With
+                // none collected there is no breadcrumb PII channel to scrub.
+                max_breadcrumbs: 0,
+                before_send: Some(std::sync::Arc::new(|event| {
+                    Some(telemetry::scrub_event(event))
+                })),
+                ..Default::default()
+            },
+        ));
+        // Retain the client so runtime toggles can re-bind it without re-init.
+        if let Some(client) = sentry::Hub::current().client() {
+            telemetry::set_sentry_client(client);
+        }
+        // `sentry::init` binds the client ON by default. Honour persisted
+        // startup consent: keep it bound only if crash reporting is enabled,
+        // otherwise unbind immediately (egress off until the user opts in).
+        //
+        // Ordering note: the panic hook is installed by init() above and consent
+        // is applied here, immediately after. The only gap is this synchronous
+        // `read_consent()` fs read — a panic in that window is a startup crash
+        // worth capturing regardless of saved preference, so the race is benign.
+        let consent = telemetry::read_consent();
+        telemetry::set_sentry_enabled(consent.crash);
+        // Keep the guard alive for the process lifetime — the client is owned by
+        // `SENTRY_CLIENT` now, and dropping the guard would close it.
+        std::mem::forget(guard);
+    }
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -52,6 +106,24 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ));
+
+    // Telemetry — usage analytics (Aptabase). Registered unconditionally when a
+    // build-time key is present; the plugin emits nothing until the frontend
+    // calls `trackEvent`, so the consent gate lives at the JS `track()` helper.
+    // No key (every local/dev build) → skip registration cleanly, no panic.
+    if let Some(key) = APTABASE_KEY {
+        builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+    }
+
+    // Telemetry — crash/error reporting (Sentry). Registered only when the
+    // client was successfully built above (DSN present). The plugin injects
+    // `@sentry/browser` and routes frontend errors through Rust via `invoke`,
+    // so frontend egress rides the Rust SDK — no widening of the JS HTTP
+    // capability surface. Runtime crash-consent gating is handled by binding /
+    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
+    if let Some(client) = telemetry::sentry_client() {
+        builder = builder.plugin(tauri_plugin_sentry::init(&client));
+    }
 
     // WebDriver plugin for real E2E testing (only when compiled with `--features e2e-testing`)
     #[cfg(feature = "e2e-testing")]
@@ -152,6 +224,7 @@ pub fn run() {
             migrate_to_icloud,
             migrate_from_icloud,
             migrate_quick_notes,
+            telemetry_apply_consent,
             agent_resolve_binary,
             agent_install,
             agent_uninstall,

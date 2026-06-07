@@ -272,6 +272,12 @@ jobs:
           # Tauri update signing
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Telemetry keys — RELEASE builds only (this workflow runs on v* tags).
+          # Read at compile time via `option_env!` in src-tauri/src/lib.rs; unset
+          # → telemetry compiles out to a clean no-op. Add these as repository
+          # secrets: NOTESAGE_SENTRY_DSN, NOTESAGE_APTABASE_KEY.
+          NOTESAGE_SENTRY_DSN: ${{ secrets.NOTESAGE_SENTRY_DSN }}
+          NOTESAGE_APTABASE_KEY: ${{ secrets.NOTESAGE_APTABASE_KEY }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           # tagName and releaseName intentionally omitted: passing them alongside

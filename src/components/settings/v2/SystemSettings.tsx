@@ -40,7 +40,13 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
-import { useSettingsStore } from '@/stores/settings-store';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import {
+  useSettingsStore,
+  selectEffectiveTelemetryUsage,
+  selectEffectiveTelemetryCrash,
+} from '@/stores/settings-store';
+import { toastTelemetryNotice } from '@/lib/notifications';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -61,6 +67,10 @@ export interface SystemSettingsProps {
    */
   onDismissSettings?: () => void;
 }
+
+/** Public privacy doc the "What we collect" link opens (created in task #14). */
+const TELEMETRY_DOC_URL =
+  'https://github.com/peterblenessy/notesage/blob/main/docs/telemetry.md';
 
 function friendlyUpdateError(error: string | null): string {
   if (!error) return 'Could not check for updates';
@@ -160,6 +170,19 @@ export function SystemSettings({
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
   const releaseChannel = useSettingsStore((s) => s.releaseChannel);
   const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
+
+  // Telemetry — switches bind to the *effective* value (explicit override or
+  // channel default) so the toggle reflects what's actually happening; the
+  // setters store the explicit boolean, which overrides the channel default.
+  const telemetryUsageEffective = useSettingsStore(selectEffectiveTelemetryUsage);
+  const telemetryCrashEffective = useSettingsStore(selectEffectiveTelemetryCrash);
+  const setTelemetryUsageEnabled = useSettingsStore(
+    (s) => s.setTelemetryUsageEnabled,
+  );
+  const setTelemetryCrashEnabled = useSettingsStore(
+    (s) => s.setTelemetryCrashEnabled,
+  );
+  const setTelemetryNoticeSeen = useSettingsStore((s) => s.setTelemetryNoticeSeen);
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -276,9 +299,27 @@ export function SystemSettings({
           control={
             <Select
               value={releaseChannel ?? 'stable'}
-              onValueChange={(v) => setReleaseChannel(v as 'stable' | 'alpha')}
+              onValueChange={(v) => {
+                const next = v as 'stable' | 'alpha';
+                const previous = releaseChannel ?? 'stable';
+                setReleaseChannel(next);
+                // On a stable → alpha switch, surface the one-time telemetry
+                // disclosure as a confirming toast and mark the notice seen so
+                // the first-run notice in useAppLifecycle doesn't re-show it.
+                if (next === 'alpha' && previous !== 'alpha') {
+                  toastTelemetryNotice({
+                    onOpenSettings: () =>
+                      window.dispatchEvent(
+                        new CustomEvent('notesage:open-settings', {
+                          detail: { tab: 'system' },
+                        }),
+                      ),
+                  });
+                  setTelemetryNoticeSeen(true);
+                }
+              }}
             >
-              <SelectTrigger className="w-[120px] h-7 text-[13px]">
+              <SelectTrigger className="w-[120px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -286,6 +327,56 @@ export function SystemSettings({
                 <SelectItem value="alpha">Alpha</SelectItem>
               </SelectContent>
             </Select>
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Telemetry"
+        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha defaults these on; Stable defaults them off — your choice here overrides the default."
+        searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
+      >
+        <SettingsRow
+          label="Usage analytics"
+          description="Share anonymous feature-usage events so the maintainer can see which features are used and prune what isn't."
+          htmlFor="telemetry-usage"
+          control={
+            <Switch
+              id="telemetry-usage"
+              checked={telemetryUsageEffective}
+              onCheckedChange={(v) => setTelemetryUsageEnabled(v)}
+              aria-label="Usage analytics"
+            />
+          }
+        />
+        <SettingsRow
+          label="Crash reports"
+          description="Share anonymous crash and error reports grouped by version so regressions can be fixed without a manual report."
+          htmlFor="telemetry-crash"
+          control={
+            <Switch
+              id="telemetry-crash"
+              checked={telemetryCrashEffective}
+              onCheckedChange={(v) => setTelemetryCrashEnabled(v)}
+              aria-label="Crash reports"
+            />
+          }
+        />
+        <SettingsRow
+          label="What we collect"
+          description="Read exactly what is and isn't sent."
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              aria-label="View what we collect"
+              onClick={() => {
+                openUrl(TELEMETRY_DOC_URL).catch(() => {});
+              }}
+            >
+              View
+            </Button>
           }
         />
       </SettingsGroup>

@@ -12,6 +12,18 @@ export type McpConfigSource =
   | 'cursor'
   | 'vscode';
 
+/**
+ * Collapse an MCP config source to the low-cardinality telemetry `ItemSource`
+ * (`bundled | user | project`). Project-scoped servers report `project`; every
+ * other source (global Notesage config, imported external configs) is `user`.
+ * Pure — no PII.
+ */
+export function mcpSourceToItemSource(
+  source: McpConfigSource,
+): 'user' | 'project' {
+  return source === 'notesage-project' ? 'project' : 'user';
+}
+
 export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 
 /** Transport an MCP server speaks. `http` (remote) is added by later tasks. */
