@@ -18,7 +18,28 @@ import { log, setLogLevel } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { track } from "@/lib/telemetry";
+import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
+
+/**
+ * Coarse, low-cardinality OS bucket for the `app_launched` telemetry event.
+ * Derived from `navigator` rather than a Tauri OS plugin (not a dependency) so
+ * no new capability is needed; intentionally returns only the three desktop
+ * buckets plus "other" — never a full UA string (PII / high-cardinality).
+ */
+function coarseOs(): "macos" | "windows" | "linux" | "other" {
+  const ua = (
+    navigator.userAgent +
+    " " +
+    // navigator.platform is deprecated but still the most reliable coarse signal
+    (navigator.platform ?? "")
+  ).toLowerCase();
+  if (ua.includes("mac")) return "macos";
+  if (ua.includes("win")) return "windows";
+  if (ua.includes("linux") || ua.includes("x11")) return "linux";
+  return "other";
+}
 
 /**
  * Consolidates all App-level startup side effects and event listeners:
@@ -74,6 +95,36 @@ export function useAppLifecycle() {
     const { logLevel } = useSettingsStore.getState();
     setLogLevel(logLevel);
     tauriApi.setLogLevel(logLevel);
+  }, []);
+
+  // --- Telemetry: app_launched event + alpha first-run/channel notice ---
+  // Fires once on startup, after settings have rehydrated from localStorage
+  // (Zustand persist rehydrates synchronously, so getState() here is current).
+  // `track` is a no-op when the effective usage flag is off, so the event is
+  // self-gated; the notice only appears on the alpha channel and only once.
+  const telemetryRanRef = useRef(false);
+  useEffect(() => {
+    if (telemetryRanRef.current) return;
+    telemetryRanRef.current = true;
+
+    const settings = useSettingsStore.getState();
+    const channel = settings.releaseChannel === "alpha" ? "alpha" : "stable";
+    const version =
+      typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
+    track("app_launched", { version, os: coarseOs(), channel });
+
+    if (channel === "alpha" && !settings.telemetryNoticeSeen) {
+      toastTelemetryNotice({
+        onOpenSettings: () =>
+          window.dispatchEvent(
+            new CustomEvent("notesage:open-settings", {
+              detail: { tab: "system" },
+            }),
+          ),
+      });
+      settings.setTelemetryNoticeSeen(true);
+    }
   }, []);
 
   // --- Stop ACP agent processes on window close ---
