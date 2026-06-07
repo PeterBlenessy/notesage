@@ -11,7 +11,7 @@
 
 ## Problem
 
-Notesage ships frequent alpha releases (`0.46.0-alpha.12` today, alpha-only channel) with a large and growing feature surface, but the only feedback signal is the maintainer's manual testing. There is no view into:
+Notesage ships frequent alpha releases (`0.46.0-alpha.12` today) on a user-selectable **alpha/stable** channel (`settings.releaseChannel`, chosen in Settings → System), with a large and growing feature surface — but the only feedback signal is the maintainer's manual testing. There is no view into:
 
 - **Usage** — which of the many features are actually used (which AI paths, which exporters, which Quiet Composer surfaces), and which are dead weight.
 - **Quality** — when and where the app crashes in the wild: Rust panics, frontend React errors, native crashes in the llama-server / WebView process tree. Today a crash is only known if a user reports it.
@@ -62,10 +62,10 @@ Two independent streams, both sending from Rust, both gated on settings flags.
 - Rust panics captured automatically; optional `sentry-rust-minidump` for native crashes (llama-server / WebView) — flagged as a follow-up sub-task, not blocking.
 - `release` set to the app version so issues attribute to the alpha that introduced them. `send_default_pii: false`. A `before_send` hook strips `server_name` and any incidental path-bearing fields.
 
-### Channel detection & default computation
+### Channel source & default computation
 
-- A compile-time helper in Rust derives the channel from the version string (pre-release suffix `-alpha` → `Alpha`, else `Stable`), exposed to the frontend via an existing startup/health command or a new `get_release_channel` command.
-- On first run, if the telemetry flags are unset, defaults are computed: **alpha → both on**, **stable → both off**. After first run the values are user-owned and persisted; channel changes never override an explicit user choice.
+- The release channel is **already a user setting** — `settings.releaseChannel` (`'stable' | 'alpha'`, default `'stable'`), selected in Settings → System and used today to choose which updates the user receives (`SystemSettings.tsx` + `useAutoUpdate`). Telemetry keys off this existing value; **no new channel-detection command or version-string parsing is needed**.
+- Default per channel: **alpha → both streams on, stable → both off.** Implement the telemetry flags as tri-state (`null` = follow channel; `true`/`false` = explicit user choice). While `null`, the effective value is derived live from `releaseChannel`, so switching to alpha turns telemetry on (and shows the disclosure) and switching to stable turns it off — *unless* the user has explicitly set a flag, in which case the explicit choice always wins.
 - The Settings toggle is the single opt-out — there is deliberately no separate env/`DO_NOT_TRACK` kill switch (redundant for a desktop app at this scale; the in-app toggle covers the need).
 
 ### Egress / capability notes
@@ -77,26 +77,31 @@ Two independent streams, both sending from Rust, both gated on settings flags.
 
 Per the design system (shadcn/ui first, neutral palette, no chromatic accent except where the system allows).
 
-- **First-run notice (alpha only):** a non-blocking `sonner` toast or a small dismissible banner on first launch — *"Alpha builds share anonymous usage and crash reports to help stabilize fast-moving features. This is on by default — turn it off in Settings → Privacy. No document content, file contents, or AI prompts are ever sent."* Single "Open Privacy settings" action + dismiss. Shown once (a `telemetryNoticeSeen` flag).
-- **Disclosure at channel selection:** whenever the user *opts into* the alpha channel (today: implicit, since alpha is the only channel; future: an explicit release-channel picker), the same disclosure must be presented at that decision point — choosing alpha *means* accepting default-on telemetry, so the value exchange has to be stated where the choice is made, not only at first run. When a channel picker is added, render an inline note beside it ("Alpha builds share anonymous usage + crash data by default — manage in Settings → Privacy") and re-surface the first-run notice if the user switches stable → alpha. Until a picker exists, the first-run notice carries this role.
-- **Settings → Privacy** (`src/components/settings/v2/` Privacy panel — the Approvals panel already lives here; this is the natural home): a new "Telemetry" group with:
+- **Disclosure at channel selection (primary surface):** the **Release channel** selector already lives in **Settings → System** (`SystemSettings.tsx`, the `Select` with Stable/Alpha next to "Check for updates"). Choosing **Alpha** is the moment the user accepts default-on telemetry, so the disclosure belongs right there: render an inline note under the selector when Alpha is active — *"Alpha builds share anonymous usage + crash reports by default to help stabilize fast-moving features. No document content, file contents, or AI prompts are ever sent."* — and, on a stable → alpha switch, surface a one-time confirming toast. This is wired to the existing `setReleaseChannel` handler.
+- **First-run notice:** if the install starts on the alpha channel and the user hasn't seen the notice, show the same message once as a non-blocking `sonner` toast with an "Open settings" action (a `telemetryNoticeSeen` flag). On stable, no notice (telemetry is off).
+- **Telemetry controls — Settings → System** (co-located with Release channel + updates, *not* Privacy — telemetry default is a property of the channel choice): a "Telemetry" group directly below the Release channel row with:
   - Two `switch` rows — **Usage analytics** and **Crash reports** — each with a one-line description.
-  - A muted line stating the current channel and what the defaults are ("Alpha builds default to on; stable builds default to off").
+  - A muted line restating the channel default ("Alpha defaults these on; Stable defaults them off — your choice here overrides the default").
   - A "Reset analytics ID" button (regenerates the anonymous install UUID).
-  - A link to the privacy explanation of exactly what is and isn't collected.
+  - A link to the explanation of exactly what is and isn't collected.
 - **States:** toggles reflect persisted values and persist across restart; flipping either immediately starts/stops that stream.
 
 ## Data Model
 
-**Settings (`settings-store`, `Full` persistence):**
+**Settings (`settings-store`, `Full` persistence):** extends the existing `releaseChannel` setting.
 
 ```typescript
 interface TelemetrySettings {
-  telemetryUsageEnabled: boolean;   // default computed from channel on first run
-  telemetryCrashEnabled: boolean;   // default computed from channel on first run
-  telemetryNoticeSeen: boolean;     // first-run notice shown
+  // null = follow releaseChannel (alpha→on, stable→off); true/false = explicit user override
+  telemetryUsageEnabled: boolean | null;
+  telemetryCrashEnabled: boolean | null;
+  telemetryNoticeSeen: boolean;     // alpha first-run / channel-switch notice shown
   telemetryInstallId: string;       // anonymous random UUID, resettable
 }
+
+// effective value (selector):
+const usageOn = telemetryUsageEnabled ?? (releaseChannel === 'alpha');
+const crashOn = telemetryCrashEnabled ?? (releaseChannel === 'alpha');
 ```
 
 **Frontend telemetry helper (`src/lib/telemetry.ts`):**
@@ -130,13 +135,7 @@ function track(event: TelemetryEvent, props?: Record<string, string>): void;
 | `skill_invoked` / `mcp_tool_called` | `source` (bundled/user/project) |
 | `feature_used` | `feature` (focus_mode/cmd_bar_pin/recording/…) |
 
-**Rust:**
-
-```rust
-// new command (or fold into existing health/startup command)
-#[tauri::command]
-fn get_release_channel() -> String; // "alpha" | "stable"
-```
+**Rust:** no new channel command — the channel is read from `settings.releaseChannel` on the frontend. The only Rust surface is the two plugin initializations (Aptabase, Sentry) in `lib.rs`, gated on the effective flags passed from the frontend at startup (or re-checked on toggle).
 
 ## Dependencies
 
@@ -151,9 +150,9 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 
 - [ ] With both flags off, **neither SDK initializes** and no network egress occurs (verified by inspecting that no telemetry endpoint is contacted).
 - [ ] Alpha build: fresh install defaults both flags **on**; the first-run notice appears exactly once.
-- [ ] Switching from stable → alpha (once a channel picker exists) presents the telemetry disclosure at the point of selection.
-- [ ] Stable build (or simulated stable channel): fresh install defaults both flags **off**; no first-run notice.
-- [ ] Toggling either switch in Settings → Privacy immediately stops/starts that stream and persists across restart.
+- [ ] Stable channel selected: both streams **off**; no notice.
+- [ ] Switching the Release channel selector stable → alpha turns telemetry on (unless explicitly overridden) and shows the disclosure; alpha → stable turns it off.
+- [ ] Toggling either switch in Settings → System immediately stops/starts that stream, persists across restart, and overrides the channel default.
 - [ ] A forced Rust panic, a thrown frontend error caught by `ErrorBoundary`, both appear in Sentry tagged with the correct release version and a merged breadcrumb timeline.
 - [ ] A representative `track()` call appears in Aptabase with expected properties; the call is a no-op when the flag is off.
 - [ ] **No PII leaves the app:** an instrumented test / manual audit confirms no document content, file paths, prompts, keys, or project names appear in any payload; `before_send` strips `server_name`.
@@ -175,4 +174,4 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 - Self-hosted Aptabase or GlitchTip deployment — kept as a DSN/config-swap fallback, not built now.
 - Native minidump crash capture (`sentry-rust-minidump`) — desirable follow-up sub-task; Rust panics + frontend errors ship first.
 - Sending `[perf:*]` performance metrics as telemetry — possible later via the same `logger.ts` batch-to-backend pipeline.
-- A stable release channel itself — this PRD assumes the channel detection but does not create the stable channel; until one exists, "alpha default-on" governs all users (hence the always-present toggle).
+- Changes to the release-channel mechanism itself — the alpha/stable selector (`settings.releaseChannel`, `SystemSettings.tsx`) already exists; this PRD consumes it and adds the telemetry disclosure beside it, nothing more.
