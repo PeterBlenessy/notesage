@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/telemetry";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRoutingStore } from "@/stores/routing-store";
@@ -410,6 +411,7 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         icon={cmdBarPinned ? PinOff : Pin}
         onClick={() => {
           setCmdBarPinned(!cmdBarPinned);
+          track("feature_used", { feature: "cmd_bar_pin" });
         }}
       />
       {/* Close button (live-test 2026-04-26) — explicit mouse path

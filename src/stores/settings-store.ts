@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 import type { LogLevel } from '@/lib/logger';
 import type { AccentName } from '@/lib/accent';
 import {
@@ -89,6 +90,21 @@ interface SettingsStore {
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
   releaseChannel: ReleaseChannel;
+  /**
+   * Telemetry consent — usage analytics (Aptabase). Tri-state:
+   * `null` = follow the release channel (alpha → on, stable → off);
+   * `true`/`false` = explicit user choice that always wins. The effective
+   * value is computed by `selectEffectiveTelemetryUsage`. PRD 2026-06-07-telemetry.
+   */
+  telemetryUsageEnabled: boolean | null;
+  /**
+   * Telemetry consent — crash / error reporting (Sentry). Tri-state with the
+   * same semantics as `telemetryUsageEnabled`. Effective value via
+   * `selectEffectiveTelemetryCrash`.
+   */
+  telemetryCrashEnabled: boolean | null;
+  /** Whether the first-run telemetry disclosure notice has been shown. */
+  telemetryNoticeSeen: boolean;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
@@ -243,6 +259,9 @@ interface SettingsStore {
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
   setReleaseChannel: (channel: ReleaseChannel) => void;
+  setTelemetryUsageEnabled: (v: boolean | null) => void;
+  setTelemetryCrashEnabled: (v: boolean | null) => void;
+  setTelemetryNoticeSeen: (v: boolean) => void;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
@@ -303,9 +322,46 @@ interface SettingsStore {
   setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
 }
 
+/**
+ * Effective usage-analytics consent. When the user hasn't made an explicit
+ * choice (`telemetryUsageEnabled === null`), the value follows the release
+ * channel: alpha defaults on, stable defaults off.
+ */
+export const selectEffectiveTelemetryUsage = (
+  state: Pick<SettingsStore, 'telemetryUsageEnabled' | 'releaseChannel'>,
+): boolean => state.telemetryUsageEnabled ?? state.releaseChannel === 'alpha';
+
+/**
+ * Effective crash-reporting consent. Same channel-derived default semantics as
+ * {@link selectEffectiveTelemetryUsage}.
+ */
+export const selectEffectiveTelemetryCrash = (
+  state: Pick<SettingsStore, 'telemetryCrashEnabled' | 'releaseChannel'>,
+): boolean => state.telemetryCrashEnabled ?? state.releaseChannel === 'alpha';
+
+/**
+ * Push the recomputed effective consent booleans to the Rust backend so it can
+ * gate Sentry init / Aptabase egress. Best-effort and fire-and-forget — a
+ * missing command or backend error must never surface to the user.
+ */
+function applyTelemetryConsent(state: SettingsStore): void {
+  try {
+    invoke('telemetry_apply_consent', {
+      usage: selectEffectiveTelemetryUsage(state),
+      crash: selectEffectiveTelemetryCrash(state),
+    }).catch((e) => {
+      // Never surface to the user (matches the track() contract), but leave a
+      // diagnostic trail so a Rust/UI consent drift is debuggable.
+      console.error('telemetry_apply_consent failed:', e);
+    });
+  } catch {
+    /* invoke unavailable (e.g. non-Tauri test env) — ignore */
+  }
+}
+
 export const useSettingsStore = create<SettingsStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: "system",
       accent: "default",
       contrastLevel: 0,
@@ -374,6 +430,9 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUpdateCheck: null,
       dismissedVersion: null,
       releaseChannel: 'stable' as ReleaseChannel,
+      telemetryUsageEnabled: null,
+      telemetryCrashEnabled: null,
+      telemetryNoticeSeen: false,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -535,6 +594,23 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setReleaseChannel: (channel: ReleaseChannel) => {
         set({ releaseChannel: channel });
+        // Channel change can flip the `null`-derived effective consent values,
+        // so re-sync the backend.
+        applyTelemetryConsent(get());
+      },
+
+      setTelemetryUsageEnabled: (v: boolean | null) => {
+        set({ telemetryUsageEnabled: v });
+        applyTelemetryConsent(get());
+      },
+
+      setTelemetryCrashEnabled: (v: boolean | null) => {
+        set({ telemetryCrashEnabled: v });
+        applyTelemetryConsent(get());
+      },
+
+      setTelemetryNoticeSeen: (v: boolean) => {
+        set({ telemetryNoticeSeen: v });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {
@@ -937,6 +1013,13 @@ export const useSettingsStore = create<SettingsStore>()(
         // Exclude runtime-only fields and deprecated fields from persistence
         const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
         return persisted;
+      },
+      // After rehydration, push the effective consent to Rust so the backend
+      // matches the (possibly channel-derived) UI state. Without this, a fresh
+      // alpha install would show crash reporting ON in Settings while the Rust
+      // consent file (absent) leaves Sentry unbound until the user toggled it.
+      onRehydrateStorage: () => (state) => {
+        if (state) applyTelemetryConsent(state);
       },
     }
   )

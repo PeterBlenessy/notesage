@@ -69,7 +69,12 @@ vi.mock('@/lib/tauri-storage', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
-import { useSettingsStore } from '../settings-store';
+import {
+  useSettingsStore,
+  selectEffectiveTelemetryUsage,
+  selectEffectiveTelemetryCrash,
+} from '../settings-store';
+import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2459,5 +2464,80 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
     expect(parsed.version).toBe(21);
+  });
+});
+
+// ===========================================================================
+// Telemetry consent (tri-state fields + effective selectors + Rust sync)
+// ===========================================================================
+
+describe('telemetry consent', () => {
+  function resetTelemetry(channel: 'stable' | 'alpha' = 'stable') {
+    useSettingsStore.setState({
+      ...SETTINGS_DEFAULTS,
+      releaseChannel: channel,
+      telemetryUsageEnabled: null,
+      telemetryCrashEnabled: null,
+      telemetryNoticeSeen: false,
+    } as Record<string, unknown>);
+  }
+
+  it('defaults: tri-state null, notice unseen', () => {
+    resetTelemetry();
+    const s = useSettingsStore.getState();
+    expect(s.telemetryUsageEnabled).toBeNull();
+    expect(s.telemetryCrashEnabled).toBeNull();
+    expect(s.telemetryNoticeSeen).toBe(false);
+  });
+
+  it('effective value follows the channel when not overridden', () => {
+    resetTelemetry('stable');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(false);
+
+    resetTelemetry('alpha');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('explicit override wins over the channel default', () => {
+    resetTelemetry('alpha');
+    useSettingsStore.getState().setTelemetryUsageEnabled(false);
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+
+    resetTelemetry('stable');
+    useSettingsStore.getState().setTelemetryCrashEnabled(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('channel switch flips the effective value while the flag is null', () => {
+    resetTelemetry('stable');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+    useSettingsStore.getState().setReleaseChannel('alpha');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('syncs effective consent to Rust via telemetry_apply_consent on change', () => {
+    resetTelemetry('stable');
+    vi.mocked(invoke).mockClear();
+
+    // Explicitly enabling usage → effective usage true, crash still channel (false on stable).
+    useSettingsStore.getState().setTelemetryUsageEnabled(true);
+    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
+      usage: true,
+      crash: false,
+    });
+  });
+
+  it('channel change re-syncs effective consent to Rust', () => {
+    resetTelemetry('stable');
+    vi.mocked(invoke).mockClear();
+
+    // stable → alpha with both flags null → both effective true.
+    useSettingsStore.getState().setReleaseChannel('alpha');
+    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
+      usage: true,
+      crash: true,
+    });
   });
 });

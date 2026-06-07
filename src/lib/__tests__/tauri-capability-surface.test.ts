@@ -33,8 +33,14 @@ interface TauriConf {
   };
 }
 
+interface HttpAllowEntry {
+  url: string;
+}
+
 interface DefaultCapability {
-  permissions: Array<string | { identifier: string; allow?: unknown }>;
+  permissions: Array<
+    string | { identifier: string; allow?: HttpAllowEntry[] }
+  >;
 }
 
 function loadTauriConf(): TauriConf {
@@ -108,5 +114,36 @@ describe('tauri default capability permissions', () => {
       return identifier.startsWith('fs:');
     });
     expect(fsPermissions).toEqual([]);
+  });
+
+  it('grants sentry:default (telemetry crash-report invoke bridge)', () => {
+    // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
+    // `sentry:default` enables that bridge. It is an invoke permission, NOT a
+    // network permission — egress originates from the Rust SDK, so this does
+    // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
+    const cap = loadDefaultCapability();
+    const identifiers = cap.permissions.map((perm) =>
+      typeof perm === 'string' ? perm : perm.identifier,
+    );
+    expect(identifiers).toContain('sentry:default');
+  });
+
+  it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
+    // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
+    // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the
+    // http:default allow-list to exactly the two GitHub release URLs so a future
+    // edit can't quietly add a telemetry (or any other) endpoint here.
+    const cap = loadDefaultCapability();
+    const httpPerm = cap.permissions.find(
+      (perm) => typeof perm !== 'string' && perm.identifier === 'http:default',
+    );
+    expect(httpPerm).toBeDefined();
+    const allow =
+      typeof httpPerm === 'string' ? [] : (httpPerm?.allow ?? []);
+    const urls = allow.map((entry) => entry.url).sort();
+    expect(urls).toEqual([
+      'https://github.com/PeterBlenessy/notesage/**',
+      'https://release-assets.githubusercontent.com/**',
+    ]);
   });
 });

@@ -50,7 +50,8 @@ import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
-import { isBinaryFileType } from "@/lib/file-utils";
+import { isBinaryFileType, documentFormat } from "@/lib/file-utils";
+import { track } from "@/lib/telemetry";
 import { setEditorRef } from "@/lib/editor-bridge";
 import { log } from "@/lib/logger";
 import { parseFrontmatter, parseDocumentStyle, documentStyleToPresets } from "@/lib/frontmatter";
@@ -134,6 +135,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     const { id, filePath, fileType } = activeTab;
     const t0 = performance.now();
     const fileName = filePath.split("/").pop() ?? filePath;
+
+    track("document_opened", { format: documentFormat(fileName, fileType) });
 
     (async () => {
       try {

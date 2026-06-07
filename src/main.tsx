@@ -1,10 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import * as Sentry from "@sentry/browser";
 import App from "./App";
 import "@/styles/globals.css";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useSettingsStore } from "@/stores/settings-store";
+import {
+  useSettingsStore,
+  selectEffectiveTelemetryCrash,
+} from "@/stores/settings-store";
 
 // Suppress React 19 flushSync warning from Tiptap's ReactNodeViewRenderer.
 // Tiptap creates React-based NodeViews (chart, drawing, link preview) via flushSync
@@ -29,6 +33,32 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__E2E_EDITOR_STORE__ = useEditorStore;
   (window as unknown as Record<string, unknown>).__E2E_SETTINGS_STORE__ = useSettingsStore;
 }
+
+// Global crash capture for uncaught frontend errors and unhandled promise
+// rejections. Routed to Sentry via the Rust-injected plugin client (we never
+// call Sentry.init here — the plugin owns the client). Gated on the effective
+// crash-reporting consent so nothing is captured when telemetry is off, and
+// wrapped in try/catch so capture never interferes with the default handling.
+// We do NOT preventDefault — the browser's own error logging still runs.
+window.addEventListener("error", (event) => {
+  try {
+    if (selectEffectiveTelemetryCrash(useSettingsStore.getState())) {
+      Sentry.captureException(event.error ?? event.message);
+    }
+  } catch {
+    /* never let crash reporting throw from a global error handler */
+  }
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  try {
+    if (selectEffectiveTelemetryCrash(useSettingsStore.getState())) {
+      Sentry.captureException(event.reason);
+    }
+  } catch {
+    /* never let crash reporting throw from a global rejection handler */
+  }
+});
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
