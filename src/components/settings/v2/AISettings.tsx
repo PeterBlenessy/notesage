@@ -55,9 +55,30 @@ export function AISettings() {
         <UseCaseRoutingSettings />
       </SettingsGroup>
 
+      {/* ----------------------------------------------------------------
+          Permission scopes — a section heading that collects the four
+          access/isolation groups (Tool Calling, Project Scope, Network
+          Sandbox, Persisted Approvals) under a label matching the
+          codebase vocabulary (*Scope types, getChatSandboxScope, etc.).
+          "privacy" is kept as a search synonym so users who remember the
+          old label can still find these controls.
+          ---------------------------------------------------------------- */}
+      <div data-section="permission-scopes">
+        <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
+          Permission scopes
+        </h3>
+        <p className="text-[12px] text-muted-foreground mb-4 leading-relaxed">
+          What AI agents may access and do — tool-calling permissions, project
+          isolation, network reach, and persisted approvals. Maps to the
+          <code className="mx-1 text-[11px] font-mono">*Scope</code>types used
+          throughout the codebase.
+        </p>
+      </div>
+
       <SettingsGroup
         label="Tool Calling"
         description="How Notesage invokes tools on your behalf during AI chat."
+        searchKeywords={['privacy']}
       >
         <SettingsRow
           label="Enable tool calling"
@@ -90,6 +111,7 @@ export function AISettings() {
       <SettingsGroup
         label="Project Scope"
         description="How AI features see your projects."
+        searchKeywords={['privacy']}
       >
         <SettingsRow
           label="Cross-project mode"
