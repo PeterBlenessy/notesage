@@ -61,3 +61,6 @@ perf-results.json
 # when the skill runs locally; not part of the skill's source).
 bundled-skills/**/scripts/package-lock.json
 bundled-skills/**/scripts/node_modules/
+
+# Generated pkg-config stubs for headless Linux cargo check
+src-tauri/.pkg-config-stubs/
