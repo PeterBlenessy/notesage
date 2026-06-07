@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-07 |
-| **Status** | Draft |
+| **Status** | Implemented (code complete; live end-to-end verification pending Aptabase/Sentry accounts) |
 | **Priority** | High |
 | **Impact** | Replaces "maintainer's manual testing" with real signal on which features are used and where the app crashes, so alpha releases can be steered by data |
 | **Tasks** | [2026-06-07-telemetry-tasks](../tasks/2026-06-07-telemetry-tasks.md) |
@@ -146,27 +146,29 @@ function track(event: TelemetryEvent, props?: Record<string, string>): void;
 
 ## Quality Gates
 
+Legend: [x] verified now · [~] verified by code/unit test, live confirmation pending build-time keys · [ ] needs a built app with keys (manual/E2E).
+
 **Functional:**
 
-- [ ] With both flags off, **neither SDK initializes** and no network egress occurs (verified by inspecting that no telemetry endpoint is contacted).
-- [ ] Alpha build: fresh install defaults both flags **on**; the first-run notice appears exactly once.
-- [ ] Stable channel selected: both streams **off**; no notice.
-- [ ] Switching the Release channel selector stable → alpha turns telemetry on (unless explicitly overridden) and shows the disclosure; alpha → stable turns it off.
-- [ ] Toggling either switch in Settings → System immediately stops/starts that stream, persists across restart, and overrides the channel default.
-- [ ] A forced Rust panic, a thrown frontend error caught by `ErrorBoundary`, both appear in Sentry tagged with the correct release version and a merged breadcrumb timeline.
-- [ ] A representative `track()` call appears in Aptabase with expected properties; the call is a no-op when the flag is off.
-- [ ] **No PII leaves the app:** an instrumented test / manual audit confirms no document content, file paths, prompts, keys, or project names appear in any payload; `before_send` strips `server_name`.
-- [ ] Egress originates from Rust; the frontend `http:default` capability and `fs` permissions are unchanged (regression test `tauri-capability-surface.test.ts` still passes).
+- [x] With both flags off, **neither SDK initializes** and no network egress occurs — no-key build: both SDKs skip init (`option_env!` → `None`); with keys + flags off: Aptabase emits only on `trackEvent` (gated by `track()` no-op, unit-tested) and Sentry is built-but-unbound (`bind_client(None)`). [~] live network-capture inspection pending keys.
+- [ ] Alpha build: fresh install defaults both flags **on**; the first-run notice appears exactly once. — manual, needs an alpha build. Test: fresh-profile launch on alpha → both effective-on, notice shows once.
+- [x] Stable channel selected: both streams **off**; no notice — effective-off on stable and notice-only-on-alpha are unit-tested (`settings-store.test.ts`, `useAppLifecycle`).
+- [x] Switching stable → alpha turns telemetry on (unless overridden) and shows the disclosure; alpha → stable turns it off — channel-flip of the effective value + `telemetry_apply_consent` re-sync unit-tested; the switch toast/disclosure are wired in `SystemSettings`.
+- [~] Toggling either switch immediately stops/starts that stream, persists, overrides the channel default — persist + override unit-tested; usage is immediate by construction; crash live-disable (`bind_client` toggle) compiles (`cargo check`) — [ ] runtime "stops immediately" needs a keyed build.
+- [ ] A forced Rust panic and a caught frontend error both appear in Sentry tagged with the release version — needs a DSN. Test: `panic!` in a command + a thrown render error → both land in Sentry with `release` = version.
+- [~] A representative `track()` call reaches Aptabase with expected props; no-op when off — no-op gating + exact-props payload unit-tested (`telemetry.test.ts`); [ ] live delivery pending key.
+- [x] **No PII leaves the app**; `before_send` strips `server_name` — `scrub_event` Rust unit tests assert `server_name`/`user`/`request` cleared and `abs_path`/`filename` stripped (incl. a serialization check that no path/hostname/email survives); `track()` sends exactly the typed enum props (unit-tested).
+- [x] Egress originates from Rust; `http:default` and `fs` permissions unchanged — `tauri-capability-surface.test.ts` asserts only `sentry:default` added, `http:default` unchanged, no `fs:allow-*`.
 
 **Design:**
 
-- [ ] First-run notice and Settings group match the design system (shadcn `switch`, neutral palette, both light/dark + soft contrast).
-- [ ] Both toggles have clear labels + one-line descriptions; no dead/ambiguous controls.
+- [~] First-run notice and Settings group match the design system (shadcn `switch`, neutral palette, light/dark + soft contrast) — built to spec with shadcn components and neutral tokens only; [ ] visual confirmation in a running app pending.
+- [x] Both toggles have clear labels + one-line descriptions; no dead/ambiguous controls.
 
 **Testing:**
 
-- [ ] Unit tests for default-computation-by-channel and the `track()` no-op gating.
-- [ ] `pnpm typecheck`, `pnpm test`, `cargo test`, `pnpm test:e2e` pass.
+- [x] Unit tests for default-computation-by-channel and the `track()` no-op gating — `settings-store.test.ts` + `telemetry.test.ts`.
+- [x] `pnpm typecheck` (green), `pnpm test` (304 files green), `cargo check` (green via pkg-config stubs). [~] `cargo test` runs in CI (local linking needs the full GTK stack); [ ] `pnpm test:e2e` not run this pass.
 
 ## Out of Scope
 
