@@ -54,6 +54,9 @@ perf-results.json
 # Runtime lockfile for the `/schedule` skill (session id + pid + timestamp)
 .claude/scheduled_tasks.lock
 
+# Transient git worktrees used by the implement-tasks skill for parallel agents
+.claude/worktrees/
+
 # Generated lockfiles for bundled-skill scripts (created by `npm install`
 # when the skill runs locally; not part of the skill's source).
 bundled-skills/**/scripts/package-lock.json
