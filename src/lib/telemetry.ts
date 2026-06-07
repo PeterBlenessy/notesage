@@ -23,7 +23,15 @@ import {
 } from "@/stores/settings-store";
 
 /** File kinds the editor can open (document_opened). */
-export type DocumentFormat = "md" | "epub" | "pdf" | "docx" | "pptx" | "code";
+export type DocumentFormat =
+  | "md"
+  | "epub"
+  | "pdf"
+  | "docx"
+  | "pptx"
+  | "code"
+  | "image"
+  | "text";
 
 /** Which of the four AI routing paths handled a chat send (ai_chat_sent). */
 export type AiPath = "direct" | "acp" | "copilot_lsp" | "local_bundled";
@@ -81,6 +89,35 @@ export interface TelemetryEventProps {
 
 /** Allowed event names. */
 export type TelemetryEvent = keyof TelemetryEventProps;
+
+/**
+ * Map a connection's provider + auth method to a coarse {@link ProviderKind}.
+ * Kept here so call sites stay one-liners and the mapping has a single home.
+ * Deliberately collapses every `agent_managed` provider (Claude Code, Codex,
+ * Copilot CLI, Gemini CLI) into the single `agent_managed` kind — the provider
+ * brand is not part of the low-cardinality taxonomy.
+ */
+export function providerKind(
+  provider: string,
+  authMethod: string,
+): ProviderKind {
+  if (authMethod === "agent_managed") return "agent_managed";
+  if (authMethod === "local_bundled") return "local_bundled";
+  if (authMethod === "local") return provider === "ollama" ? "ollama" : "local";
+  // api_key (or anything else): use the provider where it's a known kind.
+  switch (provider) {
+    case "anthropic":
+      return "anthropic";
+    case "openai":
+      return "openai";
+    case "openai_compatible":
+      return "openai_compatible";
+    case "ollama":
+      return "ollama";
+    default:
+      return "local";
+  }
+}
 
 /**
  * Record a usage event. No-ops silently when usage telemetry is off; never

@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useRecording } from "@/hooks/useRecording";
 import { useActivityStore } from "@/stores/activity-store";
 import { startTranscription } from "@/hooks/useTranscriptionJob";
+import { track } from "@/lib/telemetry";
 
 /**
  * Single owner of the meeting-recording start/stop flow shared by every
@@ -54,6 +55,7 @@ export function useMeetingRecording(): MeetingRecordingHook {
       addRecordingItem({ id, label: "Recording", recordingStartedAt: Date.now() });
       try {
         await startRecording("microphone");
+        track("feature_used", { feature: "recording" });
       } catch (err) {
         // Capture never began — remove the live activity item so the orb doesn't
         // show a stuck "Recording" indicator, clear the ref, and surface the error.

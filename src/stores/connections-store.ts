@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
+import { track, providerKind } from '@/lib/telemetry';
 
 import type {
   Connection,
@@ -62,6 +63,7 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           connections: [...state.connections, connection],
         }));
         log.info('connections', 'Connection added', { id, provider: conn.provider, authMethod: conn.authMethod, capabilities });
+        track('connection_added', { provider_kind: providerKind(conn.provider, conn.authMethod) });
         return id;
       },
 

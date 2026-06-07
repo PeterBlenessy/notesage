@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { track } from "@/lib/telemetry";
 
 /**
  * useFocusMode — Phase 1 #56.
@@ -119,6 +120,8 @@ export function useFocusMode(): UseFocusModeResult {
           : null;
 
       root.classList.add(FOCUS_MODE_CLASS);
+
+      track("feature_used", { feature: "focus_mode" });
 
       // Task #120: entering focus mode collapses the expanded command bar —
       // focus mode is distraction-free writing and the composer is chrome
