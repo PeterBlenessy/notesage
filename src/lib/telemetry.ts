@@ -16,7 +16,6 @@
  *
  * PRD: docs/prds/2026-06-07-telemetry.md
  */
-import { trackEvent } from "@aptabase/tauri";
 import {
   useSettingsStore,
   selectEffectiveTelemetryUsage,
@@ -131,10 +130,19 @@ export function track<E extends TelemetryEvent>(
 ): void {
   try {
     if (!selectEffectiveTelemetryUsage(useSettingsStore.getState())) return;
-    // The plugin command accepts string-valued props; our taxonomy is all
-    // string enums. Send exactly the typed props — nothing appended.
-    void trackEvent(event, props as Record<string, string>);
+    // Lazy-load the Aptabase SDK only when an event actually fires. The package
+    // eagerly pulls in @tauri-apps/api v1, whose path/os-check runs at import
+    // time and throws outside a Tauri/browser context (e.g. node-env unit
+    // tests). A dynamic import keeps that side effect out of every module that
+    // merely imports a telemetry call site, and out of no-telemetry sessions
+    // entirely. The plugin command accepts string-valued props; our taxonomy is
+    // all string enums, so send exactly the typed props — nothing appended.
+    void import("@aptabase/tauri")
+      .then(({ trackEvent }) => trackEvent(event, props as Record<string, string>))
+      .catch(() => {
+        /* best-effort — telemetry must never surface to the user */
+      });
   } catch {
-    /* swallow — telemetry is best-effort and must never surface to the user */
+    /* selector/store access failed — ignore */
   }
 }

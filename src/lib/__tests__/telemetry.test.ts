@@ -35,51 +35,61 @@ beforeEach(() => {
   mockState.releaseChannel = "stable";
 });
 
+// `track()` lazy-imports @aptabase/tauri and calls trackEvent in a microtask,
+// so flush the queue before asserting an emit happened.
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
 describe("track() gating", () => {
-  it("no-ops when usage is off (stable channel, no override)", () => {
+  it("no-ops when usage is off (stable channel, no override)", async () => {
     mockState.releaseChannel = "stable";
     mockState.telemetryUsageEnabled = null; // → effective false
     track("document_opened", { format: "md" });
+    await flush();
     expect(trackEvent).not.toHaveBeenCalled();
   });
 
-  it("emits when usage is on via channel default (alpha)", () => {
+  it("emits when usage is on via channel default (alpha)", async () => {
     mockState.releaseChannel = "alpha";
     mockState.telemetryUsageEnabled = null; // → effective true
     track("document_opened", { format: "pdf" });
+    await flush();
     expect(trackEvent).toHaveBeenCalledTimes(1);
     expect(trackEvent).toHaveBeenCalledWith("document_opened", { format: "pdf" });
   });
 
-  it("emits when explicitly enabled even on stable", () => {
+  it("emits when explicitly enabled even on stable", async () => {
     mockState.releaseChannel = "stable";
     mockState.telemetryUsageEnabled = true; // explicit override wins
     track("ai_action_used", { action: "improve" });
+    await flush();
     expect(trackEvent).toHaveBeenCalledWith("ai_action_used", { action: "improve" });
   });
 
-  it("no-ops when explicitly disabled even on alpha", () => {
+  it("no-ops when explicitly disabled even on alpha", async () => {
     mockState.releaseChannel = "alpha";
     mockState.telemetryUsageEnabled = false; // explicit override wins
     track("ai_action_used", { action: "expand" });
+    await flush();
     expect(trackEvent).not.toHaveBeenCalled();
   });
 
-  it("sends exactly the typed props — nothing appended (no PII)", () => {
+  it("sends exactly the typed props — nothing appended (no PII)", async () => {
     mockState.telemetryUsageEnabled = true;
     track("ai_chat_sent", { path: "acp", provider_kind: "agent_managed" });
+    await flush();
     const props = trackEvent.mock.calls[0]?.[1];
     expect(props).toEqual({ path: "acp", provider_kind: "agent_managed" });
     // Guard: no install id, no path, no content leaked into the payload.
     expect(Object.keys(props ?? {}).sort()).toEqual(["path", "provider_kind"]);
   });
 
-  it("never throws into the caller even if the SDK rejects", () => {
+  it("never throws into the caller even if the SDK rejects", async () => {
     mockState.telemetryUsageEnabled = true;
     trackEvent.mockImplementationOnce(() => {
       throw new Error("transport down");
     });
     expect(() => track("feature_used", { feature: "focus_mode" })).not.toThrow();
+    await flush(); // the rejection is swallowed inside track's .catch
   });
 });
 
