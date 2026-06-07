@@ -9,13 +9,19 @@
 | **Total** | 14 tasks: 2S, 11M, 1L |
 | **Suggested order** | Backend (#1–#5) → State + lib (#6–#8) → Instrumentation (#9) → UI (#10–#11) → Tests + docs (#12–#14) |
 
-## Risks / open questions
+## Decisions (resolved 2026-06-07)
 
-- **Sentry must init early and conditionally.** The Rust Sentry SDK installs its panic hook + starts a session at builder time, *before* the frontend (and thus localStorage settings) is available. Gating it on consent requires a **Rust-readable consent file** the frontend writes on change and Rust reads at startup (precedent: the sync-settings JSON disk file, `editor-styles.json`). This is why #3 exists as its own task.
-- **"Immediately stops" is asymmetric.** Usage gating is trivial (no `track()` call = no egress). Crash gating mid-session is harder — the Sentry client can't fully un-initialize; disabling at runtime means dropping the `ClientInitGuard` / disabling the `Hub`. Decide: either accept "crash-report changes apply on next restart" (simpler, document it) or implement Hub-disable (matches the PRD gate literally). Flagged in #4/#6.
-- **Aptabase init is unconditional, gating is at the call site.** `@aptabase/tauri` only emits on explicit `trackEvent`, so the plugin can be registered always and the frontend helper (#7) is the gate — no Rust-side gating needed for the usage stream.
-- **Secrets in a public repo.** Aptabase app key + Sentry DSN must be injected at build time via CI secrets, never committed (#2). A missing key/DSN must degrade gracefully (telemetry simply off), not crash.
-- **#9 is high blast radius** — it edits many hooks/components across the app. Keep each call site a one-liner through the `track()` helper; no logic in call sites.
+- **Sentry gating → consent file + live disable.** The frontend writes consent to a Rust-readable file (#3); Sentry initializes at startup only when crash consent is enabled, AND the crash toggle takes effect **immediately at runtime** by dropping the `ClientInitGuard` / disabling the `Hub` on disable and re-initializing on enable. The "applies on restart" shortcut is rejected — the PRD's "stops immediately" gate applies to crashes too.
+- **Telemetry in release (CI) builds only.** Keys/DSN come from GitHub Actions secrets (#2); local/dev builds are always telemetry-off (no keys → graceful no-op). Keeps dev activity out of the data.
+- **Full taxonomy now.** All 9 events instrumented in the first pass (#9), accepting the larger multi-file diff.
+- **Both streams ship together.** Usage (Aptabase) + quality (Sentry) land in one batch rather than phased.
+
+## Residual risks / notes
+
+- **#9 is high blast radius** — it edits ~9 hooks/components. Keep each call site a one-liner through the `track()` helper; no logic, no PII in props. Larger review surface now accepted (full-taxonomy decision).
+- **Live-disable correctness (#4)** — dropping/re-creating the Sentry client mid-session must be race-safe; verify a toggle-off truly stops egress and toggle-on resumes, with no panic-hook double-install.
+- **Aptabase init is unconditional, gating is at the call site.** `@aptabase/tauri` only emits on explicit `trackEvent`, so the plugin registers always (when a key is present) and the frontend helper (#7) is the gate.
+- **Graceful no-key degrade.** Missing app key / DSN (every local build) must compile and run with telemetry simply off, never crash (`option_env!`).
 
 ---
 
@@ -61,7 +67,7 @@ Persist consent (`usage: bool`, `crash: bool`) to a small JSON file in the app c
 | **Dependencies** | #2, #3 |
 | **Files** | `src-tauri/src/lib.rs`, `src-tauri/capabilities/default.json`, `commands/telemetry.rs` |
 
-If the crash DSN is present AND startup consent (#3) has crash enabled, init the Sentry Rust SDK (`release` = app version, `send_default_pii: false`, `before_send` strips `server_name` + incidental path-bearing fields) and register `tauri-plugin-sentry`; add `sentry:default` to capabilities. Decide and implement the runtime-disable behavior (drop guard / disable Hub, or document restart-required — see risks). Acceptance: a forced panic surfaces in Sentry tagged with the version when enabled; nothing initializes when disabled or DSN absent.
+If the crash DSN is present AND startup consent (#3) has crash enabled, init the Sentry Rust SDK (`release` = app version, `send_default_pii: false`, `before_send` strips `server_name` + incidental path-bearing fields) and register `tauri-plugin-sentry`; add `sentry:default` to capabilities. **Implement runtime live-disable** (per the locked decision): toggling crash off drops the client guard / disables the Hub so egress stops immediately; toggling on re-initializes without double-installing the panic hook. Acceptance: a forced panic surfaces in Sentry tagged with the version when enabled; toggling off mid-session stops new events; nothing initializes when DSN absent.
 
 ## #5 — Register Aptabase plugin
 
