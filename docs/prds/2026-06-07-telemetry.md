@@ -24,7 +24,7 @@ Without this, roadmap and stabilization decisions are guesses. The research doc 
 
 1. Capture **anonymous usage events** (a small, fixed taxonomy — no PII) and view them as DAU/MAU + per-event counts/properties.
 2. Capture **crashes and unhandled errors** across all three failure classes (Rust panic, frontend JS/React error, native crash) with stack traces grouped per release version.
-3. **Channel-based consent**: default-on for alpha builds, default-off (opt-in) for stable, with two independent user toggles (usage / crashes) and a `DO_NOT_TRACK` / env kill switch that is always honored.
+3. **Channel-based consent**: default-on for alpha builds, default-off (opt-in) for stable, with two independent user toggles (usage / crashes) as the single opt-out mechanism — the channel only sets each toggle's initial value.
 4. **All egress originates in the Rust backend** — no widening of the hardened frontend capability surface (`http:default` stays locked; no new `fs:allow-*`; no direct WebView phone-home).
 5. **Zero leakage of user content** — never transmit document content, file paths/names, AI prompts/completions, API keys, project names, or search queries. A single auditable scrub point per stream.
 
@@ -41,7 +41,7 @@ Without this, roadmap and stabilization decisions are guesses. The research doc 
 - *As the maintainer,* I want to see which AI paths and exporters are actually used, so that I invest effort where users are and prune what they ignore.
 - *As the maintainer,* I want grouped, stack-traced crash reports tagged with the exact alpha version, so that I can fix regressions without waiting for a user to describe a white screen.
 - *As an alpha user,* I want to be told plainly that the alpha shares anonymous usage and crash data and how to turn it off, so that I'm not surprised and I trust the app.
-- *As a privacy-conscious user,* I want a visible toggle (and a `DO_NOT_TRACK` honor) so that I can opt out without leaving the alpha channel or building from source.
+- *As a privacy-conscious user,* I want a visible toggle so that I can opt out without leaving the alpha channel or building from source.
 - *As a future stable user,* I want telemetry off by default and opt-in, so that the stable product matches Notesage's privacy-first positioning.
 
 ## Technical Approach
@@ -66,10 +66,7 @@ Two independent streams, both sending from Rust, both gated on settings flags.
 
 - A compile-time helper in Rust derives the channel from the version string (pre-release suffix `-alpha` → `Alpha`, else `Stable`), exposed to the frontend via an existing startup/health command or a new `get_release_channel` command.
 - On first run, if the telemetry flags are unset, defaults are computed: **alpha → both on**, **stable → both off**. After first run the values are user-owned and persisted; channel changes never override an explicit user choice.
-
-### Kill switch
-
-- The Rust init for **both** streams checks `DO_NOT_TRACK` (and a `NOTESAGE_TELEMETRY=off` env var) before initializing; if set, neither SDK is initialized regardless of settings. Documented in README/privacy docs.
+- The Settings toggle is the single opt-out — there is deliberately no separate env/`DO_NOT_TRACK` kill switch (redundant for a desktop app at this scale; the in-app toggle covers the need).
 
 ### Egress / capability notes
 
@@ -86,7 +83,7 @@ Per the design system (shadcn/ui first, neutral palette, no chromatic accent exc
   - A muted line stating the current channel and what the defaults are ("Alpha builds default to on; stable builds default to off").
   - A "Reset analytics ID" button (regenerates the anonymous install UUID).
   - A link to the privacy explanation of exactly what is and isn't collected.
-- **States:** toggles reflect persisted values; when `DO_NOT_TRACK`/env kill switch is active, both toggles render disabled with a tooltip explaining the environment override takes precedence.
+- **States:** toggles reflect persisted values and persist across restart; flipping either immediately starts/stops that stream.
 
 ## Data Model
 
@@ -115,7 +112,7 @@ type TelemetryEvent =
   | "mcp_tool_called"
   | "feature_used";
 
-// no-ops when usage flag off or kill switch active; enforces low-cardinality props
+// no-ops when usage flag off; enforces low-cardinality props
 function track(event: TelemetryEvent, props?: Record<string, string>): void;
 ```
 
@@ -151,11 +148,10 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 
 **Functional:**
 
-- [ ] With both flags off (or kill switch set), **neither SDK initializes** and no network egress occurs (verified by inspecting that no telemetry endpoint is contacted).
+- [ ] With both flags off, **neither SDK initializes** and no network egress occurs (verified by inspecting that no telemetry endpoint is contacted).
 - [ ] Alpha build: fresh install defaults both flags **on**; the first-run notice appears exactly once.
 - [ ] Stable build (or simulated stable channel): fresh install defaults both flags **off**; no first-run notice.
 - [ ] Toggling either switch in Settings → Privacy immediately stops/starts that stream and persists across restart.
-- [ ] `DO_NOT_TRACK=1` (and `NOTESAGE_TELEMETRY=off`) disables both streams and disables the toggles regardless of stored settings.
 - [ ] A forced Rust panic, a thrown frontend error caught by `ErrorBoundary`, both appear in Sentry tagged with the correct release version and a merged breadcrumb timeline.
 - [ ] A representative `track()` call appears in Aptabase with expected properties; the call is a no-op when the flag is off.
 - [ ] **No PII leaves the app:** an instrumented test / manual audit confirms no document content, file paths, prompts, keys, or project names appear in any payload; `before_send` strips `server_name`.
@@ -164,11 +160,11 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 **Design:**
 
 - [ ] First-run notice and Settings group match the design system (shadcn `switch`, neutral palette, both light/dark + soft contrast).
-- [ ] Disabled-toggle state (kill switch active) has a clear tooltip; no dead/ambiguous controls.
+- [ ] Both toggles have clear labels + one-line descriptions; no dead/ambiguous controls.
 
 **Testing:**
 
-- [ ] Unit tests for default-computation-by-channel, kill-switch precedence, and the `track()` no-op gating.
+- [ ] Unit tests for default-computation-by-channel and the `track()` no-op gating.
 - [ ] `pnpm typecheck`, `pnpm test`, `cargo test`, `pnpm test:e2e` pass.
 
 ## Out of Scope
@@ -177,4 +173,4 @@ fn get_release_channel() -> String; // "alpha" | "stable"
 - Self-hosted Aptabase or GlitchTip deployment — kept as a DSN/config-swap fallback, not built now.
 - Native minidump crash capture (`sentry-rust-minidump`) — desirable follow-up sub-task; Rust panics + frontend errors ship first.
 - Sending `[perf:*]` performance metrics as telemetry — possible later via the same `logger.ts` batch-to-backend pipeline.
-- A stable release channel itself — this PRD assumes the channel detection but does not create the stable channel; until one exists, "alpha default-on" governs all users (hence the always-present toggle + kill switch).
+- A stable release channel itself — this PRD assumes the channel detection but does not create the stable channel; until one exists, "alpha default-on" governs all users (hence the always-present toggle).
