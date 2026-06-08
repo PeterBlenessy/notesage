@@ -26,20 +26,35 @@ import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+// Whisper supports 99 languages; "Auto-detect" covers them all (it sets the
+// language to "auto", which makes Whisper detect the language per recording).
+// The explicit entries below are common picks for users who want to pin a
+// language and skip per-file detection. Keep "Auto-detect" first.
 const LANGUAGES = [
+  { value: 'auto', label: 'Auto-detect' },
   { value: 'ar', label: 'Arabic' },
   { value: 'zh', label: 'Chinese' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'da', label: 'Danish' },
   { value: 'nl', label: 'Dutch' },
   { value: 'en', label: 'English' },
+  { value: 'fi', label: 'Finnish' },
   { value: 'fr', label: 'French' },
   { value: 'de', label: 'German' },
+  { value: 'el', label: 'Greek' },
+  { value: 'hi', label: 'Hindi' },
   { value: 'it', label: 'Italian' },
   { value: 'ja', label: 'Japanese' },
   { value: 'ko', label: 'Korean' },
+  { value: 'no', label: 'Norwegian' },
+  { value: 'pl', label: 'Polish' },
   { value: 'pt', label: 'Portuguese' },
   { value: 'ru', label: 'Russian' },
   { value: 'es', label: 'Spanish' },
   { value: 'sv', label: 'Swedish' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'vi', label: 'Vietnamese' },
 ];
 
 function modelDisplayName(name: string): string {

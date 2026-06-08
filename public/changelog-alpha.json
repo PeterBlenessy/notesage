@@ -1,6 +1,29 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.20",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.19",
+      "sections": {
+        "fixes": [
+          "fix(mcp): close deep-link RCE + OAuth SSRF (security) (#419)"
+        ],
+        "improvements": [
+          "refactor(sidebar): extract ProjectRow, ChildRow + inline-edit/drag hooks from ProjectsSection (#416)"
+        ]
+      },
+      "underTheHood": [
+        "Fix ArrowUp re-render race in ProjectsSection focusRow (#350)",
+        "MCP server registration UX overhaul (#410)",
+        "chore(skills): suite-wide review fixes + Autonomy policy (#411)",
+        "docs(changelog): backfill real alpha.14–19 notes + fix the generator (#434)",
+        "test(e2e-real): sidebar keyboard-nav regression lock (#349) that actually loads (#435)",
+        "chore(skills): suite-wide review fixes + Autonomy policy (#411)",
+        "test(e2e-real): sidebar keyboard-nav regression lock (#349) that actually loads (#435)",
+        "docs(changelog): backfill real alpha.14–19 notes + fix the generator (#434)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.19",
       "date": "2026-06-08",
       "previousVersion": "0.46.0-alpha.18",
