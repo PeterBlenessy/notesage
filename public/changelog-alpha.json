@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.17",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "feat(recording): orb panel controls, pause/resume, and richer transcript items (#427)",
+        "fix(quiet): stop StatusTray mic tooltip auto-opening; fully hide sidebar in focus mode (#428)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.16",
       "date": "2026-06-07",
       "previousVersion": "0.46.0",
