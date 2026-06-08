@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.18",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(ui): white label on primary buttons over the accent fill (macOS style) (#430)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.17",
       "date": "2026-06-08",
       "previousVersion": "0.46.0",
