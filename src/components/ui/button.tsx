@@ -28,8 +28,11 @@ const buttonVariants = cva(
         // still fades the button to signal the disabled state).
         default:
           "bg-[var(--color-accent-primary)] text-[var(--color-on-accent)] disabled:text-[var(--color-on-accent)] hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]",
+        // Disabled: same as the default variant — keep the white label and dim
+        // via the base `disabled:opacity-70`, instead of the base's grey
+        // `disabled:text-muted-foreground` (unreadable on the red fill).
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:border-destructive dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-white disabled:text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:border-destructive dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         // Outline variant: the border IS the primary visual cue (no filled
         // background). Uses --color-border-strong to clear WCAG 1.4.11 (3:1).
         outline:

@@ -53,6 +53,17 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     expect(btn.className).toContain('disabled:opacity-70');
   });
 
+  it('disabled destructive variant keeps white text (dimmed via opacity, not greyed)', () => {
+    const { container } = renderWithProviders(
+      <Button variant="destructive" disabled>Delete</Button>,
+    );
+    const btn = container.querySelector('button[data-slot="button"]')!;
+    // Same grey-on-fill problem as the default variant — keep white, dim via opacity.
+    expect(btn.className).toContain('disabled:text-white');
+    expect(btn.className).not.toContain('disabled:text-muted-foreground');
+    expect(btn.className).toContain('disabled:opacity-70');
+  });
+
   it('link variant text resolves through --color-accent-primary', () => {
     const { container } = renderWithProviders(<Button variant="link">Open</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
