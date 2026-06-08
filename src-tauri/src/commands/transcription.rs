@@ -970,7 +970,7 @@ pub async fn transcribe_file(
     // Model load + whole-file transcription on a blocking thread so it never
     // contends with a live capture (which lives on its own dedicated thread).
     let result = tokio::task::spawn_blocking(
-        move || -> Result<(Vec<TranscriptSegment>, f64), String> {
+        move || -> Result<(Vec<TranscriptSegment>, f64, Option<String>), String> {
             // Load (or reuse cached) whisper context.
             {
                 let mut ctx_lock = whisper_ctx.lock();
@@ -1013,6 +1013,16 @@ pub async fn transcribe_file(
                 .full(params, &audio_data)
                 .map_err(|e| format!("Transcription failed: {}", e))?;
 
+            // When auto-detecting, surface the language Whisper actually picked
+            // (e.g. "sv") so the transcript note records it instead of "auto".
+            // A pinned language is reported back verbatim.
+            let detected_lang = if lang == "auto" {
+                let id = whisper_state.full_lang_id_from_state();
+                whisper_rs::get_lang_str(id).map(|s| s.to_string())
+            } else {
+                Some(lang.clone())
+            };
+
             let num_segments = whisper_state.full_n_segments();
             let mut segments = Vec::new();
             for i in 0..num_segments {
@@ -1043,13 +1053,13 @@ pub async fn transcribe_file(
             }
 
             let duration_secs = audio_data.len() as f64 / sample_rate as f64;
-            Ok((segments, duration_secs))
+            Ok((segments, duration_secs, detected_lang))
         },
     )
     .await
     .map_err(|e| format!("Transcription task panicked: {}", e))??;
 
-    let (segments, duration_secs) = result;
+    let (segments, duration_secs, detected_lang) = result;
     log::info!(target: "notesage::transcription", "transcribe_file complete (job={}): {} segments, {:.1}s", job_id, segments.len(), duration_secs);
 
     let _ = app_final.emit(
@@ -1060,7 +1070,9 @@ pub async fn transcribe_file(
     Ok(TranscriptionResult {
         segments,
         duration_secs,
-        language: lang_result,
+        // Prefer the detected language; fall back to the requested value
+        // (e.g. "auto") only if Whisper couldn't map the detected id.
+        language: detected_lang.unwrap_or(lang_result),
     })
 }
 
