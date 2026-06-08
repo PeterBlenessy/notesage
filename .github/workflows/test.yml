@@ -204,6 +204,41 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # Regression guard for the v0.46.0-alpha.17/18 startup crash: with
+      # NOTESAGE_APTABASE_KEY set, the Aptabase plugin registers and its setup
+      # hook calls tokio::spawn — which panics ("there is no reactor running")
+      # unless run() enters a Tokio runtime first. Keyless test/dev builds never
+      # register the plugin, so ONLY a key'd launch reproduces it. We build with
+      # a dummy key and launch briefly, asserting the app gets past plugin setup
+      # (reaches the "starting up" hook) without the reactor panic.
+      - name: Smoke-launch with telemetry key (aptabase startup-panic regression)
+        working-directory: src-tauri
+        env:
+          NOTESAGE_APTABASE_KEY: "A-DEV-0000000000"
+        run: |
+          cargo build --bin notesage
+          BIN=target/debug/notesage
+          echo "Launching $BIN for 20s to verify it survives plugin setup…"
+          # The webview may fail to load in headless CI (no dev server) AFTER
+          # plugin setup — that's fine; we only assert plugin init succeeds.
+          "$BIN" > smoke.log 2>&1 &
+          PID=$!
+          sleep 20
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          echo "----- smoke.log (tail) -----"
+          tail -40 smoke.log || true
+          echo "----------------------------"
+          if grep -qi "there is no reactor running" smoke.log; then
+            echo "::error::Startup panic from the telemetry plugin reproduced — run() must enter a Tokio runtime before the Tauri builder. See src-tauri/src/lib.rs build_app_runtime()."
+            exit 1
+          fi
+          if ! grep -q "Notesage starting up" smoke.log; then
+            echo "::error::App did not reach the 'starting up' setup hook within 20s with the telemetry plugin registered — startup is broken."
+            exit 1
+          fi
+          echo "OK: app reached startup with the telemetry plugin registered; no reactor panic."
+
   real-e2e-tests:
     name: Real Tauri E2E Tests
     # Pinned to `macos-26` (not `macos-latest`) to escape the Safari 26.5
