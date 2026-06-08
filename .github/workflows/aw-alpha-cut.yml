@@ -239,7 +239,6 @@ jobs:
       - name: Generate history file from merged PRs
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
-          PR_NUMBERS: ${{ needs.preflight.outputs.pr_numbers }}
           PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
           NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
           NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
@@ -249,6 +248,33 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           FILE="docs/history/${NEXT_NUMBER}-release-v${NEXT_VERSION}.md"
 
+          # Enumerate EVERY PR merged since the previous tag — squash commits
+          # ("title (#N)") and merge commits ("Merge pull request #N") alike.
+          # The old approach used a tier-label-filtered `gh pr list`, which
+          # silently dropped untiered PRs (alpha.14 lost the whole MCP overhaul).
+          # Sourcing from the git range guarantees nothing is missed.
+          mapfile -t ALL_PRS < <(
+            git log "${PREVIOUS_TAG}..HEAD" --format='%s %b' \
+              | grep -oE '#[0-9]+' | tr -d '#' | sort -un
+          )
+
+          feat=(); fix=(); imp=(); hood=()
+          for pr in "${ALL_PRS[@]}"; do
+            title=$(gh pr view "$pr" --json title --jq .title 2>/dev/null) || continue
+            [ -z "$title" ] && continue
+            # Skip the release PR itself.
+            case "$title" in chore*release*|*auto-cut*) continue;; esac
+            line="- ${title} (#${pr})"
+            # Classify by conventional-commit type so user-facing work lands in
+            # the right section instead of all being dumped "under the hood".
+            case "$title" in
+              feat*)            feat+=("$line");;
+              fix*)             fix+=("$line");;
+              perf*|refactor*)  imp+=("$line");;
+              *)                hood+=("$line");;
+            esac
+          done
+
           {
             echo "# Release v${NEXT_VERSION}"
             echo ""
@@ -256,26 +282,29 @@ jobs:
             echo "**Previous version:** ${PREVIOUS_TAG#v}"
             echo "**Channel:** Alpha"
             echo ""
-            echo "Auto-cut by \`aw-alpha-cut\` after Tier-A/B PRs landed. The auto-dump under \"Under the hood\" lists the merged PRs verbatim."
-            echo ""
-            echo "Before promoting this alpha to stable, edit this file:"
-            echo "  - Move anything user-visible from \"Under the hood\" into \"## Changes\" under \`### Features\`, \`### Improvements\`, or \`### Fixes\` — and rewrite each bullet in user-facing prose (drop PR titles, version triples, internal jargon)."
-            echo "  - Leave \"## Changes\" as \`_No user-visible changes._\` for infra-only releases."
-            echo "  - See \`feedback_user_facing_release_notes.md\` and \`scripts/generate-changelog.ts\` linter rules."
+            echo "Auto-cut by \`aw-alpha-cut\`. Sections below are auto-classified from merged PRs; refine the prose before promoting to stable."
             echo ""
             echo "## Changes"
             echo ""
-            echo "_No user-visible changes._"
-            echo ""
+            if [ ${#feat[@]} -eq 0 ] && [ ${#fix[@]} -eq 0 ] && [ ${#imp[@]} -eq 0 ]; then
+              echo "_No user-visible changes._"
+              echo ""
+            else
+              if [ ${#feat[@]} -gt 0 ]; then echo "### Features"; printf '%s\n' "${feat[@]}"; echo ""; fi
+              if [ ${#fix[@]}  -gt 0 ]; then echo "### Fixes";    printf '%s\n' "${fix[@]}";  echo ""; fi
+              if [ ${#imp[@]}  -gt 0 ]; then echo "### Improvements"; printf '%s\n' "${imp[@]}"; echo ""; fi
+            fi
             echo "## Under the hood"
             echo ""
-            echo "Auto-generated dump of merged Tier-A/B PRs. Rewrite as prose grouped by area before stable promotion."
+            echo "Auto-generated from merged PRs + commits since \`${PREVIOUS_TAG}\`. Alpha builds list commit-level detail for technical users."
             echo ""
-            IFS=',' read -ra PRS <<< "$PR_NUMBERS"
-            for pr in "${PRS[@]}"; do
-              title=$(gh pr view "$pr" --json title --jq .title)
-              echo "- ${title} (#${pr})"
-            done
+            if [ ${#hood[@]} -gt 0 ]; then printf '%s\n' "${hood[@]}"; fi
+            # Commit-level detail (alpha channel targets technical users). These
+            # `- ` lines are also surfaced in the in-app changelog's "Under the
+            # hood" list by scripts/generate-changelog.ts.
+            git log "${PREVIOUS_TAG}..HEAD" --no-merges --format='- %s' \
+              | grep -viE 'chore: release|auto-cut|Generate history|Regenerate changelog|Update history README' \
+              || true
           } > "$FILE"
 
           cat "$FILE"

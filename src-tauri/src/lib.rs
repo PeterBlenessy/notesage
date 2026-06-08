@@ -46,8 +46,36 @@ fn set_log_level(level: String) {
 const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
 const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
 
+/// Build the process-wide multi-threaded Tokio runtime that `run()` enters
+/// before the Tauri builder starts. Entering this runtime on the main thread is
+/// what gives plugin `setup` hooks a reactor for `tokio::spawn`
+/// (tauri-plugin-aptabase's `start_polling`); without it the app panics at
+/// startup with "there is no reactor running" — see `run()` and the regression
+/// test below.
+fn build_app_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Runtime::new().expect("failed to build Tokio runtime")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Establish and ENTER a Tokio runtime for the whole process BEFORE the
+    // Tauri builder runs. Some plugins call the global `tokio::spawn` from their
+    // `setup` hook (notably `tauri-plugin-aptabase`'s `start_polling`), which
+    // panics with "there is no reactor running, must be called from the context
+    // of a Tokio 1.x runtime" unless a runtime is entered on the main thread at
+    // plugin-setup time. Tauri's default runtime is not entered there, so we
+    // create one, hand it to Tauri (`async_runtime::set`) so everything shares a
+    // single runtime, and keep the enter-guard alive for the app's lifetime.
+    //
+    // This only manifested once `NOTESAGE_APTABASE_KEY` was wired into release
+    // builds (v0.46.0-alpha.17+): without the key the Aptabase plugin is never
+    // registered, so the panic never fired — which is why dev/local builds and
+    // earlier alphas were unaffected. `runtime` + `_runtime_guard` are held as
+    // locals through the blocking `builder.run(...)` call below.
+    let runtime = build_app_runtime();
+    tauri::async_runtime::set(runtime.handle().clone());
+    let _runtime_guard = runtime.enter();
+
     // Build the Sentry client ONCE up front so the panic hook installs exactly
     // once. The returned guard is `mem::forget`-ed (we keep the client alive for
     // the whole process via `telemetry::set_sentry_client`); dropping it would
@@ -469,4 +497,44 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for the v0.46.0-alpha.17/18 startup crash: tauri-plugin-aptabase
+    /// calls `tokio::spawn` from its plugin `setup` hook, which panics with
+    /// "there is no reactor running, must be called from the context of a Tokio
+    /// 1.x runtime" unless a runtime is ENTERED on the main thread before the
+    /// Tauri builder runs. This proves `build_app_runtime()` + `enter()` is the
+    /// mechanism that prevents it.
+    ///
+    /// This test only exercises the runtime mechanism. The end-to-end guard —
+    /// actually launching a build with `NOTESAGE_APTABASE_KEY` set so the plugin
+    /// registers — lives in CI (`.github/workflows/test.yml`), because the plugin
+    /// is never registered in a keyless test/dev build.
+    #[test]
+    fn entered_app_runtime_provides_a_reactor_for_plugin_setup() {
+        // Failure precondition: with no runtime entered on this thread, there is
+        // no reactor — exactly the state that made aptabase's `tokio::spawn` panic.
+        assert!(
+            tokio::runtime::Handle::try_current().is_err(),
+            "test thread must start with no entered runtime",
+        );
+
+        let rt = build_app_runtime();
+        {
+            let _guard = rt.enter();
+            // A reactor is now available on this thread …
+            assert!(
+                tokio::runtime::Handle::try_current().is_ok(),
+                "entering the app runtime must provide a reactor",
+            );
+            // … so the spawn that aptabase's `start_polling` performs no longer
+            // panics. `spawn` returning a handle (rather than unwinding) is the
+            // assertion; the task itself is a no-op.
+            let _join = tokio::spawn(async {});
+        }
+    }
 }
