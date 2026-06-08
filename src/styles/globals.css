@@ -120,6 +120,18 @@
 :root {
   --color-accent-primary: var(--accent, var(--color-primary));
 
+  /* Text/icon colour placed ON a `--color-accent-primary` fill (primary button
+     labels, etc.). macOS System Settings keeps a WHITE label+glyph on the
+     accent fill in BOTH light and dark mode, so each `.accent-*` class sets
+     `--color-on-accent: white`. When no accent is active the primary affordance
+     is the NEUTRAL `--color-primary` (dark in light mode, light-grey in dark
+     mode), so the on-accent colour must default to `--color-primary-foreground`
+     — white on the dark neutral in light mode, dark on the light-grey neutral
+     in dark mode. Without this default the dark-mode neutral button would get
+     dark text that the accent classes would NOT override, but the accent case
+     must be white — hence the per-accent overrides below. */
+  --color-on-accent: var(--color-primary-foreground);
+
   /* Audit #17 (2026-04-27 quiet-composer-migration) — macOS unfocused-window
      de-emphasis. Neutral grey value the accent token swaps to when the
      window loses focus. Light-mode value (oklch(60% 0 0)) clears WCAG UI
@@ -307,15 +319,22 @@
 .accent-orange {
   /* Light mode: rgb(255,87,34) — Material Deep Orange 500. ~3.2:1 vs white. */
   --accent: oklch(68% 0.21 37);
+  /* macOS keeps a white label on the accent fill (both themes). The base
+     `.accent-*` rule (no `.dark` qualifier) applies in light AND dark mode,
+     so a single white declaration covers both — the `.dark.accent-*` rules
+     only override `--accent`, not `--color-on-accent`. */
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .accent-blue {
   /* Light mode: rgb(25,118,210) — Material Blue 700. ~4.6:1 vs white (AA body). */
   --accent: oklch(56% 0.16 253);
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .accent-system {
   --accent: var(--accent-system-value, oklch(68% 0.21 37));
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .dark.accent-orange {
