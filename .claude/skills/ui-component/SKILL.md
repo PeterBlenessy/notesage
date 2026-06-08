@@ -27,11 +27,15 @@ A few quick reminders for the common cases:
 
 App-specific notes:
 
-- There is **no tab bar** — the Classic Layout (and its `tabs` usage) was
-  deleted. Quiet Composer is a single-document shell; the active document
-  surfaces in `TitleBar`, not a tab strip. Do not reach for the `tabs` primitive.
+- There is **no document tab bar** — the Classic Layout's `TabBar` was deleted.
+  Quiet Composer is a single-document shell; the active document surfaces in
+  `TitleBar`, not a tab strip. Don't build a document tab strip. (The shadcn
+  `tabs` primitive itself is still fine for in-dialog tabbed content — e.g.
+  `ImageInsertDialog.tsx`'s URL/Upload tabs; it just isn't used for documents.)
 - File/folder tree → `collapsible` + custom tree (the flat `QuietSidebar`
-  sections + the `TreeOverlay` deep-dive, not a fully custom tree).
+  sections + the in-sidebar inline `→`-expand one-level peek via `FolderPeek`,
+  not a fully custom tree). There is no `TreeOverlay` — it was removed in
+  sidebar-simplification; deeper subtrees are reached on demand inline.
 
 ## Step 2: Check Radix UI Primitives
 
@@ -53,7 +57,7 @@ multiple times in this repo (see `docs/design-system.md` §"Radix Tooltip").
   test render (or wrap it inside the component).
 
 Reference implementations that wrap their own provider: `AgentOrb.tsx`,
-`FloatingCommandBar.tsx`, `CommitDialog.tsx`, `BlockSizeToolbar.tsx`.
+`FloatingCommandBar.tsx`, `CommitDialog.tsx`, `TitleBar.tsx`.
 
 ## Step 3: Style with Tailwind + CSS Variables
 
