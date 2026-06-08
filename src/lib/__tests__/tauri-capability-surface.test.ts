@@ -33,8 +33,14 @@ interface TauriConf {
   };
 }
 
+interface HttpAllowEntry {
+  url: string;
+}
+
 interface DefaultCapability {
-  permissions: Array<string | { identifier: string; allow?: unknown }>;
+  permissions: Array<
+    string | { identifier: string; allow?: HttpAllowEntry[] }
+  >;
 }
 
 function loadTauriConf(): TauriConf {
@@ -69,9 +75,29 @@ describe('tauri asset protocol scope', () => {
       expect(entry).not.toBe('**');
       expect(entry).not.toBe('*');
       expect(entry).not.toBe('/');
-      // Scope must be rooted under a Tauri path variable ($HOME, $APPDATA,
+      // Scope must be rooted under a Tauri path variable ($APPDATA, $RESOURCE,
       // etc.) — a bare "/**" would be equivalent to "**".
       expect(entry.startsWith('$')).toBe(true);
+    }
+  });
+
+  it('does NOT statically expose the home directory (security H1)', () => {
+    // `$HOME/**` (or any $HOME-rooted glob) re-opens the ENTIRE home dir to the
+    // asset protocol — `.ssh`, `.aws`, `.env`, browser profiles, other
+    // projects — and those asset reads are NOT gated by the agent Seatbelt
+    // profile. User-content roots (the Notesage library, opened projects,
+    // explorer folders) are now granted at runtime via the `allow_asset_dir`
+    // command in `useStartWatchers`, NOT blanket-allowed here. The old test
+    // only rejected a literal `**`, so `$HOME/**` slipped through and gave
+    // false assurance that the v1 exfil surface was closed.
+    const conf = loadTauriConf();
+    const allow = conf.app?.security?.assetProtocol?.scope?.allow ?? [];
+    expect(allow).not.toContain('$HOME/**');
+    for (const entry of allow) {
+      expect(
+        entry.startsWith('$HOME'),
+        `asset scope entry "${entry}" is $HOME-rooted — grant user roots at runtime via allow_asset_dir instead`,
+      ).toBe(false);
     }
   });
 });
@@ -88,5 +114,36 @@ describe('tauri default capability permissions', () => {
       return identifier.startsWith('fs:');
     });
     expect(fsPermissions).toEqual([]);
+  });
+
+  it('grants sentry:default (telemetry crash-report invoke bridge)', () => {
+    // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
+    // `sentry:default` enables that bridge. It is an invoke permission, NOT a
+    // network permission — egress originates from the Rust SDK, so this does
+    // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
+    const cap = loadDefaultCapability();
+    const identifiers = cap.permissions.map((perm) =>
+      typeof perm === 'string' ? perm : perm.identifier,
+    );
+    expect(identifiers).toContain('sentry:default');
+  });
+
+  it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
+    // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
+    // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the
+    // http:default allow-list to exactly the two GitHub release URLs so a future
+    // edit can't quietly add a telemetry (or any other) endpoint here.
+    const cap = loadDefaultCapability();
+    const httpPerm = cap.permissions.find(
+      (perm) => typeof perm !== 'string' && perm.identifier === 'http:default',
+    );
+    expect(httpPerm).toBeDefined();
+    const allow =
+      typeof httpPerm === 'string' ? [] : (httpPerm?.allow ?? []);
+    const urls = allow.map((entry) => entry.url).sort();
+    expect(urls).toEqual([
+      'https://github.com/PeterBlenessy/notesage/**',
+      'https://release-assets.githubusercontent.com/**',
+    ]);
   });
 });

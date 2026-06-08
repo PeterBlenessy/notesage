@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { Baseline, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +49,7 @@ export function TextColorPopover({ editor }: { editor: Editor }) {
         <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5 px-1">
           Text Color
         </p>
+        <TooltipProvider delayDuration={300}>
         <div className="grid grid-cols-8 gap-1">
           {TEXT_COLORS.map(({ label, value }) => (
             <Tooltip key={label}>
@@ -78,6 +79,7 @@ export function TextColorPopover({ editor }: { editor: Editor }) {
             </Tooltip>
           ))}
         </div>
+        </TooltipProvider>
       </PopoverContent>
     </Popover>
   );

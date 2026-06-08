@@ -1,5 +1,23 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useMcpStore, type McpServerEntry, type McpToolInfo } from '../mcp-store';
+import {
+  useMcpStore,
+  isSecretEnvValue,
+  mcpSecretService,
+  type McpServerEntry,
+  type McpToolInfo,
+} from '../mcp-store';
+
+describe('mcp env-secret helpers', () => {
+  it('isSecretEnvValue distinguishes plaintext from keychain references', () => {
+    expect(isSecretEnvValue('plain')).toBe(false);
+    expect(isSecretEnvValue({ secret: true })).toBe(true);
+    expect(isSecretEnvValue({ secret: false })).toBe(true);
+  });
+
+  it('mcpSecretService builds the namespaced keychain service id', () => {
+    expect(mcpSecretService('global:github', 'API_KEY')).toBe('notesage:mcp:global:github:API_KEY');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -724,6 +724,37 @@ describe('StatusTray — task #53', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('does not autofocus a control on open (mic tooltip would auto-show) (#bug)', async () => {
+    const editor = createMockEditor() as unknown as Editor;
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div>
+          <button data-testid="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <TrayHost open={open} onOpenChange={setOpen} editor={editor} />
+        </div>
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const opener = document.querySelector('[data-testid="opener"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(opener);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // Radix's default autofocus is prevented, so focus must NOT land on the
+    // recording MicButton (whose focus-triggered tooltip would otherwise stick
+    // open on every popover open).
+    const micButton = document
+      .querySelector('[aria-label="Editor tools"]')
+      ?.querySelector('button');
+    expect(micButton).toBeTruthy();
+    expect(document.activeElement).not.toBe(micButton);
+  });
+
   // -------------------------------------------------------------------------
   // Editor tools (#110) — MicButton + source-mode toggle
   // -------------------------------------------------------------------------

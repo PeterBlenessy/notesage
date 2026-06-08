@@ -117,11 +117,17 @@ Extensible AI capability system based on open standards.
 
 **MCP Client Integration:**
 
-- MCP (Model Context Protocol) client in Rust backend using stdio transport with JSON-RPC 2.0
-- Spawn and manage MCP servers as child processes with cleanup on app exit
+- MCP (Model Context Protocol) client in the Rust backend (`commands/mcp.rs`) with two transports behind the `McpConn` enum:
+  - **stdio** — JSON-RPC 2.0 over a spawned child process's stdin/stdout (cleanup on app exit)
+  - **http (Streamable HTTP)** — JSON-RPC POSTed to a single endpoint; responses parsed from `application/json` or `text/event-stream` (SSE), with `Mcp-Session-Id` persisted across requests. No child process; the protocol helpers (`mcp_initialize`, `mcp_list_tools_from_server`, `mcp_call_tool_on_server`) are transport-agnostic.
+- **Curated catalog** (`mcp-catalog.json`, `mcp_catalog_list`) — a "Browse catalog" picker of opt-in server templates, seeded with the official MCP reference servers (Filesystem, Fetch, Memory, Git, Sequential Thinking, Time, Everything), badged "Official" with provenance links. Selecting one pre-fills the Add dialog; nothing runs until the user confirms.
+- **Validate-on-add** (`mcp_validate_server`) — a dry run (spawn/connect → `initialize` → `tools/list` → stop) that previews a server's tools on success or shows a mapped error (`binary_not_found` / `spawn_failed` / `init_failed` / `timeout`) on failure. A config is written to `mcp.json` only after a successful dry run.
+- **Env secrets in the keychain** — env values flagged secret are stored in the OS keychain (`notesage:mcp:<server_id>:<KEY>`); `mcp.json` keeps only a `{ "secret": true }` reference (`McpEnvValue`). Secrets are resolved at spawn, never written to disk, never returned to the frontend.
+- **OAuth 2.1 for protected remote servers** (`commands/mcp_oauth.rs`) — authorization-code + PKCE (S256), RFC 9728→8414 metadata discovery, RFC 7591 dynamic client registration, a transient loopback `127.0.0.1` callback, and refresh. Tokens live in the keychain (`notesage:mcp:<server_id>:oauth`); `HttpMcpClient` attaches `Authorization: Bearer` when a server is authorized. Commands: `mcp_oauth_authorize` / `mcp_oauth_status` / `mcp_oauth_logout`. Add dialog has an "Authorize" button; server cards offer Re-authenticate / Sign out.
+- **Deep-link install** — `notesage://mcp/install?...` links (parsed by `src/lib/mcp/deeplink.ts`) open the validate-first Add dialog pre-filled, via the `notesage` scheme (`tauri-plugin-deep-link`) and `McpDeepLinkInstaller` mounted at the app root.
 - Tool discovery from connected servers, displayed in Tools popover
 - Import existing MCP configs from Claude Desktop, Cursor, VS Code
-- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
+- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers; project-scoped servers default to disabled (security). PRD: `docs/prds/2026-06-03-mcp-registration-ux.md`
 
 **Standards:**
 
@@ -199,7 +205,7 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 ⏺ Recording (02:14)  →  ⟳ Transcribing…  →  ✓ Ready to file  →  📁 Moved to project
 ```
 
-1. **Record.** The StatusTray microphone (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/<Meeting timestamp>/` inbox folder. The orb shows a `recording` item with elapsed time. Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription.
+1. **Record.** The StatusTray microphone (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/Recording <timestamp>/` inbox folder. The orb shows a `recording` item with a pause-aware elapsed time and inline pause/stop controls; while recording the orb draws a clock-style seconds-ray ring (distinct from the agent-activity pulse). Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription. Pause/resume discards samples without tearing down the stream.
 2. **Stop.** A second click (or `⌘⇧R`) signals the stream owner to stop; teardown (stream drop + thread join) is awaited before the command returns and the WAV is finalized. A rapid stop→start is safe because the new stream can only open after the previous owner has fully released CoreAudio.
 3. **Transcribe.** A background **transcription job** (tracked in `activity-store`, surfaced in the orb / `AgentPanel`) runs whole-file Whisper once with the configured model and produces timestamped segments. Progress streams into the activity item via `transcription-progress` events.
 4. **File it.** On completion the panel offers "Move to project"; picking one relocates the whole bundle (audio + transcript note) into that project. No pick leaves it in the inbox, re-openable and re-runnable.

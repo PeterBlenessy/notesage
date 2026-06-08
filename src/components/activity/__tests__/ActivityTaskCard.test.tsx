@@ -11,9 +11,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderWithProviders, screen, fireEvent, waitFor, act } from '@/test/component-harness';
+import { renderHook } from '@testing-library/react';
+import { setMockInvokeHandler } from '@/test/tauri-mock';
 import { ActivityTaskCard } from '../ActivityTaskCard';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useRecordingStore } from '@/stores/recording-store';
+import { useMeetingRecording, __resetLiveRecordingItemId } from '@/hooks/useMeetingRecording';
 import type { ActivityApprovalMode } from '@/lib/ai/types';
 
 // `sonner` is mocked by `@/test/tauri-mock` (imported via component-harness);
@@ -24,8 +28,9 @@ const toastError = toast.error as ReturnType<typeof vi.fn>;
 
 // Hoisted spy — `vi.mock` factories are hoisted above the module body, so any
 // variable they close over must be created via `vi.hoisted` to exist at that point.
-const { moveBundleToProjectMock } = vi.hoisted(() => ({
+const { moveBundleToProjectMock, openFileMock } = vi.hoisted(() => ({
   moveBundleToProjectMock: vi.fn<(dir: string, root: string) => Promise<string>>(),
+  openFileMock: vi.fn<(path: string, name: string) => Promise<void>>(),
 }));
 
 // Mock the bundle move so the move-to-project flow doesn't touch Tauri.
@@ -38,6 +43,11 @@ vi.mock('@/lib/transcription/bundle', async () => {
     moveBundleToProject: (dir: string, root: string) => moveBundleToProjectMock(dir, root),
   };
 });
+
+// Mock the file-open hook — TranscriptionCard's click-to-open goes through it.
+vi.mock('@/hooks/useFileOperations', () => ({
+  useFileOperations: () => ({ openFile: openFileMock }),
+}));
 
 // Radix DropdownMenu uses PointerEvent APIs jsdom lacks — stub them so the
 // menu opens in tests (mirrors the polyfills in AgentOrb.test.tsx).
@@ -186,6 +196,7 @@ describe('ActivityTaskCard — full path tooltip', () => {
 describe('ActivityTaskCard — transcription kind', () => {
   beforeEach(() => {
     moveBundleToProjectMock.mockReset();
+    openFileMock.mockReset();
     toastSuccess.mockReset();
     toastError.mockReset();
     useWorkspaceStore.setState({ projects: [] });
@@ -197,10 +208,10 @@ describe('ActivityTaskCard — transcription kind', () => {
       id: 'tx-1',
       kind: 'transcription',
       type: 'workflow',
-      label: 'Meeting 2026-05-30',
+      label: 'Recording 2026-05-30',
       status: 'running',
       progress: 0,
-      audioPath: '/Users/me/Notesage/Recordings/Meeting 2026-05-30/audio.wav',
+      audioPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/audio.wav',
       completedAt: undefined,
       ...overrides,
     });
@@ -208,7 +219,7 @@ describe('ActivityTaskCard — transcription kind', () => {
 
   it('shows a spinner + "Starting…" while running with progress 0', () => {
     renderWithProviders(<ActivityTaskCard task={txTask({ progress: 0 })} />);
-    expect(screen.getByText('Meeting 2026-05-30')).toBeTruthy();
+    expect(screen.getByText('Recording 2026-05-30')).toBeTruthy();
     expect(screen.getByText(/transcribing/i)).toBeTruthy();
     expect(screen.getByText(/starting/i)).toBeTruthy();
   });
@@ -217,7 +228,7 @@ describe('ActivityTaskCard — transcription kind', () => {
     renderWithProviders(<ActivityTaskCard task={txTask({ progress: 42 })} />);
     expect(screen.getByText('42%')).toBeTruthy();
     // No "Move to project" while still running
-    expect(screen.queryByText(/move to project/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /move to project/i })).toBeNull();
   });
 
   it('shows "Move to project" on completion and not before', () => {
@@ -228,7 +239,7 @@ describe('ActivityTaskCard — transcription kind', () => {
       />,
     );
     expect(screen.getByText(/transcript ready/i)).toBeTruthy();
-    expect(screen.getByText(/move to project/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /move to project/i })).toBeTruthy();
   });
 
   it('does not show "Move to project" once moved', () => {
@@ -236,7 +247,7 @@ describe('ActivityTaskCard — transcription kind', () => {
     renderWithProviders(
       <ActivityTaskCard task={txTask({ status: 'done', moved: true, completedAt: Date.now() })} />,
     );
-    expect(screen.queryByText(/move to project/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /move to project/i })).toBeNull();
   });
 
   it('shows the error state for a failed transcription', () => {
@@ -244,28 +255,201 @@ describe('ActivityTaskCard — transcription kind', () => {
       <ActivityTaskCard task={txTask({ status: 'error', completedAt: Date.now() })} />,
     );
     expect(screen.getByText(/re-runnable from the inbox/i)).toBeTruthy();
-    expect(screen.queryByText(/move to project/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /move to project/i })).toBeNull();
+  });
+
+  it('opens the transcript when a completed card is clicked', async () => {
+    openFileMock.mockResolvedValue(undefined);
+    const task = txTask({
+      status: 'done',
+      progress: 100,
+      completedAt: Date.now(),
+      transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+    });
+    renderWithProviders(<ActivityTaskCard task={task} />);
+
+    expect(screen.getByText(/click to open/i)).toBeTruthy();
+    fireEvent.click(screen.getByText('Recording 2026-05-30'));
+
+    await waitFor(() => {
+      expect(openFileMock).toHaveBeenCalledWith(
+        '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+        'transcript.md',
+      );
+    });
+  });
+
+  it('reveals the transcript in Finder when the reveal button is clicked', async () => {
+    const revealHandler = vi.fn(() => undefined);
+    setMockInvokeHandler('reveal_in_finder', revealHandler);
+    const task = txTask({
+      status: 'done',
+      completedAt: Date.now(),
+      transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+    });
+    renderWithProviders(<ActivityTaskCard task={task} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /reveal in finder/i }));
+    await waitFor(() => {
+      expect(revealHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+        }),
+      );
+    });
+  });
+
+  it('reveals the raw audio when transcription failed before a note was written', async () => {
+    const revealHandler = vi.fn(() => undefined);
+    setMockInvokeHandler('reveal_in_finder', revealHandler);
+    const task = txTask({ status: 'error', completedAt: Date.now() }); // no transcriptPath
+    renderWithProviders(<ActivityTaskCard task={task} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /reveal in finder/i }));
+    await waitFor(() => {
+      expect(revealHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: '/Users/me/Notesage/Recordings/Recording 2026-05-30/audio.wav',
+        }),
+      );
+    });
+  });
+
+  it('renders a start–stop · length info row when recording metadata is present', () => {
+    // 14:02:00 → 14:08:00 wall clock, 5 min 30 s recorded (pause-aware).
+    const start = new Date(2026, 4, 30, 14, 2, 0).getTime();
+    const stop = new Date(2026, 4, 30, 14, 8, 0).getTime();
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'done',
+          completedAt: stop,
+          transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+          recordingStartedAt: start,
+          recordingStoppedAt: stop,
+          recordingDurationSecs: 330,
+        })}
+      />,
+    );
+    // Length renders as M:SS.
+    expect(screen.getByText(/5:30/)).toBeTruthy();
+    // The info row carries both the start–stop span and the length.
+    const row = screen.getByText(/·/);
+    expect(row.textContent).toMatch(/–/); // start – stop span present
+    expect(row.textContent).toMatch(/5:30/);
+  });
+
+  it('recovers the start time from the bundle folder name for legacy jobs', () => {
+    // No recording* metadata — but the path encodes the stamp the backend wrote.
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'done',
+          completedAt: Date.now(),
+          transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30 14-02-33/transcript.md',
+        })}
+      />,
+    );
+    // 14:02 in 24-hour form derived from the folder name.
+    expect(screen.getByText(/14:02/)).toBeTruthy();
+  });
+
+  it('also recovers from older "Meeting" bundle folder names', () => {
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'done',
+          completedAt: Date.now(),
+          transcriptPath: '/x/Meeting 2026-01-02 09-30-00/transcript.md',
+        })}
+      />,
+    );
+    expect(screen.getByText(/09:30/)).toBeTruthy();
+  });
+
+  it('omits the info row when neither metadata nor a parseable path exists', () => {
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'done',
+          completedAt: Date.now(),
+          transcriptPath: '/x/transcript.md',
+          audioPath: undefined,
+        })}
+      />,
+    );
+    expect(screen.queryByText(/·/)).toBeNull();
+    expect(screen.queryByText(/\d{2}:\d{2}/)).toBeNull();
+  });
+
+  it('orders the top-right cluster [Move to project] [Reveal] [Remove]', () => {
+    setMockInvokeHandler('reveal_in_finder', () => undefined);
+    useWorkspaceStore.setState({ projects: [{ path: '/Users/me/Code/acme', fileTree: [] }] });
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({
+          status: 'done',
+          completedAt: Date.now(),
+          transcriptPath: '/x/transcript.md',
+        })}
+        onRemove={() => {}}
+      />,
+    );
+    // Exact names — the remove button's tooltip mentions "Reveal in Finder",
+    // so a regex would match two buttons.
+    const move = screen.getByRole('button', { name: 'Move to project' });
+    const reveal = screen.getByRole('button', { name: 'Reveal in Finder' });
+    const remove = screen.getByRole('button', {
+      name: /^Remove from this list/,
+    });
+    // Move → Reveal → Remove, in DOM order.
+    expect(move.compareDocumentPosition(reveal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reveal.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('does not put a native title tooltip on the card label', () => {
+    renderWithProviders(
+      <ActivityTaskCard task={txTask({ status: 'done', completedAt: Date.now() })} />,
+    );
+    expect(screen.getByText('Recording 2026-05-30').getAttribute('title')).toBeNull();
+  });
+
+  it('does not open anything while still transcribing or without a transcript path', () => {
+    const { unmount } = renderWithProviders(
+      <ActivityTaskCard task={txTask({ status: 'running', progress: 50 })} />,
+    );
+    fireEvent.click(screen.getByText('Recording 2026-05-30'));
+    expect(openFileMock).not.toHaveBeenCalled();
+    unmount();
+
+    // Done but no transcriptPath (legacy item) — still not clickable.
+    renderWithProviders(
+      <ActivityTaskCard task={txTask({ status: 'done', completedAt: Date.now() })} />,
+    );
+    fireEvent.click(screen.getByText('Recording 2026-05-30'));
+    expect(openFileMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/click to open/i)).toBeNull();
   });
 
   it('moves the bundle to the picked project, toasts, and records the move', async () => {
-    moveBundleToProjectMock.mockResolvedValue('/Users/me/Code/acme/Meeting 2026-05-30');
+    moveBundleToProjectMock.mockResolvedValue('/Users/me/Code/acme/Recording 2026-05-30');
     useWorkspaceStore.setState({ projects: [{ path: '/Users/me/Code/acme', fileTree: [] }] });
     // Seed the store so setTranscriptionMoved has a task to patch.
     useActivityStore.getState().addTranscriptionJob({
       id: 'tx-1',
-      label: 'Meeting 2026-05-30',
-      audioPath: '/Users/me/Notesage/Recordings/Meeting 2026-05-30/audio.wav',
+      label: 'Recording 2026-05-30',
+      audioPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/audio.wav',
     });
     useActivityStore.getState().setTranscriptionDone(
       'tx-1',
-      '/Users/me/Notesage/Recordings/Meeting 2026-05-30/transcript.md',
+      '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
     );
 
     const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1')!;
     renderWithProviders(<ActivityTaskCard task={task} />);
 
     // Open the Radix DropdownMenu — it triggers on pointerdown.
-    const trigger = screen.getByText(/move to project/i).closest('button')!;
+    const trigger = screen.getByRole('button', { name: /move to project/i });
     act(() => {
       fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
       fireEvent.pointerUp(trigger, { button: 0 });
@@ -279,7 +463,7 @@ describe('ActivityTaskCard — transcription kind', () => {
 
     await waitFor(() => {
       expect(moveBundleToProjectMock).toHaveBeenCalledWith(
-        '/Users/me/Notesage/Recordings/Meeting 2026-05-30',
+        '/Users/me/Notesage/Recordings/Recording 2026-05-30',
         '/Users/me/Code/acme',
       );
     });
@@ -289,7 +473,7 @@ describe('ActivityTaskCard — transcription kind', () => {
     // Store recorded the move and repointed the transcript at the new bundle.
     const moved = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
     expect(moved?.moved).toBe(true);
-    expect(moved?.transcriptPath).toBe('/Users/me/Code/acme/Meeting 2026-05-30/transcript.md');
+    expect(moved?.transcriptPath).toBe('/Users/me/Code/acme/Recording 2026-05-30/transcript.md');
   });
 });
 
@@ -298,34 +482,146 @@ describe('ActivityTaskCard — transcription kind', () => {
 // ===========================================================================
 
 describe('ActivityTaskCard — recording kind', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('renders a recording indicator with a live MM:SS stopwatch', () => {
-    const startedAt = Date.now();
-    const task = makeTask({
+  function recTask(overrides: Partial<AgentTask> = {}): AgentTask {
+    return makeTask({
       id: 'rec-1',
       kind: 'recording',
       type: 'workflow',
       label: 'Recording',
       status: 'running',
-      recordingStartedAt: startedAt,
+      recordingStartedAt: Date.now(),
       completedAt: undefined,
+      ...overrides,
     });
-    renderWithProviders(<ActivityTaskCard task={task} />);
+  }
 
-    // Status line specifically (label is "Recording", status is "Recording…").
-    expect(screen.getByText('Recording…')).toBeTruthy();
-    expect(screen.getByText('00:00')).toBeTruthy();
-
-    // Advance 65s — the stopwatch ticks to 01:05.
-    act(() => {
-      vi.advanceTimersByTime(65_000);
+  /** Seed the live-capture state the card's hooks read. */
+  function seedRecordingStore() {
+    useRecordingStore.setState({
+      isRecording: true,
+      recordingSource: 'microphone',
+      recordingStartTime: Date.now(),
+      isPaused: false,
+      pauseStartedAt: null,
+      pausedTotalMs: 0,
     });
-    expect(screen.getByText('01:05')).toBeTruthy();
+  }
+
+  beforeEach(() => {
+    __resetLiveRecordingItemId();
+    useActivityStore.setState({ tasks: [] });
+    setMockInvokeHandler('pause_recording', () => undefined);
+    setMockInvokeHandler('resume_recording', () => undefined);
+    setMockInvokeHandler('stop_recording', () => ({
+      path: '/tmp/rec/audio.wav',
+      duration_secs: 1,
+      sample_rate: 16000,
+      source: 'microphone',
+      rms: 0.05,
+      peak: 0.3,
+    }));
+  });
+
+  describe('stopwatch (fake timers)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      seedRecordingStore();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('renders a recording indicator with a live MM:SS stopwatch', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+
+      // Status line specifically (label is "Recording", status is "Recording…").
+      expect(screen.getByText('Recording…')).toBeTruthy();
+      expect(screen.getByText('00:00')).toBeTruthy();
+
+      // Advance 65s — the stopwatch ticks to 01:05.
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(screen.getByText('01:05')).toBeTruthy();
+    });
+
+    it('freezes the stopwatch while paused and excludes the paused stretch', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(screen.getByText('00:10')).toBeTruthy();
+
+      // Pause (store-level — the invoke round-trip is covered separately).
+      act(() => {
+        useRecordingStore.getState().pauseRecording();
+      });
+      expect(screen.getByText('Paused')).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(30_000);
+      });
+      // Frozen at the pause instant — the 30 paused seconds don't count.
+      expect(screen.getByText('00:10')).toBeTruthy();
+
+      act(() => {
+        useRecordingStore.getState().resumeRecording();
+      });
+      expect(screen.getByText('Recording…')).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(screen.getByText('00:15')).toBeTruthy();
+    });
+  });
+
+  describe('controls (real timers)', () => {
+    beforeEach(() => {
+      seedRecordingStore();
+    });
+
+    it('pause and resume buttons drive the backend + store', async () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /pause recording/i }));
+      await waitFor(() => {
+        expect(useRecordingStore.getState().isPaused).toBe(true);
+      });
+      expect(screen.getByText('Paused')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: /resume recording/i }));
+      await waitFor(() => {
+        expect(useRecordingStore.getState().isPaused).toBe(false);
+      });
+      expect(screen.getByText('Recording…')).toBeTruthy();
+    });
+
+    it('stop button stops a capture started from another surface and clears the orb item', async () => {
+      // Start from a DIFFERENT surface (the MicButton-equivalent hook instance)
+      // so the live-item id is registered exactly as in production.
+      setMockInvokeHandler('start_recording', () => undefined);
+      useRecordingStore.setState({ isRecording: false, recordingStartTime: null });
+      const starter = renderHook(() => useMeetingRecording());
+      await act(async () => {
+        await starter.result.current.toggleRecording();
+      });
+      starter.unmount();
+      const task = useActivityStore.getState().tasks.find((t) => t.kind === 'recording')!;
+      expect(task).toBeTruthy();
+
+      // Stop from the orb panel's RecordingCard.
+      renderWithProviders(<ActivityTaskCard task={task} />);
+      fireEvent.click(screen.getByRole('button', { name: /stop recording/i }));
+
+      await waitFor(() => {
+        expect(useRecordingStore.getState().isRecording).toBe(false);
+      });
+      // The orb's recording item is cleared — no stuck indicator.
+      await waitFor(() => {
+        expect(
+          useActivityStore.getState().tasks.filter((t) => t.kind === 'recording'),
+        ).toHaveLength(0);
+      });
+    });
   });
 });

@@ -250,21 +250,15 @@ Implementation: `src/components/activity/AgentOrb.tsx`, `src/components/activity
 
 ### Quiet Sidebar
 
-Flat-list sidebar in fixed section order: **Pinned → Projects → Recent → Tags → Mentions**. No file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
+Flat-list sidebar in fixed section order: **Pinned → Projects → Folders → Recent → Tags → Mentions**. No full file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, explorer folders, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
 
-Type-to-filter: when the sidebar has focus, printable keys append to a local filter string passed down to every section. A small badge at the top shows the current filter; Backspace deletes a character, `Esc` clears. Text-entry surfaces inside the sidebar (rename rows, the TreeOverlay search box) own their own keystrokes via an `isTypingTarget` guard.
+Type-to-filter: when the sidebar has focus, printable keys append to a local filter string passed down to every section. A small badge at the top shows the current filter; Backspace deletes a character, `Esc` clears. Text-entry surfaces inside the sidebar (rename rows) own their own keystrokes via an `isTypingTarget` guard.
 
 The Tags and Mentions sections can each be hidden entirely by dragging their cap slider to `0` — the slider IS the visibility control (no separate boolean toggle). Caps are clamped to `[0, 15]` (Settings > Appearance > Sidebar Composition). Tags click into the cmd bar with the `#` prefix; Mentions click in with the `@` prefix.
 
-Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
+Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `FoldersSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
 
-### Tree Overlay (`⌘⇧E`)
-
-Slide-in workspace-tree panel that gives the deep-dive view the flat sidebar omits. Triggered globally via `⌘⇧E`. Renders a `role="tree"` hierarchical view of every open project with caret-triangle expand/collapse, a search/filter input, and full keyboard navigation (arrows, Home/End, Enter/Space, Esc).
-
-Focus is **trapped** inside the overlay while open and **restored** to the previously focused element on close — the user never loses their place in the editor or sidebar. Scope: only `workspace-store.projects` are rendered; Explorer folders and the Notes tree are intentionally excluded.
-
-Implementation: `src/components/sidebar/quiet/TreeOverlay.tsx`, gated by `useTreeOverlayStore`.
+Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand (one-level peek) on a focused project/folder row — see Folder Peek below. The earlier `TreeOverlay` slide-in panel (formerly `⌘⇧E`) was removed in sidebar-simplification task #20; `⌘⇧E` now opens the Export dialog.
 
 ### Folder Peek
 
@@ -274,7 +268,7 @@ Hover-triggered popover that previews one level of a project's contents. Timing:
 - **150 ms** grace period on mouse-leave so the cursor can cross the gap to the popover content
 - Keyboard parity: pressing `→` on a focused project row inline-expands the same one-level preview
 
-Folders first, files second, each sorted alphabetically and capped (8 folders, 6 files). Overflow surfaces as "+N more…" hints with a "See full tree" link that elevates to the TreeOverlay (`⌘⇧E`).
+Folders first, files second, each sorted alphabetically and capped (8 folders, 6 files). Overflow surfaces as "+N more…" hints that expand the next level inline.
 
 Both the hover popover and the keyboard expansion use the same `derivePeekChildren()` helper so the two surfaces never drift.
 
@@ -360,16 +354,14 @@ Use this pattern when you need to surface background activity without grabbing t
 
 When the indicator becomes a permanent panel rather than a transient popover, switch surface idioms — use a docked region with `role="region"` and `aria-label`, not a floating orb.
 
-### Peek + Overlay Pattern
+### Peek + Inline-Expand Pattern
 
-Use this pattern when a hover-preview and a deep-dive overlay reveal the same data:
+Use this pattern when a hover-preview and an inline keyboard-driven expansion reveal the same data:
 
 - Hover preview opens after 220 ms; closes after a 150 ms grace period so cursor can cross gaps
-- Provide keyboard parity via the `→` arrow key on a focused row — the preview must work without a mouse
+- Provide keyboard parity via the `→` arrow key on a focused row — the preview must work without a mouse, expanding one level inline in place
 - Both surfaces share the same derivation helper (e.g. `derivePeekChildren()`) — duplicating the derivation lets the two surfaces drift visually
-- Both surfaces elevate to a focus-trapped overlay via `⌘⇧E` (the canonical "show me the full tree" shortcut)
-- Cap the preview list (folders 8, files 6 in the workspace tree) and surface overflow as "+N more…" with a "See full tree" link that opens the overlay
-- The overlay must trap focus while open and restore focus to the previously focused element on close
+- Cap the preview list (folders 8, files 6 in the workspace tree) and surface overflow as "+N more…" hints that expand the next level inline
 
 ### Window-Inactive De-Emphasis (macOS Native Polish)
 

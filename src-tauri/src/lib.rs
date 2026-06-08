@@ -9,6 +9,9 @@ mod tray;
 pub use commands::sandbox;
 pub use commands::sandbox_monitor;
 pub use commands::watcher;
+// Exposed for the `calibrate_model_fit` example, which links the engine
+// directly so the fit/speed math stays single-source (no JS reimplementation).
+pub use commands::model_fit;
 
 use commands::*;
 use index::IndexState;
@@ -33,12 +36,94 @@ fn set_log_level(level: String) {
     log::info!(target: "notesage::settings", "Log level set to {}", level);
 }
 
+// Build-time telemetry keys. Injected by CI for release builds via GitHub
+// Actions secrets (see `.github/workflows/release.yml` + `.env.example`):
+//   NOTESAGE_SENTRY_DSN     → crash/error reporting (Sentry, DSN-swappable to GlitchTip)
+//   NOTESAGE_APTABASE_KEY   → privacy-first usage analytics (Aptabase)
+// `option_env!` resolves to `None` when the var is unset at compile time, so a
+// no-key local/dev build compiles and runs as a clean telemetry no-op — never
+// `env!` (compile error) and never a runtime panic.
+const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
+const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
+
+/// Build the process-wide multi-threaded Tokio runtime that `run()` enters
+/// before the Tauri builder starts. Entering this runtime on the main thread is
+/// what gives plugin `setup` hooks a reactor for `tokio::spawn`
+/// (tauri-plugin-aptabase's `start_polling`); without it the app panics at
+/// startup with "there is no reactor running" — see `run()` and the regression
+/// test below.
+fn build_app_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Runtime::new().expect("failed to build Tokio runtime")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Establish and ENTER a Tokio runtime for the whole process BEFORE the
+    // Tauri builder runs. Some plugins call the global `tokio::spawn` from their
+    // `setup` hook (notably `tauri-plugin-aptabase`'s `start_polling`), which
+    // panics with "there is no reactor running, must be called from the context
+    // of a Tokio 1.x runtime" unless a runtime is entered on the main thread at
+    // plugin-setup time. Tauri's default runtime is not entered there, so we
+    // create one, hand it to Tauri (`async_runtime::set`) so everything shares a
+    // single runtime, and keep the enter-guard alive for the app's lifetime.
+    //
+    // This only manifested once `NOTESAGE_APTABASE_KEY` was wired into release
+    // builds (v0.46.0-alpha.17+): without the key the Aptabase plugin is never
+    // registered, so the panic never fired — which is why dev/local builds and
+    // earlier alphas were unaffected. `runtime` + `_runtime_guard` are held as
+    // locals through the blocking `builder.run(...)` call below.
+    let runtime = build_app_runtime();
+    tauri::async_runtime::set(runtime.handle().clone());
+    let _runtime_guard = runtime.enter();
+
+    // Build the Sentry client ONCE up front so the panic hook installs exactly
+    // once. The returned guard is `mem::forget`-ed (we keep the client alive for
+    // the whole process via `telemetry::set_sentry_client`); dropping it would
+    // close the client. Crash egress is then gated at runtime by binding /
+    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`), so the
+    // crash toggle takes effect immediately with no second panic-hook install.
+    //
+    // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
+    if let Some(dsn) = SENTRY_DSN {
+        let guard = sentry::init((
+            dsn,
+            sentry::ClientOptions {
+                release: Some(env!("CARGO_PKG_VERSION").into()),
+                send_default_pii: false,
+                // Disable breadcrumb capture entirely: default integrations
+                // collect log/console breadcrumbs, and Notesage logs absolute
+                // file paths heavily (`[perf:doc-load]`, startup logs, …). With
+                // none collected there is no breadcrumb PII channel to scrub.
+                max_breadcrumbs: 0,
+                before_send: Some(std::sync::Arc::new(|event| {
+                    Some(telemetry::scrub_event(event))
+                })),
+                ..Default::default()
+            },
+        ));
+        // Retain the client so runtime toggles can re-bind it without re-init.
+        if let Some(client) = sentry::Hub::current().client() {
+            telemetry::set_sentry_client(client);
+        }
+        // `sentry::init` binds the client ON by default. Honour persisted
+        // startup consent: keep it bound only if crash reporting is enabled,
+        // otherwise unbind immediately (egress off until the user opts in).
+        //
+        // Ordering note: the panic hook is installed by init() above and consent
+        // is applied here, immediately after. The only gap is this synchronous
+        // `read_consent()` fs read — a panic in that window is a startup crash
+        // worth capturing regardless of saved preference, so the race is benign.
+        let consent = telemetry::read_consent();
+        telemetry::set_sentry_enabled(consent.crash);
+        // Keep the guard alive for the process lifetime — the client is owned by
+        // `SENTRY_CLIENT` now, and dropping the guard would close it.
+        std::mem::forget(guard);
+    }
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -49,6 +134,24 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ));
+
+    // Telemetry — usage analytics (Aptabase). Registered unconditionally when a
+    // build-time key is present; the plugin emits nothing until the frontend
+    // calls `trackEvent`, so the consent gate lives at the JS `track()` helper.
+    // No key (every local/dev build) → skip registration cleanly, no panic.
+    if let Some(key) = APTABASE_KEY {
+        builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+    }
+
+    // Telemetry — crash/error reporting (Sentry). Registered only when the
+    // client was successfully built above (DSN present). The plugin injects
+    // `@sentry/browser` and routes frontend errors through Rust via `invoke`,
+    // so frontend egress rides the Rust SDK — no widening of the JS HTTP
+    // capability surface. Runtime crash-consent gating is handled by binding /
+    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
+    if let Some(client) = telemetry::sentry_client() {
+        builder = builder.plugin(tauri_plugin_sentry::init(&client));
+    }
 
     // WebDriver plugin for real E2E testing (only when compiled with `--features e2e-testing`)
     #[cfg(feature = "e2e-testing")]
@@ -77,6 +180,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(AiStreamState::new())
         .manage(AgentManagerState::new())
         .manage(NetworkProxyState::new())
         .manage(SandboxMonitorState::new())
@@ -98,12 +202,14 @@ pub fn run() {
             rename_path,
             delete_path,
             path_exists,
+            allow_asset_dir,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            ai_chat_stream_cancel,
             ollama_fim_completion,
             openai_completions_fim,
             local_bundled_fim,
@@ -146,6 +252,7 @@ pub fn run() {
             migrate_to_icloud,
             migrate_from_icloud,
             migrate_quick_notes,
+            telemetry_apply_consent,
             agent_resolve_binary,
             agent_install,
             agent_uninstall,
@@ -219,6 +326,7 @@ pub fn run() {
             read_agent_content,
             cleanup_bundled_agents,
             mcp_start_server,
+            mcp_validate_server,
             mcp_stop_server,
             mcp_restart_server,
             mcp_list_tools,
@@ -228,6 +336,10 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
+            mcp_catalog_list,
+            mcp_oauth_status,
+            mcp_oauth_logout,
+            mcp_oauth_authorize,
             // Logging & diagnostics
             log_frontend,
             get_log_path,
@@ -244,6 +356,8 @@ pub fn run() {
             health_check,
             // Voice transcription
             start_recording,
+            pause_recording,
+            resume_recording,
             stop_recording,
             transcribe_file,
             list_whisper_models,
@@ -272,6 +386,11 @@ pub fn run() {
             fetch_hf_metadata,
             parse_gguf_metadata,
             get_runtime_model_metadata,
+            // Hardware-aware model recommendation
+            model_fit::hardware::detect_hardware_profile,
+            model_fit::estimate_model_fit,
+            model_fit::read_gguf_capabilities,
+            get_local_server_rss,
             // Actions dashboard
             scan_actions,
             // Network sandboxing proxy
@@ -378,4 +497,44 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for the v0.46.0-alpha.17/18 startup crash: tauri-plugin-aptabase
+    /// calls `tokio::spawn` from its plugin `setup` hook, which panics with
+    /// "there is no reactor running, must be called from the context of a Tokio
+    /// 1.x runtime" unless a runtime is ENTERED on the main thread before the
+    /// Tauri builder runs. This proves `build_app_runtime()` + `enter()` is the
+    /// mechanism that prevents it.
+    ///
+    /// This test only exercises the runtime mechanism. The end-to-end guard —
+    /// actually launching a build with `NOTESAGE_APTABASE_KEY` set so the plugin
+    /// registers — lives in CI (`.github/workflows/test.yml`), because the plugin
+    /// is never registered in a keyless test/dev build.
+    #[test]
+    fn entered_app_runtime_provides_a_reactor_for_plugin_setup() {
+        // Failure precondition: with no runtime entered on this thread, there is
+        // no reactor — exactly the state that made aptabase's `tokio::spawn` panic.
+        assert!(
+            tokio::runtime::Handle::try_current().is_err(),
+            "test thread must start with no entered runtime",
+        );
+
+        let rt = build_app_runtime();
+        {
+            let _guard = rt.enter();
+            // A reactor is now available on this thread …
+            assert!(
+                tokio::runtime::Handle::try_current().is_ok(),
+                "entering the app runtime must provide a reactor",
+            );
+            // … so the spawn that aptabase's `start_polling` performs no longer
+            // panics. `spawn` returning a handle (rather than unwinding) is the
+            // assertion; the task itself is a no-op.
+            let _join = tokio::spawn(async {});
+        }
+    }
 }

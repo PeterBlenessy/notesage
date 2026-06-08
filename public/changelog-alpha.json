@@ -1,9 +1,148 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.19",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.18",
+      "sections": {
+        "fixes": [
+          "**Fixed the launch crash** affecting alpha.16, .17, and .18 (#432). The telemetry plugin ran `tokio::spawn` during startup with no Tokio runtime entered, panicking immediately; the app now enters a runtime before the Tauri builder so it launches cleanly."
+        ]
+      },
+      "underTheHood": [
+        "`run()` builds a Tokio runtime, hands it to Tauri (`async_runtime::set`), and enters it for the process lifetime before the builder runs (#432)",
+        "Rust unit test proving the entered runtime gives plugin-setup `tokio::spawn` a reactor (#432)",
+        "CI smoke-launch step builds with the telemetry key and actually starts the app, failing if the reactor panic returns or startup is never reached (#432)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.18",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.17",
+      "sections": {
+        "fixes": [
+          "Primary and destructive buttons now keep a legible **white label + icon on the accent fill** in both light and dark mode (matching macOS System Settings), including a readable disabled state (#430)."
+        ]
+      },
+      "underTheHood": [
+        "New `--color-on-accent` token: white on a chromatic accent in both themes, falling back to `--color-primary-foreground` on the neutral no-accent button (#430)",
+        "Default `Button` label uses `--color-on-accent` instead of `--color-primary-foreground` (which was dark-on-accent in dark mode) (#430)",
+        "Disabled buttons keep their label and dim via `opacity-70` instead of the unreadable grey `disabled:text-muted-foreground` (#430)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.17",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.16",
+      "sections": {
+        "features": [
+          "**Recording controls in the agent orb** (#427): stop, pause, and resume a meeting recording inline, with a pause-aware timer and a clock-style seconds animation distinct from the agent-activity pulse.",
+          "**Richer transcript items** (#427): click a finished transcript to open it, reveal it in Finder, or move it to a project; each shows **start – stop · length**."
+        ],
+        "fixes": [
+          "Stop the StatusTray mic tooltip from auto-opening when the popover opens (#428).",
+          "Focus mode (⌘.) now **fully hides the sidebar** instead of just dimming it (#428).",
+          "Fix transcript frontmatter rendering `[object Object]` for the `segments` array (#427)."
+        ]
+      },
+      "underTheHood": [
+        "AgentOrb recording panel: stop/pause/resume controls + pause-aware duration from written samples (#427)",
+        "Seconds-ray ring animation that builds up one ray per second (#427)",
+        "Transcript card: open / Reveal in Finder / Move to project actions + start–stop · length info row (#427)",
+        "Rename recording bundles from \"Meeting <timestamp>\" to \"Recording <timestamp>\" (#427)",
+        "`pause_recording` / `resume_recording` Tauri commands; capture pause discards samples without tearing down the cpal stream (#427)",
+        "StatusTray popover: prevent default autofocus so the mic tooltip doesn't fire on open (#428)",
+        "Focus-mode CSS: collapse the sidebar's grid track so the document reclaims the space (#428)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.16",
+      "date": "2026-06-07",
+      "previousVersion": "0.46.0-alpha.15",
+      "sections": {
+        "features": [
+          "**Opt-in telemetry** (#423):"
+        ]
+      },
+      "underTheHood": [
+        "Usage analytics (Aptabase) + crash reporting (Sentry) with channel-based opt-out (#423)",
+        "Sentry client initialised once up front; crash egress gated at runtime by binding/unbinding the Hub client (#423)",
+        "`before_send` PII scrubber + breadcrumb capture disabled to avoid leaking file paths (#423)",
+        "Remove unused `WWW-Authenticate` parsing helpers from MCP OAuth (dead code) (#425)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.15",
+      "date": "2026-06-07",
+      "previousVersion": "0.46.0-alpha.14",
+      "sections": {
+        "improvements": [
+          "AI settings: the access / isolation controls are now grouped under a clearer **\"Permission scopes\"** heading (#422)."
+        ]
+      },
+      "underTheHood": [
+        "Rename the access/isolation grouping to \"Permission scopes\" in AI settings (#422)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.14",
+      "date": "2026-06-04",
+      "previousVersion": "0.46.0-alpha.13",
+      "sections": {
+        "features": [
+          "Connect to **remote (Streamable HTTP) MCP servers**, not just local stdio ones — added end to end (backend transport + settings UI) (#410).",
+          "**OAuth 2.1 for protected MCP servers**: authorization-code + PKCE, RFC 9728/8414 discovery, dynamic client registration, a loopback callback, and token refresh — tokens stored in the OS keychain with an in-app \"Re-authenticate\" / \"Sign out\" flow (#410).",
+          "**Curated MCP server catalog**: a \"Browse catalog\" picker seeded with the official reference servers (Filesystem, Fetch, Memory, Git, Sequential Thinking, Time, Everything), each badged \"Official\" with provenance links (#410).",
+          "**Validate-on-add**: adding a server runs a dry-run handshake (connect → initialize → list tools) and previews its tools before anything is written to `mcp.json` (#410).",
+          "**Env secrets in the keychain**: MCP server environment values flagged secret are stored in the OS keychain and resolved only at spawn — `mcp.json` keeps just a reference, never the value (#410).",
+          "**One-click install** via `notesage://mcp/install?…` deep-links that open the validate-first Add dialog pre-filled (#410)."
+        ],
+        "fixes": [
+          "**Security**: closed a deep-link RCE and an OAuth SSRF on the MCP surface, and fixed an MCP server auto-start transport bug (#419)."
+        ]
+      },
+      "underTheHood": [
+        "Add remote (Streamable HTTP) MCP transport — backend (#410)",
+        "Wire remote (HTTP) MCP servers into the UI (#410)",
+        "Validate MCP servers before writing them (validate-on-add) (#410)",
+        "Add MCP catalog scaffolding (empty manifest), then seed it with official reference servers + provenance badges (#410)",
+        "Add OAuth 2.1 core for remote MCP servers (PKCE, token storage) — part 1 (#410)",
+        "Wire the OAuth authorization-code + PKCE flow — part 2 (#410)",
+        "Add OAuth authorize / re-auth UI for remote MCP servers — part 3 (#410)",
+        "Use the `oauth2` crate for MCP OAuth instead of hand-rolling (#410)",
+        "Resolve MCP env secrets from the keychain at spawn — backend (#410)",
+        "Store MCP env secrets in the keychain from the UI — frontend (#410)",
+        "Add `notesage://mcp/install` deep-link for one-click MCP add (#410)",
+        "Polish MCP catalog card + fix pre-existing design-system violations in MCP settings (#410)",
+        "Document the MCP registration UX overhaul (PRD + task breakdown) (#410)",
+        "Refactor: extract `ProjectRow`, `ChildRow` + inline-edit/drag hooks from `ProjectsSection` (#416)",
+        "Reconcile `Cargo.lock` after dropping the unused `tauri-plugin-fs` during merge (#419)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.13",
+      "date": "2026-06-03",
+      "previousVersion": "0.46.0-alpha.12",
+      "sections": {},
+      "underTheHood": [
+        "Hardware-aware local model recommendation (Phase 1 + Phase 2 runtime calibration) (#409)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.12",
+      "date": "2026-06-01",
+      "previousVersion": "0.46.0-alpha.11",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): bump tar from 0.4.45 to 0.4.46 in /src-tauri in the cargo group across 1 directory (#403)",
+        "refactor(acp): migrate to agent-client-protocol 0.12.1 builder API (#405)",
+        "test(cmd): fix flaky FileMode Enter-key test (#406)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.11",
       "date": "2026-05-31",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.10",
       "sections": {},
       "underTheHood": [
         "feat(transcription): meeting recording with background transcription (#398)",
@@ -16,7 +155,7 @@
     {
       "version": "0.46.0-alpha.10",
       "date": "2026-05-30",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.9",
       "sections": {},
       "underTheHood": [
         "ci(e2e-real): contain the WebDriver session-timeout cascade (#396)"
@@ -25,7 +164,7 @@
     {
       "version": "0.46.0-alpha.9",
       "date": "2026-05-30",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.8",
       "sections": {},
       "underTheHood": [
         "fix(sidebar): prune Recent and Pinned on external file delete (#392)"
@@ -34,7 +173,7 @@
     {
       "version": "0.46.0-alpha.8",
       "date": "2026-05-29",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.7",
       "sections": {},
       "underTheHood": [
         "fix(ci): fold auto-labelled PRs into alpha-cut ship list to dodge search lag (#387)"
@@ -43,7 +182,7 @@
     {
       "version": "0.46.0-alpha.7",
       "date": "2026-05-29",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.6",
       "sections": {},
       "underTheHood": [
         "feat(release): surface merged-PR dump in alpha release notes (#385)"
@@ -52,7 +191,7 @@
     {
       "version": "0.46.0-alpha.6",
       "date": "2026-05-29",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.5",
       "sections": {},
       "underTheHood": [
         "feat(ai): plumb response_format for schema-constrained local LLM output (#383)"
@@ -61,7 +200,7 @@
     {
       "version": "0.46.0-alpha.5",
       "date": "2026-05-28",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.4",
       "sections": {},
       "underTheHood": [
         "feat(quiet-chrome): extend Aggressive preset with title bar + cmd bar fade and mouse-only unfade (#381)"
@@ -70,7 +209,7 @@
     {
       "version": "0.46.0-alpha.4",
       "date": "2026-05-27",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.3",
       "sections": {},
       "underTheHood": [
         "fix(ci): exclude release PRs from alpha cut to prevent infinite loop (#374)"
@@ -79,7 +218,7 @@
     {
       "version": "0.46.0-alpha.3",
       "date": "2026-05-27",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.2",
       "sections": {},
       "underTheHood": [
         "fix(html-viewer): fix 10 bugs from v0.46.0 code review (#375) (#377)"
@@ -88,7 +227,7 @@
     {
       "version": "0.46.0-alpha.2",
       "date": "2026-05-26",
-      "previousVersion": "0.46.0",
+      "previousVersion": "0.46.0-alpha.1",
       "sections": {},
       "underTheHood": [
         "chore: release v0.46.0-alpha.1 (#372)"
@@ -97,7 +236,7 @@
     {
       "version": "0.46.0-alpha.1",
       "date": "2026-05-26",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.5",
       "sections": {},
       "underTheHood": [
         "fix(ci): bump minor (not patch) when starting new alpha series (#367)",
@@ -130,7 +269,7 @@
     {
       "version": "0.45.0-alpha.6",
       "date": "2026-05-26",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.5",
       "sections": {},
       "underTheHood": [
         "fix(viewer): replace HtmlViewer static toolbar with floating pill (#363)",
@@ -140,7 +279,7 @@
     {
       "version": "0.45.0-alpha.5",
       "date": "2026-05-24",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.4",
       "sections": {
         "improvements": [
           "**Quiet Composer is now the only editor shell.** The earlier multi-column workspace with tab strips, the activity panel rail, the chat panel, and the command palette modal has been removed. Everything you used to do there now lives in one of the surfaces you already know: the floating command bar (⌘K) for prompts, palettes, and quick switches; the flat sidebar for Pinned / Projects / Recent / Tags / Mentions; and the document switcher (⌃Tab / ⌃⇧Tab) for cycling recent files. One coherent interface instead of two parallel ones.",
@@ -154,7 +293,7 @@
     {
       "version": "0.45.0-alpha.4",
       "date": "2026-05-22",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.3",
       "sections": {},
       "underTheHood": [
         "fix(release): generator writes honest placeholder; fix alpha-3 notes (#323)",
@@ -164,7 +303,7 @@
     {
       "version": "0.45.0-alpha.3",
       "date": "2026-05-22",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.2",
       "sections": {},
       "underTheHood": [
         "Corrected the alpha.2 release notes to remove placeholder text and add honest user-facing prose. (#320)",
@@ -175,7 +314,7 @@
     {
       "version": "0.45.0-alpha.2",
       "date": "2026-05-21",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.1",
       "sections": {
         "improvements": [
           "**Infrastructure-only release.** No user-visible changes vs. alpha.1 — same features, same behaviour. This alpha ships the CI plumbing that makes future auto-cuts actually work, plus two routine dependency patches."
@@ -189,7 +328,7 @@
     {
       "version": "0.45.0-alpha.1",
       "date": "2026-05-21",
-      "previousVersion": "0.45.0",
+      "previousVersion": "0.45.0-alpha.0",
       "sections": {
         "improvements": [
           "**Agent mode picker reappears for existing AI connections.** If your Claude Code / Codex / Copilot / Gemini connection was set up before the recent capability-probe change, the mode picker (Shield icon) in the chat footer had silently disappeared. Opening the chat now restores it automatically — no need to re-add the connection or visit the connection config dialog.",
@@ -294,7 +433,7 @@
     {
       "version": "0.44.0-alpha.2",
       "date": "2026-05-11",
-      "previousVersion": "0.44.0",
+      "previousVersion": "0.44.0-alpha.1",
       "sections": {
         "features": [
           "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`, and similar attributes before render. Local relative paths and same-directory files still load. Default OFF.",
@@ -329,7 +468,7 @@
     {
       "version": "0.44.0-alpha.1",
       "date": "2026-05-10",
-      "previousVersion": "0.44.0",
+      "previousVersion": "0.44.0-alpha.0",
       "sections": {
         "fixes": [
           "**Release pipeline unblocked.** Removed the obsolete"

@@ -4,7 +4,7 @@
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.46.0-alpha.11
+**Current version:** see the `version` field in `package.json` (ships on an alpha pre-release channel). Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
 
 ## Autonomy
 
@@ -40,6 +40,7 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 - **Naming:** PascalCase (components), camelCase (functions/vars), UPPER_SNAKE (constants)
 - **Files:** One component per file. Filename = component name.
 - **Types:** Prefer interfaces. No `any` (use `unknown`).
+- **Typecheck gate:** `vitest` / `pnpm test` do NOT run `tsc` — a green test run says nothing about types. After editing ANY `.ts`/`.tsx` (including `*.test.ts` and mocks), run `pnpm typecheck` before calling the work done. CI's frontend job runs `tsc --noEmit` over test files too, so a type error in a test (e.g. an untyped `vi.fn()` mock whose `.mock.calls` is an empty tuple) fails the whole job even when every test passes.
 - **Errors:** Tauri returns `Result<T, String>`. Show toast for user errors.
 - **Radix Tooltip:** Every `<Tooltip>` MUST be wrapped in `<TooltipProvider>`. Radix throws at render time without it (see `docs/design-system.md` §"Radix Tooltip — `<TooltipProvider>` is mandatory").
 
@@ -113,6 +114,19 @@ cd src-tauri && cargo clean && cd .. && pnpm tauri dev
 - Changed command signatures or the `generate_handler![]` list in `lib.rs`
 - Changed Cargo dependencies
 - Unexplained "command not found" errors from the frontend
+
+### Compiling Rust in a headless / Linux / CI environment (no GUI stack)
+
+The app targets macOS, and a full `cargo build` / `cargo test` needs the system GTK/WebKit dev libraries (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev`, `libasound2-dev`, …) that are usually absent in a Linux dev container or cloud session. **Do not burn time trying to `apt install` the whole GUI stack** — for verifying that Rust changes compile, use the committed pkg-config stubs instead:
+
+```bash
+src-tauri/scripts/generate-pkg-config-stubs.sh          # one-time per session; writes src-tauri/.pkg-config-stubs/ (gitignored)
+cd src-tauri && PKG_CONFIG_PATH="$(pwd)/.pkg-config-stubs" cargo check
+```
+
+This makes `cargo check` (compile-only, no linking) succeed without the real libraries, which is enough to catch type/borrow/API errors — the actual risk when editing backend Rust. The dep tree (incl. heavy crates like `sentry`, `typst`, `whisper-rs`) compiles fine this way; the first run is slow (cold target dir), later runs are incremental.
+
+**Limits:** stubs provide pkg-config metadata, not headers or libs — so a full `cargo build`/`cargo test` (which links) still needs the real `-dev` packages and is left to CI (`.github/workflows/test.yml` "Rust Backend Tests" runs `cargo test` on macOS). Locally, treat a green `cargo check` as the backend gate and let CI run `cargo test`.
 
 ## Versioning
 

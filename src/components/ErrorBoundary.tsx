@@ -1,6 +1,11 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import * as Sentry from '@sentry/browser';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
+import {
+  useSettingsStore,
+  selectEffectiveTelemetryCrash,
+} from '@/stores/settings-store';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -21,6 +26,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // Report to Sentry (via the Rust-injected plugin client) before rendering the
+    // fallback, but only when the user's effective crash-reporting consent is on.
+    // Wrapped in try/catch so capture can never worsen an already-broken render path.
+    // When telemetry is off or no client is bound, captureException is a silent no-op.
+    try {
+      if (selectEffectiveTelemetryCrash(useSettingsStore.getState())) {
+        Sentry.captureException(error, {
+          contexts: { react: { componentStack: info.componentStack } },
+        });
+      }
+    } catch {
+      /* never let crash reporting throw inside an error boundary */
+    }
     console.error(`[ErrorBoundary:${this.props.name}]`, error, info.componentStack);
   }
 

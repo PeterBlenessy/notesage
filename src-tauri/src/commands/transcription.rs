@@ -250,8 +250,12 @@ struct CaptureOwner {
     path: PathBuf,
     sample_rate: u32,
     channels: u16,
-    start_time: std::time::Instant,
     stop_signal: Arc<AtomicBool>,
+    /// While set, the input callback discards samples (nothing is written to
+    /// the WAV, stats don't accumulate). The cpal stream itself stays alive —
+    /// pausing never tears down or reopens the CoreAudio stream, so the #264
+    /// single-stream invariant is untouched.
+    pause_signal: Arc<AtomicBool>,
     /// Result reported back from the capture thread on teardown (rms, peak).
     stats: Arc<Mutex<Option<CaptureStats>>>,
     /// `WavWriter::finalize()` result reported back from the capture thread.
@@ -267,9 +271,28 @@ struct CaptureOwner {
 struct CaptureStats {
     rms: f32,
     peak: f32,
+    /// Total i16-equivalent samples actually written (interleaved across
+    /// channels). Paused stretches contribute nothing, so this — not wall
+    /// clock — is the source of truth for the recorded duration.
+    samples: u64,
+}
+
+/// Recorded duration from the written-sample count — pause-aware, unlike the
+/// wall-clock `start_time.elapsed()`.
+fn duration_from_samples(samples: u64, sample_rate: u32, channels: u16) -> f64 {
+    let per_second = sample_rate as u64 * channels.max(1) as u64;
+    if per_second == 0 {
+        return 0.0;
+    }
+    samples as f64 / per_second as f64
 }
 
 impl CaptureOwner {
+    /// Pause/resume the capture without touching the cpal stream. Idempotent.
+    fn set_paused(&self, paused: bool) {
+        self.pause_signal.store(paused, Ordering::Relaxed);
+    }
+
     /// Signal stop, await full teardown (stream dropped + thread joined), and
     /// return capture stats. Idempotent-ish: a second call after the thread is
     /// already joined returns default stats.
@@ -325,10 +348,12 @@ impl Drop for CaptureOwner {
 /// finalizing the WAV on stop.
 fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<CaptureOwner, String> {
     let stop_signal = Arc::new(AtomicBool::new(false));
+    let pause_signal = Arc::new(AtomicBool::new(false));
     let stats: Arc<Mutex<Option<CaptureStats>>> = Arc::new(Mutex::new(None));
     let finalize_result: Arc<Mutex<Option<Result<(), String>>>> = Arc::new(Mutex::new(None));
 
     let stop = stop_signal.clone();
+    let pause = pause_signal.clone();
     let stats_t = stats.clone();
     let finalize_t = finalize_result.clone();
     let path_t = path.clone();
@@ -395,6 +420,7 @@ fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<Captur
         let count_cb = count.clone();
         let peak_cb = peak.clone();
         let app_cb = app.clone();
+        let pause_cb = pause.clone();
         let ch = actual_channels as usize;
 
         let err_fn = |err: cpal::StreamError| {
@@ -404,6 +430,16 @@ fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<Captur
         let stream = match device.build_input_stream(
             &config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                // Paused: discard the block entirely — nothing written, no
+                // stats — but keep the level meter alive at zero so the UI
+                // visibly flatlines instead of freezing on the last value.
+                if pause_cb.load(Ordering::Relaxed) {
+                    let _ = app_cb.emit(
+                        "recording-level",
+                        serde_json::json!({ "mic": 0.0_f32, "system": 0.0_f32 }),
+                    );
+                    return;
+                }
                 // Write to disk.
                 if let Ok(mut guard) = writer_cb.lock() {
                     if let Some(w) = guard.as_mut() {
@@ -498,6 +534,7 @@ fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<Captur
             *g = Some(CaptureStats {
                 rms,
                 peak: total_peak,
+                samples: total_count,
             });
         }
     });
@@ -512,8 +549,8 @@ fn spawn_capture(app: AppHandle, source: String, path: PathBuf) -> Result<Captur
         path,
         sample_rate: actual_rate,
         channels: actual_channels,
-        start_time: std::time::Instant::now(),
         stop_signal,
+        pause_signal,
         stats,
         finalize_result,
         thread: Some(thread),
@@ -535,7 +572,13 @@ pub struct TranscriptionState {
     /// `None` but a stream is still alive. Always read/written under the
     /// `capture` mutex so the check-and-set is atomic against `start_recording`.
     stopping: AtomicBool,
-    whisper_ctx: Arc<Mutex<Option<(String, whisper_rs::WhisperContext)>>>,
+    // parking_lot::Mutex (not std) on purpose: this lock is held for the entire
+    // whole-file Whisper inference (minutes), and an FFI panic in whisper_rs
+    // under the guard would *permanently poison* a std::sync::Mutex — every
+    // later transcribe_file would then fail at .lock() until app restart. Audit
+    // rust H2. parking_lot never poisons, so a panicked job can't brick the
+    // feature.
+    whisper_ctx: Arc<parking_lot::Mutex<Option<(String, whisper_rs::WhisperContext)>>>,
     models_dir: PathBuf,
     /// Root directory for recording bundles (`~/Notesage/Recordings`).
     recordings_dir: PathBuf,
@@ -569,7 +612,7 @@ impl TranscriptionState {
         Self {
             capture: Mutex::new(None),
             stopping: AtomicBool::new(false),
-            whisper_ctx: Arc::new(Mutex::new(None)),
+            whisper_ctx: Arc::new(parking_lot::Mutex::new(None)),
             models_dir,
             recordings_dir,
             download_cancels: Mutex::new(HashMap::new()),
@@ -595,8 +638,8 @@ impl TranscriptionState {
         let cached_model = self
             .whisper_ctx
             .lock()
-            .ok()
-            .and_then(|ctx| ctx.as_ref().map(|(name, _)| name.clone()));
+            .as_ref()
+            .map(|(name, _)| name.clone());
 
         let mut models_on_disk = Vec::new();
         let mut stale_files = Vec::new();
@@ -707,11 +750,11 @@ fn resample_to_16k_mono(data: &[f32], from_rate: u32, channels: u16) -> Vec<f32>
 }
 
 /// Build the default WAV path for a new recording bundle:
-/// `~/Notesage/Recordings/Meeting <YYYY-MM-DD HH-MM-SS>/audio.wav`.
+/// `~/Notesage/Recordings/Recording <YYYY-MM-DD HH-MM-SS>/audio.wav`.
 fn new_recording_path(recordings_dir: &Path) -> PathBuf {
     let stamp = chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string();
     recordings_dir
-        .join(format!("Meeting {}", stamp))
+        .join(format!("Recording {}", stamp))
         .join("audio.wav")
 }
 
@@ -767,6 +810,34 @@ pub async fn start_recording(
     Ok(())
 }
 
+/// Pause the active recording: the input callback discards samples while the
+/// cpal stream stays alive. Idempotent — pausing an already-paused recording
+/// is a no-op. Errors if no recording is in progress.
+#[tauri::command]
+pub async fn pause_recording(state: State<'_, TranscriptionState>) -> Result<(), String> {
+    let capture = state
+        .capture
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    let owner = capture.as_ref().ok_or("No recording in progress")?;
+    owner.set_paused(true);
+    log::info!(target: "notesage::transcription", "Recording paused");
+    Ok(())
+}
+
+/// Resume a paused recording. Idempotent. Errors if no recording is in progress.
+#[tauri::command]
+pub async fn resume_recording(state: State<'_, TranscriptionState>) -> Result<(), String> {
+    let capture = state
+        .capture
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    let owner = capture.as_ref().ok_or("No recording in progress")?;
+    owner.set_paused(false);
+    log::info!(target: "notesage::transcription", "Recording resumed");
+    Ok(())
+}
+
 /// Stop recording: signal stop, **await** stream teardown + thread join,
 /// finalize the WAV, and return the finalized file path plus signal metadata.
 #[tauri::command]
@@ -787,7 +858,6 @@ pub async fn stop_recording(
         owner
     };
 
-    let duration = owner.start_time.elapsed().as_secs_f64();
     let source = owner.source.clone();
     let path = owner.path.clone();
     let sample_rate = owner.sample_rate;
@@ -800,6 +870,10 @@ pub async fn stop_recording(
     let stats_result = tokio::task::spawn_blocking(move || owner.stop()).await;
     state.stopping.store(false, Ordering::Relaxed);
     let stats = stats_result.map_err(|e| format!("Teardown task panicked: {}", e))??;
+
+    // Recorded duration from the written-sample count — pause-aware, where
+    // wall-clock `start_time.elapsed()` would overstate a paused recording.
+    let duration = duration_from_samples(stats.samples, sample_rate, channels);
 
     log::info!(
         target: "notesage::transcription",
@@ -892,9 +966,7 @@ pub async fn transcribe_file(
         move || -> Result<(Vec<TranscriptSegment>, f64), String> {
             // Load (or reuse cached) whisper context.
             {
-                let mut ctx_lock = whisper_ctx
-                    .lock()
-                    .map_err(|e| format!("Lock error: {}", e))?;
+                let mut ctx_lock = whisper_ctx.lock();
                 let needs_reload = match &*ctx_lock {
                     Some((cached_model, _)) => cached_model != &model_task,
                     None => true,
@@ -916,9 +988,7 @@ pub async fn transcribe_file(
                 serde_json::json!({ "jobId": job_id_task, "percent": 15, "segment": "Transcribing..." }),
             );
 
-            let ctx_lock = whisper_ctx
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
+            let ctx_lock = whisper_ctx.lock();
             let (_, ctx) = ctx_lock.as_ref().ok_or("Whisper context not loaded")?;
 
             let mut params =
@@ -1167,10 +1237,7 @@ pub async fn delete_whisper_model(
 
     // Clear cached context if it was using this model
     {
-        let mut ctx_lock = state
-            .whisper_ctx
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut ctx_lock = state.whisper_ctx.lock();
         if let Some((cached_model, _)) = &*ctx_lock {
             if cached_model == &size {
                 *ctx_lock = None;
@@ -1215,7 +1282,11 @@ mod tests {
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(1));
             }
-            *stats_t.lock().unwrap() = Some(CaptureStats { rms: 0.1, peak: 0.2 });
+            *stats_t.lock().unwrap() = Some(CaptureStats {
+                rms: 0.1,
+                peak: 0.2,
+                samples: 16000,
+            });
             *finalize_t.lock().unwrap() = Some(Ok(()));
             // "Release the device" only after the join completes its work.
             live_t.fetch_sub(1, O::SeqCst);
@@ -1226,12 +1297,47 @@ mod tests {
             path: PathBuf::from("/tmp/notesage-test-audio.wav"),
             sample_rate: 16000,
             channels: 1,
-            start_time: std::time::Instant::now(),
             stop_signal,
+            pause_signal: Arc::new(AtomicBool::new(false)),
             stats,
             finalize_result,
             thread: Some(thread),
         }
+    }
+
+    /// Pause/resume flips the shared `pause_signal` the capture callback reads
+    /// — and never touches `stop_signal`, so pausing can't tear the stream down.
+    #[test]
+    fn pause_resume_toggle_the_pause_signal_only() {
+        let live = Arc::new(AtomicUsize::new(0));
+        let mut owner = fake_owner(live);
+
+        assert!(!owner.pause_signal.load(Ordering::Relaxed));
+        owner.set_paused(true);
+        assert!(owner.pause_signal.load(Ordering::Relaxed));
+        assert!(!owner.stop_signal.load(Ordering::Relaxed));
+        // Idempotent re-pause, then resume.
+        owner.set_paused(true);
+        assert!(owner.pause_signal.load(Ordering::Relaxed));
+        owner.set_paused(false);
+        assert!(!owner.pause_signal.load(Ordering::Relaxed));
+
+        // Stopping still works after a pause/resume cycle.
+        owner.stop().expect("stop succeeds");
+    }
+
+    /// Recorded duration comes from the written-sample count (pause-aware),
+    /// not wall clock: interleaved samples / (rate × channels).
+    #[test]
+    fn duration_from_samples_is_pause_aware() {
+        // 16 kHz mono, 16000 samples → exactly 1 s.
+        assert_eq!(duration_from_samples(16_000, 16_000, 1), 1.0);
+        // 48 kHz stereo, 480_000 interleaved samples → 5 s.
+        assert_eq!(duration_from_samples(480_000, 48_000, 2), 5.0);
+        // Nothing written (e.g. paused the whole time) → 0 s.
+        assert_eq!(duration_from_samples(0, 48_000, 2), 0.0);
+        // Degenerate config never divides by zero.
+        assert_eq!(duration_from_samples(100, 0, 0), 0.0);
     }
 
     /// #264 regression: while a stop is mid-teardown — the owner has been taken
@@ -1327,7 +1433,11 @@ mod tests {
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(1));
             }
-            *stats_t.lock().unwrap() = Some(CaptureStats { rms: 0.1, peak: 0.2 });
+            *stats_t.lock().unwrap() = Some(CaptureStats {
+                rms: 0.1,
+                peak: 0.2,
+                samples: 16000,
+            });
             *finalize_t.lock().unwrap() = Some(Ok(()));
             finished_t.store(true, Ordering::Relaxed);
         });
@@ -1337,8 +1447,8 @@ mod tests {
             path: PathBuf::from("/tmp/notesage-test-audio.wav"),
             sample_rate: 16000,
             channels: 1,
-            start_time: std::time::Instant::now(),
             stop_signal,
+            pause_signal: Arc::new(AtomicBool::new(false)),
             stats,
             finalize_result,
             thread: Some(thread),
@@ -1381,8 +1491,8 @@ mod tests {
             path: PathBuf::from("/tmp/notesage-test-bad.wav"),
             sample_rate: 16000,
             channels: 1,
-            start_time: std::time::Instant::now(),
             stop_signal,
+            pause_signal: Arc::new(AtomicBool::new(false)),
             stats,
             finalize_result,
             thread: Some(thread),

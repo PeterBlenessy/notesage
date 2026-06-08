@@ -18,6 +18,8 @@ import { log, setLogLevel } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { track, coarseOs } from "@/lib/telemetry";
+import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
 
 /**
@@ -74,6 +76,38 @@ export function useAppLifecycle() {
     const { logLevel } = useSettingsStore.getState();
     setLogLevel(logLevel);
     tauriApi.setLogLevel(logLevel);
+  }, []);
+
+  // --- Telemetry: app_launched event + alpha first-run/channel notice ---
+  // Fires once on startup, after settings have rehydrated from localStorage
+  // (Zustand persist rehydrates synchronously, so getState() here is current).
+  // `track` is a no-op when the effective usage flag is off, so the event is
+  // self-gated; the notice only appears on the alpha channel and only once.
+  const telemetryRanRef = useRef(false);
+  useEffect(() => {
+    if (telemetryRanRef.current) return;
+    telemetryRanRef.current = true;
+
+    const settings = useSettingsStore.getState();
+    const channel = settings.releaseChannel === "alpha" ? "alpha" : "stable";
+    const version =
+      typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+
+    track("app_launched", { version, os: coarseOs(), channel });
+
+    if (channel === "alpha" && !settings.telemetryNoticeSeen) {
+      toastTelemetryNotice({
+        onOpenSettings: () =>
+          window.dispatchEvent(
+            new CustomEvent("notesage:open-settings", {
+              detail: { tab: "system" },
+            }),
+          ),
+      });
+      // Read the setter from the live store rather than the captured snapshot,
+      // so this stays correct if the persist storage adapter ever goes async.
+      useSettingsStore.getState().setTelemetryNoticeSeen(true);
+    }
   }, []);
 
   // --- Stop ACP agent processes on window close ---

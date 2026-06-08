@@ -4,7 +4,9 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
+import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
 const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDialogV2").then(m => ({ default: m.SettingsDialogV2 })));
@@ -36,6 +38,8 @@ import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { useModelFitCapture } from "@/hooks/useModelFitCapture";
+import { useCalibrationSharePrompt } from "@/hooks/useCalibrationSharePrompt";
 import { useAccent } from "@/hooks/useAccent";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -149,6 +153,12 @@ function App() {
   // class on `<html>`, so `--accent` stays unset and the chosen accent
   // never actually applies. The hook owns the class swap effect.
   useAccent();
+  // Phase 2 runtime calibration: records real local-model decode tok/s + peak
+  // RAM from each local generation (on-device only, nothing transmitted).
+  useModelFitCapture();
+  // Opt-in community-share prompt — opens a reviewable GitHub submission once
+  // enough models have been measured. Never sends anything itself.
+  const calibrationShare = useCalibrationSharePrompt();
 
   // Consolidated startup effects and event listeners
   useAppLifecycle();
@@ -690,6 +700,10 @@ function App() {
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
         />
+        <CalibrationShareDialog
+          open={calibrationShare.open}
+          onOpenChange={calibrationShare.setOpen}
+        />
         <Suspense fallback={null}>
           <KeyboardShortcutsDialogV2
             open={shortcutsOpen}
@@ -761,6 +775,7 @@ function App() {
         />
         </Suspense>
       </div>
+      <McpDeepLinkInstaller />
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

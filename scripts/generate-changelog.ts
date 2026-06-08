@@ -71,8 +71,9 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   const dateMatch = content.match(/\*\*Date:\*\*\s*([\d-]+)/);
   const date = dateMatch ? dateMatch[1] : '';
 
-  // Extract previous version
-  const prevMatch = content.match(/\*\*Previous version:\*\*\s*([\d.]+)/);
+  // Extract previous version — include any `-alpha.N` prerelease suffix (the
+  // old `[\d.]+` stopped at the `-`, so every alpha reported `0.46.0`).
+  const prevMatch = content.match(/\*\*Previous version:\*\*\s*([\d.]+(?:-[\w.]+)?)/);
   const previousVersion = prevMatch ? prevMatch[1] : '';
 
   // Parse sections

@@ -33,7 +33,8 @@ note-sage/
 │   │   │   ├── copilot_protocol.rs # JSON-RPC transport, reader loop, server→client handlers
 │   │   │   ├── copilot_signin.rs   # Device code auth helpers (field extraction)
 │   │   │   ├── copilot_models.rs   # CopilotModel type, parser, fallback list
-│   │   │   ├── mcp.rs      # MCP client (JSON-RPC stdio transport, server lifecycle, tool discovery/call)
+│   │   │   ├── mcp.rs      # MCP client (stdio + Streamable-HTTP transports via McpConn, validate-on-add, env-secret resolution, server lifecycle, tool discovery/call, catalog)
+│   │   │   ├── mcp_oauth.rs # MCP OAuth 2.1 (PKCE, RFC 9728/8414 discovery, RFC 7591 DCR, loopback callback, token refresh, keychain storage)
 │   │   │   ├── skills.rs   # Skill discovery, bundled skill extraction, commands
 │   │   │   ├── skills_frontmatter.rs # YAML frontmatter parsing, SkillFrontmatter struct
 │   │   │   ├── skills_tool_parser.rs # Tool definition extraction, usage comment parsing, ArgMapping
@@ -49,6 +50,7 @@ note-sage/
 │   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
 │   │   │   ├── health.rs   # Backend health check
 │   │   │   ├── logging.rs  # Debug logging control
+│   │   │   ├── telemetry.rs # Telemetry consent file + Sentry runtime live-disable + before_send PII scrubber (`telemetry_apply_consent`)
 │   │   │   ├── store.rs    # Key-value store operations
 │   │   │   ├── sync.rs     # iCloud sync settings
 │   │   │   ├── shell_path.rs # Shell PATH resolution
@@ -62,6 +64,8 @@ note-sage/
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   │   ├── web_search.rs   # DuckDuckGo web search (no API key required)
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
+│   │   │   ├── alpha_update.rs  # Alpha-channel update check via runtime-URL UpdaterBuilder (`alpha_check`)
+│   │   │   ├── preview.rs       # Markdown → HTML body fragment for large-file instant-load preview (`render_markdown_preview`)
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
 │   │   │   ├── acp_client.rs   # ACP inbound handlers (on_receive_request/notification → Tauri event forwarding, permission channels)
@@ -123,7 +127,7 @@ note-sage/
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
-│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, TreeOverlay.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
+│   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, FoldersSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── settings/       # ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
 │   │   ├── chat/           # ChatMessage, ChatInput, ChatMessageList, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, AttachmentStrip, ResendProviderDialog, ChatHistoryView, segments/, etc. — all consumed by FloatingCommandBar / CommandBarStream / CommandBarContext (Quiet Composer is the only shell)
@@ -131,8 +135,8 @@ note-sage/
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useCommandBarShortcuts, useDoubleTapCmd, useRecentDocumentCycle, etc.)
-│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, tree-overlay, quiet-sidebar, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, etc.)
+│   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -226,7 +230,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
-| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), home directory | Full (except `startupReady`) |
+| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), telemetry consent (`telemetryUsageEnabled`/`telemetryCrashEnabled` tri-state `boolean \| null` — `null` follows the release channel; effective values via `selectEffectiveTelemetryUsage`/`selectEffectiveTelemetryCrash`; `telemetryNoticeSeen`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config — predates `routing-store` / `connections-store`; kept for one-time migration of v1 settings and as a fallback when no routing entry exists. Not deprecated for usage, deprecated for new features | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
@@ -246,10 +250,10 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-styles-store` | Editor font family, size, line height, paragraph spacing | Disk file (`editor-styles.json`) |
 | `git-store` | Git repo state per path (branch, file statuses, loading) | None |
 | `pdf-store` | PDF viewer preferences (zoom, fit mode, bookmarks) | Full |
-| `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
+| _(no store)_ | iCloud sync settings (enabled flag, synced projects) live in the Rust backend (`commands/sync.rs`) + a settings JSON disk file — there is no dedicated Zustand store | Disk file (settings JSON) |
 | `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
 | `agent-status-store` | ACP agent unresponsive/exited banner state | None |
-| `tree-overlay-store` | Quiet Composer TreeOverlay open/closed state + optional `focusedPath` for FolderPeek footer link (PRD 2026-04-21-ui-refresh) | None |
+| `folder-appearance-store` | Per-folder appearance overrides (custom icon + color) for explorer/external folders in the Folders section; keyed by absolute path. Project folders store appearance in `.notesage/project.json` instead | None (not persisted — external paths are ephemeral) |
 | `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project under notes root) | None |
 
 ### Styling
@@ -276,7 +280,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-04-07):** 99 unit test files, 5 Playwright E2E specs, 7 real E2E specs. ~2160 total test cases.
+**Test inventory (2026-06-03):** 304 unit test files, 18 Playwright E2E specs, 11 real-e2e specs. Run `pnpm test` for the current case count.
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 
@@ -284,7 +288,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 **CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs with three parallel jobs:
 
-1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`
+1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
 2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
 3. **Rust backend:** install stable toolchain → `cargo test` in `src-tauri/`
 
@@ -322,7 +326,7 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:tree]` | `useFileOperations.ts`, `workspace-store.ts` | Per-directory load time, entry count, total tree refresh |
 | `[perf:find]` | `search-highlight.ts` | Query, match count, doc node size, elapsed time |
 | `[perf:typing]` | `tag-highlight.ts`, `search-highlight.ts`, `comment-mark.ts` | Decoration rebuild per keystroke (sampled every 10th keystroke) |
-| `[perf:palette]` | `FloatingCommandBar` mode pickers (`modes/PaletteMode.tsx`, `SymbolSearchResults.tsx`, etc.) | Mode, query, result count, IPC timing for index-backed modes |
+| `[perf:palette]` | `FloatingCommandBar` mode pickers (`modes/PaletteMode.tsx`, etc.) | Mode, query, result count, IPC timing for index-backed modes |
 | `[perf:doc-load]` | `Editor.tsx` | File type, size, load elapsed time on first read from disk |
 | `[perf:doc-switch]` | `useEditorTabSwitch.ts` | Per-stage timing of a doc activation: preview-ready, parse-cache hit/miss, hydration aborted, editor restored, doc visible. Includes `pipelineMs` (parse-promise dispatch → editor hydrated, the full async pipeline), `workerParse` / `workerPreprocess` (worker-thread JS time, both 0 on cache hit), streaming-hydrate timings (`chunkCount`, `streamMs`), and total click-to-visible (`totalMs`). |
 | `[perf:setContent]` | `markdown.ts` (`loadParsedJsonIntoEditor`, `loadRawMarkdownIntoEditor`) | DOM materialize cost — `setContentMs`, `freshStateMs`, `sideMapsMs`, plus `oldDocSize` and `newDocSize` in ProseMirror coords. Sibling to streaming hydrate's `streamMs`. |
@@ -333,7 +337,6 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 | `[perf:orb]` | `AgentOrb` | Panel open, pulse cost |
 | `[perf:status]` | `StatusBar`, `StatusTray` | StatusBar render, StatusTray popover open |
 | `[perf:peek]` | `FolderPeek` | Hover popover unfurl |
-| `[perf:tree-overlay]` | `TreeOverlay` | Slide-in, expand/collapse |
 | `[perf:sidebar]` | `Sidebar` | Sidebar render, type-to-filter |
 | `[perf:focus]` | Focus mode | Focus mode enter/exit transition timing |
 | `[perf:context]` | `useDirectApiChat.ts` | Sliding-window message trim for `local_bundled` (dropped count, surviving message count, budget, estimated tokens) |
@@ -385,7 +388,7 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 
 **Tauri capability surface (hardened 2026-04-19, task #21 in project-data-isolation):**
 
-- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, and `autostart:default`. No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
+- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, `autostart:default`, and `deep-link:default` (the `notesage://` scheme for one-click MCP install). No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
 - `tauri.conf.json`'s `assetProtocol.scope.allow` is a finite list of Tauri path variables (`$HOME`, `$APPDATA`, `$APPLOCALDATA`, `$APPCACHE`, `$RESOURCE`, `$TEMP`) instead of `**`. The asset protocol (used by `convertFileSrc` for images, drawing SVGs, and the PDF/EPUB/DOCX/PPTX viewers) can no longer serve files outside the user's home directory or the app's own sandboxed areas, closing the silent-exfil path where agent-authored markdown could point to `/etc/hosts`, `/private/var/...`, etc.
 - Regression lock: `src/lib/__tests__/tauri-capability-surface.test.ts` asserts the narrowed scope and the absence of `fs:allow-*` permissions; future config tweaks that re-open the hole will fail this test.
 
@@ -406,3 +409,14 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 - `sandbox_monitor.rs` streams macOS unified log for Seatbelt deny entries
 - Filters by registered agent PIDs, deduplicates within 5s windows
 - Violations surface as error entries in the Activity panel alongside tool calls
+
+### Telemetry (Usage & Crash Reporting)
+
+Two opt-out diagnostic streams (PRD `docs/prds/2026-06-07-telemetry.md`). Full user-facing detail — exactly what is and isn't collected — lives in `docs/telemetry.md` (the page the Settings → System → Telemetry "what we collect" link opens).
+
+- **Channel-based consent.** `telemetryUsageEnabled` / `telemetryCrashEnabled` are tri-state (`boolean | null`) in `settings-store`; `null` follows `releaseChannel` (alpha → on, stable → off), an explicit `true`/`false` always wins. Effective values come from `selectEffectiveTelemetryUsage` / `selectEffectiveTelemetryCrash`. The two Settings switches are the single opt-out.
+- **Usage (Aptabase).** `tauri-plugin-aptabase` registered in `lib.rs` when `option_env!("NOTESAGE_APTABASE_KEY")` is present. The frontend funnels every event through `track()` in `src/lib/telemetry.ts`, which **no-ops when the effective usage flag is off** and enforces a fixed, low-cardinality event taxonomy at the type level (exact props only — no PII appended).
+- **Crash (Sentry, DSN-swappable to GlitchTip).** Built in `lib.rs` when `option_env!("NOTESAGE_SENTRY_DSN")` is present: the client is created **once** (panic hook installed once, `release` = app version, `send_default_pii: false`, `before_send` = `telemetry::scrub_event` which clears `server_name`/`user`/`request` and strips `abs_path`/`filename` from every frame). Runtime **live-disable**: `telemetry_apply_consent` binds/unbinds the client on the `Hub` so the crash toggle takes effect immediately, no restart, no second panic hook. `tauri-plugin-sentry` injects `@sentry/browser` and routes frontend errors (`ErrorBoundary` + `window` `error`/`unhandledrejection` in `main.tsx`, gated on the crash flag) through Rust via `invoke`.
+- **Consent file.** `~/.notesage/telemetry-consent.json` (`{ usage, crash }`, the `sync.rs` disk-file pattern) is written by `telemetry_apply_consent` and read synchronously at startup so Sentry can be bound on/off before the frontend loads.
+- **Egress is Rust-only.** Both SDKs send via Rust `reqwest`, which is not governed by the JS `http:default` capability — no widening of the hardened frontend surface. The only capability added is `sentry:default` (the invoke bridge, not network); the `tauri-capability-surface.test.ts` regression lock asserts `http:default` is unchanged and no `fs:allow-*` was granted.
+- **Build-time keys, release-only.** Keys/DSN are injected from GitHub Actions secrets for release builds (`.github/workflows/release.yml`); a build without them (every local/dev build) compiles and runs as a clean telemetry no-op (`option_env!` → `None`).

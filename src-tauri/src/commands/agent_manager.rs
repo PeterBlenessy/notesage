@@ -529,6 +529,22 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
             continue;
         }
 
+        // Tar-Slip guard (audit rust M1): reject any entry that could escape
+        // runtime_dir via `..` or an absolute/prefixed component. Without this,
+        // an entry like `node-v22/../../../etc/foo` resolves outside runtime_dir
+        // on the join below — arbitrary file write during agent runtime install.
+        // After this check, runtime_dir.join(&stripped) stays under runtime_dir.
+        if stripped.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        }) {
+            return Err(format!("Refusing unsafe tar entry path: {}", stripped.display()));
+        }
+
         let dest = runtime_dir.join(&stripped);
         if entry.header().entry_type().is_dir() {
             std::fs::create_dir_all(&dest).ok();
@@ -541,12 +557,14 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
             std::io::copy(&mut entry, &mut outfile)
                 .map_err(|e| format!("Extract {}: {}", stripped.display(), e))?;
 
-            // Preserve executable permission
+            // Preserve executable permission, but mask to rwxr-xr-x — never
+            // honor setuid/setgid/sticky or world-writable bits from an
+            // untrusted archive (audit rust M1).
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(mode) = entry.header().mode() {
-                    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(mode)).ok();
+                    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(mode & 0o755)).ok();
                 }
             }
         }

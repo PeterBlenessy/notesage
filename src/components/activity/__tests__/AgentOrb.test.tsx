@@ -381,7 +381,7 @@ describe('AgentOrb (#29)', () => {
     );
   });
 
-  it('still pulses for a recording, and reduced motion suppresses the pulse (#13)', () => {
+  it('shows the seconds-ray ring for a recording and does NOT pulse (#13)', () => {
     mockTasks = [
       {
         id: 'rec-1',
@@ -394,20 +394,45 @@ describe('AgentOrb (#29)', () => {
         recordingStartedAt: Date.now(),
       },
     ];
-    // Motion allowed → pulse present.
+    // A recording gets the seconds-ray ring, NOT the agent-activity pulse —
+    // the two states are deliberately distinct.
     const { unmount } = renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
     expect(
       screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
-    ).toContain('orb-pulsing');
+    ).not.toContain('orb-pulsing');
     unmount();
 
-    // Reduced motion → no pulse class, but the recording indicator stays.
+    // Reduced motion → rays still render (static ring); still no pulse.
     useReducedMotionMock.mockReturnValue(true);
     renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
     expect(
       screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
     ).not.toContain('orb-pulsing');
     expect(screen.getByTestId('agent-orb-recording')).toBeTruthy();
+  });
+
+  it('pulses when a non-recording task runs alongside a recording (#13)', () => {
+    mockTasks = [
+      {
+        id: 'rec-1',
+        kind: 'recording',
+        type: 'workflow',
+        label: 'Recording',
+        status: 'running',
+        activities: [],
+        startedAt: Date.now(),
+        recordingStartedAt: Date.now(),
+      },
+      makeTask('agent-1', 'running'),
+    ];
+    renderWithProviders(<AgentOrb />);
+    // Rays for the recording AND a pulse for the agent task — both present.
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).toContain('orb-pulsing');
   });
 
   it('falls back to the count badge when running tasks are not recordings', () => {

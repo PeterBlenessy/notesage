@@ -50,7 +50,8 @@ import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
-import { isBinaryFileType } from "@/lib/file-utils";
+import { isBinaryFileType, documentFormat } from "@/lib/file-utils";
+import { track } from "@/lib/telemetry";
 import { setEditorRef } from "@/lib/editor-bridge";
 import { log } from "@/lib/logger";
 import { parseFrontmatter, parseDocumentStyle, documentStyleToPresets } from "@/lib/frontmatter";
@@ -134,6 +135,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     const { id, filePath, fileType } = activeTab;
     const t0 = performance.now();
     const fileName = filePath.split("/").pop() ?? filePath;
+
+    track("document_opened", { format: documentFormat(fileName, fileType) });
 
     (async () => {
       try {
@@ -572,8 +575,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return (
       <div className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
-          <span>File not found</span>
+          <span>
+            {/not found|no such file/i.test(activeTab.loadError)
+              ? "File not found"
+              : "Could not open file"}
+          </span>
           <span className="text-xs max-w-md text-center truncate opacity-60">{activeTab.filePath}</span>
+          {/* Surface the actual backend error (e.g. "Permission denied", "Is a
+              directory") instead of always claiming "not found" (audit a11y L5). */}
+          <span className="text-xs max-w-md text-center break-words font-mono opacity-50">{activeTab.loadError}</span>
         </div>
         {!focusMode && (
           <StatusBar editor={null} variant={statusBarVariant} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />

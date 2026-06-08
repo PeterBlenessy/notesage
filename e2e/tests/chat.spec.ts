@@ -176,6 +176,10 @@ test.describe('Chat (FloatingCommandBar)', () => {
     const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
     await expect(input).toBeVisible({ timeout: 5000 });
 
+    // Capture invoke args so we can read the per-request streamId the hook
+    // generates (events are emitted/listened on `<event>:<streamId>`).
+    const getInvokeCalls = await trackInvokeCalls(page);
+
     await input.fill('What is Notesage?');
     await page.locator('[data-cmd-bar] button[aria-label="Send message"]').click();
 
@@ -186,10 +190,15 @@ test.describe('Chat (FloatingCommandBar)', () => {
     // Give the app a beat to invoke ai_chat_stream and wire up listeners.
     await page.waitForTimeout(300);
 
-    await emitTauriEvent(page, 'ai-stream-chunk', 'Notesage is ');
-    await emitTauriEvent(page, 'ai-stream-chunk', 'a rich text ');
-    await emitTauriEvent(page, 'ai-stream-chunk', 'markdown editor.');
-    await emitTauriEvent(page, 'ai-stream-done', null);
+    const calls = await getInvokeCalls();
+    const streamCall = calls.find((c) => c.cmd === 'ai_chat_stream');
+    const streamId = (streamCall?.args as { streamId?: string } | undefined)?.streamId ?? '';
+    const ev = (base: string) => (streamId ? `${base}:${streamId}` : base);
+
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'Notesage is ');
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'a rich text ');
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'markdown editor.');
+    await emitTauriEvent(page, ev('ai-stream-done'), null);
 
     await expect(
       page.locator('[data-cmd-bar]').getByText('Notesage is a rich text markdown editor.'),

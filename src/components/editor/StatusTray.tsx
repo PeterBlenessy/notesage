@@ -766,17 +766,17 @@ export function StatusTray({
   );
 
   // `onOpenAutoFocus` runs after Radix has mounted the popover content.
-  // When a dot has pre-selected a group, intercept the default autofocus
-  // (which would land on the first focusable descendant — typically the
-  // Completions "Off" radio) and steer focus + scroll to the requested
-  // group root instead. Without this, Radix would win the focus race and
-  // any scrollIntoView we did in a later tick would be overridden.
+  // ALWAYS prevent Radix's default autofocus: it lands on the first focusable
+  // descendant — the recording `MicButton` — whose focus-triggered Radix
+  // tooltip then auto-opens on every popover open (the tooltip looks "stuck").
+  // Focus stays on the trigger; Tab still reaches the controls. When a dot has
+  // pre-selected a group, steer focus + scroll to that group root instead.
   const handleOpenAutoFocus = React.useCallback(
     (e: Event) => {
+      e.preventDefault();
       if (!initialExpandedGroup) return;
       const target = resolveGroup(initialExpandedGroup);
       if (!target) return;
-      e.preventDefault();
       target.scrollIntoView({ block: "nearest" });
       target.focus({ preventScroll: true });
     },

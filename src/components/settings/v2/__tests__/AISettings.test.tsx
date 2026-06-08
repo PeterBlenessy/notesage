@@ -96,4 +96,48 @@ describe('AISettings (v2)', () => {
       screen.getByText(/queries are sent to DuckDuckGo/i),
     ).toBeTruthy();
   });
+
+  // -----------------------------------------------------------------------
+  // Issue #421 — "Permission scopes" grouping
+  // The four access/isolation groups (Tool Calling, Project Scope, Network
+  // Sandbox, Persisted Approvals) must appear under a clearly labeled
+  // "Permission scopes" section heading so the label matches the codebase
+  // vocabulary (*Scope types, getChatSandboxScope, etc.).
+  // -----------------------------------------------------------------------
+
+  it('renders a "Permission scopes" section heading grouping the four access/isolation groups', () => {
+    renderWithProviders(<AISettings />);
+    // The new section heading must be present in the rendered output.
+    expect(screen.getByText('Permission scopes')).toBeTruthy();
+  });
+
+  it('does not render a user-visible "Privacy" heading for the access/isolation groups', () => {
+    renderWithProviders(<AISettings />);
+    // "Privacy" as a heading for these groups is the old, misleading label.
+    // Ensure no element with that exact text exists as a heading element.
+    const allHeadings = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+    const privacyHeading = Array.from(allHeadings).find((el) =>
+      el.textContent?.trim() === 'Privacy',
+    );
+    expect(privacyHeading).toBeUndefined();
+  });
+
+  it('Tool Calling group remains visible when settings search query is "privacy" (synonym)', async () => {
+    // When a user searches the old "Privacy" label they should still find
+    // the permission-scope controls. Tool Calling and Project Scope have
+    // SettingsRow children so they would otherwise hide when no row text
+    // matches — the synonym mechanism must keep them visible.
+    const { SettingsSearchContext } = await import(
+      '@/components/settings/v2/SettingsSearch'
+    );
+    renderWithProviders(
+      <SettingsSearchContext.Provider value={{ query: 'privacy' }}>
+        <AISettings />
+      </SettingsSearchContext.Provider>,
+    );
+    // The Tool Calling group must remain visible under the "privacy" query.
+    expect(screen.getByText('Tool Calling')).toBeTruthy();
+    // The Project Scope group must also remain visible.
+    expect(screen.getByText('Project Scope')).toBeTruthy();
+  });
 });

@@ -1,0 +1,142 @@
+/**
+ * Unit tests for the usage-telemetry helper (`src/lib/telemetry.ts`).
+ *
+ * Covers: the `track()` no-op gate (off → no emit, on → emit with exact props),
+ * that the payload sent is exactly the typed props (no PII appended), and the
+ * `providerKind` low-cardinality mapping.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Mutable state the mocked store returns; each test sets what it needs.
+const mockState: { telemetryUsageEnabled: boolean | null; releaseChannel: "stable" | "alpha" } = {
+  telemetryUsageEnabled: null,
+  releaseChannel: "stable",
+};
+
+vi.mock("@/stores/settings-store", () => ({
+  useSettingsStore: { getState: () => mockState },
+  // Re-implement the real selector semantics so the gate is tested honestly.
+  selectEffectiveTelemetryUsage: (s: typeof mockState) =>
+    s.telemetryUsageEnabled ?? s.releaseChannel === "alpha",
+}));
+
+const trackEvent = vi.fn(
+  (_event: string, _props?: Record<string, string>): Promise<void> => Promise.resolve(),
+);
+vi.mock("@aptabase/tauri", () => ({
+  trackEvent: (event: string, props?: Record<string, string>) => trackEvent(event, props),
+}));
+
+import { track, providerKind, coarseOs } from "../telemetry";
+
+beforeEach(() => {
+  trackEvent.mockClear();
+  mockState.telemetryUsageEnabled = null;
+  mockState.releaseChannel = "stable";
+});
+
+// `track()` lazy-imports @aptabase/tauri and calls trackEvent in a microtask,
+// so flush the queue before asserting an emit happened.
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+describe("track() gating", () => {
+  it("no-ops when usage is off (stable channel, no override)", async () => {
+    mockState.releaseChannel = "stable";
+    mockState.telemetryUsageEnabled = null; // → effective false
+    track("document_opened", { format: "md" });
+    await flush();
+    expect(trackEvent).not.toHaveBeenCalled();
+  });
+
+  it("emits when usage is on via channel default (alpha)", async () => {
+    mockState.releaseChannel = "alpha";
+    mockState.telemetryUsageEnabled = null; // → effective true
+    track("document_opened", { format: "pdf" });
+    await flush();
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+    expect(trackEvent).toHaveBeenCalledWith("document_opened", { format: "pdf" });
+  });
+
+  it("emits when explicitly enabled even on stable", async () => {
+    mockState.releaseChannel = "stable";
+    mockState.telemetryUsageEnabled = true; // explicit override wins
+    track("ai_action_used", { action: "improve" });
+    await flush();
+    expect(trackEvent).toHaveBeenCalledWith("ai_action_used", { action: "improve" });
+  });
+
+  it("no-ops when explicitly disabled even on alpha", async () => {
+    mockState.releaseChannel = "alpha";
+    mockState.telemetryUsageEnabled = false; // explicit override wins
+    track("ai_action_used", { action: "expand" });
+    await flush();
+    expect(trackEvent).not.toHaveBeenCalled();
+  });
+
+  it("sends exactly the typed props — nothing appended (no PII)", async () => {
+    mockState.telemetryUsageEnabled = true;
+    track("ai_chat_sent", { path: "acp", provider_kind: "agent_managed" });
+    await flush();
+    const props = trackEvent.mock.calls[0]?.[1];
+    expect(props).toEqual({ path: "acp", provider_kind: "agent_managed" });
+    // Guard: no install id, no path, no content leaked into the payload.
+    expect(Object.keys(props ?? {}).sort()).toEqual(["path", "provider_kind"]);
+  });
+
+  it("never throws into the caller even if the SDK rejects", async () => {
+    mockState.telemetryUsageEnabled = true;
+    trackEvent.mockImplementationOnce(() => {
+      throw new Error("transport down");
+    });
+    expect(() => track("feature_used", { feature: "focus_mode" })).not.toThrow();
+    await flush(); // the rejection is swallowed inside track's .catch
+  });
+});
+
+describe("providerKind", () => {
+  it("collapses every agent_managed provider to one kind", () => {
+    expect(providerKind("claude", "agent_managed")).toBe("agent_managed");
+    expect(providerKind("gemini", "agent_managed")).toBe("agent_managed");
+  });
+
+  it("maps local_bundled and local/ollama", () => {
+    expect(providerKind("whatever", "local_bundled")).toBe("local_bundled");
+    expect(providerKind("ollama", "local")).toBe("ollama");
+    expect(providerKind("something", "local")).toBe("local");
+  });
+
+  it("maps api_key providers by provider name", () => {
+    expect(providerKind("anthropic", "api_key")).toBe("anthropic");
+    expect(providerKind("openai", "api_key")).toBe("openai");
+    expect(providerKind("openai_compatible", "api_key")).toBe("openai_compatible");
+  });
+
+  it("falls back to a known kind for anything unrecognized", () => {
+    expect(providerKind("mystery", "api_key")).toBe("local");
+  });
+});
+
+describe("coarseOs", () => {
+  const stub = (userAgent: string, platform: string) =>
+    vi.stubGlobal("navigator", { userAgent, platform } as Navigator);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("buckets the three desktop OSes and never returns a raw UA", () => {
+    stub("Mozilla/5.0 (Macintosh; …)", "MacIntel");
+    expect(coarseOs()).toBe("macos");
+    stub("Mozilla/5.0 (Windows NT 10.0; …)", "Win32");
+    expect(coarseOs()).toBe("windows");
+    stub("Mozilla/5.0 (X11; Linux x86_64)", "Linux x86_64");
+    expect(coarseOs()).toBe("linux");
+  });
+
+  it("falls back to 'other' for unknown/empty navigator", () => {
+    stub("SomethingElse/1.0", "");
+    expect(coarseOs()).toBe("other");
+  });
+
+  it("only ever returns one of the four closed buckets", () => {
+    stub("Mozilla/5.0 (Macintosh)", "MacIntel");
+    expect(["macos", "windows", "linux", "other"]).toContain(coarseOs());
+  });
+});

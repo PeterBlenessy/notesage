@@ -3,7 +3,14 @@ import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
-import type { LocalModelInfo, SystemMemoryInfo, BinaryStatus } from '@/lib/tauri';
+import type {
+  LocalModelInfo,
+  SystemMemoryInfo,
+  BinaryStatus,
+  HardwareProfile,
+  ModelFitResult,
+  GgufCapabilities,
+} from '@/lib/tauri';
 
 export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type BinaryState = 'unknown' | 'available' | 'not_found';
@@ -40,6 +47,11 @@ interface LocalAIStore {
   binaryStatus: BinaryState;
   categoryFilter: ModelCategory;
 
+  // Hardware-aware model-fit (runtime — recomputed per session, never persisted)
+  hardwareProfile: HardwareProfile | null;
+  fitById: Record<string, ModelFitResult>;
+  capsById: Record<string, GgufCapabilities>;
+
   // Actions
   setActiveModel: (modelId: string) => void;
   setServerStatus: (status: ServerStatus, error?: string) => void;
@@ -47,6 +59,10 @@ interface LocalAIStore {
   setServerPort: (port: number | null) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
+  setHardwareProfile: (profile: HardwareProfile | null) => void;
+  setModelFits: (results: ModelFitResult[]) => void;
+  setModelCaps: (modelId: string, caps: GgufCapabilities) => void;
+  clearModelFits: () => void;
   dismissFirstRun: () => void;
   setContextLength: (len: number) => void;
   setGpuLayers: (layers: number) => void;
@@ -134,9 +150,22 @@ export const useLocalAIStore = create<LocalAIStore>()(
         systemMemory: null,
         binaryStatus: 'unknown',
         categoryFilter: 'all',
+        hardwareProfile: null,
+        fitById: {},
+        capsById: {},
 
         // Actions
         setActiveModel: (modelId) => set({ activeModelId: modelId }),
+        setHardwareProfile: (profile) => set({ hardwareProfile: profile }),
+        setModelFits: (results) =>
+          set((s) => {
+            const next = { ...s.fitById };
+            for (const r of results) next[r.id] = r;
+            return { fitById: next };
+          }),
+        setModelCaps: (modelId, caps) =>
+          set((s) => ({ capsById: { ...s.capsById, [modelId]: caps } })),
+        clearModelFits: () => set({ fitById: {}, capsById: {} }),
         setServerStatus: (status, error) => set({ serverStatus: status, serverError: error ?? null }),
         setServerStatusReason: (reason) => set({ serverStatusReason: reason }),
         setServerPort: (port) => set({ serverPort: port }),

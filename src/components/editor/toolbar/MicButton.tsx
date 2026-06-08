@@ -23,13 +23,17 @@ export function MicButton({
   // Meeting recording (not dictation): click starts a mic recording, click
   // again stops it and kicks off the background transcription job. See
   // `useMeetingRecording` for the full start → record → transcribe flow.
-  const { toggleRecording, isRecording } = useMeetingRecording();
+  const { toggleRecording, isRecording, isPaused } = useMeetingRecording();
 
   const handleToggle = useCallback(async () => {
     await toggleRecording();
   }, [toggleRecording]);
 
-  const label = isRecording ? "Stop recording" : "Start recording";
+  const label = isRecording
+    ? isPaused
+      ? "Stop recording (paused)"
+      : "Stop recording"
+    : "Start recording";
 
   const button = (
     <Button
@@ -46,10 +50,13 @@ export function MicButton({
         // --color-primary (neutral grey) when no accent is selected,
         // so existing users see no chromatic surprise. The icon also
         // keeps `animate-pulse` to make the "recording" state
-        // unmistakable.
-        isRecording
-          ? "animate-pulse text-[var(--color-accent-primary)]"
-          : "text-muted-foreground",
+        // unmistakable — except while PAUSED, where the pulse stops so
+        // the de-animated icon mirrors the frozen stopwatch.
+        isRecording && !isPaused
+          ? "animate-pulse motion-reduce:animate-none text-[var(--color-accent-primary)]"
+          : isRecording
+            ? "text-[var(--color-accent-primary)]"
+            : "text-muted-foreground",
       )}
     >
       {isRecording ? (

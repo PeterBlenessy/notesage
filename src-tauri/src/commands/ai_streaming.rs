@@ -8,6 +8,19 @@ use super::constants;
 use super::tool_execution::*;
 use super::segment_builder::*;
 
+/// Build a per-stream event name so concurrent direct-API generations don't
+/// cross-contaminate the global event bus. The frontend passes a unique
+/// `streamId` per request and listens on the suffixed names; an empty
+/// `stream_id` yields the legacy global name (back-compat for callers that
+/// don't supply one).
+pub fn stream_event(base: &str, stream_id: &str) -> String {
+    if stream_id.is_empty() {
+        base.to_string()
+    } else {
+        format!("{}:{}", base, stream_id)
+    }
+}
+
 /// Convert tool definitions to Anthropic's native format (name, description, input_schema).
 fn tools_to_anthropic_format(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
     tools.iter().map(|t| {
@@ -100,6 +113,7 @@ pub async fn anthropic_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: &Option<String>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("Anthropic API key is required")?;
     let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_ANTHROPIC);
@@ -240,7 +254,7 @@ pub async fn anthropic_chat_stream(
                                 "server_tool_use" => {
                                     let tool_name = block["name"].as_str().unwrap_or("web_search");
                                     window
-                                        .emit("ai-tool-use", serde_json::json!({
+                                        .emit(&stream_event("ai-tool-use", stream_id), serde_json::json!({
                                             "tool": tool_name,
                                             "status": "start"
                                         }))
@@ -253,7 +267,7 @@ pub async fn anthropic_chat_stream(
                                     let media_type = source["media_type"].as_str().unwrap_or("image/png");
                                     if !data.is_empty() {
                                         window
-                                            .emit("ai-stream-image", serde_json::json!({
+                                            .emit(&stream_event("ai-stream-image", stream_id), serde_json::json!({
                                                 "data": data,
                                                 "mimeType": media_type
                                             }))
@@ -289,7 +303,7 @@ pub async fn anthropic_chat_stream(
                             if delta_type == "text_delta" {
                                 if let Some(text) = delta["text"].as_str() {
                                     window
-                                        .emit("ai-stream-chunk", text)
+                                        .emit(&stream_event("ai-stream-chunk", stream_id), text)
                                         .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                 }
 
@@ -320,7 +334,7 @@ pub async fn anthropic_chat_stream(
                                 let arguments: serde_json::Value = serde_json::from_str(&current_tool_input)
                                     .unwrap_or(serde_json::Value::Null);
                                 window
-                                    .emit("ai-tool-call", serde_json::json!({
+                                    .emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                                         "id": current_tool_id,
                                         "name": current_tool_name,
                                         "arguments": arguments
@@ -368,7 +382,7 @@ pub async fn anthropic_chat_stream(
 
         for citation in unique_citations {
             window
-                .emit("ai-citation", citation)
+                .emit(&stream_event("ai-citation", stream_id), citation)
                 .map_err(|e| format!("Failed to emit citation: {}", e))?;
         }
     }
@@ -377,11 +391,11 @@ pub async fn anthropic_chat_stream(
     // to execute tools and continue. Do NOT emit ai-stream-done in this case.
     if stop_reason == "tool_use" {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 
@@ -399,6 +413,7 @@ pub async fn openai_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: &Option<String>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("OpenAI API key is required")?;
     let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
@@ -533,7 +548,7 @@ pub async fn openai_chat_stream(
                         "response.output_text.delta" => {
                             if let Some(delta) = json["delta"].as_str() {
                                 window
-                                    .emit("ai-stream-chunk", delta)
+                                    .emit(&stream_event("ai-stream-chunk", stream_id), delta)
                                     .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                             }
                         }
@@ -560,7 +575,7 @@ pub async fn openai_chat_stream(
                                     .unwrap_or("image/png");
                                 if !data.is_empty() {
                                     window
-                                        .emit("ai-stream-image", serde_json::json!({
+                                        .emit(&stream_event("ai-stream-image", stream_id), serde_json::json!({
                                             "data": data,
                                             "mimeType": mime_type
                                         }))
@@ -584,7 +599,7 @@ pub async fn openai_chat_stream(
                                 let arguments: serde_json::Value = serde_json::from_str(&tool_call.arguments)
                                     .unwrap_or(serde_json::Value::Null);
                                 window
-                                    .emit("ai-tool-call", serde_json::json!({
+                                    .emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                                         "id": tool_call.call_id,
                                         "name": tool_call.name,
                                         "arguments": arguments
@@ -595,7 +610,7 @@ pub async fn openai_chat_stream(
 
                         "response.web_search_call.in_progress" | "response.web_search_call.searching" => {
                             window
-                                .emit("ai-tool-use", serde_json::json!({
+                                .emit(&stream_event("ai-tool-use", stream_id), serde_json::json!({
                                     "tool": "web_search",
                                     "status": "start"
                                 }))
@@ -646,7 +661,7 @@ pub async fn openai_chat_stream(
     if !citations.is_empty() {
         for citation in &citations {
             window
-                .emit("ai-citation", citation)
+                .emit(&stream_event("ai-citation", stream_id), citation)
                 .map_err(|e| format!("Failed to emit citation: {}", e))?;
         }
     }
@@ -655,11 +670,11 @@ pub async fn openai_chat_stream(
     // Do NOT emit ai-stream-done in this case.
     if has_tool_calls {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 
@@ -677,6 +692,7 @@ pub async fn ollama_chat_stream(
     _max_tokens: Option<u32>,
     base_url: &Option<String>,
     response_format: &Option<serde_json::Value>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
@@ -804,7 +820,7 @@ pub async fn ollama_chat_stream(
                             if let Some(thinking) = json["message"]["thinking"].as_str() {
                                 if !thinking.is_empty() {
                                     window
-                                        .emit("ai-stream-thinking-chunk", thinking)
+                                        .emit(&stream_event("ai-stream-thinking-chunk", stream_id), thinking)
                                         .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
                                 }
                             }
@@ -821,7 +837,7 @@ pub async fn ollama_chat_stream(
                                 if !name.is_empty() {
                                     has_tool_calls = true;
                                     window
-                                        .emit("ai-tool-call", serde_json::json!({
+                                        .emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                                             "id": format!("ollama-{}", uuid_v4()),
                                             "name": name,
                                             "arguments": arguments
@@ -837,7 +853,7 @@ pub async fn ollama_chat_stream(
                                     // Native thinking handled above, or no thinking tags detected —
                                     // emit content as-is
                                     window
-                                        .emit("ai-stream-chunk", content)
+                                        .emit(&stream_event("ai-stream-chunk", stream_id), content)
                                         .map_err(|e| format!("Failed to emit event: {}", e))?;
                                 } else {
                                     // Tag-based thinking: parse using the detected opening/closing tags
@@ -849,7 +865,7 @@ pub async fn ollama_chat_stream(
                                                 let thinking_text = &tag_scan_buf[..end];
                                                 if !thinking_text.is_empty() {
                                                     window
-                                                        .emit("ai-stream-thinking-chunk", thinking_text)
+                                                        .emit(&stream_event("ai-stream-thinking-chunk", stream_id), thinking_text)
                                                         .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
                                                 }
                                                 tag_scan_buf = tag_scan_buf[end + tags.closing.len()..].to_string();
@@ -862,7 +878,7 @@ pub async fn ollama_chat_stream(
                                                     let to_emit = &tag_scan_buf[..safe];
                                                     if !to_emit.is_empty() {
                                                         window
-                                                            .emit("ai-stream-thinking-chunk", to_emit)
+                                                            .emit(&stream_event("ai-stream-thinking-chunk", stream_id), to_emit)
                                                             .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
                                                     }
                                                     tag_scan_buf = tag_scan_buf[safe..].to_string();
@@ -873,7 +889,7 @@ pub async fn ollama_chat_stream(
                                             let before = &tag_scan_buf[..start];
                                             if !before.is_empty() {
                                                 window
-                                                    .emit("ai-stream-chunk", before)
+                                                    .emit(&stream_event("ai-stream-chunk", stream_id), before)
                                                     .map_err(|e| format!("Failed to emit event: {}", e))?;
                                             }
                                             tag_scan_buf = tag_scan_buf[start + tags.opening.len()..].to_string();
@@ -886,7 +902,7 @@ pub async fn ollama_chat_stream(
                                                 let to_emit = &tag_scan_buf[..safe];
                                                 if !to_emit.is_empty() {
                                                     window
-                                                        .emit("ai-stream-chunk", to_emit)
+                                                        .emit(&stream_event("ai-stream-chunk", stream_id), to_emit)
                                                         .map_err(|e| format!("Failed to emit event: {}", e))?;
                                                 }
                                                 tag_scan_buf = tag_scan_buf[safe..].to_string();
@@ -910,11 +926,11 @@ pub async fn ollama_chat_stream(
     if !tag_scan_buf.is_empty() {
         if in_think_tag {
             window
-                .emit("ai-stream-thinking-chunk", &tag_scan_buf)
+                .emit(&stream_event("ai-stream-thinking-chunk", stream_id), &tag_scan_buf)
                 .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
         } else {
             window
-                .emit("ai-stream-chunk", &tag_scan_buf)
+                .emit(&stream_event("ai-stream-chunk", stream_id), &tag_scan_buf)
                 .map_err(|e| format!("Failed to emit event: {}", e))?;
         }
     }
@@ -922,11 +938,11 @@ pub async fn ollama_chat_stream(
     // If tool calls were detected, signal the frontend to execute them.
     if has_tool_calls {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 
@@ -944,6 +960,7 @@ pub async fn openai_compatible_chat_stream(
     max_tokens: Option<u32>,
     base_url: &Option<String>,
     response_format: &Option<serde_json::Value>,
+    stream_id: &str,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("API key is required")?;
     let base_url = base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
@@ -1084,7 +1101,7 @@ pub async fn openai_compatible_chat_stream(
                             if let Some(content) = choice["delta"]["content"].as_str() {
                                 if !content.is_empty() {
                                     window
-                                        .emit("ai-stream-chunk", content)
+                                        .emit(&stream_event("ai-stream-chunk", stream_id), content)
                                         .map_err(|e| format!("Failed to emit chunk: {}", e))?;
                                 }
                             }
@@ -1136,7 +1153,7 @@ pub async fn openai_compatible_chat_stream(
             let arguments: serde_json::Value = serde_json::from_str(&tc.arguments)
                 .unwrap_or(serde_json::Value::Null);
             window
-                .emit("ai-tool-call", serde_json::json!({
+                .emit(&stream_event("ai-tool-call", stream_id), serde_json::json!({
                     "id": if tc.id.is_empty() { format!("compat-{}", uuid_v4()) } else { tc.id.clone() },
                     "name": tc.name,
                     "arguments": arguments
@@ -1149,11 +1166,11 @@ pub async fn openai_compatible_chat_stream(
     // signal the frontend to execute them instead of emitting stream-done.
     if has_tool_calls || finish_reason == "tool_calls" {
         window
-            .emit("ai-tool-calls-done", ())
+            .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
         window
-            .emit("ai-stream-done", ())
+            .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
     }
 

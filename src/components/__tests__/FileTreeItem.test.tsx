@@ -14,12 +14,6 @@ import { createMockFileEntry } from '@/test/mock-data';
 // Mock heavy sub-components that don't render meaningfully in jsdom
 // ---------------------------------------------------------------------------
 
-vi.mock('@/components/sidebar/SyncedIcon', () => ({
-  SyncedIcon: ({ icon: Icon }: { icon: React.ComponentType<{ className?: string }>; synced?: boolean; folder?: boolean }) => (
-    <span data-testid="synced-icon"><Icon className="h-4 w-4" /></span>
-  ),
-}));
-
 vi.mock('@/components/sidebar/FolderPickerItem', () => ({
   FolderPickerItem: () => null,
 }));

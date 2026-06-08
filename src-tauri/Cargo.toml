@@ -21,7 +21,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "devtools", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -128,6 +127,15 @@ cpal = "0.17"
 
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
+tauri-plugin-deep-link = "2.4.9"
+# Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
+# Pin to match tauri-plugin-sentry 0.5's internal sentry version (0.42) so the
+# ClientInitGuard passed to the plugin is the same type — a newer top-level
+# sentry pulls a second major into the tree and breaks `init(&client)`.
+sentry = "0.42"
+tauri-plugin-sentry = "0.5.0"
+# Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
+tauri-plugin-aptabase = "1.0.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }

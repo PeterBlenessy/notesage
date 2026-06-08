@@ -109,6 +109,38 @@ export function toastExternalReload(filePath: string): void {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Telemetry first-run / channel-switch notice
+// ---------------------------------------------------------------------------
+
+export interface TelemetryNoticeToastOptions {
+  /** Invoked when the user clicks "Open settings". */
+  onOpenSettings: () => void;
+}
+
+/**
+ * Non-blocking notice shown once when the app starts on (or switches to) the
+ * alpha channel, telling the user telemetry is on by default and how to opt out.
+ * Uses a stable id so a startup notice and a channel-switch toast collapse into
+ * one rather than stacking.
+ */
+export function toastTelemetryNotice(options: TelemetryNoticeToastOptions): void {
+  // Short title + secondary description reads better in a banner than the full
+  // single-sentence disclosure; the elaborating clause goes in `description`.
+  toast.info("Alpha builds share anonymous usage + crash reports by default.", {
+    id: "telemetry-notice",
+    // Privacy-relevant notice with an action — give the user time to read it,
+    // and a close button so it doesn't vanish before they decide.
+    duration: 15000,
+    closeButton: true,
+    description: "No document content, file contents, or AI prompts are ever sent.",
+    action: {
+      label: "Open settings",
+      onClick: options.onOpenSettings,
+    },
+  });
+}
+
 export interface ExternalRenameToastOptions {
   /** Old absolute path (before rename). */
   oldPath: string;
