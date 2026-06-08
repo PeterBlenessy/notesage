@@ -6,7 +6,6 @@ import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
 import { EditorContent } from "@tiptap/react";
 import { EditorStateCache } from "@/lib/editor-state-cache";
 import { useEditorStore } from "@/stores/editor-store";
-import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
@@ -30,7 +29,6 @@ import { useChatStore } from "@/stores/chat-store";
 import { getThread } from "@/lib/chat-tree";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
-  getInlineDiffHunks,
   setSuggestion,
   hasActiveSuggestion,
   PAGE_HF_CLICK_EVENT,
@@ -41,7 +39,6 @@ import { FOCUS_EDITOR_EVENT } from "@/lib/editor-events";
 import { usePageSettings } from "@/hooks/usePageSettings";
 import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
-import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -83,14 +80,11 @@ interface EditorProps {
   focusMode?: boolean;
   outlineOpen?: boolean;
   onOutlineOpenChange?: (open: boolean) => void;
-  updateAvailable?: boolean;
-  updateVersion?: string | null;
-  onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
   onOpenActions?: () => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, onShortcutsOpen, onOpenActions }: EditorProps) {
   const openDocuments = useEditorStore((s) => s.openDocuments);
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const updateTabContent = useEditorStore((s) => s.updateTabContent);
@@ -107,7 +101,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const marginBottom = useSettingsStore((s) => s.marginBottom);
   const marginLeft = useSettingsStore((s) => s.marginLeft);
   const marginRight = useSettingsStore((s) => s.marginRight);
-  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const printLayout = useSettingsStore((s) => s.printLayout);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const sourceWordWrap = useSettingsStore((s) => s.sourceWordWrap);
@@ -118,9 +111,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { zoom: editorZoom } = useEditorZoom();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
-  const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
-  const isGitRepo = repo?.isGitRepo ?? false;
-  const copilotConnection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
   const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
@@ -242,7 +232,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   useCursorScrollGuard(scrollAreaRef);
 
-  const { renderedWidth } = useEditorResize({
+  useEditorResize({
     contentRef,
     scrollAreaRef,
     isProgrammaticScroll,
@@ -251,7 +241,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     activeTabFilePath: activeTab?.filePath,
     restoreScrollRatio,
   });
-  const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
 
@@ -282,7 +271,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   });
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
-  const { reviewActive, compareBranch } = useDiffReview(editor);
+  useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
   const hfEditStateRef = useRef(hfEditState);
@@ -393,16 +382,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
    */
   const cachedEditorStatesRef = useRef(new EditorStateCache());
 
-  // External change detection + inline diff review
-  const {
-    externalChangesAll,
-    changeListOpen,
-    setChangeListOpen,
-    handleExternalAcceptAll,
-    handleExternalRejectAll,
-    handleExternalAcceptHunk,
-    handleExternalRejectHunk,
-  } = useFileWatcherIntegration({
+  // External change detection + inline diff review. The hook drives
+  // auto-reload / inline-diff decorations via its own effects; its return
+  // values fed the removed StatusBar full variant (#415), so we call it for
+  // side effects only.
+  useFileWatcherIntegration({
     editor,
     activeTab: activeTab ?? null,
     cachedEditorStatesRef,
@@ -413,7 +397,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   });
 
   // Tab switch, scroll-to-tag/text, source↔WYSIWYG, page position
-  const { pageInfo } = useEditorTabSwitch({
+  useEditorTabSwitch({
     editor,
     activeTab: activeTab ?? null,
     cachedEditorStatesRef,
@@ -567,9 +551,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     );
   }
 
-  // Quiet Composer is the only layout — StatusBar always renders in "quiet" variant.
-  const statusBarVariant = "quiet" as const;
-
   // Show error state for tabs whose files could not be loaded from disk
   if (activeTab && activeTab.loadError) {
     return (
@@ -586,7 +567,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           <span className="text-xs max-w-md text-center break-words font-mono opacity-50">{activeTab.loadError}</span>
         </div>
         {!focusMode && (
-          <StatusBar editor={null} variant={statusBarVariant} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -600,7 +581,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           Loading...
         </div>
         {!focusMode && (
-          <StatusBar editor={null} variant={statusBarVariant} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -617,7 +598,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onOpenActions={onOpenActions}
         updateTabContent={updateTabContent}
         saveFile={saveFile}
-        statusBarVariant={statusBarVariant}
       />
     );
   }
@@ -773,18 +753,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       {!focusMode && (
         <StatusBar
           editor={editor}
-          maxWidth={maxWidth}
-          renderedWidth={renderedWidth}
-          variant={statusBarVariant}
           onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
           comments={commentOps.comments}
-          branchName={repo?.currentBranch ?? ""}
-          isGitRepo={gitEnabled && isGitRepo}
-          reviewActive={reviewActive}
-          compareBranch={compareBranch}
-          pageInfo={pageInfo}
-          commentListOpen={commentListOpen}
-          onCommentListOpenChange={setCommentListOpen}
           onSelectComment={(comment) => {
             if (activeTab?.viewMode === "source") {
               // Comments aren't rendered in source mode — offer to switch
@@ -822,14 +792,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               commentOps.setActiveComment(comment.id);
             }
           }}
-          externalChanges={externalChangesAll}
-          activeFilePath={activeTab?.filePath ?? null}
-          changeListOpen={changeListOpen}
-          onChangeListOpenChange={setChangeListOpen}
-          onAcceptAllChanges={handleExternalAcceptAll}
-          onRejectAllChanges={handleExternalRejectAll}
-          onAcceptHunk={handleExternalAcceptHunk}
-          onRejectHunk={handleExternalRejectHunk}
           onDelegateComment={async (comment) => {
             if (commentOps.commentKey && commentStorageRoot) {
               await delegateComment(comment, commentOps.commentKey, commentStorageRoot, 'delegate');
@@ -842,38 +804,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           }}
           canDelegate={canDelegate}
           viewMode={activeTab?.viewMode}
-          copilotActive={!!copilotConnection}
-          updateAvailable={updateAvailable}
-          updateVersion={updateVersion}
-          onUpdateClick={onUpdateClick}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
-          onSelectChange={(change, hunkIndex) => {
-            // Switch to the tab that has this file open and scroll to the specific hunk
-            const matchingTab = openDocuments.find((t) => t.filePath === change.filePath);
-            if (matchingTab) {
-              if (matchingTab.id === activeTabId) {
-                // Already on this tab — scroll to the specific hunk
-                if (editor) {
-                  try {
-                    const pmHunks = getInlineDiffHunks(editor);
-                    const targetHunk = pmHunks[hunkIndex] ?? pmHunks[0];
-                    if (targetHunk) {
-                      const dom = editor.view.domAtPos(targetHunk.from);
-                      const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
-                      node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                  } catch {
-                    // Ignore scroll errors
-                  }
-                }
-              } else {
-                useEditorStore.getState().setActiveTab(matchingTab.id);
-              }
-            } else if (onOpenFile) {
-              onOpenFile(change.filePath, change.fileName);
-            }
-          }}
         />
       )}
       <TranscriptionOverlay

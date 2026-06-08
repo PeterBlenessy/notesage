@@ -107,9 +107,14 @@ describe('StatusBar', () => {
     registerDefaultHandlers();
   });
 
-  it('renders without crash when editor is null', () => {
-    renderWithProviders(<StatusBar editor={null} />);
-    expect(screen.getByRole('status')).toBeTruthy();
+  it('renders the status strip when editor is null', () => {
+    const { container } = renderWithProviders(<StatusBar editor={null} />);
+    // Quiet Composer is the only shell — the strip root carries
+    // data-quiet-status + role="button" (#415 removed the legacy
+    // role="status" full variant).
+    const root = container.querySelector('[data-quiet-status]');
+    expect(root).toBeTruthy();
+    expect(root?.getAttribute('aria-label')).toBe('Open status tray');
   });
 
   it('shows word count when editor is provided', () => {
@@ -118,37 +123,7 @@ describe('StatusBar', () => {
     expect(screen.getByText('5 words')).toBeTruthy();
   });
 
-  it('shows reading time', () => {
-    const editor = createMockEditor({ text: 'Hello world test content yay' }) as Editor;
-    renderWithProviders(<StatusBar editor={editor} />);
-    expect(screen.getByText('1 min read')).toBeTruthy();
-  });
-
-  it('shows "Rich text" when viewMode is "wysiwyg"', () => {
-    const editor = createMockEditor() as Editor;
-    renderWithProviders(<StatusBar editor={editor} viewMode="wysiwyg" />);
-    expect(screen.getByText('Rich text')).toBeTruthy();
-  });
-
-  it('shows "Raw" when viewMode is "source"', () => {
-    const editor = createMockEditor() as Editor;
-    renderWithProviders(<StatusBar editor={editor} viewMode="source" />);
-    expect(screen.getByText('Raw')).toBeTruthy();
-  });
-
-  it('shows git branch name when isGitRepo and branchName provided', () => {
-    const editor = createMockEditor() as Editor;
-    renderWithProviders(
-      <StatusBar editor={editor} isGitRepo branchName="feature/test-branch" />,
-    );
-    expect(screen.getByText('feature/test-branch')).toBeTruthy();
-  });
-
-  it('shows page info when pageInfo provided', () => {
-    const editor = createMockEditor() as Editor;
-    renderWithProviders(
-      <StatusBar editor={editor} pageInfo={{ current: 3, total: 10 }} />,
-    );
-    expect(screen.getByText('page 3/10')).toBeTruthy();
-  });
+  // Reading time, inline viewMode (Rich text / Raw), git branch name, and page
+  // info were full-variant-only affordances removed in #415. ViewMode now lives
+  // in the StatusTray (covered by StatusTray.test.tsx); the rest are gone.
 });

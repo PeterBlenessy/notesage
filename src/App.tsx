@@ -650,9 +650,6 @@ function App() {
           onExportOpenChange={setExportOpen}
           outlineOpen={outlineOpen}
           onOutlineOpenChange={setOutlineOpen}
-          updateAvailable={!!updateState.updateInfo}
-          updateVersion={updateState.updateInfo?.version ?? null}
-          onUpdateClick={() => setUpdateDialogOpen(true)}
           onShortcutsOpen={() => setShortcutsOpen(true)}
           onOpenActions={() => emitCmdBarEvent({ type: "focus", prefix: "!" })}
           onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}

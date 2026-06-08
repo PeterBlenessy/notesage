@@ -1081,7 +1081,6 @@ describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab
       <EditorViewerContainer
         activeTab={tab1}
         focusMode={false}
-        statusBarVariant="quiet"
         updateTabContent={updateTabContent}
         saveFile={saveFile}
       />
@@ -1109,7 +1108,6 @@ describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab
       <EditorViewerContainer
         activeTab={tab2}
         focusMode={false}
-        statusBarVariant="quiet"
         updateTabContent={updateTabContent}
         saveFile={saveFile}
       />

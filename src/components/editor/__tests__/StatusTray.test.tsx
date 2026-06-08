@@ -561,13 +561,15 @@ describe('StatusTray — task #53', () => {
   // Local AI status dot — colour reflects server state
   // -------------------------------------------------------------------------
   //
-  // Strict-neutral palette: the dot stays greyscale (no chromatic green/amber)
-  // and distinguishes state via opacity. The only sanctioned chromatic token is
-  // `bg-destructive` for the error state. We assert via the `data-server-status`
-  // data attribute AND the class-list so the test survives Tailwind class
-  // ordering tweaks while still pinning the semantic mapping. The transitional
-  // (starting) pulse is gated on reduced motion — jsdom's matchMedia mock
-  // returns false (motion allowed), so the class is present in tests.
+  // Chromatic status palette (#415): these are semantic status indicators (a
+  // traffic-light for the local inference server), so they use status colours —
+  // green=running, amber=starting (pulse), red=error, muted=stopped. The dot
+  // here MUST match the always-visible quiet status strip dot byte-for-byte;
+  // both render from the shared `local-ai-dot` helper. We assert via the
+  // `data-server-status` data attribute AND the class-list so the test survives
+  // Tailwind class ordering tweaks while still pinning the semantic mapping. The
+  // transitional (starting) pulse is gated on reduced motion — jsdom's
+  // matchMedia mock returns false (motion allowed), so the class is present.
 
   function renderTrayWithStatus(status: 'stopped' | 'starting' | 'running' | 'error') {
     addConnection({
@@ -583,44 +585,41 @@ describe('StatusTray — task #53', () => {
     ) as HTMLElement | null;
   }
 
-  it('Local AI dot is faint neutral (idle) when the server is stopped', () => {
+  it('Local AI dot is faint muted (idle) when the server is stopped', () => {
     const dot = renderTrayWithStatus('stopped');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('stopped');
-    expect(dot?.className).toContain('bg-foreground/20');
+    expect(dot?.className).toContain('bg-muted-foreground/30');
     expect(dot?.className).not.toContain('bg-green');
     expect(dot?.className).not.toContain('bg-amber');
     expect(dot?.className).not.toContain('bg-red');
     expect(dot?.className).not.toContain('animate-pulse');
   });
 
-  it('Local AI dot is dim neutral and pulsing when the server is starting', () => {
+  it('Local AI dot is amber and pulsing when the server is starting', () => {
     const dot = renderTrayWithStatus('starting');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('starting');
-    expect(dot?.className).toContain('bg-foreground/40');
+    expect(dot?.className).toContain('bg-amber-500');
     expect(dot?.className).toContain('animate-pulse');
     expect(dot?.className).not.toContain('bg-green');
-    expect(dot?.className).not.toContain('bg-amber');
   });
 
-  it('Local AI dot is neutral foreground when the server is running', () => {
+  it('Local AI dot is green when the server is running', () => {
     const dot = renderTrayWithStatus('running');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('running');
-    expect(dot?.className).toContain('bg-foreground/60');
-    expect(dot?.className).not.toContain('bg-green');
+    expect(dot?.className).toContain('bg-green-500');
     expect(dot?.className).not.toContain('bg-amber');
     expect(dot?.className).not.toContain('animate-pulse');
   });
 
-  it('Local AI dot is destructive when the server reports an error', () => {
+  it('Local AI dot is red when the server reports an error', () => {
     const dot = renderTrayWithStatus('error');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('error');
-    expect(dot?.className).toContain('bg-destructive');
+    expect(dot?.className).toContain('bg-red-500');
     expect(dot?.className).not.toContain('bg-green');
-    expect(dot?.className).not.toContain('bg-red-500');
   });
 
   // -------------------------------------------------------------------------

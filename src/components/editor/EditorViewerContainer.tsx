@@ -31,16 +31,9 @@ interface EditorViewerContainerProps {
   updateTabContent?: (tabId: string, content: string, isDirty: boolean) => void;
   /** Save file to disk (for code file editing) */
   saveFile?: (filePath: string, content: string, tabId: string) => Promise<boolean>;
-  /**
-   * Which StatusBar variant to mount below the viewer. The app
-   * exclusively uses `"quiet"`; the `"full"` variant is retained as a
-   * fallback. `"quiet"` renders the same minimal status strip viewers
-   * (PDF, EPUB, DOCX, code, plain-text) share with the markdown editor.
-   */
-  statusBarVariant?: "full" | "quiet";
 }
 
-export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile, statusBarVariant = "full" }: EditorViewerContainerProps) {
+export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile }: EditorViewerContainerProps) {
   const isHtml = isHtmlViewerFile(activeTab.fileName);
   const [htmlSourceMode, setHtmlSourceMode] = useState(false);
   const toggleHtmlSourceMode = useCallback(() => setHtmlSourceMode((v) => !v), []);
@@ -125,7 +118,6 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
       {!focusMode && (
         <StatusBar
           editor={null}
-          variant={statusBarVariant}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
           viewMode={isHtml ? (htmlSourceMode ? "source" : "wysiwyg") : undefined}

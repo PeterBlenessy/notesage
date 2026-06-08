@@ -40,6 +40,7 @@ import type { ViewMode } from "@/lib/file-utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { MicButton } from "./toolbar/MicButton";
 import { CommentList } from "./CommentListPopover";
+import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
 
 /**
  * Inline completion icon — italic T with sparkle trail. Mirrors the
@@ -544,27 +545,10 @@ function SessionGroup() {
   );
   if (!hasConnection) return null;
 
-  // Server-state-driven dot. Strict-neutral palette: running → neutral
-  // foreground, starting → dimmer foreground (transitional) with a pulse
-  // gated on reduced motion, error → destructive, stopped → faint muted.
-  // States stay distinguishable via opacity + the tooltip/label below.
-  const dot =
-    serverStatus === "running"
-      ? "bg-foreground/60"
-      : serverStatus === "starting"
-        ? cn("bg-foreground/40", !reducedMotion && "animate-pulse")
-        : serverStatus === "error"
-          ? "bg-destructive"
-          : "bg-foreground/20";
-
-  const statusLabel =
-    serverStatus === "running"
-      ? "Running"
-      : serverStatus === "starting"
-        ? "Starting"
-        : serverStatus === "error"
-          ? "Error"
-          : "Stopped";
+  // Server-state-driven dot + label come from the shared helper so this dot
+  // and the quiet status strip's Local AI dot can never drift (issue #415).
+  const dot = localAiDotClass(serverStatus, reducedMotion);
+  const statusLabel = localAiStatusLabel(serverStatus);
 
   const downloadedModels = models.filter((m) => m.downloaded);
 
