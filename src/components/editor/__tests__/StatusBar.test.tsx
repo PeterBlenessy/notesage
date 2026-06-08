@@ -69,6 +69,7 @@ function resetAmbientDotStores() {
   });
   useRecordingStore.setState({
     isRecording: false,
+    activeDownloads: {},
   });
   useSettingsStore.setState({
     inlineCompletionsDisabled: false,
@@ -126,7 +127,7 @@ function openTab(path: string, fileName: string, lastSavedAt?: number) {
 // the quiet-composer layout; clicking or pressing Enter/Space calls
 // `onOpenTray` (the tray popover itself lands in task #53).
 
-describe('StatusBar — variants', () => {
+describe('StatusBar', () => {
   beforeEach(() => {
     registerDefaultHandlers();
     resetEditorStore();
@@ -141,54 +142,15 @@ describe('StatusBar — variants', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Full variant (legacy) — regression checks
+  // The status strip (Quiet Composer is the only shell — #415 removed the
+  // legacy "full" variant; StatusBar is always the quiet strip now)
   // -------------------------------------------------------------------------
-  describe('variant="full" (default, legacy)', () => {
-    it('renders legacy word-count label when an editor is provided', () => {
-      const editor = createMockEditor({ text: 'hello world' }) as unknown as Editor;
-      const { container } = renderWithProviders(<StatusBar editor={editor} />);
-
-      const text = container.textContent ?? '';
-      expect(text).toContain('2 words');
-      expect(text).toMatch(/min read/);
-    });
-
-    it('does not mark the root as the quiet strip', () => {
-      const editor = createMockEditor({ text: 'a' }) as unknown as Editor;
-      const { container } = renderWithProviders(<StatusBar editor={editor} />);
-
-      expect(container.querySelector('[data-quiet-status]')).toBeNull();
-    });
-
-    it('explicit variant="full" matches default behaviour', () => {
-      const editor = createMockEditor({ text: 'one two three' }) as unknown as Editor;
-      const { container } = renderWithProviders(<StatusBar editor={editor} variant="full" />);
-
-      expect(container.textContent ?? '').toContain('3 words');
-      expect(container.querySelector('[data-quiet-status]')).toBeNull();
-    });
-
-    it('renders the editor=null placeholder strip (shortcuts button visible)', () => {
-      const onShortcutsOpen = vi.fn();
-      const { container } = renderWithProviders(
-        <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} />,
-      );
-
-      // Status role present, no quiet-status slot.
-      expect(container.querySelector('[role="status"]')).toBeTruthy();
-      expect(container.querySelector('[data-quiet-status]')).toBeNull();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Quiet variant (task #52)
-  // -------------------------------------------------------------------------
-  describe('variant="quiet"', () => {
+  describe('status strip', () => {
     it('root is tagged with data-quiet-status and role="button"', () => {
       const editor = createMockEditor({ text: 'hello' }) as unknown as Editor;
       openTab('/x/y.md', 'y.md');
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       const root = container.querySelector('[data-quiet-status]') as HTMLElement | null;
@@ -200,7 +162,7 @@ describe('StatusBar — variants', () => {
     it('reserves an empty dot slot for task #54', () => {
       const editor = createMockEditor({ text: 'hi' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       const slot = container.querySelector('[data-status-dots]');
@@ -217,7 +179,7 @@ describe('StatusBar — variants', () => {
       // open, so the label is absent.
       const editor = createMockEditor({ text: 'one two three four five' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       const text = container.textContent ?? '';
@@ -232,7 +194,7 @@ describe('StatusBar — variants', () => {
     it('uses the singular "word" label for a single word', () => {
       const editor = createMockEditor({ text: 'solo' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       expect(container.textContent ?? '').toContain('1 word');
@@ -248,7 +210,7 @@ describe('StatusBar — variants', () => {
       openTab('/p/file.md', 'file.md', Date.now() - 3_000);
 
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       expect(container.textContent ?? '').toMatch(/saved \d+s ago/);
@@ -259,7 +221,7 @@ describe('StatusBar — variants', () => {
       // stale dash for "no document".
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
 
       expect(container.textContent ?? '').not.toMatch(/saved \d+s ago/);
@@ -272,7 +234,7 @@ describe('StatusBar — variants', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const onOpenTray = vi.fn();
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" onOpenTray={onOpenTray} />,
+        <StatusBar editor={editor} onOpenTray={onOpenTray} />,
       );
 
       const root = container.querySelector('[data-quiet-status]') as HTMLElement;
@@ -284,7 +246,7 @@ describe('StatusBar — variants', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const onOpenTray = vi.fn();
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" onOpenTray={onOpenTray} />,
+        <StatusBar editor={editor} onOpenTray={onOpenTray} />,
       );
 
       const root = container.querySelector('[data-quiet-status]') as HTMLElement;
@@ -305,7 +267,7 @@ describe('StatusBar — variants', () => {
     // ---------------------------------------------------------------------
     it('does not mount the StatusTray popover content until the strip is clicked', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      renderWithProviders(<StatusBar editor={editor} variant="quiet" />);
+      renderWithProviders(<StatusBar editor={editor} />);
       // Radix renders Popover content in a portal — inspect document.body.
       expect(document.body.textContent ?? '').not.toContain('Completions');
     });
@@ -313,7 +275,7 @@ describe('StatusBar — variants', () => {
     it('mounts the StatusTray popover after the strip is clicked', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const strip = container.querySelector('[data-quiet-status]') as HTMLElement;
       fireEvent.click(strip);
@@ -330,7 +292,7 @@ describe('StatusBar — variants', () => {
   // -------------------------------------------------------------------------
   // Ambient dots (task #54)
   // -------------------------------------------------------------------------
-  describe('variant="quiet" — ambient dots', () => {
+  describe('ambient dots', () => {
     beforeEach(() => {
       resetAmbientDotStores();
     });
@@ -351,7 +313,7 @@ describe('StatusBar — variants', () => {
     it('renders no dots when no local_bundled connection AND not recording', () => {
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const slot = container.querySelector('[data-status-dots]') as HTMLElement;
       expect(slot).toBeTruthy();
@@ -369,11 +331,11 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('data-tone')).toBe('green');
+      expect(dots[0].className).toContain('bg-green-500');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
       expect(dots[0].getAttribute('aria-label')).toContain('Session');
     });
@@ -389,11 +351,11 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('data-tone')).toBe('amber');
+      expect(dots[0].className).toContain('bg-amber-500');
       // Amber tone uses `animate-pulse` to match the popover starting state.
       expect(dots[0].className).toContain('animate-pulse');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI starting');
@@ -410,11 +372,11 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('data-tone')).toBe('red');
+      expect(dots[0].className).toContain('bg-red-500');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI error');
     });
 
@@ -429,11 +391,11 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('data-tone')).toBe('muted');
+      expect(dots[0].className).toContain('bg-muted-foreground/30');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI stopped');
     });
 
@@ -450,25 +412,25 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       expect(
         container.querySelectorAll('[data-status-dots] button').length,
       ).toBe(0);
     });
 
-    it('renders a RED dot when recording-store.isRecording is true', () => {
+    it('does NOT render a dot for recording alone — the AgentOrb owns that now (#415)', () => {
       useRecordingStore.setState({ isRecording: true });
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      expect(dots.length).toBe(1);
-      expect(dots[0].getAttribute('data-tone')).toBe('red');
-      expect(dots[0].getAttribute('aria-label')).toContain('Recording active');
-      expect(dots[0].getAttribute('aria-label')).toContain('Session');
+      // No local AI, no background activity — recording is no longer surfaced
+      // on the strip, so the dot slot stays empty.
+      expect(
+        container.querySelectorAll('[data-status-dots] button').length,
+      ).toBe(0);
     });
 
     it('clicking the local-AI dot opens the tray scrolled to the Session group', () => {
@@ -482,7 +444,7 @@ describe('StatusBar — variants', () => {
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} />,
       );
       expect(document.body.textContent ?? '').not.toContain('Completions');
       const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
@@ -496,22 +458,7 @@ describe('StatusBar — variants', () => {
       expect(text).toContain('Local AI');
     });
 
-    it('clicking a dot does not also trigger the strip click (no double-fire of onOpenTray)', () => {
-      useRecordingStore.setState({ isRecording: true });
-      const onOpenTray = vi.fn();
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" onOpenTray={onOpenTray} />,
-      );
-      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
-      fireEvent.click(dot);
-      // A bubbling click would fire onOpenTray twice (once from the dot, once
-      // from the strip). stopPropagation in StatusDot must prevent that.
-      expect(onOpenTray).toHaveBeenCalledTimes(1);
-    });
-
-    it('renders both the local-AI dot and the recording dot when both signals are live', () => {
+    it('clicking the dot does not also trigger the strip click (no double-fire of onOpenTray)', () => {
       addConnection({
         id: 'c-local',
         provider: 'local_ai',
@@ -519,19 +466,82 @@ describe('StatusBar — variants', () => {
         label: 'Local AI',
       });
       useLocalAIStore.setState({ serverStatus: 'running' });
-      useRecordingStore.setState({ isRecording: true });
+      const onOpenTray = vi.fn();
 
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
-        <StatusBar editor={editor} variant="quiet" />,
+        <StatusBar editor={editor} onOpenTray={onOpenTray} />,
       );
-      const dots = Array.from(
-        container.querySelectorAll('[data-status-dots] button'),
-      );
-      const labels = dots.map((d) => d.getAttribute('aria-label') ?? '');
-      expect(labels.length).toBe(2);
-      expect(labels.some((l) => l.includes('Local AI running'))).toBe(true);
-      expect(labels.some((l) => l.includes('Recording active'))).toBe(true);
+      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
+      fireEvent.click(dot);
+      // A bubbling click would fire onOpenTray twice (once from the dot, once
+      // from the strip). stopPropagation in StatusDot must prevent that.
+      expect(onOpenTray).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Dual-indicator progress ring (#415) — background activity (indexing /
+  // model downloads) fills a ring around the SAME status dot.
+  // -------------------------------------------------------------------------
+  describe('background-activity progress ring', () => {
+    beforeEach(() => {
+      resetAmbientDotStores();
+    });
+
+    it('shows an activity dot with a progress ring when a model is downloading (no local AI)', () => {
+      useRecordingStore.setState({ activeDownloads: { base: { progress: 50 } } });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(<StatusBar editor={editor} />);
+
+      const dot = container.querySelector('[data-status-dots] button') as HTMLElement | null;
+      expect(dot).toBeTruthy();
+      // Neutral fill (no local AI) + a ring at ~50%.
+      expect(dot?.className).toContain('bg-muted-foreground/30');
+      expect(dot?.getAttribute('data-progress')).toBe('50');
+      expect(dot?.querySelector('svg')).toBeTruthy();
+      expect(dot?.getAttribute('aria-label')).toContain('Downloading');
+      expect(dot?.getAttribute('aria-label')).toContain('status tray');
+    });
+
+    it('wraps the Local AI dot with the ring when both local AI and a download are live', () => {
+      addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      useLocalAIStore.setState({ serverStatus: 'running' });
+      useRecordingStore.setState({ activeDownloads: { base: { progress: 25 } } });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(<StatusBar editor={editor} />);
+
+      const dots = container.querySelectorAll('[data-status-dots] button');
+      // Still ONE dot — the ring wraps the existing Local AI dot (dual indicator).
+      expect(dots.length).toBe(1);
+      expect(dots[0].className).toContain('bg-green-500');
+      expect(dots[0].getAttribute('data-progress')).toBe('25');
+      expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
+      expect(dots[0].getAttribute('aria-label')).toContain('Downloading');
+    });
+
+    it('shows no ring when there is no background activity', () => {
+      addConnection({
+        id: 'c-local',
+        provider: 'local_ai',
+        authMethod: 'local_bundled',
+        label: 'Local AI',
+      });
+      useLocalAIStore.setState({ serverStatus: 'running' });
+
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { container } = renderWithProviders(<StatusBar editor={editor} />);
+
+      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
+      expect(dot.getAttribute('data-progress')).toBeNull();
+      expect(dot.querySelector('svg')).toBeNull();
     });
   });
 });

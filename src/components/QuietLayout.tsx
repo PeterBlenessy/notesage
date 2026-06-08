@@ -60,10 +60,6 @@ export interface QuietLayoutProps {
   // Outline
   outlineOpen: boolean;
   onOutlineOpenChange: (open: boolean) => void;
-  // Update
-  updateAvailable: boolean;
-  updateVersion: string | null;
-  onUpdateClick: () => void;
   // Misc
   onShortcutsOpen: () => void;
   onOpenActions: () => void;
@@ -124,9 +120,6 @@ export function QuietLayout(props: QuietLayoutProps) {
     onExportOpenChange,
     outlineOpen,
     onOutlineOpenChange,
-    updateAvailable,
-    updateVersion,
-    onUpdateClick,
     onShortcutsOpen,
     onOpenActions,
     focusMode: focusModeProp,
@@ -421,9 +414,6 @@ export function QuietLayout(props: QuietLayoutProps) {
                   focusMode={editorFocusMode}
                   outlineOpen={outlineOpen}
                   onOutlineOpenChange={onOutlineOpenChange}
-                  updateAvailable={updateAvailable}
-                  updateVersion={updateVersion}
-                  onUpdateClick={onUpdateClick}
                   onShortcutsOpen={onShortcutsOpen}
                   onOpenActions={onOpenActions}
                 />
