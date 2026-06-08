@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.19",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0",
+      "sections": {},
+      "underTheHood": [
+        "fix(startup): enter a Tokio runtime before the Tauri builder (alpha.17/18 launch crash) (#432)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.18",
       "date": "2026-06-08",
       "previousVersion": "0.46.0",
