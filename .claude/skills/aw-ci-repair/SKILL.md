@@ -1,3 +1,8 @@
+---
+name: aw-ci-repair
+description: CI-repair stage of the AW pipeline. Diagnoses a red CI on a bot-authored draft PR and applies a single bounded, well-understood mechanical fix (one attempt only); posts a comment for any failure pattern it cannot safely repair.
+---
+
 # aw-ci-repair
 
 Auto-repair recurring CI perf-budget flakes on bot-authored draft PRs. Narrow, safe, one-attempt-only.

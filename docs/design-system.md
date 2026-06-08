@@ -88,7 +88,7 @@ return (
 - `src/components/activity/AgentOrb.tsx`
 - `src/components/cmd/FloatingCommandBar.tsx`
 - `src/components/CommitDialog.tsx`
-- `src/components/editor/BlockSizeToolbar.tsx`
+- `src/components/TitleBar.tsx`
 
 **Anti-patterns:**
 

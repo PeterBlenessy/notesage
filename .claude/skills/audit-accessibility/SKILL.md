@@ -158,6 +158,8 @@ For each finding:
 **Fix:** <Remediation with code example.>
 ```
 
+End with a `### Confirmed Good Patterns` section.
+
 ## Example Finding
 
 ### MEDIUM: Icon-only toolbar buttons missing aria-label

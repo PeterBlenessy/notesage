@@ -277,7 +277,7 @@ The first line MUST be a GitHub auto-close line — `Fixes #<issue-number>` for 
 
 - Pick from `tdd` + `afk` + `refined` + category (sub-issues created by `aw-slice`).
 - The retrospective workflow runs after merge — do not write retro entries from here.
-- If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.
+- If a subtask is too large to fit one PR (>500 lines diff OR >15 files — the same budget `aw-slice` uses), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.
 
 ## Most-relevant feedback rules for this skill
 

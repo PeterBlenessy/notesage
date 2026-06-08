@@ -4,7 +4,23 @@
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.46.0-alpha.12 (ships on an alpha pre-release channel)
+**Current version:** see the `version` field in `package.json` (ships on an alpha pre-release channel). Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
+
+## Autonomy
+
+Default: act on anything reversible and cheap. Read, edit, run tests, research, draft, experiment locally. Do it, then report.
+
+Ask first only for:
+1. **Ships outward:** deploy, publish, send, post, **push a branch, open a PR, merge to main** — or anything users/collaborators will see.
+2. **Real spend:** estimated cost over $10. Big batch jobs, new infra, paid runs at scale.
+3. **Irreversible:** deleting or overwriting work you didn't create, force-push, dropping data.
+4. **Commit / "done":** I tend to call work done before it is. Always show the diff + what's still open and wait for an explicit go before committing. This overrides "reversible → act" — the gate is about completeness, not safety.
+
+Reversible + cheap → act, then report. Otherwise → ask first.
+
+**"Done" means:** acceptance criteria met, tests + typecheck green, self-reviewed for obvious bugs, and no known gaps quietly deferred. If any of those is unmet, say what's left — don't say "done."
+
+**Review/audit mode:** when asked to review, investigate, or audit, report findings only — don't act on them (even reversible edits) until told to proceed.
 
 ## Tech Stack
 

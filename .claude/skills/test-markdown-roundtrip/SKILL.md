@@ -1,6 +1,7 @@
 ---
 name: test-markdown-roundtrip
 description: Use when modifying markdown parsing, serialization, Tiptap schema changes, or any code that affects how markdown is converted to/from the ProseMirror document model.
+user-invocable: true
 ---
 
 # Markdown Round-Trip Integrity

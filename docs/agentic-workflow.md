@@ -1,6 +1,6 @@
 # Agentic Workflow (AW)
 
-The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Eight Claude Code skills, ten GitHub Actions workflows, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed. Every bot-authored draft PR is independently reviewed by `aw-review` before being marked ready for human review.
+The AW pipeline turns a fresh GitHub issue into a reviewed pull request, autonomously, with TDD discipline and human review gates. Nine Claude Code skills, coordinated through a label state machine. Human feedback is a first-class loop — comments on hitl-labeled issues or PRs route the agent back to any earlier stage as needed. Every bot-authored draft PR is independently reviewed by `aw-review` before being marked ready for human review.
 
 Skill rules live in `.claude/skills/aw-<name>/SKILL.md` (the source of truth for agent behavior). Design choices and rationale in [agentic-workflow-rationale.md](agentic-workflow-rationale.md).
 
@@ -15,7 +15,7 @@ Skill rules live in `.claude/skills/aw-<name>/SKILL.md` (the source of truth for
 ## Non-goals
 
 - **Replacing human review.** Every PR opens as a draft. Every skill patch opens as a draft. Humans still merge.
-- **Implementing arbitrary user requests at scale.** AW assumes one PR fits a shippable unit of user value. If too large, aw-slice splits it into peer issues — each must still ship something useful. Larger work needs human planning.
+- **Implementing arbitrary user requests at scale.** AW assumes one PR fits a shippable unit of user value. If an issue delivers N independent values, aw-slice splits it into peer issues — each must still ship something useful. If it delivers one value too large for a single TDD run, aw-slice splits it into sequential phased child issues instead. Larger work needs human planning.
 - **Cross-repo coordination.** One repo at a time today. Multi-repo features are open future work.
 
 ## Stack
@@ -107,6 +107,7 @@ Labels are the state of the system.
 | --- | --- | --- | --- |
 | `refine` | aw-refine should pick up | aw-triage | aw-refine |
 | `slice` | aw-slice should pick up | aw-refine (or human after research) | aw-slice |
+| `sliced` | parent has been split — into peer issues, or into sequential phased child issues | aw-slice (slice path + phased-child path) | human |
 | `awaiting-research` | paused on research peer | aw-slice (research path) | human |
 | `awaiting-prototypes` | paused on prototype peers — user picks the winner | aw-slice (prototype-peers path) | human |
 | `tdd` | aw-tdd should pick up | aw-slice | aw-tdd |
@@ -136,7 +137,7 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 | --- | --- | --- | --- |
 | `aw-triage` | Classify, dedup, close-or-categorize | issue opened, or cron | category + `refine`, OR closed as duplicate/wontfix |
 | `aw-refine` | Rewrite body to outcome template (bug / enhancement / chore variants); record any assumptions made about silent / ambiguous specs | `refine` label set | `+ refined`, `+ slice` (default), OR comment-and-stop with `refine` left in place if the input is unintelligible |
-| `aw-slice` | Decide one PR vs N peer issues vs research vs prototype peers; propose answers to open questions | `slice` label set | one of: `+ tdd` + `afk` (with `## Proposed answers` for any open questions; default), OR `+ tdd` + `hitl` (only when the four narrow `hitl` criteria apply), OR N peer issues + first slice = original, OR `+ awaiting-research`, OR N prototype peers + `+ awaiting-prototypes` |
+| `aw-slice` | Decide one PR vs N peer issues vs N phased child issues vs research vs prototype peers; propose answers to open questions | `slice` label set | one of: `+ tdd` + `afk` (with `## Proposed answers` for any open questions; default), OR `+ tdd` + `hitl` (only when the four narrow `hitl` criteria apply), OR N peer issues + first slice = original + `+ sliced`, OR N phased child issues (GraphQL `addSubIssue` link) + `+ sliced`, OR `+ awaiting-research`, OR N prototype peers + `+ awaiting-prototypes` |
 | `aw-tdd` | TDD red-green-refactor + draft PR; carries assumptions / proposed answers / implementation-time decisions into the PR body's `## Decisions made` | `tdd + afk + refined + category` | `+ review`, draft PR |
 | `aw-review` | Independent review of a bot-authored draft PR — checks the issue body PLUS comments after `refined` against the diff and tests; flags qualitative criteria for human visual review | `pull_request.opened` for bot-authored draft PR | per-criterion checklist comment; clean → `gh pr ready`; gaps → close PR + reset to `tdd + afk` (max 2 retries) |
 | `aw-feedback` | Interpret human comment on hitl issue or bot PR; redirect pipeline accordingly | `issue_comment.created` on hitl issue, or `pull_request_review.submitted` / PR comment on bot-authored PR | label change (approve / reset to refine, slice, or tdd) OR dispatch `aw-iterate` for small code changes |
@@ -147,8 +148,9 @@ Each skill is a markdown file with action rules. Workflows just point the agent 
 **The slice decision** is the most important skill rule. aw-slice asks: "what user values does this issue deliver?" Each value is a sentence "User can \[observable behaviour\]." Then:
 
 - **0 values** → comment-and-stop (issue is internal-only).
-- **1 value** (the common case) → don't slice. Mark the issue `tdd + (afk|hitl)` and pass to aw-tdd.
-- **N independent values** → split into peer issues. Original becomes the first slice (rewrite body). Create N-1 new peers.
+- **1 value, normal scope** (the common case — estimated ≤15 files AND ~500 lines) → don't slice. Mark the issue `tdd + (afk|hitl)` and pass to aw-tdd.
+- **1 value, too large for one TDD run** (estimated >15 files OR >~500 lines, splittable into 3+ coherent sequential phases) → split into **phased child issues**. These ARE real parent/child links via the GraphQL `addSubIssue` mutation. Each child is one phase, lands in order (`Depends on:` markers), and produces one PR. Parent gets `sliced`. Default to NOT using this path — most large-looking issues are one phase.
+- **N independent values** → split into **peer issues** (NOT sub-issues — no parent/child link). Original becomes the first slice (rewrite body). Create N-1 new peers, each with `Split from #<original>` in the body. Parent gets `sliced`.
 
 The unit is **user value**, not "issue" and not "layer." A PR that delivers half a value (settings store field with no consumer) is not a unit on its own — it ships INSIDE the PR that delivers the value it enables.
 
@@ -299,7 +301,8 @@ The full history of architectural pivots and the reasoning behind each decision 
 - **AW** — Agentic Workflow. The pipeline described in this doc.
 - **Action label** — mutually-exclusive label that says "what's needed next" (`refine`, `slice`, `tdd`, etc.).
 - **State marker** — label that accumulates as the pipeline progresses (`refined`).
-- **Peer issue** — an issue created by aw-slice's split, sibling to the original. No parent/child link.
+- **Peer issue** — an issue created by aw-slice's multi-value split, sibling to the original. No parent/child link; the relationship lives in the body text (`Split from #<original>` / `Spawned from #<original>`), queryable via `gh issue list --search`.
+- **Phased child issue** — an issue created by aw-slice's phased-child path (one user value too large for a single TDD run). Unlike peer issues, these DO have a real parent/child link via the GraphQL `addSubIssue` mutation, visible in the GitHub UI. Each child is one sequential phase (`<parent title> — Phase N: …`, body opens `Child of #<parent>`, `Depends on:` its predecessor).
 - **Research peer** — a peer issue with title `Research: <question>` created when aw-slice can't slice confidently.
 - **HITL** — human in the loop. `hitl`-labeled issue waits for human approval before aw-tdd runs.
 - **AFK** — agent-OK-to-run-autonomously. `afk`-labeled issue is picked up by aw-tdd without approval.

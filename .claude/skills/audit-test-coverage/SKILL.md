@@ -160,7 +160,7 @@ counting first — the inventory step must precede the verdict.
 
 ## Output Format
 
-Start with an overview table:
+Start with an overview table. Fill in the actual counts you find — the row values below are placeholders (`N`/`M`), not real numbers. Count every test type that exists in the repo (the codebase has Playwright E2E in `e2e/` and WebDriverIO real-E2E in `e2e-real/`, so those rows should reflect real counts, not zero):
 
 ```markdown
 ### Test Inventory
@@ -170,8 +170,9 @@ Start with an overview table:
 | Unit (TypeScript) | N | M | src/lib/, src/hooks/ |
 | Round-trip | N | M | Markdown parse/serialize |
 | Rust unit | N | M | src-tauri/src/ |
-| Integration | 0 | 0 | None |
-| End-to-end | 0 | 0 | None |
+| Integration | N | M | <where, or "None"> |
+| End-to-end (Playwright) | N | M | e2e/ |
+| End-to-end (WebDriverIO) | N | M | e2e-real/ |
 ```
 
 Then list critical untested paths:
@@ -183,6 +184,8 @@ The app has no E2E test suite. User-facing flows (open folder → edit file → 
 
 **Recommendation:** Add Playwright or Tauri's built-in WebDriver test support for critical flows.
 ```
+
+End with a `### Confirmed Good Patterns` section.
 
 ## Example Finding
 

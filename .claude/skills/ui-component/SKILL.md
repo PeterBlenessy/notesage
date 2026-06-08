@@ -15,32 +15,49 @@ pnpm dlx shadcn@latest add <component-name>
 
 ### Common Components → shadcn/ui Mapping
 
-| Need | shadcn/ui component | DON'T build custom |
-|------|---------------------|-------------------|
-| Buttons | `button` | ❌ custom `<MyButton>` |
-| Dropdowns | `dropdown-menu` | ❌ custom dropdown |
-| Right-click menus | `context-menu` | ❌ custom context menu |
-| Modals/dialogs | `dialog` + `alert-dialog` | ❌ custom modal |
-| Tab bar | `tabs` | ❌ custom tab component |
-| Tooltips | `tooltip` | ❌ custom tooltip |
-| Toasts/notifications | `sonner` | ❌ custom toast |
-| Text inputs | `input` | ❌ custom input |
-| Search/filter | `command` (cmdk) | ❌ custom search |
-| Toggle switches | `switch` | ❌ custom toggle |
-| Select/combobox | `select` or `combobox` | ❌ custom select |
-| Separators | `separator` | ❌ custom `<hr>` |
-| Scroll areas | `scroll-area` | ❌ custom scrollbar |
-| Resizable panels | `resizable` | ❌ custom splitter |
-| Popovers | `popover` | ❌ custom floating div |
-| Progress indicators | `progress` | ❌ custom progress bar |
-| Skeleton loaders | `skeleton` | ❌ custom loading state |
-| Breadcrumbs | `breadcrumb` | ❌ custom breadcrumb |
-| File/folder tree | `collapsible` + custom tree | ❌ fully custom tree |
+The full mapping table lives in `docs/design-system.md` ("Component Strategy —
+USE SHADCN/UI FIRST"). Don't duplicate it here — read it before scaffolding.
+A few quick reminders for the common cases:
+
+- Buttons → `button`; dropdowns → `dropdown-menu`; right-click → `context-menu`
+- Dialogs → `dialog` + `alert-dialog`; tooltips → `tooltip` (see provider rule
+  below); toasts → `sonner`; popovers → `popover`
+- Search/filter → `command` (cmdk); select → `select`; switch → `switch`
+- Resizable panels → `resizable`; scroll areas → `scroll-area`
+
+App-specific notes:
+
+- There is **no document tab bar** — the Classic Layout's `TabBar` was deleted.
+  Quiet Composer is a single-document shell; the active document surfaces in
+  `TitleBar`, not a tab strip. Don't build a document tab strip. (The shadcn
+  `tabs` primitive itself is still fine for in-dialog tabbed content — e.g.
+  `ImageInsertDialog.tsx`'s URL/Upload tabs; it just isn't used for documents.)
+- File/folder tree → `collapsible` + custom tree (the flat `QuietSidebar`
+  sections + the in-sidebar inline `→`-expand one-level peek via `FolderPeek`,
+  not a fully custom tree). There is no `TreeOverlay` — it was removed in
+  sidebar-simplification; deeper subtrees are reached on demand inline.
 
 ## Step 2: Check Radix UI Primitives
 
 If shadcn/ui doesn't have it, check Radix UI primitives before building from scratch:
 - https://www.radix-ui.com/primitives
+
+## Radix Tooltip — `<TooltipProvider>` Is Mandatory
+
+**Every `<Tooltip>` MUST live inside a `<TooltipProvider>` ancestor.** Radix
+`Tooltip` reads its config from the provider's React context — without it, the
+component throws `Tooltip must be used within TooltipProvider` at render time
+and the editor's ErrorBoundary catches the crash. This rule has been violated
+multiple times in this repo (see `docs/design-system.md` §"Radix Tooltip").
+
+- Self-contained component (toolbar, popover, isolated widget) → wrap its own
+  outer element in `<TooltipProvider>`. Don't rely on a parent providing one.
+- A tree of tooltip-using components → one provider near the layout root.
+- Testing a tooltip-bearing component in isolation → add the provider to the
+  test render (or wrap it inside the component).
+
+Reference implementations that wrap their own provider: `AgentOrb.tsx`,
+`FloatingCommandBar.tsx`, `CommitDialog.tsx`, `TitleBar.tsx`.
 
 ## Step 3: Style with Tailwind + CSS Variables
 
@@ -111,10 +128,11 @@ src/components/<category>/<ComponentName>.tsx
 
 **Categories:**
 - `editor/` — Tiptap editor components
-- `sidebar/` — File tree and sidebar
-- `tabs/` — Tab bar
-- `settings/` — Settings UI
-- `chat/` — AI chat panel
+- `sidebar/` — file tree and sidebar (`sidebar/quiet/` for Quiet Composer)
+- `cmd/` — floating command bar (Quiet Composer chat surface)
+- `settings/` — settings UI (`settings/v2/` for the current shell)
+- `chat/` — AI chat message + segment components
+- `activity/` — agent orb + panel
 - Generic: `src/components/<ComponentName>.tsx`
 
 ### Props Interface
@@ -139,32 +157,41 @@ export { ComponentName } from './ComponentName';
 
 ```tsx
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Settings } from 'lucide-react';
 
 export function SettingsButton() {
+  // TooltipProvider is mandatory — wrap it here so the component never crashes
+  // when rendered without an ambient provider.
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="transition-all duration-150 hover:scale-105"
-        >
-          <Settings className="h-4 w-4" strokeWidth={1.5} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>Settings</p>
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="transition-all duration-150 hover:scale-105"
+          >
+            <Settings className="h-4 w-4" strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Settings</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 ```
 
 ## Reference
 
-Read @docs/design-system.md for:
+Read `docs/design-system.md` for:
 - Full color palette and CSS variable names
 - Typography specs (fonts, sizes, weights)
 - Spacing and layout guidelines

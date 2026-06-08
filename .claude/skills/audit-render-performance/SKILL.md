@@ -140,17 +140,17 @@ End with a `### Confirmed Good Patterns` section noting components that use sele
 
 ## Example Finding
 
-### HIGH: Sidebar — 11 fields destructured from workspace store
+### HIGH: QuietSidebar — whole-store destructure subscribes to every field
 
-**File:** `src/components/sidebar/Sidebar.tsx:27-39`
+**File:** `src/components/sidebar/quiet/QuietSidebar.tsx`
 
 ```typescript
-const { explorerFolders, addExplorerFolder, projects, removeProject,
-  notesTree, explorerCollapsed, projectsCollapsed, notesCollapsed,
-  setExplorerCollapsed, setProjectsCollapsed, setNotesCollapsed } = useWorkspaceStore();
+// Illustrative anti-pattern — destructuring the whole store
+const { projects, addProject, removeProject, notesTree,
+  pendingCreate, pendingCreateProject, setPendingCreate } = useWorkspaceStore();
 ```
 
-Sidebar is always visible. Any workspace state change (file tree update, collapse toggle, project addition) triggers a full re-render of the sidebar and all its children.
+The QuietSidebar is always visible. Destructuring the whole store subscribes the component to every field — any workspace state change (file tree update, project addition, unrelated flag flip) triggers a full re-render of the sidebar and all its children.
 
 **Fix:** Use individual selectors:
 ```typescript

@@ -137,6 +137,8 @@ For each finding:
 **Fix:** <How to improve the user experience.>
 ```
 
+End with a `### Confirmed Good Patterns` section.
+
 ## Example Finding
 
 ### MEDIUM: AI provider error shows raw error string
