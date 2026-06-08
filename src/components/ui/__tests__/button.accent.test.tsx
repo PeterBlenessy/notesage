@@ -31,6 +31,28 @@ describe('Button — accent wiring (UI Refresh #6)', () => {
     expect(btn.className).toContain('focus-visible:border-[var(--color-accent-primary)]');
   });
 
+  it('default variant label uses --color-on-accent (white on accent, macOS-style)', () => {
+    const { container } = renderWithProviders(<Button>Save</Button>);
+    const btn = container.querySelector('button[data-slot="button"]')!;
+    // Label/icon colour must go through --color-on-accent — white on a chromatic
+    // accent in BOTH themes (matching the white glyph), NOT
+    // --color-primary-foreground, which is dark in dark mode → black-on-accent.
+    expect(btn.className).toContain('text-[var(--color-on-accent)]');
+    expect(btn.className).not.toContain('text-primary-foreground');
+  });
+
+  it('disabled default variant keeps on-accent text (dimmed via opacity, not greyed)', () => {
+    const { container } = renderWithProviders(<Button disabled>Next</Button>);
+    const btn = container.querySelector('button[data-slot="button"]')!;
+    // The shared base sets `disabled:text-muted-foreground` (grey-on-accent =
+    // unreadable). The default variant overrides it back to --color-on-accent;
+    // tailwind-merge must drop the muted one so the label stays white, dimmed
+    // only by `disabled:opacity-70` (macOS-style).
+    expect(btn.className).toContain('disabled:text-[var(--color-on-accent)]');
+    expect(btn.className).not.toContain('disabled:text-muted-foreground');
+    expect(btn.className).toContain('disabled:opacity-70');
+  });
+
   it('link variant text resolves through --color-accent-primary', () => {
     const { container } = renderWithProviders(<Button variant="link">Open</Button>);
     const btn = container.querySelector('button[data-slot="button"]')!;
