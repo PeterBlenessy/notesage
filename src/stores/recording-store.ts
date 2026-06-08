@@ -108,7 +108,9 @@ export const useRecordingStore = create<RecordingStore>()(
 
         // Persisted state
         defaultModel: 'base',
-        speechLanguage: 'en',
+        // 'auto' lets Whisper detect the spoken language (all 99 it supports)
+        // instead of forcing English and mistranscribing other languages.
+        speechLanguage: 'auto',
         lastUsedSource: 'microphone',
 
         // Actions

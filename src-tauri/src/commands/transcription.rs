@@ -954,7 +954,14 @@ pub async fn transcribe_file(
     );
 
     let whisper_ctx = state.whisper_ctx.clone();
-    let lang = language.unwrap_or_else(|| "en".to_string());
+    // An empty / missing language means auto-detect. whisper.cpp treats the
+    // sentinel "auto" as "detect the spoken language for this file". Previously
+    // we coerced the unset case to "en", which forced English decoding and
+    // produced "[speaking in foreign language]" garbage for every other tongue.
+    let lang = match language {
+        Some(l) if !l.trim().is_empty() => l,
+        _ => "auto".to_string(),
+    };
     let lang_result = lang.clone();
     let job_id_task = job_id.clone();
     let model_task = model.clone();
