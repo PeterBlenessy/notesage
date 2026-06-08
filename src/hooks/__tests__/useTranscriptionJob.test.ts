@@ -99,6 +99,22 @@ describe('useTranscriptionJob', () => {
     expect(jobTask().progress).toBe(100);
   });
 
+  it('passes the "auto" language through to the backend (no English coercion)', async () => {
+    // Regression lock: the store default is 'auto', which must reach the
+    // backend verbatim so Whisper auto-detects the language. A truthy 'auto'
+    // must not be dropped to undefined nor silently turned into 'en'.
+    useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'auto' });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'auto');
+  });
+
   it('routes transcription-progress only for the matching jobId', async () => {
     const d = deferred<TranscriptionResult>();
     transcribeFile.mockReturnValue(d.promise); // keep job in-flight
