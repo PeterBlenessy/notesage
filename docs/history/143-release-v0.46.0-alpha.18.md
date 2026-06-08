@@ -4,19 +4,19 @@
 **Previous version:** 0.46.0-alpha.17
 **Channel:** Alpha
 
-Auto-cut by `aw-alpha-cut` after Tier-A/B PRs landed. The auto-dump under "Under the hood" lists the merged PRs verbatim.
+> ⚠️ **Broken build — does not launch.** Inherits the alpha.16 startup crash. Fixed in alpha.19; the auto-updater no longer serves it. See #432.
 
-Before promoting this alpha to stable, edit this file:
-  - Move anything user-visible from "Under the hood" into "## Changes" under `### Features`, `### Improvements`, or `### Fixes` — and rewrite each bullet in user-facing prose (drop PR titles, version triples, internal jargon).
-  - Leave "## Changes" as `_No user-visible changes._` for infra-only releases.
-  - See `feedback_user_facing_release_notes.md` and `scripts/generate-changelog.ts` linter rules.
+Primary button labels are now legible on the accent fill.
 
 ## Changes
 
-_No user-visible changes._
+### Fixes
+- Primary and destructive buttons now keep a legible **white label + icon on the accent fill** in both light and dark mode (matching macOS System Settings), including a readable disabled state (#430).
 
 ## Under the hood
+- New `--color-on-accent` token: white on a chromatic accent in both themes, falling back to `--color-primary-foreground` on the neutral no-accent button (#430)
+- Default `Button` label uses `--color-on-accent` instead of `--color-primary-foreground` (which was dark-on-accent in dark mode) (#430)
+- Disabled buttons keep their label and dim via `opacity-70` instead of the unreadable grey `disabled:text-muted-foreground` (#430)
 
-Auto-generated dump of merged Tier-A/B PRs. Rewrite as prose grouped by area before stable promotion.
-
-- fix(ui): white label on primary buttons over the accent fill (macOS style) (#430)
+## Known issues
+- **Crashes on launch** — inherits the alpha.16 telemetry-plugin runtime panic. Fixed in alpha.19 (#432).
