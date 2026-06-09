@@ -146,6 +146,10 @@ export function SystemSettings({
   const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
 
+  // Link previews
+  const linkPreviewRemoteImages = useSettingsStore((s) => s.linkPreviewRemoteImages);
+  const setLinkPreviewRemoteImages = useSettingsStore((s) => s.setLinkPreviewRemoteImages);
+
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useSettingsStore((s) => s.setShowHiddenFiles);
@@ -499,6 +503,24 @@ export function SystemSettings({
               id="html-viewer-block-external"
               checked={htmlViewerBlockExternalResources}
               onCheckedChange={setHtmlViewerBlockExternalResources}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Link previews"
+        description="Control what link-preview cards load from the linked page."
+      >
+        <SettingsRow
+          label="Load remote preview images"
+          description="When on, link-preview cards load the preview image and favicon from the linked page. These come from the page itself, so loading them reveals your IP and that the document was opened to that site. Off by default — the card still shows the title, description, and site name."
+          htmlFor="link-preview-remote-images"
+          control={
+            <Switch
+              id="link-preview-remote-images"
+              checked={linkPreviewRemoteImages}
+              onCheckedChange={setLinkPreviewRemoteImages}
             />
           }
         />

@@ -320,6 +320,19 @@ interface SettingsStore {
    */
   htmlViewerBlockExternalResources: boolean;
   setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
+  /**
+   * When true, link-preview cards load the remote preview image and favicon
+   * fetched from the (attacker-controllable) target page. These render as live
+   * `<img>` elements, so loading them is an un-validated outbound request —
+   * a tracking beacon / IP-leak and a potential internal-GET primitive from
+   * agent-authored `> [!link](url)` cards (security audit MEDIUM). Default
+   * false (privacy by default): the card still shows title/description/site
+   * (safe text) but falls back to a neutral globe glyph instead of fetching
+   * remote images. Card metadata fetching is unaffected — only the image
+   * `<img src>` loads are gated.
+   */
+  linkPreviewRemoteImages: boolean;
+  setLinkPreviewRemoteImages: (enabled: boolean) => void;
 }
 
 /**
@@ -792,10 +805,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setHtmlViewerBlockExternalResources: (enabled: boolean) => {
         set({ htmlViewerBlockExternalResources: enabled });
       },
+
+      linkPreviewRemoteImages: false,
+
+      setLinkPreviewRemoteImages: (enabled: boolean) => {
+        set({ linkPreviewRemoteImages: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 21,
+      version: 22,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1004,6 +1023,14 @@ export const useSettingsStore = create<SettingsStore>()(
             if (typeof overrides.cmdbar !== 'boolean') {
               overrides.cmdbar = false;
             }
+          }
+        }
+        if (version < 22) {
+          // Security audit MEDIUM — link-preview remote images. Default false
+          // (privacy by default): preview/favicon images from the target page
+          // are no longer auto-loaded as live <img> beacons unless opted in.
+          if (typeof state.linkPreviewRemoteImages !== 'boolean') {
+            state.linkPreviewRemoteImages = false;
           }
         }
         return state;

@@ -106,6 +106,15 @@ pub async fn fetch_link_metadata(url: String) -> Result<LinkMetadata, String> {
 /// Validate that a URL is safe to fetch server-side: an http(s) scheme and a
 /// host that does not resolve to a private/loopback/link-local address.
 /// Returns the parsed URL on success so the caller can reuse it.
+///
+/// Known residual (security audit LOW — DNS rebinding / TOCTOU): we resolve the
+/// host here and reject blocked IPs, but `reqwest` performs its OWN resolution
+/// when it connects, so a hostile resolver that returns a public IP for this
+/// lookup and a private IP for reqwest's connect lookup could still reach an
+/// internal address. Fully closing this requires connecting to the pinned,
+/// pre-validated IP while preserving the original Host/SNI (not yet wired). The
+/// blast radius is bounded: this fetch reads metadata only, never credentials,
+/// and the body size is capped.
 async fn validate_public_url(raw: &str) -> Result<url::Url, String> {
     let parsed = url::Url::parse(raw).map_err(|e| format!("Invalid URL: {}", e))?;
     match parsed.scheme() {

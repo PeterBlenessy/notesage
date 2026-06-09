@@ -328,12 +328,65 @@ pub async fn reveal_in_finder(app: tauri::AppHandle, path: String) -> Result<(),
 #[tauri::command]
 pub fn allow_asset_dir(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let dir = Path::new(&path);
-    if !dir.is_absolute() {
-        return Err(format!("asset dir must be an absolute path: {}", path));
-    }
+    let home = dirs::home_dir();
+    validate_asset_dir(dir, home.as_deref())?;
     app.asset_protocol_scope()
         .allow_directory(dir, true)
         .map_err(|e| format!("Failed to allow asset dir '{}': {}", path, e))
+}
+
+/// Guard `allow_asset_dir` against re-opening the H1 exfil surface at runtime
+/// (security audit MEDIUM). The static `tauri.conf.json` scope is locked down
+/// and regression-tested, but `allow_asset_dir` widens the asset-protocol scope
+/// at runtime — an unvalidated grant of `/` or `$HOME` would make every file
+/// (`.ssh`, `.aws`, browser profiles, sibling projects) `convertFileSrc`-able
+/// again. Legitimate callers only ever grant a *content root* (an opened
+/// project, the Notesage library, an explorer folder), so we reject:
+///   - relative paths and paths containing `..` traversal components
+///   - the filesystem root and any ancestor of `$HOME` (incl. `$HOME` itself)
+///   - known-sensitive subtrees under `$HOME` (`.ssh`, `.aws`, `.gnupg`,
+///     `.config/gcloud`, `Library/Keychains`)
+fn validate_asset_dir(dir: &Path, home: Option<&Path>) -> Result<(), String> {
+    if !dir.is_absolute() {
+        return Err(format!("asset dir must be an absolute path: {}", dir.display()));
+    }
+    if dir
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!("asset dir must not contain '..': {}", dir.display()));
+    }
+    // Reject the filesystem root outright.
+    if dir.parent().is_none() {
+        return Err("Refusing to grant the filesystem root as an asset dir".to_string());
+    }
+
+    if let Some(home) = home {
+        // Reject $HOME itself and any ANCESTOR of $HOME (`/`, `/Users`,
+        // `/Users/<me>`) — granting those exposes the whole home dir.
+        if home.starts_with(dir) {
+            return Err(format!(
+                "Refusing to grant '{}' as an asset dir — it is the home directory or an ancestor of it",
+                dir.display()
+            ));
+        }
+        // Reject known-sensitive subtrees under $HOME.
+        for sensitive in [
+            ".ssh",
+            ".aws",
+            ".gnupg",
+            ".config/gcloud",
+            "Library/Keychains",
+        ] {
+            if dir.starts_with(home.join(sensitive)) {
+                return Err(format!(
+                    "Refusing to grant '{}' as an asset dir — it is a sensitive directory",
+                    dir.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -348,6 +401,51 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("/nonexistent/path/abc123"), "Error should contain the path: {}", err);
+    }
+
+    // --- validate_asset_dir (security audit MEDIUM) ---
+
+    #[test]
+    fn validate_asset_dir_allows_content_roots() {
+        let home = Path::new("/Users/me");
+        // Opened project / library / explorer-folder roots are fine.
+        assert!(validate_asset_dir(Path::new("/Users/me/Notesage/projectA"), Some(home)).is_ok());
+        assert!(validate_asset_dir(Path::new("/Users/me/Documents/notes"), Some(home)).is_ok());
+        assert!(validate_asset_dir(Path::new("/Volumes/ext/stuff"), Some(home)).is_ok());
+    }
+
+    #[test]
+    fn validate_asset_dir_rejects_home_and_ancestors() {
+        let home = Path::new("/Users/me");
+        assert!(validate_asset_dir(Path::new("/"), Some(home)).is_err());
+        assert!(validate_asset_dir(Path::new("/Users"), Some(home)).is_err());
+        assert!(validate_asset_dir(Path::new("/Users/me"), Some(home)).is_err());
+    }
+
+    #[test]
+    fn validate_asset_dir_rejects_sensitive_subtrees() {
+        let home = Path::new("/Users/me");
+        for sensitive in [
+            "/Users/me/.ssh",
+            "/Users/me/.ssh/keys",
+            "/Users/me/.aws",
+            "/Users/me/.gnupg",
+            "/Users/me/.config/gcloud",
+            "/Users/me/Library/Keychains",
+        ] {
+            assert!(
+                validate_asset_dir(Path::new(sensitive), Some(home)).is_err(),
+                "{} should be rejected",
+                sensitive
+            );
+        }
+    }
+
+    #[test]
+    fn validate_asset_dir_rejects_relative_and_traversal() {
+        let home = Path::new("/Users/me");
+        assert!(validate_asset_dir(Path::new("relative/path"), Some(home)).is_err());
+        assert!(validate_asset_dir(Path::new("/Users/me/../../etc"), Some(home)).is_err());
     }
 
     #[tokio::test]

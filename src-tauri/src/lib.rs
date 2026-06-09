@@ -320,6 +320,7 @@ pub fn run() {
             extract_skill_tools,
             read_skill_content,
             execute_skill_script,
+            hash_skill_script,
             read_agent_instructions,
             extract_bundled_skills,
             discover_agents,

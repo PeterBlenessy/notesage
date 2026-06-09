@@ -21,6 +21,7 @@ const defaultCapPath = path.join(
 interface TauriConf {
   app?: {
     security?: {
+      csp?: string | null;
       assetProtocol?: {
         enable?: boolean;
         scope?: {
@@ -79,6 +80,34 @@ describe('tauri asset protocol scope', () => {
       // etc.) — a bare "/**" would be equivalent to "**".
       expect(entry.startsWith('$')).toBe(true);
     }
+  });
+
+  it('has a non-null Content-Security-Policy (security audit MEDIUM)', () => {
+    // The live window must ship a CSP — `csp: null` leaves a content app that
+    // renders untrusted markdown/agent output with no defense-in-depth if any
+    // HTML-injection sink ever regresses.
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp;
+    expect(typeof csp).toBe('string');
+    expect(csp).toBeTruthy();
+  });
+
+  it('CSP hardens the high-value directives without an inline-script allowance', () => {
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp ?? '';
+    // Strict script source: no `unsafe-inline` / `unsafe-eval` in script-src.
+    const scriptSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('script-src'));
+    expect(scriptSrc, 'csp must define script-src').toBeTruthy();
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("'unsafe-eval'");
+    // Lock down the classic injection vectors.
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("default-src 'self'");
   });
 
   it('does NOT statically expose the home directory (security H1)', () => {

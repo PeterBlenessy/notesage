@@ -31,6 +31,14 @@ export interface ScopedApproval {
   projectRoot: string | null;
   /** ms since epoch; used for the Settings > Privacy > Approvals review UI. */
   grantedAt: number;
+  /**
+   * SHA-256 of the approved script body, for skill-script approvals only
+   * (security audit HIGH #2). When set, the approval is content-pinned: a
+   * later query carrying a different hash does NOT match, so a rewritten
+   * script body re-prompts instead of silently running under the old "allow
+   * always". `null`/absent = unpinned (legacy grants, or non-skill approvals).
+   */
+  contentHash?: string | null;
 }
 
 interface PermissionState {
@@ -122,21 +130,34 @@ interface PermissionStore extends PermissionState {
     projectRoot: string | null,
   ) => PermissionTier;
 
-  /** Check if a skill is allowed to execute scripts under a given scope. */
+  /**
+   * Check if a skill is allowed to execute scripts under a given scope.
+   *
+   * When `contentHash` is supplied, an `always` grant only matches if it was
+   * pinned to that exact script body (security audit HIGH #2) — a grant with no
+   * pinned hash, or a different hash, does NOT auto-allow, forcing a re-prompt.
+   * Omitting `contentHash` preserves the legacy scope-only behaviour.
+   */
   isSkillScriptAllowed: (
     skillName: string,
     connectionId: string | null,
     projectRoot: string | null,
+    contentHash?: string,
   ) => PermissionTier;
 
   /** Allow a skill to run scripts for this session. */
   allowSkillScriptSession: (skillName: string) => void;
 
-  /** Always allow a skill to run scripts (persisted) for a given scope. */
+  /**
+   * Always allow a skill to run scripts (persisted) for a given scope,
+   * optionally content-pinned to `contentHash` (the SHA-256 of the approved
+   * script). Re-granting the same scope replaces any prior hash.
+   */
   allowSkillScriptAlways: (
     skillName: string,
     connectionId: string | null,
     projectRoot: string | null,
+    contentHash?: string,
   ) => void;
 
   /** Remove a skill from the persistent always-allow list (strict triple match). */
@@ -237,6 +258,25 @@ function matchesScope(
     return false;
   }
   return true;
+}
+
+/**
+ * Skill-script matcher: scope must match AND, when a `contentHash` is supplied
+ * by the caller, the stored entry must be pinned to that exact hash. An
+ * unpinned entry (`contentHash` null/absent) does NOT satisfy a hashed query —
+ * that's the content-pin enforcement (security audit HIGH #2). When the caller
+ * omits `contentHash`, hashing is ignored (legacy scope-only behaviour).
+ */
+function matchesSkillScope(
+  entry: ScopedApproval,
+  skillName: string,
+  connectionId: string | null,
+  projectRoot: string | null,
+  contentHash: string | undefined,
+): boolean {
+  if (!matchesScope(entry, skillName, connectionId, projectRoot)) return false;
+  if (contentHash === undefined) return true;
+  return entry.contentHash != null && entry.contentHash === contentHash;
 }
 
 function hasExactTriple(
@@ -438,11 +478,11 @@ export const usePermissionStore = create<PermissionStore>()(
         return 'none';
       },
 
-      isSkillScriptAllowed: (skillName, connectionId, projectRoot) => {
+      isSkillScriptAllowed: (skillName, connectionId, projectRoot, contentHash) => {
         const state = get();
         if (
           state.skillScriptAlways.some((a) =>
-            matchesScope(a, skillName, connectionId, projectRoot),
+            matchesSkillScope(a, skillName, connectionId, projectRoot, contentHash),
           )
         ) {
           return 'always';
@@ -458,18 +498,23 @@ export const usePermissionStore = create<PermissionStore>()(
           return { skillScriptSession: next };
         }),
 
-      allowSkillScriptAlways: (skillName, connectionId, projectRoot) =>
+      allowSkillScriptAlways: (skillName, connectionId, projectRoot, contentHash) =>
         set((state) => {
-          if (hasExactTriple(state.skillScriptAlways, skillName, connectionId, projectRoot)) {
-            return state;
-          }
+          // Re-granting the same scope replaces any prior entry so the pinned
+          // hash is updated (and a re-grant after a legitimate edit re-pins).
           const entry: ScopedApproval = {
             toolName: skillName,
             connectionId,
             projectRoot,
             grantedAt: Date.now(),
+            contentHash: contentHash ?? null,
           };
-          return { skillScriptAlways: [...state.skillScriptAlways, entry] };
+          return {
+            skillScriptAlways: [
+              ...filterExactTriple(state.skillScriptAlways, skillName, connectionId, projectRoot),
+              entry,
+            ],
+          };
         }),
 
       removeSkillScriptAlways: (skillName, connectionId, projectRoot) =>

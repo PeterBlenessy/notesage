@@ -404,6 +404,16 @@ describe('boolean setters', () => {
     expect(useSettingsStore.getState().autoCheckUpdates).toBe(false);
   });
 
+  it('linkPreviewRemoteImages defaults to false (privacy by default) and can be toggled', () => {
+    // Security audit MEDIUM: remote link-preview images are off by default so
+    // opening an agent-authored `[!link]` card does not fire an outbound beacon.
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
+    useSettingsStore.getState().setLinkPreviewRemoteImages(true);
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(true);
+    useSettingsStore.getState().setLinkPreviewRemoteImages(false);
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
+  });
+
   it('setLastExportIncludeToC', () => {
     useSettingsStore.getState().setLastExportIncludeToC(true);
     expect(useSettingsStore.getState().lastExportIncludeToC).toBe(true);
@@ -1376,7 +1386,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(21);
+    expect(parsed.version).toBe(22);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2455,7 +2465,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
     expect(s.quietChromeOverrides.cmdbar).toBe(true);
   });
 
-  it('bumps persisted version to 21', async () => {
+  it('bumps persisted version to the latest after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV20State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2463,7 +2473,17 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(21);
+    expect(parsed.version).toBe(22);
+  });
+
+  it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
+    // A persisted v21 state lacking the new flag must rehydrate with it OFF.
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
   });
 });
 

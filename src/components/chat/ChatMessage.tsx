@@ -245,10 +245,20 @@ function AttachmentThumbnails({ message }: { message: ChatMessageType }) {
               <button
                 className="block rounded-md overflow-hidden border border-border hover:border-foreground/30 transition-colors duration-150 cursor-pointer"
                 onClick={() => {
+                  // Build the preview window via DOM APIs rather than a
+                  // string-interpolated document.write — `mimeType`/`data` are
+                  // app-controlled today, but constructing the element avoids
+                  // any attribute-context breakout if that ever changes
+                  // (security audit LOW).
                   const win = window.open('', '_blank');
                   if (win) {
-                    win.document.write(`<img src="data:${att.mimeType};base64,${att.data}" style="max-width:100%;height:auto" />`);
                     win.document.title = att.name ?? 'Image';
+                    const img = win.document.createElement('img');
+                    img.src = `data:${att.mimeType};base64,${att.data}`;
+                    img.alt = att.name ?? 'Image';
+                    img.style.maxWidth = '100%';
+                    img.style.height = 'auto';
+                    win.document.body.appendChild(img);
                   }
                 }}
                 aria-label={att.name ?? 'View attached image full size'}
