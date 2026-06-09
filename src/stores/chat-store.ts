@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
-import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { log } from '@/lib/logger';
 // Note: the thread-slicing helper `sliceThreadBySegment` is declared below and
 // exported for use by hooks/components that apply segment-based context isolation.
 import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
@@ -1001,6 +1002,9 @@ const EMPTY_SEGMENTS: ConversationSegment[] = [];
  * IMPORTANT: Must return a stable reference when the result hasn't changed,
  * otherwise Zustand triggers infinite re-renders (new array !== old array).
  */
+/** Conversations already warned about an orphaned thread — dedupes the log. */
+const warnedOrphanThreads = new Set<string>();
+
 export const selectMessages = (() => {
   // Per-conversation thread memoization. A single shared slot (the previous
   // design) corrupts the moment two subscribers render different conversations
@@ -1025,7 +1029,20 @@ export const selectMessages = (() => {
       const entry = cache.get(conv.id);
       if (entry && entry.key === key) return entry.thread;
 
-      const thread = getThread(conv.messages, conv.activeLeafId);
+      // Resilient walk: an orphaned activeLeafId (parent chain references a
+      // missing message) would make a plain getThread return just the leaf,
+      // hiding all history. getThreadResilient falls back to the full thread
+      // on corruption so history is never lost.
+      const { thread, broken } = getThreadResilient(conv.messages, conv.activeLeafId);
+      if (broken && !warnedOrphanThreads.has(conv.id)) {
+        warnedOrphanThreads.add(conv.id);
+        log.warn(
+          'ai',
+          `[chat] orphaned activeLeafId=${conv.activeLeafId} in conv=${conv.id} (${conv.messages.length} msgs) — recovered full history`,
+        );
+      } else if (!broken) {
+        warnedOrphanThreads.delete(conv.id);
+      }
       const result = thread.length > 0 ? thread : conv.messages;
       cache.set(conv.id, { key, thread: result });
       if (cache.size > MAX_ENTRIES) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf, sliceThreadBySegment } from '@/stores/chat-store';
-import { getThread } from '@/lib/chat-tree';
+import { getThreadResilient } from '@/lib/chat-tree';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
@@ -783,9 +783,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             const conv = useChatStore.getState().conversations
               .find(c => c.id === useChatStore.getState().activeConversationId);
             const segment = useChatStore.getState().getActiveSegment();
-            const baseThread: ChatMessage[] = conv?.activeLeafId
-              ? getThread(conv.messages, conv.activeLeafId)
-              : (conv?.messages ?? []);
+            // Resilient walk so a corrupted/orphaned activeLeafId can't collapse
+            // the agent's history to just the last message ("agent can't continue").
+            const baseThread: ChatMessage[] = conv
+              ? getThreadResilient(conv.messages, conv.activeLeafId).thread
+              : [];
             const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
             const priorMessages = allMessages.filter(
               (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
