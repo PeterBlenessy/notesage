@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.21",
+      "date": "2026-06-09",
+      "previousVersion": "0.46.0-alpha.20",
+      "sections": {
+        "fixes": [
+          "fix(transcription): auto-detect spoken language instead of forcing English (#437)"
+        ],
+        "improvements": [
+          "refactor(status-bar): remove dead full variant, sync Local AI dot, add background-activity ring (#438)"
+        ]
+      },
+      "underTheHood": [
+        "refactor(status-bar): remove dead full variant, sync Local AI dot, add activity ring (#438)",
+        "fix(transcription): auto-detect spoken language instead of forcing English (#437)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.20",
       "date": "2026-06-08",
       "previousVersion": "0.46.0-alpha.19",
