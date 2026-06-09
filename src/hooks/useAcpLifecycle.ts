@@ -22,6 +22,38 @@ import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessio
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
 /**
+ * Re-apply the conversation's remembered ACP permission mode (or, for a fresh
+ * session, the connection default) to a newly created or restored session.
+ *
+ * A sandbox-scope change respawns the agent and creates a fresh session that
+ * resets to the agent's own default mode (e.g. Claude Code → 'default' = Read
+ * Only). Without this, the footer's mode silently reverts after the user picked
+ * "Agent". The pick is persisted per-conversation (`chat-store.agentModeId`) and
+ * re-asserted here so it survives every respawn. Must be called immediately after
+ * `setSessionModes(session.modes)` at each session-creation site.
+ *
+ * @param restored True when `session` came from session/load|resume (it already
+ *   carries the agent's remembered mode, so we don't impose the connection
+ *   default — but an explicit per-conversation pick still wins).
+ */
+export function reapplySessionMode(
+  instanceId: string,
+  session: AcpSessionResult,
+  connection: Connection | null,
+  restored: boolean,
+): void {
+  if (!session.modes || !session.session_id) return;
+  const state = useChatStore.getState();
+  const convMode = state.conversations.find((c) => c.id === state.activeConversationId)?.agentModeId;
+  const targetMode = convMode ?? (restored ? undefined : connection?.acpDefaults?.modeId);
+  if (!targetMode || targetMode === session.modes.currentModeId) return;
+  updateCurrentMode(targetMode);
+  tauriApi.acpSessionSetMode(instanceId, session.session_id, targetMode).catch((err) => {
+    log.debug('ai', `ACP re-apply mode failed: ${String(err)}`);
+  });
+}
+
+/**
  * Resolve the ACP session ID to use for the next prompt on the active conversation.
  *
  * Prefers a branch-specific session (attached after `session/fork` on a leaf-branch)
@@ -414,16 +446,16 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setSessionConfigOptions(session.config_options ?? null);
         backfillAcpCapabilities(effectiveConnection?.id, session);
 
-        // Apply user's configured defaults only for fresh sessions. A restoration hit
-        // returns the agent's existing mode/config — don't overwrite it.
+        // Re-apply the conversation's remembered mode (or, for fresh sessions, the
+        // connection default). Listeners aren't active yet for the eager session, so
+        // the optimistic local update inside the helper is what the picker reads.
         const restored = session.session_id === storedSessionId;
+        reapplySessionMode(instanceId, session, effectiveConnection, restored);
+
+        // Apply remaining configured defaults only for fresh sessions. A restoration hit
+        // returns the agent's existing config — don't overwrite it.
         if (!restored) {
           const defaults = effectiveConnection.acpDefaults;
-          if (defaults?.modeId && session.modes && session.session_id) {
-            // Optimistically update local state (listeners aren't active yet for eager session)
-            updateCurrentMode(defaults.modeId);
-            tauriApi.acpSessionSetMode(instanceId, session.session_id, defaults.modeId).catch(() => {});
-          }
           if (defaults?.thinkingEffort && session.session_id) {
             updateConfigOptionValue('reasoning_effort', defaults.thinkingEffort);
             tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
@@ -714,6 +746,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           setSessionModes(session.modes ?? null);
           setSessionConfigOptions(session.config_options ?? null);
           backfillAcpCapabilities(effectiveConnection?.id, session);
+          // Fresh session (respawn on scope change / new conversation / new segment)
+          // resets to the agent default — re-assert the conversation's remembered mode.
+          reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
           // Set model via ACP-native mechanism (replaces CLI arg injection)
           if (effectiveConnection?.config?.model && session.session_id) {
@@ -987,6 +1022,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setSessionModes(session.modes ?? null);
         setSessionConfigOptions(session.config_options ?? null);
         backfillAcpCapabilities(effectiveConnection?.id, session);
+        // Fresh session on reconnect — re-assert the conversation's remembered mode.
+        reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
         // Set model via ACP-native mechanism
         if (effectiveConnection?.config?.model && session.session_id) {

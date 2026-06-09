@@ -61,6 +61,13 @@ export interface Conversation {
   /** ACP session ID for session restoration via session/load */
   acpSessionId?: string;
   /**
+   * User-selected ACP session permission mode (e.g. 'acceptEdits' = Agent) for this
+   * conversation. Persisted so it survives agent respawns (scope changes spawn a fresh
+   * session that resets to the agent's default mode). Falls back to the connection's
+   * `acpDefaults.modeId` when unset. See `useAcpLifecycle` mode re-application.
+   */
+  agentModeId?: string;
+  /**
    * Per-branch ACP session IDs, keyed by the new branch's first message ID (assigned when
    * the first message after branching is added). Populated only when `session/fork` was
    * used on a leaf-branch. Historical branches and pre-migration conversations continue
@@ -200,6 +207,8 @@ interface ChatStore {
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
   setSegmentSessionId: (sessionId: string) => void;
+  /** Persist the user-selected ACP permission mode on the active conversation. */
+  setConversationMode: (modeId: string) => void;
 
   /** Remove project paths that no longer exist from all conversations. */
   pruneStaleProjectPaths: (validPaths: Set<string>) => void;
@@ -827,6 +836,9 @@ export const useChatStore = create<ChatStore>()(
             i === c.activeSegmentIndex ? { ...s, sessionId } : s
           ),
         }))),
+
+      setConversationMode: (modeId) =>
+        set((state) => updateActiveConv(state, (c) => ({ ...c, agentModeId: modeId }))),
 
       pruneStaleProjectPaths: (validPaths) =>
         set((state) => {

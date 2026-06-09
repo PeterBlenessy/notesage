@@ -36,6 +36,7 @@ import {
   acpAgent,
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { useChatStore } from '@/stores/chat-store';
 import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 import type { Connection } from '@/lib/ai/connections';
 
@@ -102,6 +103,11 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   // This lets the footer populate instantly on agent switch, without waiting
   // for session/new to complete.
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
+  // Conversation-scoped remembered mode — drives the label during the brief window
+  // after a respawn before `useAcpLifecycle` re-applies it to the live session.
+  const conversationModeId = useChatStore((s) =>
+    s.conversations.find((c) => c.id === s.activeConversationId)?.agentModeId
+  );
   const availableModes = connection.acpCapabilities?.availableModes ?? [];
   const [conflictMode, setConflictMode] = useState<{ id: string; name: string } | null>(null);
   const [open, setOpen] = useState(false);
@@ -114,6 +120,9 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
     }
     try {
       updateCurrentMode(modeId);
+      // Persist the pick on the conversation so it survives agent respawns (a sandbox
+      // scope change spawns a fresh session that otherwise resets to the agent default).
+      useChatStore.getState().setConversationMode(modeId);
       await tauriApi.acpSessionSetMode(acpAgent.instanceId, acpAgent.chatSessionId, modeId);
     } catch (err) {
       log.error('ai', `Failed to set mode: ${String(err)}`);
@@ -162,6 +171,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   // ensureAcpAgent → clearSessionInfo, so (1) won't bleed across agents.
   const currentModeId =
     sessionInfo.modes?.currentModeId
+    ?? conversationModeId
     ?? connection.acpDefaults?.modeId
     ?? commonModes[0]?.agentModeId
     ?? null;
