@@ -54,6 +54,40 @@ export function reapplySessionMode(
 }
 
 /**
+ * Build the `<conversation-history>` preamble injected when a NEW ACP session
+ * starts mid-conversation — the first message of a fresh session, OR a
+ * crash-retry that fell back to a fresh session (session/load unsupported or
+ * failed). Without it, the new session gives the agent zero prior context and
+ * the conversation appears "broken" / the agent can't continue.
+ *
+ * Reads the active conversation's RESILIENT thread (so an orphaned activeLeafId
+ * can't collapse it to a single message), slices it to the active segment for
+ * provider context isolation, and excludes the message pair currently being
+ * (re)sent (passed as `excludeTimestamps`).
+ */
+export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
+  const store = useChatStore.getState();
+  const conv = store.conversations.find((c) => c.id === store.activeConversationId);
+  const segment = store.getActiveSegment();
+  const baseThread: ChatMessage[] = conv
+    ? getThreadResilient(conv.messages, conv.activeLeafId).thread
+    : [];
+  const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
+  const exclude = new Set(excludeTimestamps);
+  const priorMessages = allMessages.filter(
+    (m) => (m.timestamp === undefined || !exclude.has(m.timestamp)) && m.role !== 'system-status' && m.content,
+  );
+  if (priorMessages.length === 0) return '';
+  const lines = priorMessages.map((m) => {
+    const prefix = m.role === 'user' ? 'User' : 'Assistant';
+    const truncated = m.content.length > 2000 ? m.content.slice(0, 2000) + '\n... (truncated)' : m.content;
+    const suffix = m.interrupted ? ' [interrupted]' : '';
+    return `${prefix}${suffix}: ${truncated}`;
+  });
+  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
+}
+
+/**
  * Resolve the ACP session ID to use for the next prompt on the active conversation.
  *
  * Prefers a branch-specific session (attached after `session/fork` on a leaf-branch)
@@ -777,34 +811,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           if (isNewSession) {
             // Build conversation history for context restoration after interruption.
             // Respect provider context isolation — when user chose "Start fresh",
-            // only include messages from the segment boundary onward. Uses the
-            // active-leaf thread (not raw `messages`) so branching stays correct
-            // (task #28 — segment boundary as message id).
-            const conv = useChatStore.getState().conversations
-              .find(c => c.id === useChatStore.getState().activeConversationId);
-            const segment = useChatStore.getState().getActiveSegment();
-            // Resilient walk so a corrupted/orphaned activeLeafId can't collapse
-            // the agent's history to just the last message ("agent can't continue").
-            const baseThread: ChatMessage[] = conv
-              ? getThreadResilient(conv.messages, conv.activeLeafId).thread
-              : [];
-            const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
-            const priorMessages = allMessages.filter(
-              (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
-                && m.role !== 'system-status' && m.content
-            );
-            let historyBlock = '';
-            if (priorMessages.length > 0) {
-              const lines = priorMessages.map((m) => {
-                const prefix = m.role === 'user' ? 'User' : 'Assistant';
-                const truncated = m.content.length > 2000
-                  ? m.content.slice(0, 2000) + '\n... (truncated)'
-                  : m.content;
-                const suffix = m.interrupted ? ' [interrupted]' : '';
-                return `${prefix}${suffix}: ${truncated}`;
-              });
-              historyBlock = `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
-            }
+            // only include messages from the segment boundary onward. Excludes the
+            // pair currently being sent (this user message + its assistant placeholder).
+            const historyBlock = buildAcpHistoryBlock([assistantMessageId, userTimestamp]);
             promptContent = `${effectiveSystemMessage}${historyBlock}\n\n${content}`;
           } else {
             promptContent = content;
@@ -1049,8 +1058,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       const effectiveSystemMessage = buildAcpSystemMessage
         ? buildAcpSystemMessage(prompt.attachedFilePaths)
         : acpSystemMessage;
+      // On a fresh-session fallback, replay prior conversation history so the
+      // agent keeps context (otherwise a crash-retry "breaks" the conversation).
+      // The retried pair is the assistant message + its user message; the user
+      // message timestamp is assistantMessageId - 1 (assistantMessageId =
+      // userTimestamp + 1 by construction in acpSendChatMessage).
       const promptContent = isNewSession
-        ? `${effectiveSystemMessage}\n\n${prompt.content}`
+        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.assistantMessageId - 1])}\n\n${prompt.content}`
         : prompt.content;
 
       try {
