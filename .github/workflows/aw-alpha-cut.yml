@@ -1,13 +1,19 @@
 name: AW — Alpha Cut (periodic)
 
 # Cuts a new alpha tag when conditions are met:
-#   - At least one Tier-A or Tier-B PR has merged to main since the last
-#     alpha tag.
-#   - The most recent `Real Tauri E2E Tests` job on main is green AND
-#     finished within the last 24h.
-#   - No open PRs with the `tier:C` label are waiting on human review.
-#     (Tier C work should land in its own release cycle, not be silently
-#     skipped by an auto alpha.)
+#   - At least one non-release PR has merged to main since the last alpha tag.
+#     Tier is NOT considered: the alpha is just `main` HEAD, so it ships every
+#     merged PR regardless of label. Deciding what may merge (tier A/B may
+#     merge when green; tier C waits) is a *pipeline* concern, upstream of and
+#     separate from this cutter.
+#   - main's CURRENT Real-E2E state is green: the most recent completed Tests
+#     run on main (within the last 24h) has a green `Real Tauri E2E Tests`
+#     job. A main that was red but has since been FIXED (latest run green)
+#     cuts fine; a currently-red / flaky-red main is refused. (The release PR
+#     re-runs Real-E2E as the real merge gate; this is the early filter.)
+#
+# When there's nothing to do (no new PRs, or main not green) the run is a
+# clean no-op success — it does NOT fail, so routine cron ticks don't email.
 #
 # Cadence: every 6 hours via cron. Also dispatchable manually.
 #
@@ -73,103 +79,69 @@ jobs:
           echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
           echo "Previous alpha: $previous_tag"
 
-          # 2. Check for merged PRs since previous_tag.
-          since_iso=$(git log -1 --format=%cI "$previous_tag")
+          # 2. Gate: did ANY non-release PR merge since the last alpha?
+          #
+          # The alpha build is just `main` HEAD, so it already contains every
+          # merged PR regardless of tier — so the only question is "has main
+          # moved since the last alpha?". We enumerate merged PR numbers
+          # straight from the git range (the same source the history step
+          # uses), so nothing is missed and there's no tier-search / label-lag
+          # race to get wrong.
+          #
+          # Release PRs ("chore: release v*" / auto-cut) are excluded — they
+          # are infra artifacts of a previous cut. Without this, a cut's own
+          # release PR would re-trigger a cut forever.
+          mapfile -t MERGED_PRS < <(
+            git log "${previous_tag}..HEAD" --format='%s %b' \
+              | grep -oE '#[0-9]+' | tr -d '#' | sort -un
+          )
 
-          # 2a. Detect merged PRs with no tier label — refuse to cut until
-          # they are tiered. Human-merged PRs often land without tier labels
-          # (the classifier only fires on bot-authored PRs), which caused the
-          # preflight to evaluate zero qualifying PRs even when real work had
-          # landed. Checking first blocks the cut and surfaces the listing so
-          # the release manager can tier each PR before re-dispatching.
-          # Release PRs ("chore: release v*") are excluded from all queries
-          # below — they are infra artifacts of a previous alpha cut, not
-          # shippable work. Including them would cause an infinite loop:
-          # alpha cut merges a release PR → next cut finds it → cuts again → ∞.
-          release_filter='select(.title | startswith("chore: release") | not)'
-
-          echo "Checking for merged PRs without tier labels since $since_iso"
-          unclassified_prs=$(gh pr list \
-            --state merged --base main \
-            --search "merged:>$since_iso -label:tier:A -label:tier:B -label:tier:C" \
-            --json number,title --jq ".[] | $release_filter | .number")
-
-          if [[ -n "$unclassified_prs" ]]; then
-            echo "Unclassified merged PRs found — auto-labelling as tier:B."
-            for pr in $unclassified_prs; do
-              echo "  Labelling PR #$pr as tier:B"
-              gh pr edit "$pr" --add-label "tier:B"
+          pr_numbers=""
+          if [ ${#MERGED_PRS[@]} -gt 0 ]; then
+            for pr in "${MERGED_PRS[@]}"; do
+              [ -z "$pr" ] && continue
+              title=$(gh pr view "$pr" --json title --jq .title 2>/dev/null) || continue
+              case "$title" in
+                chore*release*|*auto-cut*) continue;;
+              esac
+              pr_numbers="${pr_numbers:+$pr_numbers,}$pr"
             done
-            {
-              echo "## ℹ️ Auto-classified untiered merged PRs as tier:B"
-              echo ""
-              echo "The following PRs were merged to \`main\` since \`$previous_tag\` without a tier label."
-              echo "They have been auto-classified as \`tier:B\` (included in this alpha cut)."
-              echo ""
-              echo "| PR | Title |"
-              echo "|---|---|"
-              for pr in $unclassified_prs; do
-                gh pr view "$pr" --json number,title --jq '"| #\(.number) | \(.title) |"'
-              done
-            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 2b. Tier-A or Tier-B PRs merged since previous_tag?
-          echo "Looking for tier:A/B PRs merged since $since_iso"
-          searched_prs=$(gh pr list \
-            --state merged --base main \
-            --search "merged:>$since_iso label:tier:A,tier:B" \
-            --json number,title --jq ".[] | $release_filter | .number")
-
-          # Union the search hits with the PRs we just auto-labelled in 2a.
-          # GitHub's search index lags label writes by a few seconds, so a PR
-          # labelled tier:B moments ago in 2a does NOT reliably appear in this
-          # search yet. Without the union, an alpha triggered right after a
-          # human-merged (untiered) PR sees "nothing to ship" and skips even
-          # though real work landed — exactly the race that no-op'd the cut
-          # after PR #385 merged. The freshly-labelled set is already
-          # release-PR-filtered (the 2a query used $release_filter), so it is
-          # safe to fold in verbatim.
-          pr_numbers=$(printf '%s\n%s\n' "$searched_prs" "$unclassified_prs" \
-            | grep -E '^[0-9]+$' | sort -n -u | paste -sd, -)
-
           if [[ -z "$pr_numbers" ]]; then
-            echo "No Tier-A/B PRs merged since $previous_tag — nothing to ship."
+            echo "No new PRs merged since $previous_tag — nothing to ship."
             echo "should_cut=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PRs to ship: $pr_numbers"
           echo "pr_numbers=$pr_numbers" >> "$GITHUB_OUTPUT"
 
-          # 3. Real-E2E green on main within 24h?
+          # 3. Is main's CURRENT Real-E2E state green?
+          #
+          # Gate on the *latest* completed Tests run on main (within a 24h
+          # freshness window), NOT "any green run in the window". A main that
+          # was red but has since been FIXED (latest run green) cuts fine; a
+          # currently-red / flaky-red main is refused. The release PR re-runs
+          # Real-E2E as the real merge gate, so this is just the early filter.
           one_day_ago=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
             || date -u -v-1d +%Y-%m-%dT%H:%M:%SZ)
-          last_e2e=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?branch=main&status=completed&per_page=10" \
-            --jq '.workflow_runs[] | select(.updated_at > "'$one_day_ago'") | .id' \
-            | head -10)
-          e2e_green="false"
-          for run_id in $last_e2e; do
-            real_conclusion=$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/jobs" \
-              --jq '.jobs[] | select(.name == "Real Tauri E2E Tests") | .conclusion' || echo "")
-            if [[ "$real_conclusion" == "success" ]]; then
-              e2e_green="true"
-              echo "Real-E2E green on main: run $run_id"
-              break
-            fi
-          done
-          if [[ "$e2e_green" != "true" ]]; then
-            echo "No green Real-E2E run on main within 24h — refusing to cut."
+          latest_run=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '[.workflow_runs[] | select(.updated_at > "'"$one_day_ago"'")] | sort_by(.updated_at) | last | .id // empty')
+          if [[ -z "$latest_run" ]]; then
+            echo "No completed Tests run on main within 24h — refusing to cut (stale)."
             echo "should_cut=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          # 4. No open tier:C PRs waiting?
-          tier_c_open=$(gh pr list --state open --label tier:C --json number --jq '.[].number' | wc -l)
-          if (( tier_c_open > 0 )); then
-            echo "$tier_c_open open Tier-C PR(s) waiting on human review — cutting alpha anyway (Tier-C is for stable promotion gate, not alpha gate)."
+          real_conclusion=$(gh api "repos/${{ github.repository }}/actions/runs/$latest_run/jobs" \
+            --jq '.jobs[] | select(.name == "Real Tauri E2E Tests") | .conclusion' || echo "")
+          if [[ "$real_conclusion" != "success" ]]; then
+            echo "Latest Real-E2E on main (run $latest_run) is '${real_conclusion:-missing}', not green — refusing to cut."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "Latest Real-E2E on main is green (run $latest_run)."
 
-          # 5. Compute next alpha version.
+          # 4. Compute next alpha version.
           # previous_tag format: vX.Y.Z-alpha.M
           version=${previous_tag#v}
           base=${version%-alpha.*}
@@ -191,7 +163,7 @@ jobs:
           echo "Next alpha: v$next_version"
           echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
 
-          # 6. Next history file number.
+          # 5. Next history file number.
           last_num=$(ls docs/history/ | grep -oE '^[0-9]+' | sort -n | tail -1)
           next_num=$(printf "%03d" $((10#$last_num + 1)))
           echo "Next history file: $next_num-release-v$next_version.md"
