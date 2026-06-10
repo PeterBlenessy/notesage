@@ -227,6 +227,34 @@ export function HtmlViewer({
     [content, blockExternal],
   );
 
+  // The HTML shown in the sandboxed iframe (unsafe-preview or allow-scripts
+  // path), or null when neither iframe path is active (default sanitised div).
+  const iframeContent =
+    unsafeMode
+      ? unsafePreviewContent
+      : allowScripts && unsafeHtml !== null
+        ? unsafeHtml
+        : null;
+
+  // Render the iframe from a blob: URL rather than `srcDoc`. A `srcdoc` document
+  // INHERITS the host window's Content-Security-Policy, and Tauri's CSP rewrite
+  // injects a style nonce that neutralises `'unsafe-inline'` — so a srcdoc frame
+  // refuses the document's own inline <style> blocks and web-font <link>s
+  // (regression after the app gained a CSP). A blob: document gets its own
+  // (empty) CSP context, so the document's styles + fonts apply normally, while
+  // the `sandbox="allow-scripts"` (no allow-same-origin) isolation is unchanged.
+  // `frame-src` already permits `blob:`, so the app-level CSP is not relaxed.
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (iframeContent === null) {
+      setIframeUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([iframeContent], { type: "text/html" }));
+    setIframeUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [iframeContent]);
+
   // Reset search state when switching modes, content changes, or iframe mode toggles.
   useEffect(() => {
     setFindBarOpen(false);
@@ -507,7 +535,7 @@ export function HtmlViewer({
         >
           {unsafeMode ? (
             <iframe
-              srcDoc={unsafePreviewContent}
+              src={iframeUrl ?? undefined}
               sandbox="allow-scripts"
               className="w-full h-full border-0"
               title={`Unsafe preview: ${fileName}`}
@@ -523,7 +551,7 @@ export function HtmlViewer({
           ) : allowScripts && unsafeHtml !== null ? (
             <iframe
               sandbox="allow-scripts"
-              srcDoc={unsafeHtml}
+              src={iframeUrl ?? undefined}
               title={`Rendered HTML (scripts enabled): ${fileName}`}
               aria-label={`Rendered HTML: ${fileName}`}
               className="w-full h-full border-0"
