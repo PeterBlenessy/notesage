@@ -58,13 +58,15 @@ describe('HTML viewer renders document styles under the app CSP', () => {
         const filePath = `${TEST_PROJECT_PATH}/${HTML_FILE}`;
         const content = await tauriInvoke<string>('read_file', { path: filePath });
 
-        // Open the .html file — routes to HtmlViewer, which (allowScripts ON)
-        // renders the document in a sandboxed blob: iframe.
+        // Open the .html file. fileType MUST be "other" — openTab defaults to
+        // "markdown" (opens the ProseMirror editor, not the viewer). "other"
+        // routes EditorViewerContainer → PlainTextViewer → HtmlViewer, which
+        // (allowScripts ON) renders the document in a sandboxed blob: iframe.
         await browser.execute(
             (fp: string, name: string, html: string) => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const w = window as any;
-                w.__E2E_EDITOR_STORE__?.getState().openTab(fp, name, html);
+                w.__E2E_EDITOR_STORE__?.getState().openTab(fp, name, html, null, 'other');
             },
             filePath,
             HTML_FILE,
