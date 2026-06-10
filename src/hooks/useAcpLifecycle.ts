@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf, sliceThreadBySegment } from '@/stores/chat-store';
-import { getThread } from '@/lib/chat-tree';
+import { getThreadResilient } from '@/lib/chat-tree';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
@@ -17,9 +17,78 @@ import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
+
+/**
+ * Re-apply the conversation's remembered ACP permission mode (or, for a fresh
+ * session, the connection default) to a newly created or restored session.
+ *
+ * A sandbox-scope change respawns the agent and creates a fresh session that
+ * resets to the agent's own default mode (e.g. Claude Code → 'default' = Read
+ * Only). Without this, the footer's mode silently reverts after the user picked
+ * "Agent". The pick is persisted per-conversation (`chat-store.agentModeId`) and
+ * re-asserted here so it survives every respawn. Must be called immediately after
+ * `setSessionModes(session.modes)` at each session-creation site.
+ *
+ * @param restored True when `session` came from session/load|resume (it already
+ *   carries the agent's remembered mode, so we don't impose the connection
+ *   default — but an explicit per-conversation pick still wins).
+ */
+export function reapplySessionMode(
+  instanceId: string,
+  session: AcpSessionResult,
+  connection: Connection | null,
+  restored: boolean,
+): void {
+  if (!session.modes || !session.session_id) return;
+  const state = useChatStore.getState();
+  const convMode = state.conversations.find((c) => c.id === state.activeConversationId)?.agentModeId;
+  // On restore, only an explicit per-conversation pick wins (don't impose the
+  // connection default over the agent's restored mode); on a fresh session, fall
+  // back to the connection default via the shared precedence resolver.
+  const targetMode = restored ? convMode : resolveConfiguredModeId(convMode, connection);
+  if (!targetMode || targetMode === session.modes.currentModeId) return;
+  updateCurrentMode(targetMode);
+  tauriApi.acpSessionSetMode(instanceId, session.session_id, targetMode).catch((err) => {
+    log.debug('ai', `ACP re-apply mode failed: ${String(err)}`);
+  });
+}
+
+/**
+ * Build the `<conversation-history>` preamble injected when a NEW ACP session
+ * starts mid-conversation — the first message of a fresh session, OR a
+ * crash-retry that fell back to a fresh session (session/load unsupported or
+ * failed). Without it, the new session gives the agent zero prior context and
+ * the conversation appears "broken" / the agent can't continue.
+ *
+ * Reads the active conversation's RESILIENT thread (so an orphaned activeLeafId
+ * can't collapse it to a single message), slices it to the active segment for
+ * provider context isolation, and excludes the message pair currently being
+ * (re)sent (passed as `excludeTimestamps`).
+ */
+export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
+  const store = useChatStore.getState();
+  const conv = store.conversations.find((c) => c.id === store.activeConversationId);
+  const segment = store.getActiveSegment();
+  const baseThread: ChatMessage[] = conv
+    ? getThreadResilient(conv.messages, conv.activeLeafId).thread
+    : [];
+  const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
+  const exclude = new Set(excludeTimestamps);
+  const priorMessages = allMessages.filter(
+    (m) => (m.timestamp === undefined || !exclude.has(m.timestamp)) && m.role !== 'system-status' && m.content,
+  );
+  if (priorMessages.length === 0) return '';
+  const lines = priorMessages.map((m) => {
+    const prefix = m.role === 'user' ? 'User' : 'Assistant';
+    const truncated = m.content.length > 2000 ? m.content.slice(0, 2000) + '\n... (truncated)' : m.content;
+    const suffix = m.interrupted ? ' [interrupted]' : '';
+    return `${prefix}${suffix}: ${truncated}`;
+  });
+  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
+}
 
 /**
  * Resolve the ACP session ID to use for the next prompt on the active conversation.
@@ -397,6 +466,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             }
           } else if (update.sessionUpdate === 'current_mode_update' && typeof update.currentModeId === 'string') {
             updateCurrentMode(update.currentModeId);
+            // Persist agent-initiated mode changes too, so a later restore re-applies
+            // the latest actual mode rather than a stale user pick.
+            useChatStore.getState().setConversationMode(update.currentModeId);
           } else if (update.sessionUpdate === 'config_option_update') {
             const configId = update.optionId ?? update.option_id;
             const value = update.selectedValueId ?? update.selected_value_id ?? update.value;
@@ -414,16 +486,16 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setSessionConfigOptions(session.config_options ?? null);
         backfillAcpCapabilities(effectiveConnection?.id, session);
 
-        // Apply user's configured defaults only for fresh sessions. A restoration hit
-        // returns the agent's existing mode/config — don't overwrite it.
+        // Re-apply the conversation's remembered mode (or, for fresh sessions, the
+        // connection default). Listeners aren't active yet for the eager session, so
+        // the optimistic local update inside the helper is what the picker reads.
         const restored = session.session_id === storedSessionId;
+        reapplySessionMode(instanceId, session, effectiveConnection, restored);
+
+        // Apply remaining configured defaults only for fresh sessions. A restoration hit
+        // returns the agent's existing config — don't overwrite it.
         if (!restored) {
           const defaults = effectiveConnection.acpDefaults;
-          if (defaults?.modeId && session.modes && session.session_id) {
-            // Optimistically update local state (listeners aren't active yet for eager session)
-            updateCurrentMode(defaults.modeId);
-            tauriApi.acpSessionSetMode(instanceId, session.session_id, defaults.modeId).catch(() => {});
-          }
           if (defaults?.thinkingEffort && session.session_id) {
             updateConfigOptionValue('reasoning_effort', defaults.thinkingEffort);
             tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
@@ -462,6 +534,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const lastPromptRef = useRef<{
     content: string;
     assistantMessageId: number;
+    /** Timestamp of the user message in the (re)sent pair — excluded from replayed history. */
+    userTimestamp: number;
     attachedFilePaths?: string[];
     sandboxPaths?: string[];
     attachments?: ImageAttachment[];
@@ -652,6 +726,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       lastPromptRef.current = {
         content,
         assistantMessageId,
+        userTimestamp,
         attachedFilePaths: opts?.attachedFilePaths,
         sandboxPaths: opts?.sandboxPaths,
         attachments: opts?.attachments,
@@ -714,6 +789,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           setSessionModes(session.modes ?? null);
           setSessionConfigOptions(session.config_options ?? null);
           backfillAcpCapabilities(effectiveConnection?.id, session);
+          // Fresh session (respawn on scope change / new conversation / new segment)
+          // resets to the agent default — re-assert the conversation's remembered mode.
+          reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
           // Set model via ACP-native mechanism (replaces CLI arg injection)
           if (effectiveConnection?.config?.model && session.session_id) {
@@ -742,32 +820,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           if (isNewSession) {
             // Build conversation history for context restoration after interruption.
             // Respect provider context isolation — when user chose "Start fresh",
-            // only include messages from the segment boundary onward. Uses the
-            // active-leaf thread (not raw `messages`) so branching stays correct
-            // (task #28 — segment boundary as message id).
-            const conv = useChatStore.getState().conversations
-              .find(c => c.id === useChatStore.getState().activeConversationId);
-            const segment = useChatStore.getState().getActiveSegment();
-            const baseThread: ChatMessage[] = conv?.activeLeafId
-              ? getThread(conv.messages, conv.activeLeafId)
-              : (conv?.messages ?? []);
-            const allMessages = sliceThreadBySegment(baseThread, segment, conv?.messages ?? []);
-            const priorMessages = allMessages.filter(
-              (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
-                && m.role !== 'system-status' && m.content
-            );
-            let historyBlock = '';
-            if (priorMessages.length > 0) {
-              const lines = priorMessages.map((m) => {
-                const prefix = m.role === 'user' ? 'User' : 'Assistant';
-                const truncated = m.content.length > 2000
-                  ? m.content.slice(0, 2000) + '\n... (truncated)'
-                  : m.content;
-                const suffix = m.interrupted ? ' [interrupted]' : '';
-                return `${prefix}${suffix}: ${truncated}`;
-              });
-              historyBlock = `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
-            }
+            // only include messages from the segment boundary onward. Excludes the
+            // pair currently being sent (this user message + its assistant placeholder).
+            const historyBlock = buildAcpHistoryBlock([assistantMessageId, userTimestamp]);
             promptContent = `${effectiveSystemMessage}${historyBlock}\n\n${content}`;
           } else {
             promptContent = content;
@@ -987,6 +1042,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setSessionModes(session.modes ?? null);
         setSessionConfigOptions(session.config_options ?? null);
         backfillAcpCapabilities(effectiveConnection?.id, session);
+        // Fresh session on reconnect — re-assert the conversation's remembered mode.
+        reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
         // Set model via ACP-native mechanism
         if (effectiveConnection?.config?.model && session.session_id) {
@@ -1010,8 +1067,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       const effectiveSystemMessage = buildAcpSystemMessage
         ? buildAcpSystemMessage(prompt.attachedFilePaths)
         : acpSystemMessage;
+      // On a fresh-session fallback, replay prior conversation history so the
+      // agent keeps context (otherwise a crash-retry "breaks" the conversation).
+      // Exclude the retried pair (assistant message + its user message) by their
+      // actual timestamps captured at send time.
       const promptContent = isNewSession
-        ? `${effectiveSystemMessage}\n\n${prompt.content}`
+        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.userTimestamp])}\n\n${prompt.content}`
         : prompt.content;
 
       try {

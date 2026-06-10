@@ -263,7 +263,11 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       }
     } else if (update.sessionUpdate === 'current_mode_update' && (update.currentModeId || update.current_mode_id)) {
       // Agent-initiated mode change (camelCase from ACP schema)
-      updateCurrentMode(String(update.currentModeId ?? update.current_mode_id));
+      const nextModeId = String(update.currentModeId ?? update.current_mode_id);
+      updateCurrentMode(nextModeId);
+      // Persist so a later restore re-applies the latest actual mode (keeps the
+      // conversation's agentModeId in sync with agent self-changes).
+      useChatStore.getState().setConversationMode(nextModeId);
     } else if (update.sessionUpdate === 'config_option_update' && (update.configId || update.config_id)) {
       // Agent-initiated config option change (camelCase from ACP schema)
       const configId = String(update.configId ?? update.config_id);

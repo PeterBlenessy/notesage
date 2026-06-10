@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getThread, getChildren, getBranches, getLeaves, getDescendants } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, sortByTimestamp, getChildren, getBranches, getLeaves, getDescendants } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 
 function msg(id: string, parentId: string | null, role: 'user' | 'assistant' = 'user', ts?: number): ChatMessage {
@@ -212,6 +212,91 @@ describe('chat-tree', () => {
       ];
       const desc = getDescendants(messages, '2');
       expect(desc).toEqual(new Set(['2', '3', '4', '5']));
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // getThreadResilient — orphaned-leaf recovery (history never disappears)
+  // -----------------------------------------------------------------------
+  describe('getThreadResilient', () => {
+    const linear: ChatMessage[] = [
+      msg('1', null, 'user', 1),
+      msg('2', '1', 'assistant', 2),
+      msg('3', '2', 'user', 3),
+      msg('4', '3', 'assistant', 4),
+    ];
+
+    it('returns the clean thread and broken=false for a healthy chain', () => {
+      const { thread, broken } = getThreadResilient(linear, '4');
+      expect(thread.map((m) => m.id)).toEqual(['1', '2', '3', '4']);
+      expect(broken).toBe(false);
+    });
+
+    it('is broken=false for a healthy branch (normal branching unaffected)', () => {
+      const branched: ChatMessage[] = [
+        msg('1', null, 'user', 1),
+        msg('2', '1', 'assistant', 2),
+        msg('3a', '2', 'user', 3),
+        msg('3b', '2', 'user', 4),
+      ];
+      const { thread, broken } = getThreadResilient(branched, '3b');
+      expect(thread.map((m) => m.id)).toEqual(['1', '2', '3b']);
+      expect(broken).toBe(false);
+    });
+
+    it('recovers full history when the leaf parent chain is orphaned', () => {
+      // '4' points at parent '3', but '3' was removed → plain getThread would
+      // return just ['4']; resilient falls back to all messages chronologically.
+      const orphaned: ChatMessage[] = [
+        msg('1', null, 'user', 1),
+        msg('2', '1', 'assistant', 2),
+        // '3' deleted
+        msg('4', '3', 'assistant', 4),
+      ];
+      expect(getThread(orphaned, '4').map((m) => m.id)).toEqual(['4']); // the bug
+      const { thread, broken } = getThreadResilient(orphaned, '4');
+      expect(broken).toBe(true);
+      expect(thread.map((m) => m.id)).toEqual(['1', '2', '4']); // history recovered
+    });
+
+    it('recovers when the leaf itself is missing', () => {
+      const { thread, broken } = getThreadResilient(linear, 'nonexistent');
+      expect(broken).toBe(true);
+      expect(thread.map((m) => m.id)).toEqual(['1', '2', '3', '4']);
+    });
+
+    it('recovers from a parentId cycle without infinite looping', () => {
+      const cyclic: ChatMessage[] = [
+        msg('a', 'b', 'user', 1),
+        msg('b', 'a', 'assistant', 2),
+      ];
+      const { thread, broken } = getThreadResilient(cyclic, 'a');
+      expect(broken).toBe(true);
+      expect(thread.map((m) => m.id).sort()).toEqual(['a', 'b']);
+    });
+
+    it('returns all messages chronologically when no leafId is given', () => {
+      const { thread, broken } = getThreadResilient(linear, null);
+      expect(broken).toBe(false);
+      expect(thread.map((m) => m.id)).toEqual(['1', '2', '3', '4']);
+    });
+
+    it('returns empty for an empty conversation', () => {
+      expect(getThreadResilient([], '4')).toEqual({ thread: [], broken: false });
+    });
+  });
+
+  describe('sortByTimestamp', () => {
+    it('sorts ascending by timestamp and does not mutate the input', () => {
+      const input = [msg('c', null, 'user', 3), msg('a', null, 'user', 1), msg('b', null, 'user', 2)];
+      const sorted = sortByTimestamp(input);
+      expect(sorted.map((m) => m.id)).toEqual(['a', 'b', 'c']);
+      expect(input.map((m) => m.id)).toEqual(['c', 'a', 'b']); // original untouched
+    });
+
+    it('treats undefined timestamps as 0', () => {
+      const input = [msg('b', null, 'user', 2), { id: 'a', parentId: null, role: 'user' as const, content: 'x' }];
+      expect(sortByTimestamp(input).map((m) => m.id)).toEqual(['a', 'b']);
     });
   });
 });

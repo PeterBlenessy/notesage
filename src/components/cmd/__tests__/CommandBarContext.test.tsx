@@ -33,6 +33,7 @@ const toggleProjectPathMock = vi.fn<(path: string) => void>();
 const setSelectedProjectPathsMock = vi.fn<(paths: string[]) => void>();
 const updateConnectionMock = vi.fn<(id: string, patch: Partial<Connection>) => void>();
 const createConversationMock = vi.fn<() => string>(() => 'conv-new');
+const setConversationModeMock = vi.fn<(modeId: string) => void>();
 
 // ---------------------------------------------------------------------------
 // ACP agent / session mocks (driving `AcpModePicker` via #26)
@@ -142,6 +143,9 @@ vi.mock('@/stores/chat-store', () => {
     toggleProjectPath: (path: string) => toggleProjectPathMock(path),
     setSelectedProjectPaths: (paths: string[]) => setSelectedProjectPathsMock(paths),
     createConversation: () => createConversationMock(),
+    // AcpModePicker persists the picked mode per-conversation so it survives
+    // agent respawns (fix/acp-mode-persists-across-respawn).
+    setConversationMode: (modeId: string) => setConversationModeMock(modeId),
   };
   return {
     useChatStore: Object.assign(

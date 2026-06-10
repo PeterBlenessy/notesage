@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
-import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { log } from '@/lib/logger';
 // Note: the thread-slicing helper `sliceThreadBySegment` is declared below and
 // exported for use by hooks/components that apply segment-based context isolation.
 import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
@@ -60,6 +61,13 @@ export interface Conversation {
   sourceDocumentId?: string;
   /** ACP session ID for session restoration via session/load */
   acpSessionId?: string;
+  /**
+   * User-selected ACP session permission mode (e.g. 'acceptEdits' = Agent) for this
+   * conversation. Persisted so it survives agent respawns (scope changes spawn a fresh
+   * session that resets to the agent's default mode). Falls back to the connection's
+   * `acpDefaults.modeId` when unset. See `useAcpLifecycle` mode re-application.
+   */
+  agentModeId?: string;
   /**
    * Per-branch ACP session IDs, keyed by the new branch's first message ID (assigned when
    * the first message after branching is added). Populated only when `session/fork` was
@@ -200,6 +208,8 @@ interface ChatStore {
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
   setSegmentSessionId: (sessionId: string) => void;
+  /** Persist the user-selected ACP permission mode on the active conversation. */
+  setConversationMode: (modeId: string) => void;
 
   /** Remove project paths that no longer exist from all conversations. */
   pruneStaleProjectPaths: (validPaths: Set<string>) => void;
@@ -211,6 +221,8 @@ interface ChatStore {
 
 const MAX_CONVERSATIONS = 50;
 const MAX_MESSAGES_PER_CONVERSATION = 500;
+/** Conversations already warned about an orphaned thread — dedupes the log. Cleared on delete. */
+const warnedOrphanThreads = new Set<string>();
 
 /**
  * Monotonically increasing timestamp for conversation updates.
@@ -294,6 +306,7 @@ export const useChatStore = create<ChatStore>()(
       },
 
       deleteConversation: (id) => {
+        warnedOrphanThreads.delete(id); // don't retain diagnostic state for a gone conversation
         set((state) => {
           const remaining = state.conversations.filter((c) => c.id !== id);
           let nextActive = state.activeConversationId;
@@ -828,6 +841,9 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
+      setConversationMode: (modeId) =>
+        set((state) => updateActiveConv(state, (c) => ({ ...c, agentModeId: modeId }))),
+
       pruneStaleProjectPaths: (validPaths) =>
         set((state) => {
           const result = pruneStaleProjectPathsUtil(state.conversations, validPaths);
@@ -1013,7 +1029,20 @@ export const selectMessages = (() => {
       const entry = cache.get(conv.id);
       if (entry && entry.key === key) return entry.thread;
 
-      const thread = getThread(conv.messages, conv.activeLeafId);
+      // Resilient walk: an orphaned activeLeafId (parent chain references a
+      // missing message) would make a plain getThread return just the leaf,
+      // hiding all history. getThreadResilient falls back to the full thread
+      // on corruption so history is never lost.
+      const { thread, broken } = getThreadResilient(conv.messages, conv.activeLeafId);
+      if (broken && !warnedOrphanThreads.has(conv.id)) {
+        warnedOrphanThreads.add(conv.id);
+        log.warn(
+          'ai',
+          `[chat] orphaned activeLeafId=${conv.activeLeafId} in conv=${conv.id} (${conv.messages.length} msgs) — recovered full history`,
+        );
+      } else if (!broken) {
+        warnedOrphanThreads.delete(conv.id);
+      }
       const result = thread.length > 0 ? thread : conv.messages;
       cache.set(conv.id, { key, thread: result });
       if (cache.size > MAX_ENTRIES) {
