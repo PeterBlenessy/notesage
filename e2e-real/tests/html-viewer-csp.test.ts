@@ -169,4 +169,47 @@ describe('HTML viewer renders document styles under the app CSP', () => {
         expect(pixel.b).toBeGreaterThan(pixel.r);
         console.log(`[csp-test] frame centre pixel: rgb(${pixel.r}, ${pixel.g}, ${pixel.b}) — styles applied`);
     });
+
+    it('searches inside the sandboxed iframe via postMessage (find-in-document)', async () => {
+        const filePath = `${TEST_PROJECT_PATH}/${HTML_FILE}`;
+        const content = await tauriInvoke<string>('read_file', { path: filePath });
+        await browser.execute(
+            (fp: string, name: string, html: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                w.__E2E_EDITOR_STORE__?.getState().openTab(fp, name, html, null, 'other');
+            },
+            filePath,
+            HTML_FILE,
+            content,
+        );
+        const iframe = await browser.$('iframe');
+        await iframe.waitForExist({ timeout: 10000 });
+        await browser.waitUntil(
+            async () => ((await iframe.getAttribute('src')) ?? '').startsWith('blob:'),
+            { timeout: 10000, timeoutMsg: 'iframe never received a blob: src' },
+        );
+
+        // Open the find bar (Cmd+F path) and search for a word that appears once
+        // in the fixture body ("navy"). The host can't reach into the sandboxed
+        // frame — the match count below only updates if the injected in-frame
+        // script received the query over postMessage, searched, and posted back.
+        await browser.execute(() => window.dispatchEvent(new Event('notesage:find-open')));
+        const input = await browser.$('input[aria-label="Find in document"]');
+        await input.waitForExist({ timeout: 10000 });
+        await input.setValue('navy');
+
+        await browser.waitUntil(
+            async () => {
+                const count = await browser.execute(() => {
+                    const spans = Array.from(document.querySelectorAll('span'));
+                    const el = spans.find((s) => /^\d+\/\d+$/.test((s.textContent || '').trim()));
+                    return el ? (el.textContent || '').trim() : null;
+                });
+                return count === '1/1';
+            },
+            { timeout: 10000, timeoutMsg: 'find bar never showed the in-frame match count (1/1)' },
+        );
+        console.log('[csp-test] in-frame search reported 1/1 for "navy"');
+    });
 });
