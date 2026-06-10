@@ -18,6 +18,7 @@ import { PlainTextViewer } from "../PlainTextViewer";
 import { EditorViewerContainer } from "../../EditorViewerContainer";
 import { useSettingsStore } from "@/stores/settings-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
+import { HTML_KEY_NS } from "../html-find-frame";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -1357,5 +1358,96 @@ describe("HtmlViewer — Bug 10: body extraction handles false </body>", () => {
       />
     );
     expect(screen.getByText("Real content")).toBeTruthy();
+  });
+});
+
+describe("HtmlViewer — keyboard chord forwarding from the sandboxed frame", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  async function mountIframe(tabId: string): Promise<HTMLIFrameElement> {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>x</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId={tabId}
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
+    });
+    return iframe!;
+  }
+
+  it("re-dispatches a chord forwarded from the iframe as a window keydown", async () => {
+    const iframe = await mountIframe("tab-key-forward");
+    const received: KeyboardEvent[] = [];
+    const onKey = (e: KeyboardEvent) => received.push(e);
+    window.addEventListener("keydown", onKey);
+    try {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          data: {
+            ns: HTML_KEY_NS,
+            key: "k",
+            code: "KeyK",
+            metaKey: true,
+            ctrlKey: false,
+            shiftKey: false,
+            altKey: false,
+          },
+        })
+      );
+      await waitFor(() => expect(received.some((e) => e.key === "k")).toBe(true));
+      const evt = received.find((e) => e.key === "k")!;
+      expect(evt.metaKey).toBe(true);
+      expect(evt.code).toBe("KeyK");
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("ignores a forwarded-chord message whose source is not the iframe", async () => {
+    await mountIframe("tab-key-spoof");
+    const received: KeyboardEvent[] = [];
+    const onKey = (e: KeyboardEvent) => received.push(e);
+    window.addEventListener("keydown", onKey);
+    try {
+      // No `source` → fails the e.source === iframe.contentWindow guard.
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            ns: HTML_KEY_NS,
+            key: "k",
+            code: "KeyK",
+            metaKey: true,
+            ctrlKey: false,
+            shiftKey: false,
+            altKey: false,
+          },
+        })
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      expect(received.some((e) => e.key === "k")).toBe(false);
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
   });
 });

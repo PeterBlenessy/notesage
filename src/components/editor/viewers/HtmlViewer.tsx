@@ -4,7 +4,13 @@ import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
-import { injectFindScript, HTML_FIND_NS, type HtmlFindResult } from "./html-find-frame";
+import {
+  injectFindScript,
+  HTML_FIND_NS,
+  HTML_KEY_NS,
+  type HtmlFindResult,
+  type HtmlKeyMessage,
+} from "./html-find-frame";
 import { CodeEditor } from "./CodeEditor";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -280,14 +286,36 @@ export function HtmlViewer({
     };
   }, [iframeContent]);
 
-  // Receive match count / current index from the in-frame search script.
+  // Receive messages from the in-frame script: find results (match count /
+  // current index) and forwarded keyboard chords. The frame is sandboxed
+  // cross-origin, so its keydown events never reach this window — re-dispatch the
+  // forwarded chords on `window` so the app's window-level shortcuts fire while
+  // the rendered page has focus.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
-      const d = e.data as HtmlFindResult | undefined;
-      if (!d || d.ns !== HTML_FIND_NS) return;
-      setFrameMatchCount(d.count);
-      setSearchCurrentIndex(d.current);
+      const d = e.data as
+        | HtmlFindResult
+        | HtmlKeyMessage
+        | undefined;
+      if (!d) return;
+      if (d.ns === HTML_FIND_NS) {
+        setFrameMatchCount(d.count);
+        setSearchCurrentIndex(d.current);
+      } else if (d.ns === HTML_KEY_NS) {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: d.key,
+            code: d.code,
+            metaKey: d.metaKey,
+            ctrlKey: d.ctrlKey,
+            shiftKey: d.shiftKey,
+            altKey: d.altKey,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);

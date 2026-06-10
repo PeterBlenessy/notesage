@@ -8,6 +8,10 @@
  * self-contained search script into the document and drive it over `postMessage`.
  * The frame highlights matches and reports the count + current index back.
  *
+ * The same injected script also forwards app-level keyboard chords (⌘/Ctrl
+ * combos + Escape) out to the host via postMessage, so window-level shortcuts
+ * keep working while the sandboxed frame has focus (see HTML_KEY_NS below).
+ *
  * Security: the injected script only walks the document's own text nodes and
  * wraps matches in <mark>; it accepts a fixed, tiny command vocabulary and never
  * evals. It runs inside the existing sandbox, so it gains no new privileges.
@@ -15,6 +19,26 @@
 
 /** Namespace tag on every host↔frame message so unrelated messages are ignored. */
 export const HTML_FIND_NS = 'ns-html-find';
+
+/** Namespace for keyboard chords forwarded out of the sandboxed frame. */
+export const HTML_KEY_NS = 'ns-html-key';
+
+/**
+ * Frame → host forwarded keyboard chord. The iframe is cross-origin (sandboxed,
+ * no allow-same-origin), so its keydown events never reach the parent `window`
+ * where the app's keyboard shortcuts listen — clicking into the rendered page
+ * would otherwise kill ⌘K / ⌘S / ⌘. / ⌘F / Escape etc. The injected script posts
+ * app-level chords (and Escape) out; the host re-dispatches them on `window`.
+ */
+export interface HtmlKeyMessage {
+    ns: typeof HTML_KEY_NS;
+    key: string;
+    code: string;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+}
 
 /** Host → frame command. */
 export interface HtmlFindCommand {
@@ -128,6 +152,31 @@ const FRAME_SCRIPT = `(function () {
     else if (d.action === 'prev') step(-1);
     else if (d.action === 'clear') clear();
   });
+
+  // Forward app-level keyboard chords to the host. This frame is cross-origin
+  // (sandboxed, no allow-same-origin) so its keydown events never reach the
+  // parent window where the app shortcuts live — without this, clicking into the
+  // rendered page kills ⌘K / ⌘S / ⌘. / ⌘F / Escape until focus leaves the frame.
+  // Only modifier chords + Escape are forwarded, so plain typing in the document
+  // is untouched; the native clipboard / select-all / undo chords are left to the
+  // frame so copying from the rendered page still works.
+  var KEY_NS = ${JSON.stringify(HTML_KEY_NS)};
+  var NATIVE_EDIT = { c: 1, v: 1, x: 1, a: 1, z: 1 };
+  window.addEventListener('keydown', function (e) {
+    var chord = e.metaKey || e.ctrlKey;
+    if (!chord && e.key !== 'Escape') return;
+    if (chord && NATIVE_EDIT[(e.key || '').toLowerCase()]) return;
+    e.preventDefault();
+    parent.postMessage({
+      ns: KEY_NS,
+      key: e.key,
+      code: e.code,
+      metaKey: e.metaKey,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey
+    }, '*');
+  }, true);
 })();`;
 
 /**
