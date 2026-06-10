@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.24",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.23",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): fix 10 bugs from v0.46.0 code review (#375) (#377)",
+          "fix(html-viewer): restore find-in-document in the sandboxed iframe modes (#449)"
+        ]
+      },
+      "underTheHood": [
+        "fix(html-viewer): restore find-in-document in the sandboxed iframe modes (#449)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.23",
       "date": "2026-06-10",
       "previousVersion": "0.46.0-alpha.22",
