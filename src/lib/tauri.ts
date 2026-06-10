@@ -1132,8 +1132,17 @@ export const tauriApi = {
     workingDir: string | null;
     env: Record<string, string> | null;
     timeoutMs: number | null;
+    /** SHA-256 of the approved script body — backend refuses to run a script
+     *  whose content has changed since approval (security audit HIGH #2). */
+    expectedHash?: string | null;
   }): Promise<ScriptResult> {
     return await invoke<ScriptResult>("execute_skill_script", options);
+  },
+
+  /** SHA-256 (hex) of a skill script, used to content-pin "allow always"
+   *  approvals to the exact bytes the user approved. */
+  async hashSkillScript(skillPath: string, script: string): Promise<string> {
+    return await invoke<string>("hash_skill_script", { skillPath, script });
   },
 
   async discoverAgents(baseDirs: string[]): Promise<AgentEntry[]> {

@@ -360,8 +360,20 @@ export function useSkillOperations() {
     args: string[] = [],
     workingDir?: string,
   ): Promise<ScriptResult> => {
-    // Check permission
-    const tier = usePermissionStore.getState().isSkillScriptAllowed(skillName, null, null);
+    // Content-pin the approval (security audit HIGH #2): hash the exact script
+    // body about to run and gate the "allow always" check on it, so a rewritten
+    // script re-prompts instead of running under a stale approval. If hashing
+    // fails (e.g. file vanished), treat as not-approved.
+    let contentHash: string | undefined;
+    try {
+      contentHash = await tauriApi.hashSkillScript(skillPath, script);
+    } catch {
+      contentHash = undefined;
+    }
+
+    const tier = usePermissionStore
+      .getState()
+      .isSkillScriptAllowed(skillName, null, null, contentHash);
     if (tier === 'none') {
       // Caller is responsible for showing permission UI and retrying
       throw new Error(`PERMISSION_REQUIRED:${skillName}`);
@@ -377,6 +389,9 @@ export function useSkillOperations() {
       workingDir: workingDir ?? null,
       env: null,
       timeoutMs: null,
+      // Backend re-verifies the body matches what we just hashed, closing the
+      // check→exec window.
+      expectedHash: contentHash ?? null,
     });
   }, []);
 

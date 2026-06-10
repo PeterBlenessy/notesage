@@ -1548,9 +1548,9 @@ try {
 ## Security Considerations
 
 - **All file paths are absolute**: Frontend must never construct paths from user input without validation
-- **API keys in OS keychain**: Keys stored in macOS Keychain via `keyring` crate, never in localStorage. Backend resolves keys from keychain using `connection_id` — keys never transit through IPC or appear in frontend console
-- **No direct filesystem access**: Frontend cannot read/write files directly, must use Tauri commands
-- **Permission boundaries**: Tauri enforces filesystem permissions, commands cannot access files outside allowed directories
+- **API keys in OS keychain**: Keys stored in macOS Keychain via `keyring` crate, never in localStorage. Backend resolves keys from keychain using `connection_id` — `resolve_api_key` consults the keychain FIRST (authoritative) and only falls back to an explicit `api_key` IPC parameter when no keychain entry exists, so a key passed over IPC can never shadow the keychain-resolved key
+- **No direct filesystem access via plugins**: The renderer never imports `@tauri-apps/plugin-fs` (no `fs:allow-*` capability is granted) — all file I/O goes through the vetted Rust commands in `commands/file.rs`
+- **Renderer is trusted; file commands do NOT self-validate paths**: `read_file`/`write_file`/`delete_path` operate in the main (unsandboxed) process on whatever absolute path the renderer passes — they do NOT restrict to a workspace root. The boundary against a *renderer compromise* is the live-window CSP + the XSS-hardening of every HTML sink, not per-command allow-listing. Per-scope path gating exists only at the AI/agent call sites (`tool-executor.ts`, Copilot LSP, Seatbelt writable paths). The one runtime FS-scope widener, `allow_asset_dir`, IS validated (`validate_asset_dir` rejects `/`, `$HOME` & ancestors, `..`, and sensitive subtrees)
 
 ## IPC Performance
 

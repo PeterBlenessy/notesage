@@ -92,21 +92,34 @@ pub fn normalize_base_url(url: &str) -> &str {
         .trim_end_matches('/')
 }
 
-/// Resolve an API key: prefer explicit `api_key`, fall back to keychain via `connection_id`.
+/// Resolve an API key for an AI request.
+///
+/// Security model (audit MEDIUM): keys live in the OS keychain and are resolved
+/// here from `connection_id` — they must NOT have to transit Tauri IPC. The
+/// keychain is therefore the AUTHORITATIVE source and is consulted FIRST; the
+/// explicit `api_key` IPC parameter is only a last-resort fallback for callers
+/// that have no `connection_id` (and is never populated by the current
+/// frontend). This precedence means a key passed over IPC can never override or
+/// shadow the keychain-resolved key for a known connection.
 fn resolve_api_key(api_key: &Option<String>, connection_id: &Option<String>) -> Result<Option<String>, String> {
-    if let Some(key) = api_key.as_ref() {
-        if !key.is_empty() {
-            log::debug!(target: "notesage::ai", "Using explicit api_key parameter");
-            return Ok(Some(key.clone()));
+    if let Some(conn_id) = connection_id.as_ref() {
+        if !conn_id.is_empty() {
+            log::debug!(target: "notesage::ai", "Resolving API key from keychain for connection={conn_id}");
+            match get_credential_internal(conn_id) {
+                Ok(Some(key)) => return Ok(Some(key)),
+                Ok(None) => {
+                    log::warn!(target: "notesage::ai", "No credential found in keychain for connection={conn_id}");
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
-    if let Some(conn_id) = connection_id.as_ref() {
-        log::debug!(target: "notesage::ai", "Resolving API key from keychain for connection={conn_id}");
-        let result = get_credential_internal(conn_id);
-        if let Ok(None) = &result {
-            log::warn!(target: "notesage::ai", "No credential found in keychain for connection={conn_id}");
+    // Fallback only when the keychain had nothing for this connection (or no
+    // connection_id was supplied at all).
+    if let Some(key) = api_key.as_ref() {
+        if !key.is_empty() {
+            return Ok(Some(key.clone()));
         }
-        return result;
     }
     Ok(None)
 }
@@ -1109,6 +1122,39 @@ pub async fn ollama_model_supports_vision(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // --- resolve_api_key precedence (security audit MEDIUM) ---
+
+    #[test]
+    fn resolve_api_key_returns_none_when_nothing_supplied() {
+        assert_eq!(resolve_api_key(&None, &None).unwrap(), None);
+        assert_eq!(resolve_api_key(&Some(String::new()), &None).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_to_explicit_when_no_connection() {
+        // With no connection_id the keychain is never consulted; the explicit
+        // param is the only source.
+        assert_eq!(
+            resolve_api_key(&Some("explicit-key".into()), &None).unwrap(),
+            Some("explicit-key".into())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_when_keychain_has_no_entry() {
+        // A random connection id has no keychain entry → resolver must fall
+        // through to the explicit key rather than erroring. (The security
+        // property — keychain WINS when an entry exists — is enforced by the
+        // keychain-first ordering in resolve_api_key; exercising a populated
+        // keychain entry would mutate the OS keychain and is left to manual/CI
+        // keychain tests.)
+        let conn = Some(format!("notesage-test-missing-{}", std::process::id()));
+        assert_eq!(
+            resolve_api_key(&Some("fallback-key".into()), &conn).unwrap(),
+            Some("fallback-key".into())
+        );
+    }
 
     #[test]
     fn test_chat_message_basic_serialization() {

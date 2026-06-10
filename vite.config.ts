@@ -18,6 +18,15 @@ export default defineConfig(async () => ({
   },
   plugins: [react(), tailwindcss()],
 
+  build: {
+    // Tauri's WebKit/WebView2 targets support native ES module preloading, so
+    // Vite's modulepreload polyfill (injected as an INLINE <script>) is
+    // unnecessary — dropping it lets the hardened CSP use a strict
+    // `script-src 'self'` without an inline-script allowance. See
+    // tauri.conf.json `app.security.csp` (security audit MEDIUM).
+    modulePreload: { polyfill: false },
+  },
+
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

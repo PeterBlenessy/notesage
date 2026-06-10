@@ -74,6 +74,51 @@ describe('permission-store skill script permissions', () => {
     });
   });
 
+  describe('content-pinned approvals (security audit HIGH #2)', () => {
+    it('matches only when the queried hash equals the pinned hash', () => {
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null, 'HASH_A');
+      // Same body → always.
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH_A'),
+      ).toBe('always');
+      // Rewritten body → none (re-prompt).
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH_B'),
+      ).toBe('none');
+    });
+
+    it('a pinned grant still satisfies a hash-less (legacy) query', () => {
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null, 'HASH_A');
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null),
+      ).toBe('always');
+    });
+
+    it('an UNpinned grant does NOT satisfy a hashed query', () => {
+      // Legacy/unpinned "allow always" must not auto-approve a content-checked
+      // run — that is the exact TOCTOU the fix closes.
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null);
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'HASH_A'),
+      ).toBe('none');
+    });
+
+    it('re-granting the same scope updates the pinned hash', () => {
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null, 'OLD');
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null, 'NEW');
+      const entries = usePermissionStore
+        .getState()
+        .skillScriptAlways.filter((a) => a.toolName === 'web-research');
+      expect(entries).toHaveLength(1);
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'NEW'),
+      ).toBe('always');
+      expect(
+        usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null, 'OLD'),
+      ).toBe('none');
+    });
+  });
+
   describe('removeSkillScriptAlways', () => {
     it('removes skill from always list', () => {
       usePermissionStore.getState().allowSkillScriptAlways('skill-a', null, null);
