@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CSP blob render test</title>
+  <!-- A web-font <link>: blocked by the host style-src when the iframe inherits
+       the app CSP (srcdoc), allowed when the iframe is its own blob document. -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600&display=swap"
+    rel="stylesheet"
+  />
+  <!-- Distinctive inline <style>: refused under the app's nonce CSP when the
+       iframe inherits it; applied when the document is a blob (its own context).
+       The E2E test asserts the computed body background matches this exact rgb,
+       which is impossible if the inline <style> was CSP-blocked. -->
+  <style>
+    body { background-color: rgb(7, 13, 29); margin: 0; }
+    #marker {
+      color: rgb(0, 200, 100);
+      font-family: 'Inter Tight', sans-serif;
+      padding: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="marker">Styled HTML document</h1>
+  <p style="color: rgb(0, 200, 100);">
+    If this background is dark navy, the document's own inline styles applied —
+    i.e. the blob render escaped the host Content-Security-Policy.
+  </p>
+</body>
+</html>

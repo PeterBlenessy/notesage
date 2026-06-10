@@ -28,6 +28,24 @@ vi.mock("../CodeEditor", () => ({
   ),
 }));
 
+// The iframe render paths now use a blob: URL (src) instead of srcdoc, so the
+// document escapes the host CSP. jsdom doesn't implement URL.createObjectURL;
+// stub it to capture the Blob so tests can still assert on the processed HTML.
+const capturedBlobs: Blob[] = [];
+URL.createObjectURL = ((obj: Blob) => {
+  if (obj instanceof Blob) capturedBlobs.push(obj);
+  return `blob:mock/${capturedBlobs.length}`;
+}) as typeof URL.createObjectURL;
+URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
+/** Text of the most recent Blob handed to URL.createObjectURL (the iframe HTML). */
+async function lastIframeHtml(): Promise<string> {
+  const b = capturedBlobs[capturedBlobs.length - 1];
+  return b ? await b.text() : "";
+}
+beforeEach(() => {
+  capturedBlobs.length = 0;
+});
+
 describe("HtmlViewer", () => {
   const htmlContent = "<html><body><h1>Hello</h1></body></html>";
   const filePath = "/path/to/page.html";
@@ -280,9 +298,9 @@ describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-      expect(srcdoc).toContain("console.log('local-script-executed')");
+      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
     });
+    expect(await lastIframeHtml()).toContain("console.log('local-script-executed')");
   });
 });
 
@@ -545,9 +563,9 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-      expect(srcdoc).not.toContain("https://cdn.example.com/photo.jpg");
+      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
     });
+    expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
 
   it("blockExternal ON + allowScripts ON → relative-path img src preserved in iframe srcdoc", async () => {
@@ -569,9 +587,9 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-      expect(srcdoc).toContain("./images/local.jpg");
+      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
     });
+    expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
 });
 
@@ -592,7 +610,7 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     } as Parameters<typeof useSettingsStore.setState>[0]);
   });
 
-  it("blockExternal ON + unsafeMode active → external https:// img src stripped from iframe srcdoc", () => {
+  it("blockExternal ON + unsafeMode active → external https:// img src stripped from iframe srcdoc", async () => {
     useSettingsStore.setState({
       htmlViewerBlockExternalResources: true,
     } as Parameters<typeof useSettingsStore.setState>[0]);
@@ -611,11 +629,11 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).not.toContain("https://cdn.example.com/photo.jpg");
+    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
 
-  it("blockExternal ON + unsafeMode active → relative-path img src preserved in iframe srcdoc", () => {
+  it("blockExternal ON + unsafeMode active → relative-path img src preserved in iframe srcdoc", async () => {
     useSettingsStore.setState({
       htmlViewerBlockExternalResources: true,
     } as Parameters<typeof useSettingsStore.setState>[0]);
@@ -634,8 +652,8 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).toContain("./images/local.jpg");
+    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
 });
 
@@ -709,7 +727,7 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(screen.getByRole("button", { name: /cancel/i })).toBeTruthy();
   });
 
-  it("accepting the dialog renders raw HTML in a sandboxed iframe (allow-scripts)", () => {
+  it("accepting the dialog renders raw HTML in a sandboxed iframe (allow-scripts)", async () => {
     render(<HtmlViewer {...defaultProps} />);
     fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
@@ -718,10 +736,12 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe).not.toBeNull();
     // sandbox must be exactly allow-scripts (no allow-same-origin)
     expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
-    // The raw HTML (including the CDN script tag) must be in srcdoc — not stripped
-    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).toContain("cdn.example.com");
-    expect(srcdoc).toContain("CDN App");
+    // Rendered from a blob: URL (escapes the host CSP), not srcdoc.
+    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    // The raw HTML (including the CDN script tag) must be passed through — not stripped
+    const html = await lastIframeHtml();
+    expect(html).toContain("cdn.example.com");
+    expect(html).toContain("CDN App");
   });
 
   it("cancelling the dialog keeps DOMPurify safe mode active — no iframe", () => {
@@ -756,7 +776,7 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(screen.getByText("CDN App")).toBeTruthy();
   });
 
-  it("unsafe mode iframe passes the full raw HTML content through without sanitisation", () => {
+  it("unsafe mode iframe passes the full raw HTML content through without sanitisation", async () => {
     const inlineScript =
       '<html><body><h1>Inline</h1><script>window._test = 42;</script></body></html>';
     render(<HtmlViewer {...defaultProps} content={inlineScript} />);
@@ -764,8 +784,8 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    // Raw inline script is preserved in srcdoc
-    expect(iframe!.getAttribute("srcdoc")).toContain("window._test = 42");
+    // Raw inline script is preserved in the blob document
+    expect(await lastIframeHtml()).toContain("window._test = 42");
   });
 });
 
@@ -837,13 +857,13 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-      // The external url() must be stripped from the <style> block
-      expect(srcdoc).not.toContain("https://evil.com/bg.jpg");
+      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
     });
+    // The external url() must be stripped from the <style> block
+    expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
   });
 
-  it("unsafe-preview iframe: strips url(https://) from <style> block when blockExternal ON", () => {
+  it("unsafe-preview iframe: strips url(https://) from <style> block when blockExternal ON", async () => {
     useSettingsStore.setState({
       htmlViewerAllowScripts: false,
       htmlViewerBlockExternalResources: true,
@@ -863,8 +883,8 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).not.toContain("https://evil.com/bg.jpg");
+    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
   });
 });
 
@@ -1280,13 +1300,13 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-      // DOCTYPE must be preserved in the srcdoc
-      expect(srcdoc.toLowerCase()).toContain("<!doctype html>");
+      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
     });
+    // DOCTYPE must be preserved in the blob document
+    expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
   });
 
-  it("unsafe-preview iframe srcdoc retains DOCTYPE when blockExternal ON", () => {
+  it("unsafe-preview iframe srcdoc retains DOCTYPE when blockExternal ON", async () => {
     useSettingsStore.setState({
       htmlViewerBlockExternalResources: true,
     } as Parameters<typeof useSettingsStore.setState>[0]);
@@ -1305,8 +1325,8 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    const srcdoc = iframe!.getAttribute("srcdoc") ?? "";
-    expect(srcdoc.toLowerCase()).toContain("<!doctype html>");
+    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
   });
 });
 
