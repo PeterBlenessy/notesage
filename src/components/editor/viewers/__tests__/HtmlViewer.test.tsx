@@ -1138,7 +1138,7 @@ describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab
 // first, activate unsafe mode, then confirm find re-opens (now works in-frame)
 // with fresh state (no stale match counter).
 describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () => {
-  it("find resets on unsafeMode toggle and re-opens (in-frame) afterwards", () => {
+  it("find resets on unsafeMode toggle and re-opens (in-frame) afterwards", async () => {
     const filePath = "/path/to/page.html";
     const fileName = "page.html";
     render(
@@ -1159,9 +1159,10 @@ describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () =>
     expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
 
     // Close find bar via the X button (find bar and unsafe toggle are mutually
-    // exclusive in the toolbar — must close find bar before accessing toggle)
+    // exclusive in the toolbar — must close find bar before accessing toggle).
+    // Close is animated, so the bar unmounts after its exit transition.
     fireEvent.click(screen.getByRole("button", { name: /close find/i }));
-    expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
+    await waitFor(() => expect(screen.queryByPlaceholderText(/find/i)).toBeNull());
 
     // Activate unsafeMode — this changes unsafeMode state, triggering the reset effect
     fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
@@ -1449,5 +1450,39 @@ describe("HtmlViewer — keyboard chord forwarding from the sandboxed frame", ()
     } finally {
       window.removeEventListener("keydown", onKey);
     }
+  });
+});
+
+describe("HtmlViewer — find bar open/close morph animation", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  it("enters with animate-in and plays animate-out on close before unmounting", async () => {
+    render(
+      <HtmlViewer
+        content="<html><body><p>Hello</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-find-anim"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    act(() => {
+      window.dispatchEvent(new Event("notesage:find-open"));
+    });
+    const input = screen.getByPlaceholderText(/find/i);
+    const group = input.parentElement!;
+    // Opening morphs in.
+    expect(group.className).toContain("html-find-enter");
+    expect(group.className).not.toContain("html-find-exit");
+
+    // Closing keeps the bar mounted briefly to play the exit, then unmounts.
+    fireEvent.click(screen.getByRole("button", { name: /close find/i }));
+    expect(input.parentElement!.className).toContain("html-find-exit");
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/find/i)).toBeNull()
+    );
   });
 });

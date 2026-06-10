@@ -586,6 +586,58 @@ body {
 }
 
 /* ============================================================================
+ * HTML viewer find-bar morph (HtmlViewer.tsx)
+ * ============================================================================
+ * The viewer's toolbar pill swaps the search button for the search field in
+ * place. These keyframes make that swap read as a morph: the field scales +
+ * fades up on open and back down on close. CSS-only (no JS animation loop),
+ * mirroring the orb-pulse pattern — and not reliant on tailwindcss-animate
+ * utility generation, which only emits classes used bare in source.
+ * ========================================================================= */
+@keyframes html-find-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes html-find-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px) scale(0.9);
+  }
+}
+
+/* Grow from the right edge — the search button sits at the pill's right, so the
+ * field reads as morphing out of it. Springy ease on enter for a livelier feel. */
+.html-find-enter {
+  transform-origin: right center;
+  /* easeOutCubic — gentler than easeOutQuint, so the motion spreads across the
+   * full duration instead of front-loading and feeling instant. */
+  animation: html-find-enter 400ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.html-find-exit {
+  transform-origin: right center;
+  animation: html-find-exit 240ms ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .html-find-enter,
+  .html-find-exit {
+    animation: none;
+  }
+}
+
+/* ============================================================================
  * Window unfocused state — macOS-style desaturation (audit #17, 2026-04-27)
  * ============================================================================
  * When the Notesage window loses focus we mirror native macOS behaviour:
