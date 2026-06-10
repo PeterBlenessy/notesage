@@ -110,6 +110,21 @@ describe('tauri asset protocol scope', () => {
     expect(csp).toContain("default-src 'self'");
   });
 
+  it('frame-src permits the htmlpreview scheme for the HTML viewer iframe', () => {
+    // The HTML viewer's sandboxed-iframe paths serve their document from the
+    // `htmlpreview://` custom scheme so it renders under its OWN empty CSP rather
+    // than inheriting the app's `frame-ancestors 'none'` (which blanked the old
+    // `blob:`-served frame in production). Dropping this re-breaks the viewer.
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp ?? '';
+    const frameSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('frame-src'));
+    expect(frameSrc, 'csp must define frame-src').toBeTruthy();
+    expect(frameSrc).toContain('htmlpreview:');
+  });
+
   it('does NOT statically expose the home directory (security H1)', () => {
     // `$HOME/**` (or any $HOME-rooted glob) re-opens the ENTIRE home dir to the
     // asset protocol — `.ssh`, `.aws`, `.env`, browser profiles, other

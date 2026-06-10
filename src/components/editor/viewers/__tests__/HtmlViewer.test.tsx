@@ -28,22 +28,24 @@ vi.mock("../CodeEditor", () => ({
   ),
 }));
 
-// The iframe render paths now use a blob: URL (src) instead of srcdoc, so the
-// document escapes the host CSP. jsdom doesn't implement URL.createObjectURL;
-// stub it to capture the Blob so tests can still assert on the processed HTML.
-const capturedBlobs: Blob[] = [];
-URL.createObjectURL = ((obj: Blob) => {
-  if (obj instanceof Blob) capturedBlobs.push(obj);
-  return `blob:mock/${capturedBlobs.length}`;
-}) as typeof URL.createObjectURL;
-URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
-/** Text of the most recent Blob handed to URL.createObjectURL (the iframe HTML). */
+// The iframe render paths serve the document from the htmlpreview:// custom
+// scheme so it renders under its own empty CSP (a blob:/srcdoc document inherits
+// the app's hardened CSP and gets blanked). The frontend registers the HTML
+// under a generated id via `html_preview_register`, then points the iframe at
+// htmlpreview://localhost/<id>. Capture the registered content so tests can still
+// assert on the processed HTML.
+const registeredDocs: string[] = [];
+/** Text of the most recent HTML registered for the iframe. */
 async function lastIframeHtml(): Promise<string> {
-  const b = capturedBlobs[capturedBlobs.length - 1];
-  return b ? await b.text() : "";
+  return registeredDocs[registeredDocs.length - 1] ?? "";
 }
 beforeEach(() => {
-  capturedBlobs.length = 0;
+  registeredDocs.length = 0;
+  setMockInvokeHandler("html_preview_register", (args) => {
+    registeredDocs.push(String((args as { content?: string })?.content ?? ""));
+    return undefined;
+  });
+  setMockInvokeHandler("html_preview_unregister", () => undefined);
 });
 
 describe("HtmlViewer", () => {
@@ -298,7 +300,7 @@ describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).toContain("console.log('local-script-executed')");
   });
@@ -563,7 +565,7 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
@@ -587,7 +589,7 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
@@ -629,7 +631,7 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
 
@@ -652,7 +654,7 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
 });
@@ -736,8 +738,8 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe).not.toBeNull();
     // sandbox must be exactly allow-scripts (no allow-same-origin)
     expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
-    // Rendered from a blob: URL (escapes the host CSP), not srcdoc.
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    // Rendered from the htmlpreview:// scheme (own empty CSP), not srcdoc/blob.
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     // The raw HTML (including the CDN script tag) must be passed through — not stripped
     const html = await lastIframeHtml();
     expect(html).toContain("cdn.example.com");
@@ -857,7 +859,7 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     // The external url() must be stripped from the <style> block
     expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
@@ -883,7 +885,7 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
   });
 });
@@ -1290,7 +1292,7 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     // DOCTYPE must be preserved in the blob document
     expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
@@ -1315,7 +1317,7 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
   });
 });

@@ -2,16 +2,19 @@
  * HTML viewer CSP-render E2E (real Tauri WKWebView).
  *
  * Regression guard for the alpha.22 break where the app's Content-Security-Policy
- * (added in #444) refused the HTML viewer's own inline <style> blocks and web
- * fonts. The viewer's script-enabled / unsafe iframe paths now render from a
- * blob: URL instead of `srcDoc`, so the document is its OWN CSP context and its
- * styles apply — while staying sandboxed (`allow-scripts`, no allow-same-origin).
+ * (added in #444) refused the HTML viewer's own inline <style> blocks and blanked
+ * the frame outright. The viewer's script-enabled / unsafe iframe paths render
+ * from the `htmlpreview://` custom scheme — a real origin whose response carries
+ * its OWN empty CSP — so the document's styles apply while it stays sandboxed
+ * (`allow-scripts`, no allow-same-origin).
  *
- * This MUST run in the real webview: a `srcdoc` iframe inherits the host CSP and
- * a `blob:` one does not, and that inheritance behaviour is WKWebView-specific —
- * jsdom can't verify it. The test opens a styled .html fixture with
- * `htmlViewerAllowScripts` on, switches into the sandboxed frame, and asserts the
- * document's inline-style background actually applied (impossible if CSP-blocked).
+ * This MUST run in the real webview. Both `srcDoc` and `blob:` documents INHERIT
+ * the host CSP — `blob:` only *appeared* to escape it because that inheritance is
+ * WebKit-version-specific (older WebKit, incl. the CI runner, didn't inherit;
+ * macOS Tahoe does, which is how the production blanking slipped past this very
+ * test). A custom-scheme response inherits nothing on every WebKit, so this test
+ * is now version-independent. It opens a styled .html fixture with
+ * `htmlViewerAllowScripts` on and asserts the inline-style background applied.
  */
 import * as path from 'path';
 import * as zlib from 'node:zlib';
@@ -30,8 +33,8 @@ const HTML_FILE = 'csp-style-test.html';
  * WebDriver cannot execute script in that context. So we screenshot the frame
  * and inspect a pixel instead. The fixture's inline <style> paints the body a
  * distinctive navy; if the inline <style> were CSP-refused the frame would be
- * the default white. Dark centre pixel ⇒ inline styles applied ⇒ blob escaped
- * the host CSP.
+ * the default white. Dark centre pixel ⇒ inline styles applied ⇒ the document
+ * rendered under its own empty CSP.
  */
 function centrePixel(b64: string): { r: number; g: number; b: number } {
     const buf = Buffer.from(b64, 'base64');
@@ -117,14 +120,15 @@ describe('HTML viewer renders document styles under the app CSP', () => {
         });
     });
 
-    it('applies the document\'s own inline <style> (blob escapes the host CSP)', async () => {
+    it('applies the document\'s own inline <style> (custom scheme has its own empty CSP)', async () => {
         const filePath = `${TEST_PROJECT_PATH}/${HTML_FILE}`;
         const content = await tauriInvoke<string>('read_file', { path: filePath });
 
         // Open the .html file. fileType MUST be "other" — openTab defaults to
         // "markdown" (opens the ProseMirror editor, not the viewer). "other"
         // routes EditorViewerContainer → PlainTextViewer → HtmlViewer, which
-        // (allowScripts ON) renders the document in a sandboxed blob: iframe.
+        // (allowScripts ON) renders the document in a sandboxed htmlpreview://
+        // iframe.
         await browser.execute(
             (fp: string, name: string, html: string) => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,12 +140,12 @@ describe('HTML viewer renders document styles under the app CSP', () => {
             content,
         );
 
-        // The viewer must render an iframe sourced from a blob: URL (not srcdoc).
+        // The viewer must render an iframe sourced from the htmlpreview:// scheme.
         const iframe = await browser.$('iframe');
         await iframe.waitForExist({ timeout: 10000 });
         await browser.waitUntil(
-            async () => ((await iframe.getAttribute('src')) ?? '').startsWith('blob:'),
-            { timeout: 10000, timeoutMsg: 'iframe never received a blob: src' },
+            async () => ((await iframe.getAttribute('src')) ?? '').startsWith('htmlpreview://'),
+            { timeout: 10000, timeoutMsg: 'iframe never received an htmlpreview:// src' },
         );
         expect((await iframe.getAttribute('sandbox')) ?? '').toContain('allow-scripts');
 
@@ -162,7 +166,7 @@ describe('HTML viewer renders document styles under the app CSP', () => {
                 timeout: 15000,
                 timeoutMsg: () =>
                     `frame centre pixel never went dark — got rgb(${pixel.r}, ${pixel.g}, ${pixel.b}); ` +
-                    `inline <style> appears CSP-blocked (blob did not escape the host CSP)`,
+                    `inline <style> appears CSP-blocked (document did not render under its own CSP)`,
             },
         );
         // Sanity: it should be navy-ish, not just any dark colour.
@@ -186,8 +190,8 @@ describe('HTML viewer renders document styles under the app CSP', () => {
         const iframe = await browser.$('iframe');
         await iframe.waitForExist({ timeout: 10000 });
         await browser.waitUntil(
-            async () => ((await iframe.getAttribute('src')) ?? '').startsWith('blob:'),
-            { timeout: 10000, timeoutMsg: 'iframe never received a blob: src' },
+            async () => ((await iframe.getAttribute('src')) ?? '').startsWith('htmlpreview://'),
+            { timeout: 10000, timeoutMsg: 'iframe never received an htmlpreview:// src' },
         );
 
         // Open the find bar (Cmd+F path) and search for a word that appears once

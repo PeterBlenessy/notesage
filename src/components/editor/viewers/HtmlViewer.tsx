@@ -245,14 +245,16 @@ export function HtmlViewer({
         ? unsafeHtml
         : null;
 
-  // Render the iframe from a blob: URL rather than `srcDoc`. A `srcdoc` document
-  // INHERITS the host window's Content-Security-Policy, and Tauri's CSP rewrite
-  // injects a style nonce that neutralises `'unsafe-inline'` — so a srcdoc frame
-  // refuses the document's own inline <style> blocks and web-font <link>s
-  // (regression after the app gained a CSP). A blob: document gets its own
-  // (empty) CSP context, so the document's styles + fonts apply normally, while
-  // the `sandbox="allow-scripts"` (no allow-same-origin) isolation is unchanged.
-  // `frame-src` already permits `blob:`, so the app-level CSP is not relaxed.
+  // Serve the iframe document from the `htmlpreview://` custom scheme rather than
+  // a `blob:` URL or `srcDoc`. Both `srcDoc` and `blob:` documents INHERIT the
+  // host window's Content-Security-Policy: once the app gained a hardened CSP
+  // (`frame-ancestors 'none'` + a nonce-rewritten `style-src` that drops
+  // `'unsafe-inline'`), the framed document was refused in production — the frame
+  // blanked and its inline <style> blocks were rejected. The bug hid in dev only
+  // because `tauri dev` serves the app over Vite with no CSP header to inherit.
+  // A custom-scheme response carries its own (empty) policy, so the document
+  // renders regardless of the app CSP; `sandbox="allow-scripts"` (no
+  // allow-same-origin) still isolates it. See commands/html_preview.rs.
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   useEffect(() => {
     if (iframeContent === null) {
@@ -262,9 +264,20 @@ export function HtmlViewer({
     // Inject the in-frame find script so Cmd+F / the search bar can search the
     // rendered (sandboxed, cross-origin) document via postMessage.
     const html = injectFindScript(iframeContent);
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    setIframeUrl(url);
-    return () => URL.revokeObjectURL(url);
+    const id = crypto.randomUUID();
+    let cancelled = false;
+    // Register BEFORE pointing the iframe at the id so the handler never 404s.
+    invoke("html_preview_register", { id, content: html })
+      .then(() => {
+        if (!cancelled) setIframeUrl(`htmlpreview://localhost/${id}`);
+      })
+      .catch((err) => {
+        console.error("Failed to register HTML preview document", err);
+      });
+    return () => {
+      cancelled = true;
+      void invoke("html_preview_unregister", { id }).catch(() => {});
+    };
   }, [iframeContent]);
 
   // Receive match count / current index from the in-frame search script.
