@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.23",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.22",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): render iframe paths from blob: URL so document styles survive the CSP (#447)"
+        ]
+      },
+      "underTheHood": [
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(html-viewer): render iframe paths from blob: URL so document styles survive the CSP (#447)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.22",
       "date": "2026-06-10",
       "previousVersion": "0.46.0-alpha.21",
