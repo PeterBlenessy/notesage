@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.22",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.21",
+      "sections": {
+        "fixes": [
+          "fix(ci): alpha-cut gates on any merged PR, no-ops cleanly when idle (#442)",
+          "fix(acp): conversation/session/branch state integrity (#445)"
+        ]
+      },
+      "underTheHood": [
+        "chore(editor): split StatusTray.tsx into one-component-per-file (#440)",
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(acp): conversation/session/branch state integrity (#445)",
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(ci): alpha-cut gates on any merged PR, no-ops cleanly when idle (#442)",
+        "chore(editor): split StatusTray.tsx into one-component-per-file (#439) (#440)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.21",
       "date": "2026-06-09",
       "previousVersion": "0.46.0-alpha.20",
