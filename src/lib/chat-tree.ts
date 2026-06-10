@@ -1,5 +1,10 @@
 import type { ChatMessage } from '@/lib/ai/types';
 
+/** Return a copy of `messages` sorted ascending by timestamp (undefined → 0). */
+export function sortByTimestamp(messages: ChatMessage[]): ChatMessage[] {
+  return [...messages].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+}
+
 /**
  * Walk from a leaf message to the root via parentId, return messages in
  * chronological order (root first). This is the linear thread that AI hooks
@@ -50,7 +55,7 @@ export function getThreadResilient(
   leafId: string | null | undefined,
 ): { thread: ChatMessage[]; broken: boolean } {
   if (messages.length === 0) return { thread: [], broken: false };
-  const chronological = () => [...messages].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+  const chronological = () => sortByTimestamp(messages);
   // No leaf pointer — legacy/empty conversations show everything.
   if (!leafId) return { thread: chronological(), broken: false };
 
@@ -131,8 +136,7 @@ export function getBranches(messages: ChatMessage[], messageId: string): ChatMes
       }
     }
     // Sort by timestamp for chronological order
-    branch.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-    return branch;
+    return sortByTimestamp(branch);
   });
 }
 

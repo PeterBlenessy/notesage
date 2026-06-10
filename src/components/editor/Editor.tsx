@@ -26,7 +26,7 @@ import { useEditorTabSwitch } from "@/hooks/useEditorTabSwitch";
 import type { EditorView as CMEditorView } from "@codemirror/view";
 import { useCommentStore } from "@/stores/comment-store";
 import { useChatStore } from "@/stores/chat-store";
-import { getThread } from "@/lib/chat-tree";
+import { getThreadResilient } from "@/lib/chat-tree";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   setSuggestion,
@@ -926,7 +926,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             const conv = chatStore.conversations.find((c) => c.id === freshComment.linkedConversationId);
             if (conv) {
               chatStore.setActiveConversation(conv.id);
-              const threadMessages = getThread(conv.messages, conv.activeLeafId) || conv.messages;
+              const threadMessages = getThreadResilient(conv.messages, conv.activeLeafId).thread;
               await sendChatMessage(text, threadMessages);
               emitCmdBarEvent({ type: 'focus' });
               return;

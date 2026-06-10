@@ -17,7 +17,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
@@ -45,7 +45,10 @@ export function reapplySessionMode(
   if (!session.modes || !session.session_id) return;
   const state = useChatStore.getState();
   const convMode = state.conversations.find((c) => c.id === state.activeConversationId)?.agentModeId;
-  const targetMode = convMode ?? (restored ? undefined : connection?.acpDefaults?.modeId);
+  // On restore, only an explicit per-conversation pick wins (don't impose the
+  // connection default over the agent's restored mode); on a fresh session, fall
+  // back to the connection default via the shared precedence resolver.
+  const targetMode = restored ? convMode : resolveConfiguredModeId(convMode, connection);
   if (!targetMode || targetMode === session.modes.currentModeId) return;
   updateCurrentMode(targetMode);
   tauriApi.acpSessionSetMode(instanceId, session.session_id, targetMode).catch((err) => {
@@ -463,6 +466,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             }
           } else if (update.sessionUpdate === 'current_mode_update' && typeof update.currentModeId === 'string') {
             updateCurrentMode(update.currentModeId);
+            // Persist agent-initiated mode changes too, so a later restore re-applies
+            // the latest actual mode rather than a stale user pick.
+            useChatStore.getState().setConversationMode(update.currentModeId);
           } else if (update.sessionUpdate === 'config_option_update') {
             const configId = update.optionId ?? update.option_id;
             const value = update.selectedValueId ?? update.selected_value_id ?? update.value;
@@ -528,6 +534,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const lastPromptRef = useRef<{
     content: string;
     assistantMessageId: number;
+    /** Timestamp of the user message in the (re)sent pair — excluded from replayed history. */
+    userTimestamp: number;
     attachedFilePaths?: string[];
     sandboxPaths?: string[];
     attachments?: ImageAttachment[];
@@ -718,6 +726,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       lastPromptRef.current = {
         content,
         assistantMessageId,
+        userTimestamp,
         attachedFilePaths: opts?.attachedFilePaths,
         sandboxPaths: opts?.sandboxPaths,
         attachments: opts?.attachments,
@@ -1060,11 +1069,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         : acpSystemMessage;
       // On a fresh-session fallback, replay prior conversation history so the
       // agent keeps context (otherwise a crash-retry "breaks" the conversation).
-      // The retried pair is the assistant message + its user message; the user
-      // message timestamp is assistantMessageId - 1 (assistantMessageId =
-      // userTimestamp + 1 by construction in acpSendChatMessage).
+      // Exclude the retried pair (assistant message + its user message) by their
+      // actual timestamps captured at send time.
       const promptContent = isNewSession
-        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.assistantMessageId - 1])}\n\n${prompt.content}`
+        ? `${effectiveSystemMessage}${buildAcpHistoryBlock([prompt.assistantMessageId, prompt.userTimestamp])}\n\n${prompt.content}`
         : prompt.content;
 
       try {

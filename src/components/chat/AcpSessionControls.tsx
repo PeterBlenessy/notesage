@@ -31,6 +31,7 @@ import {
   subscribeSessionInfo,
   getCommonModes,
   getCommonMode,
+  resolveConfiguredModeId,
   updateCurrentMode,
   updateConfigOptionValue,
   acpAgent,
@@ -171,8 +172,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   // ensureAcpAgent → clearSessionInfo, so (1) won't bleed across agents.
   const currentModeId =
     sessionInfo.modes?.currentModeId
-    ?? conversationModeId
-    ?? connection.acpDefaults?.modeId
+    ?? resolveConfiguredModeId(conversationModeId, connection)
     ?? commonModes[0]?.agentModeId
     ?? null;
   const currentCommon = currentModeId ? getCommonMode(currentModeId) : null;

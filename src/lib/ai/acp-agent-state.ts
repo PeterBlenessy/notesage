@@ -96,6 +96,20 @@ export function getCommonModes(availableModes: { id: string; name: string; descr
   return result;
 }
 
+/**
+ * The configured mode for a conversation: the per-conversation pick if set,
+ * otherwise the connection's default mode. Single source of the
+ * `conversationModeId → connection.acpDefaults.modeId` precedence so the footer
+ * picker and `reapplySessionMode` can't drift. Returns undefined when neither is
+ * set (caller falls back to a display default or the agent's own default).
+ */
+export function resolveConfiguredModeId(
+  conversationModeId: string | undefined,
+  connection: Connection | null,
+): string | undefined {
+  return conversationModeId ?? connection?.acpDefaults?.modeId;
+}
+
 // ---------------------------------------------------------------------------
 // Agent state (module-level singleton — survives re-renders)
 // ---------------------------------------------------------------------------

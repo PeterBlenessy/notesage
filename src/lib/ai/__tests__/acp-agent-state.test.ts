@@ -349,3 +349,23 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent!.instanceId).toBe('new-id');
   });
 });
+
+describe('resolveConfiguredModeId', () => {
+  it('prefers the per-conversation pick over the connection default', async () => {
+    const mod = await import('../acp-agent-state');
+    const conn = makeConnection({ acpDefaults: { modeId: 'default' } });
+    expect(mod.resolveConfiguredModeId('acceptEdits', conn)).toBe('acceptEdits');
+  });
+
+  it('falls back to the connection default when there is no conversation pick', async () => {
+    const mod = await import('../acp-agent-state');
+    const conn = makeConnection({ acpDefaults: { modeId: 'plan' } });
+    expect(mod.resolveConfiguredModeId(undefined, conn)).toBe('plan');
+  });
+
+  it('returns undefined when neither is set', async () => {
+    const mod = await import('../acp-agent-state');
+    expect(mod.resolveConfiguredModeId(undefined, makeConnection())).toBeUndefined();
+    expect(mod.resolveConfiguredModeId(undefined, null)).toBeUndefined();
+  });
+});

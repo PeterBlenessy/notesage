@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
-import { getThread, getLeaves } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, getLeaves } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 import { acpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
@@ -140,10 +140,9 @@ export const ChatHistoryView = memo(function ChatHistoryView({
     const title = conv.title || 'conversation';
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '').slice(0, 40);
 
-    // Export only the active thread
-    const thread = conv.activeLeafId
-      ? getThread(conv.messages, conv.activeLeafId)
-      : conv.messages;
+    // Export only the active thread (resilient: an orphaned activeLeafId must
+    // not truncate the export to a single message).
+    const thread = getThreadResilient(conv.messages, conv.activeLeafId).thread;
 
     const lines = [`# ${title}`, ''];
     lines.push(...formatMessagesAsMarkdown(thread));
@@ -159,10 +158,8 @@ export const ChatHistoryView = memo(function ChatHistoryView({
     const lines = [`# ${title}`, ''];
 
     if (leaves.length <= 1) {
-      // Single thread or no messages — export linearly
-      const thread = conv.activeLeafId
-        ? getThread(conv.messages, conv.activeLeafId)
-        : conv.messages;
+      // Single thread or no messages — export linearly (resilient).
+      const thread = getThreadResilient(conv.messages, conv.activeLeafId).thread;
       lines.push(...formatMessagesAsMarkdown(thread));
     } else {
       // Multiple branches — export each with a header

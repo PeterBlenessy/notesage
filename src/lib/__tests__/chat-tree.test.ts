@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getThread, getThreadResilient, getChildren, getBranches, getLeaves, getDescendants } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, sortByTimestamp, getChildren, getBranches, getLeaves, getDescendants } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 
 function msg(id: string, parentId: string | null, role: 'user' | 'assistant' = 'user', ts?: number): ChatMessage {
@@ -283,6 +283,20 @@ describe('chat-tree', () => {
 
     it('returns empty for an empty conversation', () => {
       expect(getThreadResilient([], '4')).toEqual({ thread: [], broken: false });
+    });
+  });
+
+  describe('sortByTimestamp', () => {
+    it('sorts ascending by timestamp and does not mutate the input', () => {
+      const input = [msg('c', null, 'user', 3), msg('a', null, 'user', 1), msg('b', null, 'user', 2)];
+      const sorted = sortByTimestamp(input);
+      expect(sorted.map((m) => m.id)).toEqual(['a', 'b', 'c']);
+      expect(input.map((m) => m.id)).toEqual(['c', 'a', 'b']); // original untouched
+    });
+
+    it('treats undefined timestamps as 0', () => {
+      const input = [msg('b', null, 'user', 2), { id: 'a', parentId: null, role: 'user' as const, content: 'x' }];
+      expect(sortByTimestamp(input).map((m) => m.id)).toEqual(['a', 'b']);
     });
   });
 });

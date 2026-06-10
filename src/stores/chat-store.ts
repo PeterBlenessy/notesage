@@ -221,6 +221,8 @@ interface ChatStore {
 
 const MAX_CONVERSATIONS = 50;
 const MAX_MESSAGES_PER_CONVERSATION = 500;
+/** Conversations already warned about an orphaned thread — dedupes the log. Cleared on delete. */
+const warnedOrphanThreads = new Set<string>();
 
 /**
  * Monotonically increasing timestamp for conversation updates.
@@ -304,6 +306,7 @@ export const useChatStore = create<ChatStore>()(
       },
 
       deleteConversation: (id) => {
+        warnedOrphanThreads.delete(id); // don't retain diagnostic state for a gone conversation
         set((state) => {
           const remaining = state.conversations.filter((c) => c.id !== id);
           let nextActive = state.activeConversationId;
@@ -1002,9 +1005,6 @@ const EMPTY_SEGMENTS: ConversationSegment[] = [];
  * IMPORTANT: Must return a stable reference when the result hasn't changed,
  * otherwise Zustand triggers infinite re-renders (new array !== old array).
  */
-/** Conversations already warned about an orphaned thread — dedupes the log. */
-const warnedOrphanThreads = new Set<string>();
-
 export const selectMessages = (() => {
   // Per-conversation thread memoization. A single shared slot (the previous
   // design) corrupts the moment two subscribers render different conversations
