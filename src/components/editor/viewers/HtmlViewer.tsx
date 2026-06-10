@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
+import { injectFindScript, HTML_FIND_NS, type HtmlFindResult } from "./html-find-frame";
 import { CodeEditor } from "./CodeEditor";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -150,13 +151,21 @@ export function HtmlViewer({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
+  // Match count for the iframe paths (div mode uses searchMatches.length instead).
+  const [frameMatchCount, setFrameMatchCount] = useState(0);
   const [zoom, setZoom] = useState(1.0);
   const [unsafeMode, setUnsafeMode] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const renderRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
+
+  // Search runs inside the sandboxed iframe (via postMessage) in the
+  // allow-scripts / unsafe-preview paths; in the default sanitised-div path it
+  // runs over the host DOM.
+  const isIframeMode = allowScripts || unsafeMode;
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Whether the content is empty or whitespace-only (triggers placeholder)
@@ -250,10 +259,31 @@ export function HtmlViewer({
       setIframeUrl(null);
       return;
     }
-    const url = URL.createObjectURL(new Blob([iframeContent], { type: "text/html" }));
+    // Inject the in-frame find script so Cmd+F / the search bar can search the
+    // rendered (sandboxed, cross-origin) document via postMessage.
+    const html = injectFindScript(iframeContent);
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     setIframeUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [iframeContent]);
+
+  // Receive match count / current index from the in-frame search script.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data as HtmlFindResult | undefined;
+      if (!d || d.ns !== HTML_FIND_NS) return;
+      setFrameMatchCount(d.count);
+      setSearchCurrentIndex(d.current);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  /** Send a command to the in-frame find script. */
+  const postFind = useCallback((action: "search" | "next" | "prev" | "clear", query?: string) => {
+    iframeRef.current?.contentWindow?.postMessage({ ns: HTML_FIND_NS, action, query }, "*");
+  }, []);
 
   // Reset search state when switching modes, content changes, or iframe mode toggles.
   useEffect(() => {
@@ -262,7 +292,8 @@ export function HtmlViewer({
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [sourceMode, content, unsafeMode]);
+    setFrameMatchCount(0);
+  }, [sourceMode, content, unsafeMode, allowScripts]);
 
   // Unsafe mode is session-only — reset when the user switches to a different tab
   useEffect(() => {
@@ -275,18 +306,18 @@ export function HtmlViewer({
     setZoom(1.0);
   }, [tabId]);
 
-  // Listen for Cmd+F / notesage:find-open — only active in sanitised-div mode;
-  // disabled in iframe modes (allowScripts or unsafeMode) where find operates
-  // inside the sandboxed frame, not the host DOM.
+  // Listen for Cmd+F / notesage:find-open. Active in the rendered view (both the
+  // sanitised-div path and the sandboxed-iframe paths, which search in-frame via
+  // postMessage). Disabled only in source mode (CodeMirror owns find there).
   useEffect(() => {
-    if (sourceMode || allowScripts || unsafeMode) return;
+    if (sourceMode) return;
     const handleFindOpen = () => {
       setFindBarOpen(true);
       requestAnimationFrame(() => searchInputRef.current?.focus());
     };
     window.addEventListener("notesage:find-open", handleFindOpen);
     return () => window.removeEventListener("notesage:find-open", handleFindOpen);
-  }, [sourceMode, allowScripts, unsafeMode]);
+  }, [sourceMode]);
 
   // Register as the active zoom controller while rendered. ⌘+ / ⌘- / ⌘0
   // scale the rendered tree via CSS `zoom` (#188).
@@ -307,6 +338,13 @@ export function HtmlViewer({
 
   const handleSearch = useCallback(
     (query: string) => {
+      // Iframe paths: search runs inside the sandboxed frame via postMessage.
+      if (isIframeMode) {
+        postFind("search", query);
+        if (!query) setSearchCurrentIndex(-1);
+        return;
+      }
+      // Default sanitised-div path: search the host DOM.
       const container = getSearchContainer();
       if (!container) return;
       clearDomHighlights(container);
@@ -329,7 +367,7 @@ export function HtmlViewer({
         setSearchCurrentIndex(-1);
       }
     },
-    [getSearchContainer],
+    [isIframeMode, postFind, getSearchContainer],
   );
 
   const scrollToMatch = useCallback((index: number, marks: HTMLElement[]) => {
@@ -339,6 +377,10 @@ export function HtmlViewer({
   }, []);
 
   const handleNext = useCallback(() => {
+    if (isIframeMode) {
+      postFind("next");
+      return;
+    }
     const marks = searchMatchesRef.current;
     if (marks.length === 0) return;
     setSearchCurrentIndex((prev) => {
@@ -346,9 +388,13 @@ export function HtmlViewer({
       scrollToMatch(next, marks);
       return next;
     });
-  }, [scrollToMatch]);
+  }, [isIframeMode, postFind, scrollToMatch]);
 
   const handlePrevious = useCallback(() => {
+    if (isIframeMode) {
+      postFind("prev");
+      return;
+    }
     const marks = searchMatchesRef.current;
     if (marks.length === 0) return;
     setSearchCurrentIndex((prev) => {
@@ -356,17 +402,22 @@ export function HtmlViewer({
       scrollToMatch(prevIdx, marks);
       return prevIdx;
     });
-  }, [scrollToMatch]);
+  }, [isIframeMode, postFind, scrollToMatch]);
 
   const handleClose = useCallback(() => {
     setFindBarOpen(false);
     setSearchQuery("");
-    const container = getSearchContainer();
-    if (container) clearDomHighlights(container);
+    if (isIframeMode) {
+      postFind("clear");
+    } else {
+      const container = getSearchContainer();
+      if (container) clearDomHighlights(container);
+    }
     setSearchMatches([]);
     searchMatchesRef.current = [];
     setSearchCurrentIndex(-1);
-  }, [getSearchContainer]);
+    setFrameMatchCount(0);
+  }, [isIframeMode, postFind, getSearchContainer]);
 
   if (sourceMode) {
     return (
@@ -452,9 +503,9 @@ export function HtmlViewer({
                 // eslint-disable-next-line jsx-a11y/no-autofocus
                 autoFocus
               />
-              {searchMatches.length > 0 && (
+              {(isIframeMode ? frameMatchCount : searchMatches.length) > 0 && (
                 <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                  {searchCurrentIndex + 1}/{searchMatches.length}
+                  {searchCurrentIndex + 1}/{isIframeMode ? frameMatchCount : searchMatches.length}
                 </span>
               )}
               <button type="button" onClick={handlePrevious} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Previous match">
@@ -498,7 +549,6 @@ export function HtmlViewer({
               <button
                 type="button"
                 onClick={() => {
-                  if (allowScripts || unsafeMode) return;
                   setFindBarOpen(true);
                   requestAnimationFrame(() => searchInputRef.current?.focus());
                 }}
@@ -535,6 +585,7 @@ export function HtmlViewer({
         >
           {unsafeMode ? (
             <iframe
+              ref={iframeRef}
               src={iframeUrl ?? undefined}
               sandbox="allow-scripts"
               className="w-full h-full border-0"
@@ -550,6 +601,7 @@ export function HtmlViewer({
             </div>
           ) : allowScripts && unsafeHtml !== null ? (
             <iframe
+              ref={iframeRef}
               sandbox="allow-scripts"
               src={iframeUrl ?? undefined}
               title={`Rendered HTML (scripts enabled): ${fileName}`}

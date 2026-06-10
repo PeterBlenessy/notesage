@@ -984,8 +984,10 @@ describe("HtmlViewer — Bugs 2 & 3: blockExternal strips poster/formaction/ping
   });
 });
 
-// Bug 4 — Find (Cmd+F) must not open in iframe render modes
-describe("HtmlViewer — Bug 4: Find does not open in iframe render modes", () => {
+// Find (Cmd+F) opens in the iframe render modes and drives in-frame search via
+// postMessage. (Was disabled by #377 when search couldn't reach the sandboxed
+// cross-origin frame; restored once the viewer injects an in-frame find script.)
+describe("HtmlViewer — Find opens in iframe render modes (in-frame search)", () => {
   const filePath = "/path/to/page.html";
   const fileName = "page.html";
 
@@ -996,40 +998,36 @@ describe("HtmlViewer — Bug 4: Find does not open in iframe render modes", () =
     } as Parameters<typeof useSettingsStore.setState>[0]);
   });
 
-  it("notesage:find-open event does NOT open the find bar when allowScripts iframe is active", async () => {
+  it("notesage:find-open opens the find bar when allowScripts iframe is active", async () => {
     useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
     render(
       <HtmlViewer
         content="<html><body><p>page</p></body></html>"
         fileName={fileName}
         filePath={filePath}
-        tabId="tab-bug4-find-scripts"
+        tabId="tab-find-scripts"
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
       />
     );
     await waitFor(() => {
-      // Wait for allowScripts iframe to be rendered
       expect(document.querySelector("iframe")).not.toBeNull();
     });
-    // Dispatch the find-open event (Cmd+F)
     act(() => {
       window.dispatchEvent(new Event("notesage:find-open"));
     });
-    // Find bar must NOT open — no search input should appear
-    expect(screen.queryByRole("textbox", { name: /find in document/i })).toBeNull();
-    expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
+    expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
   });
 
-  it("Find toolbar button does NOT open the find bar when allowScripts iframe is active", async () => {
+  it("Find toolbar button opens the find bar when allowScripts iframe is active", async () => {
     useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
     render(
       <HtmlViewer
         content="<html><body><p>page</p></body></html>"
         fileName={fileName}
         filePath={filePath}
-        tabId="tab-bug4-find-btn-scripts"
+        tabId="tab-find-btn-scripts"
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
@@ -1038,39 +1036,30 @@ describe("HtmlViewer — Bug 4: Find does not open in iframe render modes", () =
     await waitFor(() => {
       expect(document.querySelector("iframe")).not.toBeNull();
     });
-    // Click the Find button in the toolbar
-    const findBtn = screen.queryByRole("button", { name: /^find$/i });
-    if (findBtn) {
-      fireEvent.click(findBtn);
-      // Find bar must NOT open in iframe mode
-      expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
-    }
-    // If the button is not rendered in iframe mode, that's also acceptable (guard moved the button)
+    fireEvent.click(screen.getByRole("button", { name: /^find$/i }));
+    expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
   });
 
-  it("notesage:find-open event does NOT open the find bar when unsafe-preview iframe is active", () => {
+  it("notesage:find-open opens the find bar when unsafe-preview iframe is active", () => {
     render(
       <HtmlViewer
         content="<html><body><p>page</p></body></html>"
         fileName={fileName}
         filePath={filePath}
-        tabId="tab-bug4-find-unsafe"
+        tabId="tab-find-unsafe"
         isDirty={false}
         updateTabContent={vi.fn()}
         saveFileWithContent={vi.fn()}
       />
     );
-    // Activate unsafe mode
     fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     expect(document.querySelector("iframe")).not.toBeNull();
 
-    // Dispatch the find-open event
     act(() => {
       window.dispatchEvent(new Event("notesage:find-open"));
     });
-    // Find bar must NOT open
-    expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
+    expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
   });
 });
 
@@ -1142,11 +1131,11 @@ describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab
 
 // Bug 6 — Search state (counter, DOM nodes) must reset on unsafeMode toggle.
 // The find bar UI and the unsafe-preview toggle are mutually exclusive in the
-// toolbar: find bar replaces the normal toolbar buttons. To verify the reset-on-
-// unsafeMode dep, we close the find bar first, activate unsafe mode, then confirm
-// that the find-open event is blocked (Bug 4 guard) and no stale input appears.
+// toolbar: find bar replaces the normal toolbar buttons. We close the find bar
+// first, activate unsafe mode, then confirm find re-opens (now works in-frame)
+// with fresh state (no stale match counter).
 describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () => {
-  it("find bar stays closed and find-open event blocked after unsafeMode activates", () => {
+  it("find resets on unsafeMode toggle and re-opens (in-frame) afterwards", () => {
     const filePath = "/path/to/page.html";
     const fileName = "page.html";
     render(
@@ -1176,12 +1165,13 @@ describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () =>
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     expect(document.querySelector("iframe")).not.toBeNull();
 
-    // In unsafe mode, find-open event must not reopen the find bar
-    // (Bug 4 guard + Bug 6 reset effect both apply)
+    // In unsafe (iframe) mode, find-open now re-opens the bar — search runs
+    // in-frame via postMessage — with fresh state (no stale match counter).
     act(() => {
       window.dispatchEvent(new Event("notesage:find-open"));
     });
-    expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
+    expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
+    expect(screen.queryByText(/\d+\/\d+/)).toBeNull();
   });
 });
 
