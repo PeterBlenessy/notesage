@@ -193,7 +193,7 @@ describe("FolderPeek (#36)", () => {
     ]);
   });
 
-  it("caps folders at 8 and shows +N more", () => {
+  it("lists ALL folders with no +N more truncation", () => {
     const tree: FileEntry[] = [];
     for (let i = 1; i <= 10; i++) {
       tree.push(makeDir(`dir-${String(i).padStart(2, "0")}`, `/p/dir-${i}`));
@@ -210,10 +210,13 @@ describe("FolderPeek (#36)", () => {
     });
 
     const popover = screen.getByTestId("folder-peek-content");
-    expect(popover.textContent).toMatch(/\+2 more/);
+    expect(popover.textContent).not.toMatch(/more/);
+    // All ten folders rendered (including the two that used to overflow).
+    expect(popover.textContent).toContain("dir-01");
+    expect(popover.textContent).toContain("dir-10");
   });
 
-  it("caps files at 6 and shows +N more", () => {
+  it("lists ALL files with no +N more truncation", () => {
     const tree: FileEntry[] = [];
     for (let i = 1; i <= 9; i++) {
       tree.push(makeFile(`f${i}.md`, `/p/f${i}.md`));
@@ -230,7 +233,8 @@ describe("FolderPeek (#36)", () => {
     });
 
     const popover = screen.getByTestId("folder-peek-content");
-    expect(popover.textContent).toMatch(/\+3 more/);
+    expect(popover.textContent).not.toMatch(/more/);
+    expect(popover.textContent).toContain("f9.md");
   });
 
   it("renders an empty-project message when the tree has no visible children", () => {
@@ -415,8 +419,6 @@ describe("derivePeekChildren", () => {
     expect(result.isEmpty).toBe(true);
     expect(result.folders).toEqual([]);
     expect(result.files).toEqual([]);
-    expect(result.folderOverflow).toBe(0);
-    expect(result.fileOverflow).toBe(0);
   });
 
   it("puts folders before files, alphabetical case-insensitive", () => {
@@ -432,7 +434,7 @@ describe("derivePeekChildren", () => {
     expect(result.isEmpty).toBe(false);
   });
 
-  it("caps folders at 8 and reports the overflow count", () => {
+  it("lists ALL folders (no cap / overflow truncation)", () => {
     const tree: FileEntry[] = [];
     for (let i = 1; i <= 10; i++) {
       tree.push(
@@ -440,18 +442,16 @@ describe("derivePeekChildren", () => {
       );
     }
     const result = derivePeekChildren(tree);
-    expect(result.folders).toHaveLength(8);
-    expect(result.folderOverflow).toBe(2);
+    expect(result.folders).toHaveLength(10);
   });
 
-  it("caps files at 6 and reports the overflow count", () => {
+  it("lists ALL files (no cap / overflow truncation)", () => {
     const tree: FileEntry[] = [];
     for (let i = 1; i <= 9; i++) {
       tree.push(makeFile(`f${i}.md`, `/p/f${i}.md`));
     }
     const result = derivePeekChildren(tree);
-    expect(result.files).toHaveLength(6);
-    expect(result.fileOverflow).toBe(3);
+    expect(result.files).toHaveLength(9);
   });
 
   it("filters out hidden entries and .DS_Store", () => {

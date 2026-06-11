@@ -9,6 +9,21 @@ import type { FileEntry } from "@/lib/tauri";
 import type { WorkspaceProject } from "@/stores/workspace-store";
 
 // ---------------------------------------------------------------------------
+// Child-row indent guide — shared by ProjectsSection + FoldersSection. Each
+// expanded folder renders its children in a nested <ul> whose left border IS the
+// guide line; nesting makes each level's line continuous and gives deeper
+// folders their own line (a discrete guide, not a full tree view).
+// ---------------------------------------------------------------------------
+
+/**
+ * Left margin (px) of a child-group <ul>'s guide line, relative to its parent
+ * row. A row's icon centre sits at `px-2` (8px) + half the 14px icon ≈ 15px from
+ * the row's left, so the guide lands directly under the parent folder's icon at
+ * every nesting level (the value is relative to each level's own row).
+ */
+export const CHILD_GUIDE_OFFSET = 15;
+
+// ---------------------------------------------------------------------------
 // RowDescriptor — flat row representation used by the keyboard navigator
 // ---------------------------------------------------------------------------
 
@@ -25,8 +40,8 @@ export interface RowDescriptor {
   project: WorkspaceProject;
   /** Only set for `kind: "child"` — the immediate child entry. */
   entry?: FileEntry;
-  /** Overflow hint marker id, without an interactive entry. */
-  overflow?: { kind: "folder" | "file"; count: number };
+  /** Nesting depth for child rows (1 = direct child). Drives the indent guide. */
+  depth?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +129,7 @@ export function insertChildRows(
   project: WorkspaceProject,
   expandedChildPaths: Set<string>,
   showHiddenFiles: boolean,
+  depth: number,
 ): void {
   const visible = entries.filter((e) => showHiddenFiles || !e.hidden);
   const dirs = visible.filter((e) => e.is_directory);
@@ -124,15 +140,17 @@ export function insertChildRows(
       kind: "child",
       project,
       entry: dir,
+      depth,
     });
     if (expandedChildPaths.has(dir.path)) {
-      insertChildRows(list, dir.children ?? [], project, expandedChildPaths, showHiddenFiles);
+      insertChildRows(list, dir.children ?? [], project, expandedChildPaths, showHiddenFiles, depth + 1);
     }
   }
   for (const file of files) {
     list.push({
       id: `${project.path}::${file.path}`,
       kind: "child",
+      depth,
       project,
       entry: file,
     });

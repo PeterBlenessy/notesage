@@ -53,10 +53,11 @@ import {
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
  *
- * Reads absolute file paths from `workspace-store.pinnedFiles`. The list is
- * hidden (header only) when nothing is pinned to avoid an empty-state
- * placeholder. Manual ordering from drag-to-reorder (#44) is preserved by
- * rendering `pinnedFiles` in array order.
+ * Reads absolute file paths from `workspace-store.pinnedFiles`. The entire
+ * section is hidden when nothing is pinned (or the active filter excludes every
+ * pinned file) to avoid an empty header cluttering the top of the sidebar.
+ * Manual ordering from drag-to-reorder (#44) is preserved by rendering
+ * `pinnedFiles` in array order.
  *
  * Drag-and-drop (task #44) — HTML5 DnD is plumbed through `file-drag.ts`:
  * Recent / project-child rows use `FILE_DRAG_MIME` to advertise a single
@@ -625,6 +626,12 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
     setActiveDrop(null);
     setDraggingIndex(null);
   };
+
+  // Hide the whole section when nothing is pinned (or the filter excludes every
+  // pinned file) — an empty "Pinned" header + drop zone at the top of the
+  // sidebar reads as visual clutter. Pinning is still reachable via the row
+  // context menu / drag onto a non-empty list.
+  if (visibleFiles.length === 0) return null;
 
   return (
     <section
