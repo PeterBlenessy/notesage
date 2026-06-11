@@ -252,13 +252,21 @@ Implementation: `src/components/activity/AgentOrb.tsx`, `src/components/activity
 
 Flat-list sidebar in fixed section order: **Pinned → Projects → Folders → Recent → Tags → Mentions**. No full file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, explorer folders, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
 
+**Resizable.** The sidebar width is user-resizable via a hairline drag handle on its right edge (styled identically to the pinned command-bar handle — `w-px`, transparent at rest, `hover:bg-muted-foreground`, 16 px hit target; `role="slider"` with `←/→` keyboard adjust). The width persists as `settings.sidebarWidth` (clamped **200–500 px**, default 252) and drives the `--quiet-sidebar-width` CSS variable — the handle writes the variable live during drag (no React re-render) and persists on release, mirroring the cmd-bar pattern. The floating command bar stays centred in the document column as the sidebar resizes.
+
+**Pinned hides when empty.** The Pinned section renders nothing at all when nothing is pinned (or the filter excludes every pin) — no empty header at the top of the sidebar.
+
+**Sticky header.** The workspace header (Notesage "N" avatar + name) stays pinned at the top; only the section list below scrolls (the `nav` is `overflow-hidden` with a separate inner scroll container).
+
+**Active-document highlight.** Child rows in the Projects / Folders trees mark the open document — the file icon takes `--color-accent-primary` and the name goes solid/medium (`data-active` + `aria-current="page"`). A lightweight icon-led selection cue, not a full-row fill (the top-level project/folder row uses its existing `bg-muted` active treatment).
+
 Type-to-filter: when the sidebar has focus, printable keys append to a local filter string passed down to every section. A small badge at the top shows the current filter; Backspace deletes a character, `Esc` clears. Text-entry surfaces inside the sidebar (rename rows) own their own keystrokes via an `isTypingTarget` guard.
 
 The Tags and Mentions sections can each be hidden entirely by dragging their cap slider to `0` — the slider IS the visibility control (no separate boolean toggle). Caps are clamped to `[0, 15]` (Settings > Appearance > Sidebar Composition). Tags click into the cmd bar with the `#` prefix; Mentions click in with the `@` prefix.
 
 Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `FoldersSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
 
-Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand (one-level peek) on a focused project/folder row — see Folder Peek below. The earlier `TreeOverlay` slide-in panel (formerly `⌘⇧E`) was removed in sidebar-simplification task #20; `⌘⇧E` now opens the Export dialog.
+Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand on a focused project/folder row — and expand multiple levels deep. Expanded children render with a **nested continuous indent guide**: each open folder renders its children in a nested `<ul>` whose left border IS the guide line, centred under that folder's icon (`CHILD_GUIDE_OFFSET`); every level's line is continuous and each open subfolder gets its own line (no staircase). It's a discrete guide, deliberately NOT a full tree-view component. The flat row list is kept only for keyboard-navigation order. The earlier `TreeOverlay` slide-in panel (formerly `⌘⇧E`) was removed in sidebar-simplification task #20; `⌘⇧E` now opens the Export dialog.
 
 ### Folder Peek
 
@@ -268,7 +276,7 @@ Hover-triggered popover that previews one level of a project's contents. Timing:
 - **150 ms** grace period on mouse-leave so the cursor can cross the gap to the popover content
 - Keyboard parity: pressing `→` on a focused project row inline-expands the same one-level preview
 
-Folders first, files second, each sorted alphabetically and capped (8 folders, 6 files). Overflow surfaces as "+N more…" hints that expand the next level inline.
+Folders first, files second, each sorted alphabetically. **All children are listed — there is no cap or "+N more" truncation** (the cap was removed; `derivePeekChildren` returns every child).
 
 Both the hover popover and the keyboard expansion use the same `derivePeekChildren()` helper so the two surfaces never drift.
 
@@ -276,7 +284,12 @@ Implementation: `src/components/sidebar/quiet/FolderPeek.tsx`.
 
 ### TitleBar
 
-Sits at the top of the editor zone with no tab strip beneath it (a breadcrumb row used to render here as `DocHead`; removed in task #131). `TitleBar` (`src/components/TitleBar.tsx`) carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a close-document × button. The filename is centred in the bar via `editor-store.activeTabId`. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`).
+**Optional, off by default.** The TitleBar is gated on `settings.showTitleBar` (Settings → Appearance → "Show title bar"), which defaults to **off**. The filename also lives in the sidebar (Recent/Pinned) and the StatusBar, and window dragging/controls are handled by the sidebar, so the bar is optional chrome. When hidden, `QuietLayout` reclaims the vertical space:
+
+- **Sidebar shown** → the document column sits **flush at y=0** (the macOS traffic lights are over the sidebar, not this column).
+- **Sidebar also hidden** (`⌘⇧L`) → the editor surface flows under a **transparent** top zone; the editor's content + pill toolbar are pushed down (CSS gated on the root `data-titlebar-hidden` + the doc-area `data-sidebar-pinned="false"`) so the first line and controls clear the traffic-light safe zone, and a full-width invisible drag strip hosts the lights + window dragging.
+
+When shown, `TitleBar` (`src/components/TitleBar.tsx`) sits at the top of the editor zone with no tab strip beneath it (a breadcrumb row used to render here as `DocHead`; removed in task #131) and carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a hover-revealed close-document × button. The filename is centred in the bar via `editor-store.activeTabId`. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`) regardless of the title bar.
 
 ### Status Tray + Status Bar
 
@@ -361,7 +374,7 @@ Use this pattern when a hover-preview and an inline keyboard-driven expansion re
 - Hover preview opens after 220 ms; closes after a 150 ms grace period so cursor can cross gaps
 - Provide keyboard parity via the `→` arrow key on a focused row — the preview must work without a mouse, expanding one level inline in place
 - Both surfaces share the same derivation helper (e.g. `derivePeekChildren()`) — duplicating the derivation lets the two surfaces drift visually
-- Cap the preview list (folders 8, files 6 in the workspace tree) and surface overflow as "+N more…" hints that expand the next level inline
+- The hover preview lists ALL children (folders then files, alphabetical) — no cap. (The earlier 8-folder / 6-file cap + "+N more…" overflow was removed; both the hover popover and the inline expansion now show everything.)
 
 ### Window-Inactive De-Emphasis (macOS Native Polish)
 
@@ -387,7 +400,7 @@ Anti-patterns to avoid:
 
 - **Generous whitespace**: Don't cram elements together. When in doubt, add more padding.
 - **Consistent spacing**: Use Tailwind's spacing scale consistently. Sidebar padding, editor margins, toolbar spacing should all follow the same rhythm.
-- **Sidebar width**: 240-280px, resizable. Not too narrow, not too wide.
+- **Sidebar width**: user-resizable via the right-edge drag handle, persisted as `settings.sidebarWidth` (clamped 200–500px, default 252). Not too narrow, not too wide.
 - **Editor content width**: Max 720px centered, like a well-typeset document. Don't let text span the full window width.
 - **Visual hierarchy**: Use spacing (not just font size) to create hierarchy. Sections separated by generous gaps.
 
