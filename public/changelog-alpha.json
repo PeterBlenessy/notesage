@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.26",
+      "date": "2026-06-11",
+      "previousVersion": "0.46.0-alpha.25",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): render under production CSP, keep shortcuts in the sandboxed iframe, animate find bar (#451)",
+          "fix(html-viewer): re-apply find query on iframe load (fixes find-in-frame flake) (#454)"
+        ]
+      },
+      "underTheHood": [
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(html-viewer): re-apply the find query on iframe load (fixes find-in-frame flake)",
+        "feat(html-viewer): animate the find-bar morph open and closed",
+        "fix(html-viewer): keep app keyboard shortcuts working when the sandboxed iframe has focus",
+        "fix(html-viewer): serve sandboxed iframe from htmlpreview:// so it renders under the production CSP"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.25",
       "date": "2026-06-11",
       "previousVersion": "0.46.0-alpha.24",
