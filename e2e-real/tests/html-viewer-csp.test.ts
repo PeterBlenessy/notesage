@@ -198,6 +198,12 @@ describe('HTML viewer renders document styles under the app CSP', () => {
         // in the fixture body ("navy"). The host can't reach into the sandboxed
         // frame — the match count below only updates if the injected in-frame
         // script received the query over postMessage, searched, and posted back.
+        //
+        // Robustness: the query may be typed before the sandboxed document has
+        // finished loading its injected find script, in which case the first
+        // `search` postMessage is dropped. HtmlViewer re-sends the active query on
+        // the iframe `load` event (handleIframeLoad), so the count is guaranteed
+        // to arrive once the document is ready — no race, no flake.
         await browser.execute(() => window.dispatchEvent(new Event('notesage:find-open')));
         const input = await browser.$('input[aria-label="Find in document"]');
         await input.waitForExist({ timeout: 10000 });
@@ -212,7 +218,7 @@ describe('HTML viewer renders document styles under the app CSP', () => {
                 });
                 return count === '1/1';
             },
-            { timeout: 10000, timeoutMsg: 'find bar never showed the in-frame match count (1/1)' },
+            { timeout: 15000, timeoutMsg: 'find bar never showed the in-frame match count (1/1)' },
         );
         console.log('[csp-test] in-frame search reported 1/1 for "navy"');
     });

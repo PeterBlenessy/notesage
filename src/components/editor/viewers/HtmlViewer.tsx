@@ -175,6 +175,13 @@ export function HtmlViewer({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
+  // Latest find state, mirrored to refs so the iframe `onLoad` handler (a stable
+  // callback) can read them without re-subscribing — used to re-apply the active
+  // search once the sandboxed document is ready (see handleIframeLoad).
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+  const findBarOpenRef = useRef(findBarOpen);
+  findBarOpenRef.current = findBarOpen;
 
   // Search runs inside the sandboxed iframe (via postMessage) in the
   // allow-scripts / unsafe-preview paths; in the default sanitised-div path it
@@ -355,6 +362,19 @@ export function HtmlViewer({
   const postFind = useCallback((action: "search" | "next" | "prev" | "clear", query?: string) => {
     iframeRef.current?.contentWindow?.postMessage({ ns: HTML_FIND_NS, action, query }, "*");
   }, []);
+
+  // Re-apply the active find query once the sandboxed iframe document (and its
+  // injected find script) has finished loading. This closes a race: a `search`
+  // postMessage sent while the document was still loading is dropped silently
+  // (the script's message listener isn't registered yet), so the match count
+  // never appears and find looks broken. The `load` event fires only after the
+  // in-body `<script>` has executed and registered its listener, so re-sending
+  // here is guaranteed to land. No-op when find isn't open.
+  const handleIframeLoad = useCallback(() => {
+    if (findBarOpenRef.current && searchQueryRef.current) {
+      postFind("search", searchQueryRef.current);
+    }
+  }, [postFind]);
 
   // Reset search state when switching modes, content changes, or iframe mode
   // toggles. This is an instant teardown (no exit animation) — the surface the
@@ -686,6 +706,7 @@ export function HtmlViewer({
               ref={iframeRef}
               src={iframeUrl ?? undefined}
               sandbox="allow-scripts"
+              onLoad={handleIframeLoad}
               className="w-full h-full border-0"
               title={`Unsafe preview: ${fileName}`}
             />
@@ -702,6 +723,7 @@ export function HtmlViewer({
               ref={iframeRef}
               sandbox="allow-scripts"
               src={iframeUrl ?? undefined}
+              onLoad={handleIframeLoad}
               title={`Rendered HTML (scripts enabled): ${fileName}`}
               aria-label={`Rendered HTML: ${fileName}`}
               className="w-full h-full border-0"
