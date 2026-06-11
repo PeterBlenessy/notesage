@@ -29,6 +29,10 @@ export interface ChildRowProps {
   hasFocusWithin: boolean;
   /** Whether this child directory is currently expanded inline (#158). */
   isExpanded?: boolean;
+  /** True when this row's file is the active document — highlights the icon. */
+  isActive?: boolean;
+  /** ARIA tree level (project = 1, direct child = 2, …). */
+  level?: number;
   isRenaming: boolean;
   onActivate: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -48,6 +52,8 @@ export function ChildRow({
   isFocused,
   hasFocusWithin,
   isExpanded,
+  isActive,
+  level,
   isRenaming,
   onActivate,
   onKeyDown,
@@ -83,38 +89,6 @@ export function ChildRow({
     }
     prevRenamingRef.current = isRenaming;
   }, [isRenaming, row.entry]);
-
-  // Overflow rows — "+N more…"
-  if (row.overflow) {
-    const label = `Show ${row.overflow.count} more ${row.overflow.kind}${row.overflow.count === 1 ? "" : "s"}`;
-    return (
-      <div
-        ref={setRef}
-        role="treeitem"
-        aria-level={2}
-        aria-label={label}
-        data-row-type="child-overflow"
-        tabIndex={hasFocusWithin ? tabIndex : -1}
-        onClick={onActivate}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onActivate();
-            return;
-          }
-          onKeyDown?.(e);
-        }}
-        onFocus={onFocus}
-        className={cn(
-          "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
-          "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-          "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
-        )}
-      >
-        +{row.overflow.count} more…
-      </div>
-    );
-  }
 
   const entry = row.entry;
   if (!entry) return null;
@@ -160,12 +134,14 @@ export function ChildRow({
     <div
       ref={setRef}
       role="treeitem"
-      aria-level={2}
+      aria-level={level ?? 2}
       aria-expanded={entry.is_directory ? (isExpanded ?? false) : undefined}
       aria-selected={isFocused ? "true" : undefined}
+      aria-current={isActive ? "page" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"
       data-row-kind={entry.is_directory ? "folder" : "file"}
+      data-active={isActive ? "true" : undefined}
       data-renaming={isRenaming ? "true" : undefined}
       tabIndex={hasFocusWithin ? tabIndex : -1}
       draggable={draggable}
@@ -177,11 +153,18 @@ export function ChildRow({
         "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         !isRenaming && "hover:bg-muted/50 cursor-pointer",
+        // Active document — name goes solid/medium, icon gets the accent below.
+        isActive && "text-foreground font-medium",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
       )}
     >
       <Icon
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          isActive
+            ? "text-[var(--color-accent-primary)]"
+            : "text-muted-foreground/70",
+        )}
         strokeWidth={1.5}
         aria-hidden="true"
       />

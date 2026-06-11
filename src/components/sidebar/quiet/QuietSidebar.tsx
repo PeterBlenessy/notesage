@@ -1,8 +1,20 @@
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import {
+  useSettingsStore,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+} from "@/stores/settings-store";
 import { isAnyCustomizePopoverOpen } from "@/lib/sidebar-context-menu-state";
 import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
@@ -196,24 +208,130 @@ export function QuietSidebar() {
       // and the doc area share the same colour and the only signal is
       // the right border, which makes the "sidebar extends to top
       // edge" change invisible until content fills the top zone.
-      className="flex flex-col gap-4 overflow-y-auto px-4 pt-10 pb-2 h-full w-[252px] shrink-0 min-h-0 border-r border-border-strong bg-muted/30"
+      // `overflow-hidden` on the nav + a separate scroll container below keeps
+      // the WorkspaceHeader (Notesage icon + name) PINNED at the top while only
+      // the section list scrolls. `relative` anchors the resize handle.
+      // Width is user-resizable — driven by `--quiet-sidebar-width` (persisted
+      // as `settings.sidebarWidth`); the handle writes the var live during drag.
+      className="relative flex flex-col px-4 pt-10 pb-2 h-full shrink-0 min-h-0 overflow-hidden border-r border-border-strong bg-muted/30"
+      style={{ width: `var(--quiet-sidebar-width, ${SIDEBAR_DEFAULT_WIDTH}px)` }}
     >
       <WorkspaceHeader />
-      {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
-      <PinnedSection filter={filter} />
-      <ProjectsSection filter={filter} onAdd={handleAddProject} />
-      {/* Sidebar-simplification task #10 — Folders section sits
-         between Projects and Recent. Self-hides when the user has no
-         explorer folders open (locked-in 2026-04-27 — no cap, no
-         slider; the user IS the limiter). */}
-      <FoldersSection filter={filter} />
-      <RecentSection filter={filter} />
-      {/* TagsSection / MentionsSection self-hide when their cap is 0
-          (the slider IS the visibility control — see settings-store
-          v11→v12 migration). */}
-      <TagsSection filter={filter} />
-      <MentionsSection filter={filter} />
+      {/* Scroll body — everything below the header scrolls; the header stays put. */}
+      <div className="flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto -mr-2 pr-2">
+        {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
+        <PinnedSection filter={filter} />
+        <ProjectsSection filter={filter} onAdd={handleAddProject} />
+        {/* Sidebar-simplification task #10 — Folders section sits
+           between Projects and Recent. Self-hides when the user has no
+           explorer folders open (locked-in 2026-04-27 — no cap, no
+           slider; the user IS the limiter). */}
+        <FoldersSection filter={filter} />
+        <RecentSection filter={filter} />
+        {/* TagsSection / MentionsSection self-hide when their cap is 0
+            (the slider IS the visibility control — see settings-store
+            v11→v12 migration). */}
+        <TagsSection filter={filter} />
+        <MentionsSection filter={filter} />
+      </div>
+      <SidebarResizeHandle />
     </nav>
+  );
+}
+
+/**
+ * Drag handle on the sidebar's right edge. The width state lives in the
+ * `--quiet-sidebar-width` CSS variable on `<html>` (published by QuietLayout);
+ * we write the var on every pointer-move so resize is React-render-free, and
+ * persist the final value to `settings.sidebarWidth` on pointer-up — mirroring
+ * the pinned command-bar resize handle. The sidebar docks to the window's LEFT
+ * edge, so the new width is simply the pointer's x-coordinate.
+ */
+const SIDEBAR_KEYBOARD_STEP = 16;
+
+function SidebarResizeHandle() {
+  const persistedWidth = useSettingsStore((s) => s.sidebarWidth);
+  const setSidebarWidth = useSettingsStore((s) => s.setSidebarWidth);
+
+  const clamp = (w: number) =>
+    Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, w)));
+
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      const onMove = (moveEvent: PointerEvent) => {
+        document.documentElement.style.setProperty(
+          "--quiet-sidebar-width",
+          `${clamp(moveEvent.clientX)}px`,
+        );
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        setSidebarWidth(clamp(upEvent.clientX));
+        target.releasePointerCapture(event.pointerId);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [setSidebarWidth],
+  );
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const delta =
+        event.key === "ArrowRight"
+          ? SIDEBAR_KEYBOARD_STEP
+          : -SIDEBAR_KEYBOARD_STEP;
+      const next = clamp(persistedWidth + delta);
+      document.documentElement.style.setProperty(
+        "--quiet-sidebar-width",
+        `${next}px`,
+      );
+      setSidebarWidth(next);
+    },
+    [persistedWidth, setSidebarWidth],
+  );
+
+  // Keep the var in sync if the store width changes out of band (rehydration).
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--quiet-sidebar-width",
+      `${persistedWidth}px`,
+    );
+  }, [persistedWidth]);
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label="Resize sidebar"
+      aria-orientation="vertical"
+      aria-valuemin={SIDEBAR_MIN_WIDTH}
+      aria-valuemax={SIDEBAR_MAX_WIDTH}
+      aria-valuenow={persistedWidth}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      data-sidebar-resize-handle
+      className={cn(
+        // Hairline on the right edge; invisible at rest (the border carries the
+        // edge), brighter on hover/focus. A 16px invisible hit target keeps the
+        // grab comfortable without thickening the line.
+        "absolute right-0 top-0 z-10 h-full w-px cursor-col-resize",
+        "bg-transparent hover:bg-muted-foreground transition-colors",
+        "focus-visible:outline-none focus-visible:bg-muted-foreground",
+        "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
+      )}
+    />
   );
 }
 

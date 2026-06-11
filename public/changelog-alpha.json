@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.46.0-alpha.25",
+      "date": "2026-06-11",
+      "previousVersion": "0.46.0-alpha.24",
+      "sections": {
+        "features": [
+          "feat(quiet): optional title bar, resizable sidebar, and sidebar polish (#452)"
+        ]
+      },
+      "underTheHood": [
+        "test(e2e-real): enable the title bar for the dirty-dot spec + update docs",
+        "feat(quiet-sidebar): empty-Pinned hide, sticky header, list-all children, nested indent guides, active-doc highlight, resize handle",
+        "feat(quiet-layout): hide-able title bar + flush/transparent top, resizable sidebar width"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.24",
       "date": "2026-06-10",
       "previousVersion": "0.46.0-alpha.23",

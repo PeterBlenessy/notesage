@@ -82,12 +82,19 @@ vi.mock('@/components/editor/Editor', () => ({
 let mockCmdBarPinned = false;
 let mockSidebarPinned = true;
 let mockQuietChromeTransparent = false;
+// Default the TitleBar ON in tests so the existing mount/CSS-hook assertions
+// exercise the enabled path. The real store default is OFF (see settings-store
+// + the "hides the TitleBar by default" test below).
+let mockShowTitleBar = true;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     get sidebarPinned() { return mockSidebarPinned; },
     get quietChromeTransparent() { return mockQuietChromeTransparent; },
+    get showTitleBar() { return mockShowTitleBar; },
+    sidebarWidth: 252,
+    setSidebarWidth: () => {},
     // Quiet-chrome (#51) — the real store seeds these defaults on startup.
     // QuietLayout mounts `useQuietChrome()` which reads both slices, so the
     // mock has to supply them or the hook crashes with "undefined.toolbar".
@@ -107,6 +114,10 @@ vi.mock('@/stores/settings-store', () => {
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
+    // QuietSidebar imports these named constants from the (mocked) module.
+    SIDEBAR_MIN_WIDTH: 200,
+    SIDEBAR_MAX_WIDTH: 500,
+    SIDEBAR_DEFAULT_WIDTH: 252,
   };
 });
 
@@ -150,6 +161,7 @@ describe('QuietLayout (placeholder)', () => {
     mockCmdBarPinned = false;
     mockSidebarPinned = true;
     mockQuietChromeTransparent = false;
+    mockShowTitleBar = true;
   });
 
   it('renders without crashing', () => {
@@ -165,6 +177,47 @@ describe('QuietLayout (placeholder)', () => {
   it('renders the title bar at the top', () => {
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     expect(screen.getByTestId('titlebar')).toBeTruthy();
+  });
+
+  it('hides the TitleBar and sits the document flush to the top (sidebar shown)', () => {
+    mockShowTitleBar = false;
+    mockSidebarPinned = true;
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    // No TitleBar mounted.
+    expect(screen.queryByTestId('titlebar')).toBeNull();
+    // Root advertises the hidden state for the CSS clearance overrides.
+    const root = container.querySelector('[data-quiet-layout-root]');
+    expect(root?.getAttribute('data-titlebar-hidden')).toBe('true');
+    // Flush: the document area reserves NO top padding — the sidebar covers the
+    // traffic-light corner, so the column starts at y=0.
+    const docArea = container.querySelector('[data-quiet-layout-document-area]');
+    expect(docArea?.className).not.toMatch(/\bpt-/);
+    // No doc-column drag strip when the sidebar is present (it owns dragging).
+    expect(
+      container.querySelector('div[aria-hidden][data-tauri-drag-region]'),
+    ).toBeNull();
+  });
+
+  it('flows the editor flush under a transparent drag strip when title bar AND sidebar are hidden', () => {
+    mockShowTitleBar = false;
+    mockSidebarPinned = false;
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const docArea = container.querySelector('[data-quiet-layout-document-area]');
+    // Flush — no opaque top band; the editor surface flows to y=0 and the CSS
+    // (data-titlebar-hidden + data-sidebar-pinned="false") pushes editor content
+    // down to clear the traffic lights.
+    expect(docArea?.className).not.toMatch(/\bpt-/);
+    expect(docArea?.getAttribute('data-sidebar-pinned')).toBe('false');
+    // A transparent drag region covers the traffic-light zone for window moves.
+    expect(
+      container.querySelector('div[aria-hidden][data-tauri-drag-region]'),
+    ).toBeTruthy();
+  });
+
+  it('marks the root data-titlebar-hidden="false" when showTitleBar is on', () => {
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const root = container.querySelector('[data-quiet-layout-root]');
+    expect(root?.getAttribute('data-titlebar-hidden')).toBe('false');
   });
 
   it('mounts the TitleBar with data-titlebar-mode="quiet"', () => {

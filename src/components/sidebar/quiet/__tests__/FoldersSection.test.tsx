@@ -12,6 +12,7 @@ import {
   useWorkspaceStore,
   type ExplorerFolder,
 } from "@/stores/workspace-store";
+import { useEditorStore } from "@/stores/editor-store";
 import type { FileEntry } from "@/lib/tauri";
 
 // Spy openFile so we can assert child file activation routes through it.
@@ -73,6 +74,34 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
     // The "Folders" section header itself is also hidden — when there
     // are no folders, the entire <section> doesn't render.
     expect(screen.queryByText(/^Folders$/)).toBeNull();
+  });
+
+  it("marks the open document's child row as active (icon highlight)", () => {
+    setExplorerFolders([
+      {
+        path: "/Users/me/code/alpha",
+        fileTree: [makeFile("readme.md", "/Users/me/code/alpha/readme.md")],
+      },
+    ]);
+    // Active document = the child file.
+    useEditorStore.setState({
+      openDocuments: [
+        {
+          id: "t1",
+          filePath: "/Users/me/code/alpha/readme.md",
+        },
+      ],
+      activeTabId: "t1",
+    } as Parameters<typeof useEditorStore.setState>[0]);
+    renderWithProviders(<FoldersSection />);
+
+    // Expand the folder to reveal its child.
+    const folderRow = screen.getByRole("treeitem", { name: /alpha/i });
+    fireEvent.keyDown(folderRow, { key: "ArrowRight" });
+
+    const childRow = screen.getByRole("treeitem", { name: /readme\.md/i });
+    expect(childRow.getAttribute("data-active")).toBe("true");
+    expect(childRow.getAttribute("aria-current")).toBe("page");
   });
 
   it("renders one row per explorer folder when non-empty", () => {

@@ -881,8 +881,18 @@ body {
    content would still start at y=44 and there'd be nothing for the
    frosted glass to sit on top of. */
 .app[data-quiet-chrome-transparent="true"] [data-quiet-layout-document-area] {
-  padding-top: 0;
+  /* StatusBar (absolute, bottom) — content scrolls behind it regardless of the
+     title bar, so this is unconditional in transparent mode. */
   padding-bottom: 0;
+}
+
+/* The top `padding-top: 0` only made sense to let content scroll behind the
+   frosted TitleBar. When the bar is hidden (`data-titlebar-hidden="true"`) the
+   doc area keeps its React-driven top padding (breathing room / traffic-light
+   clearance) instead. */
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-quiet-layout-document-area] {
+  padding-top: 0;
 }
 
 /* =========================================================================
@@ -931,12 +941,33 @@ body {
  *     y=0 instead of y=44. Bump it to `top: 48px` so it clears the bar
  *     and floats just below the chrome edge, matching the mockup.
  */
-.app[data-quiet-chrome-transparent="true"] [data-editor-scroll-content] {
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-editor-scroll-content] {
   padding-top: calc(2.5rem + 0.5rem); /* 44px = title bar 36 + 8 gap */
 }
 
-.app[data-quiet-chrome-transparent="true"] [data-editor-pill-toolbar] {
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-editor-pill-toolbar] {
   top: 3rem; /* 48px — clears the 36px title bar with a 12px gap */
+}
+
+/* TitleBar hidden + sidebar hidden — the document column spans the full window
+   width, so its top-left sits under the macOS traffic lights. Instead of an
+   opaque top band, the editor surface flows flush to y=0 (transparent / quiet)
+   and we push the editor's OWN content + pill toolbar down so the first line and
+   controls clear the traffic-light safe zone. The full-width transparent drag
+   strip (QuietLayout) hosts the lights + window dragging. Markdown editor only;
+   non-editor viewers keep their own top spacing. */
+.app[data-titlebar-hidden="true"]
+  [data-quiet-layout-document-area][data-sidebar-pinned="false"]
+  [data-editor-scroll-content] {
+  padding-top: calc(2.5rem + 0.5rem); /* 44px — clears the traffic lights */
+}
+
+.app[data-titlebar-hidden="true"]
+  [data-quiet-layout-document-area][data-sidebar-pinned="false"]
+  [data-editor-pill-toolbar] {
+  top: 3rem; /* 48px */
 }
 
 /* =========================================================================
