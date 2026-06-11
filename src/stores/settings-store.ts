@@ -12,6 +12,11 @@ import {
 
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
+
+/** Resizable Quiet Composer sidebar width bounds (px). */
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 500;
+export const SIDEBAR_DEFAULT_WIDTH = 252;
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
@@ -191,6 +196,15 @@ interface SettingsStore {
    */
   quietChromeTransparent: boolean;
   /**
+   * Show the QuietLayout TitleBar (document name + dirty dot + close ×).
+   * Default off — the filename also lives in the sidebar (Recent/Pinned) and
+   * the StatusBar, and the window controls + dragging are handled by the
+   * sidebar's full-height drag region, so the bar is optional chrome. When off,
+   * the document area reclaims the vertical space. Trial toggle (can be flipped
+   * back on in Settings > Appearance) ahead of a possible full removal.
+   */
+  showTitleBar: boolean;
+  /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
    * the quiet-composer sidebar Recent section. Clamped to [3, 15]. Default 5.
    */
@@ -289,6 +303,7 @@ interface SettingsStore {
   setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
   /** #132 — toggle the translucent chrome + editor flow-under effect. */
   setQuietChromeTransparent: (enabled: boolean) => void;
+  setShowTitleBar: (show: boolean) => void;
   /**
    * Toggle a single per-element override. Automatically flips the preset to
    * "custom" so the override is actually used at read time.
@@ -390,7 +405,7 @@ export const useSettingsStore = create<SettingsStore>()(
       marginRight: 2.54,
       sidebarOpen: true,
       sidebarPinned: true,
-      sidebarWidth: 280,
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
       personasMigrated: false,
@@ -408,6 +423,7 @@ export const useSettingsStore = create<SettingsStore>()(
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       quietChromeTransparent: false,
+      showTitleBar: false,
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarMentionsCap: 5,
@@ -514,7 +530,11 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setSidebarWidth: (width: number) => {
-        set({ sidebarWidth: Math.round(Math.max(200, Math.min(400, width))) });
+        set({
+          sidebarWidth: Math.round(
+            Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width)),
+          ),
+        });
       },
 
       setNotesRootPath: (path: string) => {
@@ -757,6 +777,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ quietChromeTransparent: enabled });
       },
 
+      setShowTitleBar: (show: boolean) => {
+        set({ showTitleBar: show });
+      },
+
       setSidebarRecentCap: (n: number) => {
         // Clamp to [3, 15] per PRD; round so the slider value stays integer.
         set({ sidebarRecentCap: Math.round(Math.max(3, Math.min(15, n))) });
@@ -879,6 +903,22 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (typeof state.quietChromeTransparent !== 'boolean') {
             state.quietChromeTransparent = false;
+          }
+          if (typeof state.showTitleBar !== 'boolean') {
+            state.showTitleBar = false;
+          }
+          if (
+            typeof state.sidebarWidth !== 'number' ||
+            Number.isNaN(state.sidebarWidth)
+          ) {
+            state.sidebarWidth = SIDEBAR_DEFAULT_WIDTH;
+          } else {
+            state.sidebarWidth = Math.round(
+              Math.max(
+                SIDEBAR_MIN_WIDTH,
+                Math.min(SIDEBAR_MAX_WIDTH, state.sidebarWidth),
+              ),
+            );
           }
         }
         if (version < 8) {

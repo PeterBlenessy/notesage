@@ -156,6 +156,12 @@ describe('Document switching (Quiet Composer)', () => {
         // Restore the edited fixture so a typed marker never leaks into the
         // next test (or the committed fixture).
         await tauriInvoke('write_file', { path: editFilePath, content: originalEditContent });
+        // Reset the TitleBar toggle (the dirty-dot test opts it on) so it
+        // doesn't leak into other specs — it's off by default now.
+        await browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__E2E_SETTINGS_STORE__?.getState()?.setShowTitleBar?.(false);
+        });
     });
 
     after(async () => {
@@ -171,6 +177,12 @@ describe('Document switching (Quiet Composer)', () => {
 
     // ── Behaviour 1: dirty indicator ────────────────────────────────────────
     it('shows the TitleBar dirty dot after editing the active document', async () => {
+        // The TitleBar is opt-in now (hidden by default) — enable it so its
+        // dirty dot can render. Reset in afterEach.
+        await browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__E2E_SETTINGS_STORE__?.getState()?.setShowTitleBar?.(true);
+        });
         await openFile(editFile.name, TEST_PROJECT_PATH);
 
         // Clean baseline: openFile() marks the tab clean, so no dirty dot yet.

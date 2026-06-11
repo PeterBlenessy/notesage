@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { Folder, FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -32,6 +33,7 @@ import {
   isSystemFolderName,
   countMarkdownFiles,
   buildProjectNameValidator,
+  CHILD_GUIDE_OFFSET,
   insertChildRows,
   projectBasename,
   type RowDescriptor,
@@ -203,7 +205,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   );
 
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
   const [expandedChildPaths, setExpandedChildPaths] = useState<Set<string>>(new Set());
 
   const { renamePath, createFile, createFolder, openFile } = useFileOperations();
@@ -219,7 +220,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       list.push({ id: project.path, kind: "project", project });
       if (expandedPaths.has(project.path)) {
         const children = derivePeekChildren(project.fileTree, {
-          unbounded: showAllPaths.has(project.path),
           showHidden: showHiddenFiles,
         });
         for (const folder of children.folders) {
@@ -228,18 +228,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             kind: "child",
             project,
             entry: folder,
+            depth: 1,
           });
           if (expandedChildPaths.has(folder.path)) {
-            insertChildRows(list, folder.children ?? [], project, expandedChildPaths, showHiddenFiles);
+            insertChildRows(list, folder.children ?? [], project, expandedChildPaths, showHiddenFiles, 2);
           }
-        }
-        if (children.folderOverflow > 0) {
-          list.push({
-            id: `${project.path}::__folder-overflow__`,
-            kind: "child",
-            project,
-            overflow: { kind: "folder", count: children.folderOverflow },
-          });
         }
         for (const file of children.files) {
           list.push({
@@ -247,20 +240,13 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             kind: "child",
             project,
             entry: file,
-          });
-        }
-        if (children.fileOverflow > 0) {
-          list.push({
-            id: `${project.path}::__file-overflow__`,
-            kind: "child",
-            project,
-            overflow: { kind: "file", count: children.fileOverflow },
+            depth: 1,
           });
         }
       }
     }
     return list;
-  }, [projects, expandedPaths, expandedChildPaths, showAllPaths, showHiddenFiles]);
+  }, [projects, expandedPaths, expandedChildPaths, showHiddenFiles]);
 
   // Collect visible child paths for the SIDEBAR_ENTER_RENAME_MODE_EVENT filter.
   const visibleChildPaths = useMemo(() => {
@@ -497,6 +483,97 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     [rows, focusRow, expandedChildPaths],
   );
 
+  // Recursive child renderer — each expanded folder renders its children in a
+  // nested <ul> whose left border IS the indent guide, so every level's line is
+  // continuous and each open subfolder gets its own line centred under its icon
+  // (CHILD_GUIDE_OFFSET). No staircase. The flat `rows` list is kept only for
+  // keyboard navigation order.
+  const renderChildLevel = (
+    project: WorkspaceProject,
+    entries: FileEntry[],
+    level: number,
+  ): ReactNode => {
+    const peek = derivePeekChildren(entries, { showHidden: showHiddenFiles });
+    const ordered = [...peek.folders, ...peek.files];
+    if (ordered.length === 0) return null;
+    return (
+      <ul
+        role="group"
+        className="flex flex-col m-0 list-none border-l border-border/70 pl-2"
+        style={{ marginLeft: CHILD_GUIDE_OFFSET }}
+      >
+        {ordered.map((entry) => {
+          const id = `${project.path}::${entry.path}`;
+          const isChildExpanded =
+            entry.is_directory && expandedChildPaths.has(entry.path);
+          const row: RowDescriptor = {
+            id,
+            kind: "child",
+            project,
+            entry,
+            depth: level,
+          };
+          const childRow = (
+            <ChildRow
+              row={row}
+              level={level}
+              isActive={entry.path === activeTabPath}
+              isFocused={focusedRowId === id}
+              hasFocusWithin={focusedRowId !== null}
+              isRenaming={renamingPath === entry.path}
+              isExpanded={entry.is_directory ? isChildExpanded : undefined}
+              onActivate={() => {
+                if (entry.is_directory) {
+                  setExpandedChildPaths((prev) => {
+                    const next = new Set(prev);
+                    if (prev.has(entry.path)) next.delete(entry.path);
+                    else next.add(entry.path);
+                    return next;
+                  });
+                  return;
+                }
+                void openFileEntry(entry);
+              }}
+              onKeyDown={(e) => handleChildKeyDown(e, row)}
+              onFocus={() => setFocusedRowId(id)}
+              onStartRename={startRename}
+              onCommitRename={commitRename}
+              onCancelRename={cancelRename}
+              registerRef={(el) => rowRefs.current.set(id, el)}
+            />
+          );
+          const ctx = (
+            <SidebarContextMenu
+              filePath={entry.path}
+              kind={entry.is_directory ? "folder" : "file"}
+            >
+              <div>{childRow}</div>
+            </SidebarContextMenu>
+          );
+          let inner: ReactNode;
+          if (entry.is_directory) {
+            inner = (
+              <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
+                {ctx}
+              </FolderPeek>
+            );
+          } else if (isPreviewable(entry.path)) {
+            inner = <FilePreview filePath={entry.path}>{ctx}</FilePreview>;
+          } else {
+            inner = <div>{ctx}</div>;
+          }
+          return (
+            <li key={id} className="m-0 p-0">
+              {inner}
+              {isChildExpanded &&
+                renderChildLevel(project, entry.children ?? [], level + 1)}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
+
   return (
     <section
       aria-label="Folders"
@@ -591,119 +668,45 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                   </SidebarContextMenu>
                 </FolderPeek>
                 {(children || isPendingCreateHere) && (
-                  <ul
-                    role="group"
-                    className="flex flex-col m-0 p-0 list-none pl-4"
-                  >
+                  <>
                     {isPendingCreateHere && pendingCreate && (
-                      <li
-                        className="m-0 p-0"
-                        data-pending-create="true"
-                        data-pending-create-parent={pendingCreate.parentDir}
+                      // Inline create-note row in its own guided <ul> so it
+                      // lines up with the children below.
+                      <ul
+                        role="group"
+                        className="flex flex-col m-0 list-none border-l border-border/70 pl-2"
+                        style={{ marginLeft: CHILD_GUIDE_OFFSET }}
                       >
-                        <div className="h-7 px-2 flex items-center gap-2">
-                          <FileText
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                            strokeWidth={1.5}
-                            aria-hidden="true"
-                          />
-                          <SidebarInlineEdit
-                            mode="create"
-                            placeholder="note.md"
-                            validate={validateCreateBasename}
-                            onCommit={(value) =>
-                              void handleCreateCommit(
-                                pendingCreate.parentDir,
-                                value,
-                              )
-                            }
-                            onCancel={handleCreateCancel}
-                            className="flex-1 min-w-0"
-                          />
-                        </div>
-                      </li>
+                        <li
+                          className="m-0 p-0"
+                          data-pending-create="true"
+                          data-pending-create-parent={pendingCreate.parentDir}
+                        >
+                          <div className="h-7 px-2 flex items-center gap-2">
+                            <FileText
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <SidebarInlineEdit
+                              mode="create"
+                              placeholder="note.md"
+                              validate={validateCreateBasename}
+                              onCommit={(value) =>
+                                void handleCreateCommit(
+                                  pendingCreate.parentDir,
+                                  value,
+                                )
+                              }
+                              onCancel={handleCreateCancel}
+                              className="flex-1 min-w-0"
+                            />
+                          </div>
+                        </li>
+                      </ul>
                     )}
-                    {rows
-                      .filter(
-                        (r) =>
-                          r.kind === "child" && r.project.path === project.path,
-                      )
-                      .map((row) => {
-                        const childRow = (
-                          <ChildRow
-                            key={row.id}
-                            row={row}
-                            isFocused={focusedRowId === row.id}
-                            hasFocusWithin={focusedRowId !== null}
-                            isRenaming={
-                              !!row.entry && renamingPath === row.entry.path
-                            }
-                            isExpanded={
-                              row.entry?.is_directory
-                                ? expandedChildPaths.has(row.entry.path)
-                                : undefined
-                            }
-                            onActivate={() => {
-                              if (row.overflow) {
-                                setShowAllPaths((prev) => {
-                                  const updated = new Set(prev);
-                                  updated.add(project.path);
-                                  return updated;
-                                });
-                                return;
-                              }
-                              if (!row.entry) return;
-                              if (row.entry.is_directory) {
-                                setExpandedChildPaths((prev) => {
-                                  const next = new Set(prev);
-                                  if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
-                                  else next.add(row.entry!.path);
-                                  return next;
-                                });
-                                return;
-                              }
-                              void openFileEntry(row.entry);
-                            }}
-                            onKeyDown={(e) => handleChildKeyDown(e, row)}
-                            onFocus={() => setFocusedRowId(row.id)}
-                            onStartRename={startRename}
-                            onCommitRename={commitRename}
-                            onCancelRename={cancelRename}
-                            registerRef={(el) =>
-                              rowRefs.current.set(row.id, el)
-                            }
-                          />
-                        );
-                        if (!row.entry) return childRow;
-                        const ctx = (
-                          <SidebarContextMenu
-                            filePath={row.entry.path}
-                            kind={row.entry.is_directory ? "folder" : "file"}
-                          >
-                            <div>{childRow}</div>
-                          </SidebarContextMenu>
-                        );
-                        if (row.entry.is_directory) {
-                          return (
-                            <FolderPeek
-                              key={row.id}
-                              projectPath={row.entry.path}
-                              fileTree={row.entry.children ?? []}
-                            >
-                              {ctx}
-                            </FolderPeek>
-                          );
-                        }
-                        if (isPreviewable(row.entry.path)) {
-                          return (
-                            <FilePreview key={row.id} filePath={row.entry.path}>
-                              {ctx}
-                            </FilePreview>
-                          );
-                        }
-                        return <div key={row.id}>{ctx}</div>;
-                      })}
-                  </ul>
+                    {children && renderChildLevel(project, project.fileTree, 2)}
+                  </>
                 )}
               </li>
             );
@@ -716,8 +719,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
 /**
  * First-focusable child row ID for a given project. Returns the first
- * folder, falling back to the first file, and finally to the overflow
- * placeholder if that's all that's visible.
+ * folder, falling back to the first file.
  */
 function firstChildRowId(
   projectPath: string,
@@ -727,11 +729,5 @@ function firstChildRowId(
   if (firstFolder) return `${projectPath}::${firstFolder.path}`;
   const firstFile = children.files[0];
   if (firstFile) return `${projectPath}::${firstFile.path}`;
-  if (children.folderOverflow > 0) {
-    return `${projectPath}::__folder-overflow__`;
-  }
-  if (children.fileOverflow > 0) {
-    return `${projectPath}::__file-overflow__`;
-  }
   return null;
 }

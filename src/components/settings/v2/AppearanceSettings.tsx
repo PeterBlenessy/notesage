@@ -165,6 +165,8 @@ export function AppearanceSettings() {
   const setQuietChromeTransparent = useSettingsStore(
     (s) => s.setQuietChromeTransparent,
   );
+  const showTitleBar = useSettingsStore((s) => s.showTitleBar);
+  const setShowTitleBar = useSettingsStore((s) => s.setShowTitleBar);
   const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
   const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
   const sidebarRecentCap = useSettingsStore((s) => s.sidebarRecentCap);
@@ -424,6 +426,23 @@ export function AppearanceSettings() {
               );
             })
           : null}
+
+        {/* Show/hide the document title bar (name + dirty dot + close ×).
+           *  Off by default — the filename also lives in the sidebar and
+           *  status bar, and window dragging is handled by the sidebar, so
+           *  hiding it reclaims vertical space for the document. */}
+        <SettingsRow
+          label="Show title bar"
+          description="Show the document name, unsaved-changes dot, and close button at the top of the editor. Off reclaims the vertical space (the filename still shows in the sidebar and status bar)."
+          htmlFor="appearance-show-title-bar"
+          control={
+            <Switch
+              id="appearance-show-title-bar"
+              checked={showTitleBar}
+              onCheckedChange={setShowTitleBar}
+            />
+          }
+        />
 
         {/* #132 — translucent chrome + editor flow-under. Default off
            *  so existing users see no change. When on, the title bar

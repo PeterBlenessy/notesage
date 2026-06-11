@@ -63,7 +63,9 @@ function resetStores() {
     projects: [],
     recentProjects: [],
     notesTree: [],
-    pinnedFiles: [],
+    // Seed one pinned file so the Pinned section renders — it now self-hides
+    // when nothing is pinned, and these shell tests assert its presence/order.
+    pinnedFiles: ['/p/pinned.md'],
   });
   useEditorStore.setState({
     openDocuments: [],
@@ -118,8 +120,11 @@ describe('QuietSidebar — shell', () => {
   });
 
   it('renders empty section bodies (no items yet — G2 wires data)', () => {
+    // Pinned self-hides when empty; clear the seeded pin so every remaining
+    // section is genuinely empty for this assertion.
+    useWorkspaceStore.setState({ pinnedFiles: [] });
     renderWithProviders(<QuietSidebar />);
-    // Each section should contain only its header; no list items exist today.
+    // Each visible section should contain only its header; no list items.
     for (const section of screen.getAllByRole('region')) {
       expect(within(section).queryAllByRole('listitem')).toHaveLength(0);
     }
@@ -129,6 +134,37 @@ describe('QuietSidebar — shell', () => {
 // ---------------------------------------------------------------------------
 // Task #43 — type-to-filter keyboard + badge
 // ---------------------------------------------------------------------------
+
+describe('QuietSidebar — resize handle', () => {
+  it('renders a resize slider reflecting the persisted width', () => {
+    useSettingsStore.setState({ sidebarWidth: 252 });
+    renderWithProviders(<QuietSidebar />);
+    const handle = screen.getByRole('slider', { name: /resize sidebar/i });
+    expect(handle.getAttribute('aria-valuenow')).toBe('252');
+    expect(handle.getAttribute('aria-valuemin')).toBe('200');
+    expect(handle.getAttribute('aria-valuemax')).toBe('500');
+  });
+
+  it('ArrowRight / ArrowLeft adjust + persist the width (clamped)', () => {
+    useSettingsStore.setState({ sidebarWidth: 252 });
+    renderWithProviders(<QuietSidebar />);
+    const handle = screen.getByRole('slider', { name: /resize sidebar/i });
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(useSettingsStore.getState().sidebarWidth).toBe(268); // +16
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(useSettingsStore.getState().sidebarWidth).toBe(252); // -16
+  });
+
+  it('clamps at the maximum when arrowing past it', () => {
+    useSettingsStore.setState({ sidebarWidth: 495 });
+    renderWithProviders(<QuietSidebar />);
+    const handle = screen.getByRole('slider', { name: /resize sidebar/i });
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(useSettingsStore.getState().sidebarWidth).toBe(500);
+  });
+});
 
 describe('QuietSidebar — type-to-filter (#43)', () => {
   it('does not render the filter badge when no filter is active', () => {
