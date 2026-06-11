@@ -18,7 +18,7 @@ import { PlainTextViewer } from "../PlainTextViewer";
 import { EditorViewerContainer } from "../../EditorViewerContainer";
 import { useSettingsStore } from "@/stores/settings-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
-import { HTML_KEY_NS } from "../html-find-frame";
+import { HTML_KEY_NS, HTML_FIND_NS } from "../html-find-frame";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -1484,5 +1484,89 @@ describe("HtmlViewer — find bar open/close morph animation", () => {
     await waitFor(() =>
       expect(screen.queryByPlaceholderText(/find/i)).toBeNull()
     );
+  });
+});
+
+describe("HtmlViewer — re-applies the find query on iframe load (flake fix)", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("re-posts the active search to the frame when the iframe fires load", async () => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>find the navy word</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-find-reload"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
+    });
+
+    // Open find + type a query (an active search now exists).
+    act(() => {
+      window.dispatchEvent(new Event("notesage:find-open"));
+    });
+    const input = screen.getByPlaceholderText(/find/i);
+    fireEvent.change(input, { target: { value: "navy" } });
+
+    // Spy on the frame's postMessage and clear any sends from typing, then fire
+    // the iframe load event — the active query must be re-sent so a search that
+    // raced the document load isn't lost.
+    const post = vi.spyOn(iframe!.contentWindow!, "postMessage");
+    fireEvent.load(iframe!);
+
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ns: HTML_FIND_NS,
+        action: "search",
+        query: "navy",
+      }),
+      "*"
+    );
+    post.mockRestore();
+  });
+
+  it("does NOT post a search on iframe load when find is closed", async () => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>page</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-find-reload-closed"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
+    });
+    const post = vi.spyOn(iframe!.contentWindow!, "postMessage");
+    fireEvent.load(iframe!);
+    expect(post).not.toHaveBeenCalled();
+    post.mockRestore();
   });
 });
