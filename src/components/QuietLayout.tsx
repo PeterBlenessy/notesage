@@ -178,12 +178,24 @@ export function QuietLayout(props: QuietLayoutProps) {
     (s) => s.quietChromeTransparent,
   );
 
+  // Show/hide the TitleBar (document name + dirty dot + close ×). Default off —
+  // the filename lives in the sidebar + StatusBar and dragging/window controls
+  // are handled by the sidebar's full-height drag region, so the bar is optional
+  // chrome. When hidden, the document area reclaims the vertical space and a thin
+  // invisible drag strip preserves window-dragging (and clears the macOS
+  // traffic-light safe zone when the sidebar is also hidden).
+  const showTitleBar = useSettingsStore((s) => s.showTitleBar);
+
   // `⌘⇧L` — sidebar visibility (#123). The chord flips
   // `settings-store.sidebarPinned` via `useKeyboardShortcuts`; QuietLayout
   // observes the flag and either renders the sidebar + reserves the 252px
   // grid track, or omits the sidebar entirely and collapses the grid to a
   // single `1fr` column. Default is `true` (sidebar visible out of the box).
   const sidebarPinned = useSettingsStore((s) => s.sidebarPinned);
+  // Persisted, user-resizable sidebar width (drag handle in QuietSidebar). Drives
+  // `--quiet-sidebar-width` below; during a drag the handle writes the var
+  // directly (no React re-render) and persists on pointer-up.
+  const sidebarWidth = useSettingsStore((s) => s.sidebarWidth);
 
   const documentAreaStyle: React.CSSProperties = cmdBarPinned
     ? { paddingRight: "var(--cmd-bar-pinned-width, 400px)" }
@@ -207,12 +219,12 @@ export function QuietLayout(props: QuietLayoutProps) {
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--quiet-sidebar-width",
-      sidebarPinned ? "252px" : "0px",
+      sidebarPinned ? `${sidebarWidth}px` : "0px",
     );
     return () => {
       document.documentElement.style.removeProperty("--quiet-sidebar-width");
     };
-  }, [sidebarPinned]);
+  }, [sidebarPinned, sidebarWidth]);
 
   // `⌘⇧E` capture-phase listener was REMOVED in sidebar #20 along with
   // TreeOverlay. The chord now bubbles to the `useKeyboardShortcuts`
@@ -317,6 +329,7 @@ export function QuietLayout(props: QuietLayoutProps) {
       data-quiet-layout-root
       data-cmd-bar-pinned={cmdBarPinned ? "true" : "false"}
       data-quiet-chrome-transparent={quietChromeTransparent ? "true" : "false"}
+      data-titlebar-hidden={showTitleBar ? "false" : "true"}
       className="app relative flex h-screen w-full bg-background overflow-hidden"
     >
       {/*
@@ -359,9 +372,24 @@ export function QuietLayout(props: QuietLayoutProps) {
             `[data-quiet-chrome-transparent="true"]` selector in
             globals.css. The right column compensates with `pt-9`
             so editor content starts below the bar. */}
-        <TitleBar
-          className="absolute right-0 top-0 z-30 left-[var(--quiet-sidebar-width,0px)]"
-        />
+        {showTitleBar ? (
+          <TitleBar
+            className="absolute right-0 top-0 z-30 left-[var(--quiet-sidebar-width,0px)]"
+          />
+        ) : !sidebarPinned ? (
+          // TitleBar hidden AND sidebar hidden — the document column spans the
+          // full width, so its top-left sits under the macOS traffic lights. A
+          // thin invisible drag region covers that safe zone so the window stays
+          // movable and content (which gets matching `pt-10`) clears the lights.
+          // When the sidebar IS shown it owns the drag region + covers the
+          // traffic-light corner, so no strip here and the document goes flush
+          // to the top.
+          <div
+            aria-hidden
+            data-tauri-drag-region
+            className="absolute right-0 top-0 z-30 left-0 h-10"
+          />
+        ) : null}
 
         <div
           data-quiet-layout-document-area
@@ -375,8 +403,18 @@ export function QuietLayout(props: QuietLayoutProps) {
             // title bar and supplies its own pt via the
             // `[data-quiet-chrome-transparent="true"]` selectors in
             // globals.css.
+            //
+            // TitleBar hidden (showTitleBar === false) — no bar to clear, and
+            // the document surface goes FLUSH to the top in BOTH sidebar states
+            // (no opaque inset band). When the sidebar is shown the traffic
+            // lights sit over it; when hidden, the editor surface flows under a
+            // transparent top zone and the editor's own content gets pushed down
+            // to clear the traffic-light safe zone via the
+            // `[data-titlebar-hidden][data-sidebar-pinned="false"]` rules in
+            // globals.css. The transparent full-width drag strip above hosts the
+            // lights + window dragging.
             "flex-1 flex min-h-0 px-2 pb-2",
-            !quietChromeTransparent && "pt-11",
+            showTitleBar && !quietChromeTransparent && "pt-11",
             // #142 — when chrome is transparent the title bar overlays the
             // doc area instead of pushing it down. Content can scroll
             // BEHIND the frosted title bar; the editor's scroll content

@@ -123,7 +123,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   marginRight: 2.54,
   sidebarOpen: true,
   sidebarPinned: true,
-  sidebarWidth: 280,
+  sidebarWidth: 252,
   notesRootPath: '~/Notesage',
   gitEnabled: false,
   personasMigrated: false,
@@ -207,7 +207,7 @@ describe('initial state defaults', () => {
     expect(s.marginRight).toBe(2.54);
     expect(s.sidebarOpen).toBe(true);
     expect(s.sidebarPinned).toBe(true);
-    expect(s.sidebarWidth).toBe(280);
+    expect(s.sidebarWidth).toBe(252);
     expect(s.notesRootPath).toBe('~/Notesage');
     expect(s.gitEnabled).toBe(false);
     expect(s.personasMigrated).toBe(false);
@@ -565,9 +565,9 @@ describe('setSidebarWidth clamping', () => {
     expect(useSettingsStore.getState().sidebarWidth).toBe(200);
   });
 
-  it('clamps width above maximum (400) to 400', () => {
+  it('clamps width above maximum (500) to 500', () => {
     useSettingsStore.getState().setSidebarWidth(600);
-    expect(useSettingsStore.getState().sidebarWidth).toBe(400);
+    expect(useSettingsStore.getState().sidebarWidth).toBe(500);
   });
 
   it('rounds fractional values', () => {
