@@ -18,6 +18,7 @@ import { PlainTextViewer } from "../PlainTextViewer";
 import { EditorViewerContainer } from "../../EditorViewerContainer";
 import { useSettingsStore } from "@/stores/settings-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
+import { HTML_KEY_NS } from "../html-find-frame";
 
 // Mock CodeEditor to avoid full CodeMirror setup in jsdom
 vi.mock("../CodeEditor", () => ({
@@ -28,22 +29,24 @@ vi.mock("../CodeEditor", () => ({
   ),
 }));
 
-// The iframe render paths now use a blob: URL (src) instead of srcdoc, so the
-// document escapes the host CSP. jsdom doesn't implement URL.createObjectURL;
-// stub it to capture the Blob so tests can still assert on the processed HTML.
-const capturedBlobs: Blob[] = [];
-URL.createObjectURL = ((obj: Blob) => {
-  if (obj instanceof Blob) capturedBlobs.push(obj);
-  return `blob:mock/${capturedBlobs.length}`;
-}) as typeof URL.createObjectURL;
-URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL;
-/** Text of the most recent Blob handed to URL.createObjectURL (the iframe HTML). */
+// The iframe render paths serve the document from the htmlpreview:// custom
+// scheme so it renders under its own empty CSP (a blob:/srcdoc document inherits
+// the app's hardened CSP and gets blanked). The frontend registers the HTML
+// under a generated id via `html_preview_register`, then points the iframe at
+// htmlpreview://localhost/<id>. Capture the registered content so tests can still
+// assert on the processed HTML.
+const registeredDocs: string[] = [];
+/** Text of the most recent HTML registered for the iframe. */
 async function lastIframeHtml(): Promise<string> {
-  const b = capturedBlobs[capturedBlobs.length - 1];
-  return b ? await b.text() : "";
+  return registeredDocs[registeredDocs.length - 1] ?? "";
 }
 beforeEach(() => {
-  capturedBlobs.length = 0;
+  registeredDocs.length = 0;
+  setMockInvokeHandler("html_preview_register", (args) => {
+    registeredDocs.push(String((args as { content?: string })?.content ?? ""));
+    return undefined;
+  });
+  setMockInvokeHandler("html_preview_unregister", () => undefined);
 });
 
 describe("HtmlViewer", () => {
@@ -298,7 +301,7 @@ describe("HtmlViewer allow-scripts mode — htmlViewerAllowScripts", () => {
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).toContain("console.log('local-script-executed')");
   });
@@ -563,7 +566,7 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
@@ -587,7 +590,7 @@ describe("HtmlViewer — blockExternal enforced on allowScripts iframe path", ()
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
@@ -629,7 +632,7 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).not.toContain("https://cdn.example.com/photo.jpg");
   });
 
@@ -652,7 +655,7 @@ describe("HtmlViewer — blockExternal enforced on unsafe-preview iframe path", 
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).toContain("./images/local.jpg");
   });
 });
@@ -736,8 +739,8 @@ describe("HtmlViewer — Unsafe preview mode", () => {
     expect(iframe).not.toBeNull();
     // sandbox must be exactly allow-scripts (no allow-same-origin)
     expect(iframe!.getAttribute("sandbox")).toBe("allow-scripts");
-    // Rendered from a blob: URL (escapes the host CSP), not srcdoc.
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    // Rendered from the htmlpreview:// scheme (own empty CSP), not srcdoc/blob.
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     // The raw HTML (including the CDN script tag) must be passed through — not stripped
     const html = await lastIframeHtml();
     expect(html).toContain("cdn.example.com");
@@ -857,7 +860,7 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     // The external url() must be stripped from the <style> block
     expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
@@ -883,7 +886,7 @@ describe("HtmlViewer — Bug 1b: blockExternal strips CSS url() from <style> blo
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect(await lastIframeHtml()).not.toContain("https://evil.com/bg.jpg");
   });
 });
@@ -1135,7 +1138,7 @@ describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab
 // first, activate unsafe mode, then confirm find re-opens (now works in-frame)
 // with fresh state (no stale match counter).
 describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () => {
-  it("find resets on unsafeMode toggle and re-opens (in-frame) afterwards", () => {
+  it("find resets on unsafeMode toggle and re-opens (in-frame) afterwards", async () => {
     const filePath = "/path/to/page.html";
     const fileName = "page.html";
     render(
@@ -1156,9 +1159,10 @@ describe("HtmlViewer — Bug 6: search state resets on unsafeMode toggle", () =>
     expect(screen.getByPlaceholderText(/find/i)).toBeTruthy();
 
     // Close find bar via the X button (find bar and unsafe toggle are mutually
-    // exclusive in the toolbar — must close find bar before accessing toggle)
+    // exclusive in the toolbar — must close find bar before accessing toggle).
+    // Close is animated, so the bar unmounts after its exit transition.
     fireEvent.click(screen.getByRole("button", { name: /close find/i }));
-    expect(screen.queryByPlaceholderText(/find/i)).toBeNull();
+    await waitFor(() => expect(screen.queryByPlaceholderText(/find/i)).toBeNull());
 
     // Activate unsafeMode — this changes unsafeMode state, triggering the reset effect
     fireEvent.click(screen.getByRole("button", { name: /unsafe preview/i }));
@@ -1290,7 +1294,7 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     await waitFor(() => {
       const iframe = document.querySelector("iframe");
       expect(iframe).not.toBeNull();
-      expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
     });
     // DOCTYPE must be preserved in the blob document
     expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
@@ -1315,7 +1319,7 @@ describe("HtmlViewer — Bug 9: stripExternalResources preserves DOCTYPE", () =>
     fireEvent.click(screen.getByRole("button", { name: /accept|enable|confirm/i }));
     const iframe = document.querySelector("iframe");
     expect(iframe).not.toBeNull();
-    expect(iframe!.getAttribute("src")).toMatch(/^blob:/);
+    await waitFor(() => expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//));
     expect((await lastIframeHtml()).toLowerCase()).toContain("<!doctype html>");
   });
 });
@@ -1355,5 +1359,130 @@ describe("HtmlViewer — Bug 10: body extraction handles false </body>", () => {
       />
     );
     expect(screen.getByText("Real content")).toBeTruthy();
+  });
+});
+
+describe("HtmlViewer — keyboard chord forwarding from the sandboxed frame", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  afterEach(() => {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: false,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  async function mountIframe(tabId: string): Promise<HTMLIFrameElement> {
+    useSettingsStore.setState({
+      htmlViewerAllowScripts: true,
+    } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content="<html><body><p>x</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId={tabId}
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    let iframe: HTMLIFrameElement | null = null;
+    await waitFor(() => {
+      iframe = document.querySelector("iframe");
+      expect(iframe).not.toBeNull();
+      expect(iframe!.getAttribute("src")).toMatch(/^htmlpreview:\/\//);
+    });
+    return iframe!;
+  }
+
+  it("re-dispatches a chord forwarded from the iframe as a window keydown", async () => {
+    const iframe = await mountIframe("tab-key-forward");
+    const received: KeyboardEvent[] = [];
+    const onKey = (e: KeyboardEvent) => received.push(e);
+    window.addEventListener("keydown", onKey);
+    try {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          source: iframe.contentWindow,
+          data: {
+            ns: HTML_KEY_NS,
+            key: "k",
+            code: "KeyK",
+            metaKey: true,
+            ctrlKey: false,
+            shiftKey: false,
+            altKey: false,
+          },
+        })
+      );
+      await waitFor(() => expect(received.some((e) => e.key === "k")).toBe(true));
+      const evt = received.find((e) => e.key === "k")!;
+      expect(evt.metaKey).toBe(true);
+      expect(evt.code).toBe("KeyK");
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+
+  it("ignores a forwarded-chord message whose source is not the iframe", async () => {
+    await mountIframe("tab-key-spoof");
+    const received: KeyboardEvent[] = [];
+    const onKey = (e: KeyboardEvent) => received.push(e);
+    window.addEventListener("keydown", onKey);
+    try {
+      // No `source` → fails the e.source === iframe.contentWindow guard.
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            ns: HTML_KEY_NS,
+            key: "k",
+            code: "KeyK",
+            metaKey: true,
+            ctrlKey: false,
+            shiftKey: false,
+            altKey: false,
+          },
+        })
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      expect(received.some((e) => e.key === "k")).toBe(false);
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
+  });
+});
+
+describe("HtmlViewer — find bar open/close morph animation", () => {
+  const filePath = "/path/to/page.html";
+  const fileName = "page.html";
+
+  it("enters with animate-in and plays animate-out on close before unmounting", async () => {
+    render(
+      <HtmlViewer
+        content="<html><body><p>Hello</p></body></html>"
+        fileName={fileName}
+        filePath={filePath}
+        tabId="tab-find-anim"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    act(() => {
+      window.dispatchEvent(new Event("notesage:find-open"));
+    });
+    const input = screen.getByPlaceholderText(/find/i);
+    const group = input.parentElement!;
+    // Opening morphs in.
+    expect(group.className).toContain("html-find-enter");
+    expect(group.className).not.toContain("html-find-exit");
+
+    // Closing keeps the bar mounted briefly to play the exit, then unmounts.
+    fireEvent.click(screen.getByRole("button", { name: /close find/i }));
+    expect(input.parentElement!.className).toContain("html-find-exit");
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/find/i)).toBeNull()
+    );
   });
 });

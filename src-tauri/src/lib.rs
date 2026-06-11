@@ -186,6 +186,14 @@ pub fn run() {
         .manage(SandboxMonitorState::new())
         .manage(IndexState::new())
         .manage(tray::TrayState::new())
+        .manage(html_preview::HtmlPreviewState::new())
+        // Serves the HTML viewer's sandboxed-iframe documents from a real origin
+        // with their own (empty) CSP, instead of a `blob:` URL that inherits the
+        // app's hardened CSP and gets blanked by `frame-ancestors 'none'`. See
+        // commands/html_preview.rs for the full rationale.
+        .register_uri_scheme_protocol("htmlpreview", |ctx, request| {
+            html_preview::handle_request(ctx, request)
+        })
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
@@ -420,6 +428,8 @@ pub fn run() {
             tray::set_tray_visible,
             tray::set_close_to_tray,
             tray::show_main_window_command,
+            html_preview_register,
+            html_preview_unregister,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.

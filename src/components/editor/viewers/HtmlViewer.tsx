@@ -4,11 +4,18 @@ import { cn } from "@/lib/utils";
 import DOMPurify from "dompurify";
 import { invoke } from "@tauri-apps/api/core";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
-import { injectFindScript, HTML_FIND_NS, type HtmlFindResult } from "./html-find-frame";
+import {
+  injectFindScript,
+  HTML_FIND_NS,
+  HTML_KEY_NS,
+  type HtmlFindResult,
+  type HtmlKeyMessage,
+} from "./html-find-frame";
 import { CodeEditor } from "./CodeEditor";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
 import { useSettingsStore } from "@/stores/settings-store";
 import { registerZoomController } from "@/hooks/useEditorZoom";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -148,6 +155,13 @@ export function HtmlViewer({
   const setSourceMode = onToggleSourceMode ?? (() => setSourceModeInternal((v) => !v));
   const [unsafeHtml, setUnsafeHtml] = useState<string | null>(null);
   const [findBarOpen, setFindBarOpen] = useState(false);
+  // `findClosing` keeps the find UI mounted briefly so its exit animation can
+  // play before it unmounts (open and close both animate — see openFind /
+  // handleClose). The pill content swaps in place, so this reads as the search
+  // button morphing to/from the search field.
+  const [findClosing, setFindClosing] = useState(false);
+  const findCloseTimerRef = useRef<number | null>(null);
+  const reducedMotion = useReducedMotion();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
@@ -167,6 +181,28 @@ export function HtmlViewer({
   // runs over the host DOM.
   const isIframeMode = allowScripts || unsafeMode;
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Open the find bar, cancelling any in-flight close animation, and focus the
+  // input on the next frame (after it mounts).
+  const openFind = useCallback(() => {
+    if (findCloseTimerRef.current !== null) {
+      window.clearTimeout(findCloseTimerRef.current);
+      findCloseTimerRef.current = null;
+    }
+    setFindClosing(false);
+    setFindBarOpen(true);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  // Drop the close-animation timer if the component unmounts mid-exit.
+  useEffect(
+    () => () => {
+      if (findCloseTimerRef.current !== null) {
+        window.clearTimeout(findCloseTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Whether the content is empty or whitespace-only (triggers placeholder)
   const isEmpty = content.trim() === "";
@@ -245,14 +281,16 @@ export function HtmlViewer({
         ? unsafeHtml
         : null;
 
-  // Render the iframe from a blob: URL rather than `srcDoc`. A `srcdoc` document
-  // INHERITS the host window's Content-Security-Policy, and Tauri's CSP rewrite
-  // injects a style nonce that neutralises `'unsafe-inline'` — so a srcdoc frame
-  // refuses the document's own inline <style> blocks and web-font <link>s
-  // (regression after the app gained a CSP). A blob: document gets its own
-  // (empty) CSP context, so the document's styles + fonts apply normally, while
-  // the `sandbox="allow-scripts"` (no allow-same-origin) isolation is unchanged.
-  // `frame-src` already permits `blob:`, so the app-level CSP is not relaxed.
+  // Serve the iframe document from the `htmlpreview://` custom scheme rather than
+  // a `blob:` URL or `srcDoc`. Both `srcDoc` and `blob:` documents INHERIT the
+  // host window's Content-Security-Policy: once the app gained a hardened CSP
+  // (`frame-ancestors 'none'` + a nonce-rewritten `style-src` that drops
+  // `'unsafe-inline'`), the framed document was refused in production — the frame
+  // blanked and its inline <style> blocks were rejected. The bug hid in dev only
+  // because `tauri dev` serves the app over Vite with no CSP header to inherit.
+  // A custom-scheme response carries its own (empty) policy, so the document
+  // renders regardless of the app CSP; `sandbox="allow-scripts"` (no
+  // allow-same-origin) still isolates it. See commands/html_preview.rs.
   const [iframeUrl, setIframeUrl] = useState<string | null>(null);
   useEffect(() => {
     if (iframeContent === null) {
@@ -262,19 +300,52 @@ export function HtmlViewer({
     // Inject the in-frame find script so Cmd+F / the search bar can search the
     // rendered (sandboxed, cross-origin) document via postMessage.
     const html = injectFindScript(iframeContent);
-    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    setIframeUrl(url);
-    return () => URL.revokeObjectURL(url);
+    const id = crypto.randomUUID();
+    let cancelled = false;
+    // Register BEFORE pointing the iframe at the id so the handler never 404s.
+    invoke("html_preview_register", { id, content: html })
+      .then(() => {
+        if (!cancelled) setIframeUrl(`htmlpreview://localhost/${id}`);
+      })
+      .catch((err) => {
+        console.error("Failed to register HTML preview document", err);
+      });
+    return () => {
+      cancelled = true;
+      void invoke("html_preview_unregister", { id }).catch(() => {});
+    };
   }, [iframeContent]);
 
-  // Receive match count / current index from the in-frame search script.
+  // Receive messages from the in-frame script: find results (match count /
+  // current index) and forwarded keyboard chords. The frame is sandboxed
+  // cross-origin, so its keydown events never reach this window — re-dispatch the
+  // forwarded chords on `window` so the app's window-level shortcuts fire while
+  // the rendered page has focus.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
-      const d = e.data as HtmlFindResult | undefined;
-      if (!d || d.ns !== HTML_FIND_NS) return;
-      setFrameMatchCount(d.count);
-      setSearchCurrentIndex(d.current);
+      const d = e.data as
+        | HtmlFindResult
+        | HtmlKeyMessage
+        | undefined;
+      if (!d) return;
+      if (d.ns === HTML_FIND_NS) {
+        setFrameMatchCount(d.count);
+        setSearchCurrentIndex(d.current);
+      } else if (d.ns === HTML_KEY_NS) {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: d.key,
+            code: d.code,
+            metaKey: d.metaKey,
+            ctrlKey: d.ctrlKey,
+            shiftKey: d.shiftKey,
+            altKey: d.altKey,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -285,9 +356,16 @@ export function HtmlViewer({
     iframeRef.current?.contentWindow?.postMessage({ ns: HTML_FIND_NS, action, query }, "*");
   }, []);
 
-  // Reset search state when switching modes, content changes, or iframe mode toggles.
+  // Reset search state when switching modes, content changes, or iframe mode
+  // toggles. This is an instant teardown (no exit animation) — the surface the
+  // find bar belonged to is going away.
   useEffect(() => {
+    if (findCloseTimerRef.current !== null) {
+      window.clearTimeout(findCloseTimerRef.current);
+      findCloseTimerRef.current = null;
+    }
     setFindBarOpen(false);
+    setFindClosing(false);
     setSearchQuery("");
     setSearchMatches([]);
     searchMatchesRef.current = [];
@@ -311,13 +389,10 @@ export function HtmlViewer({
   // postMessage). Disabled only in source mode (CodeMirror owns find there).
   useEffect(() => {
     if (sourceMode) return;
-    const handleFindOpen = () => {
-      setFindBarOpen(true);
-      requestAnimationFrame(() => searchInputRef.current?.focus());
-    };
+    const handleFindOpen = () => openFind();
     window.addEventListener("notesage:find-open", handleFindOpen);
     return () => window.removeEventListener("notesage:find-open", handleFindOpen);
-  }, [sourceMode]);
+  }, [sourceMode, openFind]);
 
   // Register as the active zoom controller while rendered. ⌘+ / ⌘- / ⌘0
   // scale the rendered tree via CSS `zoom` (#188).
@@ -405,19 +480,32 @@ export function HtmlViewer({
   }, [isIframeMode, postFind, scrollToMatch]);
 
   const handleClose = useCallback(() => {
-    setFindBarOpen(false);
-    setSearchQuery("");
+    // Clear match highlights immediately so they don't linger during the exit.
     if (isIframeMode) {
       postFind("clear");
     } else {
       const container = getSearchContainer();
       if (container) clearDomHighlights(container);
     }
-    setSearchMatches([]);
-    searchMatchesRef.current = [];
-    setSearchCurrentIndex(-1);
-    setFrameMatchCount(0);
-  }, [isIframeMode, postFind, getSearchContainer]);
+    const finish = () => {
+      findCloseTimerRef.current = null;
+      setFindBarOpen(false);
+      setFindClosing(false);
+      setSearchQuery("");
+      setSearchMatches([]);
+      searchMatchesRef.current = [];
+      setSearchCurrentIndex(-1);
+      setFrameMatchCount(0);
+    };
+    if (reducedMotion) {
+      finish();
+      return;
+    }
+    // Keep the bar mounted for the exit animation (matches .html-find-exit's
+    // 240ms), then tear it down.
+    setFindClosing(true);
+    findCloseTimerRef.current = window.setTimeout(finish, 240);
+  }, [isIframeMode, postFind, getSearchContainer, reducedMotion]);
 
   if (sourceMode) {
     return (
@@ -476,8 +564,15 @@ export function HtmlViewer({
 
       <div className="h-full flex flex-col relative">
         <ViewerToolbarPill viewerId="html" scrollRef={scrollContainerRef} className="absolute top-4 left-1/2 -translate-x-1/2">
-          {findBarOpen ? (
-            <>
+          {findBarOpen || findClosing ? (
+            <div
+              key="html-find-bar"
+              className={cn(
+                "inline-flex items-center gap-0.5",
+                !reducedMotion &&
+                  (findClosing ? "html-find-exit" : "html-find-enter"),
+              )}
+            >
               <Search className="h-3.5 w-3.5 text-muted-foreground ml-1.5 shrink-0" strokeWidth={1.5} />
               <input
                 ref={searchInputRef}
@@ -517,9 +612,15 @@ export function HtmlViewer({
               <button type="button" onClick={handleClose} className={cn(PILL_BTN, "text-muted-foreground px-1")} aria-label="Close find">
                 <X className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
-            </>
+            </div>
           ) : (
-            <>
+            <div
+              key="html-find-toolbar"
+              className={cn(
+                "inline-flex items-center gap-0.5",
+                !reducedMotion && "html-find-enter",
+              )}
+            >
               <button
                 type="button"
                 aria-label="Unsafe preview mode"
@@ -548,10 +649,7 @@ export function HtmlViewer({
               <PillDivider />
               <button
                 type="button"
-                onClick={() => {
-                  setFindBarOpen(true);
-                  requestAnimationFrame(() => searchInputRef.current?.focus());
-                }}
+                onClick={openFind}
                 className={cn(PILL_BTN, "text-muted-foreground")}
                 title="Find (Cmd+F)"
                 aria-label="Find"
@@ -566,7 +664,7 @@ export function HtmlViewer({
                   </span>
                 </>
               )}
-            </>
+            </div>
           )}
         </ViewerToolbarPill>
 
