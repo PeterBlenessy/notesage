@@ -37,7 +37,7 @@
 **Description:** Verify (and regression-lock with a Rust test) that an unrecognized binary basename gets **no** Bucket C `$HOME` grants from `sandbox.rs`, an empty domain allowlist, and kernel network deny on by default — i.e. custom agents start maximally confined. Document the user opt-in path (existing writable-paths + allowlist UI) in code comments.
 **Complexity:** S **Category:** backend **Dependencies:** — **Files:** `src-tauri/src/commands/sandbox.rs`
 
-### #4 — Spawn + probe path for custom agents
+### #4 — Spawn + probe path for custom agents ✅
 
 **Description:** `useAcpLifecycle` / `acp-agent-state` resolve `binaryPath` + `binaryArgs` for `custom_acp` connections through the same spawn pipeline as managed agents; registration-time capability probe (spawn → initialize → session → stop) runs unchanged and **blocks registration on failure with the agent's stderr tail** (mirror the `mcp_validate_server` error-mapping pattern). Verify no downstream code branches on the four known provider names; add regression tests where it does.
 **Complexity:** M **Category:** both **Dependencies:** #1, #2 **Files:** `src/hooks/useAcpLifecycle.ts`, `src/lib/ai/acp-agent-state.ts`, `src-tauri/src/commands/acp.rs`
