@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | Not started |
+| **Status** | M1 complete (#1–#6 + #4b); M2 next |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -47,12 +47,12 @@
 **Description:** Close the localStorage secret leak for `credentials.envVars` (EnvVar ACP auth — Gemini today, custom agents next): `connections-store` writes each value to the OS keychain (`notesage:<id>:env:<KEY>`), persist `partialize` strips values so only `envVarKeys` (names) reach localStorage, rehydrate migrates legacy plaintext, `removeConnection` deletes the entries. `acp_agent_spawn` gains `connection_id` + `env_var_keys` and resolves values from the keychain — authoritative over the in-memory IPC fallback, mirroring `resolve_api_key`. Also fixes the delegation spawn path (`useAgentTaskOperations`), which previously passed no env vars at all.
 **Complexity:** M **Category:** both **Dependencies:** #2 **Files:** `src/stores/connections-store.ts`, `src/lib/ai/connections.ts`, `src/lib/ai/acp-agent-state.ts`, `src/lib/tauri.ts`, `src/hooks/useAgentTaskOperations.ts`, `src-tauri/src/commands/acp.rs`
 
-### #5 — Add Connection UI: Custom Agent card + form
+### #5 — Add Connection UI: Custom Agent card + form ✅
 
 **Description:** New card in the Add Connection flow: binary file-picker (native dialog), args input, env-var rows with secret toggle (keychain), probe-on-add with discovered capabilities preview on success / stderr tail on failure. Follow the MCP add-dialog field patterns; shadcn components; both themes; `TooltipProvider` where tooltips appear.
 **Complexity:** M **Category:** frontend **Dependencies:** #2, #4 **Files:** `src/components/settings/ConnectionsSettings.tsx` (+ Add Connection components), `src/components/settings/ConnectionCard.tsx`
 
-### #6 — M1 test pass
+### #6 — M1 test pass ✅
 
 **Description:** Unit tests: custom connection round-trips persistence without leaking secrets to localStorage; probe failure leaves no persisted connection; chat pipeline smoke against a scripted fake ACP agent (extend the existing ACP test harness/mocks in `useAcpLifecycle` tests). `pnpm typecheck` + `pnpm test` + `cargo check` green.
 **Complexity:** M **Category:** both **Dependencies:** #4, #5 **Files:** `src/hooks/__tests__/useAcpLifecycle.test.ts`, `src/stores/__tests__/`
