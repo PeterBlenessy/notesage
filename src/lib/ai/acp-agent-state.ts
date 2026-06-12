@@ -481,7 +481,13 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
 
   let instanceId: string | null = null;
   try {
-    // Spawn agent (minimal config — no sandbox needed for probe)
+    // Spawn agent (minimal config). The FS sandbox follows the connection's
+    // setting — custom_acp candidates carry an explicit `sandboxEnabled: true`
+    // so an arbitrary binary never runs its probe with full $HOME read access.
+    // The NETWORK sandbox is deliberately off for the probe: the proxy's
+    // domain-approval cards have no surface during registration and a blocked
+    // first egress would false-fail the probe; the persisted connection still
+    // gets the full network confinement for real use.
     const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
       agentBinary: launch.agentBinary,
       agentArgs: launch.agentArgs.length ? launch.agentArgs : null,
@@ -490,7 +496,7 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
       envVars: launch.envVars,
       connectionId: connection.id,
       envVarKeys: launch.envVarKeys,
-      sandboxEnabled: null,
+      sandboxEnabled: connection.sandboxEnabled ?? null,
       sandboxPaths: null,
       networkSandboxEnabled: null,
       networkAllowedDomains: null,
@@ -573,7 +579,9 @@ export async function registerCustomAcpConnection(
     ...(input.envVars && Object.keys(input.envVars).length > 0 ? { envVars: input.envVars } : {}),
   };
   const candidate: Connection = {
-    id: 'custom-acp-probe',
+    // Unique ephemeral id — never persisted. Keeps concurrent probes (popover
+    // reopened mid-probe) from sharing keychain-lookup / state-map identity.
+    id: `custom-acp-probe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     provider: 'custom_acp',
     authMethod: 'agent_managed',
     status: 'connected',
@@ -581,6 +589,14 @@ export async function registerCustomAcpConnection(
     credentials,
     capabilities: getCapabilities('custom_acp', 'agent_managed'),
     config: { binaryPath: input.binaryPath, binaryArgs: input.binaryArgs ?? [] },
+    // Maximal confinement for arbitrary third-party binaries (task #3 policy).
+    // `should_sandbox_by_default` in sandbox.rs only auto-sandboxes managed
+    // installs under ~/.notesage/agents/bin — a custom absolute path would
+    // default to UNSANDBOXED, so the connection must carry an explicit true.
+    // Applies to the registration probe too (FS sandbox, writable = /tmp cwd).
+    sandboxEnabled: true,
+    networkSandboxEnabled: true,
+    kernelNetworkDeny: true,
     createdAt: Date.now(),
   };
 
@@ -595,7 +611,12 @@ export async function registerCustomAcpConnection(
     credentials,
     config: candidate.config,
   });
-  useConnectionsStore.getState().updateConnection(connectionId, { acpCapabilities: capabilities });
+  useConnectionsStore.getState().updateConnection(connectionId, {
+    acpCapabilities: capabilities,
+    sandboxEnabled: true,
+    networkSandboxEnabled: true,
+    kernelNetworkDeny: true,
+  });
   return { connectionId, capabilities };
 }
 

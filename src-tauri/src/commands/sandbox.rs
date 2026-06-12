@@ -501,7 +501,14 @@ pub fn cleanup_legacy_profiles() {
 
 /// Determine if sandbox should be enabled by default based on binary source.
 /// Managed installs (downloaded by Notesage) are sandboxed by default.
-/// System installs (user's own) are not sandboxed by default.
+/// System installs (the user's own KNOWN agent CLIs) are not sandboxed by default.
+///
+/// NOTE: this default only applies when the connection carries no explicit
+/// `sandboxEnabled` value. `custom_acp` connections (arbitrary user-supplied
+/// binaries at absolute paths) are registered with an explicit `true` by
+/// `registerCustomAcpConnection` — relying on this source-based default for
+/// them would leave arbitrary third-party binaries unsandboxed (locked by the
+/// registration test in `useAcpLifecycle.custom-agent.test.ts`).
 pub fn should_sandbox_by_default(binary_path: &str) -> bool {
     let managed_dir = dirs::home_dir()
         .unwrap_or_default()

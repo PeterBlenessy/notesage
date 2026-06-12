@@ -303,11 +303,22 @@ describe('custom_acp — registration probe', () => {
     expect(probeSpawn.agentBinary).toBe(BINARY_PATH);
     expect(probeSpawn.agentArgs).toEqual(BINARY_ARGS);
     expect(probeSpawn.envVars).toEqual({ MY_AGENT_KEY: 'secret' });
+    // Regression lock (code review #1/#2): `should_sandbox_by_default` in
+    // sandbox.rs auto-sandboxes ONLY ~/.notesage/agents/bin paths, so a custom
+    // absolute path would default to UNSANDBOXED. The probe must carry an
+    // explicit sandboxEnabled=true — never null — for arbitrary binaries.
+    expect(probeSpawn.sandboxEnabled).toBe(true);
 
     const persisted = useConnectionsStore.getState().getConnection(connectionId);
     expect(persisted).toBeDefined();
     expect(persisted!.provider).toBe('custom_acp');
     expect(persisted!.capabilities).toEqual(['interactive', 'agent_tasks']);
+    // Regression lock: the persisted connection is maximally confined by
+    // default — explicit values that override the backend's source-based
+    // sandbox default at every future spawn.
+    expect(persisted!.sandboxEnabled).toBe(true);
+    expect(persisted!.networkSandboxEnabled).toBe(true);
+    expect(persisted!.kernelNetworkDeny).toBe(true);
     expect(persisted!.config).toEqual({ binaryPath: BINARY_PATH, binaryArgs: BINARY_ARGS });
     expect(persisted!.acpCapabilities?.availableModes).toEqual([{ id: 'default', name: 'Default' }]);
     expect(capabilities.availableModes).toEqual([{ id: 'default', name: 'Default' }]);
