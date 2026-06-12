@@ -5,8 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
-import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
+import { PROVIDER_OPTIONS, getCapabilities } from '@/lib/ai/connections';
+import type { Connection, ConnectionCredentials, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
@@ -208,6 +208,51 @@ export function subscribeSessionInfo(fn: () => void): () => void {
   return () => { sessionInfoListeners.delete(fn); };
 }
 
+// ---------------------------------------------------------------------------
+// Launch resolution — single source of binary/args/env per connection
+// ---------------------------------------------------------------------------
+
+export interface AgentLaunchSpec {
+  /** Binary name (managed agents, resolved via PATH/Homebrew/npm by the backend)
+   *  or absolute path (custom agents, validated verbatim by `acp_binary.rs`). */
+  agentBinary: string;
+  agentArgs: string[];
+  envVars: Record<string, string> | null;
+}
+
+/**
+ * Resolve what to spawn for an ACP connection.
+ *
+ * `custom_acp` connections launch the user-supplied binary: `config.binaryPath`
+ * (absolute — the backend's absolute-path branch validates existence + exec bit
+ * and returns a precise error) with `config.binaryArgs`. Managed connections keep
+ * launching from `credentials.agentBinary`/`agentArgs`. Env vars come from the
+ * existing keychain-backed `credentials.envVars` flow in both cases.
+ */
+export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
+  const creds: ConnectionCredentials = connection.credentials;
+  const managedCreds = creds.type === 'agent_managed' ? creds : null;
+  if (connection.provider === 'custom_acp') {
+    const binaryPath = connection.config?.binaryPath;
+    if (!binaryPath) {
+      throw new Error(`Custom agent connection '${connection.label}' has no binary path configured`);
+    }
+    return {
+      agentBinary: binaryPath,
+      agentArgs: connection.config?.binaryArgs ?? [],
+      envVars: managedCreds?.envVars ?? null,
+    };
+  }
+  if (!managedCreds) {
+    throw new Error(`Connection '${connection.label}' is not an agent-managed connection`);
+  }
+  return {
+    agentBinary: managedCreds.agentBinary,
+    agentArgs: managedCreds.agentArgs ?? [],
+    envVars: managedCreds.envVars ?? null,
+  };
+}
+
 /** Persistent ACP agent state — survives re-renders, reset on connection change. */
 export let acpAgent: AcpAgentState | null = null;
 
@@ -331,19 +376,21 @@ export async function ensureAcpAgent(
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
   acpSpawnPromise = (async () => {
     try {
-      const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
+      const launch = resolveAgentLaunch(connection);
 
       // Model selection is done post-session via the model-category session
       // config option (session/set_config_option). CLI args are only used for
       // non-model flags.
-      const args = [...(creds.agentArgs ?? [])];
+      const args = [...launch.agentArgs];
 
       // Build network sandbox config if enabled
       const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
       let networkAllowedDomains: string[] | null = null;
       if (networkSandboxEnabled) {
+        // Custom binaries (absolute paths) match no PROVIDER_OPTIONS entry — the
+        // `?? []` keeps their built-in allowlist EMPTY (only user-added domains).
         const providerOption = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+          (o) => o.agentBinary === launch.agentBinary || o.lspBinary === launch.agentBinary
         );
         const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
         const permStore = usePermissionStore.getState();
@@ -352,11 +399,11 @@ export async function ensureAcpAgent(
       }
 
       const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
-        agentBinary: creds.agentBinary,
+        agentBinary: launch.agentBinary,
         agentArgs: args.length > 0 ? args : null,
         role: 'interactive',
         workingDirectory: cwd,
-        envVars: creds.envVars ?? null,
+        envVars: launch.envVars,
         sandboxEnabled: connection.sandboxEnabled ?? null,
         // Deduplicate — `getChatSandboxScope` may already include extraWritablePaths;
         // non-chat callers (comment delegation, inline actions) pass them separately.
@@ -393,7 +440,7 @@ export async function ensureAcpAgent(
         connectionId: connection.id,
         sandboxScopeKey: scopeKey,
         chatSessionId: null,
-        agentBinary: creds.agentBinary,
+        agentBinary: launch.agentBinary,
         capabilities: result.capabilities,
       };
       return result.instance_id;
@@ -415,17 +462,17 @@ export async function ensureAcpAgent(
  * to discover what the agent supports before the user sends any messages.
  */
 export async function probeAcpCapabilities(connection: Connection): Promise<AcpDiscoveredCapabilities> {
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
+  const launch = resolveAgentLaunch(connection);
 
   let instanceId: string | null = null;
   try {
     // Spawn agent (minimal config — no sandbox needed for probe)
     const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
-      agentBinary: creds.agentBinary,
-      agentArgs: creds.agentArgs?.length ? creds.agentArgs : null,
+      agentBinary: launch.agentBinary,
+      agentArgs: launch.agentArgs.length ? launch.agentArgs : null,
       role: 'interactive',
       workingDirectory: '/tmp',
-      envVars: creds.envVars ?? null,
+      envVars: launch.envVars,
       sandboxEnabled: null,
       sandboxPaths: null,
       networkSandboxEnabled: null,
@@ -467,7 +514,7 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
       lastProbed: Date.now(),
     };
 
-    log.info('ai', `ACP capability probe for ${creds.agentBinary}: ${JSON.stringify(capabilities)}`);
+    log.info('ai', `ACP capability probe for ${launch.agentBinary}: ${JSON.stringify(capabilities)}`);
     return capabilities;
   } finally {
     // Always stop the probe agent
@@ -475,6 +522,64 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
       invoke('acp_agent_stop', { instanceId }).catch(() => {});
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Custom agent registration — probe-first, nothing persisted on failure
+// ---------------------------------------------------------------------------
+
+export interface CustomAcpRegistrationInput {
+  label: string;
+  /** Absolute path to the agent binary — validated by the backend at spawn. */
+  binaryPath: string;
+  binaryArgs?: string[];
+  /** Stored via the existing `credentials.envVars` flow (keychain-backed). */
+  envVars?: Record<string, string>;
+}
+
+/**
+ * Register a `custom_acp` connection. The capability probe (spawn → initialize →
+ * session → stop) runs FIRST against a transient connection object; only a
+ * passing probe persists anything. A probe failure rejects with the backend's
+ * error — which carries the agent's stderr tail (mirroring `mcp_validate_server`)
+ * — and leaves the connections store untouched.
+ */
+export async function registerCustomAcpConnection(
+  input: CustomAcpRegistrationInput,
+): Promise<{ connectionId: string; capabilities: AcpDiscoveredCapabilities }> {
+  const credentials: ConnectionCredentials = {
+    type: 'agent_managed',
+    // Mirror the path so display-only readers of `credentials.agentBinary`
+    // (connection card, reauth lookup) see a stable value; the spawn pipeline
+    // resolves from `config.binaryPath` via `resolveAgentLaunch`.
+    agentBinary: input.binaryPath,
+    ...(input.envVars && Object.keys(input.envVars).length > 0 ? { envVars: input.envVars } : {}),
+  };
+  const candidate: Connection = {
+    id: 'custom-acp-probe',
+    provider: 'custom_acp',
+    authMethod: 'agent_managed',
+    status: 'connected',
+    label: input.label,
+    credentials,
+    capabilities: getCapabilities('custom_acp', 'agent_managed'),
+    config: { binaryPath: input.binaryPath, binaryArgs: input.binaryArgs ?? [] },
+    createdAt: Date.now(),
+  };
+
+  // Throws on probe failure — registration is blocked, nothing persisted.
+  const capabilities = await probeAcpCapabilities(candidate);
+
+  const connectionId = useConnectionsStore.getState().addConnection({
+    provider: 'custom_acp',
+    authMethod: 'agent_managed',
+    status: 'connected',
+    label: input.label,
+    credentials,
+    config: candidate.config,
+  });
+  useConnectionsStore.getState().updateConnection(connectionId, { acpCapabilities: capabilities });
+  return { connectionId, capabilities };
 }
 
 /**

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use super::acp_binary::resolve_agent_binary;
+use super::acp_binary::{resolve_absolute_binary, resolve_agent_binary};
 use super::acp_client::{ClientContext, InitInfo, JsonLineFilter, PermissionReply, PermissionWaiters};
 use super::shell_path::get_shell_path;
 
@@ -369,6 +369,23 @@ fn extract_model_info(
 // Agent thread: owns the (now Send) ConnectionTo<Agent>
 // ---------------------------------------------------------------------------
 
+/// How many trailing stderr lines to retain for error reporting.
+const STDERR_TAIL_LINES: usize = 12;
+
+/// Render the retained stderr tail as an error-message suffix (empty when the
+/// agent wrote nothing). Mirrors the `mcp_validate_server` stderr_tail pattern:
+/// a failing agent's own output must reach the user, not just the app log.
+fn stderr_tail_suffix(tail: &StdMutex<std::collections::VecDeque<String>>) -> String {
+    let lines: Vec<String> = match tail.lock() {
+        Ok(t) => t.iter().cloned().collect(),
+        Err(_) => return String::new(),
+    };
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("\nAgent stderr (last {} lines):\n{}", lines.len(), lines.join("\n"))
+}
+
 /// Runs on a dedicated OS thread with a single-threaded tokio runtime.
 ///
 /// As of agent-client-protocol 0.12 the connection handle (`ConnectionTo<Agent>`)
@@ -418,6 +435,13 @@ fn run_agent_thread(
     rt.block_on(async move {
         // Flag to distinguish intentional Stop from unexpected process exit
         let stopped_intentionally = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Ring buffer of the agent's most recent stderr lines — appended to
+        // spawn/initialize error messages so binaries that crash on startup
+        // (wrong args, missing config, not actually an ACP agent) surface
+        // their own diagnostics to the frontend.
+        let stderr_tail: Arc<StdMutex<std::collections::VecDeque<String>>> =
+            Arc::new(StdMutex::new(std::collections::VecDeque::new()));
 
         // Shared permission waiters for inbound handler ↔ command loop communication.
         // Send + Sync now that the connection is Send.
@@ -520,11 +544,18 @@ fn run_agent_thread(
         // (`String` + `ChildStderr`) are `Send`.
         if let Some(stderr) = child.stderr.take() {
             let stderr_binary = agent_binary.clone();
+            let tail = Arc::clone(&stderr_tail);
             tokio::task::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     log::info!(target: "notesage::acp", "[{}:stderr] {}", stderr_binary, line);
+                    if let Ok(mut t) = tail.lock() {
+                        if t.len() == STDERR_TAIL_LINES {
+                            t.pop_front();
+                        }
+                        t.push_back(line);
+                    }
                 }
             });
         }
@@ -535,14 +566,20 @@ fn run_agent_thread(
         let stdin = match child.stdin.take() {
             Some(s) => s.compat_write(),
             None => {
-                let _ = init_tx.send(Err("Failed to acquire agent stdin pipe".to_string()));
+                let _ = init_tx.send(Err(format!(
+                    "Failed to acquire agent stdin pipe{}",
+                    stderr_tail_suffix(&stderr_tail)
+                )));
                 return;
             }
         };
         let raw_stdout = match child.stdout.take() {
             Some(s) => s,
             None => {
-                let _ = init_tx.send(Err("Failed to acquire agent stdout pipe".to_string()));
+                let _ = init_tx.send(Err(format!(
+                    "Failed to acquire agent stdout pipe{}",
+                    stderr_tail_suffix(&stderr_tail)
+                )));
                 return;
             }
         };
@@ -562,6 +599,7 @@ fn run_agent_thread(
         let stopped_for_loop = std::sync::Arc::clone(&stopped_intentionally);
         let loop_binary = agent_binary.clone();
         let perm_waiters_loop = Arc::clone(&permission_waiters);
+        let stderr_tail_loop = Arc::clone(&stderr_tail);
 
         let connect_result = agent_client_protocol::Client
             .builder()
@@ -687,7 +725,15 @@ fn run_agent_thread(
                         let _ = init_tx.send(Ok(info));
                     }
                     Err(e) => {
-                        let _ = init_tx.send(Err(format!("ACP initialize failed: {}", e)));
+                        // Brief drain window: an agent that crashed mid-handshake is
+                        // typically still flushing its final stderr lines when the
+                        // request errors — give the reader task a beat to catch them.
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        let _ = init_tx.send(Err(format!(
+                            "ACP initialize failed: {}{}",
+                            e,
+                            stderr_tail_suffix(&stderr_tail_loop)
+                        )));
                         let _ = child.kill().await;
                         return Ok(());
                     }
@@ -1144,9 +1190,17 @@ pub async fn acp_agent_spawn(
     let mut env = env_vars.unwrap_or_default();
     let args = agent_args.unwrap_or_default();
 
-    // Resolve the actual binary path (system PATH or bundled node_modules)
-    let resolved_binary = resolve_agent_binary(&agent_binary, &app)
-        .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?;
+    // Resolve the actual binary path. Absolute paths (custom agents) go through
+    // `resolve_absolute_binary` directly so its precise validation errors
+    // ("not found at <path>" / "not executable") reach the frontend instead of
+    // collapsing into the generic not-found message; agent names keep the
+    // PATH/Homebrew/npm/bundled lookup.
+    let resolved_binary = if std::path::Path::new(&agent_binary).is_absolute() {
+        resolve_absolute_binary(&agent_binary)?
+    } else {
+        resolve_agent_binary(&agent_binary, &app)
+            .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?
+    };
 
     // Determine sandbox policy: explicit override, or default based on binary source
     let sandbox = sandbox_enabled
