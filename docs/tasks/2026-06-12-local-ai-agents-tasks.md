@@ -8,7 +8,7 @@
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
 
-**Prerequisite (external to this breakdown):** the ACP 0.14.0 migration (P0 of the upgrade plan in [research](../research/2026-06-12-acp-0.14-landscape.md)) should land first so capability probing and model handling target the post-migration surface (config-options-based models). M1 works on 0.12.1 but would need re-touching.
+**Prerequisite (external to this breakdown):** ✅ landed 2026-06-12 (commits da211e8, c212e67, 5e5621f) — the ACP 0.14.0 migration (P0 of the upgrade plan in [research](../research/2026-06-12-acp-0.14-landscape.md)) should land first so capability probing and model handling target the post-migration surface (config-options-based models). M1 works on 0.12.1 but would need re-touching.
 
 **Risks / open questions**
 
@@ -22,17 +22,17 @@
 
 ## M1 — Custom ACP agent connections
 
-### #1 — Accept absolute binary paths in ACP binary resolution
+### #1 — Accept absolute binary paths in ACP binary resolution ✅
 
 **Description:** `acp_binary.rs` currently resolves known agent names (PATH, Homebrew, npm, bundled). Add a branch: an absolute path is used verbatim after validating existence + executable bit; return a precise error (`binary not found at <path>` / `not executable`) otherwise. Unit tests for both failure modes and the happy path.
 **Complexity:** S **Category:** backend **Dependencies:** — **Files:** `src-tauri/src/commands/acp_binary.rs`
 
-### #2 — Add `custom_acp` provider type and connection config fields
+### #2 — Add `custom_acp` provider type and connection config fields ✅
 
 **Description:** Extend `ConnectionProvider` with `'custom_acp'`; add `binaryPath`, `binaryArgs?: string[]`, `localAgentPreset?: 'opencode'` to `ConnectionConfig`; capabilities mapping `['interactive', 'agent_tasks']`; reuse existing `envVars` keychain storage for secrets. No UI yet. Typecheck-clean with exhaustive-switch sites updated.
 **Complexity:** S **Category:** frontend **Dependencies:** — **Files:** `src/lib/ai/connections.ts`, `src/stores/connections-store.ts`
 
-### #3 — Conservative sandbox defaults for unknown agent binaries
+### #3 — Conservative sandbox defaults for unknown agent binaries ✅
 
 **Description:** Verify (and regression-lock with a Rust test) that an unrecognized binary basename gets **no** Bucket C `$HOME` grants from `sandbox.rs`, an empty domain allowlist, and kernel network deny on by default — i.e. custom agents start maximally confined. Document the user opt-in path (existing writable-paths + allowlist UI) in code comments.
 **Complexity:** S **Category:** backend **Dependencies:** — **Files:** `src-tauri/src/commands/sandbox.rs`
