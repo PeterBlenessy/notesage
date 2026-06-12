@@ -21,6 +21,12 @@ use super::network_proxy::NetworkSandboxConfig;
 /// The basename is extracted before matching — callers don't need to normalize.
 /// Adding a new agent requires extending this match plus adding a matching
 /// Rust unit test.
+///
+/// POLICY — unknown/custom agent binaries get NOTHING by default. A basename
+/// that doesn't match a known agent receives no Bucket C re-allow entries
+/// (only the app's own `.notesage`); the deny-by-default `$HOME` read rule
+/// and the deny-last sensitive entries apply in full. Users opt in to extra
+/// paths via the connection's writable-paths UI, never via this table.
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug)]
 pub(crate) enum SandboxEntry {
@@ -1076,6 +1082,100 @@ mod tests {
             assert!(
                 !content.contains("Library/Keychains/login.keychain-db"),
                 "Unknown-agent profile must NOT allow login.keychain-db:\n{}",
+                content,
+            );
+        }
+
+        // ---------------------------------------------------------------------
+        // Local-AI-agents task #3 — conservative defaults for unknown/custom
+        // agent binaries.
+        //
+        // Custom ACP agents (any binary the user registers) must start
+        // maximally confined: no Bucket C re-allow entries, deny-by-default
+        // $HOME reads, and the deny-last sensitive entries intact. The `_`
+        // arm in `agent_config_entries` grants nothing — these tests lock
+        // that in so a future Bucket C edit can't accidentally widen the
+        // unknown-basename profile.
+        // ---------------------------------------------------------------------
+
+        #[test]
+        fn unknown_basenames_get_no_bucket_c_entries() {
+            // Bare names AND absolute paths (basename extraction must not
+            // accidentally match a known agent for custom binaries).
+            for (id, binary) in [
+                ("task3-opencode-custom", "opencode-custom"),
+                ("task3-my-agent", "my-agent"),
+                ("task3-abs-custom", "/Users/peter/.notesage/agents/bin/my-agent"),
+            ] {
+                let content = profile_contents(id, binary);
+
+                for bucket_c in [".claude", ".codex", ".copilot", ".gemini"] {
+                    assert!(
+                        !content.contains(&home_subpath_needle(bucket_c)),
+                        "Unknown binary {binary} must NOT get ~{bucket_c} — Bucket C is opt-in via writable-paths UI:\n{content}",
+                    );
+                }
+                assert!(
+                    !content.contains(".claude.json"),
+                    "Unknown binary {binary} must NOT get the .claude.json literal:\n{content}",
+                );
+                assert!(
+                    !content.contains("Library/Keychains/login.keychain-db"),
+                    "Unknown binary {binary} must NOT get the keychain literal:\n{content}",
+                );
+            }
+        }
+
+        #[test]
+        fn known_basenames_keep_bucket_c_grants() {
+            // One assertion per known agent — a future refactor of the
+            // Bucket C table can't silently drop a grant without failing here.
+            for (id, binary, expected) in [
+                ("task3-keep-claude", "claude-agent-acp", ".claude"),
+                ("task3-keep-codex", "codex-acp", ".codex"),
+                ("task3-keep-copilot", "copilot", ".copilot"),
+                ("task3-keep-copilot-lsp", "copilot-language-server", ".copilot"),
+                ("task3-keep-gemini", "gemini", ".gemini"),
+            ] {
+                let content = profile_contents(id, binary);
+                assert!(
+                    content.contains(&home_subpath_needle(expected)),
+                    "{binary} profile must keep its ~{expected} Bucket C grant:\n{content}",
+                );
+            }
+        }
+
+        #[test]
+        fn unknown_basename_profile_keeps_home_deny_and_deny_last() {
+            // Maximal confinement: the unknown-basename profile must keep the
+            // deny-by-default $HOME read rule AND the explicit deny-last
+            // sensitive entries — Bucket C narrowing must not perturb either.
+            let content = profile_contents("task3-unknown-denies", "my-agent");
+
+            let home = dirs::home_dir().unwrap();
+            let home_deny = format!("(deny file-read* (subpath \"{}\"))", home.display());
+            assert!(
+                content.contains(&home_deny),
+                "Unknown-agent profile must deny $HOME reads by default; expected `{}` in:\n{}",
+                home_deny, content,
+            );
+
+            for sensitive in [".ssh", ".aws", ".gnupg"] {
+                let needle = home_subpath_needle(sensitive);
+                assert!(
+                    content.contains(&needle),
+                    "Unknown-agent profile must keep the ~{} deny-last entry; expected `{}` in:\n{}",
+                    sensitive, needle, content,
+                );
+            }
+            assert!(
+                content.contains(r#"(regex #"\.env$")"#),
+                "Unknown-agent profile must keep the .env deny regex:\n{}",
+                content,
+            );
+            assert!(
+                content.contains(r#"(regex #"\.env\..*$")"#),
+                "Unknown-agent profile must keep the .env.* deny regex:\n{}",
                 content,
             );
         }
