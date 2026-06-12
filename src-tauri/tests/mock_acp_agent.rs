@@ -46,9 +46,9 @@ use agent_client_protocol::schema::{
     RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
     ResumeSessionResponse, SelectedPermissionOutcome, SessionCapabilities,
     SessionCloseCapabilities, SessionForkCapabilities, SessionId, SessionInfo, SessionNotification,
-    SessionResumeCapabilities, SetSessionConfigOptionRequest, SetSessionConfigOptionResponse,
-    SetSessionModeRequest, SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse,
-    StopReason, ToolCallUpdate, ToolCallUpdateFields,
+    SessionConfigId, SessionConfigValueId, SessionResumeCapabilities,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, ToolCallUpdate, ToolCallUpdateFields,
 };
 use agent_client_protocol::{Channel, ConnectionTo, Responder};
 
@@ -218,15 +218,6 @@ async fn run_mock_agent(
                   responder: Responder<SetSessionConfigOptionResponse>,
                   _cx: ConnectionTo<Client>| async move {
                 responder.respond(SetSessionConfigOptionResponse::new(vec![]))
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        // session/set_model
-        .on_receive_request(
-            move |_req: SetSessionModelRequest,
-                  responder: Responder<SetSessionModelResponse>,
-                  _cx: ConnectionTo<Client>| async move {
-                responder.respond(SetSessionModelResponse::new())
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -715,10 +706,12 @@ async fn supports_images_extracted_from_initialize_response() {
     .await;
 }
 
-/// `session/set_model` round-trips through the new handler (#5). Covers the
-/// full client→agent operation set previously missing a handler.
+/// `session/set_config_option` round-trips through the mock handler. This is
+/// the operation production now uses to apply the connection's default model
+/// (ACP 0.14 removed the dedicated `session/set_model` request — model
+/// selection is a config option with category "model").
 #[tokio::test]
-async fn set_session_model_round_trips() {
+async fn set_session_config_option_round_trips() {
     with_agent_and_client(CapabilityProfile::Full, async |conn: ConnectionTo<Agent>| {
         conn.send_request(InitializeRequest::new(ProtocolVersion::V1))
             .block_task()
@@ -729,11 +722,14 @@ async fn set_session_model_round_trips() {
             .block_task()
             .await?;
 
-        // set_model: returns a SetSessionModelResponse without error.
+        // set_config_option: returns a SetSessionConfigOptionResponse without
+        // error — the same call applyConnectionModelOption issues for the
+        // model-category option.
         let _resp = conn
-            .send_request(SetSessionModelRequest::new(
+            .send_request(SetSessionConfigOptionRequest::new(
                 new_resp.session_id,
-                "mock-model-1",
+                SessionConfigId::new("model"),
+                SessionConfigValueId::new("mock-model-1"),
             ))
             .block_task()
             .await?;
