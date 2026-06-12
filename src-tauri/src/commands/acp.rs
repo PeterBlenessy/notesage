@@ -1186,8 +1186,31 @@ pub async fn acp_agent_spawn(
     network_sandbox_enabled: Option<bool>,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: Option<bool>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
 ) -> Result<SpawnResult, String> {
     let mut env = env_vars.unwrap_or_default();
+    // Resolve env-var secrets from the OS keychain (`notesage:<conn_id>:env:<KEY>`).
+    // Keychain values are authoritative and override any value passed over IPC —
+    // same precedence as `resolve_api_key` in ai.rs. The IPC `env_vars` map stays
+    // as the same-session fallback for values not yet written to the keychain.
+    if let Some(conn_id) = connection_id.as_deref() {
+        for key in env_var_keys.unwrap_or_default() {
+            match super::credentials::get_credential_internal(&format!("{conn_id}:env:{key}")) {
+                Ok(Some(value)) => {
+                    env.insert(key, value);
+                }
+                Ok(None) => {
+                    log::debug!(target: "notesage::acp",
+                        "No keychain entry for env var {key} on connection {conn_id} — using IPC fallback if present");
+                }
+                Err(e) => {
+                    log::warn!(target: "notesage::acp",
+                        "Failed to resolve env var {key} from keychain for connection {conn_id}: {e}");
+                }
+            }
+        }
+    }
     let args = agent_args.unwrap_or_default();
 
     // Resolve the actual binary path. Absolute paths (custom agents) go through
@@ -1490,6 +1513,10 @@ pub async fn acp_agent_reconnect(
         Some(old_handle.network_sandbox_enabled),
         old_handle.network_allowed_domains,
         Some(old_handle.kernel_network_deny),
+        // env_vars above already carries the keychain-resolved values from the
+        // original spawn — no connection_id/env_var_keys re-resolution needed.
+        None,
+        None,
     ).await?;
 
     // 5. Re-authenticate (best-effort, same as initial spawn)

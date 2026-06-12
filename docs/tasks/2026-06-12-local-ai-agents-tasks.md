@@ -42,6 +42,11 @@
 **Description:** `useAcpLifecycle` / `acp-agent-state` resolve `binaryPath` + `binaryArgs` for `custom_acp` connections through the same spawn pipeline as managed agents; registration-time capability probe (spawn → initialize → session → stop) runs unchanged and **blocks registration on failure with the agent's stderr tail** (mirror the `mcp_validate_server` error-mapping pattern). Verify no downstream code branches on the four known provider names; add regression tests where it does.
 **Complexity:** M **Category:** both **Dependencies:** #1, #2 **Files:** `src/hooks/useAcpLifecycle.ts`, `src/lib/ai/acp-agent-state.ts`, `src-tauri/src/commands/acp.rs`
 
+### #4b — Keychain-backed agent env-var secrets (unplanned, operator-requested) ✅
+
+**Description:** Close the localStorage secret leak for `credentials.envVars` (EnvVar ACP auth — Gemini today, custom agents next): `connections-store` writes each value to the OS keychain (`notesage:<id>:env:<KEY>`), persist `partialize` strips values so only `envVarKeys` (names) reach localStorage, rehydrate migrates legacy plaintext, `removeConnection` deletes the entries. `acp_agent_spawn` gains `connection_id` + `env_var_keys` and resolves values from the keychain — authoritative over the in-memory IPC fallback, mirroring `resolve_api_key`. Also fixes the delegation spawn path (`useAgentTaskOperations`), which previously passed no env vars at all.
+**Complexity:** M **Category:** both **Dependencies:** #2 **Files:** `src/stores/connections-store.ts`, `src/lib/ai/connections.ts`, `src/lib/ai/acp-agent-state.ts`, `src/lib/tauri.ts`, `src/hooks/useAgentTaskOperations.ts`, `src-tauri/src/commands/acp.rs`
+
 ### #5 — Add Connection UI: Custom Agent card + form
 
 **Description:** New card in the Add Connection flow: binary file-picker (native dialog), args input, env-var rows with secret toggle (keychain), probe-on-add with discovered capabilities preview on success / stderr tail on failure. Follow the MCP add-dialog field patterns; shadcn components; both themes; `TooltipProvider` where tooltips appear.

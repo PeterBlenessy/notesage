@@ -816,6 +816,10 @@ export const tauriApi = {
     networkSandboxEnabled?: boolean | null,
     networkAllowedDomains?: string[] | null,
     kernelNetworkDeny?: boolean | null,
+    /** Connection id + env-var names for keychain secret resolution at spawn
+     *  (`notesage:<connectionId>:env:<KEY>`). Values never transit IPC here. */
+    connectionId?: string | null,
+    envVarKeys?: string[] | null,
   ): Promise<AcpSpawnResult> {
     return await invoke<AcpSpawnResult>("acp_agent_spawn", {
       agentBinary,
@@ -827,6 +831,8 @@ export const tauriApi = {
       networkSandboxEnabled: networkSandboxEnabled ?? null,
       networkAllowedDomains: networkAllowedDomains ?? null,
       kernelNetworkDeny: kernelNetworkDeny ?? null,
+      connectionId: connectionId ?? null,
+      envVarKeys: envVarKeys ?? null,
     });
   },
 

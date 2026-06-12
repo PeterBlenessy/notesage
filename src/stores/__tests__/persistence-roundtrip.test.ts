@@ -381,6 +381,90 @@ describe('connections-store persistence round-trip', () => {
     expect(restored!.capabilities).toEqual(['interactive', 'agent_tasks']);
   });
 
+  it('strips agent env-var VALUES from localStorage — only the names persist', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    vi.mocked(invoke).mockClear();
+
+    const id = useConnectionsStore.getState().addConnection({
+      provider: 'google',
+      authMethod: 'agent_managed',
+      status: 'connected',
+      label: 'Gemini CLI',
+      credentials: {
+        type: 'agent_managed',
+        agentBinary: 'gemini',
+        agentArgs: ['--acp'],
+        envVars: { GEMINI_API_KEY: 'sk-gemini-secret' },
+      },
+    });
+    await waitForPersist();
+
+    // The secret value went to the keychain, keyed per-var by connection id
+    expect(invoke).toHaveBeenCalledWith('store_credential', {
+      service: `notesage:${id}:env:GEMINI_API_KEY`,
+      key: 'sk-gemini-secret',
+    });
+
+    // The persisted shape carries the var NAME but never the value
+    const raw = localStorageMock.getItem('notesage-connections')!;
+    expect(raw).not.toContain('sk-gemini-secret');
+    const persisted = JSON.parse(raw).state.connections.find((c: Connection) => c.id === id);
+    expect(persisted.credentials.envVars).toBeUndefined();
+    expect(persisted.credentials.envVarKeys).toEqual(['GEMINI_API_KEY']);
+
+    // After a restart the in-memory session copy is gone too — spawns resolve
+    // values from the keychain via connectionId + envVarKeys
+    await simulateRestart(useConnectionsStore, 'notesage-connections', CONNECTIONS_DEFAULTS);
+    const restored = useConnectionsStore.getState().getConnection(id)!;
+    expect(restored.credentials).toMatchObject({ type: 'agent_managed', envVarKeys: ['GEMINI_API_KEY'] });
+    expect((restored.credentials as { envVars?: unknown }).envVars).toBeUndefined();
+  });
+
+  it('migrates legacy plaintext env vars from localStorage into the keychain on rehydrate', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+
+    // Seed storage with a pre-keychain persisted shape (plaintext envVars)
+    const legacy = {
+      state: {
+        connections: [{
+          id: 'conn-legacy-gemini',
+          provider: 'google',
+          authMethod: 'agent_managed',
+          status: 'connected',
+          label: 'Gemini CLI',
+          credentials: {
+            type: 'agent_managed',
+            agentBinary: 'gemini',
+            envVars: { GEMINI_API_KEY: 'sk-legacy-secret' },
+          },
+          capabilities: ['interactive', 'agent_tasks'],
+          createdAt: 1700000000000,
+        }],
+      },
+      version: 0,
+    };
+    localStorageMock.setItem('notesage-connections', JSON.stringify(legacy));
+    vi.mocked(invoke).mockClear();
+
+    await useConnectionsStore.persist.rehydrate();
+    await waitForPersist();
+
+    // Migration wrote the secret to the keychain…
+    expect(invoke).toHaveBeenCalledWith('store_credential', {
+      service: 'notesage:conn-legacy-gemini:env:GEMINI_API_KEY',
+      key: 'sk-legacy-secret',
+    });
+    // …kept the value in memory for this session…
+    const conn = useConnectionsStore.getState().getConnection('conn-legacy-gemini')!;
+    expect(conn.credentials).toMatchObject({
+      envVars: { GEMINI_API_KEY: 'sk-legacy-secret' },
+      envVarKeys: ['GEMINI_API_KEY'],
+    });
+    // …and the re-persisted shape no longer contains the plaintext value
+    const raw = localStorageMock.getItem('notesage-connections')!;
+    expect(raw).not.toContain('sk-legacy-secret');
+  });
+
   it('persists sandbox and network config', async () => {
     const testConnection: Connection = {
       id: 'conn-sandbox',

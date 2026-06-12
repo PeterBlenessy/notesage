@@ -217,7 +217,13 @@ export interface AgentLaunchSpec {
    *  or absolute path (custom agents, validated verbatim by `acp_binary.rs`). */
   agentBinary: string;
   agentArgs: string[];
+  /** In-memory env values (same-session fallback — present right after the
+   *  EnvVar auth form, absent after a restart). Passed over IPC only as the
+   *  fallback; keychain-resolved values win in `acp_agent_spawn`. */
   envVars: Record<string, string> | null;
+  /** Names of env vars whose values live in the OS keychain
+   *  (`notesage:<connectionId>:env:<KEY>`); resolved by the backend at spawn. */
+  envVarKeys: string[] | null;
 }
 
 /**
@@ -226,12 +232,17 @@ export interface AgentLaunchSpec {
  * `custom_acp` connections launch the user-supplied binary: `config.binaryPath`
  * (absolute — the backend's absolute-path branch validates existence + exec bit
  * and returns a precise error) with `config.binaryArgs`. Managed connections keep
- * launching from `credentials.agentBinary`/`agentArgs`. Env vars come from the
- * existing keychain-backed `credentials.envVars` flow in both cases.
+ * launching from `credentials.agentBinary`/`agentArgs`. Env-var secrets come from
+ * the keychain-backed `credentials.envVars`/`envVarKeys` flow in both cases.
  */
 export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
   const creds: ConnectionCredentials = connection.credentials;
   const managedCreds = creds.type === 'agent_managed' ? creds : null;
+  const envVarKeys = (() => {
+    if (!managedCreds) return null;
+    const keys = managedCreds.envVarKeys ?? Object.keys(managedCreds.envVars ?? {});
+    return keys.length > 0 ? keys : null;
+  })();
   if (connection.provider === 'custom_acp') {
     const binaryPath = connection.config?.binaryPath;
     if (!binaryPath) {
@@ -241,6 +252,7 @@ export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
       agentBinary: binaryPath,
       agentArgs: connection.config?.binaryArgs ?? [],
       envVars: managedCreds?.envVars ?? null,
+      envVarKeys,
     };
   }
   if (!managedCreds) {
@@ -250,6 +262,7 @@ export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
     agentBinary: managedCreds.agentBinary,
     agentArgs: managedCreds.agentArgs ?? [],
     envVars: managedCreds.envVars ?? null,
+    envVarKeys,
   };
 }
 
@@ -404,6 +417,8 @@ export async function ensureAcpAgent(
         role: 'interactive',
         workingDirectory: cwd,
         envVars: launch.envVars,
+        connectionId: connection.id,
+        envVarKeys: launch.envVarKeys,
         sandboxEnabled: connection.sandboxEnabled ?? null,
         // Deduplicate — `getChatSandboxScope` may already include extraWritablePaths;
         // non-chat callers (comment delegation, inline actions) pass them separately.
@@ -473,6 +488,8 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
       role: 'interactive',
       workingDirectory: '/tmp',
       envVars: launch.envVars,
+      connectionId: connection.id,
+      envVarKeys: launch.envVarKeys,
       sandboxEnabled: null,
       sandboxPaths: null,
       networkSandboxEnabled: null,

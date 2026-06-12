@@ -189,6 +189,10 @@ describe('custom_acp — spawn wiring', () => {
     expect(last.agentBinary).toBe(BINARY_PATH);
     expect(last.agentArgs).toEqual(BINARY_ARGS);
     expect(last.envVars).toEqual({ MY_AGENT_KEY: 'secret' });
+    // Keychain resolution inputs: the backend resolves each named var from
+    // `notesage:<connectionId>:env:<KEY>`, overriding the IPC fallback above.
+    expect(last.connectionId).toBe('conn-custom');
+    expect(last.envVarKeys).toEqual(['MY_AGENT_KEY']);
   });
 
   it('config.binaryArgs absent → spawn args null (defaults to [])', async () => {
@@ -229,6 +233,7 @@ describe('custom_acp — spawn wiring', () => {
       agentBinary: 'claude-agent-acp',
       agentArgs: ['--flag'],
       envVars: null,
+      envVarKeys: null,
     });
   });
 });

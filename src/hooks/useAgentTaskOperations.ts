@@ -154,6 +154,8 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
         networkSandboxEnabled || null,
         networkAllowedDomains,
         connection.kernelNetworkDeny ?? null,
+        connection.id,
+        launch.envVarKeys,
       );
 
       // Try to authenticate — some agents handle auth internally

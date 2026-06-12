@@ -25,13 +25,15 @@ export type ConnectionProvider =
 
 export type ConnectionCredentials =
   | { type: 'api_key'; key?: string; credentialStored?: boolean }
-  // `envVars` stores credentials collected by the generic ACP EnvVar auth flow
-  // (`AuthMethod::EnvVar` with `unstable_auth_methods`). The flow writes values
-  // keyed by the var names the agent advertises (e.g. `GEMINI_API_KEY`), and
-  // `acp_agent_spawn` injects them into the child process environment. Kept as
-  // the storage layer because it's the minimal shape needed to round-trip ACP
-  // EnvVar auth — audit conclusion for PRD 2026-04-18-acp-protocol-tail #11.
-  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> }  // e.g., "claude-agent-acp"
+  // `envVars` holds credentials collected by the generic ACP EnvVar auth flow
+  // (`AuthMethod::EnvVar` with `unstable_auth_methods`), keyed by the var names
+  // the agent advertises (e.g. `GEMINI_API_KEY`). Values are SESSION-ONLY: the
+  // store writes each one to the OS keychain (`notesage:<id>:env:<KEY>`) and the
+  // persist partialize strips them, so only `envVarKeys` (the non-secret names)
+  // reach localStorage. At spawn time `acp_agent_spawn` resolves the values from
+  // the keychain by `connection_id` + key name (keychain wins over any in-memory
+  // fallback passed over IPC — same precedence as `resolve_api_key`).
+  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string>; envVarKeys?: string[] }  // e.g., "claude-agent-acp"
   | { type: 'local'; url: string }
   | { type: 'local_bundled' };    // No credentials — bundled llama-server
 
