@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{AppHandle, Manager};
 
@@ -21,6 +21,28 @@ pub struct AgentAvailability {
 // Binary resolution
 // ---------------------------------------------------------------------------
 
+/// Validate an absolute path to an agent binary and return it verbatim.
+///
+/// Constraints: the path must point at an existing regular file, and on unix
+/// it must carry at least one executable bit (`mode & 0o111`). No name-based
+/// resolution (PATH, Homebrew, npm, bundled) is attempted for absolute inputs
+/// — a failing absolute path must NOT be reinterpreted as an agent name.
+pub fn resolve_absolute_binary(path: &str) -> Result<String, String> {
+    let meta = std::fs::metadata(Path::new(path))
+        .map_err(|_| format!("ACP agent binary not found at {}", path))?;
+    if !meta.is_file() {
+        return Err(format!("ACP agent binary not found at {}", path));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o111 == 0 {
+            return Err(format!("ACP agent binary at {} is not executable", path));
+        }
+    }
+    Ok(path.to_string())
+}
+
 /// Resolve the path to an ACP agent binary.
 /// Checks: 1) system PATH via `which`, 2) common install locations
 /// (Homebrew, npm global, pnpm, nvm, ~/.local/bin), 3) bundled node_modules/.bin/.
@@ -29,6 +51,12 @@ pub struct AgentAvailability {
 /// not include user-installed directories, so we must check common locations
 /// explicitly as fallback.
 pub fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
+    // Absolute paths bypass name-based resolution entirely: used verbatim
+    // after validation, never fed through PATH / install-location lookup.
+    if Path::new(agent_id).is_absolute() {
+        return resolve_absolute_binary(agent_id).ok();
+    }
+
     // 0. Check managed install directory (~/.notesage/agents/bin/)
     let managed_bin = dirs::home_dir()
         .unwrap_or_default()
@@ -165,4 +193,61 @@ pub async fn acp_agent_check_availability(
         path,
         version,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // Absolute-path resolution (resolve_absolute_binary)
+    // -------------------------------------------------------------------------
+
+    #[cfg(unix)]
+    mod unix {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        fn set_mode(path: &Path, mode: u32) {
+            let mut perms = std::fs::metadata(path).unwrap().permissions();
+            perms.set_mode(mode);
+            std::fs::set_permissions(path, perms).unwrap();
+        }
+
+        #[test]
+        fn absolute_path_to_executable_resolves_verbatim() {
+            let dir = tempfile::tempdir().unwrap();
+            let bin = dir.path().join("fake-agent");
+            std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+            set_mode(&bin, 0o755);
+
+            let input = bin.to_string_lossy().to_string();
+            assert_eq!(resolve_absolute_binary(&input), Ok(input.clone()));
+        }
+
+        #[test]
+        fn absolute_path_to_missing_file_returns_not_found_error() {
+            let dir = tempfile::tempdir().unwrap();
+            let missing = dir.path().join("does-not-exist");
+
+            let input = missing.to_string_lossy().to_string();
+            let err = resolve_absolute_binary(&input).unwrap_err();
+            assert_eq!(err, format!("ACP agent binary not found at {}", input));
+        }
+
+        #[test]
+        fn absolute_path_to_non_executable_file_returns_not_executable_error() {
+            let dir = tempfile::tempdir().unwrap();
+            let bin = dir.path().join("not-executable");
+            std::fs::write(&bin, "not a binary").unwrap();
+            set_mode(&bin, 0o644);
+
+            let input = bin.to_string_lossy().to_string();
+            let err = resolve_absolute_binary(&input).unwrap_err();
+            assert_eq!(
+                err,
+                format!("ACP agent binary at {} is not executable", input)
+            );
+        }
+    }
 }
