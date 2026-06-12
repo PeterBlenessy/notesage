@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | High |
 | **Impact** | One decision ("use local AI") gives the user a fully offline agentic chat — a real agent loop (planning, multi-step tool use, file edits) plus MCP tools, running entirely against the bundled llama-server, with a verifiably empty network allowlist |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [local-ai-agents-tasks](../tasks/2026-06-12-local-ai-agents-tasks.md) |
 | **Phase** | Privacy-First Local AI |
 
 ## Problem
