@@ -29,6 +29,7 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import { ConnectCopilotLsp } from './ConnectCopilotLsp';
 import { ConnectAgent } from './ConnectAgent';
+import { ConnectCustomAgent } from './ConnectCustomAgent';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
@@ -36,7 +37,8 @@ import { invoke } from '@tauri-apps/api/core';
 type AddFlowState =
   | { step: 'pick' }
   | { step: 'configure'; option: ProviderOption }
-  | { step: 'connecting'; option: ProviderOption };
+  | { step: 'connecting'; option: ProviderOption }
+  | { step: 'custom' };
 
 export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const connections = useConnectionsStore((s) => s.connections);
@@ -127,6 +129,25 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     });
     autoAssign(connectionId);
   }, [addConnection, autoAssign]);
+
+  const handlePickCustomAgent = useCallback(() => {
+    setFlow({ step: 'custom' });
+    // Delay popover open so it doesn't race with the dropdown close animation
+    setTimeout(() => {
+      setPopoverOpen(true);
+      popoverOpenedAt.current = Date.now();
+    }, 100);
+  }, []);
+
+  // `registerCustomAcpConnection` already persisted the connection (probe-first);
+  // this callback only routes it and closes the flow.
+  const handleCustomAgentConnected = useCallback(
+    (connectionId: string) => {
+      autoAssign(connectionId);
+      resetFlow();
+    },
+    [autoAssign, resetFlow]
+  );
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
     // Local AI: connect immediately (binary is always bundled as sidecar)
@@ -361,6 +382,27 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   );
                 })}
               </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Custom
+                </DropdownMenuLabel>
+                {/* Custom agents deliberately have no PROVIDER_OPTIONS entry —
+                    managed install/update/allowlist surfaces must never match
+                    them (locked by useAcpLifecycle.custom-agent.test.ts). */}
+                <DropdownMenuItem
+                  className="relative flex items-start gap-2.5 py-1.5 cursor-pointer"
+                  onSelect={handlePickCustomAgent}
+                >
+                  <ProviderLogo provider="custom_acp" className="w-5 h-5 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">Custom Agent</span>
+                    <span className="text-xs text-muted-foreground block truncate">
+                      Bring your own ACP-compatible agent binary
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -394,6 +436,12 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 option={flow.option}
                 onBack={handleBack}
                 onConnected={handleAgentConnected}
+              />
+            )}
+            {flow.step === 'custom' && (
+              <ConnectCustomAgent
+                onBack={handleBack}
+                onConnected={handleCustomAgentConnected}
               />
             )}
           </PopoverContent>
