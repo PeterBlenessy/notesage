@@ -18,7 +18,8 @@ export type ConnectionProvider =
   | 'google'             // Agent-managed subscription (Gemini CLI via ACP)
   | 'ollama'             // Local, no auth
   | 'openai_compatible'  // Any OpenAI-compatible API (vLLM, LiteLLM, Together AI, Groq)
-  | 'local_ai';          // Bundled local inference (llama-server)
+  | 'local_ai'           // Bundled local inference (llama-server)
+  | 'custom_acp';        // User-supplied ACP agent binary (spawned via the same ACP pipeline as managed agents)
 
 // --- Credentials ---
 
@@ -74,6 +75,11 @@ export const PROVIDER_CAPABILITIES: Record<ConnectionProvider, Partial<Record<Au
   local_ai: {
     local_bundled: ['interactive', 'agent_tasks', 'inline_completion'],
   },
+  // Custom agents speak ACP over stdio — same auth model as the managed
+  // agent_managed providers. No inline_completion: ACP has no FIM surface.
+  custom_acp: {
+    agent_managed: ['interactive', 'agent_tasks'],
+  },
 };
 
 /** Resolve capabilities for a given provider + auth method */
@@ -92,6 +98,11 @@ export interface ConnectionConfig {
   baseUrl?: string;            // Custom API endpoint override
   /** @deprecated Use acpDefaults.thinkingEffort instead. Kept for migration. */
   reasoningEffort?: ReasoningEffort;
+  // custom_acp only. Secrets never go here — they stay in `credentials.envVars`
+  // (the existing keychain-backed EnvVar flow); config is plain persisted state.
+  binaryPath?: string;            // Absolute path to the agent binary
+  binaryArgs?: string[];          // Launch args (e.g. ["acp"])
+  localAgentPreset?: 'opencode';  // Marks preset-managed connections (Local Agent setup flow)
 }
 
 // --- ACP Capabilities (discovered at connection registration) ---

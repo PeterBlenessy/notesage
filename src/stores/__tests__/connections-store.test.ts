@@ -155,6 +155,32 @@ describe('connections-store', () => {
       expect(conn!.config).toEqual({ model: 'gpt-4o', temperature: 0.7 });
     });
 
+    it('passes custom_acp launch config through unchanged and never hits the keychain', () => {
+      const id = useConnectionsStore.getState().addConnection({
+        provider: 'custom_acp',
+        authMethod: 'agent_managed',
+        status: 'connected',
+        label: 'OpenCode (local)',
+        credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/opencode' },
+        config: {
+          binaryPath: '/usr/local/bin/opencode',
+          binaryArgs: ['acp'],
+          localAgentPreset: 'opencode',
+        },
+      });
+
+      const conn = useConnectionsStore.getState().getConnection(id);
+      expect(conn!.provider).toBe('custom_acp');
+      expect(conn!.config).toEqual({
+        binaryPath: '/usr/local/bin/opencode',
+        binaryArgs: ['acp'],
+        localAgentPreset: 'opencode',
+      });
+      // binaryPath/binaryArgs are not secrets — nothing goes to the keychain
+      expect(invoke).not.toHaveBeenCalledWith('store_credential', expect.anything());
+      expect(getCapabilities).toHaveBeenCalledWith('custom_acp', 'agent_managed');
+    });
+
     it('does not call store_credential for non-api_key credentials', () => {
       useConnectionsStore.getState().addConnection({
         provider: 'ollama',
