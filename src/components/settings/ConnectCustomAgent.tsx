@@ -284,7 +284,7 @@ export function ConnectCustomAgent({
                   value={row.name}
                   onChange={(e) => updateEnvRow(row.id, { name: e.target.value })}
                   disabled={probing}
-                  className="font-mono text-xs h-8 w-[40%]"
+                  className="font-mono text-xs h-8 w-2/5"
                 />
                 <div className="relative flex-1">
                   <Input
@@ -300,7 +300,7 @@ export function ConnectCustomAgent({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                    className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground transition-colors duration-150"
                     onClick={() => updateEnvRow(row.id, { show: !row.show })}
                     aria-label={row.show ? 'Hide value' : 'Show value'}
                     tabIndex={-1}
@@ -316,7 +316,7 @@ export function ConnectCustomAgent({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground transition-colors duration-150"
                   onClick={() => removeEnvRow(row.id)}
                   disabled={probing}
                   aria-label="Remove variable"
