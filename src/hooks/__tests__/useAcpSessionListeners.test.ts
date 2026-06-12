@@ -2,7 +2,7 @@
 //
 // Tests for `setupAcpChatListeners` — the chat-side ACP session-update dispatcher.
 // Focus: silent `user_message_chunk` handling, inline `resource_link` rendering,
-// and `unstable_message_id` (acpMessageId) propagation onto ChatMessages.
+// and agent-assigned `messageId` (acpMessageId) propagation onto ChatMessages.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { emitMockEvent, setMockInvokeHandler } from '@/test/tauri-mock';
@@ -244,8 +244,11 @@ describe('setupAcpChatListeners', () => {
     });
   });
 
-  describe('acpMessageId propagation (unstable_message_id)', () => {
-    it('stores messageId on the assistant message when agent emits it', async () => {
+  // The id is agent-assigned (ContentChunk.message_id, stable since ACP 0.13.6) —
+  // chunks of one assistant message share it. There is no client-supplied or
+  // echoed user-message id.
+  describe('acpMessageId propagation', () => {
+    it('stores the agent-assigned messageId on the assistant message', async () => {
       const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
 
       emitMockEvent('acp-session-update', {
@@ -264,7 +267,7 @@ describe('setupAcpChatListeners', () => {
       unlistenPermission();
     });
 
-    it('stores echoed user_message_id on the user message', async () => {
+    it('tolerates snake_case message_id (custom agents)', async () => {
       const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
 
       emitMockEvent('acp-session-update', {
@@ -272,39 +275,18 @@ describe('setupAcpChatListeners', () => {
         sessionId: 'sess-1',
         update: {
           sessionUpdate: 'agent_message_chunk',
-          messageId: 'agent-abc',
-          userMessageId: 'user-xyz',
-          content: { type: 'text', text: 'reply' },
-        },
-      });
-
-      expect(getUserMessage()?.acpMessageId).toBe('user-xyz');
-      expect(getAssistantMessage()?.acpMessageId).toBe('agent-abc');
-
-      unlisten();
-      unlistenPermission();
-    });
-
-    it('tolerates snake_case user_message_id (custom agents)', async () => {
-      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
-
-      emitMockEvent('acp-session-update', {
-        instanceId: INSTANCE_ID,
-        sessionId: 'sess-1',
-        update: {
-          sessionUpdate: 'agent_message_chunk',
-          user_message_id: 'user-snake',
+          message_id: 'agent-snake',
           content: { type: 'text', text: 'ok' },
         },
       });
 
-      expect(getUserMessage()?.acpMessageId).toBe('user-snake');
+      expect(getAssistantMessage()?.acpMessageId).toBe('agent-snake');
 
       unlisten();
       unlistenPermission();
     });
 
-    it('is a no-op when the agent emits neither field', async () => {
+    it('is a no-op when the agent emits no messageId', async () => {
       const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
 
       emitMockEvent('acp-session-update', {

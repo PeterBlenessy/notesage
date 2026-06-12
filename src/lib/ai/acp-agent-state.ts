@@ -333,8 +333,9 @@ export async function ensureAcpAgent(
     try {
       const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
 
-      // Model selection is now done post-session via session/set_model (ACP-native).
-      // CLI args are only used for non-model flags.
+      // Model selection is done post-session via the model-category session
+      // config option (session/set_config_option). CLI args are only used for
+      // non-model flags.
       const args = [...(creds.agentArgs ?? [])];
 
       // Build network sandbox config if enabled

@@ -281,7 +281,6 @@ pub fn run() {
             acp_session_cancel,
             acp_session_set_mode,
             acp_session_set_config_option,
-            acp_session_set_model,
             acp_session_close,
             acp_session_list,
             acp_session_resume,

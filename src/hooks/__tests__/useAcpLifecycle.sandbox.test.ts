@@ -36,7 +36,6 @@ vi.mock('@/lib/tauri', () => ({
   tauriApi: {
     getHomeDir: vi.fn().mockResolvedValue('/Users/test'),
     acpSessionSetMode: vi.fn().mockResolvedValue(undefined),
-    acpSessionSetModel: vi.fn().mockResolvedValue(undefined),
     acpSessionSetConfigOption: vi.fn().mockResolvedValue(undefined),
   },
 }));

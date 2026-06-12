@@ -329,7 +329,6 @@ describe('useAcpLifecycle', () => {
         config_options: null,
       }));
       setMockInvokeHandler('acp_session_prompt', () => undefined);
-      setMockInvokeHandler('acp_session_set_model', () => undefined);
 
       // Seed a chat store with an active conversation so addMessage has a home.
       useChatStore.getState().clearMessages();
@@ -396,7 +395,6 @@ describe('useAcpLifecycle', () => {
         config_options: null,
       }));
       setMockInvokeHandler('acp_session_prompt', () => undefined);
-      setMockInvokeHandler('acp_session_set_model', () => undefined);
 
       useChatStore.getState().clearMessages();
 

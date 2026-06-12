@@ -68,12 +68,15 @@ fs_extra = "1.3"
 libc = "0.2"
 
 # ACP - Agent Client Protocol (Phase 6)
-# session/close + session/resume were stabilized upstream (0.12.2); their
-# unstable_* feature flags were removed — the functionality is now default.
-# agent-client-protocol 0.12.1 pins the schema crate to exactly =0.13.2, so the
-# two versions must move together (0.13.3/0.13.4 aren't compatible with 0.12.1).
-agent-client-protocol = { version = "0.12.1", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_fork", "unstable_message_id", "unstable_auth_methods"] }
-agent-client-protocol-schema = { version = "0.13.2", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_fork", "unstable_message_id", "unstable_auth_methods"] }
+# Upstream repo moved to github.com/agentclientprotocol/rust-sdk.
+# Stabilized in 0.13.x/0.14.0 (feature flags removed, functionality is default):
+# session usage updates, ContentChunk.message_id (replaces the old
+# PromptRequest.message_id design). The session-model API was removed entirely —
+# model selection now goes through config options with category "model".
+# agent-client-protocol 0.14.0 pins the schema crate to exactly =0.13.6, so the
+# two versions must move together.
+agent-client-protocol = { version = "0.14.0", features = ["unstable_session_fork", "unstable_auth_methods"] }
+agent-client-protocol-schema = { version = "=0.13.6", features = ["unstable_session_fork", "unstable_auth_methods"] }
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 

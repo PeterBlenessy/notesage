@@ -263,10 +263,6 @@ enum AgentCmd {
         session_id: String,
         content: String,
         images: Option<Vec<super::ai::ImageData>>,
-        /// Optional client-generated message ID — forwarded as `PromptRequest.message_id`
-        /// when the `unstable_message_id` feature is enabled. The agent MAY echo this
-        /// back as `user_message_id` on subsequent `agent_message_chunk` events.
-        message_id: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel {
@@ -286,11 +282,6 @@ enum AgentCmd {
         session_id: String,
         option_id: String,
         value_id: String,
-        reply: oneshot::Sender<Result<(), String>>,
-    },
-    SetModel {
-        session_id: String,
-        model_id: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
     CloseSession {
@@ -317,6 +308,62 @@ enum AgentCmd {
     },
 }
 
+
+// ---------------------------------------------------------------------------
+// Session response helpers
+// ---------------------------------------------------------------------------
+
+/// Derive `(current_model, available_models)` from a session response's config
+/// options.
+///
+/// ACP 0.14 removed the dedicated session-model API (`SessionModelState`,
+/// `session/set_model`); the stable replacement is the config option whose
+/// `category` is `Model`. Agents without such an option simply have no model
+/// selector — `(None, [])` is returned rather than an error.
+fn extract_model_info(
+    config_options: Option<&Vec<agent_client_protocol::schema::SessionConfigOption>>,
+) -> (Option<String>, Vec<AgentModelInfo>) {
+    use agent_client_protocol::schema::{
+        SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOption,
+        SessionConfigSelectOptions,
+    };
+
+    let model_option = config_options
+        .into_iter()
+        .flatten()
+        .find(|opt| opt.category == Some(SessionConfigOptionCategory::Model));
+
+    let Some(option) = model_option else {
+        return (None, Vec::new());
+    };
+
+    let to_info = |o: &SessionConfigSelectOption| AgentModelInfo {
+        model_id: o.value.to_string(),
+        name: o.name.clone(),
+        description: o.description.clone(),
+    };
+
+    match &option.kind {
+        SessionConfigKind::Select(select) => {
+            let current_model = Some(select.current_value.to_string());
+            let available_models = match &select.options {
+                SessionConfigSelectOptions::Ungrouped(opts) => {
+                    opts.iter().map(to_info).collect()
+                }
+                SessionConfigSelectOptions::Grouped(groups) => groups
+                    .iter()
+                    .flat_map(|g| g.options.iter())
+                    .map(to_info)
+                    .collect(),
+                // Non-exhaustive upstream enum — unknown layouts yield no list.
+                _ => Vec::new(),
+            };
+            (current_model, available_models)
+        }
+        // Future / non-select option kinds carry no model list to surface.
+        _ => (None, Vec::new()),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Agent thread: owns the (now Send) ConnectionTo<Agent>
@@ -731,22 +778,8 @@ fn run_agent_thread(
                     let req = NewSessionRequest::new(PathBuf::from(cwd));
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-
-                            if let Some(ref model_state) = resp.models {
-                                current_model =
-                                    Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
 
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
@@ -778,22 +811,8 @@ fn run_agent_thread(
                     );
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-
-                            if let Some(ref model_state) = resp.models {
-                                current_model =
-                                    Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
 
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
@@ -818,7 +837,6 @@ fn run_agent_thread(
                     session_id: sid,
                     content,
                     images,
-                    message_id,
                     reply,
                 } => {
                     // Run prompt in a background task so the command loop remains
@@ -833,10 +851,9 @@ fn run_agent_thread(
                     tokio::task::spawn(async move {
                         log::info!(
                             target: "notesage::acp",
-                            "[{}] Prompt started (session={}, content_len={}, images={}, has_message_id={})",
+                            "[{}] Prompt started (session={}, content_len={}, images={})",
                             prompt_binary, prompt_sid, content.len(),
                             images.as_ref().map_or(0, |v| v.len()),
-                            message_id.is_some(),
                         );
                         let start = std::time::Instant::now();
                         let mut blocks: Vec<ContentBlock> = Vec::new();
@@ -849,13 +866,10 @@ fn run_agent_thread(
                             }
                         }
                         blocks.push(ContentBlock::Text(TextContent::new(content)));
-                        let mut req = PromptRequest::new(
+                        let req = PromptRequest::new(
                             SessionId::new(sid),
                             blocks,
                         );
-                        if let Some(mid) = message_id {
-                            req = req.message_id(mid);
-                        }
                         match conn.send_request(req).block_task().await {
                             Ok(_) => {
                                 log::info!(
@@ -942,20 +956,6 @@ fn run_agent_thread(
                         Err(e) => { let _ = reply.send(Err(format!("set_config_option failed: {}", e))); }
                     }
                 }
-                AgentCmd::SetModel {
-                    session_id: sid,
-                    model_id,
-                    reply,
-                } => {
-                    let req = SetSessionModelRequest::new(
-                        SessionId::new(sid),
-                        ModelId::new(model_id),
-                    );
-                    match conn.send_request(req).block_task().await {
-                        Ok(_) => { let _ = reply.send(Ok(())); }
-                        Err(e) => { let _ = reply.send(Err(format!("set_model failed: {}", e))); }
-                    }
-                }
                 AgentCmd::CloseSession {
                     session_id: sid,
                     reply,
@@ -996,20 +996,8 @@ fn run_agent_thread(
                     );
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-                            if let Some(ref model_state) = resp.models {
-                                current_model = Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
                             let config_options = resp.config_options.as_ref()
@@ -1036,20 +1024,8 @@ fn run_agent_thread(
                     );
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-                            if let Some(ref model_state) = resp.models {
-                                current_model = Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
                             let config_options = resp.config_options.as_ref()
@@ -1559,9 +1535,9 @@ pub async fn acp_session_load(
 /// Session updates are emitted as `acp-session-update` Tauri events.
 /// Permission requests are emitted as `acp-permission-request` events.
 ///
-/// The optional `message_id` parameter is forwarded on the `PromptRequest` when the
-/// `unstable_message_id` feature is enabled in the ACP crate. Agents that recognize it
-/// MAY echo the value back on `agent_message_chunk` events as `user_message_id`.
+/// Message identity is agent-assigned: `agent_message_chunk` updates carry an
+/// optional `messageId` (`ContentChunk.message_id`) grouping the chunks of one
+/// message — there is no client-supplied message id in ACP 0.14.
 #[tauri::command]
 pub async fn acp_session_prompt(
     state: State<'_, AcpState>,
@@ -1569,7 +1545,6 @@ pub async fn acp_session_prompt(
     session_id: String,
     content: String,
     images: Option<Vec<super::ai::ImageData>>,
-    message_id: Option<String>,
 ) -> Result<(), String> {
     let cmd_tx = {
         let agents = state.agents.lock().await;
@@ -1586,7 +1561,6 @@ pub async fn acp_session_prompt(
             session_id,
             content,
             images,
-            message_id,
             reply: reply_tx,
         })
         .await
@@ -1707,37 +1681,6 @@ pub async fn acp_session_set_config_option(
     reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to set_config_option".to_string())?
-}
-
-/// Set the model for an ACP session.
-#[tauri::command]
-pub async fn acp_session_set_model(
-    state: State<'_, AcpState>,
-    instance_id: String,
-    session_id: String,
-    model_id: String,
-) -> Result<(), String> {
-    let cmd_tx = {
-        let agents = state.agents.lock().await;
-        let handle = agents
-            .get(&instance_id)
-            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
-        handle.cmd_tx.clone()
-    };
-
-    let (reply_tx, reply_rx) = oneshot::channel();
-    cmd_tx
-        .send(AgentCmd::SetModel {
-            session_id,
-            model_id,
-            reply: reply_tx,
-        })
-        .await
-        .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    reply_rx
-        .await
-        .map_err(|_| "Agent thread did not respond to set_model".to_string())?
 }
 
 /// Close an ACP session. Best-effort — agents may not support this.
@@ -1897,8 +1840,11 @@ pub async fn acp_permission_respond(
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthEnvVar, AuthMethodInfo};
-    use agent_client_protocol::schema::{ContentBlock, PromptRequest, SessionId, TextContent};
+    use super::{extract_model_info, AuthEnvVar, AuthMethodInfo};
+    use agent_client_protocol::schema::{
+        ContentBlock, ContentChunk, MessageId, SessionConfigOption, SessionConfigOptionCategory,
+        SessionConfigSelectOption, TextContent,
+    };
 
     /// `AuthMethodInfo::EnvVar` must round-trip through serde so the frontend receives
     /// the full `{ vars, link }` payload. Tagged as `{ "type": "env_var", ... }`.
@@ -1968,40 +1914,70 @@ mod tests {
         assert!(json.get("link").is_none(), "Agent variant should not carry link");
     }
 
-    /// `PromptRequest::message_id()` is a `#[cfg(feature = "unstable_message_id")]`-gated
-    /// builder. This test confirms the Cargo feature is enabled and that the resulting
-    /// request serializes with the `messageId` field — the same wire shape that agents
-    /// will see and MAY echo back as `user_message_id`.
+    /// `ContentChunk.message_id` is the stable (0.13.6) message-identity design:
+    /// the agent assigns the id, and all chunks of one message share it. The
+    /// frontend reads it from `agent_message_chunk` updates as `messageId`
+    /// (camelCase) — this test locks that wire shape.
     #[test]
-    fn prompt_request_carries_message_id_when_set() {
-        let blocks = vec![ContentBlock::Text(TextContent::new("hello".to_string()))];
-        let req = PromptRequest::new(SessionId::new("sess-1".to_string()), blocks)
-            .message_id("user-uuid-1".to_string());
+    fn content_chunk_serializes_message_id_when_present() {
+        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("hello".to_string())))
+            .message_id(MessageId::new("msg-1"));
 
-        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
+        let json = serde_json::to_value(&chunk).expect("ContentChunk must serialize");
         assert_eq!(
             json.get("messageId").and_then(|v| v.as_str()),
-            Some("user-uuid-1"),
-            "PromptRequest should serialize `messageId` (camelCase) when set via the builder"
+            Some("msg-1"),
+            "ContentChunk should serialize `messageId` (camelCase) when present"
         );
-        assert_eq!(
-            json.get("sessionId").and_then(|v| v.as_str()),
-            Some("sess-1"),
+
+        let bare = ContentChunk::new(ContentBlock::Text(TextContent::new("hi".to_string())));
+        let json = serde_json::to_value(&bare).expect("ContentChunk must serialize");
+        assert!(
+            json.get("messageId").is_none(),
+            "messageId should be omitted when absent (got {json:?})",
         );
     }
 
-    /// When `message_id` is not set, the field is omitted from the serialized JSON
-    /// (serde `skip_serializing_if = "Option::is_none"`) — so agents that don't know
-    /// about the unstable feature simply don't see the key.
+    /// The session-model API was removed in ACP 0.14; `extract_model_info` derives
+    /// the model picker from the config option with category `Model`. No such
+    /// option → graceful empty result, never an error.
     #[test]
-    fn prompt_request_omits_message_id_when_absent() {
-        let blocks = vec![ContentBlock::Text(TextContent::new("hi".to_string()))];
-        let req = PromptRequest::new(SessionId::new("sess-2".to_string()), blocks);
+    fn extract_model_info_reads_model_category_config_option() {
+        let model_option = SessionConfigOption::select(
+            "model",
+            "Model",
+            "claude-sonnet-4",
+            vec![
+                SessionConfigSelectOption::new("claude-sonnet-4", "Claude Sonnet 4")
+                    .description("Fast and capable".to_string()),
+                SessionConfigSelectOption::new("claude-opus-4", "Claude Opus 4"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::Model);
+        let unrelated_option = SessionConfigOption::select(
+            "effort",
+            "Thinking effort",
+            "medium",
+            vec![SessionConfigSelectOption::new("medium", "Medium")],
+        )
+        .category(SessionConfigOptionCategory::ThoughtLevel);
 
-        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
-        assert!(
-            json.get("messageId").is_none(),
-            "messageId should be omitted when builder not called (got {json:?})",
-        );
+        let options = vec![unrelated_option.clone(), model_option];
+        let (current, available) = extract_model_info(Some(&options));
+        assert_eq!(current.as_deref(), Some("claude-sonnet-4"));
+        assert_eq!(available.len(), 2);
+        assert_eq!(available[0].model_id, "claude-sonnet-4");
+        assert_eq!(available[0].name, "Claude Sonnet 4");
+        assert_eq!(available[0].description.as_deref(), Some("Fast and capable"));
+        assert_eq!(available[1].model_id, "claude-opus-4");
+
+        // No model-category option → empty result (graceful degradation).
+        let (current, available) = extract_model_info(Some(&vec![unrelated_option]));
+        assert!(current.is_none());
+        assert!(available.is_empty());
+
+        let (current, available) = extract_model_info(None);
+        assert!(current.is_none());
+        assert!(available.is_empty());
     }
 }

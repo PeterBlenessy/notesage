@@ -200,10 +200,10 @@ export interface ChatMessage {
   /** Image attachments on this message */
   attachments?: ImageAttachment[];
   /**
-   * Optional ACP protocol-level message ID (forward-compatibility plumbing for
-   * `unstable_message_id`). For user messages, set to the outbound `PromptRequest.message_id`;
-   * for assistant messages, populated from `agent_message_chunk.message_id` when the agent emits it.
-   * Absent when the agent/protocol doesn't support message IDs.
+   * Optional ACP protocol-level message ID. Agent-assigned: populated on assistant
+   * messages from `agent_message_chunk.messageId` (`ContentChunk.message_id`) —
+   * chunks of one message share the id; a change signals a new message. Absent when
+   * the agent doesn't emit message IDs.
    */
   acpMessageId?: string;
   // --- system-status fields (role: 'system-status') ---

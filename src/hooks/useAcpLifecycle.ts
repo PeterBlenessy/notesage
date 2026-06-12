@@ -57,6 +57,33 @@ export function reapplySessionMode(
 }
 
 /**
+ * Apply the connection's configured model to a fresh ACP session.
+ *
+ * ACP 0.14 removed the dedicated `session/set_model` request; model selection is
+ * a session config option with category `"model"`. Agents without such an option
+ * have no model selector — skip silently (debug log), never fail the send.
+ */
+export async function applyConnectionModelOption(
+  instanceId: string,
+  session: AcpSessionResult,
+  model: string | undefined,
+): Promise<void> {
+  if (!model || !session.session_id) return;
+  const modelOption = session.config_options?.find((opt) => opt.category === 'model');
+  if (!modelOption) {
+    log.debug('ai', 'ACP model default skipped: agent reports no model-category config option');
+    return;
+  }
+  try {
+    await tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, modelOption.id, model);
+    updateConfigOptionValue(modelOption.id, model);
+  } catch (err) {
+    // Agent may reject an unknown model id — not fatal, proceed without it.
+    log.debug('ai', `ACP set model config option failed: ${String(err)}`);
+  }
+}
+
+/**
  * Build the `<conversation-history>` preamble injected when a NEW ACP session
  * starts mid-conversation — the first message of a fresh session, OR a
  * crash-retry that fell back to a fresh session (session/load unsupported or
@@ -500,11 +527,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             updateConfigOptionValue('reasoning_effort', defaults.thinkingEffort);
             tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
           }
-          if (effectiveConnection.config?.model && session.session_id) {
-            tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model).catch((err) => {
-              log.debug('ai', `ACP eager set_model failed: ${String(err)}`);
-            });
-          }
+          void applyConnectionModelOption(instanceId, session, effectiveConnection.config?.model);
         }
       } catch (err) {
         log.debug('ai', `ACP eager session creation failed (non-fatal): ${String(err)}`);
@@ -541,8 +564,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     attachments?: ImageAttachment[];
     pathFilterRoots: string[];
     homeDir: string;
-    /** Outbound ACP message_id (UUID) for the user message — forwarded on retry. */
-    userMessageAcpId?: string;
   } | null>(null);
 
   /**
@@ -667,14 +688,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
         addActivity(userTimestamp, activity);
       }
-      // Resolve the UUID id that addMessage generated — we'll pass it as the outbound
-      // ACP message_id so the agent can echo it back as `user_message_id`.
-      const userMessageAcpId = (() => {
-        const st = useChatStore.getState();
-        const conv = st.conversations.find((c) => c.id === st.activeConversationId);
-        const found = conv?.messages.find((m) => m.timestamp === userTimestamp && m.role === 'user');
-        return found?.id;
-      })();
       const assistantMessageId = userTimestamp + 1;
       addMessage({
         role: 'assistant',
@@ -732,7 +745,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         attachments: opts?.attachments,
         pathFilterRoots,
         homeDir,
-        userMessageAcpId,
       };
 
       try {
@@ -793,15 +805,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           // resets to the agent default — re-assert the conversation's remembered mode.
           reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
-          // Set model via ACP-native mechanism (replaces CLI arg injection)
-          if (effectiveConnection?.config?.model && session.session_id) {
-            try {
-              await tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model);
-            } catch (modelErr) {
-              // Agent may not support set_model — not fatal, proceed without it
-              log.debug('ai', `ACP set_model failed (agent may not support it): ${String(modelErr)}`);
-            }
-          }
+          // Set model via the model-category config option (replaces CLI arg injection)
+          await applyConnectionModelOption(instanceId, session, effectiveConnection?.config?.model);
         }
 
         // Full chat listeners now take over — stop the eager listener
@@ -837,7 +842,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
             content: promptContent,
             images: acpImages,
-            messageId: userMessageAcpId ?? null,
           });
         } finally {
           clearUnresponsiveTimer();
@@ -1045,14 +1049,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         // Fresh session on reconnect — re-assert the conversation's remembered mode.
         reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
 
-        // Set model via ACP-native mechanism
-        if (effectiveConnection?.config?.model && session.session_id) {
-          try {
-            await tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model);
-          } catch (modelErr) {
-            log.debug('ai', `ACP set_model failed on retry: ${String(modelErr)}`);
-          }
-        }
+        // Set model via the model-category config option
+        await applyConnectionModelOption(instanceId, session, effectiveConnection?.config?.model);
       }
 
       // Full chat listeners now take over — stop the eager listener
@@ -1085,7 +1083,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
           content: promptContent,
           images: retryImages,
-          messageId: prompt.userMessageAcpId ?? null,
         });
       } finally {
         clearUnresponsiveTimer();

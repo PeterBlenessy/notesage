@@ -871,14 +871,12 @@ export const tauriApi = {
     sessionId: string,
     content: string,
     images?: Array<{ data: string; mime_type: string }>,
-    messageId?: string,
   ): Promise<void> {
     await invoke("acp_session_prompt", {
       instanceId,
       sessionId,
       content,
       images: images ?? null,
-      messageId: messageId ?? null,
     });
   },
 
@@ -896,10 +894,6 @@ export const tauriApi = {
 
   async acpSessionSetConfigOption(instanceId: string, sessionId: string, optionId: string, valueId: string): Promise<void> {
     await invoke("acp_session_set_config_option", { instanceId, sessionId, optionId, valueId });
-  },
-
-  async acpSessionSetModel(instanceId: string, sessionId: string, modelId: string): Promise<void> {
-    await invoke("acp_session_set_model", { instanceId, sessionId, modelId });
   },
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
