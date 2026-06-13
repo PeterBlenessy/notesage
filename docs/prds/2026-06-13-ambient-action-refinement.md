@@ -5,9 +5,11 @@
 | **Date** | 2026-06-13 |
 | **Status** | Draft |
 | **Priority** | Medium |
-| **Impact** | A local-only background AI quietly sharpens your action items as you write, surfaced on demand — never interrupting the flow. |
+| **Impact** | A background AI quietly sharpens your action items as you write, surfaced on demand — never interrupting the flow. |
 | **Tasks** | — (not yet planned) |
 | **Phase** | Productivity Features |
+
+> **Revision (2026-06-13):** the engine is no longer hard-pinned to `local_bundled`. It now **routes to whatever the user selected in the use-case mapping** (agent-agnostic — e.g. goose-over-ACP + llama-server, or the bundled server). Locality is the user's responsibility, **not** enforced by Notesage. This supersedes the original "local-only, hard rule" framing throughout. The privacy default is still *expected* to be a local connection, but it is a default, not a guarantee.
 
 ## Problem
 
@@ -15,7 +17,7 @@ Notesage already extracts tasks from documents into a SQLite index (`type: goal`
 
 Existing AI features can help, but every one of them is **pull-and-interrupt**: you stop writing, open the command bar, type a prompt, read a wall of suggestions, decide. That tax is high enough that nobody pays it mid-flow — so notes stay vague. There is no surface in Notesage where the AI *notices* a weak action item and offers, without being asked, a sharper version you can take or leave.
 
-Why now: the three pieces needed to do this *without* violating Notesage's local-first ethos all exist. `local_bundled` (bundled llama-server) gives free, private, always-on inference. `generateStructured()` gives GBNF-grammar-guaranteed JSON on that path. The `AgentOrb` + `activity-store` already model "background work happened, here's a queue." This PRD assembles them into one ambient loop.
+Why now: the pieces needed to do this all exist. The connection/routing system (`routing-store` + capability-driven slots) already lets the user select *any* provider — including a local agent stack (goose-over-ACP + llama-server) or the bundled `local_bundled` server — so the engine can stay agent-agnostic. `generateStructured()` gives GBNF-grammar-guaranteed JSON on the direct-API paths (`local_bundled` / `openai_compatible` / `ollama`). The `AgentOrb` + `activity-store` already model "background work happened, here's a queue." This PRD assembles them into one ambient loop. The privacy posture is local-*first* by default (we expect users to point the slot at a local connection) but not enforced — see the Revision note above.
 
 ## Goals / Non-Goals
 
@@ -24,12 +26,13 @@ Why now: the three pieces needed to do this *without* violating Notesage's local
 1. **Ambient detection.** A background watcher analyzes action items *as the user writes* (on paragraph commit), incrementally — only new or changed lines, never re-scanning settled text — with zero per-keystroke cost.
 2. **Sharper actions.** For each detected action item, produce a triaged verdict + a sharpened outcome + optional concrete sub-steps, with schema-guaranteed structure.
 3. **Pull, never push.** The engine never injects content inline. It raises a single quiet availability signal (orb flash); the user chooses when to look. Reviewing and applying is one click.
-4. **Local-only, private, free.** The engine runs exclusively on `local_bundled`. Nothing the user writes leaves the machine. No marginal cost per analysis. No cloud path exists.
+4. **Agent-agnostic, routed by selection.** The engine runs on whatever connection the user assigns to the refinement use-case slot — it never hardcodes a specific agent (goose, opencode, bundled server, …). Local-first is the *expected* default (free, private), but not enforced; if the user points the slot at a cloud connection, that is their choice.
 5. **Top 5.** Surface the highest-priority refined actions across the document so the user can see, at a glance, what matters most — ranked by the engine's own verdicts.
 
 ### Non-Goals
 
-- **No cloud inference.** Not even as an opt-in. (See Open Questions for the deferred reconsideration.)
+- **No hardcoded agent.** The engine must not assume a specific binary or provider — it reads the use-case selection. (goose today, something else tomorrow.)
+- **No Notesage-enforced locality.** The engine will not police whether the selected provider is on-device. Locality is a user responsibility (see Risks).
 - **No inline injection / autocomplete-style rewriting.** The engine does not edit the document on its own; apply is always an explicit user action.
 - **No per-row gutter indicator in v1.** Precise per-line affordances need the unified left-gutter design that the editor docs have deferred twice. Orb-only for now.
 - **No goal-alignment scoring** (against project frontmatter goals) in v1 — roadmap.
@@ -41,9 +44,9 @@ Why now: the three pieces needed to do this *without* violating Notesage's local
 - As a writer drafting a planning note, I want the app to notice when I've written a vague to-do and quietly offer a sharper version, so that my notes become actionable without me stopping to ask.
 - As someone in flow, I want refinements to wait silently until I'm ready, so that I'm never interrupted mid-sentence.
 - As a reviewer of my own notes, I want to open one panel and see every pending suggestion, jump to its line, and accept or dismiss it in one click.
-- As a privacy-conscious user, I want certainty that this analysis never leaves my machine, so that I can enable it on sensitive documents.
+- As a privacy-conscious user, I want to point the refinement engine at my own local agent (goose + llama-server) so that my notes stay on my machine — and I accept that keeping it local is my choice of provider, not something the app enforces.
 - As someone with a long task list, I want to see the top 5 things that matter most across this document, ranked by the AI's read, so that I know where to start.
-- As a user without a local model, I want a clear, one-time prompt to download one (and the feature to stay silent otherwise), so that I'm not nagged or confused.
+- As a user with no AI configured, I want a clear, one-time prompt to set up a provider (defaulting to a local model), and the feature to stay silent otherwise, so that I'm not nagged or confused.
 
 ## Technical Approach
 
@@ -68,7 +71,7 @@ Why now: the three pieces needed to do this *without* violating Notesage's local
 
 ### Detection — the watcher
 
-A new hook `useRefinementWatcher` (mounted from `QuietLayout`, gated on the feature being enabled + a local model being ready) subscribes to the editor's transactions. It does **not** fire per keystroke. It fires on **paragraph commit** — a heuristic equivalent to "the user pressed Enter or moved off the block": the watcher tracks the block the cursor sits in and enqueues the *previous* block for analysis when the cursor leaves it, plus a trailing debounce (~1500 ms, tunable) so a fast typist crossing several blocks batches cleanly. This mirrors the existing `[perf:typing]` sampling discipline (DOM-read path, no React re-render per keystroke).
+A new hook `useRefinementWatcher` (mounted from `QuietLayout`, gated on the feature being enabled + a connection resolvable from the refinement slot) subscribes to the editor's transactions. It does **not** fire per keystroke. It fires on **paragraph commit** — a heuristic equivalent to "the user pressed Enter or moved off the block": the watcher tracks the block the cursor sits in and enqueues the *previous* block for analysis when the cursor leaves it, plus a trailing debounce (~1500 ms, tunable) so a fast typist crossing several blocks batches cleanly. This mirrors the existing `[perf:typing]` sampling discipline (DOM-read path, no React re-render per keystroke).
 
 **Incremental processing.** Every candidate line is keyed by a content hash. Before dispatching to the engine the watcher checks two watermarks:
 
@@ -79,13 +82,16 @@ Only lines that pass both gates **and** look like action items reach the engine.
 
 ### Running — the engine
 
-The engine is a thin module `src/lib/ai/refinement.ts` exporting `refineAction(line, context)`. It calls `generateStructured<RefinementResult>()` with:
+The engine is a thin module `src/lib/ai/refinement.ts` exporting `refineAction(line, context)`. It **reads the connection from the refinement use-case slot** (`routing-store`) — never a hardcoded provider — and dispatches by connection *shape*, mirroring how `useAIOperations` already routes the rest of the app:
 
-- `provider: 'local_bundled'` — **hard-coded, not routed.** The engine ignores `routing-store` entirely. This is the enforcement point for the local-only rule.
-- a JSON schema for `RefinementResult` (see Data Model), `strict: true` → GBNF guarantees a schema-valid object on llama-server.
-- a compact system prompt defining the verdict taxonomy and the "sharpen, don't pad" directive, plus minimal surrounding context (the line + its heading ancestry, not the whole doc, to keep the local context window cheap; reuses the `[perf:context]` trimming mindset).
+- **Direct-API connections** (`local_bundled`, `openai_compatible`, `ollama`, `api_key`) → `generateStructured<RefinementResult>()` with the `RefinementResult` JSON schema and `strict: true`. On the GBNF-capable subset (`local_bundled` / `openai_compatible` / `ollama`) the grammar **guarantees** a schema-valid object; `api_key` cloud providers ignore the grammar and fall back to best-effort parse + retry.
+- **`agent_managed` connections** (goose / opencode / any ACP agent) → there is **no `ai_chat_stream`/`response_format` path** for ACP. The engine sends the refinement prompt through the ACP session and parses the agent's text reply as best-effort JSON (prompt asks for a fenced JSON block matching the schema; one reparse-on-failure retry). The hard GBNF guarantee does **not** hold here — this is the cost of agent-agnosticism. *(See Open Questions: which slot, and whether to constrain it to GBNF-capable connections for a stronger guarantee.)*
 
-Concurrency: one in-flight refinement at a time (a queue, FIFO), so the watcher can't stampede the single local server. Reuses the existing `ai_chat_stream` cancellation (`ai_chat_stream_cancel`) when the source line is deleted before its refinement returns.
+The system prompt (shared across both paths) defines the verdict taxonomy and the "sharpen, don't pad" directive, with minimal surrounding context (the line + its heading ancestry, not the whole doc — reuses the `[perf:context]` trimming mindset).
+
+Concurrency: one in-flight refinement at a time (FIFO queue), so the watcher can't stampede the backing server/agent. Direct-API in-flight calls are cancelled via `ai_chat_stream_cancel`; ACP refinements are best-effort-abandoned (the source line was deleted) since ACP has no mid-prompt cancel primitive here.
+
+**Default routing.** If the refinement slot is empty, the engine falls back to the `agent_tasks` slot (semantically the closest existing slot — delegated background analysis), and is inert if that is also empty. Whether refinement deserves its own first-class use-case slot vs. reusing `agent_tasks` is an Open Question.
 
 ### Surfacing — orb + queue
 
@@ -116,7 +122,7 @@ A read-only view (rendered in the `AgentPanel` Refinements header, or a dedicate
 
 ### Gating & local-model readiness
 
-The whole watcher is inert unless: (a) the feature toggle is on (Settings → AI, default **off** for v1 — opt-in while we tune), and (b) `local-ai-store` reports a downloaded, loadable model. When the toggle is on but no model is ready, the Settings row shows a "Download a local model" CTA that deep-links to the existing Local AI model picker (mirrors that panel's UX; builds no new download flow). No nagging elsewhere.
+The whole watcher is inert unless: (a) the feature toggle is on (Settings → AI, default **off** for v1 — opt-in while we tune), and (b) the refinement slot resolves to a usable connection (the assigned slot, falling back to `agent_tasks`). When the toggle is on but the slot is empty, the Settings row shows a "Configure refinement provider" CTA — for users with no AI set up at all, it deep-links to the Local AI model picker so the zero-config path is "download a local model" (mirrors that panel's UX; builds no new download flow). No nagging elsewhere.
 
 ## UI/UX
 
@@ -124,7 +130,7 @@ The whole watcher is inert unless: (a) the feature toggle is on (Settings → AI
 - **Orb (refinement pending):** one pulse cycle on arrival, then a steady count badge (reuses the running-count badge styling). Honors `prefers-reduced-motion` (no pulse; badge only).
 - **AgentPanel → Refinements section:** list of cards. Each card: verdict badge (neutral grey pill — verdicts are not chromatic), original line in muted strikethrough, sharpened outcome in foreground, nested steps preview (collapsed), and `Jump` + `Apply` + `Dismiss` actions. Empty state: "No refinements right now — keep writing." Loading: a single in-flight card shows a subtle skeleton.
 - **Inline apply affordance:** hover/focus-revealed ✦ button at line end; `--color-accent-primary` glyph, neutral otherwise. Tooltip ("Apply suggestion") wrapped in `TooltipProvider` per the mandatory rule.
-- **Settings (AI):** "Ambient action refinement" switch (default off) + helper text naming the local-only guarantee, with the download CTA when no model is ready.
+- **Settings (AI):** "Ambient action refinement" switch (default off) + a provider line showing which connection the refinement slot resolves to (with a "this fires continuously — a local connection is recommended for privacy and cost" note), and a CTA to configure the slot / download a local model when none is assigned.
 - **States:** loading (skeleton card), empty (copy above), error (per-entry: "Couldn't refine this line" with a retry; the watcher backs off after repeated local-server failures, mirroring `useLocalCompletion`'s 5-failure backoff).
 
 All colors via tokens; verdict badges are neutral greys (no new chromatic tokens). Both light/dark + soft-contrast must pass.
@@ -172,27 +178,28 @@ export interface RefinementEntry {
 
 ## Dependencies
 
-- **Existing, reused:** `generateStructured()` / `ai_chat_stream` (+ `ai_chat_stream_cancel`), `local-ai-store` + `local_bundled` server lifecycle, `AgentOrb` + `AgentPanel` + `.orb-pulsing` keyframe, `useReducedMotion`, the markdown round-trip pipeline, `prosemirror-markdown`, the SQLite index task parser (for the future project-wide Top 5).
-- **New:** `useRefinementWatcher` hook, `src/lib/ai/refinement.ts`, `refinement-store`, a refinement decoration/apply extension, the Refinements section in `AgentPanel`, the Settings toggle.
+- **Existing, reused:** `routing-store` / `connections-store` (provider selection), `generateStructured()` / `ai_chat_stream` (+ `ai_chat_stream_cancel`), the ACP session path in `useAIOperations` (for `agent_managed` selections), `AgentOrb` + `AgentPanel` + `.orb-pulsing` keyframe, `useReducedMotion`, the markdown round-trip pipeline, `prosemirror-markdown`, the SQLite index task parser (for the future project-wide Top 5).
+- **New:** `useRefinementWatcher` hook, `src/lib/ai/refinement.ts` (with the direct-API vs ACP dispatch fork), `refinement-store`, a refinement decoration/apply extension, the Refinements section in `AgentPanel`, the Settings toggle + slot resolver display.
 - **No new third-party libraries.**
-- **Prerequisite:** a downloaded `local_bundled` model — surfaced via existing Local AI UX, not built here.
+- **Prerequisite:** a connection assigned to the refinement slot. For a local setup this is the user's goose+llama-server ACP connection (registered per the "local agent" work — see Related Work) or a downloaded `local_bundled` model surfaced via existing Local AI UX.
 
 ## Quality Gates
 
 ### Functional
 
 - [ ] With the toggle off, the watcher installs no listeners and makes zero model calls (verified by a no-op test).
-- [ ] With the toggle on but no local model ready, the feature stays silent and Settings shows the download CTA.
+- [ ] With the toggle on but no connection assigned to the refinement slot (and no `agent_tasks` fallback), the feature stays silent and Settings shows the configure CTA.
 - [ ] Typing within a block fires **no** analysis; committing/leaving a block fires **one** debounced analysis for that block.
 - [ ] A clean line analyzed once is **not** re-analyzed on subsequent Enters (seen-set holds); an edited line **is** re-analyzed (src-hash divergence).
-- [ ] The engine **only** ever calls `local_bundled` — a test asserts the provider argument is hard-coded and `routing-store` is never consulted.
-- [ ] `generateStructured` output always parses to a valid `RefinementResult` (GBNF guarantee; covered by a schema test on llama-server, and a frontend test with a mocked valid/invalid stream).
+- [ ] The engine resolves its provider from the refinement use-case slot (falling back to `agent_tasks`) — a test asserts it reads `routing-store` and hardcodes no binary/provider.
+- [ ] Dispatch fork: a direct-API (GBNF-capable) selection produces a guaranteed-valid `RefinementResult`; an `agent_managed` selection parses the ACP text reply as best-effort JSON with one reparse retry, and surfaces a per-entry error (not a crash) when the reply is unparseable.
 - [ ] A non-`keep` result flashes the orb once and adds a queue entry; `keep` adds nothing and seeds the seen-set.
 - [ ] Apply swaps the line text in one transaction, marks the comment `applied`, and removes the queue entry; the markdown round-trips losslessly (parse → serialize → compare).
 - [ ] Sub-steps render as a nested task list and survive a save/reopen cycle unchanged.
 - [ ] Deleting a source line before its refinement returns cancels the in-flight stream and drops the entry.
 - [ ] Top 5 lists the five highest-ranked pending refinements for the active document; each jumps to its line.
-- [ ] Repeated local-server failures back the watcher off (no infinite retry); it recovers on model/connection change.
+- [ ] Repeated backing-provider failures back the watcher off (no infinite retry); it recovers on model/connection/slot change.
+- [ ] Changing the refinement slot's connection at runtime re-points the engine without a restart (no stale-provider capture).
 
 ### Design
 
@@ -217,11 +224,23 @@ Deferred to future phases (documented roadmap, not built in v1):
 - **Goal-alignment scoring** — score each action against the project's `type: goal` frontmatter and flag misalignment. Reuses goals infra; adds a scoring field + UI.
 - **Scheduling / calendar view** — surface dated refined actions on a timeline. Largest scope; needs date parsing + a new view.
 - **Project-wide Top 5** — rank across all documents via the SQLite index (v1 ranks within the active document only).
-- **Cloud provider for the engine** — explicitly excluded by the local-only rule; revisit only if a future privacy-preserving remote path is designed (see Open Questions).
+- **Notesage-enforced locality** — kernel/sandbox enforcement that the selected refinement provider stays on-device is *not* in v1. It remains a possible future hardening (see Risks); v1 trusts the user's slot choice.
 - **Auto-apply / inline injection** — the engine will always remain pull-and-confirm.
+
+## Related Work
+
+This PRD depends on the **local agent registration** work (separate effort): adding goose-over-ACP as a selectable `agent_managed` connection — `ConnectionProvider`/`PROVIDER_CAPABILITIES`/`PROVIDER_OPTIONS` entries in `connections.ts`, an `acp_binary.rs` resolver entry + `agent_manager.rs` versioning, a Seatbelt read-policy (Bucket C) entry for goose's config dir, and a network-sandbox allow for `localhost:<llama-port>` so goose can reach llama-server. Once that connection exists and is assigned to the refinement (or `agent_tasks`) slot, this engine consumes it agnostically. The refinement engine does **not** itself register or hardcode goose.
+
+## Risks
+
+- **No locality guarantee.** Because the engine routes to the user's selection and Notesage cannot introspect an ACP agent's model endpoint (goose's model config is goose-side), the app cannot promise that ambient analysis stays on-device. Mitigation: a clear Settings note + local-first default; a future option could *enforce* locality via the network sandbox (deny-all-except-localhost) for the refinement connection, which would kernel-guarantee it — deferred.
+- **Continuous-fire cost on a cloud selection.** If a user assigns a paid cloud connection to a slot that fires on every paragraph commit, cost accrues silently. Mitigation: the Settings provider line warns when the resolved connection is not local.
+- **Degraded output guarantee on ACP.** `agent_managed` selections lose the GBNF schema guarantee (best-effort JSON parse). Mitigation: schema-shaped prompt + one reparse retry + per-entry error surfacing; consider constraining the slot to GBNF-capable connections (Open Question).
 
 ## Open Questions
 
 1. **Verdict taxonomy (proposed, reviewable).** Starter set: `keep` / `sharpen` / `split` / `defer` / `drop`. This covers "it's fine", "make it specific", "break it up", "blocked", and "this isn't a task". Open to collapsing `defer`+`drop` or adding `merge` (combine duplicate actions) after dogfooding. **Decision owner: reviewer of this PRD.**
-2. **Commit heuristic tuning.** "Block exit + 1500 ms" is a starting point; the debounce and whether to also fire on explicit Enter-at-end-of-block should be tuned during implementation against real typing traces.
-3. **Top 5 ranking weights.** Verdict-priority + recency is the v1 heuristic; may need a small learned/weighted scheme once project-wide ranking lands.
+2. **Refinement routing slot.** Reuse `agent_tasks`, or add a dedicated `refinement` use-case slot/capability so users can point refinement at a different (cheaper/faster) agent than their heavy delegated-task agent? Default in this PRD: read a refinement slot, fall back to `agent_tasks`. **Reviewable.**
+3. **Constrain the slot to GBNF-capable connections?** Restricting the refinement slot to `local_bundled`/`openai_compatible`/`ollama` would preserve the hard schema guarantee but exclude ACP agents like goose. Allowing `agent_managed` keeps it fully agent-agnostic at the cost of best-effort JSON. **Reviewable** — current PRD allows both.
+4. **Commit heuristic tuning.** "Block exit + 1500 ms" is a starting point; the debounce and whether to also fire on explicit Enter-at-end-of-block should be tuned during implementation against real typing traces.
+5. **Top 5 ranking weights.** Verdict-priority + recency is the v1 heuristic; may need a small learned/weighted scheme once project-wide ranking lands.
