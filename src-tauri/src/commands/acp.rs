@@ -131,6 +131,35 @@ pub struct AcpListResult {
     pub next_cursor: Option<String>,
 }
 
+/// Outcome of `acp_agent_smoke_test` — a bounded end-to-end verification that the
+/// Local Agent chain works (health → spawn → session → prompt → teardown).
+/// `stage` names the LAST stage attempted: on success it's `Done`, on failure
+/// it's the stage that failed so the UI can point the user at the right fix.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SmokeTestReport {
+    pub ok: bool,
+    pub stage: SmokeStage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SmokeStage {
+    /// Bundled llama-server `/health` probe.
+    Health,
+    /// Agent subprocess spawn + ACP `initialize`.
+    Spawn,
+    /// ACP `session/new`.
+    Session,
+    /// A single short prompt round-trip.
+    Prompt,
+    /// All stages passed.
+    Done,
+}
+
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
@@ -1559,6 +1588,198 @@ pub async fn acp_agent_reconnect(
     Ok(result)
 }
 
+// ---------------------------------------------------------------------------
+// Smoke test (task #12) — bounded end-to-end verification of the Local Agent
+// chain: bundled server health → agent spawn → session/new → one short prompt
+// → teardown. Used by the setup flow (#16) to gate "ready" and by routing (#13)
+// to decide whether to fall back to direct local chat.
+// ---------------------------------------------------------------------------
+
+/// Per-stage timeout budgets. The prompt budget is generous because the FIRST
+/// prompt on a cold llama-server pays the model-load cost before any token.
+const SMOKE_HEALTH_TIMEOUT_SECS: u64 = 5;
+const SMOKE_SPAWN_TIMEOUT_SECS: u64 = 45;
+const SMOKE_SESSION_TIMEOUT_SECS: u64 = 30;
+const SMOKE_PROMPT_TIMEOUT_SECS: u64 = 180;
+
+/// A trivial prompt that should elicit a one-token reply on any working model.
+const SMOKE_PROMPT: &str = "Reply with the single word: ok";
+
+/// Probe the bundled llama-server `/health`. `Ok(())` only when a port is bound
+/// AND the endpoint returns success within the budget; otherwise a stage error.
+async fn smoke_check_local_health(
+    local_state: &super::local_inference::LocalInferenceState,
+) -> Result<(), String> {
+    let port = local_state
+        .current_port()
+        .await
+        .ok_or_else(|| "Local AI server is not running".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(SMOKE_HEALTH_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let healthy = client
+        .get(&url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    if healthy {
+        Ok(())
+    } else {
+        Err(format!("Local AI server on port {port} is not responding to /health"))
+    }
+}
+
+/// Bounded end-to-end smoke test of the Local Agent chain. Always tears the
+/// probe agent down before returning (success or failure). Never panics — every
+/// stage maps to a `SmokeTestReport` with the failing stage + error string.
+///
+/// When `require_local_server` is true (the Local Agent preset case) the bundled
+/// llama-server must be healthy first; otherwise the health stage is skipped so
+/// the same command can verify any ACP agent.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn acp_agent_smoke_test(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, super::network_proxy::NetworkProxyState>,
+    local_state: State<'_, super::local_inference::LocalInferenceState>,
+    agent_binary: String,
+    agent_args: Option<Vec<String>>,
+    working_directory: String,
+    env_vars: Option<HashMap<String, String>>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
+    sandbox_enabled: Option<bool>,
+    sandbox_paths: Option<Vec<String>>,
+    network_sandbox_enabled: Option<bool>,
+    network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: Option<bool>,
+    extra_localhost_ports: Option<Vec<u16>>,
+    require_local_server: Option<bool>,
+) -> Result<SmokeTestReport, String> {
+    let started = std::time::Instant::now();
+    let elapsed = |s: &std::time::Instant| s.elapsed().as_millis() as u64;
+    let fail = |stage: SmokeStage, err: String, s: &std::time::Instant| SmokeTestReport {
+        ok: false,
+        stage,
+        error: Some(err),
+        elapsed_ms: elapsed(s),
+    };
+
+    // Stage 1 — bundled server health (preset only).
+    if require_local_server.unwrap_or(false) {
+        if let Err(e) = smoke_check_local_health(&local_state).await {
+            return Ok(fail(SmokeStage::Health, e, &started));
+        }
+    }
+
+    // Stage 2 — spawn + initialize.
+    let spawn = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SPAWN_TIMEOUT_SECS),
+        acp_agent_spawn(
+            app,
+            state.clone(),
+            network_proxy_state,
+            agent_binary,
+            agent_args,
+            AgentRole::Interactive,
+            working_directory.clone(),
+            env_vars,
+            sandbox_enabled,
+            sandbox_paths,
+            network_sandbox_enabled,
+            network_allowed_domains,
+            kernel_network_deny,
+            connection_id,
+            env_var_keys,
+            extra_localhost_ports,
+        ),
+    )
+    .await;
+    let instance_id = match spawn {
+        Ok(Ok(result)) => result.instance_id,
+        Ok(Err(e)) => return Ok(fail(SmokeStage::Spawn, e, &started)),
+        Err(_) => {
+            return Ok(fail(
+                SmokeStage::Spawn,
+                format!("Agent spawn timed out after {SMOKE_SPAWN_TIMEOUT_SECS}s"),
+                &started,
+            ))
+        }
+    };
+
+    // From here on, always stop the probe agent before returning. `stop_then`
+    // does the best-effort teardown then hands back the report. (A closure that
+    // captures `State` can't be used here — the async return-type lifetime won't
+    // outlive the borrow — so the teardown is inlined at each exit instead.)
+
+    // Best-effort authenticate (mirror spawn; most local agents have no auth).
+    if let Err(auth_err) = acp_agent_authenticate(state.clone(), instance_id.clone(), None).await {
+        let msg = auth_err.to_lowercase();
+        if !msg.contains("not implemented") && !msg.contains("no authentication methods") {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Spawn, format!("Authentication failed: {auth_err}"), &started));
+        }
+    }
+
+    // Stage 3 — session/new.
+    let session = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SESSION_TIMEOUT_SECS),
+        acp_session_new(state.clone(), instance_id.clone(), working_directory.clone()),
+    )
+    .await;
+    let session_id = match session {
+        Ok(Ok(s)) => s.session_id,
+        Ok(Err(e)) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Session, e, &started));
+        }
+        Err(_) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(
+                SmokeStage::Session,
+                format!("session/new timed out after {SMOKE_SESSION_TIMEOUT_SECS}s"),
+                &started,
+            ));
+        }
+    };
+
+    // Stage 4 — one short prompt (pays cold model-load cost on first call).
+    let prompt = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_PROMPT_TIMEOUT_SECS),
+        acp_session_prompt(
+            state.clone(),
+            instance_id.clone(),
+            session_id,
+            SMOKE_PROMPT.to_string(),
+            None,
+        ),
+    )
+    .await;
+    let prompt_failure = match prompt {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(fail(SmokeStage::Prompt, e, &started)),
+        Err(_) => Some(fail(
+            SmokeStage::Prompt,
+            format!("prompt timed out after {SMOKE_PROMPT_TIMEOUT_SECS}s (model may still be loading)"),
+            &started,
+        )),
+    };
+
+    // Single teardown for both the success and prompt-failure paths.
+    let _ = acp_agent_stop(state.clone(), instance_id).await;
+
+    Ok(prompt_failure.unwrap_or(SmokeTestReport {
+        ok: true,
+        stage: SmokeStage::Done,
+        error: None,
+        elapsed_ms: elapsed(&started),
+    }))
+}
+
 /// Create a new ACP session.
 #[tauri::command]
 pub async fn acp_session_new(
@@ -1934,7 +2155,7 @@ pub async fn acp_permission_respond(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_model_info, AuthEnvVar, AuthMethodInfo};
+    use super::{extract_model_info, AuthEnvVar, AuthMethodInfo, SmokeStage, SmokeTestReport};
     use agent_client_protocol::schema::{
         ContentBlock, ContentChunk, MessageId, SessionConfigOption, SessionConfigOptionCategory,
         SessionConfigSelectOption, TextContent,
@@ -1991,6 +2212,61 @@ mod tests {
                 assert_eq!(link.as_deref(), Some("https://example.com/keys"));
             }
             _ => panic!("Expected EnvVar variant after round-trip"),
+        }
+    }
+
+    /// A passing smoke test serializes with camelCase fields, a snake_case
+    /// stage, and omits the `error` field entirely (the frontend treats absent
+    /// error as success and reads `stage`/`elapsedMs`).
+    #[test]
+    fn smoke_report_ok_serializes_camel_case_and_omits_error() {
+        let report = SmokeTestReport {
+            ok: true,
+            stage: SmokeStage::Done,
+            error: None,
+            elapsed_ms: 4200,
+        };
+        let json = serde_json::to_value(&report).expect("SmokeTestReport must serialize");
+        assert_eq!(json.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(json.get("stage").and_then(|v| v.as_str()), Some("done"));
+        assert_eq!(json.get("elapsedMs").and_then(|v| v.as_u64()), Some(4200));
+        assert!(json.get("error").is_none(), "error must be omitted on success");
+        // No snake_case leak for the multi-word field.
+        assert!(json.get("elapsed_ms").is_none());
+    }
+
+    /// A failing smoke test names the stage that failed and carries the error.
+    #[test]
+    fn smoke_report_failure_names_stage_and_error() {
+        let report = SmokeTestReport {
+            ok: false,
+            stage: SmokeStage::Prompt,
+            error: Some("prompt timed out".to_string()),
+            elapsed_ms: 180_000,
+        };
+        let json = serde_json::to_value(&report).expect("SmokeTestReport must serialize");
+        assert_eq!(json.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(json.get("stage").and_then(|v| v.as_str()), Some("prompt"));
+        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("prompt timed out"));
+
+        // Round-trips back to the same value.
+        let round: SmokeTestReport =
+            serde_json::from_value(json).expect("SmokeTestReport must deserialize");
+        assert_eq!(round, report);
+    }
+
+    /// Every stage maps to a distinct, stable snake_case wire name.
+    #[test]
+    fn smoke_stage_wire_names_are_stable() {
+        let cases = [
+            (SmokeStage::Health, "health"),
+            (SmokeStage::Spawn, "spawn"),
+            (SmokeStage::Session, "session"),
+            (SmokeStage::Prompt, "prompt"),
+            (SmokeStage::Done, "done"),
+        ];
+        for (stage, wire) in cases {
+            assert_eq!(serde_json::to_value(&stage).unwrap().as_str(), Some(wire));
         }
     }
 

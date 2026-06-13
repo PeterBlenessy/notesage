@@ -275,6 +275,7 @@ pub fn run() {
             acp_is_agent_alive,
             acp_agent_stop,
             acp_agent_reconnect,
+            acp_agent_smoke_test,
             acp_session_new,
             acp_session_load,
             acp_session_prompt,

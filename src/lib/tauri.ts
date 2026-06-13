@@ -66,6 +66,35 @@ export interface LocalAgentConfig {
   modelId: string;
 }
 
+/** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
+export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'done';
+
+/** Result of `acp_agent_smoke_test` — see `src-tauri/.../acp.rs`. */
+export interface SmokeTestReport {
+  ok: boolean;
+  stage: SmokeStage;
+  error?: string;
+  elapsedMs: number;
+}
+
+/** Params for `acpAgentSmokeTest` — mirrors the spawn surface plus the bundled
+ *  server health gate (`requireLocalServer`). */
+export interface SmokeTestParams {
+  agentBinary: string;
+  agentArgs?: string[] | null;
+  workingDirectory: string;
+  envVars?: Record<string, string> | null;
+  connectionId?: string | null;
+  envVarKeys?: string[] | null;
+  sandboxEnabled?: boolean | null;
+  sandboxPaths?: string[] | null;
+  networkSandboxEnabled?: boolean | null;
+  networkAllowedDomains?: string[] | null;
+  kernelNetworkDeny?: boolean | null;
+  extraLocalhostPorts?: number[] | null;
+  requireLocalServer?: boolean | null;
+}
+
 // ---------------------------------------------------------------------------
 // Skill & Agent types
 // ---------------------------------------------------------------------------
@@ -869,6 +898,29 @@ export const tauriApi = {
    */
   async localAgentWriteConfig(): Promise<LocalAgentConfig> {
     return await invoke<LocalAgentConfig>("local_agent_write_config");
+  },
+
+  /**
+   * Bounded end-to-end verification of an ACP agent (health → spawn → session →
+   * one prompt → teardown). Always resolves to a `SmokeTestReport` (never throws
+   * for stage failures) so callers can branch on `ok` + `stage` (tasks #12/#13/#16).
+   */
+  async acpAgentSmokeTest(params: SmokeTestParams): Promise<SmokeTestReport> {
+    return await invoke<SmokeTestReport>("acp_agent_smoke_test", {
+      agentBinary: params.agentBinary,
+      agentArgs: params.agentArgs ?? null,
+      workingDirectory: params.workingDirectory,
+      envVars: params.envVars ?? null,
+      connectionId: params.connectionId ?? null,
+      envVarKeys: params.envVarKeys ?? null,
+      sandboxEnabled: params.sandboxEnabled ?? null,
+      sandboxPaths: params.sandboxPaths ?? null,
+      networkSandboxEnabled: params.networkSandboxEnabled ?? null,
+      networkAllowedDomains: params.networkAllowedDomains ?? null,
+      kernelNetworkDeny: params.kernelNetworkDeny ?? null,
+      extraLocalhostPorts: params.extraLocalhostPorts ?? null,
+      requireLocalServer: params.requireLocalServer ?? null,
+    });
   },
 
   async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
