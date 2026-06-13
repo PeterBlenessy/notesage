@@ -74,3 +74,10 @@ export type { TableHeaderMenuEventDetail } from './table-header-menu';
 export { TableOfContents } from './toc';
 export type { TocHeading } from './toc';
 export { scanHeadings } from './toc';
+export {
+  RefinementApply,
+  RefinementApplyPluginKey,
+  applyRefinement,
+  applyRefinementToDoc,
+  isAnchorValid,
+} from './refinement-apply';
