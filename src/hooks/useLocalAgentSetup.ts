@@ -35,8 +35,11 @@ async function resolveOpencodePath(): Promise<string> {
 export interface UseLocalAgentSetup {
   /** Current persisted setup state (stage, modelId, error). */
   setup: ReturnType<typeof useLocalAIStore.getState>['localAgentSetup'];
-  /** Run (or resume / retry) the setup flow. Resolves with the outcome. */
-  start: () => Promise<LocalAgentSetupResult>;
+  /**
+   * Run (or resume / retry) the setup flow. Resolves with the outcome.
+   * Pass `modelId` to override the hardware recommendation (dialog model picker).
+   */
+  start: (modelId?: string) => Promise<LocalAgentSetupResult>;
   /** Reset the flow back to idle. */
   reset: () => void;
 }
@@ -44,7 +47,7 @@ export interface UseLocalAgentSetup {
 export function useLocalAgentSetup(): UseLocalAgentSetup {
   const setup = useLocalAIStore((s) => s.localAgentSetup);
 
-  const start = useCallback(async (): Promise<LocalAgentSetupResult> => {
+  const start = useCallback(async (modelOverride?: string): Promise<LocalAgentSetupResult> => {
     const localStore = useLocalAIStore.getState();
     const connStore = useConnectionsStore.getState();
     const routingStore = useRoutingStore.getState();
@@ -67,6 +70,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       },
 
       recommendModel: async () => {
+        if (modelOverride) return modelOverride;
         const { models, systemMemory } = useLocalAIStore.getState();
         const modelId = recommendToolCallingModel(models, systemMemory?.total_bytes ?? null);
         if (!modelId) {

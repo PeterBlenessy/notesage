@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/telemetry";
@@ -10,7 +10,8 @@ import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useLocalAIStore } from "@/stores/local-ai-store";
+import { useLocalAIStore, selectLocalAgentNotice } from "@/stores/local-ai-store";
+import { isLocalAgentPreset } from "@/lib/ai/acp-agent-state";
 import { useGoalsDiscovery } from "@/hooks/useGoalsDiscovery";
 import { tauriApi } from "@/lib/tauri";
 import { getAgentModels, prettyModelName } from "@/lib/ai/connections";
@@ -356,6 +357,9 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
       {/* Cross-project scope warning pill (#73) */}
       {crossProjectMode ? <CrossProjectScopePill /> : null}
 
+      {/* Local Agent degraded → Path-4 fallback notice (#20) */}
+      <LocalAgentDegradedPill />
+
       {/* Trailing icons ---------------------------------------------------- */}
       {/* New chat button — sits LEFT of the history toggle.
           `createConversation()` atomically creates and activates a fresh
@@ -531,6 +535,15 @@ function ProviderPill({
                   <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
                 ) : null}
                 <span>{label}</span>
+                {/* "Offline" badge for the Local Agent preset (task #20) — its
+                    network allowlist is empty (kernel deny), so it runs fully
+                    offline against the bundled model. */}
+                {connection && isLocalAgentPreset(connection) ? (
+                  <span className="ml-0.5 inline-flex items-center gap-0.5 rounded px-1 text-[10px] font-medium text-muted-foreground bg-muted-foreground/10">
+                    <WifiOff className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
+                    Offline
+                  </span>
+                ) : null}
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -948,6 +961,37 @@ function CrossProjectScopePill() {
     >
       <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={1.8} aria-hidden />
       <span>Cross-project scope</span>
+    </button>
+  );
+}
+
+/**
+ * Local Agent degraded-fallback notice (task #20). When the preset is degraded
+ * or its last setup failed (`selectLocalAgentNotice`), the interactive slot is
+ * running direct local chat (Path 4); this muted pill says so and its "Fix"
+ * action reopens the setup dialog (#17) so the user can retry.
+ */
+function LocalAgentDegradedPill() {
+  const notice = useLocalAIStore(selectLocalAgentNotice);
+  const openSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
+  if (!notice) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => openSetup(true)}
+      aria-label={`${notice.reason}. Click to fix.`}
+      title={notice.reason}
+      className={cn(
+        "inline-flex items-center gap-1 h-5 px-2 rounded-full shrink-0 max-w-[220px]",
+        "text-[11px] font-medium",
+        "bg-muted text-muted-foreground border border-border",
+        "hover:border-border-strong transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <WifiOff className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden />
+      <span className="truncate">Local chat (agent unavailable)</span>
+      <span className="font-semibold underline shrink-0">Fix</span>
     </button>
   );
 }

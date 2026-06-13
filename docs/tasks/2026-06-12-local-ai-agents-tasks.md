@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | M1 complete (#1–#6 + #4b); M2 complete (#7–#14); M3 #15–#21 next |
+| **Status** | M1 complete; M2 complete (#7–#14); M3 #15–#20 complete, #21 (component tests done; Playwright E2E + /review-ui pending GUI); docs/gates #22–#23 next |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -101,32 +101,32 @@
 
 ## M3 — Setup flow + entry points
 
-### #15 — `LocalAgentSetupState` store slice
+### #15 — `LocalAgentSetupState` store slice ✅
 
 **Description:** Stage machine (`idle → detecting → downloading → configuring → verifying → ready | failed(stage, error)`) in `local-ai-store`, persisted enough to resume an interrupted flow after relaunch (persist stage + chosen model id; never persist transient errors). Selector for the degraded/fallback notice.
 **Complexity:** S **Category:** frontend **Dependencies:** — **Files:** `src/stores/local-ai-store.ts`
 
-### #16 — Setup orchestrator hook (`useLocalAgentSetup`)
+### #16 — Setup orchestrator hook (`useLocalAgentSetup`) ✅
 
 **Description:** Drives the staged flow: RAM-tier detection → recommend `supports_tool_calling` model (reuse hardware-aware recommendation logic) → **parallel** agent install (#7) + model download (existing pipeline) with cancel + resume-on-reconnect → `local_agent_write_config` (#8) → connection creation (#2) + routing (#13) → smoke test (#12) → ready/failed. Surfaces progress as `activity-store` entries (orb visibility); editor remains usable throughout. Tests: stage transitions, resume after simulated relaunch, partial-failure → Path 4 fallback.
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #8, #12, #13, #15 **Files:** new `src/hooks/useLocalAgentSetup.ts`, `src/stores/activity-store.ts`
 
-### #17 — Setup flow dialog UI
+### #17 — Setup flow dialog UI ✅
 
 **Description:** Dialog with stage list (pending/active/done/failed per stage), one progress bar per active download, model picker filtered to `supports_tool_calling` with RAM-tier default + sub-8GB reliability warning, inline error + Retry on failure, background-continue on dismiss. Design-system compliant (neutral palette, both themes + soft contrast, skeletons for catalog load, no raw error dumps).
 **Complexity:** L **Category:** frontend **Dependencies:** #16 **Files:** new `src/components/settings/LocalAgentSetupDialog.tsx`
 
-### #18 — Entry point: command-bar empty state
+### #18 — Entry point: command-bar empty state ✅
 
 **Description:** When no AI connection exists, the stream's existing empty-state onboarding prompts include "Set up private, offline AI →" which opens #17. Disappears once any connection exists.
 **Complexity:** S **Category:** frontend **Dependencies:** #17 **Files:** `src/components/cmd/CommandBarStream.tsx`
 
-### #19 — Entry point: Local Agent card in Add Connection
+### #19 — Entry point: Local Agent card in Add Connection ✅
 
 **Description:** Preset card (primary treatment, lucide shield/offline iconography, strokeWidth 1.5) launching #17; shows installed/ready state when the preset already exists instead of re-offering setup.
 **Complexity:** S **Category:** frontend **Dependencies:** #17 **Files:** Add Connection components, `src/components/settings/ConnectionCard.tsx`
 
-### #20 — Offline badge + degraded-fallback notice in cmd-bar header
+### #20 — Offline badge + degraded-fallback notice in cmd-bar header ✅
 
 **Description:** Provider pill gains an "Offline" badge variant when the active connection is the preset (empty allowlist enforced); a one-line muted notice with a "Fix" action (reopens #17 at the failed stage) renders in the context row when routing degraded to Path 4. No toast storms.
 **Complexity:** M **Category:** frontend **Dependencies:** #13, #17 **Files:** `src/components/cmd/CommandBarContext.tsx`

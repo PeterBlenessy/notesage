@@ -23,7 +23,8 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
@@ -129,6 +130,15 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     });
     autoAssign(connectionId);
   }, [addConnection, autoAssign]);
+
+  const openLocalAgentSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
+  // Whether the Local Agent preset is already set up (#19 shows ready state).
+  const localAgentReady = connections.some(
+    (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'opencode',
+  );
+  const handlePickLocalAgent = useCallback(() => {
+    openLocalAgentSetup(true);
+  }, [openLocalAgentSetup]);
 
   const handlePickCustomAgent = useCallback(() => {
     setFlow({ step: 'custom' });
@@ -296,6 +306,30 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               </DropdownMenuTrigger>
             </PopoverAnchor>
             <DropdownMenuContent align="end" className="w-96">
+              {/* Primary, recommended path: private offline agent (task #19). */}
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  className="relative flex items-start gap-2.5 py-2 cursor-pointer"
+                  onSelect={handlePickLocalAgent}
+                >
+                  <ShieldCheck
+                    className="w-5 h-5 mt-0.5 shrink-0 text-[var(--color-accent-primary)]"
+                    strokeWidth={1.5}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">Local Agent</span>
+                    <span className="text-xs text-muted-foreground block truncate">
+                      {localAgentReady
+                        ? 'Private offline agent — set up'
+                        : 'Private, offline AI — no keys, no network'}
+                    </span>
+                  </div>
+                  {localAgentReady && (
+                    <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                  )}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Subscription
