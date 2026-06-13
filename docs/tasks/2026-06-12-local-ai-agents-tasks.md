@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | M1 complete (#1–#6 + #4b); M2 next |
+| **Status** | M1 complete (#1–#6 + #4b); M2 backend #7–#9 done; M2 frontend #10–#14 next |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -59,17 +59,17 @@
 
 ## M2 — Local Agent preset (plumbing)
 
-### #7 — OpenCode entry in the managed-agent registry
+### #7 — OpenCode entry in the managed-agent registry ✅
 
 **Description:** Add OpenCode to `agent_manager.rs`: GitHub repo, darwin-arm64/x64 asset patterns (zip), version probe, install → `~/.notesage/bin/`, update/uninstall, quarantine handling, progress events — all via the existing machinery. Pin a minimum supported version.
 **Complexity:** M **Category:** backend **Dependencies:** — **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #8 — `local_agent_write_config` command
+### #8 — `local_agent_write_config` command ✅
 
 **Description:** Generate the OpenCode provider config: `baseURL` from the **live** llama-server port (`LocalInferenceState`; it's dynamic via `find_available_port`), model entries from the active catalog model, written to a Notesage-owned path; return the config path + the env/flag needed to launch OpenCode against it in isolation (verify mechanism — see risks). Unit tests: port substitution, model mapping, regeneration idempotency.
 **Complexity:** M **Category:** backend **Dependencies:** #7 **Files:** `src-tauri/src/commands/agent_manager.rs` or new `local_agent.rs`, `src-tauri/src/commands/local_inference.rs` (port accessor)
 
-### #9 — Seatbelt: llama-server port allow + OpenCode Bucket C row ⚠️ shared infra
+### #9 — Seatbelt: llama-server port allow + OpenCode Bucket C row ⚠️ shared infra ✅
 
 **Description:** Profile generation accepts an extra localhost-port literal per connection (the llama-server port) alongside the proxy port; add the `opencode` basename row to the Bucket C table (its own config/cache dirs — confirmed via sandbox violation monitoring during implementation, not guessed). **Regression-lock test:** the preset profile allows exactly {proxy port, llama-server port} on localhost and nothing else.
 **Complexity:** M **Category:** backend **Dependencies:** #8 **Files:** `src-tauri/src/commands/sandbox.rs`
