@@ -9,6 +9,7 @@ import {
   setMockInvokeHandler,
   clearMockInvokeHandlers,
 } from '@/test/component-harness';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
 import type { ChatMessage } from '@/lib/ai/types';
@@ -528,6 +529,23 @@ describe('CommandBarContext', () => {
     expect(
       screen.getByLabelText(/active provider: claude sonnet 4\.5/i),
     ).toBeTruthy();
+  });
+
+  it('renders the Local Agent degraded pill without an infinite render loop', () => {
+    // Regression lock: `selectLocalAgentNotice` builds a fresh object each call,
+    // so selecting it WITHOUT `useShallow` makes useSyncExternalStore see a new
+    // snapshot every render → "getSnapshot should be cached" → Maximum update
+    // depth exceeded (crashed the command bar). With useShallow it renders once.
+    useLocalAIStore.setState({
+      localAgentDegraded: true,
+      localAgentDegradedReason: 'Local Agent unavailable — using direct local chat',
+    });
+    try {
+      renderWithProviders(<CommandBarContext />);
+      expect(screen.getByText(/local chat \(agent unavailable\)/i)).toBeTruthy();
+    } finally {
+      useLocalAIStore.setState({ localAgentDegraded: false, localAgentDegradedReason: null });
+    }
   });
 
   it('renders the projects picker label when one project is selected', () => {

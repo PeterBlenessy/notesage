@@ -11,7 +11,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useLocalAIStore, selectLocalAgentNotice } from "@/stores/local-ai-store";
-import { isLocalAgentPreset } from "@/lib/ai/acp-agent-state";
+import { useShallow } from "zustand/react/shallow";
 import { useGoalsDiscovery } from "@/hooks/useGoalsDiscovery";
 import { tauriApi } from "@/lib/tauri";
 import { getAgentModels, prettyModelName } from "@/lib/ai/connections";
@@ -534,15 +534,6 @@ function ProviderPill({
                   <ProviderLogo provider={provider} className="w-3.5 h-3.5" bare />
                 ) : null}
                 <span>{label}</span>
-                {/* "Offline" badge for the Local Agent preset (task #20) — its
-                    network allowlist is empty (kernel deny), so it runs fully
-                    offline against the bundled model. */}
-                {connection && isLocalAgentPreset(connection) ? (
-                  <span className="ml-0.5 inline-flex items-center gap-0.5 rounded px-1 text-[10px] font-medium text-muted-foreground bg-muted-foreground/10">
-                    <WifiOff className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
-                    Offline
-                  </span>
-                ) : null}
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -971,7 +962,11 @@ function CrossProjectScopePill() {
  * action reopens the setup dialog (#17) so the user can retry.
  */
 function LocalAgentDegradedPill() {
-  const notice = useLocalAIStore(selectLocalAgentNotice);
+  // `useShallow` is REQUIRED here: `selectLocalAgentNotice` builds a fresh
+  // `{ reason, failedStage? }` object every call, so without a shallow equality
+  // check useSyncExternalStore sees a new snapshot each render → "getSnapshot
+  // should be cached" → infinite re-render loop (crashed the command bar).
+  const notice = useLocalAIStore(useShallow(selectLocalAgentNotice));
   const openSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
   if (!notice) return null;
   return (
