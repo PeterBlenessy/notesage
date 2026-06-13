@@ -69,7 +69,7 @@ describe('recommendToolCallingModel', () => {
 
 describe('resolveLocalAgentContext', () => {
   it('floors the chat default (4096) at the agent minimum', () => {
-    // 4096 is the store chat default — far too small for OpenCode's ~7.3K-token
+    // 4096 is the store chat default — far too small for an agent's multi-thousand-token
     // system prompt. The agent must run with at least the minimum.
     expect(resolveLocalAgentContext(4096)).toBe(LOCAL_AGENT_MIN_CONTEXT);
   });
@@ -85,7 +85,7 @@ describe('resolveLocalAgentContext', () => {
     expect(resolveLocalAgentContext(LOCAL_AGENT_MIN_CONTEXT + 1)).toBe(LOCAL_AGENT_MIN_CONTEXT + 1);
   });
 
-  it('the minimum clears OpenCode\'s agentic system prompt with headroom', () => {
+  it('the minimum clears an agentic system prompt with headroom', () => {
     // The empirical failure was a 7319-token request against a 4096 window.
     // The floor must comfortably exceed that (it does, with ~2x headroom).
     expect(LOCAL_AGENT_MIN_CONTEXT).toBeGreaterThan(7319 * 2);

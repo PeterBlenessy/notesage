@@ -134,7 +134,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const openLocalAgentSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
   // Whether the Local Agent preset is already set up (#19 shows ready state).
   const localAgentReady = connections.some(
-    (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'opencode',
+    (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
   );
   const handlePickLocalAgent = useCallback(() => {
     openLocalAgentSetup(true);
@@ -322,6 +322,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                       {localAgentReady
                         ? 'Private offline agent — set up'
                         : 'Private, offline AI — no keys, no network'}
+                    </span>
+                    <span className="text-[0.6875rem] text-muted-foreground block truncate">
+                      Powered by Goose, an open-source agent by Block
                     </span>
                   </div>
                   {localAgentReady && (

@@ -24,8 +24,8 @@ const preset = conn({
   id: 'preset',
   provider: 'custom_acp',
   label: 'Local Agent',
-  credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
-  config: { binaryPath: '/opt/opencode', localAgentPreset: 'opencode' },
+  credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
+  config: { binaryPath: '/opt/goose', localAgentPreset: 'goose' },
 });
 
 const localBundled = conn({
@@ -74,7 +74,7 @@ describe('resolveInteractiveConnection', () => {
 
 describe('isAgentHealthError — fallback triggers', () => {
   it('flags binary-missing / not-executable errors', () => {
-    expect(isAgentHealthError(new Error('binary not found at /opt/opencode'))).toBe(true);
+    expect(isAgentHealthError(new Error('binary not found at /opt/goose'))).toBe(true);
     expect(isAgentHealthError('not executable')).toBe(true);
   });
   it('flags spawn / start failures', () => {

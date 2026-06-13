@@ -335,12 +335,12 @@ describe('connections-store persistence round-trip', () => {
       provider: 'custom_acp',
       authMethod: 'agent_managed',
       status: 'connected',
-      label: 'OpenCode (local)',
-      credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/opencode' },
+      label: 'Goose (local)',
+      credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/goose' },
       config: {
-        binaryPath: '/usr/local/bin/opencode',
+        binaryPath: '/usr/local/bin/goose',
         binaryArgs: ['acp'],
-        localAgentPreset: 'opencode',
+        localAgentPreset: 'goose',
       },
     });
     await waitForPersist();
@@ -351,9 +351,9 @@ describe('connections-store persistence round-trip', () => {
     const parsed = JSON.parse(raw!);
     const conn = parsed.state.connections.find((c: Connection) => c.id === id);
     expect(conn).toBeTruthy();
-    expect(conn.config.binaryPath).toBe('/usr/local/bin/opencode');
+    expect(conn.config.binaryPath).toBe('/usr/local/bin/goose');
     expect(conn.config.binaryArgs).toEqual(['acp']);
-    expect(conn.config.localAgentPreset).toBe('opencode');
+    expect(conn.config.localAgentPreset).toBe('goose');
 
     // Capabilities resolved from the real PROVIDER_CAPABILITIES mapping
     expect(conn.capabilities).toEqual(['interactive', 'agent_tasks']);
@@ -371,9 +371,9 @@ describe('connections-store persistence round-trip', () => {
     expect(restored).toBeTruthy();
     expect(restored!.provider).toBe('custom_acp');
     expect(restored!.config).toEqual({
-      binaryPath: '/usr/local/bin/opencode',
+      binaryPath: '/usr/local/bin/goose',
       binaryArgs: ['acp'],
-      localAgentPreset: 'opencode',
+      localAgentPreset: 'goose',
     });
     // Rehydration migrations (openai_compatible baseUrl check, Copilot LSP
     // capability migration, api_key keychain migration) must not touch it.

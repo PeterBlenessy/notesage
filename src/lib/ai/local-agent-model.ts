@@ -14,12 +14,12 @@ const RAM_BUDGET_FRACTION = 0.7;
 
 /**
  * Minimum context window (tokens) the bundled server must run with for the
- * Local Agent preset. OpenCode's agentic system prompt alone is ~7.3K tokens —
- * at the store's chat default of 4096 the very first agentic turn fails with
- * "request exceeds the available context size", so the smoke test (and all
- * agentic chat) is dead on arrival. 16384 clears the system prompt with
- * headroom for tool definitions and a few turns. Confirmed empirically: 4096
- * fails, 16384 completes a turn.
+ * Local Agent preset. An agent's system prompt + tool schemas run several
+ * thousand tokens — at the store's chat default of 4096 the very first agentic
+ * turn fails with "request exceeds the available context size", so the smoke
+ * test (and all agentic chat) is dead on arrival. 16384 clears the system
+ * prompt with headroom for tool definitions and a few turns. Confirmed
+ * empirically: 4096 fails, 16384 completes a turn.
  */
 export const LOCAL_AGENT_MIN_CONTEXT = 16384;
 

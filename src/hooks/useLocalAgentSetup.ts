@@ -19,15 +19,15 @@ import { runLocalAgentSetup, type LocalAgentSetupResult } from '@/lib/ai/local-a
 import { recommendToolCallingModel, resolveLocalAgentContext } from '@/lib/ai/local-agent-model';
 import { log } from '@/lib/logger';
 
-const OPENCODE_AGENT_ID = 'opencode';
+const GOOSE_AGENT_ID = 'goose';
 
-/** Resolve the installed OpenCode binary's absolute path (managed install). */
-async function resolveOpencodePath(): Promise<string> {
+/** Resolve the installed Goose binary's absolute path (managed install). */
+async function resolveGoosePath(): Promise<string> {
   const resolution = await invoke<{ path: string } | null>('agent_resolve_binary', {
-    agentId: OPENCODE_AGENT_ID,
+    agentId: GOOSE_AGENT_ID,
   });
   if (!resolution?.path) {
-    throw new Error('OpenCode binary not found after install');
+    throw new Error('Goose binary not found after install');
   }
   return resolution.path;
 }
@@ -53,7 +53,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
     const routingStore = useRoutingStore.getState();
 
     // Captured across stages: the generated config (env + llama port) the smoke
-    // test needs to spawn OpenCode against the bundled server in isolation.
+    // test needs to spawn Goose against the bundled server in isolation.
     let configResult: LocalAgentConfig | null = null;
     let presetBinaryPath = '';
 
@@ -84,7 +84,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
 
       installAgent: async () => {
         // Resolves when the install finishes (the command awaits do_agent_install).
-        await invoke('agent_install', { agentId: OPENCODE_AGENT_ID });
+        await invoke('agent_install', { agentId: GOOSE_AGENT_ID });
       },
 
       downloadModel: async (modelId) => {
@@ -95,10 +95,10 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       ensureServerRunning: async (modelId) => {
         const { contextLength, gpuLayers } = useLocalAIStore.getState();
         // Agentic chat needs a much larger window than the chat default (4096):
-        // OpenCode's system prompt alone is ~7.3K tokens, so the server must
-        // start with at least LOCAL_AGENT_MIN_CONTEXT or every agentic turn
-        // overflows. startLocalServer stops + restarts, so this takes effect
-        // even if a smaller-context chat server was already running.
+        // an agent's system prompt + tool schemas run several thousand tokens, so
+        // the server must start with at least LOCAL_AGENT_MIN_CONTEXT or every
+        // agentic turn overflows. startLocalServer stops + restarts, so this
+        // takes effect even if a smaller-context chat server was already running.
         const agentContext = resolveLocalAgentContext(contextLength);
         const port = await tauriApi.startLocalServer(modelId, agentContext, gpuLayers);
         useLocalAIStore.setState({ serverStatus: 'running', serverPort: port, serverError: null });
@@ -110,14 +110,14 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       },
 
       createPresetConnection: async () => {
-        presetBinaryPath = await resolveOpencodePath();
+        presetBinaryPath = await resolveGoosePath();
         // Reuse an existing preset connection if one is already registered.
         const existing = connStore.connections.find(
-          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'opencode',
+          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
         );
         if (existing) {
           connStore.updateConnection(existing.id, {
-            config: { ...existing.config, binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'opencode' },
+            config: { ...existing.config, binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'goose' },
           });
           return existing.id;
         }
@@ -127,7 +127,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           status: 'connected',
           label: 'Local Agent',
           credentials: { type: 'agent_managed', agentBinary: presetBinaryPath },
-          config: { binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'opencode' },
+          config: { binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'goose' },
         });
         // Maximal confinement: the agent only needs the bundled server (allowed
         // via the llama port) — empty network allowlist, kernel deny on (#9).
@@ -147,7 +147,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
         const paths = selectProjectPaths(useChatStore.getState());
         const cwd = paths[0] || '/tmp';
         const conn = useConnectionsStore.getState().connections.find(
-          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'opencode',
+          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
         );
         const sandboxPaths = conn ? getChatSandboxScope({ projectPaths: paths }, conn, false) : paths;
         return tauriApi.acpAgentSmokeTest({
@@ -158,6 +158,11 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           sandboxEnabled: true,
           sandboxPaths,
           networkSandboxEnabled: true,
+          // Goose is a self-contained Rust binary that needs NO network for local
+          // use — no npm install of a provider SDK, no cloud model registry, no
+          // auth. It talks only to the bundled llama-server over localhost (added
+          // via extraLocalhostPorts below). The preset stays strictly local-only:
+          // an EMPTY domain allowlist under kernel network deny.
           networkAllowedDomains: [],
           kernelNetworkDeny: true,
           extraLocalhostPorts: configResult ? [configResult.port] : null,

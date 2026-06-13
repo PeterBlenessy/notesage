@@ -346,7 +346,7 @@ struct AgentHandle {
     network_sandbox_enabled: bool,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: bool,
-    /// Extra direct-localhost ports (e.g. llama-server for the OpenCode preset).
+    /// Extra direct-localhost ports (e.g. llama-server for the Goose preset).
     /// Stored so a reconnect re-applies the same network confinement.
     extra_localhost_ports: Vec<u16>,
     /// Whether the agent supports image content (from promptCapabilities)
@@ -1382,7 +1382,7 @@ pub async fn acp_agent_spawn(
         {
             Ok(mut config) => {
                 // Direct-localhost allows (e.g. the bundled llama-server port
-                // for the OpenCode preset) — reachable without the proxy under
+                // for the Goose preset) — reachable without the proxy under
                 // kernel network deny. Empty for ordinary agents.
                 if let Some(ports) = extra_localhost_ports.clone() {
                     config.extra_localhost_ports = ports;

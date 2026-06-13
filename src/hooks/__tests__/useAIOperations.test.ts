@@ -56,7 +56,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   acpAgent: null,
   ensureAcpAgent: vi.fn(),
   isLocalAgentPreset: (conn: { provider?: string; config?: { localAgentPreset?: string } } | null) =>
-    conn?.provider === 'custom_acp' && conn?.config?.localAgentPreset === 'opencode',
+    conn?.provider === 'custom_acp' && conn?.config?.localAgentPreset === 'goose',
 }));
 
 vi.mock('@/lib/ai/acp-utils', () => ({
@@ -656,8 +656,8 @@ describe('useAIOperations', () => {
         provider: 'custom_acp',
         authMethod: 'agent_managed',
         label: 'Local Agent',
-        credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
-        config: { binaryPath: '/opt/opencode', localAgentPreset: 'opencode' },
+        credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
+        config: { binaryPath: '/opt/goose', localAgentPreset: 'goose' },
         ...overrides,
       });
     }

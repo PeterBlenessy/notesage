@@ -51,14 +51,16 @@ export interface PptxTemplateInfo {
 }
 
 /**
- * Result of `local_agent_write_config` — the generated OpenCode provider config
- * pointing at the live bundled llama-server, plus the isolation env and the
- * respawn-trigger key (`<port>:<modelId>`). See `src-tauri/.../local_agent.rs`.
+ * Result of `local_agent_write_config` — the Goose env pointing at the live
+ * bundled llama-server (provider + host + model) plus the XDG isolation paths
+ * and the respawn-trigger key (`<port>:<modelId>`). Goose is configured purely
+ * via env vars — no config file is written. See `src-tauri/.../local_agent.rs`.
  */
 export interface LocalAgentConfig {
   configPath: string;
-  /** Env vars (XDG/OPENCODE_CONFIG paths) the spawn must inject to isolate
-   *  OpenCode's config tree. Path config only — never secrets. */
+  /** Env vars (Goose provider + XDG isolation paths) the spawn must inject to
+   *  point Goose at the bundled server and isolate its config tree. The only
+   *  key is a dummy the local server ignores — never real secrets. */
   env: Record<string, string>;
   /** `<port>:<modelId>` — changes when the server port or active model changes. */
   configKey: string;
@@ -892,8 +894,8 @@ export const tauriApi = {
   },
 
   /**
-   * Regenerate the Local Agent (OpenCode) provider config from the LIVE bundled
-   * llama-server state and return the isolation env + respawn trigger key. Used
+   * Regenerate the Local Agent (Goose) env from the LIVE bundled llama-server
+   * state and return the provider/isolation env + respawn trigger key. Used
    * by `ensureAcpAgent` for `localAgentPreset` connections (tasks #8/#10).
    * Rejects when the bundled server is not running / has no active model.
    */

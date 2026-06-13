@@ -160,21 +160,21 @@ describe('connections-store', () => {
         provider: 'custom_acp',
         authMethod: 'agent_managed',
         status: 'connected',
-        label: 'OpenCode (local)',
-        credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/opencode' },
+        label: 'Goose (local)',
+        credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/goose' },
         config: {
-          binaryPath: '/usr/local/bin/opencode',
+          binaryPath: '/usr/local/bin/goose',
           binaryArgs: ['acp'],
-          localAgentPreset: 'opencode',
+          localAgentPreset: 'goose',
         },
       });
 
       const conn = useConnectionsStore.getState().getConnection(id);
       expect(conn!.provider).toBe('custom_acp');
       expect(conn!.config).toEqual({
-        binaryPath: '/usr/local/bin/opencode',
+        binaryPath: '/usr/local/bin/goose',
         binaryArgs: ['acp'],
-        localAgentPreset: 'opencode',
+        localAgentPreset: 'goose',
       });
       // binaryPath/binaryArgs are not secrets — nothing goes to the keychain
       expect(invoke).not.toHaveBeenCalledWith('store_credential', expect.anything());

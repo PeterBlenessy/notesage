@@ -285,17 +285,17 @@ export interface LocalAgentEndpoint {
 }
 
 /**
- * Returns true when `connection` is the Local Agent preset (OpenCode wired to
+ * Returns true when `connection` is the Local Agent preset (Goose wired to
  * the bundled llama-server). Only these connections regenerate config and key
  * their respawn on the live endpoint.
  */
 export function isLocalAgentPreset(connection: Connection): boolean {
-  return connection.provider === 'custom_acp' && connection.config?.localAgentPreset === 'opencode';
+  return connection.provider === 'custom_acp' && connection.config?.localAgentPreset === 'goose';
 }
 
 /**
  * Resolve the live endpoint config for a preset connection by (re)generating
- * the OpenCode config against the running bundled server (#8). Returns `null`
+ * the Goose env against the running bundled server (#8). Returns `null`
  * for non-preset connections (their `configKey` is always `''`). Throws the
  * backend error verbatim when the server is down / has no model — the caller
  * (#13 routing) is responsible for falling back to direct local chat.
@@ -370,7 +370,7 @@ export async function ensureAcpAgent(
   }
   const scopeKey = (sandboxPaths ?? []).sort().join('|');
 
-  // For the Local Agent preset, regenerate the OpenCode config against the LIVE
+  // For the Local Agent preset, regenerate the Goose env against the LIVE
   // bundled server and derive the respawn-trigger key (`<port>:<model>`). A
   // server restart on a new port (or a model switch) changes this key, so the
   // existing agent is torn down and respawned against the fresh config — same
@@ -472,9 +472,9 @@ export async function ensureAcpAgent(
         networkAllowedDomains = [...builtIn, ...userDomains];
       }
 
-      // Merge the preset's isolation env (XDG/OPENCODE_CONFIG paths) on top of
-      // the connection's own env. These point OpenCode at the Notesage-owned
-      // config tree so the user's real OpenCode setup is untouched (#8).
+      // Merge the preset's isolation env (provider + XDG paths) on top of the
+      // connection's own env. These point Goose at the bundled server and the
+      // Notesage-owned XDG tree so the user's real Goose setup is untouched (#8).
       const spawnEnvVars = endpoint
         ? { ...(launch.envVars ?? {}), ...endpoint.env }
         : launch.envVars;

@@ -20,9 +20,9 @@ const presetConn: Connection = {
   authMethod: 'agent_managed',
   status: 'connected',
   label: 'Local Agent',
-  credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
+  credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
   capabilities: ['interactive'],
-  config: { binaryPath: '/opt/opencode', binaryArgs: ['acp'], localAgentPreset: 'opencode' },
+  config: { binaryPath: '/opt/goose', binaryArgs: ['acp'], localAgentPreset: 'goose' },
   createdAt: 0,
 };
 
@@ -65,8 +65,13 @@ describe('Local Agent M2 integration (task #14)', () => {
   it('preset: spawn injects isolation env + llama port, and session/new carries MCP servers', async () => {
     // The bundled-server config (#8) the preset regenerates before spawn.
     setMockInvokeHandler('local_agent_write_config', () => ({
-      configPath: '/x/opencode.json',
-      env: { XDG_CONFIG_HOME: '/x/config', OPENCODE_CONFIG: '/x/opencode.json' },
+      configPath: '/x/goose',
+      env: {
+        GOOSE_PROVIDER: 'openai',
+        OPENAI_HOST: 'http://localhost:8137',
+        GOOSE_MODEL: 'qwen2.5-coder-7b',
+        XDG_CONFIG_HOME: '/x/goose/config',
+      },
       configKey: '8137:qwen2.5-coder-7b',
       port: 8137,
       modelId: 'qwen2.5-coder-7b',
@@ -92,7 +97,8 @@ describe('Local Agent M2 integration (task #14)', () => {
 
     // #10: respawn key is the live endpoint; #9/#8: isolation env + llama port reach the spawn.
     expect(mod.acpAgent!.configKey).toBe('8137:qwen2.5-coder-7b');
-    expect((spawnArgs!.envVars as Record<string, string>).OPENCODE_CONFIG).toBe('/x/opencode.json');
+    expect((spawnArgs!.envVars as Record<string, string>).OPENAI_HOST).toBe('http://localhost:8137');
+    expect((spawnArgs!.envVars as Record<string, string>).GOOSE_MODEL).toBe('qwen2.5-coder-7b');
     expect(spawnArgs!.extraLocalhostPorts).toEqual([8137]);
 
     // #11: the session carries the scope-matched, stdio-capability-gated server.

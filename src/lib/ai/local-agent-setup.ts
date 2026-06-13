@@ -15,13 +15,13 @@ export interface LocalAgentSetupDeps {
   recommendModel: () => Promise<string>;
   /** True when the model file is already on disk (skip the download). */
   isModelDownloaded: (modelId: string) => boolean;
-  /** Install the OpenCode agent binary (#7); resolves when the install finishes. */
+  /** Install the Goose agent binary (#7); resolves when the install finishes. */
   installAgent: () => Promise<void>;
   /** Download the chosen model; resolves when complete. */
   downloadModel: (modelId: string) => Promise<void>;
   /** Ensure the bundled llama-server is running with the chosen model. */
   ensureServerRunning: (modelId: string) => Promise<void>;
-  /** Generate the OpenCode config against the live server (#8). */
+  /** Generate the Goose env against the live server (#8). */
   writeConfig: () => Promise<void>;
   /** Create (or reuse) the custom_acp preset connection; returns its id (#2). */
   createPresetConnection: (modelId: string) => Promise<string>;

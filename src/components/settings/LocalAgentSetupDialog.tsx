@@ -173,6 +173,10 @@ export function LocalAgentSetupDialog() {
           </p>
         )}
 
+        <p className="text-xs text-muted-foreground">
+          Local agent powered by Goose, an open-source agent by Block.
+        </p>
+
         <DialogFooter>
           {isReady ? (
             <Button onClick={() => onOpenChange(false)}>Done</Button>

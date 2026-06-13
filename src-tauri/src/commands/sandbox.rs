@@ -91,24 +91,19 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
         "gemini" => {
             entries.push(SandboxEntry::Subpath(".gemini"));
         }
-        // OpenCode (`opencode acp`) — the Local Agent preset binary.
+        // Goose (`goose acp`) — the Local Agent preset binary.
         //
-        // The preset redirects OpenCode's XDG dirs into the Notesage-owned
-        // ~/.notesage/agents/opencode tree (already covered by the `.notesage`
+        // The preset redirects Goose's XDG dirs into the Notesage-owned
+        // ~/.notesage/agents/goose tree (already covered by the `.notesage`
         // grant above), so in the happy path no extra row is needed. These
-        // conventional dirs are a fallback for the case where OpenCode ignores
-        // the XDG redirect on macOS.
-        //
-        // VERIFY ON MACOS: confirm via sandbox violation monitoring whether
-        // OpenCode actually uses XDG (`~/.config/opencode`, `~/.cache/opencode`,
-        // `~/.local/share/opencode`) or macOS-native
-        // (`~/Library/Application Support/opencode`). Narrow this arm to the
-        // dirs it actually touches once observed — do not broaden to all of
-        // `~/.config`.
-        "opencode" => {
-            entries.push(SandboxEntry::Subpath(".config/opencode"));
-            entries.push(SandboxEntry::Subpath(".cache/opencode"));
-            entries.push(SandboxEntry::Subpath(".local/share/opencode"));
+        // conventional XDG dirs are a fallback for the case where Goose ignores
+        // the XDG redirect on a given platform. Narrowed to Goose's own dirs —
+        // do NOT broaden to all of `~/.config`.
+        "goose" => {
+            entries.push(SandboxEntry::Subpath(".config/goose"));
+            entries.push(SandboxEntry::Subpath(".cache/goose"));
+            entries.push(SandboxEntry::Subpath(".local/share/goose"));
+            entries.push(SandboxEntry::Subpath(".local/state/goose"));
         }
         // Unknown / custom agent binaries get only `.notesage` — defense in
         // depth: no cross-agent config leakage by default.
@@ -273,7 +268,7 @@ pub fn generate_seatbelt_profile(
     let network_block = if kernel_network_deny {
         if let Some(nc) = network_config {
             // Extra direct-localhost allows (e.g. the bundled llama-server port
-            // for the OpenCode preset). Each is a loopback service the agent
+            // for the Goose preset). Each is a loopback service the agent
             // reaches without the proxy; ordinary agents have none, so the
             // confinement to {proxy port} is unchanged for them.
             let extra_port_allows: String = nc
@@ -637,7 +632,7 @@ mod tests {
             let id = "test-preset-ports";
             let nc = make_network_config_with_extra(12345, vec![8137]);
             let result =
-                generate_seatbelt_profile(id, "opencode", &[], Some(&nc), true);
+                generate_seatbelt_profile(id, "goose", &[], Some(&nc), true);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -679,26 +674,30 @@ mod tests {
             );
         }
 
-        // OpenCode's Bucket C row: its own config/cache dirs re-allowed, sibling
-        // agent dirs still denied.
+        // Goose's Bucket C row: its own config/cache/data/state dirs re-allowed,
+        // sibling agent dirs still denied.
         #[test]
-        fn opencode_bucket_c_grants_own_dirs_only() {
-            let id = "test-opencode-bucket-c";
-            let result = generate_seatbelt_profile(id, "opencode", &[], None, false);
+        fn goose_bucket_c_grants_own_dirs_only() {
+            let id = "test-goose-bucket-c";
+            let result = generate_seatbelt_profile(id, "goose", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
 
-            assert!(
-                content.contains(&home_subpath_needle(".config/opencode")),
-                "OpenCode profile must re-allow ~/.config/opencode — got:\n{}",
-                content
-            );
+            // Goose's own conventional XDG dirs are the only Bucket C grants.
+            for own in [".config/goose", ".cache/goose", ".local/share/goose", ".local/state/goose"] {
+                assert!(
+                    content.contains(&home_subpath_needle(own)),
+                    "Goose profile must re-allow ~/{} — got:\n{}",
+                    own,
+                    content
+                );
+            }
             // Sibling agent config dirs stay denied.
             for sibling in [".claude", ".codex", ".gemini", ".copilot"] {
                 assert!(
                     !content.contains(&home_subpath_needle(sibling)),
-                    "OpenCode profile must NOT re-allow sibling {} — got:\n{}",
+                    "Goose profile must NOT re-allow sibling {} — got:\n{}",
                     sibling,
                     content
                 );
@@ -1229,7 +1228,7 @@ mod tests {
             // Bare names AND absolute paths (basename extraction must not
             // accidentally match a known agent for custom binaries).
             for (id, binary) in [
-                ("task3-opencode-custom", "opencode-custom"),
+                ("task3-goose-custom", "goose-custom"),
                 ("task3-my-agent", "my-agent"),
                 ("task3-abs-custom", "/Users/peter/.notesage/agents/bin/my-agent"),
             ] {

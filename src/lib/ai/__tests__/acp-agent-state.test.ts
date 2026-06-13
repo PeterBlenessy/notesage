@@ -340,8 +340,8 @@ describe('ensureAcpAgent', () => {
       id: 'conn-preset',
       provider: 'custom_acp',
       label: 'Local Agent',
-      credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
-      config: { binaryPath: '/opt/opencode', binaryArgs: ['acp'], localAgentPreset: 'opencode' },
+      credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
+      config: { binaryPath: '/opt/goose', binaryArgs: ['acp'], localAgentPreset: 'goose' },
       ...overrides,
     });
   }
@@ -354,8 +354,11 @@ describe('ensureAcpAgent', () => {
       return { instance_id: 'inst-preset' };
     });
     setMockInvokeHandler('local_agent_write_config', () => ({
-      configPath: '/home/u/.notesage/agents/opencode/config/opencode/opencode.json',
-      env: { XDG_CONFIG_HOME: '/home/u/.notesage/agents/opencode/config', OPENCODE_CONFIG: '/x' },
+      configPath: '/home/u/.notesage/agents/goose',
+      env: {
+        GOOSE_PROVIDER: 'openai',
+        XDG_CONFIG_HOME: '/home/u/.notesage/agents/goose/config',
+      },
       configKey: '8137:qwen2.5-coder-7b',
       port: 8137,
       modelId: 'qwen2.5-coder-7b',
@@ -369,7 +372,7 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent!.configKey).toBe('8137:qwen2.5-coder-7b');
     // Isolation env merged into the spawn.
     expect((lastSpawnArgs!.envVars as Record<string, string>).XDG_CONFIG_HOME).toBe(
-      '/home/u/.notesage/agents/opencode/config',
+      '/home/u/.notesage/agents/goose/config',
     );
     // llama-server port allowed through the kernel network sandbox.
     expect(lastSpawnArgs!.extraLocalhostPorts).toEqual([8137]);

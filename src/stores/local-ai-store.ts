@@ -63,7 +63,7 @@ interface LocalAIStore {
   serverStatusReason: string | null;
   serverPort: number | null;
   /**
-   * Local Agent (OpenCode preset) degraded state (task #13). When `true`, the
+   * Local Agent (Goose preset) degraded state (task #13). When `true`, the
    * interactive slot falls back from the agent (Path 2) to direct local chat
    * (Path 4) so chat never dead-ends. Set when the preset binary is missing, a
    * spawn fails, or the last smoke test failed; cleared by a passing setup/smoke

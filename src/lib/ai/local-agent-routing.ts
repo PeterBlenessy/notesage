@@ -1,4 +1,4 @@
-// Local Agent (OpenCode preset) interactive routing (task #13).
+// Local Agent (Goose preset) interactive routing (task #13).
 //
 // The preset is the agentic-chat default for "Local AI": when healthy, the
 // interactive slot routes to the agent (Path 2, ACP). When the preset is
