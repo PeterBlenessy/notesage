@@ -69,6 +69,11 @@ struct NpmAgentConfig {
     bin_name: &'static str,
     /// Upstream repo, recorded in versions.json for display/update purposes.
     repo: &'static str,
+    /// Optional pinned minimum supported version (no leading `v`). When `Some`,
+    /// an install resolving below this is rejected post-install. Used by OpenCode
+    /// (the preset's ACP surface + config schema were built against a known
+    /// version); `None` for agents we track at `@latest` without a floor.
+    min_version: Option<&'static str>,
 }
 
 fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
@@ -77,71 +82,45 @@ fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
             package: "@agentclientprotocol/claude-agent-acp",
             bin_name: "claude-agent-acp",
             repo: "agentclientprotocol/claude-agent-acp",
+            min_version: None,
         }),
         "gemini" => Some(NpmAgentConfig {
             package: "@google/gemini-cli",
             bin_name: "gemini",
             repo: "google-gemini/gemini-cli",
+            min_version: None,
         }),
         "codex-acp" => Some(NpmAgentConfig {
             package: "@agentclientprotocol/codex-acp",
             bin_name: "codex-acp",
             repo: "agentclientprotocol/codex-acp",
+            min_version: None,
         }),
         "copilot" => Some(NpmAgentConfig {
             package: "@github/copilot",
             bin_name: "copilot",
             repo: "github/copilot-cli",
+            min_version: None,
         }),
         "copilot-language-server" => Some(NpmAgentConfig {
             package: "@github/copilot-language-server",
             bin_name: "copilot-language-server",
             repo: "github/copilot-language-server-release",
+            min_version: None,
         }),
-        _ => None,
-    }
-}
-
-// GitHub-release-binary agents. Unlike the npm agents above, these attach
-// prebuilt platform binaries (zip/tar.gz) to their GitHub releases. OpenCode is
-// the first: it ships ~40 MB darwin/linux CLI assets and is the binary behind
-// the "Local AI" agentic-chat preset (PRD 2026-06-12-local-ai-agents).
-struct GithubBinaryAgentConfig {
-    /// `owner/repo` on GitHub.
-    repo: &'static str,
-    /// Executable name inside the release archive AND the managed bin filename.
-    bin_name: &'static str,
-    /// Pinned minimum supported version (no leading `v`). Installs below this
-    /// are rejected; recorded so the update checker can keep it fresh.
-    min_version: &'static str,
-}
-
-fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig> {
-    match agent_id {
-        "opencode" => Some(GithubBinaryAgentConfig {
-            repo: "sst/opencode",
+        // OpenCode — the "Local AI" agentic-chat preset binary. Distributed on
+        // npm as `opencode-ai`, which delivers the native binary via per-platform
+        // optionalDependencies; installs through the same path as the agents
+        // above (one unified install flow). `bin.opencode` exposes the executable
+        // under `node_modules/.bin/opencode`. Pinned floor: the version whose ACP
+        // surface + config schema this integration was built against.
+        "opencode" => Some(NpmAgentConfig {
+            package: "opencode-ai",
             bin_name: "opencode",
-            // v1.17.4 is the version whose ACP surface + config schema this
-            // integration was built against (asset list verified against the
-            // release's expanded_assets manifest).
-            min_version: "1.17.4",
+            repo: "sst/opencode",
+            min_version: Some("1.17.4"),
         }),
         _ => None,
-    }
-}
-
-/// Release-asset filename for OpenCode's CLI binary on a platform.
-/// Verified against `sst/opencode` v1.17.4: darwin → `opencode-darwin-<arch>.zip`,
-/// linux → `opencode-linux-<arch>.tar.gz`. The `-baseline` x64 variant (older
-/// CPUs without AVX2) is intentionally NOT used — it targets a lower hardware
-/// tier than the bundled llama-server's Metal/AVX2 path the preset feeds.
-fn opencode_asset_name(os: &str, arch: &str) -> Result<&'static str, String> {
-    match (os, arch) {
-        ("darwin", "arm64") => Ok("opencode-darwin-arm64.zip"),
-        ("darwin", "x64") => Ok("opencode-darwin-x64.zip"),
-        ("linux", "arm64") => Ok("opencode-linux-arm64.tar.gz"),
-        ("linux", "x64") => Ok("opencode-linux-x64.tar.gz"),
-        _ => Err(format!("OpenCode has no prebuilt binary for {}-{}", os, arch)),
     }
 }
 
@@ -424,14 +403,10 @@ pub async fn agent_install(
 }
 
 async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<String>, String> {
-    // Two install flavors: npm-distributed agents (Claude Code, Codex, Copilot
-    // CLI/LSP, Gemini) and GitHub-release-binary agents (OpenCode). Dispatch by
-    // whichever registry the id matches.
+    // All supported agents install via npm (Claude Code, Codex, Copilot CLI/LSP,
+    // Gemini, and OpenCode — distributed as `opencode-ai`). One unified flow.
     if let Some(npm_config) = npm_agent_config(agent_id) {
         return do_npm_install(app, agent_id, &npm_config).await;
-    }
-    if let Some(gh_config) = github_binary_agent_config(agent_id) {
-        return do_github_binary_install(app, agent_id, &gh_config).await;
     }
     Err(format!(
         "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, opencode",
@@ -777,6 +752,19 @@ async fn do_npm_install(
         "unknown".to_string()
     };
 
+    // Enforce the pinned minimum (OpenCode): reject an install that resolved
+    // below the version this integration was built against. npm installs
+    // `@latest`, so this is a post-install guard rather than a pre-download one.
+    // Skipped when the version is indeterminate (the install itself succeeded).
+    if let Some(min) = config.min_version {
+        if version != "unknown" && !version_at_least(&version, min) {
+            return Err(format!(
+                "{} v{} is below the minimum supported version v{}",
+                agent_id, version, min
+            ));
+        }
+    }
+
     // Update versions.json
     let mut versions = read_versions();
     versions.agents.insert(
@@ -807,235 +795,6 @@ async fn do_npm_install(
 #[tauri::command]
 pub async fn agent_install_node_runtime(app: AppHandle) -> Result<(), String> {
     download_node_runtime(&app).await
-}
-
-// ---------------------------------------------------------------------------
-// GitHub-release-binary agent install (OpenCode)
-// ---------------------------------------------------------------------------
-
-/// Fetch the latest release tag for a GitHub repo. Returns the tag with any
-/// leading `v` stripped (e.g. `1.17.4`). Uses an unauthenticated request with a
-/// User-Agent (required by the GitHub API); the 60-req/hr anonymous limit is
-/// ample for occasional install/update checks.
-async fn fetch_github_latest_release(repo: &str) -> Result<String, String> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "notesage")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("GitHub release request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("GitHub release API returned {}", resp.status()));
-    }
-
-    let meta: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse GitHub release metadata: {}", e))?;
-
-    meta["tag_name"]
-        .as_str()
-        .map(|s| s.trim_start_matches('v').to_string())
-        .ok_or_else(|| "GitHub release metadata missing tag_name".to_string())
-}
-
-/// Place a single extracted file at `~/.notesage/agents/bin/<bin_name>` with
-/// rwxr-xr-x perms. Shared by the zip and tar.gz extraction branches.
-fn install_extracted_binary(bin_name: &str, data: &[u8]) -> Result<(), String> {
-    ensure_agent_dirs()?;
-    let dest = agents_bin_dir().join(bin_name);
-    std::fs::write(&dest, data)
-        .map_err(|e| format!("Failed to write {}: {}", dest.display(), e))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to chmod {}: {}", dest.display(), e))?;
-    }
-    Ok(())
-}
-
-/// Extract `bin_name` from a downloaded archive and install it. `asset` selects
-/// the format (`.zip` → zip crate, `.tar.gz` → flate2+tar). Path traversal is
-/// guarded (zip `enclosed_name`, tar component check) — same hardening as the
-/// Node.js runtime extractor.
-fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Result<(), String> {
-    if asset.ends_with(".zip") {
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))
-            .map_err(|e| format!("Failed to open zip: {}", e))?;
-        for i in 0..archive.len() {
-            let mut file = archive
-                .by_index(i)
-                .map_err(|e| format!("Zip entry error: {}", e))?;
-            // `enclosed_name` returns None for traversal/absolute entries.
-            let name = match file.enclosed_name() {
-                Some(p) => p,
-                None => continue,
-            };
-            if file.is_file() && name.file_name().and_then(|n| n.to_str()) == Some(bin_name) {
-                let mut buf = Vec::with_capacity(file.size() as usize);
-                std::io::copy(&mut file, &mut buf)
-                    .map_err(|e| format!("Zip read error: {}", e))?;
-                return install_extracted_binary(bin_name, &buf);
-            }
-        }
-        Err(format!("'{}' not found in archive {}", bin_name, asset))
-    } else if asset.ends_with(".tar.gz") || asset.ends_with(".tgz") {
-        use flate2::read::GzDecoder;
-        use tar::Archive;
-        let mut archive = Archive::new(GzDecoder::new(std::io::Cursor::new(data)));
-        for entry in archive.entries().map_err(|e| format!("Tar error: {}", e))? {
-            let mut entry = entry.map_err(|e| format!("Tar entry error: {}", e))?;
-            let path = entry
-                .path()
-                .map_err(|e| format!("Tar path error: {}", e))?
-                .to_path_buf();
-            // Reject traversal/absolute components (tar-slip guard).
-            if path.components().any(|c| {
-                matches!(
-                    c,
-                    std::path::Component::ParentDir
-                        | std::path::Component::RootDir
-                        | std::path::Component::Prefix(_)
-                )
-            }) {
-                continue;
-            }
-            if entry.header().entry_type().is_file()
-                && path.file_name().and_then(|n| n.to_str()) == Some(bin_name)
-            {
-                let mut buf = Vec::new();
-                std::io::copy(&mut entry, &mut buf)
-                    .map_err(|e| format!("Tar read error: {}", e))?;
-                return install_extracted_binary(bin_name, &buf);
-            }
-        }
-        Err(format!("'{}' not found in archive {}", bin_name, asset))
-    } else {
-        Err(format!("Unsupported archive format: {}", asset))
-    }
-}
-
-async fn do_github_binary_install(
-    app: &AppHandle,
-    agent_id: &str,
-    config: &GithubBinaryAgentConfig,
-) -> Result<Option<String>, String> {
-    let (os, arch) = detect_platform()?;
-    let asset = opencode_asset_name(os, arch)?;
-
-    // Resolve the latest version and enforce the minimum pin before downloading.
-    let version = fetch_github_latest_release(config.repo).await?;
-    if !version_at_least(&version, config.min_version) {
-        return Err(format!(
-            "{} v{} is below the minimum supported version v{}",
-            agent_id, version, config.min_version
-        ));
-    }
-
-    let url = format!(
-        "https://github.com/{}/releases/download/v{}/{}",
-        config.repo, version, asset
-    );
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "downloading".to_string(),
-            progress: 0,
-            total: 0,
-            message: format!("Downloading {} v{}...", agent_id, version),
-        },
-    );
-
-    use futures::StreamExt;
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "notesage")
-        .send()
-        .await
-        .map_err(|e| format!("{} download failed: {}", agent_id, e))?;
-    if !resp.status().is_success() {
-        return Err(format!("{} download returned {}", agent_id, resp.status()));
-    }
-
-    let total = resp.content_length().unwrap_or(0);
-    let mut stream = resp.bytes_stream();
-    let mut data = Vec::with_capacity(total as usize);
-    let mut downloaded: u64 = 0;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
-        downloaded += chunk.len() as u64;
-        data.extend_from_slice(&chunk);
-        let _ = app.emit(
-            "agent-install-progress",
-            AgentInstallProgress {
-                agent_id: agent_id.to_string(),
-                phase: "downloading".to_string(),
-                progress: downloaded,
-                total,
-                message: format!(
-                    "Downloading {}... {:.1} MB / {:.1} MB",
-                    agent_id,
-                    downloaded as f64 / 1_048_576.0,
-                    total as f64 / 1_048_576.0
-                ),
-            },
-        );
-    }
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "extracting".to_string(),
-            progress: 0,
-            total: 1,
-            message: format!("Extracting {}...", agent_id),
-        },
-    );
-
-    extract_and_install_binary(asset, config.bin_name, &data)?;
-
-    // Verify the binary is present after extraction.
-    let bin_path = agents_bin_dir().join(config.bin_name);
-    if !bin_path.exists() {
-        return Err(format!(
-            "{} binary not found after extraction",
-            config.bin_name
-        ));
-    }
-
-    let mut versions = read_versions();
-    versions.agents.insert(
-        agent_id.to_string(),
-        AgentVersionEntry {
-            version: version.clone(),
-            installed_at: chrono::Utc::now().to_rfc3339(),
-            source: "github".to_string(),
-            repo: Some(config.repo.to_string()),
-        },
-    );
-    write_versions(&versions)?;
-
-    let _ = app.emit(
-        "agent-install-progress",
-        AgentInstallProgress {
-            agent_id: agent_id.to_string(),
-            phase: "done".to_string(),
-            progress: 1,
-            total: 1,
-            message: format!("Installed {} v{}", agent_id, version),
-        },
-    );
-
-    Ok(Some(version))
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,37 +849,38 @@ mod tests {
         assert!(npm_agent_config("not-a-real-agent").is_none());
     }
 
-    // OpenCode is the first GitHub-release-binary agent (not npm). These lock
-    // the repo, bin name, version pin, and per-platform asset names so a
+    // OpenCode installs via npm (`opencode-ai`) through the same flow as every
+    // other agent. Lock the package name, bin name, and version floor so a
     // registry edit can't silently break the Local AI preset install.
-
     #[test]
-    fn opencode_is_github_binary_not_npm() {
-        assert!(
-            npm_agent_config("opencode").is_none(),
-            "opencode must NOT be in the npm registry"
+    fn opencode_installs_via_npm() {
+        let npm = npm_agent_config("opencode").expect("opencode must be npm-distributed");
+        assert_eq!(npm.package, "opencode-ai");
+        assert_eq!(npm.bin_name, "opencode");
+        assert_eq!(npm.repo, "sst/opencode");
+        assert_eq!(
+            npm.min_version,
+            Some("1.17.4"),
+            "opencode keeps a version floor matching the ACP/config schema it was built against"
         );
-        let gh = github_binary_agent_config("opencode")
-            .expect("opencode must be a GitHub-binary agent");
-        assert_eq!(gh.repo, "sst/opencode");
-        assert_eq!(gh.bin_name, "opencode");
-        assert_eq!(gh.min_version, "1.17.4");
     }
 
     #[test]
-    fn unknown_agent_has_no_github_config() {
-        assert!(github_binary_agent_config("not-a-real-agent").is_none());
-    }
-
-    #[test]
-    fn opencode_asset_names_match_release_manifest() {
-        // Verified against sst/opencode v1.17.4 expanded_assets.
-        assert_eq!(opencode_asset_name("darwin", "arm64").unwrap(), "opencode-darwin-arm64.zip");
-        assert_eq!(opencode_asset_name("darwin", "x64").unwrap(), "opencode-darwin-x64.zip");
-        assert_eq!(opencode_asset_name("linux", "arm64").unwrap(), "opencode-linux-arm64.tar.gz");
-        assert_eq!(opencode_asset_name("linux", "x64").unwrap(), "opencode-linux-x64.tar.gz");
-        assert!(opencode_asset_name("windows", "x64").is_err());
-        assert!(opencode_asset_name("darwin", "mips").is_err());
+    fn only_opencode_pins_a_min_version() {
+        // The four cloud agents track @latest with no floor; only OpenCode pins.
+        for id in [
+            "claude-agent-acp",
+            "codex-acp",
+            "copilot",
+            "copilot-language-server",
+            "gemini",
+        ] {
+            assert_eq!(
+                npm_agent_config(id).unwrap().min_version,
+                None,
+                "{id} should not pin a min_version"
+            );
+        }
     }
 
     #[test]
@@ -1181,17 +941,12 @@ pub async fn agent_check_updates(app: AppHandle, force: Option<bool>) -> Result<
     let mut updates = Vec::new();
 
     for (agent_id, entry) in &versions.agents {
-        // npm agents check the npm registry; GitHub-binary agents (OpenCode)
-        // check the GitHub releases API. Resolve whichever applies.
+        // All agents are npm-distributed — check the npm registry for the
+        // latest published version.
         let (latest_result, repo): (Result<String, String>, String) =
             if let Some(config) = npm_agent_config(agent_id) {
                 (
                     fetch_npm_latest_version(config.package).await,
-                    config.repo.to_string(),
-                )
-            } else if let Some(config) = github_binary_agent_config(agent_id) {
-                (
-                    fetch_github_latest_release(config.repo).await,
                     config.repo.to_string(),
                 )
             } else {
