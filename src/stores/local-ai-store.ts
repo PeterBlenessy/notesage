@@ -36,6 +36,15 @@ interface LocalAIStore {
   serverError: string | null;
   serverStatusReason: string | null;
   serverPort: number | null;
+  /**
+   * Local Agent (OpenCode preset) degraded state (task #13). When `true`, the
+   * interactive slot falls back from the agent (Path 2) to direct local chat
+   * (Path 4) so chat never dead-ends. Set when the preset binary is missing, a
+   * spawn fails, or the last smoke test failed; cleared by a passing setup/smoke
+   * run (#16). Transient — recomputed each session, never persisted.
+   */
+  localAgentDegraded: boolean;
+  localAgentDegradedReason: string | null;
   /** Dedicated FIM server lifecycle (item #8 of the agentic stack).
    *  Mirrors the main server's status/port/error fields. */
   completionServerStatus: ServerStatus;
@@ -57,6 +66,8 @@ interface LocalAIStore {
   setServerStatus: (status: ServerStatus, error?: string) => void;
   setServerStatusReason: (reason: string | null) => void;
   setServerPort: (port: number | null) => void;
+  /** Mark / clear the Local Agent preset as degraded (task #13). `null` clears. */
+  setLocalAgentDegraded: (reason: string | null) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
   setHardwareProfile: (profile: HardwareProfile | null) => void;
@@ -142,6 +153,8 @@ export const useLocalAIStore = create<LocalAIStore>()(
         serverError: null,
         serverStatusReason: null,
         serverPort: null,
+        localAgentDegraded: false,
+        localAgentDegradedReason: null,
         completionServerStatus: 'stopped',
         completionServerPort: null,
         completionServerError: null,
@@ -169,6 +182,8 @@ export const useLocalAIStore = create<LocalAIStore>()(
         setServerStatus: (status, error) => set({ serverStatus: status, serverError: error ?? null }),
         setServerStatusReason: (reason) => set({ serverStatusReason: reason }),
         setServerPort: (port) => set({ serverPort: port }),
+        setLocalAgentDegraded: (reason) =>
+          set({ localAgentDegraded: reason !== null, localAgentDegradedReason: reason }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
         dismissFirstRun: () => set({ dismissedFirstRun: true }),

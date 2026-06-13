@@ -10,6 +10,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,8 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   stopAcpAgent: vi.fn(),
   acpAgent: null,
   ensureAcpAgent: vi.fn(),
+  isLocalAgentPreset: (conn: { provider?: string; config?: { localAgentPreset?: string } } | null) =>
+    conn?.provider === 'custom_acp' && conn?.config?.localAgentPreset === 'opencode',
 }));
 
 vi.mock('@/lib/ai/acp-utils', () => ({
@@ -117,6 +120,7 @@ describe('useAIOperations', () => {
     mockAcpGenerateText.mockClear();
     mockAcpSendChatMessage.mockClear();
     mockAcpCancelChat.mockClear();
+    useLocalAIStore.getState().setLocalAgentDegraded(null);
   });
 
   // ---- Provider routing ----
@@ -640,6 +644,87 @@ describe('useAIOperations', () => {
 
       expect(mockDirectGenerateText).toHaveBeenCalledWith('local test');
       expect(mockAcpGenerateText).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- Local Agent preset routing + Path-4 fallback (task #13) ----
+
+  describe('Local Agent preset fallback', () => {
+    function makePresetConnection(overrides: Partial<Connection> = {}): Connection {
+      return makeConnection({
+        id: 'preset',
+        provider: 'custom_acp',
+        authMethod: 'agent_managed',
+        label: 'Local Agent',
+        credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
+        config: { binaryPath: '/opt/opencode', localAgentPreset: 'opencode' },
+        ...overrides,
+      });
+    }
+    const localBundled: Connection = {
+      id: 'lb',
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      status: 'connected',
+      label: 'Local (bundled)',
+      credentials: { type: 'local_bundled' },
+      capabilities: ['interactive'],
+      createdAt: Date.now(),
+    };
+
+    function routeTo(connId: string) {
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: connId },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+    }
+
+    it('routes to the agent (ACP) when the preset is healthy', async () => {
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await result.current.sendChatMessage('hi', []);
+      });
+      expect(mockAcpSendChatMessage).toHaveBeenCalled();
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+
+    it('falls back to direct local chat (Path 4) when the preset is degraded', async () => {
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      useLocalAIStore.getState().setLocalAgentDegraded('Local AI server is not running');
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await result.current.sendChatMessage('hi', []);
+      });
+      expect(mockDirectSendChatMessage).toHaveBeenCalled();
+      expect(mockAcpSendChatMessage).not.toHaveBeenCalled();
+    });
+
+    it('flips the degraded flag when an agent-health error is thrown', async () => {
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('Agent spawn failed after multiple retries'));
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow();
+      });
+      expect(useLocalAIStore.getState().localAgentDegraded).toBe(true);
+    });
+
+    it('does NOT flip degraded for an ordinary turn error', async () => {
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('model produced invalid output'));
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow();
+      });
+      expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
     });
   });
 });
