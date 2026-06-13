@@ -9,7 +9,7 @@
 | **Tasks** | — (not yet planned) |
 | **Phase** | Productivity Features |
 
-> **Revision (2026-06-13):** the engine is no longer hard-pinned to `local_bundled`. It now **routes to whatever the user selected in the use-case mapping** (agent-agnostic — e.g. goose-over-ACP + llama-server, or the bundled server). Locality is the user's responsibility, **not** enforced by Notesage. This supersedes the original "local-only, hard rule" framing throughout. The privacy default is still *expected* to be a local connection, but it is a default, not a guarantee.
+> **Revision (2026-06-13):** the engine is no longer hard-pinned to `local_bundled`. It now **routes to whatever the user selected in the use-case mapping** (agent-agnostic — any direct-API local connection or an ACP agent backed by a local model server). Locality is the user's responsibility, **not** enforced by Notesage. This supersedes the original "local-only, hard rule" framing throughout. The privacy default is still *expected* to be a local connection, but it is a default, not a guarantee.
 
 ## Problem
 
@@ -17,7 +17,7 @@ Notesage already extracts tasks from documents into a SQLite index (`type: goal`
 
 Existing AI features can help, but every one of them is **pull-and-interrupt**: you stop writing, open the command bar, type a prompt, read a wall of suggestions, decide. That tax is high enough that nobody pays it mid-flow — so notes stay vague. There is no surface in Notesage where the AI *notices* a weak action item and offers, without being asked, a sharper version you can take or leave.
 
-Why now: the pieces needed to do this all exist. The connection/routing system (`routing-store` + capability-driven slots) already lets the user select *any* provider — including a local agent stack (goose-over-ACP + llama-server) or the bundled `local_bundled` server — so the engine can stay agent-agnostic. `generateStructured()` gives GBNF-grammar-guaranteed JSON on the direct-API paths (`local_bundled` / `openai_compatible` / `ollama`). The `AgentOrb` + `activity-store` already model "background work happened, here's a queue." This PRD assembles them into one ambient loop. The privacy posture is local-*first* by default (we expect users to point the slot at a local connection) but not enforced — see the Revision note above.
+Why now: the pieces needed to do this all exist. The connection/routing system (`routing-store` + capability-driven slots) already lets the user select *any* provider — a direct-API local connection or a local ACP agent — so the engine can stay agent-agnostic. `generateStructured()` gives GBNF-grammar-guaranteed JSON on the direct-API paths (`local_bundled` / `openai_compatible` / `ollama`). The `AgentOrb` + `activity-store` already model "background work happened, here's a queue." This PRD assembles them into one ambient loop. The privacy posture is local-*first* by default (we expect users to point the slot at a local connection) but not enforced — see the Revision note above.
 
 ## Goals / Non-Goals
 
@@ -26,12 +26,12 @@ Why now: the pieces needed to do this all exist. The connection/routing system (
 1. **Ambient detection.** A background watcher analyzes action items *as the user writes* (on paragraph commit), incrementally — only new or changed lines, never re-scanning settled text — with zero per-keystroke cost.
 2. **Sharper actions.** For each detected action item, produce a triaged verdict + a sharpened outcome + optional concrete sub-steps, with schema-guaranteed structure.
 3. **Pull, never push.** The engine never injects content inline. It raises a single quiet availability signal (orb flash); the user chooses when to look. Reviewing and applying is one click.
-4. **Agent-agnostic, routed by selection.** The engine runs on whatever connection the user assigns to the refinement use-case slot — it never hardcodes a specific agent (goose, opencode, bundled server, …). Local-first is the *expected* default (free, private), but not enforced; if the user points the slot at a cloud connection, that is their choice.
+4. **Agent-agnostic, routed by selection.** The engine runs on whatever connection the user assigns to the refinement use-case slot — it never hardcodes a specific agent or binary. Local-first is the *expected* default (free, private), but not enforced; if the user points the slot at a cloud connection, that is their choice.
 5. **Top 5.** Surface the highest-priority refined actions across the document so the user can see, at a glance, what matters most — ranked by the engine's own verdicts.
 
 ### Non-Goals
 
-- **No hardcoded agent.** The engine must not assume a specific binary or provider — it reads the use-case selection. (goose today, something else tomorrow.)
+- **No hardcoded agent.** The engine must not assume a specific binary or provider — it reads the use-case selection, whatever it points at.
 - **No Notesage-enforced locality.** The engine will not police whether the selected provider is on-device. Locality is a user responsibility (see Risks).
 - **No inline injection / autocomplete-style rewriting.** The engine does not edit the document on its own; apply is always an explicit user action.
 - **No per-row gutter indicator in v1.** Precise per-line affordances need the unified left-gutter design that the editor docs have deferred twice. Orb-only for now.
@@ -44,7 +44,7 @@ Why now: the pieces needed to do this all exist. The connection/routing system (
 - As a writer drafting a planning note, I want the app to notice when I've written a vague to-do and quietly offer a sharper version, so that my notes become actionable without me stopping to ask.
 - As someone in flow, I want refinements to wait silently until I'm ready, so that I'm never interrupted mid-sentence.
 - As a reviewer of my own notes, I want to open one panel and see every pending suggestion, jump to its line, and accept or dismiss it in one click.
-- As a privacy-conscious user, I want to point the refinement engine at my own local agent (goose + llama-server) so that my notes stay on my machine — and I accept that keeping it local is my choice of provider, not something the app enforces.
+- As a privacy-conscious user, I want to point the refinement engine at my own local provider so that my notes stay on my machine — and I accept that keeping it local is my choice of provider, not something the app enforces.
 - As someone with a long task list, I want to see the top 5 things that matter most across this document, ranked by the AI's read, so that I know where to start.
 - As a user with no AI configured, I want a clear, one-time prompt to set up a provider (defaulting to a local model), and the feature to stay silent otherwise, so that I'm not nagged or confused.
 
@@ -85,7 +85,7 @@ Only lines that pass both gates **and** look like action items reach the engine.
 The engine is a thin module `src/lib/ai/refinement.ts` exporting `refineAction(line, context)`. It **reads the connection from the refinement use-case slot** (`routing-store`) — never a hardcoded provider — and dispatches by connection *shape*, mirroring how `useAIOperations` already routes the rest of the app:
 
 - **Direct-API connections** (`local_bundled`, `openai_compatible`, `ollama`, `api_key`) → `generateStructured<RefinementResult>()` with the `RefinementResult` JSON schema and `strict: true`. On the GBNF-capable subset (`local_bundled` / `openai_compatible` / `ollama`) the grammar **guarantees** a schema-valid object; `api_key` cloud providers ignore the grammar and fall back to best-effort parse + retry.
-- **`agent_managed` connections** (goose / opencode / any ACP agent) → there is **no `ai_chat_stream`/`response_format` path** for ACP. The engine sends the refinement prompt through the ACP session and parses the agent's text reply as best-effort JSON (prompt asks for a fenced JSON block matching the schema; one reparse-on-failure retry). The hard GBNF guarantee does **not** hold here — this is the cost of agent-agnosticism. *(See Open Questions: which slot, and whether to constrain it to GBNF-capable connections for a stronger guarantee.)*
+- **`agent_managed` connections** (any ACP agent) → there is **no `ai_chat_stream`/`response_format` path** for ACP. The engine sends the refinement prompt through the ACP session and parses the agent's text reply as best-effort JSON (prompt asks for a fenced JSON block matching the schema; one reparse-on-failure retry). The hard GBNF guarantee does **not** hold here — this is the cost of agent-agnosticism. *(See Open Questions: which slot, and whether to constrain it to GBNF-capable connections for a stronger guarantee.)*
 
 The system prompt (shared across both paths) defines the verdict taxonomy and the "sharpen, don't pad" directive, with minimal surrounding context (the line + its heading ancestry, not the whole doc — reuses the `[perf:context]` trimming mindset).
 
@@ -181,7 +181,7 @@ export interface RefinementEntry {
 - **Existing, reused:** `routing-store` / `connections-store` (provider selection), `generateStructured()` / `ai_chat_stream` (+ `ai_chat_stream_cancel`), the ACP session path in `useAIOperations` (for `agent_managed` selections), `AgentOrb` + `AgentPanel` + `.orb-pulsing` keyframe, `useReducedMotion`, the markdown round-trip pipeline, `prosemirror-markdown`, the SQLite index task parser (for the future project-wide Top 5).
 - **New:** `useRefinementWatcher` hook, `src/lib/ai/refinement.ts` (with the direct-API vs ACP dispatch fork), `refinement-store`, a refinement decoration/apply extension, the Refinements section in `AgentPanel`, the Settings toggle + slot resolver display.
 - **No new third-party libraries.**
-- **Prerequisite:** a connection assigned to the refinement slot. For a local setup this is the user's goose+llama-server ACP connection (registered per the "local agent" work — see Related Work) or a downloaded `local_bundled` model surfaced via existing Local AI UX.
+- **Prerequisite:** a connection assigned to the refinement slot — any local ACP agent connection the user has registered, or a downloaded `local_bundled` model surfaced via existing Local AI UX.
 
 ## Quality Gates
 
@@ -229,11 +229,11 @@ Deferred to future phases (documented roadmap, not built in v1):
 
 ## Related Work
 
-This PRD depends on the **local agent registration** work (separate effort): adding goose-over-ACP as a selectable `agent_managed` connection — `ConnectionProvider`/`PROVIDER_CAPABILITIES`/`PROVIDER_OPTIONS` entries in `connections.ts`, an `acp_binary.rs` resolver entry + `agent_manager.rs` versioning, a Seatbelt read-policy (Bucket C) entry for goose's config dir, and a network-sandbox allow for `localhost:<llama-port>` so goose can reach llama-server. Once that connection exists and is assigned to the refinement (or `agent_tasks`) slot, this engine consumes it agnostically. The refinement engine does **not** itself register or hardcode goose.
+If a user wants to drive refinement with a **local ACP agent** (rather than a direct-API local connection), registering that agent is **separate, out-of-scope work** — provider/capability/option entries in `connections.ts`, binary resolution + versioning, the Seatbelt read-policy entry for the agent's config dir, and a network-sandbox allow for its local model endpoint. This PRD does not include that registration; the refinement engine simply consumes whatever connection is assigned to its slot, agnostically. Direct-API local connections (`local_bundled`, `ollama`, `openai_compatible`) need no such registration and work out of the box.
 
 ## Risks
 
-- **No locality guarantee.** Because the engine routes to the user's selection and Notesage cannot introspect an ACP agent's model endpoint (goose's model config is goose-side), the app cannot promise that ambient analysis stays on-device. Mitigation: a clear Settings note + local-first default; a future option could *enforce* locality via the network sandbox (deny-all-except-localhost) for the refinement connection, which would kernel-guarantee it — deferred.
+- **No locality guarantee.** Because the engine routes to the user's selection and Notesage cannot introspect an ACP agent's model endpoint (the agent's model config is agent-side), the app cannot promise that ambient analysis stays on-device. Mitigation: a clear Settings note + local-first default; a future option could *enforce* locality via the network sandbox (deny-all-except-localhost) for the refinement connection, which would kernel-guarantee it — deferred.
 - **Continuous-fire cost on a cloud selection.** If a user assigns a paid cloud connection to a slot that fires on every paragraph commit, cost accrues silently. Mitigation: the Settings provider line warns when the resolved connection is not local.
 - **Degraded output guarantee on ACP.** `agent_managed` selections lose the GBNF schema guarantee (best-effort JSON parse). Mitigation: schema-shaped prompt + one reparse retry + per-entry error surfacing; consider constraining the slot to GBNF-capable connections (Open Question).
 
@@ -241,6 +241,6 @@ This PRD depends on the **local agent registration** work (separate effort): add
 
 1. **Verdict taxonomy (proposed, reviewable).** Starter set: `keep` / `sharpen` / `split` / `defer` / `drop`. This covers "it's fine", "make it specific", "break it up", "blocked", and "this isn't a task". Open to collapsing `defer`+`drop` or adding `merge` (combine duplicate actions) after dogfooding. **Decision owner: reviewer of this PRD.**
 2. **Refinement routing slot.** Reuse `agent_tasks`, or add a dedicated `refinement` use-case slot/capability so users can point refinement at a different (cheaper/faster) agent than their heavy delegated-task agent? Default in this PRD: read a refinement slot, fall back to `agent_tasks`. **Reviewable.**
-3. **Constrain the slot to GBNF-capable connections?** Restricting the refinement slot to `local_bundled`/`openai_compatible`/`ollama` would preserve the hard schema guarantee but exclude ACP agents like goose. Allowing `agent_managed` keeps it fully agent-agnostic at the cost of best-effort JSON. **Reviewable** — current PRD allows both.
+3. **Constrain the slot to GBNF-capable connections?** Restricting the refinement slot to `local_bundled`/`openai_compatible`/`ollama` would preserve the hard schema guarantee but exclude `agent_managed` ACP agents. Allowing `agent_managed` keeps it fully agent-agnostic at the cost of best-effort JSON. **Reviewable** — current PRD allows both.
 4. **Commit heuristic tuning.** "Block exit + 1500 ms" is a starting point; the debounce and whether to also fire on explicit Enter-at-end-of-block should be tuned during implementation against real typing traces.
 5. **Top 5 ranking weights.** Verdict-priority + recency is the v1 heuristic; may need a small learned/weighted scheme once project-wide ranking lands.
