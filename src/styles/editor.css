@@ -2025,3 +2025,49 @@ mark.dom-find-highlight-active {
   opacity: 1;
   transition: opacity 200ms ease;
 }
+
+/* ----------------------------------------------------------------
+   Refinement apply affordance — a small ✦ button at the end of a
+   line that carries a pending refinement (refinement-apply.ts).
+   Hidden by default; revealed on hover of the line or focus of the
+   button, mirroring the restraint of the comment/close-doc hover
+   affordances. The glyph uses the accent token (the only chromatic
+   exception allowed in editor chrome via --color-accent-primary).
+   ---------------------------------------------------------------- */
+
+.ProseMirror .refinement-apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.35rem;
+  padding: 0;
+  vertical-align: baseline;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-accent-primary);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 150ms ease, background-color 150ms ease;
+}
+
+/* Reveal on hover of the containing block or focus of the button. */
+.ProseMirror > *:hover .refinement-apply,
+.ProseMirror .refinement-apply:focus-visible,
+.ProseMirror .refinement-apply:hover {
+  opacity: 1;
+}
+
+.ProseMirror .refinement-apply:hover {
+  background-color: var(--color-muted);
+}
+
+.ProseMirror .refinement-apply:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
