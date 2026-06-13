@@ -83,6 +83,16 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
         useLocalAIStore.getState().models.find((m) => m.id === modelId)?.downloaded ?? false,
 
       installAgent: async () => {
+        // Setup-time skip: the GitHub-binary install re-downloads the ~79 MB
+        // tarball every run, so if the Goose binary already resolves to a real
+        // path we don't reinstall it. This is purely a setup-flow optimisation —
+        // updates still go through `agent_update` (→ do_agent_install), which
+        // must keep forcing a fresh download, so we deliberately don't touch the
+        // shared backend command.
+        const existing = await invoke<{ path: string } | null>('agent_resolve_binary', {
+          agentId: GOOSE_AGENT_ID,
+        }).catch(() => null);
+        if (existing?.path) return;
         // Resolves when the install finishes (the command awaits do_agent_install).
         await invoke('agent_install', { agentId: GOOSE_AGENT_ID });
       },

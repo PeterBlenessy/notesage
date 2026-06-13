@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { Check, CircleDashed, Loader2, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import {
   Dialog,
@@ -24,6 +25,9 @@ import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 
 const GB = 1024 ** 3;
+
+/** Agent id used for the Goose managed install (mirrors useLocalAgentSetup). */
+const GOOSE_AGENT_ID = 'goose';
 
 /** Ordered active stages with user-facing labels. */
 const STAGES: { key: LocalAgentActiveStage; label: string }[] = [
@@ -78,10 +82,46 @@ export function LocalAgentSetupDialog() {
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const effectiveModel = chosenModel ?? setup.modelId ?? recommended;
 
+  // Goose binary download percent (0–100) from `agent-install-progress`. The
+  // backend emits bytes downloaded / content-length during the GitHub-binary
+  // download — unlike the model download (tracked via `downloads`), the agent
+  // download previously showed only a spinner for the ~79 MB tarball.
+  const [agentProgress, setAgentProgress] = useState<number | null>(null);
+
   // Load the catalog once when the dialog opens so the picker is populated.
   useEffect(() => {
     if (open && models.length === 0) void refreshModels();
   }, [open, models.length, refreshModels]);
+
+  // Track Goose binary download progress while the dialog is open. The IPC
+  // payload is serde snake_case (`agent_id`, `progress`, `total`), matching the
+  // ConnectAgent listener.
+  useEffect(() => {
+    if (!open) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{ agent_id: string; phase: string; progress: number; total: number; message: string }>(
+      'agent-install-progress',
+      (event) => {
+        const p = event.payload;
+        if (p.agent_id !== GOOSE_AGENT_ID) return;
+        if (p.phase === 'downloading') {
+          setAgentProgress(p.total > 0 ? Math.round((p.progress / p.total) * 100) : null);
+        } else {
+          // Past the download phase (extracting/configuring/done) — the model
+          // download takes over the bar.
+          setAgentProgress(null);
+        }
+      },
+    ).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [open]);
 
   const running = ['detecting', 'downloading', 'configuring', 'verifying'].includes(setup.stage);
   const isReady = setup.stage === 'ready';
@@ -99,6 +139,10 @@ export function LocalAgentSetupDialog() {
 
   // Per-stage download progress for the model (0–100), if a download is active.
   const modelProgress = effectiveModel ? downloads[effectiveModel]?.progress : undefined;
+  // During the "downloading" stage we show whichever of the two is currently
+  // downloading: the Goose binary runs first, then the model. Prefer the agent
+  // bar while it's active, falling back to the model bar.
+  const downloadProgress = agentProgress ?? modelProgress ?? null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -159,8 +203,8 @@ export function LocalAgentSetupDialog() {
                 >
                   {s.label}
                 </span>
-                {s.key === 'downloading' && state === 'active' && modelProgress != null && (
-                  <Progress value={modelProgress} className="ml-auto w-24 h-1.5" />
+                {s.key === 'downloading' && state === 'active' && downloadProgress != null && (
+                  <Progress value={downloadProgress} className="ml-auto w-24 h-1.5" />
                 )}
               </li>
             );

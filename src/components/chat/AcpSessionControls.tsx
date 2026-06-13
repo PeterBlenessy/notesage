@@ -40,6 +40,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useChatStore } from '@/stores/chat-store';
 import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 import type { Connection } from '@/lib/ai/connections';
+import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Mode-sandbox conflict detection
@@ -462,9 +463,18 @@ export const AcpSessionControls = memo(function AcpSessionControls({
   // which have dedicated pickers (mode picker above, model picker elsewhere).
   const capabilities = connection.acpCapabilities;
   const availableModes = capabilities?.availableModes ?? [];
-  const configOptions = (capabilities?.configOptions ?? []).filter(
-    opt => opt.category !== 'model' && opt.category !== 'mode'
-  );
+  // For the Local Agent preset (Goose), the provider + model are fixed by the
+  // env config we generate in `local_agent.rs` (pointed at the bundled
+  // llama-server). Goose's own provider/model selector would let the user
+  // switch away from the bundled server and break the local-only setup — the
+  // model is changed through Notesage's Local AI settings instead — so we
+  // intentionally hide the agent-reported config-option pickers here. The mode
+  // picker stays gated by `showModePicker` (untouched).
+  const configOptions = isLocalAgentPreset(connection)
+    ? []
+    : (capabilities?.configOptions ?? []).filter(
+        opt => opt.category !== 'model' && opt.category !== 'mode'
+      );
 
   // Build a lookup of live current values from sessionInfo — used by each
   // config picker to highlight the currently-selected entry. Falls back to the

@@ -165,6 +165,27 @@ describe('AcpSessionControls — capability source of truth', () => {
     expect(screen.queryByRole('button', { name: /gpt-5/i })).toBeNull();
   });
 
+  it('suppresses agent-reported config-option pickers for the local-agent (Goose) preset', () => {
+    // The Local Agent preset's provider + model are fixed by the env config in
+    // local_agent.rs (bundled llama-server) — exposing Goose's provider/model
+    // dropdown would let the user break the local-only setup. The mode picker
+    // (gated by showModePicker) is unaffected.
+    const conn = makeConnection({
+      provider: 'custom_acp',
+      config: { localAgentPreset: 'goose' },
+      acpCapabilities: {
+        availableModes: CODEX_CAPS.availableModes,
+        configOptions: CODEX_CAPS.configOptions,
+      },
+    });
+    render(<AcpSessionControls showModePicker={true} connection={conn} />);
+
+    // Reasoning-effort (and any other agent-reported) config picker is hidden.
+    expect(screen.queryByRole('button', { name: /^m/i })).toBeNull();
+    // The mode picker still renders (Codex's modes map to common modes).
+    expect(screen.getByRole('button', { name: /read only/i })).toBeDefined();
+  });
+
   it('respects showModePicker=false even when modes are available', () => {
     const conn = makeConnection({
       acpCapabilities: {

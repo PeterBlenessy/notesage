@@ -7,7 +7,8 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { renderWithProviders, screen } from '@/test/component-harness';
+import { renderWithProviders, screen, waitFor, act } from '@/test/component-harness';
+import { emitMockEvent } from '@/test/tauri-mock';
 import { LocalAgentSetupDialog } from '@/components/settings/LocalAgentSetupDialog';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { LocalModelInfo } from '@/lib/tauri';
@@ -69,6 +70,34 @@ describe('LocalAgentSetupDialog', () => {
     useLocalAIStore.getState().setLocalAgentSetup({ stage: 'ready', modelId: 'qwen2.5-coder-7b' });
     renderWithProviders(<LocalAgentSetupDialog />);
     expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
+  });
+
+  it('shows a progress bar for the Goose binary download during the downloading stage', async () => {
+    open();
+    useLocalAIStore.getState().setLocalAgentSetup({ stage: 'downloading', modelId: 'qwen2.5-coder-7b' });
+    renderWithProviders(<LocalAgentSetupDialog />);
+    // No model download is registered, so the bar only appears once the agent
+    // download progress arrives over `agent-install-progress`.
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    act(() => {
+      emitMockEvent('agent-install-progress', {
+        agent_id: 'goose', phase: 'downloading', progress: 40, total: 100, message: '',
+      });
+    });
+    await waitFor(() => expect(screen.getByRole('progressbar')).toBeTruthy());
+  });
+
+  it('ignores agent-install-progress for other agents', async () => {
+    open();
+    useLocalAIStore.getState().setLocalAgentSetup({ stage: 'downloading', modelId: 'qwen2.5-coder-7b' });
+    renderWithProviders(<LocalAgentSetupDialog />);
+    act(() => {
+      emitMockEvent('agent-install-progress', {
+        agent_id: 'gemini', phase: 'downloading', progress: 40, total: 100, message: '',
+      });
+    });
+    // A non-goose agent must not drive the bar.
+    await waitFor(() => expect(screen.queryByRole('progressbar')).toBeNull());
   });
 
   it('warns when the machine has under 8GB of memory', () => {
