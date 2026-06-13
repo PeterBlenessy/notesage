@@ -9,6 +9,8 @@ import {
   useSettingsStore,
   selectEffectiveTelemetryCrash,
 } from "@/stores/settings-store";
+import { useLocalAIStore } from "@/stores/local-ai-store";
+import { useConnectionsStore } from "@/stores/connections-store";
 
 // Suppress React 19 flushSync warning from Tiptap's ReactNodeViewRenderer.
 // Tiptap creates React-based NodeViews (chart, drawing, link preview) via flushSync
@@ -32,6 +34,8 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__E2E_WORKSPACE_STORE__ = useWorkspaceStore;
   (window as unknown as Record<string, unknown>).__E2E_EDITOR_STORE__ = useEditorStore;
   (window as unknown as Record<string, unknown>).__E2E_SETTINGS_STORE__ = useSettingsStore;
+  (window as unknown as Record<string, unknown>).__E2E_LOCAL_AI_STORE__ = useLocalAIStore;
+  (window as unknown as Record<string, unknown>).__E2E_CONNECTIONS_STORE__ = useConnectionsStore;
 }
 
 // Global crash capture for uncaught frontend errors and unhandled promise

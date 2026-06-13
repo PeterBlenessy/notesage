@@ -12,6 +12,27 @@ import type { LocalModelInfo } from '@/lib/tauri';
 /** Fraction of total RAM we let a model's working set occupy. */
 const RAM_BUDGET_FRACTION = 0.7;
 
+/**
+ * Minimum context window (tokens) the bundled server must run with for the
+ * Local Agent preset. OpenCode's agentic system prompt alone is ~7.3K tokens —
+ * at the store's chat default of 4096 the very first agentic turn fails with
+ * "request exceeds the available context size", so the smoke test (and all
+ * agentic chat) is dead on arrival. 16384 clears the system prompt with
+ * headroom for tool definitions and a few turns. Confirmed empirically: 4096
+ * fails, 16384 completes a turn.
+ */
+export const LOCAL_AGENT_MIN_CONTEXT = 16384;
+
+/**
+ * Resolve the context window to start the Local Agent's bundled server with.
+ * Floors the user's chat-oriented `contextLength` at `LOCAL_AGENT_MIN_CONTEXT`
+ * so agentic turns never overflow, while still honouring a larger user setting.
+ * Pure so the floor is unit-testable without the store.
+ */
+export function resolveLocalAgentContext(userContextLength: number): number {
+  return Math.max(userContextLength, LOCAL_AGENT_MIN_CONTEXT);
+}
+
 export function recommendToolCallingModel(
   models: LocalModelInfo[],
   totalRamBytes: number | null,

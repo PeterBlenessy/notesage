@@ -16,7 +16,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { getChatSandboxScope } from '@/lib/ai/acp-utils';
 import { runLocalAgentSetup, type LocalAgentSetupResult } from '@/lib/ai/local-agent-setup';
-import { recommendToolCallingModel } from '@/lib/ai/local-agent-model';
+import { recommendToolCallingModel, resolveLocalAgentContext } from '@/lib/ai/local-agent-model';
 import { log } from '@/lib/logger';
 
 const OPENCODE_AGENT_ID = 'opencode';
@@ -94,7 +94,13 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
 
       ensureServerRunning: async (modelId) => {
         const { contextLength, gpuLayers } = useLocalAIStore.getState();
-        const port = await tauriApi.startLocalServer(modelId, contextLength, gpuLayers);
+        // Agentic chat needs a much larger window than the chat default (4096):
+        // OpenCode's system prompt alone is ~7.3K tokens, so the server must
+        // start with at least LOCAL_AGENT_MIN_CONTEXT or every agentic turn
+        // overflows. startLocalServer stops + restarts, so this takes effect
+        // even if a smaller-context chat server was already running.
+        const agentContext = resolveLocalAgentContext(contextLength);
+        const port = await tauriApi.startLocalServer(modelId, agentContext, gpuLayers);
         useLocalAIStore.setState({ serverStatus: 'running', serverPort: port, serverError: null });
         useLocalAIStore.getState().setActiveModel(modelId);
       },
