@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | A background AI quietly sharpens your action items as you write, surfaced on demand — never interrupting the flow. |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [ambient-action-refinement-tasks](../tasks/2026-06-13-ambient-action-refinement-tasks.md) |
 | **Phase** | Productivity Features |
 
 > **Revision (2026-06-13):** the engine is no longer hard-pinned to `local_bundled`. It now **routes to whatever the user selected in the use-case mapping** (agent-agnostic — any direct-API local connection or an ACP agent backed by a local model server). Locality is the user's responsibility, **not** enforced by Notesage. This supersedes the original "local-only, hard rule" framing throughout. The privacy default is still *expected* to be a local connection, but it is a default, not a guarantee.
