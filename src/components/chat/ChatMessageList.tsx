@@ -398,7 +398,7 @@ function LocalAgentSetupPrompt() {
       onClick={() => openSetup(true)}
       className="mt-3 h-auto gap-1 p-0 text-xs font-medium text-[var(--color-accent-primary)]"
     >
-      Set up private, offline AI
+      Set up a private, on-device agent
       <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
     </Button>
   );

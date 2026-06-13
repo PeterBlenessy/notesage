@@ -23,7 +23,8 @@ import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig, ReasoningEffort } from '@/lib/ai/connections';
 import { DEFAULT_MODELS } from '@/lib/ai/connections';
-import { getAgentModeDisplay } from '@/lib/ai/acp-agent-state';
+import { getAgentModeDisplay, isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
+import { GooseAttribution } from './GooseAttribution';
 import { ModelSelectionForm, MAX_TOKEN_PRESETS, nearestPresetIndex } from './connection/ModelSelectionForm';
 import { ApiKeyForm } from './connection/ApiKeyForm';
 import { AdvancedSettingsForm } from './connection/AdvancedSettingsForm';
@@ -292,6 +293,11 @@ export function ConnectionConfigDialog({
         </DialogHeader>
 
         <div className="space-y-5 px-7 py-5 max-h-[70vh] overflow-y-auto">
+
+          {/* ── Local Agent attribution ── */}
+          {isLocalAgentPreset(connection) && (
+            <GooseAttribution className="rounded-md border border-border bg-muted/40 px-3 py-2" />
+          )}
 
           {/* ── Model Section ── */}
           <ModelSelectionForm

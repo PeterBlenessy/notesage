@@ -21,6 +21,7 @@ import {
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useLocalAgentSetup } from '@/hooks/useLocalAgentSetup';
 import { recommendToolCallingModel } from '@/lib/ai/local-agent-model';
+import { GooseAttribution } from './GooseAttribution';
 import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 
@@ -150,10 +151,10 @@ export function LocalAgentSetupDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-[var(--color-accent-primary)]" strokeWidth={1.5} />
-            Set up private, offline AI
+            Set up a private, on-device agent
           </DialogTitle>
           <DialogDescription>
-            Runs an agent entirely on your Mac against the bundled model — no API keys, no network.
+            Runs an agent on your Mac against the bundled local model — no API keys, no cloud account.
           </DialogDescription>
         </DialogHeader>
 
@@ -217,9 +218,7 @@ export function LocalAgentSetupDialog() {
           </p>
         )}
 
-        <p className="text-xs text-muted-foreground">
-          Local agent powered by Goose, an open-source agent by Block.
-        </p>
+        <GooseAttribution />
 
         <DialogFooter>
           {isReady ? (

@@ -320,8 +320,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                     <span className="text-sm font-medium block truncate">Local Agent</span>
                     <span className="text-xs text-muted-foreground block truncate">
                       {localAgentReady
-                        ? 'Private offline agent — set up'
-                        : 'Private, offline AI — no keys, no network'}
+                        ? 'Private on-device agent — set up'
+                        : 'Private AI — the model runs on your device, no API keys'}
                     </span>
                     <span className="text-[0.6875rem] text-muted-foreground block truncate">
                       Powered by Goose, an open-source agent by Block

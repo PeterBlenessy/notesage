@@ -40,7 +40,7 @@ describe('LocalAgentSetupDialog', () => {
   it('idle: shows the model picker, the stage checklist, and a Set up button', () => {
     open();
     renderWithProviders(<LocalAgentSetupDialog />);
-    expect(screen.getByText('Set up private, offline AI')).toBeTruthy();
+    expect(screen.getByText('Set up a private, on-device agent')).toBeTruthy();
     expect(screen.getByText('Check hardware')).toBeTruthy();
     expect(screen.getByText('Verify it responds')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Set up' })).toBeTruthy();
