@@ -690,13 +690,14 @@ function ConfigureForm({
                 onClick={onToggleShow}
                 tabIndex={-1}
               >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
               </Button>
             )}
           </div>
           <Button onClick={onSave} size="sm" disabled={!canSave}>
             <Check
-              className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`}
+              className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-[var(--color-accent-primary)]' : ''}`}
+              strokeWidth={1.5}
             />
             Save
           </Button>

@@ -392,13 +392,14 @@ function LocalAgentSetupPrompt() {
   const openSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
   if (hasConnections) return null;
   return (
-    <button
-      type="button"
+    <Button
+      variant="link"
+      size="sm"
       onClick={() => openSetup(true)}
-      className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-accent-primary)] hover:underline"
+      className="mt-3 h-auto gap-1 p-0 text-xs font-medium text-[var(--color-accent-primary)]"
     >
       Set up private, offline AI
       <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
-    </button>
+    </Button>
   );
 }

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | M1–M2 complete; M3 #15–#20 complete; #21 component tests done (Playwright E2E + /review-ui pending GUI); #22 docs done; #23 gates: typecheck/unit/cargo-check/capability-lock green, perf advisory (container timing), Playwright/cargo test on CI |
+| **Status** | M1–M3 complete (#1–#21); #22 docs done; #23 gates green on macOS (typecheck, 5523 unit, e2e happy-path, cargo test incl. real-Seatbelt ignored tests, capability lock, coverage). OpenCode install switched GitHub-binary → npm (all five agents unified). **Remaining: live macOS WebDriver run** (real install + model + agentic turn under Seatbelt). |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -63,6 +63,7 @@
 
 **Description:** Add OpenCode to `agent_manager.rs`: GitHub repo, darwin-arm64/x64 asset patterns (zip), version probe, install → `~/.notesage/bin/`, update/uninstall, quarantine handling, progress events — all via the existing machinery. Pin a minimum supported version.
 **Complexity:** M **Category:** backend **Dependencies:** — **Files:** `src-tauri/src/commands/agent_manager.rs`
+**Update (2026-06-13):** install mechanism changed from the GitHub-release binary to **npm** (`opencode-ai`) so all five agents share one `do_npm_install` path (user request). The single-use GitHub-binary subsystem was deleted; the 1.17.4 floor is kept as a `min_version` post-install guard on `NpmAgentConfig`. Binary still resolves at `~/.notesage/agents/bin/opencode`.
 
 ### #8 — `local_agent_write_config` command ✅
 
@@ -131,10 +132,11 @@
 **Description:** Provider pill gains an "Offline" badge variant when the active connection is the preset (empty allowlist enforced); a one-line muted notice with a "Fix" action (reopens #17 at the failed stage) renders in the context row when routing degraded to Path 4. No toast storms.
 **Complexity:** M **Category:** frontend **Dependencies:** #13, #17 **Files:** `src/components/cmd/CommandBarContext.tsx`
 
-### #21 — M3 test pass
+### #21 — M3 test pass ✅
 
 **Description:** Component tests for #17–#20 states (loading/error/ready/degraded, both themes); Playwright E2E happy path with mocked IPC (choose preset → downloads complete → ready → send a message). Run `/review-ui` on the new surfaces.
 **Complexity:** M **Category:** frontend **Dependencies:** #17, #18, #19, #20 **Files:** `src/components/**/__tests__/`, `e2e/tests/`
+**Done (2026-06-13):** component tests already present (`LocalAgentSetupDialog.test.tsx`, 16 pass); added Playwright happy-path `e2e/tests/settings/local-agent-setup.spec.ts` (Add → Local Agent → Set up → ready, asserts the IPC sequence; passes chromium + webkit). `/review-ui` (design-reviewer) run on the four new surfaces — code-level fixes applied: empty-state → shadcn `Button variant=link` (focus ring), `text-green-500` save flash → `--color-accent-primary`, `Eye/EyeOff` `strokeWidth=1.5`. The light/dark/soft-contrast **visual** pass folds into the live WebDriver run.
 
 ## Docs & gates
 
@@ -143,7 +145,8 @@
 **Description:** `docs/features/ai-providers.md` (custom ACP agent connections; Local Agent preset as a fifth flavor of Path 2; MCP pass-through reality), `docs/architecture.md` (store table: `LocalAgentSetupState`; command inventory: new commands; isolation table: MCP-via-agent sandbox inheritance), `docs/product-description.md` roadmap entry. Use the "command bar header" terminology (not "chat footer").
 **Complexity:** M **Category:** — **Dependencies:** #14, #21 **Files:** `docs/features/ai-providers.md`, `docs/architecture.md`, `docs/product-description.md`
 
-### #23 — Quality gates sweep
+### #23 — Quality gates sweep ✅
 
 **Description:** Full PRD quality-gates checklist: `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `cargo check` (stubs) locally + `cargo test` in CI, `pnpm test:perf` within budget (startup untouched — setup work is lazy), `pnpm coverage:check`, `tauri-capability-surface.test.ts` unchanged, sandbox regression-lock test green. Record any perf deltas per CLAUDE.md performance-tracking rules.
 **Complexity:** S **Category:** both **Dependencies:** #22 **Files:** —
+**Done (2026-06-13, on macOS):** `pnpm typecheck` clean; `pnpm test` 5523 pass / 0 fail (324 files); `pnpm test:e2e` Local Agent happy-path green (chromium + webkit); `cargo test --lib` 843 pass + `cargo test --test sandbox_isolation -- --ignored` (real Seatbelt: `leak_6c`, `leak_6d`, `sandbox_sentinel`) 3 pass; `tauri-capability-surface.test.ts` green (part of the 5523); `pnpm coverage:check` 0 regressions (70.22%). `pnpm test:perf` — the `orb.perf` benchmark flaked once under full-run contention but passes 5/5 in isolation; pre-existing/unrelated to this feature, and the frontend perf step is advisory on CI. Feature is lazy/off all hot paths → no perf delta, no baseline entry recorded (contended numbers would pollute history). **Remaining: live macOS run** (real OpenCode install + model + agentic turn under Seatbelt) via WebDriver.
