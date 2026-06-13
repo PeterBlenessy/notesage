@@ -17,6 +17,11 @@ pub struct NetworkSandboxConfig {
     pub proxy_addr: String,
     /// Proxy port (for Seatbelt localhost allow rule)
     pub proxy_port: u16,
+    /// Extra localhost ports the agent may reach DIRECTLY (bypassing the proxy).
+    /// Used for local loopback services that need no domain filtering — e.g. the
+    /// bundled llama-server port for the Local Agent (OpenCode) preset. Empty for
+    /// ordinary agents, so kernel network deny still confines them to the proxy.
+    pub extra_localhost_ports: Vec<u16>,
 }
 
 /// A running proxy instance for a single agent
@@ -176,6 +181,8 @@ impl NetworkProxyState {
         Ok(NetworkSandboxConfig {
             proxy_addr: addr.to_string(),
             proxy_port: addr.port(),
+            // Caller (acp_agent_spawn) populates this for preset connections.
+            extra_localhost_ports: Vec::new(),
         })
     }
 

@@ -91,6 +91,25 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
         "gemini" => {
             entries.push(SandboxEntry::Subpath(".gemini"));
         }
+        // OpenCode (`opencode acp`) — the Local Agent preset binary.
+        //
+        // The preset redirects OpenCode's XDG dirs into the Notesage-owned
+        // ~/.notesage/agents/opencode tree (already covered by the `.notesage`
+        // grant above), so in the happy path no extra row is needed. These
+        // conventional dirs are a fallback for the case where OpenCode ignores
+        // the XDG redirect on macOS.
+        //
+        // VERIFY ON MACOS: confirm via sandbox violation monitoring whether
+        // OpenCode actually uses XDG (`~/.config/opencode`, `~/.cache/opencode`,
+        // `~/.local/share/opencode`) or macOS-native
+        // (`~/Library/Application Support/opencode`). Narrow this arm to the
+        // dirs it actually touches once observed — do not broaden to all of
+        // `~/.config`.
+        "opencode" => {
+            entries.push(SandboxEntry::Subpath(".config/opencode"));
+            entries.push(SandboxEntry::Subpath(".cache/opencode"));
+            entries.push(SandboxEntry::Subpath(".local/share/opencode"));
+        }
         // Unknown / custom agent binaries get only `.notesage` — defense in
         // depth: no cross-agent config leakage by default.
         _ => {}
@@ -253,13 +272,22 @@ pub fn generate_seatbelt_profile(
     //   (allow network*) permits all network. Proxy env vars are the only enforcement.
     let network_block = if kernel_network_deny {
         if let Some(nc) = network_config {
+            // Extra direct-localhost allows (e.g. the bundled llama-server port
+            // for the OpenCode preset). Each is a loopback service the agent
+            // reaches without the proxy; ordinary agents have none, so the
+            // confinement to {proxy port} is unchanged for them.
+            let extra_port_allows: String = nc
+                .extra_localhost_ports
+                .iter()
+                .map(|p| format!("\n(allow network-outbound (remote ip \"localhost:{}\"))", p))
+                .collect();
             format!(
                 r#";; Network: kernel-enforced deny (deny default blocks all network)
-;; Only the proxy port on localhost is reachable from within the sandbox.
+;; Only the proxy port (+ any explicit extra localhost ports) is reachable.
 ;; DNS is blocked — resolution happens through the proxy outside the sandbox.
 
 ;; Allow connecting to the proxy port
-(allow network-outbound (remote ip "localhost:{port}"))
+(allow network-outbound (remote ip "localhost:{port}")){extra_port_allows}
 
 ;; Allow localhost bind + inbound for agent subprocess IPC
 ;; Uses "*:*" for IPv6 dual-stack compat (::ffff:127.0.0.1 vs 127.0.0.1)
@@ -583,6 +611,97 @@ mod tests {
             NetworkSandboxConfig {
                 proxy_addr: format!("127.0.0.1:{}", port),
                 proxy_port: port,
+                extra_localhost_ports: Vec::new(),
+            }
+        }
+
+        fn make_network_config_with_extra(port: u16, extra: Vec<u16>) -> NetworkSandboxConfig {
+            NetworkSandboxConfig {
+                proxy_addr: format!("127.0.0.1:{}", port),
+                proxy_port: port,
+                extra_localhost_ports: extra,
+            }
+        }
+
+        /// Count of `(allow network-outbound (remote ip "localhost:N"))` lines.
+        fn localhost_allow_count(content: &str) -> usize {
+            content
+                .matches(r#"(allow network-outbound (remote ip "localhost:"#)
+                .count()
+        }
+
+        // Task #9 regression lock: the Local Agent preset profile must allow
+        // EXACTLY {proxy port, llama-server port} on localhost — no more.
+        #[test]
+        fn preset_profile_allows_exactly_proxy_and_llama_ports() {
+            let id = "test-preset-ports";
+            let nc = make_network_config_with_extra(12345, vec![8137]);
+            let result =
+                generate_seatbelt_profile(id, "opencode", &[], Some(&nc), true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains(r#"(allow network-outbound (remote ip "localhost:12345"))"#),
+                "preset profile must allow the proxy port:\n{}",
+                content
+            );
+            assert!(
+                content.contains(r#"(allow network-outbound (remote ip "localhost:8137"))"#),
+                "preset profile must allow the llama-server port:\n{}",
+                content
+            );
+            assert_eq!(
+                localhost_allow_count(&content),
+                2,
+                "preset profile must allow EXACTLY 2 localhost ports (proxy + llama), got:\n{}",
+                content
+            );
+        }
+
+        // An ordinary agent (no extra ports) stays confined to the proxy port only.
+        #[test]
+        fn ordinary_agent_allows_only_proxy_port() {
+            let id = "test-ordinary-ports";
+            let nc = make_network_config(12345);
+            let result =
+                generate_seatbelt_profile(id, "claude-agent-acp", &[], Some(&nc), true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert_eq!(
+                localhost_allow_count(&content),
+                1,
+                "ordinary agent must allow EXACTLY the proxy port on localhost, got:\n{}",
+                content
+            );
+        }
+
+        // OpenCode's Bucket C row: its own config/cache dirs re-allowed, sibling
+        // agent dirs still denied.
+        #[test]
+        fn opencode_bucket_c_grants_own_dirs_only() {
+            let id = "test-opencode-bucket-c";
+            let result = generate_seatbelt_profile(id, "opencode", &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains(&home_subpath_needle(".config/opencode")),
+                "OpenCode profile must re-allow ~/.config/opencode — got:\n{}",
+                content
+            );
+            // Sibling agent config dirs stay denied.
+            for sibling in [".claude", ".codex", ".gemini", ".copilot"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "OpenCode profile must NOT re-allow sibling {} — got:\n{}",
+                    sibling,
+                    content
+                );
             }
         }
 

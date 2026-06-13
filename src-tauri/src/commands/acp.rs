@@ -237,6 +237,9 @@ struct AgentHandle {
     network_sandbox_enabled: bool,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: bool,
+    /// Extra direct-localhost ports (e.g. llama-server for the OpenCode preset).
+    /// Stored so a reconnect re-applies the same network confinement.
+    extra_localhost_ports: Vec<u16>,
     /// Whether the agent supports image content (from promptCapabilities)
     supports_images: bool,
 }
@@ -1188,6 +1191,7 @@ pub async fn acp_agent_spawn(
     kernel_network_deny: Option<bool>,
     connection_id: Option<String>,
     env_var_keys: Option<Vec<String>>,
+    extra_localhost_ports: Option<Vec<u16>>,
 ) -> Result<SpawnResult, String> {
     let mut env = env_vars.unwrap_or_default();
     // Resolve env-var secrets from the OS keychain (`notesage:<conn_id>:env:<KEY>`).
@@ -1256,7 +1260,13 @@ pub async fn acp_agent_spawn(
             .start_proxy(&instance_id, &agent_binary, domains, app.clone())
             .await
         {
-            Ok(config) => {
+            Ok(mut config) => {
+                // Direct-localhost allows (e.g. the bundled llama-server port
+                // for the OpenCode preset) — reachable without the proxy under
+                // kernel network deny. Empty for ordinary agents.
+                if let Some(ports) = extra_localhost_ports.clone() {
+                    config.extra_localhost_ports = ports;
+                }
                 // Inject proxy env vars into the agent's environment
                 let proxy_url = format!("http://{}", config.proxy_addr);
                 env.insert("HTTP_PROXY".to_string(), proxy_url.clone());
@@ -1338,6 +1348,7 @@ pub async fn acp_agent_spawn(
             None
         },
         kernel_network_deny: knd,
+        extra_localhost_ports: extra_localhost_ports.unwrap_or_default(),
         supports_images: init_info.supports_images,
     };
 
@@ -1517,6 +1528,8 @@ pub async fn acp_agent_reconnect(
         // original spawn — no connection_id/env_var_keys re-resolution needed.
         None,
         None,
+        // Preserve the same direct-localhost confinement (llama-server port) on reconnect.
+        Some(old_handle.extra_localhost_ports),
     ).await?;
 
     // 5. Re-authenticate (best-effort, same as initial spawn)
