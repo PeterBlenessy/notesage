@@ -40,9 +40,12 @@ interface AIProvider {
 - **EnvVar auth flow**: Agents advertising `AuthMethod::EnvVar` drive a generic credential form — required variable names, labels, and the "get credentials" link all come from the agent. Submitted values are written per-var to the OS keychain (`notesage:<connectionId>:env:<KEY>`) by `connections-store`; the persist partialize strips the values so only the var **names** (`credentials.envVarKeys`) reach localStorage. At spawn time `acp_agent_spawn` resolves the values from the keychain by `connection_id` + key name — keychain values are authoritative over the in-memory IPC fallback (same precedence as `resolve_api_key`). Legacy plaintext `envVars` persisted by older builds migrate to the keychain on rehydrate. This replaces the Gemini-specific API-key panel; new EnvVar-auth agents (including custom ACP agents) work without per-provider UI code.
 - Agent subprocess stderr is logged at info level for auth debugging
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
-- Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
+- Four built-in agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
+- **Custom ACP agents (`custom_acp` connections):** any ACP-compatible binary works. The connection stores `config.binaryPath` (absolute, validated verbatim by `acp_binary.rs`) + `config.binaryArgs`; registration runs the same probe (spawn → initialize → session → stop) and blocks on failure with the agent's stderr tail. Custom binaries match no `PROVIDER_OPTIONS` entry, so they default to **maximal confinement** — empty network allowlist, kernel deny on, no Bucket C `$HOME` grants.
+- **Local Agent preset (OpenCode, `localAgentPreset: 'opencode'`):** a managed `custom_acp` connection that wires the bundled OpenCode binary to the local llama-server for fully-offline agentic chat — Path 2 over the same bundled model that Path 4 uses directly. `local_agent_write_config` (Rust `local_agent.rs`) regenerates OpenCode's provider config against the **live** server port + active model into a Notesage-owned, XDG-isolated config tree (the user's own OpenCode setup is untouched). `ensureAcpAgent` keys the agent respawn on `<port>:<modelId>` (mirroring `sandboxScopeKey`), injects the isolation env, and allows the llama-server port through the kernel network sandbox alongside the proxy. Set up via the staged `useLocalAgentSetup` flow (detect → download → configure → smoke-test); if the agent is unhealthy the interactive slot falls back to Path 4 (direct local chat) and shows an "Offline / Fix" notice — chat never dead-ends.
 - Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
 - Session resilience: 5-minute unresponsive timer checks if agent is alive (not auto-kill). `AgentStatusBanner` shows Wait/Retry/Cancel options. `acp-agent-exited` event for instant crash detection. Retry uses `acp_agent_reconnect` + `session/load` for context restoration, continues in same branch (no dead branches). `agent-status-store` for banner state.
+- **MCP pass-through:** the user's enabled, project-scope-matching MCP servers are attached to every ACP session at `session/new` (and re-sent on `session/load`), gated on the agent's advertised `McpCapabilities` (`mcp.stdio` / `mcp.http`). The frontend assembles them via `buildAcpMcpServerInputs` (from `mcp-store.getActiveServers`); the backend (`build_acp_mcp_servers` in `acp.rs`) resolves stdio env secrets from the keychain (`mcp::resolve_env`) and attaches OAuth bearer tokens for http servers — secrets never transit IPC in plaintext beyond the existing spawn path. Applies to all ACP agents, not just the Local Agent preset. (Crash-recovery reconnect currently reloads with no MCP — documented follow-up.)
 - Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always)
 - Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
 - Thinking effort slider for Codex ACP: Default / Low / Medium / High / Extra High (hidden for free accounts)
@@ -391,7 +394,8 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | --- | --- |
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
 | `src-tauri/src/commands/credentials.rs` | OS keychain credential storage (store, get, delete, migrate) |
-| `src-tauri/src/commands/acp.rs` | ACP agent management |
+| `src-tauri/src/commands/acp.rs` | ACP agent management; MCP pass-through (`build_acp_mcp_servers`), `acp_agent_smoke_test` |
+| `src-tauri/src/commands/local_agent.rs` | Local Agent preset: `local_agent_write_config` (OpenCode config against the live llama-server, isolated XDG tree) |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |
 | `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny + $HOME read allow-list) |
@@ -402,7 +406,13 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src-tauri/src/commands/gguf_parser.rs` | GGUF binary header parser |
 | `src-tauri/model-catalog.json` | Curated LLM model catalog |
 | `src/lib/ai/` | Provider abstraction (types, connections, providers) |
-| `src/hooks/useAIOperations.ts` | AI generation, chat, and ACP routing |
+| `src/hooks/useAIOperations.ts` | AI generation, chat, and ACP routing; Local Agent degraded → Path-4 fallback |
+| `src/hooks/useLocalAgentSetup.ts` | Local Agent staged setup orchestrator (detect → download → configure → smoke-test) |
+| `src/lib/ai/local-agent-setup.ts` | Pure staged setup driver (`runLocalAgentSetup`) |
+| `src/lib/ai/local-agent-routing.ts` | Degraded-preset → local_bundled fallback resolution |
+| `src/lib/ai/local-agent-model.ts` | Tool-calling model recommendation (RAM-fit) |
+| `src/lib/ai/acp-mcp.ts` | `buildAcpMcpServerInputs` — capability-gated, scope-matched MCP servers for a session |
+| `src/components/settings/LocalAgentSetupDialog.tsx` | Staged setup dialog (model picker, progress, retry) |
 | `src/hooks/useCopilotCompletion.ts` | Copilot LSP lifecycle (inline completions) |
 | `src/hooks/useCopilotChat.ts` | Copilot LSP chat via conversation/* JSON-RPC |
 | `src/hooks/useLocalAI.ts` | Local AI server lifecycle |

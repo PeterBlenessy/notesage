@@ -97,6 +97,17 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Phase 3 (Classic Layout deletion) — issue #325, PRD `docs/prds/2026-05-22-classic-layout-removal.md`. Removed `Layout.tsx`, `TabBar`, `ChatPanel`, `ChatFooter`, `ActivityStrip`, `CommandPalette`, `NewNoteDialog`, `NewProjectDialog`, `KeyboardShortcutsDialog`, `PreviewInvitation`, `RevertInvitation`, and the legacy `SettingsDialog`. Quiet Composer is the only shell.
 - PRD: `docs/prds/2026-04-21-ui-refresh.md`
 
+### Local AI Agents — Offline Agentic Chat for Local Models (In progress)
+
+**Goal:** Bring agentic chat (tool calls, MCP, multi-step) to fully-offline local models — no API keys, no network.
+
+- Custom ACP agent connections (`custom_acp`): bring any ACP-compatible binary; probe-on-add, maximal-confinement sandbox defaults
+- Local Agent preset: bundled OpenCode binary wired to the local llama-server (Path 2 over the bundled model), with isolated config generation, endpoint-change respawn, and the llama port allowed through the kernel network sandbox
+- MCP pass-through: the user's enabled, scope-matching MCP servers are attached to every ACP session (capability-gated; keychain secrets resolved backend-side)
+- Bounded smoke test gating setup; routing falls back to direct local chat (Path 4) when the agent is unhealthy so chat never dead-ends
+- Staged setup flow (detect → download → configure → verify) with a setup dialog, command-bar empty-state + Add-Connection entry points, and an Offline / degraded-Fix notice
+- PRD: `docs/prds/2026-06-12-local-ai-agents.md`
+
 ### Beyond — Ideas
 
 - **Workflows & Automation:** User-defined YAML workflows as skills

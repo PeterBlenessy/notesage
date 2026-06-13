@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | M1 complete; M2 complete (#7–#14); M3 #15–#20 complete, #21 (component tests done; Playwright E2E + /review-ui pending GUI); docs/gates #22–#23 next |
+| **Status** | M1–M2 complete; M3 #15–#20 complete; #21 component tests done (Playwright E2E + /review-ui pending GUI); #22 docs done; #23 gates: typecheck/unit/cargo-check/capability-lock green, perf advisory (container timing), Playwright/cargo test on CI |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -138,7 +138,7 @@
 
 ## Docs & gates
 
-### #22 — Documentation updates
+### #22 — Documentation updates ✅
 
 **Description:** `docs/features/ai-providers.md` (custom ACP agent connections; Local Agent preset as a fifth flavor of Path 2; MCP pass-through reality), `docs/architecture.md` (store table: `LocalAgentSetupState`; command inventory: new commands; isolation table: MCP-via-agent sandbox inheritance), `docs/product-description.md` roadmap entry. Use the "command bar header" terminology (not "chat footer").
 **Complexity:** M **Category:** — **Dependencies:** #14, #21 **Files:** `docs/features/ai-providers.md`, `docs/architecture.md`, `docs/product-description.md`

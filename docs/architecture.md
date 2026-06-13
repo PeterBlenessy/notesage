@@ -56,6 +56,7 @@ note-sage/
 │   │   │   ├── shell_path.rs # Shell PATH resolution
 │   │   │   ├── transcription.rs # Mic capture-to-WAV (single stream owner, awaited teardown), whole-file Whisper transcription (transcribe_file → segments), Whisper model management (no live dictation)
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
+│   │   │   ├── local_agent.rs # Local Agent preset: OpenCode config generation against the live llama-server (`local_agent_write_config`)
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
@@ -244,7 +245,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `activity-store` | Agent / transcription / recording task registry, discriminated by `kind` (`agent \| transcription \| recording`) | Full |
 | `recording-store` | Meeting-recording state, Whisper models + downloads, transcription model + recording language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |
-| `local-ai-store` | Local AI server state, models | Partial (`enabled`, `activeModelId`, etc.) |
+| `local-ai-store` | Local AI server state, models; Local Agent preset setup state machine (`localAgentSetup` — `idle→detecting→downloading→configuring→verifying→ready\|failed`), degraded flag (`localAgentDegraded`), dialog-open flag, `selectLocalAgentNotice` selector | Partial (`activeModelId`, `localAgentSetup.{stage,modelId}` — never the transient setup error, etc.) |
 | `action-store` | Actions dashboard (task/goal scanning, comments, agent tasks) | Partial (`actionCache`, `filter` only) |
 | `diff-review-store` | Git branch diff review with per-hunk accept/reject | None |
 | `editor-styles-store` | Editor font family, size, line height, paragraph spacing | Disk file (`editor-styles.json`) |
@@ -379,6 +380,7 @@ Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.
 | System-prompt "Currently editing" | `isUriInScope` on active tab path | `src/hooks/useAIContext.ts` |
 | System-prompt file tree | `isUriInScope` per entry + 200-file / 4-level cap | `src/lib/ai/context.ts`, `useAIContext.ts` |
 | Skills / agents / MCP injection | `{ global, byProject }` registries merged by `selectedProjectPaths` | `src/stores/skill-store.ts`, `mcp-store.ts`, `useSkillOperations.ts` |
+| MCP-via-agent (ACP `session/new`) | `getActiveServers(selectedProjectPaths)` + agent `McpCapabilities` gate; stdio env secrets + http OAuth resolved keychain-side at session build | `src/lib/ai/acp-mcp.ts`, `src-tauri/src/commands/acp.rs` (`build_acp_mcp_servers`) |
 | Approvals persistence | `ScopedApproval` triples with migration from legacy flat strings | `src/stores/permission-store.ts` |
 | `aiLock` enforcement | `ProjectLockViolation` at every send path | `src/lib/ai/project-lock.ts`, `useAIOperations.ts`, `useAgentTaskOperations.ts`, `CommandBarContext.tsx` |
 | Resend/edit provider mismatch | `ResendProviderDialog` on `ChatMessage.connectionId` mismatch | `src/components/cmd/FloatingCommandBar.tsx`, `ResendProviderDialog.tsx` |
