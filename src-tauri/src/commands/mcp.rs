@@ -93,7 +93,11 @@ where
 }
 
 /// Resolve env references against the real OS keychain.
-fn resolve_env(server_id: &str, env: &HashMap<String, McpEnvValue>) -> HashMap<String, String> {
+///
+/// `pub(crate)` so the ACP MCP pass-through (`acp.rs`, task #11) can resolve the
+/// same `mcp:<server_id>:<KEY>` keychain secrets when assembling `mcp_servers`
+/// for a `session/new` request — secrets are resolved here, never in the renderer.
+pub(crate) fn resolve_env(server_id: &str, env: &HashMap<String, McpEnvValue>) -> HashMap<String, String> {
     resolve_env_with(server_id, env, |conn_id| {
         super::credentials::get_credential_internal(conn_id)
             .ok()

@@ -131,6 +131,86 @@ pub struct AcpListResult {
     pub next_cursor: Option<String>,
 }
 
+/// One MCP server the frontend wants attached to an ACP session (`session/new` /
+/// `session/load`, task #11). The renderer assembles these from `mcp-store`
+/// (already filtered by enabled-state, project scope, and the agent's advertised
+/// `McpCapabilities`); the backend resolves env secrets from the keychain and
+/// converts to the ACP `McpServer` schema. Deliberately a minimal, dedicated IPC
+/// type rather than reusing `McpServerConfig` so the renderer never has to send
+/// the `source`/`enabled` bookkeeping fields — only what a spawn needs.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpMcpServerInput {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub transport: super::mcp::McpTransport,
+    /// Stdio transport: the executable. Empty/ignored for http servers.
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Env values — bare strings are plaintext, `{ "secret": true }` references
+    /// resolve from `notesage:mcp:<id>:<KEY>` in the keychain at build time.
+    #[serde(default)]
+    pub env: HashMap<String, super::mcp::McpEnvValue>,
+    /// Endpoint URL for `http` (remote) servers. `None` for stdio.
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+/// Convert the renderer's MCP server inputs into ACP `McpServer` configs,
+/// resolving env secrets (stdio) and OAuth bearer tokens (http) from the OS
+/// keychain. Servers that can't form a valid config (stdio without a command,
+/// http without a URL) are dropped rather than failing the whole session.
+async fn build_acp_mcp_servers(
+    inputs: Vec<AcpMcpServerInput>,
+) -> Vec<agent_client_protocol::schema::McpServer> {
+    use agent_client_protocol::schema::{
+        EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerStdio,
+    };
+    let mut out = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        match input.transport {
+            super::mcp::McpTransport::Stdio => {
+                if input.command.trim().is_empty() {
+                    log::warn!(target: "notesage::acp",
+                        "Skipping stdio MCP server '{}' for session: empty command", input.name);
+                    continue;
+                }
+                let env: Vec<EnvVariable> = super::mcp::resolve_env(&input.id, &input.env)
+                    .into_iter()
+                    .map(|(k, v)| EnvVariable::new(k, v))
+                    .collect();
+                out.push(McpServer::Stdio(
+                    McpServerStdio::new(input.name, PathBuf::from(input.command))
+                        .args(input.args)
+                        .env(env),
+                ));
+            }
+            super::mcp::McpTransport::Http => {
+                let Some(url) = input.url.filter(|u| !u.trim().is_empty()) else {
+                    log::warn!(target: "notesage::acp",
+                        "Skipping http MCP server '{}' for session: missing URL", input.name);
+                    continue;
+                };
+                // Attach a Bearer token if this server has been authorized via the
+                // MCP OAuth flow — the same token `HttpMcpClient` uses. Notesage
+                // owns the OAuth dance; the agent just gets a valid access token.
+                let headers: Vec<HttpHeader> =
+                    match super::mcp_oauth::valid_access_token(&input.id).await {
+                        Some(token) => vec![HttpHeader::new("Authorization", format!("Bearer {token}"))],
+                        None => Vec::new(),
+                    };
+                out.push(McpServer::Http(
+                    McpServerHttp::new(input.name, url).headers(headers),
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// Outcome of `acp_agent_smoke_test` — a bounded end-to-end verification that the
 /// Local Agent chain works (health → spawn → session → prompt → teardown).
 /// `stage` names the LAST stage attempted: on success it's `Done`, on failure
@@ -284,11 +364,18 @@ enum AgentCmd {
     },
     NewSession {
         working_directory: String,
+        /// MCP servers to attach to the new session (task #11). Built on the
+        /// command side (keychain secrets resolved) so the agent thread just
+        /// forwards them to the ACP `session/new` request.
+        mcp_servers: Vec<agent_client_protocol::schema::McpServer>,
         reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     LoadSession {
         session_id: String,
         working_directory: String,
+        /// MCP servers for the reloaded session. ACP treats this as the complete
+        /// list for the loaded session, so callers re-send the current set (#11).
+        mcp_servers: Vec<agent_client_protocol::schema::McpServer>,
         reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     Prompt {
@@ -851,9 +938,11 @@ fn run_agent_thread(
                 }
                 AgentCmd::NewSession {
                     working_directory: cwd,
+                    mcp_servers,
                     reply,
                 } => {
-                    let req = NewSessionRequest::new(PathBuf::from(cwd));
+                    let req =
+                        NewSessionRequest::new(PathBuf::from(cwd)).mcp_servers(mcp_servers);
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let (current_model, available_models) =
@@ -881,12 +970,14 @@ fn run_agent_thread(
                 AgentCmd::LoadSession {
                     session_id: sid,
                     working_directory: cwd,
+                    mcp_servers,
                     reply,
                 } => {
-                    let req = LoadSessionRequest::new(
+                    let mut req = LoadSessionRequest::new(
                         SessionId::new(sid.clone()),
                         PathBuf::from(cwd),
                     );
+                    req.mcp_servers = mcp_servers;
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
                             let (current_model, available_models) =
@@ -1574,12 +1665,17 @@ pub async fn acp_agent_reconnect(
         }
     }
 
-    // 6. Load the existing session
+    // 6. Load the existing session.
+    // MCP re-attachment on crash-recovery reconnect is a follow-up: reconnect
+    // doesn't carry the renderer's current MCP set, so we reload with none here.
+    // The normal restore path (`restoreOrCreateAcpSession`) re-sends the current
+    // servers; reconnect is the rarer crash-recovery edge (#11 known follow-up).
     let _session = acp_session_load(
         state,
         result.instance_id.clone(),
         session_id,
         working_dir,
+        None,
     ).await
     .map_err(|e| format!("Reconnect session/load failed: {}", e))?;
 
@@ -1728,7 +1824,7 @@ pub async fn acp_agent_smoke_test(
     // Stage 3 — session/new.
     let session = tokio::time::timeout(
         std::time::Duration::from_secs(SMOKE_SESSION_TIMEOUT_SECS),
-        acp_session_new(state.clone(), instance_id.clone(), working_directory.clone()),
+        acp_session_new(state.clone(), instance_id.clone(), working_directory.clone(), None),
     )
     .await;
     let session_id = match session {
@@ -1786,7 +1882,13 @@ pub async fn acp_session_new(
     state: State<'_, AcpState>,
     instance_id: String,
     working_directory: String,
+    // Enabled, scope-matching, capability-gated MCP servers from the renderer
+    // (task #11). `None` keeps the legacy no-MCP behavior for callers that don't
+    // pass it. Built here (keychain secrets resolved) before the agent thread.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
 ) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
     let cmd_tx = {
         let agents = state.agents.lock().await;
         let handle = agents
@@ -1800,6 +1902,7 @@ pub async fn acp_session_new(
     cmd_tx
         .send(AgentCmd::NewSession {
             working_directory,
+            mcp_servers,
             reply: reply_tx,
         })
         .await
@@ -1819,7 +1922,13 @@ pub async fn acp_session_load(
     instance_id: String,
     session_id: String,
     working_directory: String,
+    // MCP servers for the reloaded session (task #11). ACP treats this as the
+    // complete list for the loaded session, so the renderer re-sends the current
+    // set. `None` keeps the legacy no-MCP behavior.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
 ) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
     let cmd_tx = {
         let agents = state.agents.lock().await;
         let handle = agents
@@ -1834,6 +1943,7 @@ pub async fn acp_session_load(
         .send(AgentCmd::LoadSession {
             session_id,
             working_directory,
+            mcp_servers,
             reply: reply_tx,
         })
         .await
@@ -2155,7 +2265,105 @@ pub async fn acp_permission_respond(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_model_info, AuthEnvVar, AuthMethodInfo, SmokeStage, SmokeTestReport};
+    use super::{
+        build_acp_mcp_servers, extract_model_info, AcpMcpServerInput, AuthEnvVar, AuthMethodInfo,
+        SmokeStage, SmokeTestReport,
+    };
+    use super::super::mcp::{McpEnvValue, McpTransport};
+    use agent_client_protocol::schema::McpServer;
+    use std::collections::HashMap;
+
+    fn stdio_input(name: &str, command: &str) -> AcpMcpServerInput {
+        AcpMcpServerInput {
+            id: format!("srv-{name}"),
+            name: name.to_string(),
+            transport: McpTransport::Stdio,
+            command: command.to_string(),
+            args: vec!["--flag".to_string()],
+            env: HashMap::new(),
+            url: None,
+        }
+    }
+
+    /// A stdio server with a command + plain env builds an `McpServer::Stdio`
+    /// carrying the resolved env and args (task #11). Plain values pass through;
+    /// secret refs that miss the keychain are simply dropped.
+    #[tokio::test]
+    async fn build_mcp_servers_stdio_carries_env_and_args() {
+        let mut input = stdio_input("fs", "/usr/bin/mcp-fs");
+        input.env.insert("TOKEN".to_string(), McpEnvValue::Plain("abc".to_string()));
+        input
+            .env
+            .insert("MISSING".to_string(), McpEnvValue::Secret(super::super::mcp::McpSecretRef { secret: true }));
+
+        let built = build_acp_mcp_servers(vec![input]).await;
+        assert_eq!(built.len(), 1);
+        match &built[0] {
+            McpServer::Stdio(s) => {
+                assert_eq!(s.name, "fs");
+                assert_eq!(s.command.to_string_lossy(), "/usr/bin/mcp-fs");
+                assert_eq!(s.args, vec!["--flag".to_string()]);
+                // Plain env present; the missing keychain secret was dropped.
+                let token = s.env.iter().find(|e| e.name == "TOKEN");
+                assert_eq!(token.map(|e| e.value.as_str()), Some("abc"));
+                assert!(s.env.iter().all(|e| e.name != "MISSING"));
+            }
+            _ => panic!("expected Stdio"),
+        }
+    }
+
+    /// A stdio server with an empty command is dropped rather than failing the
+    /// whole session.
+    #[tokio::test]
+    async fn build_mcp_servers_drops_stdio_without_command() {
+        let built = build_acp_mcp_servers(vec![stdio_input("broken", "   ")]).await;
+        assert!(built.is_empty());
+    }
+
+    /// An http server with a URL builds an `McpServer::Http`; one without a URL
+    /// is dropped.
+    #[tokio::test]
+    async fn build_mcp_servers_http_requires_url() {
+        let with_url = AcpMcpServerInput {
+            id: "srv-remote".to_string(),
+            name: "remote".to_string(),
+            transport: McpTransport::Http,
+            command: String::new(),
+            args: vec![],
+            env: HashMap::new(),
+            url: Some("https://mcp.example.com".to_string()),
+        };
+        let without_url = AcpMcpServerInput {
+            id: "srv-bad".to_string(),
+            name: "bad".to_string(),
+            transport: McpTransport::Http,
+            command: String::new(),
+            args: vec![],
+            env: HashMap::new(),
+            url: None,
+        };
+        let built = build_acp_mcp_servers(vec![with_url, without_url]).await;
+        assert_eq!(built.len(), 1);
+        match &built[0] {
+            McpServer::Http(h) => {
+                assert_eq!(h.name, "remote");
+                assert_eq!(h.url, "https://mcp.example.com");
+            }
+            _ => panic!("expected Http"),
+        }
+    }
+
+    /// `AcpMcpServerInput` deserializes from the renderer's camelCase payload,
+    /// defaulting transport to stdio and env to empty (absent-field back-compat).
+    #[test]
+    fn acp_mcp_server_input_deserializes_with_defaults() {
+        let json = serde_json::json!({ "id": "s1", "name": "S1", "command": "x" });
+        let input: AcpMcpServerInput = serde_json::from_value(json).unwrap();
+        assert_eq!(input.transport, McpTransport::Stdio);
+        assert!(input.env.is_empty());
+        assert!(input.args.is_empty());
+        assert!(input.url.is_none());
+    }
     use agent_client_protocol::schema::{
         ContentBlock, ContentChunk, MessageId, SessionConfigOption, SessionConfigOptionCategory,
         SessionConfigSelectOption, TextContent,

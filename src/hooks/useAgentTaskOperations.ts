@@ -15,6 +15,7 @@ import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability, formatResourceLinkAsMarkdown } from '@/lib/ai/acp-utils';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
+import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { resolveAgentLaunch } from '@/lib/ai/acp-agent-state';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { getProjectLock, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
@@ -310,11 +311,16 @@ async function startAcpTask(
     : undefined;
   const storedSessionId = activeConv?.acpSessionId;
 
+  // Scope MCP servers to the task's project (explicit projectRoot when set, else
+  // the chat selection) so a delegated task gets the same enabled, capability-
+  // gated servers the interactive chat would (task #11).
+  const mcpScopePaths = taskMeta?.projectRoot ? [taskMeta.projectRoot] : selectedProjectPaths;
   const session = await restoreOrCreateAcpSession({
     instanceId,
     cwd,
     storedSessionId,
     capabilities: taskAgent?.capabilities ?? null,
+    mcpServers: buildAcpMcpServerInputs(taskAgent?.capabilities ?? null, mcpScopePaths),
   });
 
   // Persist the (possibly new) session ID back onto the conversation so a subsequent

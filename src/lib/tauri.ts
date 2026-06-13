@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
+import type { AcpMcpServerInput } from './ai/acp-mcp';
 
 export interface FileEntry {
   name: string;
@@ -923,12 +924,32 @@ export const tauriApi = {
     });
   },
 
-  async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
+  async acpSessionNew(
+    instanceId: string,
+    workingDirectory: string,
+    /** MCP servers to attach to the session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_new", {
+      instanceId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
   },
 
-  async acpSessionLoad(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_load", { instanceId, sessionId, workingDirectory });
+  async acpSessionLoad(
+    instanceId: string,
+    sessionId: string,
+    workingDirectory: string,
+    /** MCP servers for the reloaded session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_load", {
+      instanceId,
+      sessionId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
   },
 
   async acpSessionClose(instanceId: string, sessionId: string): Promise<void> {

@@ -71,6 +71,17 @@ export interface AcpSessionCapabilities {
  * We accept snake_case aliases as a safety net for older/custom agents
  * that may not follow the spec exactly.
  */
+/**
+ * MCP transport sub-capabilities from ACP `AgentCapabilities.mcp`. The schema
+ * encodes each transport as `Option<Mcp*Capabilities>` — `null`/missing means
+ * the agent does NOT accept that transport; a present object (even `{}`) means
+ * it does. We don't read the nested fields, only presence.
+ */
+export interface AcpMcpCapabilities {
+  stdio?: unknown;
+  http?: unknown;
+}
+
 export interface AcpAgentCapabilities {
   loadSession?: boolean;
   /** @deprecated snake_case alias — prefer `loadSession`. */
@@ -79,7 +90,24 @@ export interface AcpAgentCapabilities {
   sessionCapabilities?: AcpSessionCapabilities;
   /** @deprecated snake_case alias — prefer `sessionCapabilities`. */
   session_capabilities?: AcpSessionCapabilities;
+  /** MCP transport support (`mcp.stdio` / `mcp.http`). */
+  mcp?: AcpMcpCapabilities;
   [key: string]: unknown;
+}
+
+/**
+ * Returns true when the agent advertises the given MCP transport. ACP sends each
+ * transport as a nullable object — any non-null value counts as supported. When
+ * the whole `mcp` field is absent (older/custom agents), this is `false`, so the
+ * caller sends no MCP servers rather than risking an unsupported `session/new`
+ * payload (absent-field back-compat).
+ */
+export function hasMcpCapability(
+  caps: AcpAgentCapabilities | null | undefined,
+  transport: 'stdio' | 'http',
+): boolean {
+  const value = caps?.mcp?.[transport];
+  return value !== undefined && value !== null;
 }
 
 /** True when the agent advertises `loadSession` (tolerant of snake_case). */

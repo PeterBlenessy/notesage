@@ -16,6 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
+import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
 import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
@@ -455,6 +456,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           cwd,
           storedSessionId,
           capabilities: acpAgent?.capabilities,
+          mcpServers: buildAcpMcpServerInputs(acpAgent?.capabilities, freshPaths),
         });
 
         if (!acpAgent) return;
@@ -582,6 +584,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const session = await invoke<AcpSessionResult>('acp_session_new', {
           instanceId,
           workingDirectory: cwd,
+          mcpServers: buildAcpMcpServerInputs(acpAgent?.capabilities, selectedProjectPaths),
         });
 
         let result = '';
@@ -775,6 +778,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const session = await invoke<AcpSessionResult>('acp_session_new', {
             instanceId,
             workingDirectory: cwd,
+            mcpServers: buildAcpMcpServerInputs(acpAgent!.capabilities, selectedProjectPaths),
           });
           acpAgent!.chatSessionId = session.session_id;
           isNewSession = true;
@@ -1026,6 +1030,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const session = await invoke<AcpSessionResult>('acp_session_new', {
           instanceId,
           workingDirectory: cwd,
+          mcpServers: buildAcpMcpServerInputs(acpAgent!.capabilities, selectedProjectPaths),
         });
         acpAgent!.chatSessionId = session.session_id;
         useChatStore.getState().setSegmentSessionId(session.session_id);
