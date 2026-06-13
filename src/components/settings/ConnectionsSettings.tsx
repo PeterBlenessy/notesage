@@ -317,8 +317,13 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               </DropdownMenuTrigger>
             </PopoverAnchor>
             <DropdownMenuContent align="end" className="w-96">
-              {/* Primary, recommended path: private offline agent (task #19). */}
+              {/* "Local" group at the top — on-device options, no account
+                  needed. Order: Local Agent (recommended, task #19), then Local
+                  AI (bundled), then Ollama. */}
               <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Local
+                </DropdownMenuLabel>
                 <DropdownMenuItem
                   className="relative flex items-start gap-2.5 py-2 cursor-pointer"
                   onSelect={handlePickLocalAgent}
@@ -342,6 +347,30 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                     <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                   )}
                 </DropdownMenuItem>
+                {/* Local AI (local_bundled) before Ollama (local). */}
+                {PROVIDER_OPTIONS
+                  .filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled')
+                  .sort((a, b) => (a.authMethod === 'local_bundled' ? 0 : 1) - (b.authMethod === 'local_bundled' ? 0 : 1))
+                  .map((option) => {
+                    const alreadyConnected = connectedLabels.has(option.label);
+                    return (
+                      <DropdownMenuItem
+                        key={`${option.provider}-${option.authMethod}-${option.label}`}
+                        className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                        disabled={alreadyConnected}
+                        onSelect={() => handlePickProvider(option)}
+                      >
+                        <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium block truncate">{option.label}</span>
+                          <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
+                        </div>
+                        {alreadyConnected && (
+                          <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
@@ -395,32 +424,6 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                             <span className="ml-1.5 text-xs font-normal text-muted-foreground">({oaiCompatCount})</span>
                           )}
                         </span>
-                        <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
-                      </div>
-                      {alreadyConnected && (
-                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Local
-                </DropdownMenuLabel>
-                {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled').map((option) => {
-                  const alreadyConnected = connectedLabels.has(option.label);
-                  return (
-                    <DropdownMenuItem
-                      key={`${option.provider}-${option.authMethod}-${option.label}`}
-                      className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
-                      disabled={alreadyConnected}
-                      onSelect={() => handlePickProvider(option)}
-                    >
-                      <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block truncate">{option.label}</span>
                         <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
                       </div>
                       {alreadyConnected && (
