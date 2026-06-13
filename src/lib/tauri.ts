@@ -49,6 +49,23 @@ export interface PptxTemplateInfo {
   date_added: string;
 }
 
+/**
+ * Result of `local_agent_write_config` — the generated OpenCode provider config
+ * pointing at the live bundled llama-server, plus the isolation env and the
+ * respawn-trigger key (`<port>:<modelId>`). See `src-tauri/.../local_agent.rs`.
+ */
+export interface LocalAgentConfig {
+  configPath: string;
+  /** Env vars (XDG/OPENCODE_CONFIG paths) the spawn must inject to isolate
+   *  OpenCode's config tree. Path config only — never secrets. */
+  env: Record<string, string>;
+  /** `<port>:<modelId>` — changes when the server port or active model changes. */
+  configKey: string;
+  /** The bundled server port the config points at (for the Seatbelt allow). */
+  port: number;
+  modelId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Skill & Agent types
 // ---------------------------------------------------------------------------
@@ -842,6 +859,16 @@ export const tauriApi = {
 
   async acpAgentAuthenticate(instanceId: string): Promise<void> {
     await invoke("acp_agent_authenticate", { instanceId });
+  },
+
+  /**
+   * Regenerate the Local Agent (OpenCode) provider config from the LIVE bundled
+   * llama-server state and return the isolation env + respawn trigger key. Used
+   * by `ensureAcpAgent` for `localAgentPreset` connections (tasks #8/#10).
+   * Rejects when the bundled server is not running / has no active model.
+   */
+  async localAgentWriteConfig(): Promise<LocalAgentConfig> {
+    return await invoke<LocalAgentConfig>("local_agent_write_config");
   },
 
   async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {

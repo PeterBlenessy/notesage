@@ -119,6 +119,13 @@ export interface AcpAgentState {
   connectionId: string;
   /** Serialized sandbox scope key — used to detect when agent needs respawning. */
   sandboxScopeKey: string;
+  /**
+   * Endpoint-config key (`<llama-port>:<modelId>`) for `localAgentPreset`
+   * connections, or `''` for ordinary agents. When the bundled server restarts
+   * on a new port or the active model changes, this key changes and
+   * `ensureAcpAgent` respawns the agent against the regenerated config (#10).
+   */
+  configKey: string;
   chatSessionId: string | null;
   /** Agent binary name (e.g., 'claude-agent-acp', 'codex-acp') */
   agentBinary?: string;
@@ -266,6 +273,41 @@ export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
   };
 }
 
+/**
+ * Resolved endpoint config for a `localAgentPreset` connection: the isolation
+ * env to inject at spawn, the respawn-trigger key, and the bundled server port
+ * (allowed through the Seatbelt network sandbox alongside the proxy port, #9).
+ */
+export interface LocalAgentEndpoint {
+  env: Record<string, string>;
+  configKey: string;
+  port: number;
+}
+
+/**
+ * Returns true when `connection` is the Local Agent preset (OpenCode wired to
+ * the bundled llama-server). Only these connections regenerate config and key
+ * their respawn on the live endpoint.
+ */
+export function isLocalAgentPreset(connection: Connection): boolean {
+  return connection.provider === 'custom_acp' && connection.config?.localAgentPreset === 'opencode';
+}
+
+/**
+ * Resolve the live endpoint config for a preset connection by (re)generating
+ * the OpenCode config against the running bundled server (#8). Returns `null`
+ * for non-preset connections (their `configKey` is always `''`). Throws the
+ * backend error verbatim when the server is down / has no model — the caller
+ * (#13 routing) is responsible for falling back to direct local chat.
+ */
+export async function resolveLocalAgentEndpoint(
+  connection: Connection,
+): Promise<LocalAgentEndpoint | null> {
+  if (!isLocalAgentPreset(connection)) return null;
+  const cfg = await invoke<import('@/lib/tauri').LocalAgentConfig>('local_agent_write_config');
+  return { env: cfg.env, configKey: cfg.configKey, port: cfg.port };
+}
+
 /** Persistent ACP agent state — survives re-renders, reset on connection change. */
 export let acpAgent: AcpAgentState | null = null;
 
@@ -328,18 +370,37 @@ export async function ensureAcpAgent(
   }
   const scopeKey = (sandboxPaths ?? []).sort().join('|');
 
+  // For the Local Agent preset, regenerate the OpenCode config against the LIVE
+  // bundled server and derive the respawn-trigger key (`<port>:<model>`). A
+  // server restart on a new port (or a model switch) changes this key, so the
+  // existing agent is torn down and respawned against the fresh config — same
+  // mechanism as `sandboxScopeKey`. Non-preset connections get `configKey=''`.
+  const endpoint = await resolveLocalAgentEndpoint(connection);
+  const configKey = endpoint?.configKey ?? '';
+
   log.info(
     'ai',
     `[ensureAcpAgent:${callerTag}] conn=${connection.id} scope=[${scopeKey}] cwd=${cwd} currentAgent=${acpAgent ? `conn=${acpAgent.connectionId} scope=[${acpAgent.sandboxScopeKey}] session=${acpAgent.chatSessionId ?? 'none'}` : 'none'}`,
   );
 
-  // Respawn if connection changed OR sandbox scope changed
-  if (acpAgent && (acpAgent.connectionId !== connection.id || acpAgent.sandboxScopeKey !== scopeKey)) {
+  // Respawn if connection changed OR sandbox scope changed OR endpoint config changed
+  if (
+    acpAgent &&
+    (acpAgent.connectionId !== connection.id ||
+      acpAgent.sandboxScopeKey !== scopeKey ||
+      acpAgent.configKey !== configKey)
+  ) {
     const connectionChanged = acpAgent.connectionId !== connection.id;
     if (acpAgent.sandboxScopeKey !== scopeKey) {
       log.info(
         'ai',
         `[ensureAcpAgent:${callerTag}] sandbox scope changed, respawning. old=[${acpAgent.sandboxScopeKey}] new=[${scopeKey}]`,
+      );
+    }
+    if (acpAgent.configKey !== configKey) {
+      log.info(
+        'ai',
+        `[ensureAcpAgent:${callerTag}] endpoint config changed, respawning. old=[${acpAgent.configKey}] new=[${configKey}]`,
       );
     }
     try {
@@ -411,12 +472,19 @@ export async function ensureAcpAgent(
         networkAllowedDomains = [...builtIn, ...userDomains];
       }
 
+      // Merge the preset's isolation env (XDG/OPENCODE_CONFIG paths) on top of
+      // the connection's own env. These point OpenCode at the Notesage-owned
+      // config tree so the user's real OpenCode setup is untouched (#8).
+      const spawnEnvVars = endpoint
+        ? { ...(launch.envVars ?? {}), ...endpoint.env }
+        : launch.envVars;
+
       const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
         agentBinary: launch.agentBinary,
         agentArgs: args.length > 0 ? args : null,
         role: 'interactive',
         workingDirectory: cwd,
-        envVars: launch.envVars,
+        envVars: spawnEnvVars,
         connectionId: connection.id,
         envVarKeys: launch.envVarKeys,
         sandboxEnabled: connection.sandboxEnabled ?? null,
@@ -432,6 +500,10 @@ export async function ensureAcpAgent(
         networkSandboxEnabled: networkSandboxEnabled || null,
         networkAllowedDomains,
         kernelNetworkDeny: connection.kernelNetworkDeny ?? null,
+        // Allow the bundled llama-server port through the kernel network sandbox
+        // alongside the proxy port (#9) — the preset agent must reach the local
+        // OpenAI-compatible endpoint even under `(deny default)` networking.
+        extraLocalhostPorts: endpoint ? [endpoint.port] : null,
       });
 
       // Try to authenticate — some agents handle auth internally
@@ -454,6 +526,7 @@ export async function ensureAcpAgent(
         instanceId: result.instance_id,
         connectionId: connection.id,
         sandboxScopeKey: scopeKey,
+        configKey,
         chatSessionId: null,
         agentBinary: launch.agentBinary,
         capabilities: result.capabilities,

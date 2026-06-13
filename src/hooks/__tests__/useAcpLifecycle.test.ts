@@ -106,6 +106,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'test-instance-id',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
+        configKey: '',
         chatSessionId: 'session-123',
       };
 
@@ -156,6 +157,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'inst-workspace-29',
         connectionId: 'conn-test',
         sandboxScopeKey: '/work/projA',
+        configKey: '',
         chatSessionId: 'sess-active-29',
       };
 
@@ -235,6 +237,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'inst-workspace-idle',
         connectionId: 'conn-test',
         sandboxScopeKey: '/work/projA',
+        configKey: '',
         chatSessionId: 'sess-idle',
       };
 
@@ -274,6 +277,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'test-instance-id',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
+        configKey: '',
         chatSessionId: 'session-123',
       };
 
@@ -338,6 +342,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'inst-attach-test',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
+        configKey: '',
         chatSessionId: null, // forces session_new path
       };
 
@@ -402,6 +407,7 @@ describe('useAcpLifecycle', () => {
         instanceId: 'inst-attach-empty',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
+        configKey: '',
         chatSessionId: null,
       };
 

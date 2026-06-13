@@ -333,6 +333,100 @@ describe('ensureAcpAgent', () => {
     expect(spawnCount).toBe(2);
   });
 
+  // --- Local Agent preset: endpoint-config respawn (#10) ---
+
+  function makePresetConnection(overrides: Partial<Connection> = {}): Connection {
+    return makeConnection({
+      id: 'conn-preset',
+      provider: 'custom_acp',
+      label: 'Local Agent',
+      credentials: { type: 'agent_managed', agentBinary: '/opt/opencode' },
+      config: { binaryPath: '/opt/opencode', binaryArgs: ['acp'], localAgentPreset: 'opencode' },
+      ...overrides,
+    });
+  }
+
+  it('preset connection regenerates config and injects isolation env + llama port at spawn', async () => {
+    setupDefaultHandlers();
+    let lastSpawnArgs: Record<string, unknown> | null = null;
+    setMockInvokeHandler('acp_agent_spawn', (args) => {
+      lastSpawnArgs = args as Record<string, unknown>;
+      return { instance_id: 'inst-preset' };
+    });
+    setMockInvokeHandler('local_agent_write_config', () => ({
+      configPath: '/home/u/.notesage/agents/opencode/config/opencode/opencode.json',
+      env: { XDG_CONFIG_HOME: '/home/u/.notesage/agents/opencode/config', OPENCODE_CONFIG: '/x' },
+      configKey: '8137:qwen2.5-coder-7b',
+      port: 8137,
+      modelId: 'qwen2.5-coder-7b',
+    }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const result = await mod.ensureAcpAgent(makePresetConnection(), '/work');
+    expect(result).toBe('inst-preset');
+    expect(mod.acpAgent!.configKey).toBe('8137:qwen2.5-coder-7b');
+    // Isolation env merged into the spawn.
+    expect((lastSpawnArgs!.envVars as Record<string, string>).XDG_CONFIG_HOME).toBe(
+      '/home/u/.notesage/agents/opencode/config',
+    );
+    // llama-server port allowed through the kernel network sandbox.
+    expect(lastSpawnArgs!.extraLocalhostPorts).toEqual([8137]);
+  });
+
+  it('preset connection respawns when the llama-server port changes (#10)', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+    let port = 8137;
+    setMockInvokeHandler('local_agent_write_config', () => ({
+      configPath: '/x',
+      env: {},
+      configKey: `${port}:qwen2.5-coder-7b`,
+      port,
+      modelId: 'qwen2.5-coder-7b',
+    }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const conn = makePresetConnection();
+    const r1 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r1).toBe('inst-1');
+    // Same port → no respawn.
+    const r2 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r2).toBe('inst-1');
+    expect(spawnCount).toBe(1);
+
+    // Server restarted on a new port → config key changes → respawn.
+    port = 8190;
+    const r3 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r3).toBe('inst-2');
+    expect(spawnCount).toBe(2);
+    expect(mod.acpAgent!.configKey).toBe('8190:qwen2.5-coder-7b');
+  });
+
+  it('non-preset connections never call local_agent_write_config and keep configKey empty', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-plain' }));
+    let configCalls = 0;
+    setMockInvokeHandler('local_agent_write_config', () => {
+      configCalls++;
+      return { configPath: '', env: {}, configKey: 'x', port: 1, modelId: 'm' };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-plain' }), '/tmp');
+    expect(configCalls).toBe(0);
+    expect(mod.acpAgent!.configKey).toBe('');
+  });
+
   it('updateAcpAgentInstanceId updates the instance ID', async () => {
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => ({
