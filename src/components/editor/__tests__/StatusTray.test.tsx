@@ -276,8 +276,8 @@ describe('StatusTray — task #53', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('does not render the legacy "N words · M min read" footer', () => {
-    // Live-test 2026-04-26 — the word-count + reading-time footer was
+  it('does not render the legacy "N words · M min read" strip', () => {
+    // Live-test 2026-04-26 — the word-count + reading-time strip was
     // dropped from the popover (the word count is already shown in the
     // status-bar row itself; duplicating it here was visual noise).
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);

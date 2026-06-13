@@ -288,13 +288,12 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
 
       {/* Mode pill --------------------------------------------------------- */}
       {/*
-       * #26 — Reuse the existing chat-footer mode picker (`AcpModePicker`)
-       * instead of forking a parallel implementation. The picker:
+       * #26 — The command-bar mode picker (`AcpModePicker`). The picker:
        *   - Reads available modes from `connection.acpCapabilities.availableModes`
-       *     (probed at registration), maps them to the four common permission
-       *     levels (Read Only / Agent / Full Access / Plan) via `getCommonModes`,
-       *     and hides itself when fewer than 2 levels are available — which is
-       *     the case for every non-ACP provider (no `acpCapabilities` set).
+       *     (probed at registration) and renders every mode the agent advertises
+       *     with a friendly label (`getAgentModeDisplay`); it hides itself only
+       *     when fewer than 2 modes are available — which is the case for every
+       *     non-ACP provider (no `acpCapabilities` set).
        *   - Dispatches mode changes through `updateCurrentMode` +
        *     `tauriApi.acpSessionSetMode` so the active ACP session stays
        *     in sync.
@@ -664,7 +663,7 @@ function ProjectsPicker({
                     : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} selected — ${triggerLabel}`
                 }
                 className={cn(
-                  // Same h-7 chat-footer rhythm as ProviderPill.
+                  // Same h-7 command-bar rhythm as ProviderPill.
                   "inline-flex items-center gap-1.5 h-7 px-2 rounded-md min-w-0 shrink",
                   "text-xs font-medium",
                   "border border-transparent",

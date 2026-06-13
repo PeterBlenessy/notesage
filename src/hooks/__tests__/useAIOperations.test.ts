@@ -381,7 +381,7 @@ describe('useAIOperations', () => {
   // ---- aiLock enforcement (red-team TDD) ----
   //
   // Attack scenario per leak #8 / PRD 1.5: the user has locked Project A to
-  // Claude Code (`aiLock.connectionId = 'conn-claude'`). The chat footer is
+  // Claude Code (`aiLock.connectionId = 'conn-claude'`). The command bar is
   // somehow set to OpenAI. The user presses Send. PRE-FIX the send routed to
   // OpenAI — the lock was advisory. POST-FIX it's refused with a toast and a
   // ProjectLockViolation is thrown, no downstream provider is called.

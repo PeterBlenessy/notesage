@@ -365,7 +365,7 @@ describe('useAcpLifecycle — ACP sandbox paths match selected scope (task #7)',
   // `acpGenerateText` derives `cwd` from `selectedProjectPaths[0]` and passes
   // `inlineSandboxPaths = cwd !== '/tmp' ? [cwd] : []`. The invariant we lock
   // here: the inline spawn does not inherit additional selected projects from
-  // the chat's multi-select footer.
+  // the chat's multi-select project picker.
   // -------------------------------------------------------------------------
 
   it('inline action: sandboxPaths = [cwd] only, even when multiple projects are selected', async () => {

@@ -44,7 +44,7 @@ export function useLocalCompletion(editor: Editor | null) {
     (connection?.provider === 'openai_compatible' && connection?.authMethod === 'api_key');
 
   // Task #17 — URI scope gate. Skip completion requests when the active
-  // tab's path falls outside the chat footer's selected projects + the
+  // tab's path falls outside the command bar's selected projects + the
   // resolved notes root. `completionsOnOutOfScope` (default false) restores
   // the legacy "complete everywhere" behaviour when a user opts in.
   const selectedProjectPaths = useChatStore(selectProjectPaths);

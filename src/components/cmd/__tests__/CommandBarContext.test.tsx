@@ -1048,7 +1048,7 @@ describe('CommandBarContext', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mode pill (#26) — wires the chat-footer's `AcpModePicker` into the
+  // Mode pill (#26) — wires the command bar's `AcpModePicker` into the
   // context row. We exercise the picker directly (rather than mocking it
   // out) so the integration — common-mode mapping, store-action dispatch,
   // and the Full Access × sandbox conflict dialog — is end-to-end covered.
@@ -1324,7 +1324,7 @@ describe('CommandBarContext', () => {
   // -------------------------------------------------------------------------
   // Overflow / shrink layout (regression lock for the 5-project bug where
   // the agent mode picker and trailing icons got pushed out of view when
-  // the chat footer carried more than 2 project chips).
+  // the command bar carried more than 2 project chips).
   // -------------------------------------------------------------------------
 
   describe('overflow (regression lock — live-test 2026-04-26)', () => {

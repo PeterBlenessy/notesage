@@ -1139,7 +1139,7 @@ describe('useLocalCompletion', () => {
   // Track 1 High leak — Task #17
   //
   // Regression lock: inline-completion requests must NOT fire when the
-  // active tab's path sits outside the chat footer's selected project scope
+  // active tab's path sits outside the command bar's selected project scope
   // (+ notes root). Local completion providers don't have a document-sync
   // channel, so the gate lives inline in the request path. The
   // `completionsOnOutOfScope` setting (default false) is an opt-out that

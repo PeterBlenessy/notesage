@@ -14,7 +14,7 @@ export const PROVIDER_LOGOS: Record<string, string | null> = {
 /**
  * `bare = true`: render the logo without the white background + padding chrome
  * that keeps dark-on-dark logos legible. Use when the parent provides its own
- * visual containment (e.g. a bordered footer pill) so we don't end up with a
+ * visual containment (e.g. a bordered pill) so we don't end up with a
  * solid white square in dark mode.
  */
 export function ProviderLogo({ provider, className = 'w-6 h-6', bare = false }: { provider: string; className?: string; bare?: boolean }) {

@@ -23,6 +23,7 @@ import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig, ReasoningEffort } from '@/lib/ai/connections';
 import { DEFAULT_MODELS } from '@/lib/ai/connections';
+import { getAgentModeDisplay } from '@/lib/ai/acp-agent-state';
 import { ModelSelectionForm, MAX_TOKEN_PRESETS, nearestPresetIndex } from './connection/ModelSelectionForm';
 import { ApiKeyForm } from './connection/ApiKeyForm';
 import { AdvancedSettingsForm } from './connection/AdvancedSettingsForm';
@@ -340,14 +341,14 @@ export function ConnectionConfigDialog({
                     <SelectContent>
                       {connection.acpCapabilities.availableModes.map((mode) => (
                         <SelectItem key={mode.id} value={mode.id} className="text-xs">
-                          {/* Live-test 2026-04-25 — only `mode.name` in
-                              the dropdown value (and trigger via
-                              SelectValue). Description used to render
-                              inline; long descriptions overflowed the
-                              trigger because shadcn Select's
-                              whitespace-nowrap. The description now
-                              renders as help text below the select. */}
-                          {mode.name}
+                          {/* Live-test 2026-04-25 — only the label in the
+                              dropdown value (and trigger via SelectValue). The
+                              description renders as help text below the select
+                              (long descriptions overflow shadcn Select's
+                              whitespace-nowrap trigger). Friendly labels via
+                              getAgentModeDisplay so raw agent ids (Goose's
+                              auto/approve/smart_approve/chat) aren't shown. */}
+                          {getAgentModeDisplay(connection, mode.id, mode.name, mode.description).name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -358,9 +359,13 @@ export function ConnectionConfigDialog({
                     const selectedMode = modes.find(
                       (m) => m.id === (acpDefaultMode ?? modes[0]?.id),
                     );
-                    return selectedMode?.description ? (
+                    if (!selectedMode) return null;
+                    const display = getAgentModeDisplay(
+                      connection, selectedMode.id, selectedMode.name, selectedMode.description,
+                    );
+                    return display.description ? (
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        {selectedMode.description}
+                        {display.description}
                       </p>
                     ) : null;
                   })()}

@@ -560,7 +560,7 @@ function getAllWorkspacePaths(): string[] {
  * paths the ACP agent is allowed to write to.
  *
  * Default mode (`crossProjectMode = false`): only the projects explicitly
- * selected in the chat footer (`conv.projectPaths`), unioned with the
+ * selected in the command bar (`conv.projectPaths`), unioned with the
  * connection's `extraWritablePaths`. This is the primary isolation guarantee
  * established by the project-data-isolation PRD.
  *

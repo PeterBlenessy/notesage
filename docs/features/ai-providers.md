@@ -54,16 +54,16 @@ interface AIProvider {
 - Dynamic model dedup: strips `/low`, `/medium`, `/high`, `/xhigh` reasoning effort variants from model lists
 - ACP crate version 0.14.0 (schema 0.13.6) with `usage_update` event support. Builder/component API (`role::acp::Client.builder()…connect_with(transport, |conn| …)`) replacing the old `ClientSideConnection`; inbound `request_permission` / `session/update` are handled via registered `on_receive_request` / `on_receive_notification` handlers instead of a `Client` trait impl, and the connection handle is `Send + Clone` (no `!Send` thread isolation needed). `session/close` and `session/resume` are stable. The dedicated session-model API (`session/set_model`) was removed upstream — model selection goes through the session config option with category `model`; assistant message identity is agent-assigned via `ContentChunk.message_id` (the old client-supplied `PromptRequest.message_id` was removed)
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
-- Context-aware chat footer: "Search" toggle for direct API connections
-- **Session modes**: Permission-level mode picker (Shield icon) in chat footer (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
-- **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in chat footer. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
+- Context-aware command bar: "Search" toggle for direct API connections
+- **Session modes**: Permission-level mode picker (Shield icon) in command bar (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
+- **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in command bar. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
 - **Capability probing**: At connection registration, lightweight spawn → session → read → stop cycle discovers available modes, config options, and capabilities. Stored on connection, auto-refreshed when stale (>24h).
 - **Connection defaults**: Default mode and thinking effort configurable in connection settings dialog, applied automatically to new sessions.
 - **Eager session creation**: Session created when chat panel opens (before first message), so mode picker and config options are immediately available.
 - **Session restoration**: `acpSessionId` stored per conversation. Reopening an existing chat runs a capability-gated preference chain via `restoreOrCreateAcpSession`: `session/resume` (live takeover) → `session/load` (replay) → `session/list` (sanity check) → `session/new` (fresh). Each step is optional based on agent capabilities.
 - **Session forking on branch**: Branching from the current leaf with an agent that advertises `session.fork` calls `session/fork` to give the new branch its own isolated agent-side session. Branches from historical messages share the parent session (ACP has no primitive to rewind agent state). Per-branch session IDs live on `Conversation.branchSessions`; the resolver `getSessionIdForLeaf` walks the active leaf's ancestors at prompt-send time.
 - **Session close on delete**: Deleting a conversation fires best-effort `session/close` for its shared session and any per-branch sessions, so agents can free resources. Skipped when the agent doesn't advertise `session.close`.
-- **Usage tracking**: `usage_update` events parsed and displayed as token count in chat footer with cost tooltip.
+- **Usage tracking**: `usage_update` events parsed and displayed as token count in command bar with cost tooltip.
 - **Plan display**: `plan` session updates rendered as collapsible `PlanSegment` cards with status icons and priority dots.
 - **Agent slash commands**: `available_commands_update` events populate the `/` command menu alongside Notesage skills.
 - **Thinking segments**: `agent_thought_chunk` events rendered as collapsible thinking blocks in chat messages.
@@ -77,7 +77,7 @@ interface AIProvider {
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents via ACP protocol, the LSP handles completions and chat via JSON-RPC
 - Full capabilities: `['interactive', 'inline_completion', 'agent_tasks']` — users can use their Copilot subscription for all AI features
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
-- **Project isolation.** `workingDir` reflects the chat footer's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
+- **Project isolation.** `workingDir` reflects the command bar's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
 - OAuth device flow authentication with two protocol variants:
   - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
   - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
@@ -174,13 +174,13 @@ Multi-layer defense: the Seatbelt profile denies reads and writes by default in 
 - Curated re-allow list inside `$HOME`:
   - **Bucket B (runtime):** `~/.npm`, `~/.nvm`, `~/.volta`, `~/.fnm`, `~/.asdf`, `~/.yarn`, `~/.pnpm`, `~/.bun`, `~/.deno`, `~/.cargo`, `~/.rustup`, `~/.local`, `~/.config`, `~/.cache`, `~/Library/Caches`, `~/Library/Application Support`, `~/Library/Preferences`, `~/.gitconfig`, `~/.gitignore_global`
   - **Bucket C (per-agent config):** narrowed by agent binary — `claude-agent-acp` gets `~/.claude` + `~/.claude.json` + `~/.claude.json.backup` + `~/Library/Keychains/login.keychain-db`; `codex-acp` gets `~/.codex`; `copilot`/`copilot-language-server` get `~/.copilot` + keychain; `gemini` gets `~/.gemini`. Basename extraction means the match works whether the caller passes the bare command or the resolved absolute path.
-  - **Writable paths:** the chat footer's selected project(s) — plus any ancestor-literal reads required for `fs.watch` parent-chain traversal on nested iCloud paths
+  - **Writable paths:** the command bar's selected project(s) — plus any ancestor-literal reads required for `fs.watch` parent-chain traversal on nested iCloud paths
 - Ancestor directory literal-allows: each writable path's ancestor dirs up to `$HOME` are `(literal)`-allowed so `fs.watch` and workspace-marker discovery can `stat` / `readdir` the parents without exposing sibling contents
 - Explicit deny-last: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, and regex `\.env$` / `\.env\..*$` are denied after all the above (overrides any earlier allow)
 
 **Filesystem policy (write):**
 
-- Writable subpaths = chat footer's selected projects (respawn on change) — plus `/tmp`, `/private/tmp`, `/private/var/folders`, `~/.config`, agent's own config dir, and a short list of device nodes (`/dev/null`, `/dev/tty`, etc.)
+- Writable subpaths = command bar's selected projects (respawn on change) — plus `/tmp`, `/private/tmp`, `/private/var/folders`, `~/.config`, agent's own config dir, and a short list of device nodes (`/dev/null`, `/dev/tty`, etc.)
 - Keychain literal is read-only — filtered out of the write-allow list
 
 **Writable scope:** `getChatSandboxScope(conv, connection, crossProjectMode)` computes the set. Default mode returns `conv.projectPaths ∪ connection.extraWritablePaths`. Cross-project mode (opt-in) unions all workspace folders. `sandboxScopeKey` in `acp-agent-state.ts` triggers a respawn when the scope changes.
@@ -301,7 +301,7 @@ When a tool call errors or the user denies permission, `buildToolResultContent` 
 
 - `toolCallingEnabled` toggle in Settings > Advanced (default: enabled)
 - `searchProvider` setting for web search backend (DuckDuckGo)
-- Tools indicator badge in chat footer showing count of available tools
+- Tools indicator badge in command bar showing count of available tools
 
 **Tool call content rendering (ACP):**
 

@@ -91,11 +91,11 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent!.connectionId).toBe('conn-b');
   });
 
-  it('clears sessionInfo when respawning for a connection change (footer-freshness invariant)', async () => {
-    // Regression lock for the chat-footer UX bug on 2026-04-19: stale modes
+  it('clears sessionInfo when respawning for a connection change (command-bar-freshness invariant)', async () => {
+    // Regression lock for the command bar UX bug on 2026-04-19: stale modes
     // and currentModeId from the previous agent were bleeding across to the
     // new agent because ensureAcpAgent stopped the backend but never cleared
-    // the module-level sessionInfo. Fixing it makes the footer's "currently
+    // the module-level sessionInfo. Fixing it makes the picker's "currently
     // selected" fallback chain (live sessionInfo → connection.acpDefaults →
     // first available) produce correct output immediately on switch.
     setupDefaultHandlers();
@@ -132,7 +132,7 @@ describe('ensureAcpAgent', () => {
     expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
 
     // Connection change MUST clear sessionInfo so stale modes/configOptions
-    // from the prior agent don't leak into the new agent's footer.
+    // from the prior agent don't leak into the new agent's command bar.
     await mod.ensureAcpAgent(connB, '/tmp');
     expect(mod.getSessionInfo().modes).toBeNull();
     expect(mod.getSessionInfo().configOptions).toBeNull();
@@ -464,5 +464,39 @@ describe('resolveConfiguredModeId', () => {
     const mod = await import('../acp-agent-state');
     expect(mod.resolveConfiguredModeId(undefined, makeConnection())).toBeUndefined();
     expect(mod.resolveConfiguredModeId(undefined, null)).toBeUndefined();
+  });
+});
+
+describe('getAgentModeDisplay', () => {
+  const goose = (): Connection =>
+    makeConnection({ provider: 'custom_acp', config: { localAgentPreset: 'goose' } });
+
+  it('maps Goose raw mode ids to friendly labels with descriptions', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    const conn = goose();
+    expect(getAgentModeDisplay(conn, 'smart_approve', 'smart_approve').name).toBe('Smart Approval');
+    expect(getAgentModeDisplay(conn, 'approve', 'approve').name).toBe('Approve Each Step');
+    expect(getAgentModeDisplay(conn, 'auto', 'auto').name).toBe('Full Access');
+    expect(getAgentModeDisplay(conn, 'chat', 'chat').name).toBe('Chat Only');
+    // Every Goose mode carries a user-facing description.
+    for (const id of ['smart_approve', 'approve', 'auto', 'chat']) {
+      expect(getAgentModeDisplay(conn, id, id).description).toBeTruthy();
+    }
+  });
+
+  it('does NOT apply the Goose map to non-preset agents (auto collision)', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    // Codex's `auto` means "agent" (read + edit, asks for risky) — must NOT
+    // become Goose's "Full Access".
+    const codex = makeConnection({ credentials: { type: 'agent_managed', agentBinary: 'codex-acp' } });
+    expect(getAgentModeDisplay(codex, 'auto', 'auto').name).toBe('Agent');
+  });
+
+  it('falls back to the native name/description for unmapped ids', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    const conn = goose();
+    const display = getAgentModeDisplay(conn, 'some_future_mode', 'Native Name', 'native desc');
+    expect(display.name).toBe('Native Name');
+    expect(display.description).toBe('native desc');
   });
 });

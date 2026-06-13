@@ -16,8 +16,8 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 - Hard per-project lock on which AI provider can access the project. Soft `ai.provider` override is still supported as an advisory default; `aiLock` is hard enforcement.
 - Set from Settings > Project > "AI Provider Lock" section — pick a connection, optionally add a reason, confirm. Unlock from the same panel.
 - Enforced at every send path: new chat message, resend, edit, comment delegation, inline actions (ACP and direct-API bubble menu). A mismatch raises a `ProjectLockViolation` toast; the wrong-provider API is never called.
-- Chat footer multi-select refuses to mix projects with conflicting locks. A locked project drives the effective connection automatically — the provider picker becomes read-only with a Lock icon.
-- Visual affordances: padlock overlay on the project folder in the sidebar (tooltip lists the locked provider); clickable Lock icon in the chat footer opens an "explain lock" modal when any selected project is locked.
+- Command bar multi-select refuses to mix projects with conflicting locks. A locked project drives the effective connection automatically — the provider picker becomes read-only with a Lock icon.
+- Visual affordances: padlock overlay on the project folder in the sidebar (tooltip lists the locked provider); clickable Lock icon in the command bar opens an "explain lock" modal when any selected project is locked.
 
 **Project goals:**
 
@@ -25,11 +25,11 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 - Goal templates: OKR, Simple Checklist, SMART Goals, Milestone Tracker
 - Goals discovery by scanning for `type: goal` frontmatter
 - AI context injection — goals included in chat system prompt
-- Multi-select project selector in chat footer
+- Multi-select project selector in command bar
 
 **Chat project isolation:**
 
-Every AI feature scopes to the chat footer's selected projects (plus the `~/Notesage` library root). The selection is the source of truth for:
+Every AI feature scopes to the command bar's selected projects (plus the `~/Notesage` library root). The selection is the source of truth for:
 
 - ACP Seatbelt sandbox writable paths and kernel read deny-by-default allow-list
 - Direct-API tool executor — `read_file`, `list_directory`, `write_file`, and implicit-FS tools refuse out-of-scope paths
@@ -151,7 +151,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/stores/external-change-store.ts` | Pending external changes |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
 | `src/lib/ai/uri-scope.ts` | `isUriInScope` for LSP doc sync / completion gate / active-tab attach |
-| `src/components/chat/ExplainLockDialog.tsx` | Chat footer "provider locked by project" modal |
+| `src/components/chat/ExplainLockDialog.tsx` | Command bar "provider locked by project" modal |
 | `src/components/settings/LockProjectDialog.tsx` | Settings > Project lock-creation dialog |
 | `src-tauri/src/commands/file.rs` | File operations |
 | `src-tauri/src/commands/git.rs` | Git operations |

@@ -28,7 +28,7 @@ import { useAgentStatusStore } from '@/stores/agent-status-store';
  *
  * A sandbox-scope change respawns the agent and creates a fresh session that
  * resets to the agent's own default mode (e.g. Claude Code → 'default' = Read
- * Only). Without this, the footer's mode silently reverts after the user picked
+ * Only). Without this, the picker's mode silently reverts after the user picked
  * "Agent". The pick is persisted per-conversation (`chat-store.agentModeId`) and
  * re-asserted here so it survives every respawn. Must be called immediately after
  * `setSessionModes(session.modes)` at each session-creation site.

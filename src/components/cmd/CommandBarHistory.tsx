@@ -17,7 +17,7 @@ export interface CommandBarHistoryProps {
    */
   onDismiss?: () => void;
   /**
-   * The chat footer's selected project paths. When non-empty, only
+   * The command bar's selected project paths. When non-empty, only
    * conversations whose `projectPaths` overlap the selection are shown.
    * Empty selection shows everything.
    */

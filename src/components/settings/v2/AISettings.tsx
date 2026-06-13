@@ -138,7 +138,7 @@ export function AISettings() {
         />
         <SettingsRow
           label="Show agent mode picker"
-          description="Show a mode picker in the chat footer for agents that support permission modes — Read Only, Agent, Full Access, Plan. When off, the agent's default mode is used."
+          description="Show a permission-mode picker in the command bar for agents that support modes. When off, the agent's default mode is used."
           htmlFor="show-agent-mode-picker"
           control={
             <Switch

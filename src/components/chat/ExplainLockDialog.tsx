@@ -22,7 +22,7 @@ interface ExplainLockDialogProps {
 }
 
 /**
- * Read-only explanation of why the provider picker is locked in the chat footer.
+ * Read-only explanation of why the provider picker is locked in the command bar.
  * Users who want to unlock go through Settings > Project — this dialog is purely
  * informative so we don't silently disable controls without a rationale.
  */

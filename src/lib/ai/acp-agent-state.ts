@@ -29,8 +29,11 @@ const COMMON_MODES: Record<CommonModeKey, CommonMode> = {
 };
 
 /**
- * Maps known agent mode IDs to common permission-level modes.
- * Any mode ID not in this map is hidden from the footer picker.
+ * Maps known agent mode IDs to common permission-level modes. Used to classify
+ * a mode's permission level (e.g. detecting "Full Access" for the sandbox
+ * conflict dialog) and to label non-preset agents in the command-bar picker.
+ * The picker itself no longer hides unmapped modes — it renders every mode the
+ * agent advertises (see `getAgentModeDisplay`).
  *
  * Mode IDs come from actual ACP agent responses:
  * - Claude Code: default, acceptEdits, plan, dontAsk, bypassPermissions
@@ -97,10 +100,52 @@ export function getCommonModes(availableModes: { id: string; name: string; descr
 }
 
 /**
+ * Friendly labels + descriptions for the Local Agent preset's (Goose) ACP
+ * session modes. Goose reports raw snake_case ids (`auto`, `approve`,
+ * `smart_approve`, `chat`) as both `id` and `name`, which read as developer
+ * jargon in the settings picker. Semantics per Goose docs (block/goose):
+ *   - smart_approve — asks for approval only before risky tool calls (default)
+ *   - approve       — asks for approval before every tool call
+ *   - auto          — runs every tool without asking
+ *   - chat          — no tools, conversation only
+ * Kept separate from the cross-agent {@link MODE_ID_TO_COMMON} map because
+ * Goose's `auto` (full access) collides with Codex's `auto` (read + edit,
+ * asks for risky), so it must only be consulted for the Local Agent preset.
+ */
+const GOOSE_MODE_DISPLAY: Record<string, { name: string; description: string }> = {
+  smart_approve: { name: 'Smart Approval', description: 'Asks for approval only before potentially risky operations. Recommended.' },
+  approve:       { name: 'Approve Each Step', description: 'Asks for approval before every tool call.' },
+  auto:          { name: 'Full Access', description: 'Reads, edits, and runs commands without asking. Use with caution.' },
+  chat:          { name: 'Chat Only', description: 'Conversation only — no file edits or commands.' },
+};
+
+/**
+ * User-facing label + description for an agent mode in the settings picker.
+ * For the Local Agent preset (Goose) uses {@link GOOSE_MODE_DISPLAY}; for any
+ * other agent maps through the common-mode names, falling back to the agent's
+ * own native name/description for unmapped ids.
+ */
+export function getAgentModeDisplay(
+  connection: Connection,
+  modeId: string,
+  nativeName: string,
+  nativeDescription?: string,
+): { name: string; description?: string } {
+  if (isLocalAgentPreset(connection)) {
+    const g = GOOSE_MODE_DISPLAY[modeId];
+    if (g) return g;
+    return { name: nativeName, description: nativeDescription };
+  }
+  const common = getCommonMode(modeId);
+  if (common) return { name: common.name, description: common.tooltip };
+  return { name: nativeName, description: nativeDescription };
+}
+
+/**
  * The configured mode for a conversation: the per-conversation pick if set,
  * otherwise the connection's default mode. Single source of the
- * `conversationModeId → connection.acpDefaults.modeId` precedence so the footer
- * picker and `reapplySessionMode` can't drift. Returns undefined when neither is
+ * `conversationModeId → connection.acpDefaults.modeId` precedence so the command-bar
+ * mode picker and `reapplySessionMode` can't drift. Returns undefined when neither is
  * set (caller falls back to a display default or the agent's own default).
  */
 export function resolveConfiguredModeId(
@@ -412,7 +457,7 @@ export async function ensureAcpAgent(
     acpSpawnPromise = null;
     // When the connection itself changed, the previous agent's sessionInfo
     // (modes, currentModeId, configOptions, usage, commands) no longer
-    // applies. Clearing here ensures the footer's "currently selected"
+    // applies. Clearing here ensures the picker's "currently selected"
     // state falls back to the new connection's defaults instead of showing
     // the previous agent's values until session/new completes.
     if (connectionChanged) {

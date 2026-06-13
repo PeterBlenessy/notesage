@@ -9,7 +9,7 @@ export interface ProjectMetadata {
   citationStyle?: 'apa' | 'mla' | 'chicago';
   ai: {
     // Soft default for this project — the initial connection selected in the
-    // chat footer when a conversation opens here. Overridable per chat. For
+    // command bar when a conversation opens here. Overridable per chat. For
     // hard enforcement that refuses to send to any other connection, see
     // `aiLock` below (added in the project-data-isolation PRD).
     provider: string | null; // Connection ID (v2) or legacy provider name

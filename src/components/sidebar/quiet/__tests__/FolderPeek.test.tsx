@@ -13,7 +13,7 @@
  *  - hidden / .DS_Store filtering
  *  - file-click opens a tab via `read_file`
  *  - folder-row click dispatches `expand-path` with the folder's path
- *  - footer "Expand in sidebar" button is absent (removed — inline row-click supersedes it)
+ *  - bottom "Expand in sidebar" button is absent (removed — inline row-click supersedes it)
  *  - reduced motion: animation classes omitted
  */
 
@@ -184,7 +184,7 @@ describe("FolderPeek (#36)", () => {
       (el) => el.textContent?.trim()
     );
     // Folders first: alpha-dir, Beta. Files second: alpha.md, zeta.md.
-    // No footer button — "Expand in sidebar" was removed (issue #157).
+    // No bottom button — "Expand in sidebar" was removed (issue #157).
     expect(items).toEqual([
       "alpha-dir",
       "Beta",
@@ -311,7 +311,7 @@ describe("FolderPeek (#36)", () => {
   });
 
   // Sidebar-simplification task #6 — FolderPeek no longer takes
-  // `onOpenTreeOverlay`. Folder-clicks and the footer "Expand in
+  // `onOpenTreeOverlay`. Folder-clicks and the bottom "Expand in
   // sidebar" button dispatch `notesage:sidebar-expand-path` on the
   // shared `sidebar-events` bus instead.
   it("folder-row click dispatches expand-path with the folder's path as target", async () => {
