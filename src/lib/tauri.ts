@@ -869,6 +869,12 @@ export const tauriApi = {
      *  (`notesage:<connectionId>:env:<KEY>`). Values never transit IPC here. */
     connectionId?: string | null,
     envVarKeys?: string[] | null,
+    /** Inline env passed to the spawned agent (e.g. the Local Agent preset's
+     *  generated Goose env). Keychain-resolved values still win backend-side. */
+    envVars?: Record<string, string> | null,
+    /** Extra localhost ports to allow through the kernel network sandbox
+     *  alongside the proxy port (e.g. the bundled llama-server port, #9). */
+    extraLocalhostPorts?: number[] | null,
   ): Promise<AcpSpawnResult> {
     return await invoke<AcpSpawnResult>("acp_agent_spawn", {
       agentBinary,
@@ -882,6 +888,8 @@ export const tauriApi = {
       kernelNetworkDeny: kernelNetworkDeny ?? null,
       connectionId: connectionId ?? null,
       envVarKeys: envVarKeys ?? null,
+      envVars: envVars ?? null,
+      extraLocalhostPorts: extraLocalhostPorts ?? null,
     });
   },
 

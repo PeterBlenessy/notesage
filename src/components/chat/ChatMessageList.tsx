@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { Loader2, GitBranch, ArrowRight } from 'lucide-react';
+import { Loader2, GitBranch } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
@@ -11,7 +11,7 @@ import { acpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { useLocalAIStore } from '@/stores/local-ai-store';
+import { LocalAgentSetupPrompt } from './LocalAgentSetupPrompt';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { usePermissionStore } from '@/stores/permission-store';
@@ -381,25 +381,3 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     </div>
   );
 });
-
-/**
- * Empty-state entry point for the Local Agent setup flow (task #18). Renders a
- * single quiet link only while NO AI connection exists; opens the setup dialog
- * (#17). Disappears the moment any connection is added.
- */
-function LocalAgentSetupPrompt() {
-  const hasConnections = useConnectionsStore((s) => s.connections.length > 0);
-  const openSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
-  if (hasConnections) return null;
-  return (
-    <Button
-      variant="link"
-      size="sm"
-      onClick={() => openSetup(true)}
-      className="mt-3 h-auto gap-1 p-0 text-xs font-medium text-[var(--color-accent-primary)]"
-    >
-      Set up a private, on-device agent
-      <ArrowRight className="h-3 w-3" strokeWidth={1.5} />
-    </Button>
-  );
-}

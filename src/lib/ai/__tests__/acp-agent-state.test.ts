@@ -221,6 +221,49 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent).not.toBeNull();
   });
 
+  it('flips localAgentDegraded when a preset endpoint resolution fails (review High #1)', async () => {
+    // Regression lock: the eager session-creation effect calls ensureAcpAgent
+    // directly (not through runPresetGuarded). When the bundled server is down,
+    // resolveLocalAgentEndpoint throws — and that throw must flip the degraded
+    // flag so the "Offline / Fix" notice shows and the next send falls back to
+    // Path 4, regardless of which caller triggered the spawn.
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-x' }));
+    setMockInvokeHandler('local_agent_write_config', () => {
+      throw new Error('Local AI server is not running');
+    });
+
+    const mod = await import('../acp-agent-state');
+    const { useLocalAIStore } = await import('@/stores/local-ai-store');
+    mod.clearAcpAgent();
+    useLocalAIStore.getState().setLocalAgentDegraded(null);
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
+
+    const preset = makeConnection({
+      id: 'goose',
+      provider: 'custom_acp',
+      config: { localAgentPreset: 'goose' },
+    });
+
+    await expect(mod.ensureAcpAgent(preset, '/tmp')).rejects.toThrow('Local AI server is not running');
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(true);
+  });
+
+  it('does NOT flip localAgentDegraded for a non-preset spawn failure', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      throw new Error('Binary not found');
+    });
+
+    const mod = await import('../acp-agent-state');
+    const { useLocalAIStore } = await import('@/stores/local-ai-store');
+    mod.clearAcpAgent();
+    useLocalAIStore.getState().setLocalAgentDegraded(null);
+
+    await expect(mod.ensureAcpAgent(makeConnection(), '/tmp')).rejects.toThrow('Binary not found');
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
+  });
+
   it('authentication real error propagates', async () => {
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => ({

@@ -57,6 +57,16 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverOpenedAt = useRef(0);
+  // Tracks the deferred popover-open timer so it can be cleared on unmount
+  // (review Low #5 — avoids a setState after unmount if the dialog closes
+  // within the 100 ms delay window).
+  const customAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (customAgentTimerRef.current) clearTimeout(customAgentTimerRef.current);
+    },
+    [],
+  );
   const [inputValue, setInputValue] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -143,7 +153,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const handlePickCustomAgent = useCallback(() => {
     setFlow({ step: 'custom' });
     // Delay popover open so it doesn't race with the dropdown close animation
-    setTimeout(() => {
+    if (customAgentTimerRef.current) clearTimeout(customAgentTimerRef.current);
+    customAgentTimerRef.current = setTimeout(() => {
       setPopoverOpen(true);
       popoverOpenedAt.current = Date.now();
     }, 100);
@@ -323,7 +334,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                         ? 'Private on-device agent — set up'
                         : 'Private AI — the model runs on your device, no API keys'}
                     </span>
-                    <span className="text-[0.6875rem] text-muted-foreground block truncate">
+                    <span className="text-[10px] text-muted-foreground block truncate">
                       Powered by Goose, an open-source agent by Block
                     </span>
                   </div>

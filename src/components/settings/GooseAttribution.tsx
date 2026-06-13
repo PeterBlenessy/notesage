@@ -26,7 +26,7 @@ export function GooseAttribution({
         e.stopPropagation();
         openUrl(GOOSE_REPO_URL).catch(() => {});
       }}
-      className="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+      className="underline underline-offset-2 hover:text-foreground transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
     >
       Goose
     </button>

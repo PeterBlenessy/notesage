@@ -89,6 +89,19 @@ describe('isAgentHealthError — fallback triggers', () => {
   it('does NOT flag ordinary turn errors', () => {
     expect(isAgentHealthError(new Error('model produced invalid tool call'))).toBe(false);
     expect(isAgentHealthError('rate limited')).toBe(false);
+    expect(isAgentHealthError('context length exceeded')).toBe(false);
+    expect(isAgentHealthError('the model returned an empty response')).toBe(false);
     expect(isAgentHealthError(undefined)).toBe(false);
+    expect(isAgentHealthError(null)).toBe(false);
+  });
+  it('flags Node spawn-ENOENT binary-missing errors (bare "spawn" kept on purpose)', () => {
+    // Regression lock for review Medium #4: narrowing `spawn` → `spawn failed`
+    // would miss Node's child_process error shape and hide the degraded notice.
+    expect(isAgentHealthError(new Error('spawn goose ENOENT'))).toBe(true);
+    expect(isAgentHealthError('spawn /usr/local/bin/goose EACCES')).toBe(true);
+  });
+  it('reads .message off Error objects and stringifies non-Error throws', () => {
+    expect(isAgentHealthError({ message: 'ECONNREFUSED 127.0.0.1:8137' })).toBe(true);
+    expect(isAgentHealthError('Binary not found')).toBe(true);
   });
 });

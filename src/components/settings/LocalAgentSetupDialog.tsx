@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -161,7 +162,7 @@ export function LocalAgentSetupDialog() {
         {/* Model picker — only meaningful before the flow starts or after failure. */}
         {(setup.stage === 'idle' || isFailed) && (
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">Model</label>
+            <Label className="text-sm font-medium text-foreground">Model</Label>
             <Select
               value={effectiveModel ?? undefined}
               onValueChange={setChosenModel}
@@ -213,9 +214,13 @@ export function LocalAgentSetupDialog() {
         </ul>
 
         {isFailed && setup.error && (
-          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-destructive">
-            {setup.error}
-          </p>
+          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
+            <p className="text-xs text-destructive">{setup.error}</p>
+            <p className="text-[11px] text-muted-foreground">
+              Check your internet connection and try again. If it keeps failing, the
+              bundled model may need re-downloading from Settings → Local AI.
+            </p>
+          </div>
         )}
 
         <GooseAttribution />

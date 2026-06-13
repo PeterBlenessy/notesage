@@ -43,6 +43,13 @@ export function resolveInteractiveConnection(
  * unhealthy" signal (binary missing, spawn/connect failure, server down) versus
  * an ordinary turn error. Only the former should flip the degraded flag so a
  * one-off model error doesn't permanently route around the agent.
+ *
+ * Matching is intentionally broad substring-based and errs toward flagging: a
+ * false positive merely routes the next turn to Path 4 (which still serves and
+ * is cleared by the next healthy setup), whereas a false negative hides the
+ * "Offline / Fix" notice. Bare `spawn` is kept (not narrowed to `spawn failed`)
+ * so Node's `spawn <bin> ENOENT` binary-missing errors are still caught. If this
+ * ever needs to be exact, replace it with a typed error code from the backend.
  */
 export function isAgentHealthError(error: unknown): boolean {
   const msg = String(

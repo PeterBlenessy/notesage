@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { PROVIDER_OPTIONS, getCapabilities } from '@/lib/ai/connections';
 import type { Connection, ConnectionCredentials, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
@@ -420,7 +421,23 @@ export async function ensureAcpAgent(
   // server restart on a new port (or a model switch) changes this key, so the
   // existing agent is torn down and respawned against the fresh config — same
   // mechanism as `sandboxScopeKey`. Non-preset connections get `configKey=''`.
-  const endpoint = await resolveLocalAgentEndpoint(connection);
+  let endpoint: LocalAgentEndpoint | null;
+  try {
+    endpoint = await resolveLocalAgentEndpoint(connection);
+  } catch (err) {
+    // Preset endpoint resolution throws when the bundled llama-server isn't
+    // running / has no model. That's an agent-health failure — flip the degraded
+    // flag HERE (not only in the send-path `runPresetGuarded`) so EVERY caller,
+    // including the eager session-creation effect that previously swallowed this
+    // as "non-fatal", surfaces the "Offline / Fix" notice and routes the next
+    // send to Path 4 (review High #1).
+    if (isLocalAgentPreset(connection)) {
+      useLocalAIStore.getState().setLocalAgentDegraded(
+        `Local Agent unavailable: ${String((err as Error)?.message ?? err)}`,
+      );
+    }
+    throw err;
+  }
   const configKey = endpoint?.configKey ?? '';
 
   log.info(
