@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | M1 complete (#1–#6 + #4b); M2 backend #7–#9 done; M2 frontend #10–#14 next |
+| **Status** | M1 complete (#1–#6 + #4b); M2 complete (#7–#14); M3 #15–#21 next |
 | **PRD** | [local-ai-agents](../prds/2026-06-12-local-ai-agents.md) |
 | **Total** | 23 tasks: 6S, 13M, 4L |
 | **Suggested order** | M1 Custom agents (#1–#6) → M2 Preset plumbing (#7–#14) → M3 Setup flow (#15–#21) → Docs & gates (#22–#23) |
@@ -74,27 +74,27 @@
 **Description:** Profile generation accepts an extra localhost-port literal per connection (the llama-server port) alongside the proxy port; add the `opencode` basename row to the Bucket C table (its own config/cache dirs — confirmed via sandbox violation monitoring during implementation, not guessed). **Regression-lock test:** the preset profile allows exactly {proxy port, llama-server port} on localhost and nothing else.
 **Complexity:** M **Category:** backend **Dependencies:** #8 **Files:** `src-tauri/src/commands/sandbox.rs`
 
-### #10 — Respawn agent on endpoint-config change
+### #10 — Respawn agent on endpoint-config change ✅
 
 **Description:** Include a config key (llama-server port + active model id) in the agent respawn trigger, mirroring the `sandboxScopeKey` pattern in `acp-agent-state.ts` — server restart on a new port regenerates the config (#8) and respawns the agent transparently. Test: simulated port change → respawn observed, conversation session restored via the existing restore chain.
 **Complexity:** M **Category:** frontend **Dependencies:** #8 **Files:** `src/lib/ai/acp-agent-state.ts`, `src/hooks/useAcpLifecycle.ts`
 
-### #11 — Pass `mcp_servers` at session/new ⚠️ shared infra (= upgrade-plan task 10)
+### #11 — Pass `mcp_servers` at session/new ⚠️ shared infra (= upgrade-plan task 10) ✅
 
 **Description:** Assemble enabled, scope-matching MCP servers (`{global, byProject}` × selected projects) into `McpServerStdio` configs (keychain env secrets resolved at spawn, never through IPC in plaintext beyond the existing spawn path), gate on the agent's advertised `McpCapabilities`, attach to `NewSessionRequest` (and the resume/load paths where applicable). Applies to **all** ACP agents, not just the preset. Tests: scope filtering, secret resolution, capability gating, absent-field back-compat.
 **Complexity:** L **Category:** both **Dependencies:** #4 **Files:** `src-tauri/src/commands/acp.rs`, `src/hooks/useAcpLifecycle.ts`, `src/stores/mcp-store.ts`
 
-### #12 — `acp_agent_smoke_test` command
+### #12 — `acp_agent_smoke_test` command ✅
 
 **Description:** Bounded verification: ensure llama-server `/health` is green → spawn agent → `initialize` → `session/new` → one-token prompt → teardown; return `SmokeTestReport { ok, stage, error?, elapsedMs }`. Timeout budget accounts for cold model load. Rust tests with a scripted fake agent binary.
 **Complexity:** M **Category:** backend **Dependencies:** #4 **Files:** `src-tauri/src/commands/acp.rs` or new module
 
-### #13 — Routing default + Path 4 fallback
+### #13 — Routing default + Path 4 fallback ✅
 
 **Description:** When the preset connection exists and is healthy, the Local AI interactive slot routes to the agent (agentic chat default). If the binary is missing, spawn fails, or the last smoke test failed → route to the existing direct local chat (Path 4) and set a `degraded` flag for UI (#20). Chat must never dead-end. Tests for each fallback trigger.
 **Complexity:** M **Category:** frontend **Dependencies:** #10, #12 **Files:** `src/stores/routing-store.ts`, `src/hooks/useAIOperations.ts`, `src/stores/local-ai-store.ts`
 
-### #14 — M2 integration test pass
+### #14 — M2 integration test pass ✅
 
 **Description:** End-to-end (mocked IPC): preset connection → session with MCP configs attached → tool-call permission flow unchanged → fallback path on simulated spawn failure. `cargo test` additions for #8/#9/#12 land with their tasks; this task is the cross-cutting integration sweep + coverage check.
 **Complexity:** M **Category:** both **Dependencies:** #9, #11, #13 **Files:** `src/hooks/__tests__/`, `e2e/tests/`
