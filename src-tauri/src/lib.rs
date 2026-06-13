@@ -267,6 +267,7 @@ pub fn run() {
             agent_install_node_runtime,
             agent_check_updates,
             agent_update,
+            commands::local_agent::local_agent_write_config,
             acp_agent_check_availability,
             acp_agent_spawn,
             acp_agent_authenticate,

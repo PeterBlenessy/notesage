@@ -89,6 +89,19 @@ impl LocalInferenceState {
 
     // -- Accessors for model_management and thinking_tags modules --
 
+    /// The live llama-server port, or `None` when the server isn't running.
+    /// Dynamic (chosen via `find_available_port`), so callers must re-read it
+    /// rather than caching — the Local Agent config (`local_agent.rs`) keys its
+    /// respawn trigger on this value.
+    pub async fn current_port(&self) -> Option<u16> {
+        *self.port.lock().await
+    }
+
+    /// The id of the model the running server was started with, or `None`.
+    pub async fn current_model(&self) -> Option<String> {
+        self.active_model.lock().await.clone()
+    }
+
     /// Get models directory path.
     pub fn models_dir(&self) -> &std::path::Path {
         &self.models_dir
