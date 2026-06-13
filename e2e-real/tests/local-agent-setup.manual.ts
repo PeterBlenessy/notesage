@@ -12,10 +12,13 @@
  * llama port only), and completes an agentic turn — the part that can't run in
  * the Linux CI container.
  *
- * Run manually:
+ * MANUAL-ONLY: the filename is `.manual.ts` (not `.test.ts`) on purpose, so the
+ * CI Real-E2E globs (wdio `**/*.test.ts`, orchestrator `tests/*.test.ts`) do NOT
+ * pick it up — it can't satisfy its prerequisites (network npm install,
+ * downloaded model, clean single instance) in the CI runner. Run it by hand:
  *   Terminal 1: pnpm tauri:test
  *   Terminal 2: tauri-webdriver
- *   Terminal 3: pnpm wdio run wdio.conf.ts --spec ./e2e-real/tests/local-agent-setup.test.ts
+ *   Terminal 3: pnpm wdio run wdio.conf.ts --spec ./e2e-real/tests/local-agent-setup.manual.ts
  *
  * Prereqs on the host (this is a MANUAL validation tool, not a CI gate):
  *   - Network access (npm install of opencode-ai; Node runtime if no system Node).
