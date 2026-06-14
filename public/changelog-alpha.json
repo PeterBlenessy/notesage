@@ -27,6 +27,20 @@
       }
     },
     {
+      "version": "0.46.0-alpha.29",
+      "date": "2026-06-14",
+      "previousVersion": "0.46.0-alpha.28",
+      "sections": {
+        "fixes": [
+          "fix(local-agent): harden setup/heartbeat + in-app re-authentication (#461)"
+        ]
+      },
+      "underTheHood": [
+        "fix(local-agent): harden setup/heartbeat + in-app re-authentication (#461)",
+        "docs(perf): record v0.46.0 startup baseline"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.28",
       "date": "2026-06-14",
       "previousVersion": "0.46.0-alpha.27",
