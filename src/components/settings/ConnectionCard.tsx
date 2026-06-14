@@ -11,9 +11,10 @@ import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { tauriApi } from '@/lib/tauri';
-import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
+import { canReauthenticate } from '@/lib/ai/reauth';
 import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
 import { GooseAttribution } from './GooseAttribution';
+import { ReauthDialog } from './ReauthDialog';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -68,6 +69,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState('');
   const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
+  const [reauthOpen, setReauthOpen] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
@@ -379,12 +381,17 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
           {connection.authMethod === 'agent_managed' && (() => {
             const creds = connection.credentials as { agentBinary: string };
             if (!canReauthenticate(creds.agentBinary)) return null;
+            // Only surface the key icon when the connection actually needs
+            // re-auth — i.e. its status is `expired` (set on a 401 during use) or
+            // `error` (a failed heartbeat). When `connected`, the icon would just
+            // read as a permanent "needs attention" badge on a healthy provider.
+            if (connection.status !== 'expired' && connection.status !== 'error') return null;
             return (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                onClick={() => reauthenticateAgent(creds.agentBinary, connection.label)}
+                onClick={() => setReauthOpen(true)}
                 title="Re-authenticate"
               >
                 <KeyRound className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -441,6 +448,13 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         <LocalAIModelsDialog
           open={modelsDialogOpen}
           onOpenChange={setModelsDialogOpen}
+        />
+      )}
+      {connection.authMethod === 'agent_managed' && (
+        <ReauthDialog
+          connection={connection}
+          open={reauthOpen}
+          onOpenChange={setReauthOpen}
         />
       )}
     </div>

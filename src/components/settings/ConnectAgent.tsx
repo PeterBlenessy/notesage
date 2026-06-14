@@ -137,11 +137,15 @@ export function ConnectAgent({
         }
         instanceId = result.instance_id;
 
-        // If the agent advertises EnvVar auth, collect credentials before continuing.
-        // The probe agent is stopped — on submit, a fresh connection is registered with
-        // `envVars` stored on the connection; the real agent spawn happens at use time.
+        // Pick the auth method. Agents can advertise BOTH an interactive OAuth
+        // ("agent") method AND an API-key ("env_var") method — Codex offers
+        // ChatGPT login *and* OPENAI_API_KEY. Prefer the OAuth method: only fall
+        // back to the env_var credential form when env_var is the ONLY option
+        // (e.g. Gemini, which can't open a browser from a subprocess). Without
+        // this, Codex wrongly led with an API-key dialog.
+        const agentMethod = result.auth_methods.find((m) => m.type === 'agent');
         const envVar = findEnvVarAuthMethod(result.auth_methods);
-        if (envVar) {
+        if (envVar && !agentMethod) {
           invoke('acp_agent_stop', { instanceId }).catch(() => {});
           if (!active) return;
           setEnvVarMethod(envVar);
@@ -156,11 +160,13 @@ export function ConnectAgent({
         setPhase('authenticating');
 
         // Try to authenticate — some agents handle auth internally.
+        // Pass the OAuth method id explicitly so a multi-method agent (e.g. Codex)
+        // uses ChatGPT login rather than whichever method it lists first.
         // Use a shorter timeout (30s) since if the agent can't open a browser,
         // waiting longer won't help.
         try {
           await withTimeout(
-            invoke('acp_agent_authenticate', { instanceId }),
+            invoke('acp_agent_authenticate', { instanceId, methodId: agentMethod?.id ?? null }),
             30_000,
             'Authentication',
           );

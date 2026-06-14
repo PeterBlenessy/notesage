@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useConnectionsStore } from '@/stores/connections-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
@@ -910,6 +911,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           isAuthError(error) &&
           effectiveConnection?.credentials.type === 'agent_managed'
         ) {
+          // Flip the connection to `expired` so the dot stops reading "healthy"
+          // and the connection card surfaces its Re-authenticate affordance — the
+          // only reliable "needs reauth" signal, since heartbeat/session-create
+          // doesn't validate the OAuth token. A successful reauth (or heartbeat)
+          // flips it back to `connected`.
+          useConnectionsStore.getState().updateConnection(effectiveConnection.id, { status: 'expired' });
           const creds = effectiveConnection.credentials as { agentBinary: string };
           if (canReauthenticate(creds.agentBinary)) {
             toast.error(`Authentication failed for ${agentLabel}`, {
