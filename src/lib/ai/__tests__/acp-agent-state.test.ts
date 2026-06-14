@@ -221,12 +221,11 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent).not.toBeNull();
   });
 
-  it('flips localAgentDegraded when a preset endpoint resolution fails (review High #1)', async () => {
-    // Regression lock: the eager session-creation effect calls ensureAcpAgent
-    // directly (not through runPresetGuarded). When the bundled server is down,
-    // resolveLocalAgentEndpoint throws — and that throw must flip the degraded
-    // flag so the "Offline / Fix" notice shows and the next send falls back to
-    // Path 4, regardless of which caller triggered the spawn.
+  it('propagates a preset endpoint resolution failure to the caller (no silent fallback)', async () => {
+    // User decision: a broken Local Agent must surface a proper error in the
+    // chat message, NOT be swallowed into a degraded flag + Path-4 fallback.
+    // When the bundled server is down, resolveLocalAgentEndpoint throws and that
+    // throw must reach the caller so the send path can render the real failure.
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-x' }));
     setMockInvokeHandler('local_agent_write_config', () => {
@@ -234,10 +233,7 @@ describe('ensureAcpAgent', () => {
     });
 
     const mod = await import('../acp-agent-state');
-    const { useLocalAIStore } = await import('@/stores/local-ai-store');
     mod.clearAcpAgent();
-    useLocalAIStore.getState().setLocalAgentDegraded(null);
-    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
 
     const preset = makeConnection({
       id: 'goose',
@@ -246,22 +242,18 @@ describe('ensureAcpAgent', () => {
     });
 
     await expect(mod.ensureAcpAgent(preset, '/tmp')).rejects.toThrow('Local AI server is not running');
-    expect(useLocalAIStore.getState().localAgentDegraded).toBe(true);
   });
 
-  it('does NOT flip localAgentDegraded for a non-preset spawn failure', async () => {
+  it('propagates a non-preset spawn failure to the caller', async () => {
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => {
       throw new Error('Binary not found');
     });
 
     const mod = await import('../acp-agent-state');
-    const { useLocalAIStore } = await import('@/stores/local-ai-store');
     mod.clearAcpAgent();
-    useLocalAIStore.getState().setLocalAgentDegraded(null);
 
     await expect(mod.ensureAcpAgent(makeConnection(), '/tmp')).rejects.toThrow('Binary not found');
-    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
   });
 
   it('authentication real error propagates', async () => {

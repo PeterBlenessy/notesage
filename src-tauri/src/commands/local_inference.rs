@@ -16,6 +16,13 @@ pub struct LocalInferenceState {
     server_pid: std::sync::Mutex<Option<u32>>,
     port: tokio::sync::Mutex<Option<u16>>,
     active_model: tokio::sync::Mutex<Option<String>>,
+    /// Context size (`--ctx-size`) the running server was started with. Lets
+    /// `start_local_server` reuse a live server when it already serves the
+    /// requested model with at least the requested context — avoiding a
+    /// cold-load restart (the Local Agent setup needs a large window; if chat
+    /// already started one big enough, restarting would needlessly burn the
+    /// cold-load budget). Cleared on stop.
+    active_context: tokio::sync::Mutex<Option<u32>>,
     pub models_dir: PathBuf,
     download_cancels: std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Cached thinking tags detected from /props chat_template for the active model.
@@ -46,6 +53,7 @@ impl LocalInferenceState {
             server_pid: std::sync::Mutex::new(None),
             port: tokio::sync::Mutex::new(None),
             active_model: tokio::sync::Mutex::new(None),
+            active_context: tokio::sync::Mutex::new(None),
             models_dir,
             download_cancels: std::sync::Mutex::new(HashMap::new()),
             detected_thinking_tags: tokio::sync::Mutex::new(None),
@@ -210,9 +218,47 @@ pub async fn start_local_server(
     context_length: Option<u32>,
     gpu_layers: Option<i32>,
 ) -> Result<u16, String> {
+    let ctx_len = context_length.unwrap_or(4096);
+
+    // Reuse the running server if it already serves THIS model with at least
+    // the requested context. Verifying liveness via /health (the stored pid can
+    // be stale if the process died) means a same-model, same-or-larger-context
+    // request returns instantly instead of paying another multi-second cold
+    // load. This is what lets a chat server started with a large window satisfy
+    // the Local Agent setup without a restart (user request) — and once the
+    // agent has started the server at its large context, subsequent calls reuse
+    // it too.
+    if let Some(existing_port) = *state.port.lock().await {
+        let same_model = state.active_model.lock().await.as_deref() == Some(model_id.as_str());
+        let ctx_ok = state
+            .active_context
+            .lock()
+            .await
+            .map(|c| c >= ctx_len)
+            .unwrap_or(false);
+        if same_model && ctx_ok {
+            let health_url = format!("http://127.0.0.1:{}/health", existing_port);
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .map_err(|e| format!("HTTP client error: {}", e))?;
+            if let Ok(resp) = client.get(&health_url).send().await {
+                if resp.status().is_success() {
+                    log::info!(
+                        target: "notesage::local_ai",
+                        "Reusing running llama-server on port {} (model '{}', ctx ≥ {})",
+                        existing_port, model_id, ctx_len
+                    );
+                    return Ok(existing_port);
+                }
+            }
+        }
+    }
+
     // Stop existing server if running and clear stale port
     kill_server_process(&state);
     *state.port.lock().await = None;
+    *state.active_context.lock().await = None;
 
     // Find model file
     let entry = find_model_entry(&state.models_dir, &model_id)
@@ -227,7 +273,6 @@ pub async fn start_local_server(
     let port = find_available_port(8090)
         .ok_or("Could not find an available port in range 8090-8189")?;
 
-    let ctx_len = context_length.unwrap_or(4096);
     let gpu = gpu_layers.unwrap_or(-1);
 
     // Resolve binary
@@ -352,7 +397,14 @@ pub async fn start_local_server(
         }
     });
 
-    // Wait for server to become healthy (max 30 seconds)
+    // Wait for the server to become healthy. Cold-loading a multi-GB model with
+    // Metal — especially a vision model that also loads an mmproj projector, or
+    // any model started with the Local Agent's large context — can comfortably
+    // exceed 30 s, which is what produced the spurious "failed to become healthy
+    // within 30 seconds" setup failures. A healthy server still returns the
+    // instant it responds; the longer budget only delays giving up on a
+    // genuinely stuck start.
+    const HEALTH_TIMEOUT_SECS: u64 = 120;
     let health_url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
@@ -360,7 +412,7 @@ pub async fn start_local_server(
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
     let mut healthy = false;
-    for _ in 0..60 {
+    for _ in 0..(HEALTH_TIMEOUT_SECS * 2) {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         if let Ok(resp) = client.get(&health_url).send().await {
             if resp.status().is_success() {
@@ -372,12 +424,16 @@ pub async fn start_local_server(
 
     if !healthy {
         kill_server_process(&state);
-        return Err("llama-server failed to become healthy within 30 seconds".to_string());
+        return Err(format!(
+            "llama-server failed to become healthy within {} seconds",
+            HEALTH_TIMEOUT_SECS
+        ));
     }
 
     // Store state
     *state.port.lock().await = Some(port);
     *state.active_model.lock().await = Some(model_id.clone());
+    *state.active_context.lock().await = Some(ctx_len);
     *state.detected_thinking_tags.lock().await = None; // clear cache on model switch
 
     let _ = app.emit(
@@ -415,6 +471,7 @@ pub async fn stop_local_server(
 
     *state.port.lock().await = None;
     *state.active_model.lock().await = None;
+    *state.active_context.lock().await = None;
 
     let _ = app.emit(
         "local-server-status",

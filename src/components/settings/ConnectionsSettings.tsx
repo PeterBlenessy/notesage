@@ -292,9 +292,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       // the `configuring` stage that creates the connection), so the agent can
       // never be re-added after removal.
       if (isLocalAgentPreset(connection)) {
-        const localStore = useLocalAIStore.getState();
-        localStore.resetLocalAgentSetup();
-        localStore.setLocalAgentDegraded(null);
+        useLocalAIStore.getState().resetLocalAgentSetup();
       }
     },
     [clearRoutingForConnection, removeConnection]

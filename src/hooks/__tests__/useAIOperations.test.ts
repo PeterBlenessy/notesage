@@ -10,7 +10,6 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
-import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -120,7 +119,6 @@ describe('useAIOperations', () => {
     mockAcpGenerateText.mockClear();
     mockAcpSendChatMessage.mockClear();
     mockAcpCancelChat.mockClear();
-    useLocalAIStore.getState().setLocalAgentDegraded(null);
   });
 
   // ---- Provider routing ----
@@ -647,9 +645,9 @@ describe('useAIOperations', () => {
     });
   });
 
-  // ---- Local Agent preset routing + Path-4 fallback (task #13) ----
+  // ---- Local Agent preset routing (no silent fallback — user decision) ----
 
-  describe('Local Agent preset fallback', () => {
+  describe('Local Agent preset routing', () => {
     function makePresetConnection(overrides: Partial<Connection> = {}): Connection {
       return makeConnection({
         id: 'preset',
@@ -682,7 +680,7 @@ describe('useAIOperations', () => {
       });
     }
 
-    it('routes to the agent (ACP) when the preset is healthy', async () => {
+    it('routes to the agent (ACP) when the preset is selected', async () => {
       useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
       routeTo('preset');
       const { result } = renderHook(() => useAIOperations());
@@ -693,38 +691,17 @@ describe('useAIOperations', () => {
       expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
 
-    it('falls back to direct local chat (Path 4) when the preset is degraded', async () => {
+    it('surfaces an agent error to the caller instead of silently falling back to direct local chat', async () => {
+      // User decision: a broken Local Agent must NOT silently route to Path 4.
+      // The error propagates so the chat message shows the real failure.
       useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
       routeTo('preset');
-      useLocalAIStore.getState().setLocalAgentDegraded('Local AI server is not running');
+      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('Local AI server is not running'));
       const { result } = renderHook(() => useAIOperations());
       await act(async () => {
-        await result.current.sendChatMessage('hi', []);
+        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow(/not running/);
       });
-      expect(mockDirectSendChatMessage).toHaveBeenCalled();
-      expect(mockAcpSendChatMessage).not.toHaveBeenCalled();
-    });
-
-    it('flips the degraded flag when an agent-health error is thrown', async () => {
-      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
-      routeTo('preset');
-      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('Agent spawn failed after multiple retries'));
-      const { result } = renderHook(() => useAIOperations());
-      await act(async () => {
-        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow();
-      });
-      expect(useLocalAIStore.getState().localAgentDegraded).toBe(true);
-    });
-
-    it('does NOT flip degraded for an ordinary turn error', async () => {
-      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
-      routeTo('preset');
-      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('model produced invalid output'));
-      const { result } = renderHook(() => useAIOperations());
-      await act(async () => {
-        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow();
-      });
-      expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
   });
 });

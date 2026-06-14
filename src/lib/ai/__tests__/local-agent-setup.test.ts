@@ -19,20 +19,20 @@ function makeDeps(overrides: Partial<LocalAgentSetupDeps> = {}): {
     routeInteractive: vi.fn(),
     smokeTest: vi.fn().mockResolvedValue({ ok: true, stage: 'done', elapsedMs: 10 } as SmokeTestReport),
     setStage: vi.fn((next) => { stages.push(next.stage + (next.failedStage ? `:${next.failedStage}` : '')); }),
-    clearDegraded: vi.fn(),
+    rollback: vi.fn(),
     ...overrides,
   };
   return { deps, stages };
 }
 
 describe('runLocalAgentSetup', () => {
-  it('walks the happy path to ready and clears degraded', async () => {
+  it('walks the happy path to ready without rolling back', async () => {
     const { deps, stages } = makeDeps();
     const result = await runLocalAgentSetup(deps);
     expect(result.ok).toBe(true);
     expect(stages).toEqual(['detecting', 'downloading', 'configuring', 'verifying', 'ready']);
     expect(deps.routeInteractive).toHaveBeenCalledWith('preset-conn');
-    expect(deps.clearDegraded).toHaveBeenCalled();
+    expect(deps.rollback).not.toHaveBeenCalled();
   });
 
   it('installs the agent and downloads the model in parallel', async () => {
@@ -53,7 +53,7 @@ describe('runLocalAgentSetup', () => {
     expect(deps.installAgent).toHaveBeenCalled();
   });
 
-  it('attributes a download failure to the downloading stage', async () => {
+  it('attributes a download failure to the downloading stage, before any connection exists', async () => {
     const { deps, stages } = makeDeps({
       downloadModel: vi.fn().mockRejectedValue(new Error('network down')),
     });
@@ -61,24 +61,46 @@ describe('runLocalAgentSetup', () => {
     expect(result).toMatchObject({ ok: false, failedStage: 'downloading', error: 'network down' });
     expect(stages).toContain('failed:downloading');
     expect(deps.smokeTest).not.toHaveBeenCalled();
+    // No connection was created yet → nothing to roll back.
+    expect(deps.rollback).not.toHaveBeenCalled();
   });
 
-  it('attributes a config failure to the configuring stage', async () => {
+  it('does not roll back a config failure that happens before the connection is created', async () => {
     const { deps } = makeDeps({
       writeConfig: vi.fn().mockRejectedValue(new Error('server not running')),
     });
     const result = await runLocalAgentSetup(deps);
     expect(result).toMatchObject({ ok: false, failedStage: 'configuring' });
+    // writeConfig runs before createPresetConnection → no connection to undo.
+    expect(deps.rollback).not.toHaveBeenCalled();
   });
 
-  it('lands a failing smoke test as failed at verifying (Path-4 fallback, no throw)', async () => {
+  it('rolls back the created connection when a config step after creation throws', async () => {
+    const { deps } = makeDeps({
+      routeInteractive: vi.fn(() => { throw new Error('routing exploded'); }),
+    });
+    const result = await runLocalAgentSetup(deps);
+    expect(result).toMatchObject({ ok: false, failedStage: 'configuring' });
+    expect(deps.rollback).toHaveBeenCalledWith('preset-conn');
+  });
+
+  it('rolls back the created connection when the smoke test fails (broken add is not listed)', async () => {
     const { deps, stages } = makeDeps({
       smokeTest: vi.fn().mockResolvedValue({ ok: false, stage: 'prompt', error: 'model timed out', elapsedMs: 180000 } as SmokeTestReport),
     });
     const result = await runLocalAgentSetup(deps);
     expect(result).toMatchObject({ ok: false, failedStage: 'verifying', error: 'model timed out' });
     expect(stages).toContain('failed:verifying');
-    expect(deps.clearDegraded).not.toHaveBeenCalled();
+    expect(deps.rollback).toHaveBeenCalledWith('preset-conn');
+  });
+
+  it('rolls back the created connection when the smoke test throws', async () => {
+    const { deps } = makeDeps({
+      smokeTest: vi.fn().mockRejectedValue(new Error('spawn goose ENOENT')),
+    });
+    const result = await runLocalAgentSetup(deps);
+    expect(result).toMatchObject({ ok: false, failedStage: 'verifying' });
+    expect(deps.rollback).toHaveBeenCalledWith('preset-conn');
   });
 
   it('carries the recommended modelId into every stage transition', async () => {

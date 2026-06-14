@@ -213,9 +213,30 @@ describe('custom_acp — spawn wiring', () => {
     expect(last.agentArgs).toBeNull();
   });
 
-  it('resolveAgentLaunch throws when a custom_acp connection has no binaryPath', () => {
-    const broken = makeCustomConnection({ config: {} });
+  it('resolveAgentLaunch throws only when BOTH config.binaryPath AND credentials.agentBinary are absent', () => {
+    const broken = makeCustomConnection({
+      config: {},
+      credentials: { type: 'agent_managed', agentBinary: '', envVars: {} },
+    });
     expect(() => resolveAgentLaunch(broken)).toThrow(/no binary path/i);
+  });
+
+  it('resolveAgentLaunch falls back to credentials.agentBinary when config.binaryPath is missing (self-heal)', () => {
+    // Regression lock: a 0.46.0-alpha.28 Local Agent preset connection was
+    // observed in prod with `credentials.agentBinary` set but no `config` object
+    // (config dropped/never-persisted). The old config-only read threw "has no
+    // binary path configured", bricking the agent. The fallback heals it without
+    // re-running setup.
+    const healed = makeCustomConnection({
+      config: {},
+      credentials: { type: 'agent_managed', agentBinary: '/Users/me/.notesage/agents/bin/goose' },
+    });
+    expect(resolveAgentLaunch(healed)).toEqual({
+      agentBinary: '/Users/me/.notesage/agents/bin/goose',
+      agentArgs: [],
+      envVars: null,
+      envVarKeys: null,
+    });
   });
 
   it('resolveAgentLaunch keeps managed connections on credentials.agentBinary', () => {

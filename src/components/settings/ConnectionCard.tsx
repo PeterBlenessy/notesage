@@ -10,8 +10,9 @@ import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield
 import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
+import { tauriApi } from '@/lib/tauri';
 import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
-import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
+import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
 import { GooseAttribution } from './GooseAttribution';
 
 const AUTH_BADGES: Record<string, string> = {
@@ -95,7 +96,35 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         const creds = connection.credentials as { agentBinary: string; agentArgs?: string[] };
         const isLsp = creds.agentBinary === 'copilot-language-server';
 
-        if (isLsp) {
+        if (isLocalAgentPreset(connection)) {
+          // The generic ACP health check below spawns from `credentials.agentBinary`
+          // /`agentArgs` with NO env. The Local Agent preset keeps its `acp` arg in
+          // `config.binaryArgs` and needs the Goose env (GOOSE_PROVIDER/OPENAI_HOST/
+          // GOOSE_MODEL/GOOSE_DISABLE_KEYRING) + the bundled llama-server port — without
+          // them Goose falls into its interactive `goose configure` flow and dies in the
+          // non-TTY subprocess ("goose configure requires an interactive terminal"), so
+          // the heartbeat failed even though chat works. Run the same smoke test the
+          // setup uses (correct binary+args, live-regenerated env, llama port, preset
+          // sandbox) so the heartbeat reflects what chat actually does.
+          const launch = resolveAgentLaunch(connection);
+          const endpoint = await resolveLocalAgentEndpoint(connection);
+          const report = await tauriApi.acpAgentSmokeTest({
+            agentBinary: launch.agentBinary,
+            agentArgs: launch.agentArgs,
+            workingDirectory: '/tmp',
+            envVars: endpoint?.env ?? null,
+            sandboxEnabled: true,
+            sandboxPaths: ['/tmp'],
+            networkSandboxEnabled: true,
+            networkAllowedDomains: [],
+            kernelNetworkDeny: true,
+            extraLocalhostPorts: endpoint ? [endpoint.port] : null,
+            requireLocalServer: true,
+          });
+          if (!report.ok) {
+            throw new Error(report.error ?? `Verification failed at the ${report.stage} stage`);
+          }
+        } else if (isLsp) {
           // Copilot LSP: check status via LSP protocol (don't use ACP)
           let status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
             'copilot_lsp_status'

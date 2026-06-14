@@ -56,6 +56,9 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
     // test needs to spawn Goose against the bundled server in isolation.
     let configResult: LocalAgentConfig | null = null;
     let presetBinaryPath = '';
+    // The connection id this run *created* (vs reused). Only a created one is
+    // rolled back on failure — never one the run found already registered.
+    let createdConnectionId: string | null = null;
 
     return runLocalAgentSetup({
       detect: async () => {
@@ -148,11 +151,23 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           networkSandboxEnabled: true,
           kernelNetworkDeny: true,
         });
+        createdConnectionId = id;
         return id;
       },
 
       routeInteractive: (connectionId) => {
         routingStore.setRouting('interactive', connectionId);
+      },
+
+      rollback: (connectionId) => {
+        // Only undo a connection THIS run created — never a reused one (so
+        // re-running setup on an already-working agent can't delete it). On a
+        // failed add, clear the interactive routing slot pointing at it and
+        // remove the connection so the broken agent never reaches the dropdown.
+        if (createdConnectionId !== connectionId) return;
+        useRoutingStore.getState().clearRoutingForConnection(connectionId);
+        useConnectionsStore.getState().removeConnection(connectionId);
+        createdConnectionId = null;
       },
 
       smokeTest: async () => {
@@ -183,7 +198,6 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       },
 
       setStage: (next) => useLocalAIStore.getState().setLocalAgentSetup(next),
-      clearDegraded: () => useLocalAIStore.getState().setLocalAgentDegraded(null),
     });
   }, []);
 

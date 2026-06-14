@@ -43,6 +43,24 @@ const STAGES: { key: LocalAgentActiveStage; label: string }[] = [
 
 const STAGE_ORDER: LocalAgentActiveStage[] = STAGES.map((s) => s.key);
 
+/**
+ * Stage-specific guidance under a failed setup. Must stay accurate to the
+ * failure: only the download stage involves the network — a local server-health
+ * or smoke-test failure must NOT blame the internet (the bundled server is local).
+ */
+function failureHint(stage: LocalAgentActiveStage | undefined): string {
+  switch (stage) {
+    case 'downloading':
+      return 'The agent or model download didn’t finish — check your internet connection and try again.';
+    case 'configuring':
+      return 'The local AI server didn’t start in time. Make sure a model is downloaded in Settings → Local AI, then try again.';
+    case 'verifying':
+      return 'The agent started but didn’t respond in time. Try again, or pick a smaller model in Settings → Local AI.';
+    default:
+      return 'Try again.';
+  }
+}
+
 type RowState = 'pending' | 'active' | 'done' | 'failed';
 
 function rowState(
@@ -228,10 +246,7 @@ export function LocalAgentSetupDialog() {
         {isFailed && setup.error && (
           <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
             <p className="text-xs text-destructive">{setup.error}</p>
-            <p className="text-[11px] text-muted-foreground">
-              Check your internet connection and try again. If it keeps failing, the
-              bundled model may need re-downloading from Settings → Local AI.
-            </p>
+            <p className="text-[11px] text-muted-foreground">{failureHint(setup.failedStage)}</p>
           </div>
         )}
 

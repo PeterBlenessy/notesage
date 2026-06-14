@@ -2,7 +2,7 @@
 //
 // Kept free of React/stores/Tauri so the staged state machine — including
 // parallel install+download, per-stage failure attribution, and the
-// smoke-test gate → Path-4 fallback — is unit-testable with fakes. The hook
+// rollback-on-failure gate — is unit-testable with fakes. The hook
 // `useLocalAgentSetup` supplies the real dependencies.
 
 import type { LocalAgentActiveStage, LocalAgentSetupStage } from '@/stores/local-ai-store';
@@ -36,8 +36,13 @@ export interface LocalAgentSetupDeps {
     error?: string;
     modelId?: string;
   }) => void;
-  /** Clear the degraded flag once setup verifies healthy (#13). */
-  clearDegraded: () => void;
+  /**
+   * Roll back a connection this run created, after a failure at or past the
+   * `configuring` stage. The hook only removes a connection it *created* (not
+   * one it reused) so a failed add never leaves a broken Local Agent in the
+   * provider dropdown (user decision). No-op when no connection was created.
+   */
+  rollback?: (connectionId: string) => void;
   /** Optional progress breadcrumb (orb / activity entry). */
   onProgress?: (stage: LocalAgentActiveStage, message: string) => void;
 }
@@ -55,10 +60,11 @@ function errMessage(err: unknown): string {
 
 /**
  * Drive the staged Local Agent setup. Each stage is attributed on failure so
- * the dialog (#17) and the cmd-bar notice (#20) can point the user at the right
- * place. Verification failure does NOT throw — it lands as a `failed` state at
- * the `verifying` stage so routing falls back to Path 4 (#13) and the user can
- * retry from the dialog.
+ * the dialog (#17) can point the user at the right place. ANY failure — a
+ * thrown stage or a smoke test that reports `!ok` — rolls back a connection
+ * this run created and lands a `failed` state, so a broken add never leaves a
+ * Local Agent in the provider dropdown (user decision). The user retries from
+ * the dialog.
  */
 export async function runLocalAgentSetup(
   deps: LocalAgentSetupDeps,
@@ -72,7 +78,7 @@ export async function runLocalAgentSetup(
     await deps.detect();
     modelId = await deps.recommendModel();
   } catch (err) {
-    return fail(deps, 'detecting', err, modelId);
+    return fail(deps, 'detecting', err, modelId, '');
   }
 
   // downloading: install agent + download model in parallel
@@ -84,7 +90,7 @@ export async function runLocalAgentSetup(
       deps.isModelDownloaded(modelId) ? Promise.resolve() : deps.downloadModel(modelId),
     ]);
   } catch (err) {
-    return fail(deps, 'downloading', err, modelId);
+    return fail(deps, 'downloading', err, modelId, '');
   }
 
   // configuring: start server, write config, create connection, route
@@ -97,24 +103,24 @@ export async function runLocalAgentSetup(
     connectionId = await deps.createPresetConnection(modelId);
     deps.routeInteractive(connectionId);
   } catch (err) {
-    return fail(deps, 'configuring', err, modelId);
+    return fail(deps, 'configuring', err, modelId, connectionId);
   }
 
-  // verifying: smoke test (gate). A failed report is terminal-failed, not a throw.
+  // verifying: smoke test (gate). A failed report rolls back, same as a throw.
   try {
     deps.setStage({ stage: 'verifying', modelId });
     deps.onProgress?.('verifying', 'Verifying the agent responds…');
     const report = await deps.smokeTest(connectionId);
     if (!report.ok) {
       const reason = report.error ?? `Verification failed at the ${report.stage} stage`;
+      if (connectionId) deps.rollback?.(connectionId);
       deps.setStage({ stage: 'failed', failedStage: 'verifying', error: reason, modelId });
       return { ok: false, failedStage: 'verifying', error: reason };
     }
   } catch (err) {
-    return fail(deps, 'verifying', err, modelId);
+    return fail(deps, 'verifying', err, modelId, connectionId);
   }
 
-  deps.clearDegraded();
   deps.setStage({ stage: 'ready', modelId });
   return { ok: true };
 }
@@ -124,8 +130,10 @@ function fail(
   stage: LocalAgentActiveStage,
   err: unknown,
   modelId: string,
+  connectionId: string,
 ): LocalAgentSetupResult {
   const error = errMessage(err);
+  if (connectionId) deps.rollback?.(connectionId);
   deps.setStage({ stage: 'failed', failedStage: stage, error, modelId });
   return { ok: false, failedStage: stage, error };
 }
