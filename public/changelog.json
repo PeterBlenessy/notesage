@@ -1,6 +1,32 @@
 {
   "releases": [
     {
+      "version": "0.46.0",
+      "date": "2026-06-14",
+      "previousVersion": "0.45.0",
+      "sections": {
+        "features": [
+          "**Local AI Agents — a private agent that runs on your Mac.** Set up a local agent in one step (Settings → AI Providers → Add → \"Local Agent\") and it runs a real agent loop — planning, multiple steps, reading and editing your files — entirely on-device against the bundled local model. No API keys, no cloud account. You can also connect your own agent if it speaks the open Agent Client Protocol.",
+          "**Meeting recording with on-device transcription.** Record a meeting and Notesage transcribes it locally in the background, then offers to file the audio and transcript into a project. Start, pause, and stop from the agent orb or with ⌘⇧R; choose the model and language in Settings → Voice.",
+          "**Connect far more AI tools (MCP).** Connect to remote MCP servers (not just local ones), sign in to protected servers with OAuth, browse a built-in catalog of official servers, preview a server's tools before adding it, keep credentials in your OS keychain, and install a server in one click from a `notesage://` link.",
+          "**Opt-in usage and crash reporting.** Optional, privacy-first telemetry that stays off until you turn it on, with a single switch in Settings. Nothing leaves your device without your consent."
+        ],
+        "improvements": [
+          "**A calmer, more flexible workspace.** The title bar is now optional and the sidebar is resizable, with a tidier sidebar (the Pinned section hides when empty, a sticky header, clearer nesting lines, and the open document highlighted) and a stronger \"fade the chrome while I type\" option.",
+          "**Agent controls in the command bar.** When enabled, the agent permission-mode picker is always available and shows each agent's modes with plain-language names.",
+          "**Smoother indexing indicator.** The ring around the status dot now spins steadily while your library indexes instead of flickering.",
+          "**More reliable HTML viewing.** HTML files render correctly under the app's stricter security policy, with a sandboxed mode and find-in-document."
+        ],
+        "fixes": [
+          "**Fixed a startup crash** that affected a few mid-cycle builds.",
+          "**Closed two security issues** in how external tools connect (a malicious-link and a sign-in request-forgery path).",
+          "**Meeting transcription now detects the spoken language automatically** instead of assuming English.",
+          "**Buttons stay legible** — primary and destructive buttons keep a clear white label on the colored fill in both light and dark mode.",
+          "**Chat and agent stability** — conversations and branches keep their state correctly, and you can now remove and re-add the Local Agent cleanly."
+        ]
+      }
+    },
+    {
       "version": "0.45.0",
       "date": "2026-05-24",
       "previousVersion": "0.44.0",
