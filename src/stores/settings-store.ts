@@ -37,6 +37,8 @@ interface SettingsStore {
   /** Chroma intensity for UI color tint (0–30, mapped to 0–0.03 oklch chroma). 0 = neutral grey. */
   tintChroma: number;
   showFloatingToolbar: boolean;
+  /** Ambient action-refinement engine: analyze action items as you write (default off). */
+  ambientRefinementEnabled: boolean;
   toolbarVisible: boolean;
   contentWidth: ContentWidth;
   measurementUnit: MeasurementUnit;
@@ -240,6 +242,7 @@ interface SettingsStore {
   setTintHue: (hue: number) => void;
   setTintChroma: (chroma: number) => void;
   setShowFloatingToolbar: (show: boolean) => void;
+  setAmbientRefinementEnabled: (enabled: boolean) => void;
   setToolbarVisible: (visible: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
   setMeasurementUnit: (unit: MeasurementUnit) => void;
@@ -396,6 +399,7 @@ export const useSettingsStore = create<SettingsStore>()(
       tintHue: 60,
       tintChroma: 0,
       showFloatingToolbar: true,
+      ambientRefinementEnabled: false,
       toolbarVisible: true,
       contentWidth: "auto",
       measurementUnit: "cm",
@@ -491,6 +495,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowFloatingToolbar: (show: boolean) => {
         set({ showFloatingToolbar: show });
+      },
+      setAmbientRefinementEnabled: (enabled: boolean) => {
+        set({ ambientRefinementEnabled: enabled });
       },
 
       setToolbarVisible: (visible: boolean) => {
@@ -838,7 +845,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 22,
+      version: 23,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1071,6 +1078,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // are no longer auto-loaded as live <img> beacons unless opted in.
           if (typeof state.linkPreviewRemoteImages !== 'boolean') {
             state.linkPreviewRemoteImages = false;
+          }
+        }
+        if (version < 23) {
+          // Ambient action-refinement engine (PRD 2026-06-13). Opt-in; existing
+          // users default to off so nothing fires until they enable it.
+          if (typeof state.ambientRefinementEnabled !== 'boolean') {
+            state.ambientRefinementEnabled = false;
           }
         }
         return state;

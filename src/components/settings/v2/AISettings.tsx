@@ -3,6 +3,7 @@ import { UseCaseRoutingSettings } from '@/components/settings/UseCaseRoutingSett
 import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/settings/ApprovalsSettings';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useRefinementConnection } from '@/lib/ai/refinement-routing';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
@@ -29,6 +30,9 @@ export function AISettings() {
   const setCrossProjectMode = useSettingsStore((s) => s.setCrossProjectMode);
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
   const setShowAgentModePicker = useSettingsStore((s) => s.setShowAgentModePicker);
+  const ambientRefinementEnabled = useSettingsStore((s) => s.ambientRefinementEnabled);
+  const setAmbientRefinementEnabled = useSettingsStore((s) => s.setAmbientRefinementEnabled);
+  const refinementConn = useRefinementConnection();
 
   return (
     <div data-slot="ai-settings">
@@ -103,6 +107,56 @@ export function AISettings() {
               checked={requireAllToolConfirmations}
               onCheckedChange={setRequireAllToolConfirmations}
               aria-label="Require confirmation for every tool call"
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Ambient Action Refinement"
+        description="A background AI quietly sharpens vague action items as you write, surfaced on demand in the agent orb — never inline, never interrupting."
+        searchKeywords={['refine', 'tasks', 'ambient']}
+      >
+        <SettingsRow
+          label="Enable ambient action refinement"
+          description={
+            <>
+              Analyzes action items as you write and offers sharper versions in
+              the agent panel. Runs on the connection assigned to the{' '}
+              <span className="font-medium text-foreground">Agent tasks</span>{' '}
+              slot above —{' '}
+              {refinementConn ? (
+                <>
+                  currently{' '}
+                  <span className="font-medium text-foreground">
+                    {refinementConn.label}
+                  </span>
+                  {refinementConn.authMethod !== 'local' &&
+                  refinementConn.authMethod !== 'local_bundled' ? (
+                    <span className="text-muted-foreground">
+                      {' '}
+                      — this fires continuously, so a local connection is
+                      recommended for privacy and cost.
+                    </span>
+                  ) : (
+                    '.'
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground">
+                  no provider is assigned to that slot yet, so the feature stays
+                  inert. Assign one under Use Case Mapping above.
+                </span>
+              )}
+            </>
+          }
+          htmlFor="ambient-refinement-enabled"
+          control={
+            <Switch
+              id="ambient-refinement-enabled"
+              checked={ambientRefinementEnabled}
+              onCheckedChange={setAmbientRefinementEnabled}
+              aria-label="Enable ambient action refinement"
             />
           }
         />

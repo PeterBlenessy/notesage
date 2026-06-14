@@ -875,6 +875,29 @@ describe('v0 → v1 migration (debugLogging → logLevel)', () => {
     // The key assertion is that logLevel was correctly set.
   });
 
+  it('defaults ambientRefinementEnabled to false and the setter flips it', () => {
+    expect(useSettingsStore.getState().ambientRefinementEnabled).toBe(false);
+    useSettingsStore.getState().setAmbientRefinementEnabled(true);
+    expect(useSettingsStore.getState().ambientRefinementEnabled).toBe(true);
+    useSettingsStore.getState().setAmbientRefinementEnabled(false);
+    expect(useSettingsStore.getState().ambientRefinementEnabled).toBe(false);
+  });
+
+  it('migration <23 defines ambientRefinementEnabled for a pre-existing blob', async () => {
+    const v22State = {
+      state: {
+        theme: 'light',
+        showFloatingToolbar: true,
+        notesRootPath: '~/Notesage',
+      },
+      version: 22,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v22State));
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+    expect(useSettingsStore.getState().ambientRefinementEnabled).toBe(false);
+  });
+
   it('migrates debugLogging: false to logLevel: warn', async () => {
     const v0State = {
       state: {
@@ -1386,7 +1409,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(22);
+    expect(parsed.version).toBe(23);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2473,7 +2496,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(22);
+    expect(parsed.version).toBe(23);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
