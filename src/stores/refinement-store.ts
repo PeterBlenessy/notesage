@@ -99,6 +99,14 @@ export function selectHasPending(state: Pick<RefinementStore, 'entries'>): boole
   );
 }
 
+/** Count of pending entries whose verdict is not `keep` — drives the orb badge. */
+export function selectPendingCount(state: Pick<RefinementStore, 'entries'>): number {
+  return state.entries.reduce(
+    (n, e) => (e.status === 'pending' && e.result.verdict !== 'keep' ? n + 1 : n),
+    0,
+  );
+}
+
 /** Pending entries for a specific doc. */
 export function selectPendingForDoc(
   state: Pick<RefinementStore, 'entries'>,

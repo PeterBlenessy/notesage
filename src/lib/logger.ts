@@ -45,6 +45,7 @@ export const PERF = {
   sidebar: 'perf:sidebar',
   focus: 'perf:focus',
   context: 'perf:context',
+  refine: 'perf:refine',
 } as const;
 
 export type PerfCategory = typeof PERF[keyof typeof PERF];
