@@ -9,6 +9,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { extractRefinements } from "@/lib/ai/refinement-persist";
 import { processPendingCommentFile } from "@/lib/pending-comments";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import { deleteCachedViewport } from "@/lib/viewport-cache";
@@ -288,7 +289,12 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
 
   try {
     const raw = await tauriApi.readFile(path);
-    const { content } = parseFrontmatter(raw);
+    const { content: rawContent } = parseFrontmatter(raw);
+    // Strip persisted `ns-refine` comments before comparing/using — the editor
+    // holds the clean body, so without this every save (which writes comments to
+    // disk) would read back as an "external change" and the reload would inject
+    // comment text into the editor.
+    const content = extractRefinements(rawContent).cleaned;
 
     // Re-read state after await — tab state may have changed during the read
     const freshState = useEditorStore.getState();

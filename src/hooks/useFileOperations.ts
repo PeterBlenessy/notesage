@@ -5,6 +5,9 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
+import { extractRefinements, injectRefinements } from "@/lib/ai/refinement-persist";
+import { stashPersistedRefinements } from "@/lib/ai/refinement-persist-bridge";
+import { useRefinementStore } from "@/stores/refinement-store";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
@@ -237,7 +240,12 @@ export function useFileOperations() {
         const raw = await tauriApi.readFile(filePath);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
-          openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag, scrollToText);
+          // Strip persisted `ns-refine` comments before the editor parses them
+          // (they're how refinements travel with the file / iCloud). The parsed
+          // payloads are stashed for the watcher to re-anchor after hydration.
+          const { cleaned, persisted } = extractRefinements(content);
+          stashPersistedRefinements(filePath, persisted);
+          openTab(filePath, fileName, cleaned, frontmatter, fileType, scrollToTag, scrollToText);
         } else {
           openTab(filePath, fileName, raw, null, fileType, scrollToTag, scrollToText);
         }
@@ -275,7 +283,18 @@ export function useFileOperations() {
         const tab = useEditorStore.getState().openDocuments.find((t) => t.id === tabId);
         const frontmatter = tab?.frontmatter ?? null;
         const serializeStart = performance.now();
-        const raw = serializeFrontmatter(frontmatter, content);
+        // Persist refinements WITH the file: append `ns-refine` comments to the
+        // body for the pending refinements anchored in this doc, so they survive
+        // a reopen and travel via iCloud. `content` (and the in-editor state)
+        // stay clean — only the on-disk bytes carry the comments. No-op when the
+        // file isn't markdown or has no pending refinements.
+        const bodyForDisk = filePath.endsWith(".md")
+          ? injectRefinements(
+              content,
+              useRefinementStore.getState().entries.filter((e) => e.docPath === filePath),
+            )
+          : content;
+        const raw = serializeFrontmatter(frontmatter, bodyForDisk);
         const serializeMs = Math.round(performance.now() - serializeStart);
         await tauriApi.markSelfWrite(filePath);
         const writeStart = performance.now();

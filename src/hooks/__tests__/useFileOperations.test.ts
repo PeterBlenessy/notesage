@@ -8,6 +8,11 @@ import { useFileOperations } from '@/hooks/useFileOperations';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useRefinementStore } from '@/stores/refinement-store';
+import { peekPersistedRefinements } from '@/lib/ai/refinement-persist-bridge';
+import { serializeRefineComment } from '@/lib/ai/refine-comment';
+import { hashLine } from '@/lib/ai/refinement-hash';
+import type { RefinementResult } from '@/lib/ai/refinement';
 
 // Mock modules that useFileOperations imports but that aren't relevant to unit tests
 vi.mock('@/lib/refresh-notes-tree', () => ({
@@ -163,6 +168,70 @@ describe('useFileOperations', () => {
           await result.current.openFile('/missing.md', 'missing.md');
         }),
       ).rejects.toThrow('File not found');
+    });
+  });
+
+  // ---- refinement persistence (task #15) ----
+
+  describe('refinement persistence (ns-refine comments travel with the file)', () => {
+    const result: RefinementResult = {
+      verdict: 'sharpen',
+      outcome: 'Email the team Friday',
+      steps: [],
+      rationale: 'no owner/date',
+    };
+
+    beforeEach(() => {
+      useRefinementStore.setState({ entries: [], seen: new Set<string>() });
+    });
+
+    it('strips ns-refine comments on open and stashes them, leaving clean tab content', async () => {
+      const line = '- [ ] follow up with the team';
+      const comment = serializeRefineComment(result, hashLine('follow up with the team'), 'pending');
+      setMockInvokeHandler('read_file', () => `# Notes\n\n${line} ${comment}\n`);
+
+      const { result: hook } = renderHook(() => useFileOperations());
+      await act(async () => {
+        await hook.current.openFile('/project/r.md', 'r.md');
+      });
+
+      const tab = useEditorStore.getState().openDocuments.find((t) => t.filePath === '/project/r.md')!;
+      expect(tab.content).not.toContain('ns-refine');
+      expect(tab.content).toContain(line);
+      expect(peekPersistedRefinements('/project/r.md')).toHaveLength(1);
+    });
+
+    it('injects ns-refine comments into the written markdown for pending entries', async () => {
+      setMockInvokeHandler('read_file', () => '- [ ] follow up with the team');
+      setMockInvokeHandler('mark_self_write', () => undefined);
+      let written = '';
+      setMockInvokeHandler('write_file', (args) => {
+        written = (args as { content: string }).content;
+        return undefined;
+      });
+
+      const { result: hook } = renderHook(() => useFileOperations());
+      await act(async () => {
+        await hook.current.openFile('/project/r.md', 'r.md');
+      });
+      const tabId = useEditorStore.getState().openDocuments.find((t) => t.filePath === '/project/r.md')!.id;
+
+      useRefinementStore.getState().upsertEntry({
+        id: 'r1',
+        docPath: '/project/r.md',
+        anchor: { from: 1, to: 5 },
+        srcHash: hashLine('follow up with the team'),
+        originalText: 'follow up with the team',
+        result,
+        status: 'pending',
+        createdAt: 1,
+      });
+
+      await act(async () => {
+        await hook.current.saveFile('/project/r.md', '- [ ] follow up with the team', tabId);
+      });
+
+      expect(written).toContain('ns-refine:v1');
     });
   });
 

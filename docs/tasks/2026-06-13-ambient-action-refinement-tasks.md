@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-13 |
-| **Status** | Implemented (local, unpushed) — 2026-06-14 |
+| **Status** | Implemented — 2026-06-14 (17/18 done; #18 perf-benchmark + ACP-runner remain) |
 | **PRD** | [ambient-action-refinement](../prds/2026-06-13-ambient-action-refinement.md) |
 | **Total** | 18 tasks: 4S, 12M, 2L |
 | **Suggested order** | Foundations (#1–#5) → Engine (#6–#7) → Detection & Apply (#8–#10) → Surfacing (#11–#14) → Wire-up (#15) → Tests (#16–#18) |
@@ -28,16 +28,13 @@ Built via orchestrated sub-agents (Waves 1–2) + direct implementation (Wave 3,
 | #12 panel section | ✅ done | |
 | #13 Top-5 rank | ✅ done | per active document |
 | #14 settings toggle | ✅ done | persist v22→23 migration |
-| #15 wire-up | ⚠️ partial | watcher mounted + gating done. Persistence **helpers built + tested** (`refinement-persist.ts`: `injectRefinements`/`extractRefinements`/`rebuildEntriesFromDoc`). **Still un-wired:** calling inject on save + extract/rebuild on load — so v1 refinements are **session-only** (lost on doc close). See the wiring plan + hazard below |
+| #15 wire-up | ✅ done | watcher mounted + gating; **persistence wired end-to-end** via inline `ns-refine` comments (travel with the file → iCloud-safe). Inject on save (`saveFile`), strip + stash on open (`openFile`), re-anchor by content-hash on hydrate (`useRefinementWatcher`), and the external-change comparator strips comments so saves don't false-trigger reloads. Residual: an external edit *while the doc is open* re-hydrates only on next reopen (comments are safe on disk meanwhile) |
 | #16 engine tests | ✅ done | |
 | #17 foundation tests | ✅ done | hash / comment / store |
 | #18 tests | ⚠️ partial | watcher-gating tests ✅ (`refinement-run`, `refinement-plan`), apply round-trip ✅ (`refinement-apply`). **Deferred:** the dedicated `[perf:typing]`-not-regressed benchmark |
 
-**Three known deferrals to close before this is "done" done:**
-1. **Markdown persistence wiring (#15)** — the pure helpers (`refinement-persist.ts`) are built + tested; what remains is wiring them into the editor's save/load, which is **invasive** (not a single seam) and needs a live editor to verify:
-   - **Save:** call `injectRefinements(markdown, pendingEntriesForDoc)` on the serialized markdown in the autosave path (`useEditor.ts` ~line 285) — and ONLY there (not the `useFileWatcherIntegration` diff-comparison serializes).
-   - **Load:** call `extractRefinements(raw)` at the disk-read chokepoint (`useFileOperations` openFile) so every parse path (`useEditorTabSwitch`'s ~8 `loadRawMarkdownIntoEditor` sites + streaming-hydrate + worker-parse) gets clean markdown; stash the `persisted[]` per path; after the editor hydrates, call `rebuildEntriesFromDoc(editor.state.doc, persisted, docPath)` → `refinement-store.rebuildForDoc`.
-   - **⚠️ Hazard found:** the external-change watcher compares `getMarkdownFromEditor` (clean) against the on-disk file (now commented). Writing comments to disk will make disk ≠ editor and trigger a false external-change/reload loop. The comparator in `useFileWatcherIntegration` must strip `ns-refine` comments (via `extractRefinements`) before comparing, or compare against the injected output. This coupling is why the wiring wasn't landed blind.
+**Two known deferrals remaining:**
+1. ~~Markdown persistence wiring (#15)~~ — **DONE.** Wired at the `useFileOperations` chokepoints (`saveFile` injects, `openFile` strips + stashes), re-anchored in `useRefinementWatcher`'s hydration effect, and the `useFileWatcher` content-guard strips `ns-refine` before comparing so saves don't false-trigger an external-change reload. Refinements now survive reopen and travel with the file via iCloud. (`refinement-persist.ts` + `refinement-persist-bridge.ts`, tested in `refinement-persist.test.ts` + `useFileOperations.test.ts`.)
 2. **ACP one-shot runner (#9)** — let `agent_managed` connections drive refinement (engine already supports it; only the hook injection is missing).
 3. **Typing perf benchmark (#18)** — add a `src/perf/` bench asserting per-keystroke cost is unchanged with the watcher mounted.
 

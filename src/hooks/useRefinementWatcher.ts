@@ -6,6 +6,11 @@ import { useRefinementStore } from '@/stores/refinement-store';
 import { createSeenSet } from '@/lib/ai/refinement-hash';
 import { resolveRefinementConnection } from '@/lib/ai/refinement-routing';
 import { analyzeBlock, type RefinementBlock } from '@/lib/ai/refinement-run';
+import { rebuildEntriesFromDoc } from '@/lib/ai/refinement-persist';
+import {
+  peekPersistedRefinements,
+  consumePersistedRefinements,
+} from '@/lib/ai/refinement-persist-bridge';
 import { log, PERF } from '@/lib/logger';
 
 const DEBOUNCE_MS = 1500;
@@ -31,6 +36,43 @@ const MAX_FAILURES = 5;
  */
 export function useRefinementWatcher(editor: Editor | null): void {
   const enabled = useSettingsStore((s) => s.ambientRefinementEnabled);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+
+  // Hydration: when a document opens, its `ns-refine` comments were stripped at
+  // read time and stashed (see `useFileOperations.openFile`). Re-anchor them
+  // against the freshly-parsed doc by content hash and load them into the store
+  // so persisted refinements reappear. Runs regardless of `enabled` — refinements
+  // saved in the file should show on reopen even if generation is turned off.
+  useEffect(() => {
+    if (!editor) return;
+    const path =
+      useEditorStore.getState().openDocuments.find((t) => t.id === activeTabId)?.filePath ?? null;
+    if (!path) return;
+    const persisted = peekPersistedRefinements(path);
+    if (persisted.length === 0) return;
+
+    let cancelled = false;
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = () => {
+      if (cancelled || editor.isDestroyed) return;
+      const entries = rebuildEntriesFromDoc(editor.state.doc, persisted, path);
+      // The doc may not be parsed yet on the first tick — retry briefly until we
+      // match (entries found) or give up, then commit whatever we have.
+      if (entries.length > 0 || tries >= 8) {
+        useRefinementStore.getState().rebuildForDoc(path, entries);
+        consumePersistedRefinements(path);
+        return;
+      }
+      tries += 1;
+      timer = setTimeout(attempt, 100);
+    };
+    timer = setTimeout(attempt, 50);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor, activeTabId]);
 
   useEffect(() => {
     if (!editor || !enabled) return;
