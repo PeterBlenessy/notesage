@@ -10,7 +10,7 @@
  * Flow under test (src/hooks/useLocalAgentSetup.ts):
  *   Settings → AI Providers → Add → "Local Agent" → "Set up"
  *   → detect (list_local_models, get_system_memory)
- *   → install (agent_install)            [model already downloaded → no download stage]
+   *   → install: agent_resolve_binary check → SKIPPED (binary already resolves; model already downloaded → no download stage)
  *   → configure (start_local_server, local_agent_write_config, agent_resolve_binary)
  *   → verify (acp_agent_smoke_test ok)   → ready ("Done").
  */
@@ -71,7 +71,7 @@ async function openLocalAgentDialog(page: Page) {
   // The setup dialog is mounted at the app root and appears on top.
   const dialog = page
     .getByRole('dialog')
-    .filter({ hasText: 'Set up private, offline AI' });
+    .filter({ hasText: 'Set up a private, on-device agent' });
   await expect(dialog).toBeVisible({ timeout: 10000 });
   return dialog;
 }
@@ -95,15 +95,20 @@ test.describe('Local Agent setup — happy path', () => {
       timeout: 15000,
     });
 
-    // The setup drove the real IPC sequence (not the download stage — the model
-    // is pre-downloaded in the mock).
+    // The setup drove the real IPC sequence. In the mock both the agent binary
+    // already resolves (pre-installed) and the model is pre-downloaded, so the
+    // resume/skip guards fire: the install is skipped (installAgentIfMissing
+    // sees a resolved binary) and the download is skipped — only the resolve
+    // check, server start, config write, and smoke test run.
     const calls = await getCalls();
     const cmds = calls.map((c) => c.cmd);
-    expect(cmds).toContain('agent_install');
+    expect(cmds).toContain('agent_resolve_binary');
     expect(cmds).toContain('start_local_server');
     expect(cmds).toContain('local_agent_write_config');
     expect(cmds).toContain('acp_agent_smoke_test');
-    // Model already downloaded → no download was triggered.
+    // Binary already resolves → install skipped; model already downloaded →
+    // download skipped (the setup-flow resume guards).
+    expect(cmds).not.toContain('agent_install');
     expect(cmds).not.toContain('download_local_model');
   });
 });
