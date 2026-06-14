@@ -158,3 +158,4 @@ Chronological log of major implementation milestones and changes.
 | 152 | [Release v0.46.0-alpha.27](152-release-v0.46.0-alpha.27.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 153 | [Release v0.46.0-alpha.28](153-release-v0.46.0-alpha.28.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 154 | [Release v0.46.0](154-release-v0.46.0.md) | Stable: Local AI Agents (on-device agent), on-device meeting transcription, MCP remote/OAuth/catalog, opt-in telemetry, and Quiet Composer polish. |
+| 155 | [Release v0.46.0-alpha.29](155-release-v0.46.0-alpha.29.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
