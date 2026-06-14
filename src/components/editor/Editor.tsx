@@ -20,6 +20,7 @@ import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
 import { useLocalCompletion } from "@/hooks/useLocalCompletion";
+import { useRefinementWatcher } from "@/hooks/useRefinementWatcher";
 import { useEditorKeyBindings } from "@/hooks/useEditorKeyBindings";
 import { useFileWatcherIntegration } from "@/hooks/useFileWatcherIntegration";
 import { useEditorTabSwitch } from "@/hooks/useEditorTabSwitch";
@@ -280,6 +281,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+  useRefinementWatcher(editor);
 
   // Expose editor instance for tool executor access (comment tools, etc.)
   useEffect(() => {
