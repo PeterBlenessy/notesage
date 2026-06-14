@@ -58,8 +58,8 @@ interface SettingsStore {
   /** Global toggle — disables inline completions across all documents */
   inlineCompletionsDisabled: boolean;
   /**
-   * When true, inline completions are issued for files outside the chat
-   * footer's selected project scope (+ notes root) — the legacy behaviour
+   * When true, inline completions are issued for files outside the command
+   * bar's selected project scope (+ notes root) — the legacy behaviour
    * prior to task #17. Default false: out-of-scope files see no completion
    * traffic. Opt-in escape hatch for users who want completions everywhere.
    */
@@ -142,12 +142,12 @@ interface SettingsStore {
    * by this setting.
    */
   sidebarFilePreviewEnabled: boolean;
-  /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
+  /** Show agent mode picker in the command bar (default: off — uses default mode automatically) */
   showAgentModePicker: boolean;
   /**
    * Cross-project mode: when true, the ACP agent's filesystem sandbox is widened
    * to ALL workspace projects + explorer folders, not just the projects selected
-   * in the chat footer. Default false. Opt-in escape hatch — disables the
+   * in the command bar. Default false. Opt-in escape hatch — disables the
    * primary project-isolation guarantee from the project-data-isolation PRD.
    */
   crossProjectMode: boolean;

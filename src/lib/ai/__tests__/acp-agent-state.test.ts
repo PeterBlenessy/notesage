@@ -91,11 +91,11 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent!.connectionId).toBe('conn-b');
   });
 
-  it('clears sessionInfo when respawning for a connection change (footer-freshness invariant)', async () => {
-    // Regression lock for the chat-footer UX bug on 2026-04-19: stale modes
+  it('clears sessionInfo when respawning for a connection change (command-bar-freshness invariant)', async () => {
+    // Regression lock for the command bar UX bug on 2026-04-19: stale modes
     // and currentModeId from the previous agent were bleeding across to the
     // new agent because ensureAcpAgent stopped the backend but never cleared
-    // the module-level sessionInfo. Fixing it makes the footer's "currently
+    // the module-level sessionInfo. Fixing it makes the picker's "currently
     // selected" fallback chain (live sessionInfo → connection.acpDefaults →
     // first available) produce correct output immediately on switch.
     setupDefaultHandlers();
@@ -132,7 +132,7 @@ describe('ensureAcpAgent', () => {
     expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
 
     // Connection change MUST clear sessionInfo so stale modes/configOptions
-    // from the prior agent don't leak into the new agent's footer.
+    // from the prior agent don't leak into the new agent's command bar.
     await mod.ensureAcpAgent(connB, '/tmp');
     expect(mod.getSessionInfo().modes).toBeNull();
     expect(mod.getSessionInfo().configOptions).toBeNull();
@@ -219,6 +219,49 @@ describe('ensureAcpAgent', () => {
     const result = await mod.ensureAcpAgent(makeConnection(), '/tmp');
     expect(result).toBe('inst-auth-skip');
     expect(mod.acpAgent).not.toBeNull();
+  });
+
+  it('flips localAgentDegraded when a preset endpoint resolution fails (review High #1)', async () => {
+    // Regression lock: the eager session-creation effect calls ensureAcpAgent
+    // directly (not through runPresetGuarded). When the bundled server is down,
+    // resolveLocalAgentEndpoint throws — and that throw must flip the degraded
+    // flag so the "Offline / Fix" notice shows and the next send falls back to
+    // Path 4, regardless of which caller triggered the spawn.
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-x' }));
+    setMockInvokeHandler('local_agent_write_config', () => {
+      throw new Error('Local AI server is not running');
+    });
+
+    const mod = await import('../acp-agent-state');
+    const { useLocalAIStore } = await import('@/stores/local-ai-store');
+    mod.clearAcpAgent();
+    useLocalAIStore.getState().setLocalAgentDegraded(null);
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
+
+    const preset = makeConnection({
+      id: 'goose',
+      provider: 'custom_acp',
+      config: { localAgentPreset: 'goose' },
+    });
+
+    await expect(mod.ensureAcpAgent(preset, '/tmp')).rejects.toThrow('Local AI server is not running');
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(true);
+  });
+
+  it('does NOT flip localAgentDegraded for a non-preset spawn failure', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      throw new Error('Binary not found');
+    });
+
+    const mod = await import('../acp-agent-state');
+    const { useLocalAIStore } = await import('@/stores/local-ai-store');
+    mod.clearAcpAgent();
+    useLocalAIStore.getState().setLocalAgentDegraded(null);
+
+    await expect(mod.ensureAcpAgent(makeConnection(), '/tmp')).rejects.toThrow('Binary not found');
+    expect(useLocalAIStore.getState().localAgentDegraded).toBe(false);
   });
 
   it('authentication real error propagates', async () => {
@@ -333,6 +376,103 @@ describe('ensureAcpAgent', () => {
     expect(spawnCount).toBe(2);
   });
 
+  // --- Local Agent preset: endpoint-config respawn (#10) ---
+
+  function makePresetConnection(overrides: Partial<Connection> = {}): Connection {
+    return makeConnection({
+      id: 'conn-preset',
+      provider: 'custom_acp',
+      label: 'Local Agent',
+      credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
+      config: { binaryPath: '/opt/goose', binaryArgs: ['acp'], localAgentPreset: 'goose' },
+      ...overrides,
+    });
+  }
+
+  it('preset connection regenerates config and injects isolation env + llama port at spawn', async () => {
+    setupDefaultHandlers();
+    let lastSpawnArgs: Record<string, unknown> | null = null;
+    setMockInvokeHandler('acp_agent_spawn', (args) => {
+      lastSpawnArgs = args as Record<string, unknown>;
+      return { instance_id: 'inst-preset' };
+    });
+    setMockInvokeHandler('local_agent_write_config', () => ({
+      configPath: '/home/u/.notesage/agents/goose',
+      env: {
+        GOOSE_PROVIDER: 'openai',
+        XDG_CONFIG_HOME: '/home/u/.notesage/agents/goose/config',
+      },
+      configKey: '8137:qwen2.5-coder-7b',
+      port: 8137,
+      modelId: 'qwen2.5-coder-7b',
+    }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const result = await mod.ensureAcpAgent(makePresetConnection(), '/work');
+    expect(result).toBe('inst-preset');
+    expect(mod.acpAgent!.configKey).toBe('8137:qwen2.5-coder-7b');
+    // Isolation env merged into the spawn.
+    expect((lastSpawnArgs!.envVars as Record<string, string>).XDG_CONFIG_HOME).toBe(
+      '/home/u/.notesage/agents/goose/config',
+    );
+    // llama-server port allowed through the kernel network sandbox.
+    expect(lastSpawnArgs!.extraLocalhostPorts).toEqual([8137]);
+  });
+
+  it('preset connection respawns when the llama-server port changes (#10)', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+    let port = 8137;
+    setMockInvokeHandler('local_agent_write_config', () => ({
+      configPath: '/x',
+      env: {},
+      configKey: `${port}:qwen2.5-coder-7b`,
+      port,
+      modelId: 'qwen2.5-coder-7b',
+    }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const conn = makePresetConnection();
+    const r1 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r1).toBe('inst-1');
+    // Same port → no respawn.
+    const r2 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r2).toBe('inst-1');
+    expect(spawnCount).toBe(1);
+
+    // Server restarted on a new port → config key changes → respawn.
+    port = 8190;
+    const r3 = await mod.ensureAcpAgent(conn, '/work');
+    expect(r3).toBe('inst-2');
+    expect(spawnCount).toBe(2);
+    expect(mod.acpAgent!.configKey).toBe('8190:qwen2.5-coder-7b');
+  });
+
+  it('non-preset connections never call local_agent_write_config and keep configKey empty', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-plain' }));
+    let configCalls = 0;
+    setMockInvokeHandler('local_agent_write_config', () => {
+      configCalls++;
+      return { configPath: '', env: {}, configKey: 'x', port: 1, modelId: 'm' };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-plain' }), '/tmp');
+    expect(configCalls).toBe(0);
+    expect(mod.acpAgent!.configKey).toBe('');
+  });
+
   it('updateAcpAgentInstanceId updates the instance ID', async () => {
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => ({
@@ -367,5 +507,39 @@ describe('resolveConfiguredModeId', () => {
     const mod = await import('../acp-agent-state');
     expect(mod.resolveConfiguredModeId(undefined, makeConnection())).toBeUndefined();
     expect(mod.resolveConfiguredModeId(undefined, null)).toBeUndefined();
+  });
+});
+
+describe('getAgentModeDisplay', () => {
+  const goose = (): Connection =>
+    makeConnection({ provider: 'custom_acp', config: { localAgentPreset: 'goose' } });
+
+  it('maps Goose raw mode ids to friendly labels with descriptions', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    const conn = goose();
+    expect(getAgentModeDisplay(conn, 'smart_approve', 'smart_approve').name).toBe('Smart Approval');
+    expect(getAgentModeDisplay(conn, 'approve', 'approve').name).toBe('Approve Each Step');
+    expect(getAgentModeDisplay(conn, 'auto', 'auto').name).toBe('Full Access');
+    expect(getAgentModeDisplay(conn, 'chat', 'chat').name).toBe('Chat Only');
+    // Every Goose mode carries a user-facing description.
+    for (const id of ['smart_approve', 'approve', 'auto', 'chat']) {
+      expect(getAgentModeDisplay(conn, id, id).description).toBeTruthy();
+    }
+  });
+
+  it('does NOT apply the Goose map to non-preset agents (auto collision)', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    // Codex's `auto` means "agent" (read + edit, asks for risky) — must NOT
+    // become Goose's "Full Access".
+    const codex = makeConnection({ credentials: { type: 'agent_managed', agentBinary: 'codex-acp' } });
+    expect(getAgentModeDisplay(codex, 'auto', 'auto').name).toBe('Agent');
+  });
+
+  it('falls back to the native name/description for unmapped ids', async () => {
+    const { getAgentModeDisplay } = await import('../acp-agent-state');
+    const conn = goose();
+    const display = getAgentModeDisplay(conn, 'some_future_mode', 'Native Name', 'native desc');
+    expect(display.name).toBe('Native Name');
+    expect(display.description).toBe('native desc');
   });
 });

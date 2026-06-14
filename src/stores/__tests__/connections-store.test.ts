@@ -155,6 +155,82 @@ describe('connections-store', () => {
       expect(conn!.config).toEqual({ model: 'gpt-4o', temperature: 0.7 });
     });
 
+    it('passes custom_acp launch config through unchanged and never hits the keychain', () => {
+      const id = useConnectionsStore.getState().addConnection({
+        provider: 'custom_acp',
+        authMethod: 'agent_managed',
+        status: 'connected',
+        label: 'Goose (local)',
+        credentials: { type: 'agent_managed', agentBinary: '/usr/local/bin/goose' },
+        config: {
+          binaryPath: '/usr/local/bin/goose',
+          binaryArgs: ['acp'],
+          localAgentPreset: 'goose',
+        },
+      });
+
+      const conn = useConnectionsStore.getState().getConnection(id);
+      expect(conn!.provider).toBe('custom_acp');
+      expect(conn!.config).toEqual({
+        binaryPath: '/usr/local/bin/goose',
+        binaryArgs: ['acp'],
+        localAgentPreset: 'goose',
+      });
+      // binaryPath/binaryArgs are not secrets — nothing goes to the keychain
+      expect(invoke).not.toHaveBeenCalledWith('store_credential', expect.anything());
+      expect(getCapabilities).toHaveBeenCalledWith('custom_acp', 'agent_managed');
+    });
+
+    it('stores agent env vars in the keychain per-var and records the names on credentials', () => {
+      const id = useConnectionsStore.getState().addConnection({
+        provider: 'google',
+        authMethod: 'agent_managed',
+        status: 'connected',
+        label: 'Gemini CLI',
+        credentials: {
+          type: 'agent_managed',
+          agentBinary: 'gemini',
+          agentArgs: ['--acp'],
+          envVars: { GEMINI_API_KEY: 'sk-gemini-secret' },
+        },
+      });
+
+      expect(invoke).toHaveBeenCalledWith('store_credential', {
+        service: `notesage:${id}:env:GEMINI_API_KEY`,
+        key: 'sk-gemini-secret',
+      });
+
+      const conn = useConnectionsStore.getState().getConnection(id)!;
+      expect(conn.credentials).toMatchObject({
+        type: 'agent_managed',
+        envVarKeys: ['GEMINI_API_KEY'],
+        // Values stay in memory for the session (avoids racing the async
+        // keychain write at first spawn) — partialize strips them at persist.
+        envVars: { GEMINI_API_KEY: 'sk-gemini-secret' },
+      });
+    });
+
+    it('removeConnection deletes env-var keychain entries alongside the api_key entry', () => {
+      const id = useConnectionsStore.getState().addConnection({
+        provider: 'google',
+        authMethod: 'agent_managed',
+        status: 'connected',
+        label: 'Gemini CLI',
+        credentials: {
+          type: 'agent_managed',
+          agentBinary: 'gemini',
+          envVars: { GEMINI_API_KEY: 'sk-gemini-secret' },
+        },
+      });
+
+      useConnectionsStore.getState().removeConnection(id);
+
+      expect(invoke).toHaveBeenCalledWith('delete_credential', { service: `notesage:${id}` });
+      expect(invoke).toHaveBeenCalledWith('delete_credential', {
+        service: `notesage:${id}:env:GEMINI_API_KEY`,
+      });
+    });
+
     it('does not call store_credential for non-api_key credentials', () => {
       useConnectionsStore.getState().addConnection({
         provider: 'ollama',

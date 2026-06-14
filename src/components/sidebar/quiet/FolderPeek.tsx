@@ -66,7 +66,7 @@ export interface FolderPeekProps {
   /** The trigger element — typically the project row. */
   children: ReactNode;
   // Sidebar-simplification task #6 — `onOpenTreeOverlay` was removed.
-  // Folder-clicks and the footer "Expand in sidebar" link now dispatch
+  // Folder-clicks and the bottom "Expand in sidebar" link now dispatch
   // `notesage:sidebar-expand-path` on the shared `sidebar-events` bus
   // (handled by ProjectsSection). TreeOverlay deletion lands in #20.
 }

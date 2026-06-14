@@ -304,7 +304,7 @@ export function EditorSettings() {
             sense: ON = restricted (default), OFF = allow everywhere. */}
         <SettingsRow
           label="Restrict completions to project scope"
-          description="When on (default), inline completions are suppressed for files outside the project selected in the chat footer — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
+          description="When on (default), inline completions are suppressed for files outside the project selected in the command bar — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
           htmlFor="restrict-completions-scope"
           control={
             <Switch

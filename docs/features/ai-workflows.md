@@ -32,12 +32,12 @@ Streaming AI responses.
 
 **Features:**
 
-- Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current chat footer provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
+- Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current command bar provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
 - Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape). Same provider-mismatch dialog as resend fires at send time when the original `connectionId` differs.
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-ups
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
-- Multi-select project selector in chat footer
+- Multi-select project selector in command bar
 - Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count, branch count)
 - Conversation branching: branch from any message to explore alternative responses. Branch indicator pills show at branch points with a popover to switch between branches. "Branch from here" action on all messages via GitBranch icon.
 - Conversation export: export active thread as Markdown, all branches as Markdown (separated by horizontal rules with "Branch N" headers), or full tree as JSON with `id`/`parentId` fields. Native save dialog with Reveal in Finder option.
@@ -48,9 +48,9 @@ Streaming AI responses.
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
 - Image attachments: paste, drag-drop, or file picker to attach up to 5 images per message. Images compressed client-side (1568px max, PNG→JPEG, 5MB cap). Vision capability auto-detected per provider. Right-click "Add to chat" on editor images/drawings or sidebar image files. See [Image Attachments & Vision](ai-providers.md#image-attachments--vision) for full details.
-- **ACP session modes**: Permission-level mode picker (Shield icon) in chat footer. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
+- **ACP session modes**: Permission-level mode picker (Shield icon) in command bar. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
 - **ACP config options**: Dynamic config dropdowns (e.g., thinking effort with Brain icon) populated from agent session response. Values set via `session/set_config_option`.
-- **ACP usage tracking**: Live token count displayed in chat footer during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
+- **ACP usage tracking**: Live token count displayed in command bar during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
 - **ACP plan display**: Agent execution plans rendered as collapsible `PlanSegment` cards with step status icons (pending/in_progress/completed) and priority indicators.
 - **ACP agent slash commands**: Agent-specific commands (e.g., `/compact`, `/clear`) appear in the `/` command menu alongside Notesage skills, distinguished by Terminal icon.
 - **ACP thinking segments**: Agent reasoning output (`agent_thought_chunk`) displayed as collapsible thinking blocks in chat messages.
@@ -95,7 +95,7 @@ File-based agent system for user-created and provider-native agents.
 - **`@` behavior depends on connection type:**
   - **ACP connections** (`agent_managed`): `@agent-name message` is passed through verbatim to the provider, which manages its own subagent system
   - **Direct API connections** (`api_key`, `local`): `@agent-name` strips the prefix and swaps the system prompt to the agent's body content
-- Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message scoping
+- Agent picker dropdown in command bar; `@agent-name` addressing in chat input for per-message scoping
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
 - Agents section in Settings > Skills & Agents for viewing, enabling/disabling
 - Skill & agent management: delete and move (global ↔ project) for custom items, gated behind Settings > Advanced toggle

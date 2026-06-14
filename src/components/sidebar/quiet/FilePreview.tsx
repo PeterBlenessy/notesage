@@ -663,7 +663,7 @@ export function FilePreview({
             )
           )}
         </div>
-        {/* No footer — mockup-L had a "Click to open · ⌘click for new
+        {/* No bottom bar — mockup-L had a "Click to open · ⌘click for new
             tab" hint, but live-test feedback 2026-04-24 said it's
             noise. Click + ⌘-click are the expected verbs for any file
             row and don't need an inline legend. */}

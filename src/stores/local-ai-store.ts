@@ -16,6 +16,32 @@ export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type BinaryState = 'unknown' | 'available' | 'not_found';
 export type ModelCategory = 'all' | 'general' | 'code' | 'reasoning' | 'compact' | 'downloaded';
 
+/**
+ * Local Agent setup-flow stages (task #15). Linear path plus terminal `ready` /
+ * `failed`. `idle` = the flow has never run (or was reset).
+ */
+export type LocalAgentSetupStage =
+  | 'idle'
+  | 'detecting'   // hardware-tier detection + model recommendation
+  | 'downloading' // agent install + model download (parallel)
+  | 'configuring' // local_agent_write_config + connection/routing setup
+  | 'verifying'   // smoke test
+  | 'ready'
+  | 'failed';
+
+/** The active (in-flight) stages a failure can be attributed to. */
+export type LocalAgentActiveStage = Exclude<LocalAgentSetupStage, 'idle' | 'ready' | 'failed'>;
+
+export interface LocalAgentSetupState {
+  stage: LocalAgentSetupStage;
+  /** When `stage === 'failed'`, the stage that was active when it failed. */
+  failedStage?: LocalAgentActiveStage;
+  /** Human-readable failure message. Transient — never persisted. */
+  error?: string;
+  /** Model chosen for the agent. Persisted so an interrupted flow can resume. */
+  modelId?: string;
+}
+
 export interface DownloadState {
   progress: number;
 }
@@ -36,6 +62,25 @@ interface LocalAIStore {
   serverError: string | null;
   serverStatusReason: string | null;
   serverPort: number | null;
+  /**
+   * Local Agent (Goose preset) degraded state (task #13). When `true`, the
+   * interactive slot falls back from the agent (Path 2) to direct local chat
+   * (Path 4) so chat never dead-ends. Set when the preset binary is missing, a
+   * spawn fails, or the last smoke test failed; cleared by a passing setup/smoke
+   * run (#16). Transient — recomputed each session, never persisted.
+   */
+  localAgentDegraded: boolean;
+  localAgentDegradedReason: string | null;
+  /** Whether the Local Agent setup dialog (#17) is open. Single app-level flag so
+   *  every entry point (#18 empty state, #19 Add Connection, #20 "Fix") opens the
+   *  same dialog mounted once at the app root. Non-persisted UI state. */
+  localAgentSetupDialogOpen: boolean;
+  /**
+   * Local Agent setup-flow state machine (task #15). Persisted enough to resume
+   * an interrupted flow after relaunch (stage + modelId; the transient `error`
+   * is never persisted). Driven by `useLocalAgentSetup` (#16).
+   */
+  localAgentSetup: LocalAgentSetupState;
   /** Dedicated FIM server lifecycle (item #8 of the agentic stack).
    *  Mirrors the main server's status/port/error fields. */
   completionServerStatus: ServerStatus;
@@ -57,6 +102,14 @@ interface LocalAIStore {
   setServerStatus: (status: ServerStatus, error?: string) => void;
   setServerStatusReason: (reason: string | null) => void;
   setServerPort: (port: number | null) => void;
+  /** Mark / clear the Local Agent preset as degraded (task #13). `null` clears. */
+  setLocalAgentDegraded: (reason: string | null) => void;
+  /** Advance the Local Agent setup state machine (task #15). */
+  setLocalAgentSetup: (next: Partial<LocalAgentSetupState> & { stage: LocalAgentSetupStage }) => void;
+  /** Reset the setup flow back to `idle` (e.g. user cancels / starts over). */
+  resetLocalAgentSetup: () => void;
+  /** Open/close the app-level Local Agent setup dialog (#17). */
+  setLocalAgentSetupDialogOpen: (open: boolean) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
   setHardwareProfile: (profile: HardwareProfile | null) => void;
@@ -142,6 +195,10 @@ export const useLocalAIStore = create<LocalAIStore>()(
         serverError: null,
         serverStatusReason: null,
         serverPort: null,
+        localAgentDegraded: false,
+        localAgentDegradedReason: null,
+        localAgentSetupDialogOpen: false,
+        localAgentSetup: { stage: 'idle' },
         completionServerStatus: 'stopped',
         completionServerPort: null,
         completionServerError: null,
@@ -169,6 +226,25 @@ export const useLocalAIStore = create<LocalAIStore>()(
         setServerStatus: (status, error) => set({ serverStatus: status, serverError: error ?? null }),
         setServerStatusReason: (reason) => set({ serverStatusReason: reason }),
         setServerPort: (port) => set({ serverPort: port }),
+        setLocalAgentDegraded: (reason) =>
+          set({ localAgentDegraded: reason !== null, localAgentDegradedReason: reason }),
+        setLocalAgentSetup: (next) =>
+          set((s) => {
+            // Carry the chosen model id forward across stage transitions unless a
+            // call explicitly overrides it. Clear `error`/`failedStage` on any
+            // non-failed stage so a recovered flow doesn't show a stale error.
+            const merged: LocalAgentSetupState = {
+              modelId: s.localAgentSetup.modelId,
+              ...next,
+            };
+            if (merged.stage !== 'failed') {
+              delete merged.error;
+              delete merged.failedStage;
+            }
+            return { localAgentSetup: merged };
+          }),
+        resetLocalAgentSetup: () => set({ localAgentSetup: { stage: 'idle' } }),
+        setLocalAgentSetupDialogOpen: (open) => set({ localAgentSetupDialogOpen: open }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
         dismissFirstRun: () => set({ dismissedFirstRun: true }),
@@ -354,10 +430,37 @@ export const useLocalAIStore = create<LocalAIStore>()(
         dismissedFirstRun: state.dismissedFirstRun,
         hiddenModelIds: state.hiddenModelIds,
         completionModelId: state.completionModelId,
+        // Persist enough to resume an interrupted setup (stage + model), never
+        // the transient `error`/`failedStage` (task #15).
+        localAgentSetup: {
+          stage: state.localAgentSetup.stage,
+          modelId: state.localAgentSetup.modelId,
+        },
       }),
     },
   ),
 );
+
+/**
+ * Degraded/fallback notice for the command-bar header (task #20). Returns a
+ * one-line reason + the failed setup stage (so "Fix" can reopen the dialog at
+ * that stage) when the Local Agent is degraded (runtime health failure) or its
+ * last setup attempt failed; `null` when healthy. Pure selector over the store.
+ */
+export function selectLocalAgentNotice(
+  state: Pick<LocalAIStore, 'localAgentDegraded' | 'localAgentDegradedReason' | 'localAgentSetup'>,
+): { reason: string; failedStage?: LocalAgentActiveStage } | null {
+  if (state.localAgentDegraded) {
+    return { reason: state.localAgentDegradedReason ?? 'Local Agent unavailable — using direct local chat' };
+  }
+  if (state.localAgentSetup.stage === 'failed') {
+    return {
+      reason: state.localAgentSetup.error ?? 'Local Agent setup failed',
+      failedStage: state.localAgentSetup.failedStage,
+    };
+  }
+  return null;
+}
 
 // Listen for completion-server status events emitted by the Rust backend.
 // Mirror of the main server's event listener pattern — the store stays in

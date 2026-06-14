@@ -29,12 +29,13 @@ import { log } from '@/lib/logger';
 import {
   getSessionInfo,
   subscribeSessionInfo,
-  getCommonModes,
   getCommonMode,
+  getAgentModeDisplay,
   resolveConfiguredModeId,
   updateCurrentMode,
   updateConfigOptionValue,
   acpAgent,
+  isLocalAgentPreset,
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useChatStore } from '@/stores/chat-store';
@@ -45,10 +46,15 @@ import type { Connection } from '@/lib/ai/connections';
 // Mode-sandbox conflict detection
 // ---------------------------------------------------------------------------
 
-/** Check if a mode maps to the "Full Access" common mode (conflicts with sandbox) */
-function isUnrestrictedMode(modeId: string): boolean {
-  const common = getCommonMode(modeId);
-  return common?.key === 'full_access';
+/**
+ * Check if a mode grants unrestricted/no-prompt access (conflicts with sandbox).
+ * For the Local Agent preset (Goose) that's the `auto` mode; Goose's ids aren't
+ * in the cross-agent common-mode map, so it's classified directly here. For
+ * every other agent it's whatever maps to the "Full Access" common mode.
+ */
+function isUnrestrictedMode(connection: Connection, modeId: string): boolean {
+  if (isLocalAgentPreset(connection)) return modeId === 'auto';
+  return getCommonMode(modeId)?.key === 'full_access';
 }
 
 function hasActiveRestrictions(connectionId: string): boolean {
@@ -101,7 +107,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   // Available modes come from the connection's capability probe (persisted at
   // registration, refreshed ≥24h later). The live session's `modes` field is
   // used only to determine the currently-selected value for highlighting.
-  // This lets the footer populate instantly on agent switch, without waiting
+  // This lets the picker populate instantly on agent switch, without waiting
   // for session/new to complete.
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
   // Conversation-scoped remembered mode — drives the label during the brief window
@@ -132,13 +138,13 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   }, []);
 
   const handleSetMode = useCallback((modeId: string, modeName: string) => {
-    if (isUnrestrictedMode(modeId) && acpAgent?.connectionId && hasActiveRestrictions(acpAgent.connectionId)) {
+    if (isUnrestrictedMode(connection, modeId) && acpAgent?.connectionId && hasActiveRestrictions(acpAgent.connectionId)) {
       setConflictMode({ id: modeId, name: modeName });
       return;
     }
     applyMode(modeId);
     setOpen(false);
-  }, [applyMode]);
+  }, [applyMode, connection]);
 
   const handleConflictKeep = useCallback(() => {
     if (conflictMode) applyMode(conflictMode.id);
@@ -159,24 +165,37 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
     toast.info('Security restrictions removed. Agent will respawn with new settings on next session.');
   }, [conflictMode, applyMode]);
 
-  // Map agent modes to common modes (Agent/Plan/Chat) — hide agent-specific modes
-  const commonModes = getCommonModes(availableModes);
-  if (commonModes.length < 2) return null;
+  // Render every mode the agent advertises, each with a friendly display label
+  // (getAgentModeDisplay). This previously collapsed modes into four fixed common
+  // buckets (Read Only / Agent / Full Access / Plan) and dropped anything that
+  // didn't map — which hid the picker entirely for agents whose ids aren't in
+  // the common map, e.g. the Local Agent preset (Goose: auto/approve/
+  // smart_approve/chat, only `auto` mapped → 1 mode → hidden).
+  //
+  // The picker's ONLY visibility gate is the user's `showAgentModePicker`
+  // toggle (applied by the caller via `showModePicker`). It is never hidden for
+  // having "too few" modes — the lone `=== 0` guard is just defensive (an empty
+  // dropdown has literally nothing to render; no real ACP agent reports 0 modes).
+  if (availableModes.length === 0) return null;
 
   const restricted = hasActiveRestrictions(connection.id);
+  const displayFor = (mode: { id: string; name: string; description?: string }) =>
+    getAgentModeDisplay(connection, mode.id, mode.name, mode.description);
   // Currently-selected mode resolution, preferring most-recent truth:
   //   1. Live session (if a session is currently active for this agent)
   //   2. User-configured default on the connection (acpDefaults.modeId)
-  //   3. First mapped common mode (so the picker has something selected)
+  //   3. First advertised mode (so the picker has something selected)
   // Note: when the user switches connections, sessionInfo is cleared by
   // ensureAcpAgent → clearSessionInfo, so (1) won't bleed across agents.
   const currentModeId =
     sessionInfo.modes?.currentModeId
     ?? resolveConfiguredModeId(conversationModeId, connection)
-    ?? commonModes[0]?.agentModeId
+    ?? availableModes[0]?.id
     ?? null;
-  const currentCommon = currentModeId ? getCommonMode(currentModeId) : null;
-  const currentLabel = currentCommon ?? { name: commonModes[0]?.name ?? 'Agent', tooltip: '' };
+  const currentMode = availableModes.find((m) => m.id === currentModeId) ?? availableModes[0];
+  const currentLabel = currentMode
+    ? { name: displayFor(currentMode).name, tooltip: displayFor(currentMode).description ?? '' }
+    : { name: 'Agent', tooltip: '' };
 
   return (
     <>
@@ -207,22 +226,23 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
           className="w-auto min-w-[120px] max-w-[250px] p-1"
         >
           <DropdownMenuRadioGroup
-            value={currentCommon?.key ?? ''}
+            value={currentModeId ?? ''}
             onValueChange={(value) => {
-              const next = commonModes.find((cm) => cm.commonKey === value);
-              if (next && next.commonKey !== currentCommon?.key) {
-                handleSetMode(next.agentModeId, next.name);
+              if (value && value !== currentModeId) {
+                const next = availableModes.find((m) => m.id === value);
+                if (next) handleSetMode(next.id, displayFor(next).name);
               }
             }}
           >
-            {commonModes.map((cm) => {
-              const showLock = restricted && isUnrestrictedMode(cm.agentModeId);
+            {availableModes.map((mode) => {
+              const display = displayFor(mode);
+              const showLock = restricted && isUnrestrictedMode(connection, mode.id);
               return (
                 <PickerItem
-                  key={cm.commonKey}
-                  value={cm.commonKey}
-                  label={cm.name}
-                  description={cm.tooltip || undefined}
+                  key={mode.id}
+                  value={mode.id}
+                  label={display.name}
+                  description={display.description || undefined}
                   trailing={showLock ? <Lock className="h-3 w-3 opacity-40" /> : undefined}
                 />
               );
@@ -292,7 +312,7 @@ function prettifyOptionName(name: string): string {
 }
 
 /**
- * Short abbreviation for the footer trigger when space matters (e.g.
+ * Short abbreviation for the command-bar trigger when space matters (e.g.
  * thought_level, which typically has 4–5 values and appears alongside other
  * compact widgets). The Brain icon gives the category context, so a single
  * letter is enough for most users.
@@ -343,7 +363,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
   const currentOption = options.find(o => (o.value ?? o.name) === currentValue);
   const rawDisplayName = currentOption?.name ?? currentValue ?? option.name;
   // thought_level uses a 1-char abbreviation (Min/L/M/H/X) alongside the Brain
-  // icon — keeps the footer compact since reasoning effort is a scalar value
+  // icon — keeps the command bar compact since reasoning effort is a scalar value
   // most users scan rather than read. Other categories show the prettified
   // Title Case name directly.
   const triggerLabel = option.category === 'thought_level'
@@ -420,7 +440,7 @@ const UsageIndicator = memo(function UsageIndicator() {
     ? `${usage.cost.currency === 'USD' ? '$' : usage.cost.currency + ' '}${usage.cost.amount.toFixed(2)}`
     : undefined;
 
-  // Bordered pill to match the other footer buttons. Just the icon at rest —
+  // Bordered pill to match the other command-bar buttons. Just the icon at rest —
   // the token count (and optional cost) live in the tooltip, which gives the
   // same affordance without consuming horizontal space.
   return (
@@ -457,14 +477,23 @@ export const AcpSessionControls = memo(function AcpSessionControls({
 
   // Available modes + config options come from the connection's probed
   // capabilities (captured at registration, refreshed ≥24h later) — not from
-  // the live session response. This gives the footer instant response on agent
+  // the live session response. This gives the picker instant response on agent
   // switch, with no wait for session/new. `category` filter excludes mode/model
   // which have dedicated pickers (mode picker above, model picker elsewhere).
   const capabilities = connection.acpCapabilities;
   const availableModes = capabilities?.availableModes ?? [];
-  const configOptions = (capabilities?.configOptions ?? []).filter(
-    opt => opt.category !== 'model' && opt.category !== 'mode'
-  );
+  // For the Local Agent preset (Goose), the provider + model are fixed by the
+  // env config we generate in `local_agent.rs` (pointed at the bundled
+  // llama-server). Goose's own provider/model selector would let the user
+  // switch away from the bundled server and break the local-only setup — the
+  // model is changed through Notesage's Local AI settings instead — so we
+  // intentionally hide the agent-reported config-option pickers here. The mode
+  // picker stays gated by `showModePicker` (untouched).
+  const configOptions = isLocalAgentPreset(connection)
+    ? []
+    : (capabilities?.configOptions ?? []).filter(
+        opt => opt.category !== 'model' && opt.category !== 'mode'
+      );
 
   // Build a lookup of live current values from sessionInfo — used by each
   // config picker to highlight the currently-selected entry. Falls back to the
@@ -474,7 +503,7 @@ export const AcpSessionControls = memo(function AcpSessionControls({
     liveCurrentValues.set(opt.id, opt.currentValue);
   }
 
-  const hasControls = (showModePicker && availableModes.length >= 2)
+  const hasControls = (showModePicker && availableModes.length > 0)
     || configOptions.length > 0
     || sessionInfo.usage;
   if (!hasControls) return null;

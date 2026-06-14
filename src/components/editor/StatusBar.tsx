@@ -66,6 +66,7 @@ function StatusDot({
   label,
   onActivate,
   progress,
+  spin,
   reducedMotion,
 }: {
   colorClass: string;
@@ -84,6 +85,10 @@ function StatusDot({
    * the 6px button so the click hitbox and the dot's colour class stay put.
    */
   progress?: number;
+  /** When true, render the ring as an indeterminate spinner (indexing) rather
+   *  than a determinate fill (downloads). The burst of short index passes has
+   *  no meaningful single %, so a spinner avoids backward arc jumps. */
+  spin?: boolean;
   reducedMotion?: boolean;
 }) {
   const handleClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
@@ -117,46 +122,78 @@ function StatusDot({
           onClick={handleClick}
           onKeyDown={handleKeyDown}
           className={cn(
-            "relative h-1.5 w-1.5 rounded-full shrink-0 transition-opacity",
+            "relative h-1.5 w-1.5 rounded-full shrink-0",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
-            "hover:opacity-80",
-            colorClass,
           )}
         >
+          {/* Dot fill — fills the button. The status colour AND the
+              (reduced-motion-gated) pulse live on this inner span, NOT the
+              button: CSS opacity multiplies through descendants, so with the
+              pulse on the button the progress ring (a child) blinked and hid
+              along with the dot. Keeping the ring as a SIBLING of this span,
+              both inside the un-animated button, decouples them. The button
+              has NO `grid`/flex — an absolutely-positioned ring inside a grid
+              container gets mis-centred by `place-items`. */}
+          <span
+            className={cn(
+              "block h-full w-full rounded-full transition-colors duration-200 hover:opacity-80",
+              colorClass,
+            )}
+          />
           {fraction !== null && (
-            // Progress ring — overflows the 6px dot via negative inset so the
-            // arc sits AROUND it. pointer-events-none keeps clicks on the dot.
-            <svg
-              viewBox="0 0 16 16"
+            // Ring — a 14px square centred on the 6px dot so it sits
+            // concentrically AROUND it. Centre via left/top-1/2 + translate on a
+            // NON-animated wrapper: a spinning child owns its own `transform`, so
+            // the centring transform must live on a separate element or the spin
+            // overrides it. pointer-events-none keeps clicks on the dot.
+            <span
               aria-hidden="true"
-              className="pointer-events-none absolute -inset-[4px]"
+              className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2"
             >
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                className="text-border"
-              />
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                transform="rotate(-90 8 8)"
-                strokeDasharray={RING_CIRCUMFERENCE}
-                strokeDashoffset={RING_CIRCUMFERENCE * (1 - fraction)}
-                className={cn(
-                  "text-foreground transition-[stroke-dashoffset] duration-300 ease-out",
-                  reducedMotion && "transition-none",
-                )}
-              />
-            </svg>
+              {spin ? (
+                // Indeterminate spinner (indexing). A faint full ring under a
+                // single-quadrant arc that rotates — no backward jumps, no
+                // flashing off between the many short index passes.
+                <>
+                  <span className="absolute inset-0 rounded-full border-[1.5px] border-border" />
+                  <span
+                    className={cn(
+                      "absolute inset-0 rounded-full border-[1.5px] border-transparent border-t-foreground",
+                      !reducedMotion && "animate-spin",
+                    )}
+                  />
+                </>
+              ) : (
+                // Determinate fill (downloads) — a real 0–100% arc.
+                <svg viewBox="0 0 16 16" className="h-full w-full">
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    className="text-border"
+                  />
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    transform="rotate(-90 8 8)"
+                    strokeDasharray={RING_CIRCUMFERENCE}
+                    strokeDashoffset={RING_CIRCUMFERENCE * (1 - fraction)}
+                    className={cn(
+                      "text-foreground transition-[stroke-dashoffset] duration-300 ease-out",
+                      reducedMotion && "transition-none",
+                    )}
+                  />
+                </svg>
+              )}
+            </span>
           )}
         </button>
       </TooltipTrigger>
@@ -403,6 +440,7 @@ export function StatusBar({
               colorClass={statusDotColor}
               label={statusDotLabel}
               progress={bg.active ? bg.fraction ?? 0 : undefined}
+              spin={bg.indeterminate}
               reducedMotion={reducedMotion}
               onActivate={(coords) =>
                 hasLocalAi ? openTrayForGroup("session", coords) : openTrayAt(coords)

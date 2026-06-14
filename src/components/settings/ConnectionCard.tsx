@@ -11,6 +11,8 @@ import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
+import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
+import { GooseAttribution } from './GooseAttribution';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -273,6 +275,11 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
             </span>
           </div>
+          {/* Transparency: the Local Agent preset is powered by Goose — credit
+              it (with a link) on the connection card too, not just at setup. */}
+          {isLocalAgentPreset(connection) && (
+            <GooseAttribution compact className="mt-0.5" />
+          )}
           {/* Badge row wraps to multiple lines so capability + sandbox
               + network + update pills don't overflow the card on
               narrower dialog widths (live-test 2026-04-26). */}

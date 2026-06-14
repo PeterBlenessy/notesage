@@ -9,6 +9,7 @@ import {
   setMockInvokeHandler,
   clearMockInvokeHandlers,
 } from '@/test/component-harness';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
 import type { ChatMessage } from '@/lib/ai/types';
@@ -530,6 +531,23 @@ describe('CommandBarContext', () => {
     ).toBeTruthy();
   });
 
+  it('renders the Local Agent degraded pill without an infinite render loop', () => {
+    // Regression lock: `selectLocalAgentNotice` builds a fresh object each call,
+    // so selecting it WITHOUT `useShallow` makes useSyncExternalStore see a new
+    // snapshot every render → "getSnapshot should be cached" → Maximum update
+    // depth exceeded (crashed the command bar). With useShallow it renders once.
+    useLocalAIStore.setState({
+      localAgentDegraded: true,
+      localAgentDegradedReason: 'Local Agent unavailable — using direct local chat',
+    });
+    try {
+      renderWithProviders(<CommandBarContext />);
+      expect(screen.getByText(/local chat \(agent unavailable\)/i)).toBeTruthy();
+    } finally {
+      useLocalAIStore.setState({ localAgentDegraded: false, localAgentDegradedReason: null });
+    }
+  });
+
   it('renders the projects picker label when one project is selected', () => {
     // Live-test 2026-04-26 — picker shows the project name on its
     // trigger when only one project is selected. (Was: chip per
@@ -1048,7 +1066,7 @@ describe('CommandBarContext', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mode pill (#26) — wires the chat-footer's `AcpModePicker` into the
+  // Mode pill (#26) — wires the command bar's `AcpModePicker` into the
   // context row. We exercise the picker directly (rather than mocking it
   // out) so the integration — common-mode mapping, store-action dispatch,
   // and the Full Access × sandbox conflict dialog — is end-to-end covered.
@@ -1324,7 +1342,7 @@ describe('CommandBarContext', () => {
   // -------------------------------------------------------------------------
   // Overflow / shrink layout (regression lock for the 5-project bug where
   // the agent mode picker and trailing icons got pushed out of view when
-  // the chat footer carried more than 2 project chips).
+  // the command bar carried more than 2 project chips).
   // -------------------------------------------------------------------------
 
   describe('overflow (regression lock — live-test 2026-04-26)', () => {

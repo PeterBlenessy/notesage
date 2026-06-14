@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
+import type { AcpMcpServerInput } from './ai/acp-mcp';
 
 export interface FileEntry {
   name: string;
@@ -47,6 +48,54 @@ export interface PptxTemplateInfo {
   scope: string;  // "builtin" | "global" | "project"
   path: string;
   date_added: string;
+}
+
+/**
+ * Result of `local_agent_write_config` — the Goose env pointing at the live
+ * bundled llama-server (provider + host + model) plus the XDG isolation paths
+ * and the respawn-trigger key (`<port>:<modelId>`). Goose is configured purely
+ * via env vars — no config file is written. See `src-tauri/.../local_agent.rs`.
+ */
+export interface LocalAgentConfig {
+  configPath: string;
+  /** Env vars (Goose provider + XDG isolation paths) the spawn must inject to
+   *  point Goose at the bundled server and isolate its config tree. The only
+   *  key is a dummy the local server ignores — never real secrets. */
+  env: Record<string, string>;
+  /** `<port>:<modelId>` — changes when the server port or active model changes. */
+  configKey: string;
+  /** The bundled server port the config points at (for the Seatbelt allow). */
+  port: number;
+  modelId: string;
+}
+
+/** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
+export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'done';
+
+/** Result of `acp_agent_smoke_test` — see `src-tauri/.../acp.rs`. */
+export interface SmokeTestReport {
+  ok: boolean;
+  stage: SmokeStage;
+  error?: string;
+  elapsedMs: number;
+}
+
+/** Params for `acpAgentSmokeTest` — mirrors the spawn surface plus the bundled
+ *  server health gate (`requireLocalServer`). */
+export interface SmokeTestParams {
+  agentBinary: string;
+  agentArgs?: string[] | null;
+  workingDirectory: string;
+  envVars?: Record<string, string> | null;
+  connectionId?: string | null;
+  envVarKeys?: string[] | null;
+  sandboxEnabled?: boolean | null;
+  sandboxPaths?: string[] | null;
+  networkSandboxEnabled?: boolean | null;
+  networkAllowedDomains?: string[] | null;
+  kernelNetworkDeny?: boolean | null;
+  extraLocalhostPorts?: number[] | null;
+  requireLocalServer?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -816,6 +865,16 @@ export const tauriApi = {
     networkSandboxEnabled?: boolean | null,
     networkAllowedDomains?: string[] | null,
     kernelNetworkDeny?: boolean | null,
+    /** Connection id + env-var names for keychain secret resolution at spawn
+     *  (`notesage:<connectionId>:env:<KEY>`). Values never transit IPC here. */
+    connectionId?: string | null,
+    envVarKeys?: string[] | null,
+    /** Inline env passed to the spawned agent (e.g. the Local Agent preset's
+     *  generated Goose env). Keychain-resolved values still win backend-side. */
+    envVars?: Record<string, string> | null,
+    /** Extra localhost ports to allow through the kernel network sandbox
+     *  alongside the proxy port (e.g. the bundled llama-server port, #9). */
+    extraLocalhostPorts?: number[] | null,
   ): Promise<AcpSpawnResult> {
     return await invoke<AcpSpawnResult>("acp_agent_spawn", {
       agentBinary,
@@ -827,6 +886,10 @@ export const tauriApi = {
       networkSandboxEnabled: networkSandboxEnabled ?? null,
       networkAllowedDomains: networkAllowedDomains ?? null,
       kernelNetworkDeny: kernelNetworkDeny ?? null,
+      connectionId: connectionId ?? null,
+      envVarKeys: envVarKeys ?? null,
+      envVars: envVars ?? null,
+      extraLocalhostPorts: extraLocalhostPorts ?? null,
     });
   },
 
@@ -838,12 +901,65 @@ export const tauriApi = {
     await invoke("acp_agent_authenticate", { instanceId });
   },
 
-  async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
+  /**
+   * Regenerate the Local Agent (Goose) env from the LIVE bundled llama-server
+   * state and return the provider/isolation env + respawn trigger key. Used
+   * by `ensureAcpAgent` for `localAgentPreset` connections (tasks #8/#10).
+   * Rejects when the bundled server is not running / has no active model.
+   */
+  async localAgentWriteConfig(): Promise<LocalAgentConfig> {
+    return await invoke<LocalAgentConfig>("local_agent_write_config");
   },
 
-  async acpSessionLoad(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_load", { instanceId, sessionId, workingDirectory });
+  /**
+   * Bounded end-to-end verification of an ACP agent (health → spawn → session →
+   * one prompt → teardown). Always resolves to a `SmokeTestReport` (never throws
+   * for stage failures) so callers can branch on `ok` + `stage` (tasks #12/#13/#16).
+   */
+  async acpAgentSmokeTest(params: SmokeTestParams): Promise<SmokeTestReport> {
+    return await invoke<SmokeTestReport>("acp_agent_smoke_test", {
+      agentBinary: params.agentBinary,
+      agentArgs: params.agentArgs ?? null,
+      workingDirectory: params.workingDirectory,
+      envVars: params.envVars ?? null,
+      connectionId: params.connectionId ?? null,
+      envVarKeys: params.envVarKeys ?? null,
+      sandboxEnabled: params.sandboxEnabled ?? null,
+      sandboxPaths: params.sandboxPaths ?? null,
+      networkSandboxEnabled: params.networkSandboxEnabled ?? null,
+      networkAllowedDomains: params.networkAllowedDomains ?? null,
+      kernelNetworkDeny: params.kernelNetworkDeny ?? null,
+      extraLocalhostPorts: params.extraLocalhostPorts ?? null,
+      requireLocalServer: params.requireLocalServer ?? null,
+    });
+  },
+
+  async acpSessionNew(
+    instanceId: string,
+    workingDirectory: string,
+    /** MCP servers to attach to the session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_new", {
+      instanceId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
+  },
+
+  async acpSessionLoad(
+    instanceId: string,
+    sessionId: string,
+    workingDirectory: string,
+    /** MCP servers for the reloaded session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_load", {
+      instanceId,
+      sessionId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
   },
 
   async acpSessionClose(instanceId: string, sessionId: string): Promise<void> {
@@ -871,14 +987,12 @@ export const tauriApi = {
     sessionId: string,
     content: string,
     images?: Array<{ data: string; mime_type: string }>,
-    messageId?: string,
   ): Promise<void> {
     await invoke("acp_session_prompt", {
       instanceId,
       sessionId,
       content,
       images: images ?? null,
-      messageId: messageId ?? null,
     });
   },
 
@@ -896,10 +1010,6 @@ export const tauriApi = {
 
   async acpSessionSetConfigOption(instanceId: string, sessionId: string, optionId: string, valueId: string): Promise<void> {
     await invoke("acp_session_set_config_option", { instanceId, sessionId, optionId, valueId });
-  },
-
-  async acpSessionSetModel(instanceId: string, sessionId: string, modelId: string): Promise<void> {
-    await invoke("acp_session_set_model", { instanceId, sessionId, modelId });
   },
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {

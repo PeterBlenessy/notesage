@@ -12,6 +12,8 @@ import {
   hasLoadSessionCapability,
 } from '@/lib/ai/acp-utils';
 
+import type { AcpMcpServerInput } from '@/lib/ai/acp-mcp';
+
 export interface AcpSessionRestoreDeps {
   instanceId: string;
   cwd: string;
@@ -19,6 +21,12 @@ export interface AcpSessionRestoreDeps {
   storedSessionId: string | undefined;
   /** Agent capabilities from AcpSpawnResult. */
   capabilities: AcpAgentCapabilities | null | undefined;
+  /**
+   * MCP servers to attach to the session (task #11). Passed to `session/load`
+   * and `session/new` (ACP treats load's list as the complete set). `resume` is
+   * a live takeover and keeps the session's existing servers, so it's not sent.
+   */
+  mcpServers?: AcpMcpServerInput[];
 }
 
 /**
@@ -36,7 +44,7 @@ export interface AcpSessionRestoreDeps {
 export async function restoreOrCreateAcpSession(
   deps: AcpSessionRestoreDeps,
 ): Promise<AcpSessionResult> {
-  const { instanceId, cwd, storedSessionId, capabilities } = deps;
+  const { instanceId, cwd, storedSessionId, capabilities, mcpServers } = deps;
   const supportsLoad = hasLoadSessionCapability(capabilities);
   const supportsResume = hasSessionCapability(capabilities, 'resume');
   const supportsList = hasSessionCapability(capabilities, 'list');
@@ -56,7 +64,7 @@ export async function restoreOrCreateAcpSession(
     // 2. Try load (replay-based).
     if (supportsLoad) {
       try {
-        const session = await tauriApi.acpSessionLoad(instanceId, storedSessionId, cwd);
+        const session = await tauriApi.acpSessionLoad(instanceId, storedSessionId, cwd, mcpServers);
         log.info('ai', `ACP session restored via session/load (${storedSessionId})`);
         return session;
       } catch (err) {
@@ -86,7 +94,7 @@ export async function restoreOrCreateAcpSession(
   }
 
   // 4. Final fallback.
-  const session = await tauriApi.acpSessionNew(instanceId, cwd);
+  const session = await tauriApi.acpSessionNew(instanceId, cwd, mcpServers);
   log.info('ai', `ACP session created fresh (session/new)`);
   return session;
 }

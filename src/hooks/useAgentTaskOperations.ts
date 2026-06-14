@@ -15,6 +15,8 @@ import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability, formatResourceLinkAsMarkdown } from '@/lib/ai/acp-utils';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
+import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
+import { resolveAgentLaunch } from '@/lib/ai/acp-agent-state';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { getProjectLock, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { log } from '@/lib/logger';
@@ -112,15 +114,17 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
   taskSpawnPromise = (async () => {
     try {
-      const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
+      // Custom agents (`custom_acp`) launch from config.binaryPath/binaryArgs;
+      // managed agents from credentials — one resolver for both paths.
+      const launch = resolveAgentLaunch(connection);
       // Inject model flag — codex-acp uses -c model="...", others use --model
-      const args = [...(creds.agentArgs ?? [])];
+      const args = [...launch.agentArgs];
       if (connection.config?.model) {
         let modelId = connection.config.model;
-        if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
+        if (launch.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
           modelId = `${modelId}/${connection.config.reasoningEffort}`;
         }
-        if (creds.agentBinary === 'codex-acp') {
+        if (launch.agentBinary === 'codex-acp') {
           args.push('-c', `model="${modelId}"`);
         } else {
           args.push('--model', modelId);
@@ -130,8 +134,9 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
       const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
       let networkAllowedDomains: string[] | null = null;
       if (networkSandboxEnabled) {
+        // Custom binaries match no PROVIDER_OPTIONS entry → built-in allowlist stays empty.
         const providerOption = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+          (o) => o.agentBinary === launch.agentBinary || o.lspBinary === launch.agentBinary
         );
         const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
         const permStore = usePermissionStore.getState();
@@ -141,7 +146,7 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
 
       // Delegation: sandbox to single folder only
       const result = await tauriApi.acpAgentSpawn(
-        creds.agentBinary,
+        launch.agentBinary,
         args.length > 0 ? args : null,
         'task',
         cwd,
@@ -150,6 +155,8 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
         networkSandboxEnabled || null,
         networkAllowedDomains,
         connection.kernelNetworkDeny ?? null,
+        connection.id,
+        launch.envVarKeys,
       );
 
       // Try to authenticate — some agents handle auth internally
@@ -304,11 +311,16 @@ async function startAcpTask(
     : undefined;
   const storedSessionId = activeConv?.acpSessionId;
 
+  // Scope MCP servers to the task's project (explicit projectRoot when set, else
+  // the chat selection) so a delegated task gets the same enabled, capability-
+  // gated servers the interactive chat would (task #11).
+  const mcpScopePaths = taskMeta?.projectRoot ? [taskMeta.projectRoot] : selectedProjectPaths;
   const session = await restoreOrCreateAcpSession({
     instanceId,
     cwd,
     storedSessionId,
     capabilities: taskAgent?.capabilities ?? null,
+    mcpServers: buildAcpMcpServerInputs(taskAgent?.capabilities ?? null, mcpScopePaths),
   });
 
   // Persist the (possibly new) session ID back onto the conversation so a subsequent

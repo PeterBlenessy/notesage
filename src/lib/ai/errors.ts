@@ -23,6 +23,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   local: 'Local AI',
   local_bundled: 'Local AI',
   openai_compatible: 'OpenAI-compatible provider',
+  custom_acp: 'Custom agent',
 };
 
 /**

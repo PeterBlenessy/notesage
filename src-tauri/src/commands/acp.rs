@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use super::acp_binary::resolve_agent_binary;
+use super::acp_binary::{resolve_absolute_binary, resolve_agent_binary};
 use super::acp_client::{ClientContext, InitInfo, JsonLineFilter, PermissionReply, PermissionWaiters};
 use super::shell_path::get_shell_path;
 
@@ -131,6 +131,115 @@ pub struct AcpListResult {
     pub next_cursor: Option<String>,
 }
 
+/// One MCP server the frontend wants attached to an ACP session (`session/new` /
+/// `session/load`, task #11). The renderer assembles these from `mcp-store`
+/// (already filtered by enabled-state, project scope, and the agent's advertised
+/// `McpCapabilities`); the backend resolves env secrets from the keychain and
+/// converts to the ACP `McpServer` schema. Deliberately a minimal, dedicated IPC
+/// type rather than reusing `McpServerConfig` so the renderer never has to send
+/// the `source`/`enabled` bookkeeping fields — only what a spawn needs.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AcpMcpServerInput {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub transport: super::mcp::McpTransport,
+    /// Stdio transport: the executable. Empty/ignored for http servers.
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Env values — bare strings are plaintext, `{ "secret": true }` references
+    /// resolve from `notesage:mcp:<id>:<KEY>` in the keychain at build time.
+    #[serde(default)]
+    pub env: HashMap<String, super::mcp::McpEnvValue>,
+    /// Endpoint URL for `http` (remote) servers. `None` for stdio.
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+/// Convert the renderer's MCP server inputs into ACP `McpServer` configs,
+/// resolving env secrets (stdio) and OAuth bearer tokens (http) from the OS
+/// keychain. Servers that can't form a valid config (stdio without a command,
+/// http without a URL) are dropped rather than failing the whole session.
+async fn build_acp_mcp_servers(
+    inputs: Vec<AcpMcpServerInput>,
+) -> Vec<agent_client_protocol::schema::McpServer> {
+    use agent_client_protocol::schema::{
+        EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerStdio,
+    };
+    let mut out = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        match input.transport {
+            super::mcp::McpTransport::Stdio => {
+                if input.command.trim().is_empty() {
+                    log::warn!(target: "notesage::acp",
+                        "Skipping stdio MCP server '{}' for session: empty command", input.name);
+                    continue;
+                }
+                let env: Vec<EnvVariable> = super::mcp::resolve_env(&input.id, &input.env)
+                    .into_iter()
+                    .map(|(k, v)| EnvVariable::new(k, v))
+                    .collect();
+                out.push(McpServer::Stdio(
+                    McpServerStdio::new(input.name, PathBuf::from(input.command))
+                        .args(input.args)
+                        .env(env),
+                ));
+            }
+            super::mcp::McpTransport::Http => {
+                let Some(url) = input.url.filter(|u| !u.trim().is_empty()) else {
+                    log::warn!(target: "notesage::acp",
+                        "Skipping http MCP server '{}' for session: missing URL", input.name);
+                    continue;
+                };
+                // Attach a Bearer token if this server has been authorized via the
+                // MCP OAuth flow — the same token `HttpMcpClient` uses. Notesage
+                // owns the OAuth dance; the agent just gets a valid access token.
+                let headers: Vec<HttpHeader> =
+                    match super::mcp_oauth::valid_access_token(&input.id).await {
+                        Some(token) => vec![HttpHeader::new("Authorization", format!("Bearer {token}"))],
+                        None => Vec::new(),
+                    };
+                out.push(McpServer::Http(
+                    McpServerHttp::new(input.name, url).headers(headers),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Outcome of `acp_agent_smoke_test` — a bounded end-to-end verification that the
+/// Local Agent chain works (health → spawn → session → prompt → teardown).
+/// `stage` names the LAST stage attempted: on success it's `Done`, on failure
+/// it's the stage that failed so the UI can point the user at the right fix.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SmokeTestReport {
+    pub ok: bool,
+    pub stage: SmokeStage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SmokeStage {
+    /// Bundled llama-server `/health` probe.
+    Health,
+    /// Agent subprocess spawn + ACP `initialize`.
+    Spawn,
+    /// ACP `session/new`.
+    Session,
+    /// A single short prompt round-trip.
+    Prompt,
+    /// All stages passed.
+    Done,
+}
+
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
@@ -237,6 +346,9 @@ struct AgentHandle {
     network_sandbox_enabled: bool,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: bool,
+    /// Extra direct-localhost ports (e.g. llama-server for the Goose preset).
+    /// Stored so a reconnect re-applies the same network confinement.
+    extra_localhost_ports: Vec<u16>,
     /// Whether the agent supports image content (from promptCapabilities)
     supports_images: bool,
 }
@@ -252,21 +364,24 @@ enum AgentCmd {
     },
     NewSession {
         working_directory: String,
+        /// MCP servers to attach to the new session (task #11). Built on the
+        /// command side (keychain secrets resolved) so the agent thread just
+        /// forwards them to the ACP `session/new` request.
+        mcp_servers: Vec<agent_client_protocol::schema::McpServer>,
         reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     LoadSession {
         session_id: String,
         working_directory: String,
+        /// MCP servers for the reloaded session. ACP treats this as the complete
+        /// list for the loaded session, so callers re-send the current set (#11).
+        mcp_servers: Vec<agent_client_protocol::schema::McpServer>,
         reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     Prompt {
         session_id: String,
         content: String,
         images: Option<Vec<super::ai::ImageData>>,
-        /// Optional client-generated message ID — forwarded as `PromptRequest.message_id`
-        /// when the `unstable_message_id` feature is enabled. The agent MAY echo this
-        /// back as `user_message_id` on subsequent `agent_message_chunk` events.
-        message_id: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel {
@@ -286,11 +401,6 @@ enum AgentCmd {
         session_id: String,
         option_id: String,
         value_id: String,
-        reply: oneshot::Sender<Result<(), String>>,
-    },
-    SetModel {
-        session_id: String,
-        model_id: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
     CloseSession {
@@ -319,8 +429,81 @@ enum AgentCmd {
 
 
 // ---------------------------------------------------------------------------
+// Session response helpers
+// ---------------------------------------------------------------------------
+
+/// Derive `(current_model, available_models)` from a session response's config
+/// options.
+///
+/// ACP 0.14 removed the dedicated session-model API (`SessionModelState`,
+/// `session/set_model`); the stable replacement is the config option whose
+/// `category` is `Model`. Agents without such an option simply have no model
+/// selector — `(None, [])` is returned rather than an error.
+fn extract_model_info(
+    config_options: Option<&Vec<agent_client_protocol::schema::SessionConfigOption>>,
+) -> (Option<String>, Vec<AgentModelInfo>) {
+    use agent_client_protocol::schema::{
+        SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOption,
+        SessionConfigSelectOptions,
+    };
+
+    let model_option = config_options
+        .into_iter()
+        .flatten()
+        .find(|opt| opt.category == Some(SessionConfigOptionCategory::Model));
+
+    let Some(option) = model_option else {
+        return (None, Vec::new());
+    };
+
+    let to_info = |o: &SessionConfigSelectOption| AgentModelInfo {
+        model_id: o.value.to_string(),
+        name: o.name.clone(),
+        description: o.description.clone(),
+    };
+
+    match &option.kind {
+        SessionConfigKind::Select(select) => {
+            let current_model = Some(select.current_value.to_string());
+            let available_models = match &select.options {
+                SessionConfigSelectOptions::Ungrouped(opts) => {
+                    opts.iter().map(to_info).collect()
+                }
+                SessionConfigSelectOptions::Grouped(groups) => groups
+                    .iter()
+                    .flat_map(|g| g.options.iter())
+                    .map(to_info)
+                    .collect(),
+                // Non-exhaustive upstream enum — unknown layouts yield no list.
+                _ => Vec::new(),
+            };
+            (current_model, available_models)
+        }
+        // Future / non-select option kinds carry no model list to surface.
+        _ => (None, Vec::new()),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Agent thread: owns the (now Send) ConnectionTo<Agent>
 // ---------------------------------------------------------------------------
+
+/// How many trailing stderr lines to retain for error reporting.
+const STDERR_TAIL_LINES: usize = 12;
+
+/// Render the retained stderr tail as an error-message suffix (empty when the
+/// agent wrote nothing). Mirrors the `mcp_validate_server` stderr_tail pattern:
+/// a failing agent's own output must reach the user, not just the app log.
+fn stderr_tail_suffix(tail: &StdMutex<std::collections::VecDeque<String>>) -> String {
+    let lines: Vec<String> = match tail.lock() {
+        Ok(t) => t.iter().cloned().collect(),
+        Err(_) => return String::new(),
+    };
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("\nAgent stderr (last {} lines):\n{}", lines.len(), lines.join("\n"))
+}
 
 /// Runs on a dedicated OS thread with a single-threaded tokio runtime.
 ///
@@ -371,6 +554,13 @@ fn run_agent_thread(
     rt.block_on(async move {
         // Flag to distinguish intentional Stop from unexpected process exit
         let stopped_intentionally = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Ring buffer of the agent's most recent stderr lines — appended to
+        // spawn/initialize error messages so binaries that crash on startup
+        // (wrong args, missing config, not actually an ACP agent) surface
+        // their own diagnostics to the frontend.
+        let stderr_tail: Arc<StdMutex<std::collections::VecDeque<String>>> =
+            Arc::new(StdMutex::new(std::collections::VecDeque::new()));
 
         // Shared permission waiters for inbound handler ↔ command loop communication.
         // Send + Sync now that the connection is Send.
@@ -473,11 +663,18 @@ fn run_agent_thread(
         // (`String` + `ChildStderr`) are `Send`.
         if let Some(stderr) = child.stderr.take() {
             let stderr_binary = agent_binary.clone();
+            let tail = Arc::clone(&stderr_tail);
             tokio::task::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     log::info!(target: "notesage::acp", "[{}:stderr] {}", stderr_binary, line);
+                    if let Ok(mut t) = tail.lock() {
+                        if t.len() == STDERR_TAIL_LINES {
+                            t.pop_front();
+                        }
+                        t.push_back(line);
+                    }
                 }
             });
         }
@@ -488,14 +685,20 @@ fn run_agent_thread(
         let stdin = match child.stdin.take() {
             Some(s) => s.compat_write(),
             None => {
-                let _ = init_tx.send(Err("Failed to acquire agent stdin pipe".to_string()));
+                let _ = init_tx.send(Err(format!(
+                    "Failed to acquire agent stdin pipe{}",
+                    stderr_tail_suffix(&stderr_tail)
+                )));
                 return;
             }
         };
         let raw_stdout = match child.stdout.take() {
             Some(s) => s,
             None => {
-                let _ = init_tx.send(Err("Failed to acquire agent stdout pipe".to_string()));
+                let _ = init_tx.send(Err(format!(
+                    "Failed to acquire agent stdout pipe{}",
+                    stderr_tail_suffix(&stderr_tail)
+                )));
                 return;
             }
         };
@@ -515,6 +718,7 @@ fn run_agent_thread(
         let stopped_for_loop = std::sync::Arc::clone(&stopped_intentionally);
         let loop_binary = agent_binary.clone();
         let perm_waiters_loop = Arc::clone(&permission_waiters);
+        let stderr_tail_loop = Arc::clone(&stderr_tail);
 
         let connect_result = agent_client_protocol::Client
             .builder()
@@ -640,7 +844,15 @@ fn run_agent_thread(
                         let _ = init_tx.send(Ok(info));
                     }
                     Err(e) => {
-                        let _ = init_tx.send(Err(format!("ACP initialize failed: {}", e)));
+                        // Brief drain window: an agent that crashed mid-handshake is
+                        // typically still flushing its final stderr lines when the
+                        // request errors — give the reader task a beat to catch them.
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        let _ = init_tx.send(Err(format!(
+                            "ACP initialize failed: {}{}",
+                            e,
+                            stderr_tail_suffix(&stderr_tail_loop)
+                        )));
                         let _ = child.kill().await;
                         return Ok(());
                     }
@@ -726,27 +938,15 @@ fn run_agent_thread(
                 }
                 AgentCmd::NewSession {
                     working_directory: cwd,
+                    mcp_servers,
                     reply,
                 } => {
-                    let req = NewSessionRequest::new(PathBuf::from(cwd));
+                    let req =
+                        NewSessionRequest::new(PathBuf::from(cwd)).mcp_servers(mcp_servers);
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-
-                            if let Some(ref model_state) = resp.models {
-                                current_model =
-                                    Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
 
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
@@ -770,30 +970,18 @@ fn run_agent_thread(
                 AgentCmd::LoadSession {
                     session_id: sid,
                     working_directory: cwd,
+                    mcp_servers,
                     reply,
                 } => {
-                    let req = LoadSessionRequest::new(
+                    let mut req = LoadSessionRequest::new(
                         SessionId::new(sid.clone()),
                         PathBuf::from(cwd),
                     );
+                    req.mcp_servers = mcp_servers;
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-
-                            if let Some(ref model_state) = resp.models {
-                                current_model =
-                                    Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
 
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
@@ -818,7 +1006,6 @@ fn run_agent_thread(
                     session_id: sid,
                     content,
                     images,
-                    message_id,
                     reply,
                 } => {
                     // Run prompt in a background task so the command loop remains
@@ -833,10 +1020,9 @@ fn run_agent_thread(
                     tokio::task::spawn(async move {
                         log::info!(
                             target: "notesage::acp",
-                            "[{}] Prompt started (session={}, content_len={}, images={}, has_message_id={})",
+                            "[{}] Prompt started (session={}, content_len={}, images={})",
                             prompt_binary, prompt_sid, content.len(),
                             images.as_ref().map_or(0, |v| v.len()),
-                            message_id.is_some(),
                         );
                         let start = std::time::Instant::now();
                         let mut blocks: Vec<ContentBlock> = Vec::new();
@@ -849,13 +1035,10 @@ fn run_agent_thread(
                             }
                         }
                         blocks.push(ContentBlock::Text(TextContent::new(content)));
-                        let mut req = PromptRequest::new(
+                        let req = PromptRequest::new(
                             SessionId::new(sid),
                             blocks,
                         );
-                        if let Some(mid) = message_id {
-                            req = req.message_id(mid);
-                        }
                         match conn.send_request(req).block_task().await {
                             Ok(_) => {
                                 log::info!(
@@ -942,20 +1125,6 @@ fn run_agent_thread(
                         Err(e) => { let _ = reply.send(Err(format!("set_config_option failed: {}", e))); }
                     }
                 }
-                AgentCmd::SetModel {
-                    session_id: sid,
-                    model_id,
-                    reply,
-                } => {
-                    let req = SetSessionModelRequest::new(
-                        SessionId::new(sid),
-                        ModelId::new(model_id),
-                    );
-                    match conn.send_request(req).block_task().await {
-                        Ok(_) => { let _ = reply.send(Ok(())); }
-                        Err(e) => { let _ = reply.send(Err(format!("set_model failed: {}", e))); }
-                    }
-                }
                 AgentCmd::CloseSession {
                     session_id: sid,
                     reply,
@@ -996,20 +1165,8 @@ fn run_agent_thread(
                     );
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-                            if let Some(ref model_state) = resp.models {
-                                current_model = Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
                             let config_options = resp.config_options.as_ref()
@@ -1036,20 +1193,8 @@ fn run_agent_thread(
                     );
                     match conn.send_request(req).block_task().await {
                         Ok(resp) => {
-                            let mut current_model = None;
-                            let mut available_models = Vec::new();
-                            if let Some(ref model_state) = resp.models {
-                                current_model = Some(model_state.current_model_id.to_string());
-                                available_models = model_state
-                                    .available_models
-                                    .iter()
-                                    .map(|m| AgentModelInfo {
-                                        model_id: m.model_id.to_string(),
-                                        name: m.name.clone(),
-                                        description: m.description.clone(),
-                                    })
-                                    .collect();
-                            }
+                            let (current_model, available_models) =
+                                extract_model_info(resp.config_options.as_ref());
                             let modes = resp.modes.as_ref()
                                 .and_then(|m| serde_json::to_value(m).ok());
                             let config_options = resp.config_options.as_ref()
@@ -1164,13 +1309,45 @@ pub async fn acp_agent_spawn(
     network_sandbox_enabled: Option<bool>,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: Option<bool>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
+    extra_localhost_ports: Option<Vec<u16>>,
 ) -> Result<SpawnResult, String> {
     let mut env = env_vars.unwrap_or_default();
+    // Resolve env-var secrets from the OS keychain (`notesage:<conn_id>:env:<KEY>`).
+    // Keychain values are authoritative and override any value passed over IPC —
+    // same precedence as `resolve_api_key` in ai.rs. The IPC `env_vars` map stays
+    // as the same-session fallback for values not yet written to the keychain.
+    if let Some(conn_id) = connection_id.as_deref() {
+        for key in env_var_keys.unwrap_or_default() {
+            match super::credentials::get_credential_internal(&format!("{conn_id}:env:{key}")) {
+                Ok(Some(value)) => {
+                    env.insert(key, value);
+                }
+                Ok(None) => {
+                    log::debug!(target: "notesage::acp",
+                        "No keychain entry for env var {key} on connection {conn_id} — using IPC fallback if present");
+                }
+                Err(e) => {
+                    log::warn!(target: "notesage::acp",
+                        "Failed to resolve env var {key} from keychain for connection {conn_id}: {e}");
+                }
+            }
+        }
+    }
     let args = agent_args.unwrap_or_default();
 
-    // Resolve the actual binary path (system PATH or bundled node_modules)
-    let resolved_binary = resolve_agent_binary(&agent_binary, &app)
-        .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?;
+    // Resolve the actual binary path. Absolute paths (custom agents) go through
+    // `resolve_absolute_binary` directly so its precise validation errors
+    // ("not found at <path>" / "not executable") reach the frontend instead of
+    // collapsing into the generic not-found message; agent names keep the
+    // PATH/Homebrew/npm/bundled lookup.
+    let resolved_binary = if std::path::Path::new(&agent_binary).is_absolute() {
+        resolve_absolute_binary(&agent_binary)?
+    } else {
+        resolve_agent_binary(&agent_binary, &app)
+            .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?
+    };
 
     // Determine sandbox policy: explicit override, or default based on binary source
     let sandbox = sandbox_enabled
@@ -1203,7 +1380,13 @@ pub async fn acp_agent_spawn(
             .start_proxy(&instance_id, &agent_binary, domains, app.clone())
             .await
         {
-            Ok(config) => {
+            Ok(mut config) => {
+                // Direct-localhost allows (e.g. the bundled llama-server port
+                // for the Goose preset) — reachable without the proxy under
+                // kernel network deny. Empty for ordinary agents.
+                if let Some(ports) = extra_localhost_ports.clone() {
+                    config.extra_localhost_ports = ports;
+                }
                 // Inject proxy env vars into the agent's environment
                 let proxy_url = format!("http://{}", config.proxy_addr);
                 env.insert("HTTP_PROXY".to_string(), proxy_url.clone());
@@ -1285,6 +1468,7 @@ pub async fn acp_agent_spawn(
             None
         },
         kernel_network_deny: knd,
+        extra_localhost_ports: extra_localhost_ports.unwrap_or_default(),
         supports_images: init_info.supports_images,
     };
 
@@ -1460,6 +1644,12 @@ pub async fn acp_agent_reconnect(
         Some(old_handle.network_sandbox_enabled),
         old_handle.network_allowed_domains,
         Some(old_handle.kernel_network_deny),
+        // env_vars above already carries the keychain-resolved values from the
+        // original spawn — no connection_id/env_var_keys re-resolution needed.
+        None,
+        None,
+        // Preserve the same direct-localhost confinement (llama-server port) on reconnect.
+        Some(old_handle.extra_localhost_ports),
     ).await?;
 
     // 5. Re-authenticate (best-effort, same as initial spawn)
@@ -1475,12 +1665,17 @@ pub async fn acp_agent_reconnect(
         }
     }
 
-    // 6. Load the existing session
+    // 6. Load the existing session.
+    // MCP re-attachment on crash-recovery reconnect is a follow-up: reconnect
+    // doesn't carry the renderer's current MCP set, so we reload with none here.
+    // The normal restore path (`restoreOrCreateAcpSession`) re-sends the current
+    // servers; reconnect is the rarer crash-recovery edge (#11 known follow-up).
     let _session = acp_session_load(
         state,
         result.instance_id.clone(),
         session_id,
         working_dir,
+        None,
     ).await
     .map_err(|e| format!("Reconnect session/load failed: {}", e))?;
 
@@ -1489,13 +1684,211 @@ pub async fn acp_agent_reconnect(
     Ok(result)
 }
 
+// ---------------------------------------------------------------------------
+// Smoke test (task #12) — bounded end-to-end verification of the Local Agent
+// chain: bundled server health → agent spawn → session/new → one short prompt
+// → teardown. Used by the setup flow (#16) to gate "ready" and by routing (#13)
+// to decide whether to fall back to direct local chat.
+// ---------------------------------------------------------------------------
+
+/// Per-stage timeout budgets. The prompt budget is generous because the FIRST
+/// prompt on a cold llama-server pays the model-load cost before any token.
+const SMOKE_HEALTH_TIMEOUT_SECS: u64 = 5;
+const SMOKE_SPAWN_TIMEOUT_SECS: u64 = 45;
+const SMOKE_SESSION_TIMEOUT_SECS: u64 = 30;
+const SMOKE_PROMPT_TIMEOUT_SECS: u64 = 180;
+
+/// A trivial prompt that should elicit a one-token reply on any working model.
+const SMOKE_PROMPT: &str = "Reply with the single word: ok";
+
+/// Probe the bundled llama-server `/health`. `Ok(())` only when a port is bound
+/// AND the endpoint returns success within the budget; otherwise a stage error.
+async fn smoke_check_local_health(
+    local_state: &super::local_inference::LocalInferenceState,
+) -> Result<(), String> {
+    let port = local_state
+        .current_port()
+        .await
+        .ok_or_else(|| "Local AI server is not running".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(SMOKE_HEALTH_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let healthy = client
+        .get(&url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    if healthy {
+        Ok(())
+    } else {
+        Err(format!("Local AI server on port {port} is not responding to /health"))
+    }
+}
+
+/// Bounded end-to-end smoke test of the Local Agent chain. Always tears the
+/// probe agent down before returning (success or failure). Never panics — every
+/// stage maps to a `SmokeTestReport` with the failing stage + error string.
+///
+/// When `require_local_server` is true (the Local Agent preset case) the bundled
+/// llama-server must be healthy first; otherwise the health stage is skipped so
+/// the same command can verify any ACP agent.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn acp_agent_smoke_test(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, super::network_proxy::NetworkProxyState>,
+    local_state: State<'_, super::local_inference::LocalInferenceState>,
+    agent_binary: String,
+    agent_args: Option<Vec<String>>,
+    working_directory: String,
+    env_vars: Option<HashMap<String, String>>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
+    sandbox_enabled: Option<bool>,
+    sandbox_paths: Option<Vec<String>>,
+    network_sandbox_enabled: Option<bool>,
+    network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: Option<bool>,
+    extra_localhost_ports: Option<Vec<u16>>,
+    require_local_server: Option<bool>,
+) -> Result<SmokeTestReport, String> {
+    let started = std::time::Instant::now();
+    let elapsed = |s: &std::time::Instant| s.elapsed().as_millis() as u64;
+    let fail = |stage: SmokeStage, err: String, s: &std::time::Instant| SmokeTestReport {
+        ok: false,
+        stage,
+        error: Some(err),
+        elapsed_ms: elapsed(s),
+    };
+
+    // Stage 1 — bundled server health (preset only).
+    if require_local_server.unwrap_or(false) {
+        if let Err(e) = smoke_check_local_health(&local_state).await {
+            return Ok(fail(SmokeStage::Health, e, &started));
+        }
+    }
+
+    // Stage 2 — spawn + initialize.
+    let spawn = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SPAWN_TIMEOUT_SECS),
+        acp_agent_spawn(
+            app,
+            state.clone(),
+            network_proxy_state,
+            agent_binary,
+            agent_args,
+            AgentRole::Interactive,
+            working_directory.clone(),
+            env_vars,
+            sandbox_enabled,
+            sandbox_paths,
+            network_sandbox_enabled,
+            network_allowed_domains,
+            kernel_network_deny,
+            connection_id,
+            env_var_keys,
+            extra_localhost_ports,
+        ),
+    )
+    .await;
+    let instance_id = match spawn {
+        Ok(Ok(result)) => result.instance_id,
+        Ok(Err(e)) => return Ok(fail(SmokeStage::Spawn, e, &started)),
+        Err(_) => {
+            return Ok(fail(
+                SmokeStage::Spawn,
+                format!("Agent spawn timed out after {SMOKE_SPAWN_TIMEOUT_SECS}s"),
+                &started,
+            ))
+        }
+    };
+
+    // From here on, always stop the probe agent before returning. `stop_then`
+    // does the best-effort teardown then hands back the report. (A closure that
+    // captures `State` can't be used here — the async return-type lifetime won't
+    // outlive the borrow — so the teardown is inlined at each exit instead.)
+
+    // Best-effort authenticate (mirror spawn; most local agents have no auth).
+    if let Err(auth_err) = acp_agent_authenticate(state.clone(), instance_id.clone(), None).await {
+        let msg = auth_err.to_lowercase();
+        if !msg.contains("not implemented") && !msg.contains("no authentication methods") {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Spawn, format!("Authentication failed: {auth_err}"), &started));
+        }
+    }
+
+    // Stage 3 — session/new.
+    let session = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SESSION_TIMEOUT_SECS),
+        acp_session_new(state.clone(), instance_id.clone(), working_directory.clone(), None),
+    )
+    .await;
+    let session_id = match session {
+        Ok(Ok(s)) => s.session_id,
+        Ok(Err(e)) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Session, e, &started));
+        }
+        Err(_) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(
+                SmokeStage::Session,
+                format!("session/new timed out after {SMOKE_SESSION_TIMEOUT_SECS}s"),
+                &started,
+            ));
+        }
+    };
+
+    // Stage 4 — one short prompt (pays cold model-load cost on first call).
+    let prompt = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_PROMPT_TIMEOUT_SECS),
+        acp_session_prompt(
+            state.clone(),
+            instance_id.clone(),
+            session_id,
+            SMOKE_PROMPT.to_string(),
+            None,
+        ),
+    )
+    .await;
+    let prompt_failure = match prompt {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(fail(SmokeStage::Prompt, e, &started)),
+        Err(_) => Some(fail(
+            SmokeStage::Prompt,
+            format!("prompt timed out after {SMOKE_PROMPT_TIMEOUT_SECS}s (model may still be loading)"),
+            &started,
+        )),
+    };
+
+    // Single teardown for both the success and prompt-failure paths.
+    let _ = acp_agent_stop(state.clone(), instance_id).await;
+
+    Ok(prompt_failure.unwrap_or(SmokeTestReport {
+        ok: true,
+        stage: SmokeStage::Done,
+        error: None,
+        elapsed_ms: elapsed(&started),
+    }))
+}
+
 /// Create a new ACP session.
 #[tauri::command]
 pub async fn acp_session_new(
     state: State<'_, AcpState>,
     instance_id: String,
     working_directory: String,
+    // Enabled, scope-matching, capability-gated MCP servers from the renderer
+    // (task #11). `None` keeps the legacy no-MCP behavior for callers that don't
+    // pass it. Built here (keychain secrets resolved) before the agent thread.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
 ) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
     let cmd_tx = {
         let agents = state.agents.lock().await;
         let handle = agents
@@ -1509,6 +1902,7 @@ pub async fn acp_session_new(
     cmd_tx
         .send(AgentCmd::NewSession {
             working_directory,
+            mcp_servers,
             reply: reply_tx,
         })
         .await
@@ -1528,7 +1922,13 @@ pub async fn acp_session_load(
     instance_id: String,
     session_id: String,
     working_directory: String,
+    // MCP servers for the reloaded session (task #11). ACP treats this as the
+    // complete list for the loaded session, so the renderer re-sends the current
+    // set. `None` keeps the legacy no-MCP behavior.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
 ) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
     let cmd_tx = {
         let agents = state.agents.lock().await;
         let handle = agents
@@ -1543,6 +1943,7 @@ pub async fn acp_session_load(
         .send(AgentCmd::LoadSession {
             session_id,
             working_directory,
+            mcp_servers,
             reply: reply_tx,
         })
         .await
@@ -1559,9 +1960,9 @@ pub async fn acp_session_load(
 /// Session updates are emitted as `acp-session-update` Tauri events.
 /// Permission requests are emitted as `acp-permission-request` events.
 ///
-/// The optional `message_id` parameter is forwarded on the `PromptRequest` when the
-/// `unstable_message_id` feature is enabled in the ACP crate. Agents that recognize it
-/// MAY echo the value back on `agent_message_chunk` events as `user_message_id`.
+/// Message identity is agent-assigned: `agent_message_chunk` updates carry an
+/// optional `messageId` (`ContentChunk.message_id`) grouping the chunks of one
+/// message — there is no client-supplied message id in ACP 0.14.
 #[tauri::command]
 pub async fn acp_session_prompt(
     state: State<'_, AcpState>,
@@ -1569,7 +1970,6 @@ pub async fn acp_session_prompt(
     session_id: String,
     content: String,
     images: Option<Vec<super::ai::ImageData>>,
-    message_id: Option<String>,
 ) -> Result<(), String> {
     let cmd_tx = {
         let agents = state.agents.lock().await;
@@ -1586,7 +1986,6 @@ pub async fn acp_session_prompt(
             session_id,
             content,
             images,
-            message_id,
             reply: reply_tx,
         })
         .await
@@ -1707,37 +2106,6 @@ pub async fn acp_session_set_config_option(
     reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to set_config_option".to_string())?
-}
-
-/// Set the model for an ACP session.
-#[tauri::command]
-pub async fn acp_session_set_model(
-    state: State<'_, AcpState>,
-    instance_id: String,
-    session_id: String,
-    model_id: String,
-) -> Result<(), String> {
-    let cmd_tx = {
-        let agents = state.agents.lock().await;
-        let handle = agents
-            .get(&instance_id)
-            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
-        handle.cmd_tx.clone()
-    };
-
-    let (reply_tx, reply_rx) = oneshot::channel();
-    cmd_tx
-        .send(AgentCmd::SetModel {
-            session_id,
-            model_id,
-            reply: reply_tx,
-        })
-        .await
-        .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    reply_rx
-        .await
-        .map_err(|_| "Agent thread did not respond to set_model".to_string())?
 }
 
 /// Close an ACP session. Best-effort — agents may not support this.
@@ -1897,8 +2265,109 @@ pub async fn acp_permission_respond(
 
 #[cfg(test)]
 mod tests {
-    use super::{AuthEnvVar, AuthMethodInfo};
-    use agent_client_protocol::schema::{ContentBlock, PromptRequest, SessionId, TextContent};
+    use super::{
+        build_acp_mcp_servers, extract_model_info, AcpMcpServerInput, AuthEnvVar, AuthMethodInfo,
+        SmokeStage, SmokeTestReport,
+    };
+    use super::super::mcp::{McpEnvValue, McpTransport};
+    use agent_client_protocol::schema::McpServer;
+    use std::collections::HashMap;
+
+    fn stdio_input(name: &str, command: &str) -> AcpMcpServerInput {
+        AcpMcpServerInput {
+            id: format!("srv-{name}"),
+            name: name.to_string(),
+            transport: McpTransport::Stdio,
+            command: command.to_string(),
+            args: vec!["--flag".to_string()],
+            env: HashMap::new(),
+            url: None,
+        }
+    }
+
+    /// A stdio server with a command + plain env builds an `McpServer::Stdio`
+    /// carrying the resolved env and args (task #11). Plain values pass through;
+    /// secret refs that miss the keychain are simply dropped.
+    #[tokio::test]
+    async fn build_mcp_servers_stdio_carries_env_and_args() {
+        let mut input = stdio_input("fs", "/usr/bin/mcp-fs");
+        input.env.insert("TOKEN".to_string(), McpEnvValue::Plain("abc".to_string()));
+        input
+            .env
+            .insert("MISSING".to_string(), McpEnvValue::Secret(super::super::mcp::McpSecretRef { secret: true }));
+
+        let built = build_acp_mcp_servers(vec![input]).await;
+        assert_eq!(built.len(), 1);
+        match &built[0] {
+            McpServer::Stdio(s) => {
+                assert_eq!(s.name, "fs");
+                assert_eq!(s.command.to_string_lossy(), "/usr/bin/mcp-fs");
+                assert_eq!(s.args, vec!["--flag".to_string()]);
+                // Plain env present; the missing keychain secret was dropped.
+                let token = s.env.iter().find(|e| e.name == "TOKEN");
+                assert_eq!(token.map(|e| e.value.as_str()), Some("abc"));
+                assert!(s.env.iter().all(|e| e.name != "MISSING"));
+            }
+            _ => panic!("expected Stdio"),
+        }
+    }
+
+    /// A stdio server with an empty command is dropped rather than failing the
+    /// whole session.
+    #[tokio::test]
+    async fn build_mcp_servers_drops_stdio_without_command() {
+        let built = build_acp_mcp_servers(vec![stdio_input("broken", "   ")]).await;
+        assert!(built.is_empty());
+    }
+
+    /// An http server with a URL builds an `McpServer::Http`; one without a URL
+    /// is dropped.
+    #[tokio::test]
+    async fn build_mcp_servers_http_requires_url() {
+        let with_url = AcpMcpServerInput {
+            id: "srv-remote".to_string(),
+            name: "remote".to_string(),
+            transport: McpTransport::Http,
+            command: String::new(),
+            args: vec![],
+            env: HashMap::new(),
+            url: Some("https://mcp.example.com".to_string()),
+        };
+        let without_url = AcpMcpServerInput {
+            id: "srv-bad".to_string(),
+            name: "bad".to_string(),
+            transport: McpTransport::Http,
+            command: String::new(),
+            args: vec![],
+            env: HashMap::new(),
+            url: None,
+        };
+        let built = build_acp_mcp_servers(vec![with_url, without_url]).await;
+        assert_eq!(built.len(), 1);
+        match &built[0] {
+            McpServer::Http(h) => {
+                assert_eq!(h.name, "remote");
+                assert_eq!(h.url, "https://mcp.example.com");
+            }
+            _ => panic!("expected Http"),
+        }
+    }
+
+    /// `AcpMcpServerInput` deserializes from the renderer's camelCase payload,
+    /// defaulting transport to stdio and env to empty (absent-field back-compat).
+    #[test]
+    fn acp_mcp_server_input_deserializes_with_defaults() {
+        let json = serde_json::json!({ "id": "s1", "name": "S1", "command": "x" });
+        let input: AcpMcpServerInput = serde_json::from_value(json).unwrap();
+        assert_eq!(input.transport, McpTransport::Stdio);
+        assert!(input.env.is_empty());
+        assert!(input.args.is_empty());
+        assert!(input.url.is_none());
+    }
+    use agent_client_protocol::schema::{
+        ContentBlock, ContentChunk, MessageId, SessionConfigOption, SessionConfigOptionCategory,
+        SessionConfigSelectOption, TextContent,
+    };
 
     /// `AuthMethodInfo::EnvVar` must round-trip through serde so the frontend receives
     /// the full `{ vars, link }` payload. Tagged as `{ "type": "env_var", ... }`.
@@ -1954,6 +2423,61 @@ mod tests {
         }
     }
 
+    /// A passing smoke test serializes with camelCase fields, a snake_case
+    /// stage, and omits the `error` field entirely (the frontend treats absent
+    /// error as success and reads `stage`/`elapsedMs`).
+    #[test]
+    fn smoke_report_ok_serializes_camel_case_and_omits_error() {
+        let report = SmokeTestReport {
+            ok: true,
+            stage: SmokeStage::Done,
+            error: None,
+            elapsed_ms: 4200,
+        };
+        let json = serde_json::to_value(&report).expect("SmokeTestReport must serialize");
+        assert_eq!(json.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(json.get("stage").and_then(|v| v.as_str()), Some("done"));
+        assert_eq!(json.get("elapsedMs").and_then(|v| v.as_u64()), Some(4200));
+        assert!(json.get("error").is_none(), "error must be omitted on success");
+        // No snake_case leak for the multi-word field.
+        assert!(json.get("elapsed_ms").is_none());
+    }
+
+    /// A failing smoke test names the stage that failed and carries the error.
+    #[test]
+    fn smoke_report_failure_names_stage_and_error() {
+        let report = SmokeTestReport {
+            ok: false,
+            stage: SmokeStage::Prompt,
+            error: Some("prompt timed out".to_string()),
+            elapsed_ms: 180_000,
+        };
+        let json = serde_json::to_value(&report).expect("SmokeTestReport must serialize");
+        assert_eq!(json.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(json.get("stage").and_then(|v| v.as_str()), Some("prompt"));
+        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("prompt timed out"));
+
+        // Round-trips back to the same value.
+        let round: SmokeTestReport =
+            serde_json::from_value(json).expect("SmokeTestReport must deserialize");
+        assert_eq!(round, report);
+    }
+
+    /// Every stage maps to a distinct, stable snake_case wire name.
+    #[test]
+    fn smoke_stage_wire_names_are_stable() {
+        let cases = [
+            (SmokeStage::Health, "health"),
+            (SmokeStage::Spawn, "spawn"),
+            (SmokeStage::Session, "session"),
+            (SmokeStage::Prompt, "prompt"),
+            (SmokeStage::Done, "done"),
+        ];
+        for (stage, wire) in cases {
+            assert_eq!(serde_json::to_value(&stage).unwrap().as_str(), Some(wire));
+        }
+    }
+
     /// `AuthMethodInfo::Agent` serializes as `{ "type": "agent", ... }`.
     #[test]
     fn auth_method_info_agent_serializes_without_vars() {
@@ -1968,40 +2492,70 @@ mod tests {
         assert!(json.get("link").is_none(), "Agent variant should not carry link");
     }
 
-    /// `PromptRequest::message_id()` is a `#[cfg(feature = "unstable_message_id")]`-gated
-    /// builder. This test confirms the Cargo feature is enabled and that the resulting
-    /// request serializes with the `messageId` field — the same wire shape that agents
-    /// will see and MAY echo back as `user_message_id`.
+    /// `ContentChunk.message_id` is the stable (0.13.6) message-identity design:
+    /// the agent assigns the id, and all chunks of one message share it. The
+    /// frontend reads it from `agent_message_chunk` updates as `messageId`
+    /// (camelCase) — this test locks that wire shape.
     #[test]
-    fn prompt_request_carries_message_id_when_set() {
-        let blocks = vec![ContentBlock::Text(TextContent::new("hello".to_string()))];
-        let req = PromptRequest::new(SessionId::new("sess-1".to_string()), blocks)
-            .message_id("user-uuid-1".to_string());
+    fn content_chunk_serializes_message_id_when_present() {
+        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new("hello".to_string())))
+            .message_id(MessageId::new("msg-1"));
 
-        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
+        let json = serde_json::to_value(&chunk).expect("ContentChunk must serialize");
         assert_eq!(
             json.get("messageId").and_then(|v| v.as_str()),
-            Some("user-uuid-1"),
-            "PromptRequest should serialize `messageId` (camelCase) when set via the builder"
+            Some("msg-1"),
+            "ContentChunk should serialize `messageId` (camelCase) when present"
         );
-        assert_eq!(
-            json.get("sessionId").and_then(|v| v.as_str()),
-            Some("sess-1"),
+
+        let bare = ContentChunk::new(ContentBlock::Text(TextContent::new("hi".to_string())));
+        let json = serde_json::to_value(&bare).expect("ContentChunk must serialize");
+        assert!(
+            json.get("messageId").is_none(),
+            "messageId should be omitted when absent (got {json:?})",
         );
     }
 
-    /// When `message_id` is not set, the field is omitted from the serialized JSON
-    /// (serde `skip_serializing_if = "Option::is_none"`) — so agents that don't know
-    /// about the unstable feature simply don't see the key.
+    /// The session-model API was removed in ACP 0.14; `extract_model_info` derives
+    /// the model picker from the config option with category `Model`. No such
+    /// option → graceful empty result, never an error.
     #[test]
-    fn prompt_request_omits_message_id_when_absent() {
-        let blocks = vec![ContentBlock::Text(TextContent::new("hi".to_string()))];
-        let req = PromptRequest::new(SessionId::new("sess-2".to_string()), blocks);
+    fn extract_model_info_reads_model_category_config_option() {
+        let model_option = SessionConfigOption::select(
+            "model",
+            "Model",
+            "claude-sonnet-4",
+            vec![
+                SessionConfigSelectOption::new("claude-sonnet-4", "Claude Sonnet 4")
+                    .description("Fast and capable".to_string()),
+                SessionConfigSelectOption::new("claude-opus-4", "Claude Opus 4"),
+            ],
+        )
+        .category(SessionConfigOptionCategory::Model);
+        let unrelated_option = SessionConfigOption::select(
+            "effort",
+            "Thinking effort",
+            "medium",
+            vec![SessionConfigSelectOption::new("medium", "Medium")],
+        )
+        .category(SessionConfigOptionCategory::ThoughtLevel);
 
-        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
-        assert!(
-            json.get("messageId").is_none(),
-            "messageId should be omitted when builder not called (got {json:?})",
-        );
+        let options = vec![unrelated_option.clone(), model_option];
+        let (current, available) = extract_model_info(Some(&options));
+        assert_eq!(current.as_deref(), Some("claude-sonnet-4"));
+        assert_eq!(available.len(), 2);
+        assert_eq!(available[0].model_id, "claude-sonnet-4");
+        assert_eq!(available[0].name, "Claude Sonnet 4");
+        assert_eq!(available[0].description.as_deref(), Some("Fast and capable"));
+        assert_eq!(available[1].model_id, "claude-opus-4");
+
+        // No model-category option → empty result (graceful degradation).
+        let (current, available) = extract_model_info(Some(&vec![unrelated_option]));
+        assert!(current.is_none());
+        assert!(available.is_empty());
+
+        let (current, available) = extract_model_info(None);
+        assert!(current.is_none());
+        assert!(available.is_empty());
     }
 }

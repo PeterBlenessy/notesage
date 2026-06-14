@@ -501,8 +501,8 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
             )}
           </div>
 
-          {/* Action row — three minimalistic pills matching the chat
-              footer style (h-7, transparent border, subtle hover). */}
+          {/* Action row — three minimalistic pills matching the command-bar
+              pill style (h-7, transparent border, subtle hover). */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <ActionPill
               icon={Cloud}

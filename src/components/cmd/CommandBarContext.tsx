@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
+import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/telemetry";
@@ -10,7 +10,8 @@ import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useLocalAIStore } from "@/stores/local-ai-store";
+import { useLocalAIStore, selectLocalAgentNotice } from "@/stores/local-ai-store";
+import { useShallow } from "zustand/react/shallow";
 import { useGoalsDiscovery } from "@/hooks/useGoalsDiscovery";
 import { tauriApi } from "@/lib/tauri";
 import { getAgentModels, prettyModelName } from "@/lib/ai/connections";
@@ -287,13 +288,12 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
 
       {/* Mode pill --------------------------------------------------------- */}
       {/*
-       * #26 — Reuse the existing chat-footer mode picker (`AcpModePicker`)
-       * instead of forking a parallel implementation. The picker:
+       * #26 — The command-bar mode picker (`AcpModePicker`). The picker:
        *   - Reads available modes from `connection.acpCapabilities.availableModes`
-       *     (probed at registration), maps them to the four common permission
-       *     levels (Read Only / Agent / Full Access / Plan) via `getCommonModes`,
-       *     and hides itself when fewer than 2 levels are available — which is
-       *     the case for every non-ACP provider (no `acpCapabilities` set).
+       *     (probed at registration) and renders every mode the agent advertises
+       *     with a friendly label (`getAgentModeDisplay`); it hides itself only
+       *     when fewer than 2 modes are available — which is the case for every
+       *     non-ACP provider (no `acpCapabilities` set).
        *   - Dispatches mode changes through `updateCurrentMode` +
        *     `tauriApi.acpSessionSetMode` so the active ACP session stays
        *     in sync.
@@ -355,6 +355,9 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
 
       {/* Cross-project scope warning pill (#73) */}
       {crossProjectMode ? <CrossProjectScopePill /> : null}
+
+      {/* Local Agent degraded → Path-4 fallback notice (#20) */}
+      <LocalAgentDegradedPill />
 
       {/* Trailing icons ---------------------------------------------------- */}
       {/* New chat button — sits LEFT of the history toggle.
@@ -651,7 +654,7 @@ function ProjectsPicker({
                     : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} selected — ${triggerLabel}`
                 }
                 className={cn(
-                  // Same h-7 chat-footer rhythm as ProviderPill.
+                  // Same h-7 command-bar rhythm as ProviderPill.
                   "inline-flex items-center gap-1.5 h-7 px-2 rounded-md min-w-0 shrink",
                   "text-xs font-medium",
                   "border border-transparent",
@@ -948,6 +951,41 @@ function CrossProjectScopePill() {
     >
       <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={1.8} aria-hidden />
       <span>Cross-project scope</span>
+    </button>
+  );
+}
+
+/**
+ * Local Agent degraded-fallback notice (task #20). When the preset is degraded
+ * or its last setup failed (`selectLocalAgentNotice`), the interactive slot is
+ * running direct local chat (Path 4); this muted pill says so and its "Fix"
+ * action reopens the setup dialog (#17) so the user can retry.
+ */
+function LocalAgentDegradedPill() {
+  // `useShallow` is REQUIRED here: `selectLocalAgentNotice` builds a fresh
+  // `{ reason, failedStage? }` object every call, so without a shallow equality
+  // check useSyncExternalStore sees a new snapshot each render → "getSnapshot
+  // should be cached" → infinite re-render loop (crashed the command bar).
+  const notice = useLocalAIStore(useShallow(selectLocalAgentNotice));
+  const openSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
+  if (!notice) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => openSetup(true)}
+      aria-label={`${notice.reason}. Click to fix.`}
+      title={notice.reason}
+      className={cn(
+        "inline-flex items-center gap-1 h-5 px-2 rounded-full shrink-0 max-w-[220px]",
+        "text-[11px] font-medium",
+        "bg-muted text-muted-foreground border border-border",
+        "hover:border-border-strong transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      <WifiOff className="h-3 w-3 shrink-0" strokeWidth={1.5} aria-hidden />
+      <span className="truncate">Local chat (agent unavailable)</span>
+      <span className="font-semibold underline shrink-0">Fix</span>
     </button>
   );
 }

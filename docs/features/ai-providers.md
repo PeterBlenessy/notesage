@@ -36,29 +36,34 @@ interface AIProvider {
 - Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
 - Agent processes spawned with `kill_on_drop(true)` — SIGKILL sent when `Child` is dropped
 - Agent auth: ACP `authenticate` method delegates to the agent subprocess. Most agents open a browser for OAuth. Agents that can't open a browser from a subprocess (e.g., Gemini CLI — same limitation as Zed editor #43288) fall back to API key input or terminal-based auth. Auth state comes from the ACP `authenticate` response — there are no per-provider CLI `auth status` probes.
-- Gemini CLI auth: in-app API key input (from Google AI Studio, free) stored as `envVars` in connection credentials and passed at spawn time. Terminal-based Google OAuth as secondary option via `run_in_terminal` command.
-- **EnvVar auth flow**: Agents advertising `AuthMethod::EnvVar` drive a generic credential form — required variable names, labels, and the "get credentials" link all come from the agent. Submitted values are stored in `credentials.envVars` (keychain) and passed to the child process as environment variables on spawn. This replaces the Gemini-specific API-key panel; new EnvVar-auth agents work without per-provider UI code.
+- Gemini CLI auth: in-app API key input (from Google AI Studio, free) stored via the keychain-backed EnvVar flow below. Terminal-based Google OAuth as secondary option via `run_in_terminal` command.
+- **EnvVar auth flow**: Agents advertising `AuthMethod::EnvVar` drive a generic credential form — required variable names, labels, and the "get credentials" link all come from the agent. Submitted values are written per-var to the OS keychain (`notesage:<connectionId>:env:<KEY>`) by `connections-store`; the persist partialize strips the values so only the var **names** (`credentials.envVarKeys`) reach localStorage. At spawn time `acp_agent_spawn` resolves the values from the keychain by `connection_id` + key name — keychain values are authoritative over the in-memory IPC fallback (same precedence as `resolve_api_key`). Legacy plaintext `envVars` persisted by older builds migrate to the keychain on rehydrate. This replaces the Gemini-specific API-key panel; new EnvVar-auth agents (including custom ACP agents) work without per-provider UI code.
 - Agent subprocess stderr is logged at info level for auth debugging
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
-- Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
+- Four built-in agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
+- **Custom ACP agents (`custom_acp` connections):** any ACP-compatible binary works. The connection stores `config.binaryPath` (absolute, validated verbatim by `acp_binary.rs`) + `config.binaryArgs`; registration runs the same probe (spawn → initialize → session → stop) and blocks on failure with the agent's stderr tail. Custom binaries match no `PROVIDER_OPTIONS` entry, so they default to **maximal confinement** — empty network allowlist, kernel deny on, no Bucket C `$HOME` grants.
+- **Local Agent preset (Goose, `localAgentPreset: 'goose'`):** a managed `custom_acp` connection that wires the bundled [Goose](https://github.com/aaif-goose/goose) binary (an open-source ACP agent from the Agentic AI Foundation — AAIF, a Linux Foundation project; created by Block and donated to AAIF) to the local llama-server for fully-offline agentic chat — Path 2 over the same bundled model that Path 4 uses directly. Goose is a self-contained Rust binary launched as `goose acp` — no Node runtime, no npm install, and no cloud auth — so it runs cleanly under the strict `(deny default)` Seatbelt sandbox with a **100% empty network allowlist** (it talks only to the bundled llama-server over localhost). It installs via the GitHub-release-binary path (`aaif-goose/goose`, `goose-{rust-target-triple}.tar.gz`, min version 1.37.0), not npm. Goose is configured **purely via environment variables — no config file is written**: `local_agent_write_config` (Rust `local_agent.rs`) builds the env against the **live** server port + active model (`GOOSE_PROVIDER=openai`, `OPENAI_HOST=http://localhost:<port>`, `GOOSE_MODEL=<id>`, a dummy `OPENAI_API_KEY` the local server ignores, `GOOSE_DISABLE_KEYRING=1`, and all four `XDG_*` dirs redirected into a Notesage-owned `~/.notesage/agents/goose` tree so the user's own Goose setup is untouched). `ensureAcpAgent` keys the agent respawn on `<port>:<modelId>` (mirroring `sandboxScopeKey`), injects that env, and allows the llama-server port through the kernel network sandbox alongside the proxy. Set up via the staged `useLocalAgentSetup` flow (detect → download → configure → smoke-test); if the agent is unhealthy the interactive slot falls back to Path 4 (direct local chat) and shows an "Offline / Fix" notice — chat never dead-ends.
+
+  > The preset previously used OpenCode but switched to Goose: OpenCode requires an npm install of its provider SDK + a cloud model-registry fetch at bootstrap, which could not be satisfied under the strict empty-allowlist sandbox. Goose was empirically verified to work with zero network and no config file.
 - Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
 - Session resilience: 5-minute unresponsive timer checks if agent is alive (not auto-kill). `AgentStatusBanner` shows Wait/Retry/Cancel options. `acp-agent-exited` event for instant crash detection. Retry uses `acp_agent_reconnect` + `session/load` for context restoration, continues in same branch (no dead branches). `agent-status-store` for banner state.
+- **MCP pass-through:** the user's enabled, project-scope-matching MCP servers are attached to every ACP session at `session/new` (and re-sent on `session/load`), gated on the agent's advertised `McpCapabilities` (`mcp.stdio` / `mcp.http`). The frontend assembles them via `buildAcpMcpServerInputs` (from `mcp-store.getActiveServers`); the backend (`build_acp_mcp_servers` in `acp.rs`) resolves stdio env secrets from the keychain (`mcp::resolve_env`) and attaches OAuth bearer tokens for http servers — secrets never transit IPC in plaintext beyond the existing spawn path. Applies to all ACP agents, not just the Local Agent preset. (Crash-recovery reconnect currently reloads with no MCP — documented follow-up.)
 - Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always)
 - Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
 - Thinking effort slider for Codex ACP: Default / Low / Medium / High / Extra High (hidden for free accounts)
 - Dynamic model dedup: strips `/low`, `/medium`, `/high`, `/xhigh` reasoning effort variants from model lists
-- ACP crate version 0.12.1 (schema 0.13.2) with `usage_update` event support. The 0.12.x line is a builder/component API (`role::acp::Client.builder()…connect_with(transport, |conn| …)`) replacing the old `ClientSideConnection`; inbound `request_permission` / `session/update` are handled via registered `on_receive_request` / `on_receive_notification` handlers instead of a `Client` trait impl, and the connection handle is `Send + Clone` (no `!Send` thread isolation needed). `session/close` and `session/resume` are now stable (their `unstable_*` cargo features were dropped)
+- ACP crate version 0.14.0 (schema 0.13.6) with `usage_update` event support. Builder/component API (`role::acp::Client.builder()…connect_with(transport, |conn| …)`) replacing the old `ClientSideConnection`; inbound `request_permission` / `session/update` are handled via registered `on_receive_request` / `on_receive_notification` handlers instead of a `Client` trait impl, and the connection handle is `Send + Clone` (no `!Send` thread isolation needed). `session/close` and `session/resume` are stable. The dedicated session-model API (`session/set_model`) was removed upstream — model selection goes through the session config option with category `model`; assistant message identity is agent-assigned via `ContentChunk.message_id` (the old client-supplied `PromptRequest.message_id` was removed)
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
-- Context-aware chat footer: "Search" toggle for direct API connections
-- **Session modes**: Permission-level mode picker (Shield icon) in chat footer (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
-- **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in chat footer. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
+- Context-aware command bar: "Search" toggle for direct API connections
+- **Session modes**: Permission-level mode picker (Shield icon) in command bar (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
+- **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in command bar. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
 - **Capability probing**: At connection registration, lightweight spawn → session → read → stop cycle discovers available modes, config options, and capabilities. Stored on connection, auto-refreshed when stale (>24h).
 - **Connection defaults**: Default mode and thinking effort configurable in connection settings dialog, applied automatically to new sessions.
 - **Eager session creation**: Session created when chat panel opens (before first message), so mode picker and config options are immediately available.
 - **Session restoration**: `acpSessionId` stored per conversation. Reopening an existing chat runs a capability-gated preference chain via `restoreOrCreateAcpSession`: `session/resume` (live takeover) → `session/load` (replay) → `session/list` (sanity check) → `session/new` (fresh). Each step is optional based on agent capabilities.
 - **Session forking on branch**: Branching from the current leaf with an agent that advertises `session.fork` calls `session/fork` to give the new branch its own isolated agent-side session. Branches from historical messages share the parent session (ACP has no primitive to rewind agent state). Per-branch session IDs live on `Conversation.branchSessions`; the resolver `getSessionIdForLeaf` walks the active leaf's ancestors at prompt-send time.
 - **Session close on delete**: Deleting a conversation fires best-effort `session/close` for its shared session and any per-branch sessions, so agents can free resources. Skipped when the agent doesn't advertise `session.close`.
-- **Usage tracking**: `usage_update` events parsed and displayed as token count in chat footer with cost tooltip.
+- **Usage tracking**: `usage_update` events parsed and displayed as token count in command bar with cost tooltip.
 - **Plan display**: `plan` session updates rendered as collapsible `PlanSegment` cards with status icons and priority dots.
 - **Agent slash commands**: `available_commands_update` events populate the `/` command menu alongside Notesage skills.
 - **Thinking segments**: `agent_thought_chunk` events rendered as collapsible thinking blocks in chat messages.
@@ -72,7 +77,7 @@ interface AIProvider {
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents via ACP protocol, the LSP handles completions and chat via JSON-RPC
 - Full capabilities: `['interactive', 'inline_completion', 'agent_tasks']` — users can use their Copilot subscription for all AI features
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
-- **Project isolation.** `workingDir` reflects the chat footer's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
+- **Project isolation.** `workingDir` reflects the command bar's selected project (not a hardcoded `projects[0]`). `textDocument/didOpen`, `didChange`, `didFocus`, and the `copilot/context-request` handler all gate on `isUriInScope(uri, { projectRoots, notesRootPath })` — tabs outside the selection never reach the LSP. Out-of-scope context requests return `null`; out-of-scope doc events suppress a rate-limited per-tab toast ("Completions disabled for this file — outside selected project scope"). `completionsOnOutOfScope: true` in Settings > Advanced restores the legacy behavior.
 - OAuth device flow authentication with two protocol variants:
   - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
   - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
@@ -169,13 +174,13 @@ Multi-layer defense: the Seatbelt profile denies reads and writes by default in 
 - Curated re-allow list inside `$HOME`:
   - **Bucket B (runtime):** `~/.npm`, `~/.nvm`, `~/.volta`, `~/.fnm`, `~/.asdf`, `~/.yarn`, `~/.pnpm`, `~/.bun`, `~/.deno`, `~/.cargo`, `~/.rustup`, `~/.local`, `~/.config`, `~/.cache`, `~/Library/Caches`, `~/Library/Application Support`, `~/Library/Preferences`, `~/.gitconfig`, `~/.gitignore_global`
   - **Bucket C (per-agent config):** narrowed by agent binary — `claude-agent-acp` gets `~/.claude` + `~/.claude.json` + `~/.claude.json.backup` + `~/Library/Keychains/login.keychain-db`; `codex-acp` gets `~/.codex`; `copilot`/`copilot-language-server` get `~/.copilot` + keychain; `gemini` gets `~/.gemini`. Basename extraction means the match works whether the caller passes the bare command or the resolved absolute path.
-  - **Writable paths:** the chat footer's selected project(s) — plus any ancestor-literal reads required for `fs.watch` parent-chain traversal on nested iCloud paths
+  - **Writable paths:** the command bar's selected project(s) — plus any ancestor-literal reads required for `fs.watch` parent-chain traversal on nested iCloud paths
 - Ancestor directory literal-allows: each writable path's ancestor dirs up to `$HOME` are `(literal)`-allowed so `fs.watch` and workspace-marker discovery can `stat` / `readdir` the parents without exposing sibling contents
 - Explicit deny-last: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gcloud`, and regex `\.env$` / `\.env\..*$` are denied after all the above (overrides any earlier allow)
 
 **Filesystem policy (write):**
 
-- Writable subpaths = chat footer's selected projects (respawn on change) — plus `/tmp`, `/private/tmp`, `/private/var/folders`, `~/.config`, agent's own config dir, and a short list of device nodes (`/dev/null`, `/dev/tty`, etc.)
+- Writable subpaths = command bar's selected projects (respawn on change) — plus `/tmp`, `/private/tmp`, `/private/var/folders`, `~/.config`, agent's own config dir, and a short list of device nodes (`/dev/null`, `/dev/tty`, etc.)
 - Keychain literal is read-only — filtered out of the write-allow list
 
 **Writable scope:** `getChatSandboxScope(conv, connection, crossProjectMode)` computes the set. Default mode returns `conv.projectPaths ∪ connection.extraWritablePaths`. Cross-project mode (opt-in) unions all workspace folders. `sandboxScopeKey` in `acp-agent-state.ts` triggers a respawn when the scope changes.
@@ -296,7 +301,7 @@ When a tool call errors or the user denies permission, `buildToolResultContent` 
 
 - `toolCallingEnabled` toggle in Settings > Advanced (default: enabled)
 - `searchProvider` setting for web search backend (DuckDuckGo)
-- Tools indicator badge in chat footer showing count of available tools
+- Tools indicator badge in command bar showing count of available tools
 
 **Tool call content rendering (ACP):**
 
@@ -391,7 +396,8 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | --- | --- |
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
 | `src-tauri/src/commands/credentials.rs` | OS keychain credential storage (store, get, delete, migrate) |
-| `src-tauri/src/commands/acp.rs` | ACP agent management |
+| `src-tauri/src/commands/acp.rs` | ACP agent management; MCP pass-through (`build_acp_mcp_servers`), `acp_agent_smoke_test` |
+| `src-tauri/src/commands/local_agent.rs` | Local Agent preset: `local_agent_write_config` (Goose env against the live llama-server — provider + host + model + isolated XDG tree; no config file) |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |
 | `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny + $HOME read allow-list) |
@@ -402,7 +408,13 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src-tauri/src/commands/gguf_parser.rs` | GGUF binary header parser |
 | `src-tauri/model-catalog.json` | Curated LLM model catalog |
 | `src/lib/ai/` | Provider abstraction (types, connections, providers) |
-| `src/hooks/useAIOperations.ts` | AI generation, chat, and ACP routing |
+| `src/hooks/useAIOperations.ts` | AI generation, chat, and ACP routing; Local Agent degraded → Path-4 fallback |
+| `src/hooks/useLocalAgentSetup.ts` | Local Agent staged setup orchestrator (detect → download → configure → smoke-test) |
+| `src/lib/ai/local-agent-setup.ts` | Pure staged setup driver (`runLocalAgentSetup`) |
+| `src/lib/ai/local-agent-routing.ts` | Degraded-preset → local_bundled fallback resolution |
+| `src/lib/ai/local-agent-model.ts` | Tool-calling model recommendation (RAM-fit) |
+| `src/lib/ai/acp-mcp.ts` | `buildAcpMcpServerInputs` — capability-gated, scope-matched MCP servers for a session |
+| `src/components/settings/LocalAgentSetupDialog.tsx` | Staged setup dialog (model picker, progress, retry) |
 | `src/hooks/useCopilotCompletion.ts` | Copilot LSP lifecycle (inline completions) |
 | `src/hooks/useCopilotChat.ts` | Copilot LSP chat via conversation/* JSON-RPC |
 | `src/hooks/useLocalAI.ts` | Local AI server lifecycle |

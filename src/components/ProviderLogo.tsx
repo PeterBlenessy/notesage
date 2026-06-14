@@ -1,4 +1,4 @@
-import { Cpu, Server } from 'lucide-react';
+import { Cpu, Server, Terminal } from 'lucide-react';
 
 export const PROVIDER_LOGOS: Record<string, string | null> = {
   anthropic: '/logos/anthropic.svg',
@@ -8,12 +8,13 @@ export const PROVIDER_LOGOS: Record<string, string | null> = {
   google: '/logos/google.svg',
   openai_compatible: null, // Uses Server icon instead
   local_ai: null, // Uses Cpu icon instead
+  custom_acp: null, // Uses Terminal icon instead
 };
 
 /**
  * `bare = true`: render the logo without the white background + padding chrome
  * that keeps dark-on-dark logos legible. Use when the parent provides its own
- * visual containment (e.g. a bordered footer pill) so we don't end up with a
+ * visual containment (e.g. a bordered pill) so we don't end up with a
  * solid white square in dark mode.
  */
 export function ProviderLogo({ provider, className = 'w-6 h-6', bare = false }: { provider: string; className?: string; bare?: boolean }) {
@@ -29,6 +30,14 @@ export function ProviderLogo({ provider, className = 'w-6 h-6', bare = false }: 
     return (
       <span className={`${className} rounded ${bare ? '' : 'bg-muted'} flex items-center justify-center`}>
         <Server className="w-[70%] h-[70%] text-foreground" strokeWidth={1.5} />
+      </span>
+    );
+  }
+
+  if (provider === 'custom_acp') {
+    return (
+      <span className={`${className} rounded ${bare ? '' : 'bg-muted'} flex items-center justify-center`}>
+        <Terminal className="w-[70%] h-[70%] text-foreground" strokeWidth={1.5} />
       </span>
     );
   }

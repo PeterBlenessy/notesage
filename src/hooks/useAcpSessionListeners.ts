@@ -103,11 +103,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     // Narrow to the single-object form here; tool_call_update handles the array form below.
     const chunkContent = Array.isArray(update.content) ? undefined : update.content;
 
-    // ACP `unstable_message_id` (forward-compat): persist agent-side message IDs when emitted.
-    // On `agent_message_chunk`, the schema carries `messageId` (assistant's own ID) and may
-    // echo the outbound `user_message_id` the client provided on `PromptRequest.message_id`.
-    // No user-visible effect in v1 — this is future-proofing for features that reference
-    // specific messages by stable protocol ID.
+    // Persist the agent-assigned message ID when emitted. On `agent_message_chunk`,
+    // `messageId` (ContentChunk.message_id, stable in ACP 0.13.6) groups the chunks
+    // of one assistant message — all chunks of the same message share it; a change
+    // signals a new message. It is NOT an echo of a client-supplied UUID (the old
+    // PromptRequest.message_id design was removed). No user-visible effect in v1 —
+    // future-proofing for features that reference messages by stable protocol ID.
     if (update.sessionUpdate === 'agent_message_chunk') {
       const assistantAcpId = typeof update.messageId === 'string' && update.messageId
         ? update.messageId
@@ -116,15 +117,6 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           : undefined;
       if (assistantAcpId) {
         useChatStore.getState().setMessageAcpId(deps.assistantMessageId, assistantAcpId);
-      }
-      const echoedUserAcpId = typeof update.userMessageId === 'string' && update.userMessageId
-        ? update.userMessageId
-        : typeof update.user_message_id === 'string' && update.user_message_id
-          ? update.user_message_id
-          : undefined;
-      if (echoedUserAcpId) {
-        // The user message has `timestamp = assistantMessageId - 1` per acpSendChatMessage.
-        useChatStore.getState().setMessageAcpId(deps.assistantMessageId - 1, echoedUserAcpId);
       }
     }
 

@@ -335,7 +335,7 @@ describe('StatusBar', () => {
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].className).toContain('bg-green-500');
+      expect(dots[0].querySelector('span')?.className).toContain('bg-green-500');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
       expect(dots[0].getAttribute('aria-label')).toContain('Session');
     });
@@ -355,9 +355,9 @@ describe('StatusBar', () => {
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].className).toContain('bg-amber-500');
+      expect(dots[0].querySelector('span')?.className).toContain('bg-amber-500');
       // Amber tone uses `animate-pulse` to match the popover starting state.
-      expect(dots[0].className).toContain('animate-pulse');
+      expect(dots[0].querySelector('span')?.className).toContain('animate-pulse');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI starting');
     });
 
@@ -376,7 +376,7 @@ describe('StatusBar', () => {
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].className).toContain('bg-red-500');
+      expect(dots[0].querySelector('span')?.className).toContain('bg-red-500');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI error');
     });
 
@@ -395,7 +395,7 @@ describe('StatusBar', () => {
       );
       const dots = container.querySelectorAll('[data-status-dots] button');
       expect(dots.length).toBe(1);
-      expect(dots[0].className).toContain('bg-muted-foreground/30');
+      expect(dots[0].querySelector('span')?.className).toContain('bg-muted-foreground/30');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI stopped');
     });
 
@@ -498,7 +498,7 @@ describe('StatusBar', () => {
       const dot = container.querySelector('[data-status-dots] button') as HTMLElement | null;
       expect(dot).toBeTruthy();
       // Neutral fill (no local AI) + a ring at ~50%.
-      expect(dot?.className).toContain('bg-muted-foreground/30');
+      expect(dot?.querySelector('span')?.className).toContain('bg-muted-foreground/30');
       expect(dot?.getAttribute('data-progress')).toBe('50');
       expect(dot?.querySelector('svg')).toBeTruthy();
       expect(dot?.getAttribute('aria-label')).toContain('Downloading');
@@ -521,7 +521,7 @@ describe('StatusBar', () => {
       const dots = container.querySelectorAll('[data-status-dots] button');
       // Still ONE dot — the ring wraps the existing Local AI dot (dual indicator).
       expect(dots.length).toBe(1);
-      expect(dots[0].className).toContain('bg-green-500');
+      expect(dots[0].querySelector('span')?.className).toContain('bg-green-500');
       expect(dots[0].getAttribute('data-progress')).toBe('25');
       expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
       expect(dots[0].getAttribute('aria-label')).toContain('Downloading');

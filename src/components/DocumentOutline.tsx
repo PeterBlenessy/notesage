@@ -119,7 +119,7 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
           )}
         </div>
 
-        {/* Footer hints */}
+        {/* Bottom hints */}
         <div className="flex items-center px-4 h-8 border-t border-border bg-muted text-muted-foreground text-[11px]">
           <span>Click a heading to navigate</span>
         </div>

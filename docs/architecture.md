@@ -56,6 +56,7 @@ note-sage/
 │   │   │   ├── shell_path.rs # Shell PATH resolution
 │   │   │   ├── transcription.rs # Mic capture-to-WAV (single stream owner, awaited teardown), whole-file Whisper transcription (transcribe_file → segments), Whisper model management (no live dictation)
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
+│   │   │   ├── local_agent.rs # Local Agent preset: OpenCode config generation against the live llama-server (`local_agent_write_config`)
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
@@ -244,7 +245,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `activity-store` | Agent / transcription / recording task registry, discriminated by `kind` (`agent \| transcription \| recording`) | Full |
 | `recording-store` | Meeting-recording state, Whisper models + downloads, transcription model + recording language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |
-| `local-ai-store` | Local AI server state, models | Partial (`enabled`, `activeModelId`, etc.) |
+| `local-ai-store` | Local AI server state, models; Local Agent preset setup state machine (`localAgentSetup` — `idle→detecting→downloading→configuring→verifying→ready\|failed`), degraded flag (`localAgentDegraded`), dialog-open flag, `selectLocalAgentNotice` selector | Partial (`activeModelId`, `localAgentSetup.{stage,modelId}` — never the transient setup error, etc.) |
 | `action-store` | Actions dashboard (task/goal scanning, comments, agent tasks) | Partial (`actionCache`, `filter` only) |
 | `diff-review-store` | Git branch diff review with per-hunk accept/reject | None |
 | `editor-styles-store` | Editor font family, size, line height, paragraph spacing | Disk file (`editor-styles.json`) |
@@ -360,7 +361,7 @@ Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.
 - **`allow_asset_dir` guard:** the runtime asset-scope widener (`allow_asset_dir`) is validated by `validate_asset_dir` — it refuses `/`, `$HOME` and any ancestor of it, `..` traversal, and sensitive subtrees (`.ssh`, `.aws`, `.gnupg`, `.config/gcloud`, `Library/Keychains`) so a compromised renderer can't re-open the whole home dir to `convertFileSrc`.
 - OS-level filesystem sandboxing (Seatbelt on macOS) with configurable writable paths per connection
 - **MCP servers & skill scripts (audit 2026-06-09):** skill scripts (`execute_skill_script`) now spawn inside the same Seatbelt filesystem sandbox as ACP agents (scoped to the skill dir + working dir), and "allow always" skill-script approvals are content-pinned to a SHA-256 of the approved body (`expected_hash`) so a rewritten script re-prompts. MCP stdio servers reject inline-code launch commands (`bash -c`, `python -c`, `node -e`, …) via `validate_mcp_command`. **Known follow-ups (deferred):** routing MCP/skill subprocess network through the per-agent proxy, and a per-MCP-server writable-scope model so MCP stdio servers can also run under the Seatbelt FS sandbox — tracked for a follow-up PR.
-- **Chat agents:** writable paths = `getChatSandboxScope(conv, connection, crossProjectMode)` — the chat footer's selected projects (plus `extraWritablePaths`), or all workspace paths if cross-project mode is on. Scope change triggers agent respawn.
+- **Chat agents:** writable paths = `getChatSandboxScope(conv, connection, crossProjectMode)` — the command bar's selected projects (plus `extraWritablePaths`), or all workspace paths if cross-project mode is on. Scope change triggers agent respawn.
 - **Read policy (task #6d):** `(deny file-read* (subpath "$HOME"))` + curated allow-list for Bucket B (language tooling runtime) and Bucket C (per-agent config, narrowed by agent binary — `claude-agent-acp` gets `~/.claude`, `codex-acp` gets `~/.codex`, etc.). Sibling projects at neutral `$HOME` paths are no longer mutually readable when only one is selected.
 - **Direct-API tool executor:** `src/lib/tool-executor.ts` gates `read_file`, `list_directory`, `write_file`, and the implicit-FS tools (`add_comments`, `list_comments`, `resolve_comments`, `generate_pptx`) on `isToolCallAllowed(name, JSON.stringify(args), scope.projectRoots, scope.homeDir)`. Missing scope defaults to deny. Call sites pass scope from `selectProjectPaths(chat-store)`.
 - **Copilot LSP:** document sync (`didOpen`, `didChange`, `didFocus`), context requests (`copilot/context-request`), and inline completion requests (`textDocument/inlineCompletion`) all gate on `isUriInScope(uri, scope)` from `src/lib/ai/uri-scope.ts`. Out-of-scope tabs suppressed; per-tab toast explains. Opt out via `completionsOnOutOfScope: true`.
@@ -379,6 +380,7 @@ Category names are exported as `PERF` constants from `src/lib/logger.ts` (`PERF.
 | System-prompt "Currently editing" | `isUriInScope` on active tab path | `src/hooks/useAIContext.ts` |
 | System-prompt file tree | `isUriInScope` per entry + 200-file / 4-level cap | `src/lib/ai/context.ts`, `useAIContext.ts` |
 | Skills / agents / MCP injection | `{ global, byProject }` registries merged by `selectedProjectPaths` | `src/stores/skill-store.ts`, `mcp-store.ts`, `useSkillOperations.ts` |
+| MCP-via-agent (ACP `session/new`) | `getActiveServers(selectedProjectPaths)` + agent `McpCapabilities` gate; stdio env secrets + http OAuth resolved keychain-side at session build | `src/lib/ai/acp-mcp.ts`, `src-tauri/src/commands/acp.rs` (`build_acp_mcp_servers`) |
 | Approvals persistence | `ScopedApproval` triples with migration from legacy flat strings | `src/stores/permission-store.ts` |
 | `aiLock` enforcement | `ProjectLockViolation` at every send path | `src/lib/ai/project-lock.ts`, `useAIOperations.ts`, `useAgentTaskOperations.ts`, `CommandBarContext.tsx` |
 | Resend/edit provider mismatch | `ResendProviderDialog` on `ChatMessage.connectionId` mismatch | `src/components/cmd/FloatingCommandBar.tsx`, `ResendProviderDialog.tsx` |

@@ -71,7 +71,7 @@ export function useCopilotChat({
     && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
 
   const projects = useWorkspaceStore((s) => s.projects);
-  // Working directory for the Copilot LSP must reflect the chat footer's
+  // Working directory for the Copilot LSP must reflect the command bar's
   // project selection (Track 1 isolation — task #15). The first workspace
   // folder is only a fallback for when no chat is active yet, so the LSP
   // can still come up before the user opens a conversation.
@@ -695,7 +695,7 @@ export function useCopilotChat({
  * Reads directly from stores (not from closures) because it's called inside
  * async event handlers where the captured hook-state may be stale.
  *
- * Scope = selected project paths (from the chat footer) ∪ `~/Notesage`
+ * Scope = selected project paths (from the command bar) ∪ `~/Notesage`
  * resolved to an absolute path. Empty `selectedProjectPaths` does NOT
  * fall back to "allow everything" — matches task #8's semantics.
  */

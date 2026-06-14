@@ -36,6 +36,7 @@ pub mod gguf_parser;
 pub mod model_metadata;
 pub mod actions;
 pub mod agent_manager;
+pub mod local_agent;
 pub mod sandbox;
 pub mod sandbox_monitor;
 pub mod network_proxy;

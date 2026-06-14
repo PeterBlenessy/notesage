@@ -554,9 +554,12 @@ export async function reloadTrees() {
     const notesRoot = useSettingsStore.getState().notesRootPath;
     const allFolders = [
       ...projects.map((p) => p.path),
-      ...explorerFolders,
+      // `explorerFolders` are ExplorerFolder objects, not strings — map to the
+      // path or each entry reaches the Rust command as `[object Object]` and is
+      // rejected ("invalid type: map, expected a string").
+      ...explorerFolders.map((f) => f.path),
       ...(notesRoot && !notesRoot.startsWith("~") ? [notesRoot] : []),
-    ].filter(Boolean) as string[];
+    ].filter(Boolean);
     void migrateUserContentPathsForFolders(allFolders).catch(() => {});
   }
 

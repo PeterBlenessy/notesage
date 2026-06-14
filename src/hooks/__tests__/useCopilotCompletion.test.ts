@@ -236,7 +236,7 @@ function setupWithProject(path = '/project') {
   // Seed a conversation scoped to this project so the task #16 scope gate
   // (URI must be under `selectedProjectPaths`) lets didOpen/didChange/didFocus
   // through for the default `/project/...` tab fixtures. Tests that need a
-  // different footer scope override by calling `setupConversation()` after.
+  // different command bar scope override by calling `setupConversation()` after.
   setupConversation([path]);
 }
 
@@ -1150,21 +1150,21 @@ describe('useCopilotCompletion', () => {
   // Track 1 Critical leak — Task #15
   //
   // Regression lock: Copilot LSP `workingDirectory` must reflect the chat
-  // footer's project selection (`selectedProjectPaths[0]`), NOT the first
+  // command bar's project selection (`selectedProjectPaths[0]`), NOT the first
   // workspace folder (`projects[0].path`). Without this, a Copilot LSP chat
-  // scoped to Project B on the footer silently boots the LSP against
+  // scoped to Project B on the command bar silently boots the LSP against
   // Project A (the first workspace), leaking Project A as the workspace
   // folder to the agent.
   //
   // These tests were authored alongside the fix (red-team TDD).
   // =========================================================================
 
-  describe('Track 1 leak #15 — workingDir reflects footer selection, not workspace order', () => {
+  describe('Track 1 leak #15 — workingDir reflects command bar selection, not workspace order', () => {
     it('starts LSP with selectedProjectPaths[0] when it differs from projects[0]', async () => {
       const conn = makeAgentManagedConnection();
       setupWithConnection(conn);
 
-      // Workspace has two projects. The footer selection is the SECOND one.
+      // Workspace has two projects. The command bar selection is the SECOND one.
       useWorkspaceStore.setState({
         projects: [
           { path: '/workspace/project-A', fileTree: [] },
@@ -1190,7 +1190,7 @@ describe('useCopilotCompletion', () => {
     });
 
     it('falls back to projects[0] when no conversation is active', async () => {
-      // Backward-compat: if nothing is selected in the chat footer yet (e.g.
+      // Backward-compat: if nothing is selected in the command bar yet (e.g.
       // opening the app, no chat opened), we still want the LSP to come up
       // against some working directory rather than failing outright.
       const conn = makeAgentManagedConnection();
@@ -1211,7 +1211,7 @@ describe('useCopilotCompletion', () => {
       });
     });
 
-    it('re-runs LSP start (→ workspace folder change) when footer selection changes', async () => {
+    it('re-runs LSP start (→ workspace folder change) when command bar selection changes', async () => {
       const conn = makeAgentManagedConnection();
       setupWithConnection(conn);
       useWorkspaceStore.setState({
@@ -1235,7 +1235,7 @@ describe('useCopilotCompletion', () => {
 
       vi.mocked(invoke).mockClear();
 
-      // Switch the footer selection to B
+      // Switch the command bar selection to B
       act(() => {
         useChatStore.setState((state) => ({
           conversations: state.conversations.map((c) =>
@@ -1267,7 +1267,7 @@ describe('useCopilotCompletion', () => {
   //
   // Regression lock: the Copilot LSP must not receive document content
   // (`textDocument/didOpen`, `textDocument/didChange`) for tabs whose paths
-  // fall outside the chat footer's selected projects + notes root. Without
+  // fall outside the command bar's selected projects + notes root. Without
   // this gate, a tab from an unrelated project leaks file contents to the
   // LSP — and onward to GitHub's servers — purely because it happens to be
   // the currently active editor tab.
@@ -1290,7 +1290,7 @@ describe('useCopilotCompletion', () => {
           { path: '/workspace/project-B', fileTree: [] },
         ],
       });
-      // Footer is scoped to A; the active tab is inside B — leak candidate.
+      // Command bar is scoped to A; the active tab is inside B — leak candidate.
       setupConversation(['/workspace/project-A']);
       setupWithTab(makeTab({ filePath: '/workspace/project-B/secrets.md' }));
 
@@ -1452,7 +1452,7 @@ describe('useCopilotCompletion', () => {
   // Track 1 High leak — Task #17
   //
   // Regression lock: inline-completion requests must NOT fire when the
-  // active tab's path sits outside the chat footer's selected project
+  // active tab's path sits outside the command bar's selected project
   // scope (+ notes root). For Copilot the no-request outcome is achieved
   // through the #16 doc-sync gate (no didOpen ⇒ handleUpdate returns early
   // on its `openDocUri.current !== activeTab.filePath` guard). #17 adds
