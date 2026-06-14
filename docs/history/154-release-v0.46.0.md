@@ -27,22 +27,26 @@ The headline of 0.46.0 is **Local AI Agents** — a real agent that runs entirel
 - **Closed two security issues** in how external tools connect (a malicious-link and a sign-in request-forgery path).
 - **Meeting transcription now detects the spoken language automatically** instead of assuming English.
 - **Buttons stay legible** — primary and destructive buttons keep a clear white label on the colored fill in both light and dark mode.
-- **Chat and agent stability** — conversations and branches keep their state correctly, and you can now remove and re-add the Local Agent cleanly.
+- **Chat and agent stability** — conversations and branches keep their state correctly.
+- **The Local Agent is far more reliable.** Adding it now succeeds cleanly, its connection check passes once it's set up, and it no longer fails to start with a timeout on larger models. If it ever stops working, you get a clear message in the chat instead of a silent switch to a different model.
+- **Signing back in to AI providers is now in-app.** Re-authenticating Claude Code, Codex, Copilot, or Gemini opens the same friendly sign-in you used to add them — no surprise Terminal window — and the sign-in shortcut only appears when a provider actually needs it.
 
 ## Under the hood
 
-Promotes the entire `0.46.0-alpha.1 … 28` line to stable (history entries 126–153), tagged at the alpha.28 commit (`9f3277f0`) so stable contains only alpha-tested code — main HEAD and the alpha.28 commit are identical (no post-alpha commits).
+Promotes the `0.46.0-alpha.1 … 30` line to stable (history entries 126–156), tagged at the alpha.30 commit (`bbd0616c`) so stable contains only alpha-tested code — main HEAD and the alpha.30 commit are identical (no post-alpha commits). This re-cuts 0.46.0 from the fixed alpha after the first attempt (tagged at alpha.28) was rolled back because the Local Agent shipped broken.
 
 Marquee work:
 
-- **Local AI Agents** — PRD `docs/prds/2026-06-12-local-ai-agents.md`, PR #458. Custom `custom_acp` agent connections + a one-click **Local Agent** preset built on **Goose** (an open-source agent from the Agentic AI Foundation — AAIF, a Linux Foundation project; created by Block and donated to AAIF) wired to the bundled llama-server. Real agent loop + MCP pass-through, under a Seatbelt FS sandbox + kernel network deny with staged setup and a direct-local-chat (Path 4) fallback. Goose installs from `aaif-goose/goose` GitHub releases.
+- **Local AI Agents** — PRD `docs/prds/2026-06-12-local-ai-agents.md`, PR #458. Custom `custom_acp` agent connections + a one-click **Local Agent** preset built on **Goose** (an open-source agent from the Agentic AI Foundation — AAIF, a Linux Foundation project; created by Block and donated to AAIF) wired to the bundled llama-server. Real agent loop + MCP pass-through, under a Seatbelt FS sandbox + kernel network deny with staged setup.
+- **Local Agent hardening (#461)** — `resolveAgentLaunch` self-heals a missing `config.binaryPath` from `credentials.agentBinary`; `start_local_server` reuses a live server with adequate context and raises the cold-load health budget to 120 s; the preset heartbeat runs the real smoke test (correct env + llama port). Degraded-UX redesign: a failed setup is rolled back so a broken agent never reaches the dropdown, and a runtime failure surfaces in the chat message — the old silent direct-local-chat (Path 4) fallback and the header "Fix" pill were removed.
+- **In-app re-authentication (#461)** — the key icon opens a `ReauthDialog` reusing the install flow (browser OAuth / device-code / credential form), prefers the OAuth method over an API-key form for multi-method agents (Codex), and is gated on `expired`/`error` status (a 401 flips the connection to `expired`).
 - **MCP** — remote (Streamable HTTP) transport, OAuth 2.1 (PKCE, RFC 9728/8414 discovery, DCR), curated catalog, validate-on-add, keychain env secrets, `notesage://mcp/install` deep links (#410); deep-link RCE + OAuth SSRF closed (#419).
 - **Telemetry** — Aptabase (usage) + Sentry (crash) with channel-based consent, PII scrubber, Rust-only egress (#423).
 - **Meeting recording** — capture-to-WAV + whole-file Whisper background transcription; orb recording controls; language auto-detect (#427, #437).
-- **Quiet Composer** — optional/hide-able title bar, resizable sidebar, sidebar polish (#452); always-visible agent mode picker with friendly labels; status-dot indexing spinner.
+- **Quiet Composer** — optional/hide-able title bar, resizable sidebar, sidebar polish (#452); always-visible agent mode picker with friendly labels; status-dot indexing spinner; neutral (non-red) command-bar stop button.
 - **HTML viewer** — render under the production CSP via `blob:` URLs, sandboxed-iframe modes, find-in-document (#447, #449, #451, #454).
-- Launch-crash fix (telemetry runtime panic, #432); ACP conversation/session/branch integrity (#445).
+- Launch-crash fix (telemetry runtime panic, #432); ACP conversation/session/branch integrity (#445); `esbuild` pinned to `>=0.28.1` to clear two build-time advisories (#463).
 
 ## Files Changed
 
-- Promotion of the 0.46.0 alpha line to stable: `package.json` version `0.46.0-alpha.28` → `0.46.0`, this history entry, the README index row, and the regenerated `public/changelog.json`.
+- Promotion of the 0.46.0 alpha line to stable: `package.json` version `0.46.0-alpha.30` → `0.46.0`, this history entry, the README index row, and the regenerated `public/changelog.json`.
