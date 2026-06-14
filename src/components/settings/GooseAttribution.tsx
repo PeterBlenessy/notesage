@@ -1,15 +1,18 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { cn } from '@/lib/utils';
 
-/** Canonical Goose project link — single source of truth for the attribution. */
-export const GOOSE_REPO_URL = 'https://github.com/block/goose';
+/** Canonical Goose project link — single source of truth for the attribution.
+ *  Goose was created by Block and donated to the Agentic AI Foundation (AAIF, a
+ *  Linux Foundation project); the repo moved from block/goose to aaif-goose. */
+export const GOOSE_REPO_URL = 'https://github.com/aaif-goose/goose';
 
 /**
  * Shared attribution for the Local Agent preset. We are deliberately open that
- * the Local Agent is powered by Goose — Block's open-source ACP agent — so the
- * credit (and a link to its repo) is surfaced everywhere the preset appears:
- * the setup dialog, the connection card, and the connection config dialog.
- * Keeping it in one component stops the wording/link from drifting per surface.
+ * the Local Agent is powered by Goose — the Agentic AI Foundation's open-source
+ * ACP agent — so the credit (and a link to its repo) is surfaced everywhere the
+ * preset appears: the setup dialog, the connection card, and the connection
+ * config dialog. Keeping it in one component stops the wording/link from
+ * drifting per surface.
  */
 export function GooseAttribution({
   className,
@@ -35,16 +38,16 @@ export function GooseAttribution({
   if (compact) {
     return (
       <p className={cn('text-xs text-muted-foreground', className)}>
-        Powered by {link}, an open-source agent by Block
+        Powered by {link}, an open-source agent from the Agentic AI Foundation (AAIF)
       </p>
     );
   }
 
   return (
     <p className={cn('text-xs text-muted-foreground leading-relaxed', className)}>
-      The Local Agent is powered by {link}, an open-source agent by Block. It
-      runs on your device against the bundled local model — no cloud account or
-      API key.
+      The Local Agent is powered by {link}, an open-source agent from the
+      Agentic AI Foundation (AAIF). It runs on your device against the bundled
+      local model — no cloud account or API key.
     </p>
   );
 }

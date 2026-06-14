@@ -351,7 +351,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                         : 'Private AI — the model runs on your device, no API keys'}
                     </span>
                     <span className="text-[10px] text-muted-foreground block truncate">
-                      Powered by Goose, an open-source agent by Block
+                      Powered by Goose, an open-source agent from the Agentic AI Foundation (AAIF)
                     </span>
                   </div>
                   {localAgentReady && (

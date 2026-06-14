@@ -132,7 +132,11 @@ struct GithubBinaryAgentConfig {
 fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig> {
     match agent_id {
         "goose" => Some(GithubBinaryAgentConfig {
-            repo: "block/goose",
+            // Goose was created by Block and donated to the Agentic AI Foundation
+            // (AAIF, a Linux Foundation project); the repo moved block/goose →
+            // aaif-goose/goose. The new repo carries the same release/asset
+            // scheme (`goose-{triple}.tar.gz`) and version line (v1.37.0+).
+            repo: "aaif-goose/goose",
             bin_name: "goose",
             // The version whose ACP surface this integration was built against
             // and empirically verified under the strict sandbox.
@@ -143,7 +147,7 @@ fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig>
 }
 
 /// Release-asset filename for Goose's CLI binary on a platform.
-/// Verified against `block/goose`: the macOS assets use the Rust target triple
+/// Verified against `aaif-goose/goose`: the macOS assets use the Rust target triple
 /// naming, `goose-{triple}.tar.gz`. The tarball contains a single `goose`
 /// executable at its root. Linux falls back to the same `{triple}.tar.gz`
 /// convention; Goose ships no Windows ACP binary.
@@ -1126,7 +1130,7 @@ mod tests {
     fn goose_installs_via_github_binary() {
         let gh = github_binary_agent_config("goose")
             .expect("goose must be a GitHub-binary agent");
-        assert_eq!(gh.repo, "block/goose");
+        assert_eq!(gh.repo, "aaif-goose/goose");
         assert_eq!(gh.bin_name, "goose");
         assert_eq!(
             gh.min_version, "1.37.0",

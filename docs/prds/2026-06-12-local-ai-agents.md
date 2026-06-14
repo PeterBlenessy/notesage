@@ -130,7 +130,7 @@ async fn acp_agent_smoke_test(instance_config: SmokeTestConfig) -> Result<SmokeT
 | --- | --- | --- |
 | ACP 0.14.0 migration (crate bump, model→config-options, message-ID redesign) | Shipped (landed 2026-06-12) | Custom-agent probing targets the post-migration surface |
 | `mcp_servers` pass-through at `session/new` | Shipped (#11) | Wired for all ACP agents; end-to-end MCP-via-Goose verification + MCP-subprocess proxy routing are follow-ups |
-| ~~OpenCode~~ → **Goose** releases (`block/goose`, GitHub, Apache-2.0) | External | Switched from OpenCode (incompatible with the strict sandbox); GitHub-release-binary install, min v1.37.0. See tasks addendum. |
+| ~~OpenCode~~ → **Goose** releases (`aaif-goose/goose`, GitHub, Apache-2.0) | External | Switched from OpenCode (incompatible with the strict sandbox); GitHub-release-binary install, min v1.37.0. Goose was created by Block and donated to the Agentic AI Foundation (AAIF); repo moved block/goose → aaif-goose/goose. See tasks addendum. |
 | Bundled llama-server + model catalog (`supports_tool_calling`, RAM tiers) | Shipped | Reused as-is |
 | Managed-install system (`agent_manager.rs`) | Shipped | Reused as-is |
 

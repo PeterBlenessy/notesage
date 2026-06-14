@@ -104,7 +104,7 @@ export function getCommonModes(availableModes: { id: string; name: string; descr
  * Friendly labels + descriptions for the Local Agent preset's (Goose) ACP
  * session modes. Goose reports raw snake_case ids (`auto`, `approve`,
  * `smart_approve`, `chat`) as both `id` and `name`, which read as developer
- * jargon in the settings picker. Semantics per Goose docs (block/goose):
+ * jargon in the settings picker. Semantics per Goose docs (goose-docs.ai):
  *   - smart_approve — asks for approval only before risky tool calls (default)
  *   - approve       — asks for approval before every tool call
  *   - auto          — runs every tool without asking
