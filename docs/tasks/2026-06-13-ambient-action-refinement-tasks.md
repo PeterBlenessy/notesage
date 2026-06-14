@@ -3,10 +3,44 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-13 |
-| **Status** | Not started |
+| **Status** | Implemented (local, unpushed) — 2026-06-14 |
 | **PRD** | [ambient-action-refinement](../prds/2026-06-13-ambient-action-refinement.md) |
 | **Total** | 18 tasks: 4S, 12M, 2L |
 | **Suggested order** | Foundations (#1–#5) → Engine (#6–#7) → Detection & Apply (#8–#10) → Surfacing (#11–#14) → Wire-up (#15) → Tests (#16–#18) |
+
+## Implementation status (2026-06-14)
+
+Built via orchestrated sub-agents (Waves 1–2) + direct implementation (Wave 3, after the sub-agent budget was cut off mid-run). Full unit suite green: **326 files / 5592 tests**, `pnpm typecheck` clean.
+
+| Task | State | Notes |
+| --- | --- | --- |
+| #1 types + schema | ✅ done | |
+| #2 hashing + seen-set | ✅ done | |
+| #3 `ns-refine` codec | ✅ done | codec built + tested; **not yet wired into the markdown save/load pipeline** (see #15) |
+| #4 refinement-store | ✅ done | |
+| #5 provider resolver | ✅ done | reuses `agent_tasks` slot (Open Q#2) |
+| #6 engine direct-API | ✅ done | uses shared `resolveConnectionCredentials` |
+| #7 engine ACP path | ✅ done (engine) | engine parses ACP JSON; **watcher does not yet inject an ACP runner** (see #9) |
+| #8 pre-filter | ✅ done | |
+| #9 watcher hook | ✅ done | mounted in `Editor.tsx` (not QuietLayout — matches the completion-hook pattern). **Deferred:** ACP one-shot runner — `agent_managed` connections are skipped gracefully; direct-API local connections work |
+| #10 apply extension | ✅ done | + window-event bridge for panel Apply/Jump |
+| #11 orb flash + count | ✅ done | |
+| #12 panel section | ✅ done | |
+| #13 Top-5 rank | ✅ done | per active document |
+| #14 settings toggle | ✅ done | persist v22→23 migration |
+| #15 wire-up | ⚠️ partial | watcher mounted + gating done. **Deferred:** persisting `ns-refine` comments into saved markdown + rebuilding the store from them on open — so v1 refinements are **session-only** (lost on doc close). The codec (#3) exists; only the markdown.ts save/load wiring is missing |
+| #16 engine tests | ✅ done | |
+| #17 foundation tests | ✅ done | hash / comment / store |
+| #18 tests | ⚠️ partial | watcher-gating tests ✅ (`refinement-run`, `refinement-plan`), apply round-trip ✅ (`refinement-apply`). **Deferred:** the dedicated `[perf:typing]`-not-regressed benchmark |
+
+**Three known deferrals to close before this is "done" done:**
+1. **Markdown persistence of refinements (#15)** — wire the `#3` codec into `markdown.ts` serialize (inject `ns-refine` comments) + parse (rebuild store on open). Without it, refinements don't survive a reopen.
+2. **ACP one-shot runner (#9)** — let `agent_managed` connections drive refinement (engine already supports it; only the hook injection is missing).
+3. **Typing perf benchmark (#18)** — add a `src/perf/` bench asserting per-keystroke cost is unchanged with the watcher mounted.
+
+Local perf suite shows 6 failures in **unrelated** suites (markdown parse / cmdbar / sidebar-filter) — environmental (this cloud runner is ~2× slower than the M3 baseline); the `decorations` + `stores` suites (the ones this feature could affect) pass. CI has its own baseline.
+
+---
 
 All tasks are **frontend** — the PRD adds no Tauri commands and no Rust structs. Inference reuses the existing `ai_chat_stream` (via `generateStructured`) and the ACP session path in `useAIOperations`.
 
