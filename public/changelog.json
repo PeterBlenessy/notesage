@@ -22,7 +22,9 @@
           "**Closed two security issues** in how external tools connect (a malicious-link and a sign-in request-forgery path).",
           "**Meeting transcription now detects the spoken language automatically** instead of assuming English.",
           "**Buttons stay legible** — primary and destructive buttons keep a clear white label on the colored fill in both light and dark mode.",
-          "**Chat and agent stability** — conversations and branches keep their state correctly, and you can now remove and re-add the Local Agent cleanly."
+          "**Chat and agent stability** — conversations and branches keep their state correctly.",
+          "**The Local Agent is far more reliable.** Adding it now succeeds cleanly, its connection check passes once it's set up, and it no longer fails to start with a timeout on larger models. If it ever stops working, you get a clear message in the chat instead of a silent switch to a different model.",
+          "**Signing back in to AI providers is now in-app.** Re-authenticating Claude Code, Codex, Copilot, or Gemini opens the same friendly sign-in you used to add them — no surprise Terminal window — and the sign-in shortcut only appears when a provider actually needs it."
         ]
       }
     },
