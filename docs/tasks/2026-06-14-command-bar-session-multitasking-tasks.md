@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | Not started |
+| **Status** | In progress (#1 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -19,7 +19,7 @@
 
 ## Foundation
 
-### #1 — Session run-state model + manager store
+### #1 — Session run-state model + manager store ✅
 - **Description:** New non-persisted store holding `SessionRun` per conversation (`status: idle | queued | running | awaiting_permission | error`, `path`, `streamId?`, `instanceId?`, `startedAt`, `pendingPermissionId?`). On rehydrate/startup, any `running`/`queued` is reset to `error` (mirrors `activity-store`'s interrupted-task handling). Selectors: `getRun(conversationId)`, `runningSessions()`, `foregroundConversationId`. **Acceptance:** store + selectors unit-tested; interrupted→error verified.
 - **Complexity:** M · **Category:** frontend · **Depends on:** —
 - **Files:** `src/stores/session-run-store.ts` (new), `src/lib/ai/types.ts`
