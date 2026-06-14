@@ -11,9 +11,27 @@ import { renderWithProviders, screen, waitFor, act } from '@/test/component-harn
 import { emitMockEvent } from '@/test/tauri-mock';
 import { LocalAgentSetupDialog } from '@/components/settings/LocalAgentSetupDialog';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import type { Connection } from '@/lib/ai/connections';
 import type { LocalModelInfo } from '@/lib/tauri';
 
 const GB = 1024 ** 3;
+
+/** Minimal Local Agent (Goose) preset connection — `isLocalAgentPreset` only
+ *  checks provider + config.localAgentPreset. */
+function presetConnection(): Connection {
+  return {
+    id: 'goose-conn',
+    provider: 'custom_acp',
+    authMethod: 'agent_managed',
+    status: 'connected',
+    label: 'Local Agent',
+    credentials: { type: 'agent_managed', agentBinary: 'goose' },
+    capabilities: ['interactive'],
+    createdAt: Date.now(),
+    config: { localAgentPreset: 'goose' },
+  } as Connection;
+}
 
 function toolModel(id: string): LocalModelInfo {
   return {
@@ -35,6 +53,7 @@ describe('LocalAgentSetupDialog', () => {
   beforeEach(() => {
     useLocalAIStore.getState().resetLocalAgentSetup();
     useLocalAIStore.setState({ localAgentSetupDialogOpen: false, models: [], systemMemory: null });
+    useConnectionsStore.setState({ connections: [] });
   });
 
   it('idle: shows the model picker, the stage checklist, and a Set up button', () => {
@@ -65,11 +84,25 @@ describe('LocalAgentSetupDialog', () => {
     expect(screen.getByRole('button', { name: /cancel/i })).toBeTruthy();
   });
 
-  it('ready: shows a Done button', () => {
+  it('ready: shows a Done button (when the preset connection exists)', () => {
     open();
+    useConnectionsStore.setState({ connections: [presetConnection()] });
     useLocalAIStore.getState().setLocalAgentSetup({ stage: 'ready', modelId: 'qwen2.5-coder-7b' });
     renderWithProviders(<LocalAgentSetupDialog />);
     expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
+  });
+
+  it('stale ready (connection removed) falls back to idle so the agent can be re-added', () => {
+    // Regression lock: after removing the Local Agent, the persisted
+    // `stage: 'ready'` would otherwise render a dead "Done" (which only closes,
+    // never re-running setup). With no preset connection present, the dialog
+    // must reset to idle and offer "Set up" again.
+    open();
+    useConnectionsStore.setState({ connections: [] });
+    useLocalAIStore.getState().setLocalAgentSetup({ stage: 'ready', modelId: 'qwen2.5-coder-7b' });
+    renderWithProviders(<LocalAgentSetupDialog />);
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Set up' })).toBeTruthy();
   });
 
   it('shows a progress bar for the Goose binary download during the downloading stage', async () => {

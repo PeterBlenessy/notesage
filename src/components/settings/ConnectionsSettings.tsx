@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
-import { probeAcpCapabilities } from '@/lib/ai/acp-agent-state';
+import { probeAcpCapabilities, isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
 import { ConnectionCard } from './ConnectionCard';
@@ -285,6 +285,17 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       }
       clearRoutingForConnection(connection.id);
       removeConnection(connection.id);
+      // Removing the Local Agent preset MUST reset its setup state machine.
+      // `localAgentSetup.stage` is persisted, so without this the prior
+      // `stage: 'ready'` survives the removal — re-opening the setup dialog then
+      // shows the completed/"Done" state (which only closes, never re-running
+      // the `configuring` stage that creates the connection), so the agent can
+      // never be re-added after removal.
+      if (isLocalAgentPreset(connection)) {
+        const localStore = useLocalAIStore.getState();
+        localStore.resetLocalAgentSetup();
+        localStore.setLocalAgentDegraded(null);
+      }
     },
     [clearRoutingForConnection, removeConnection]
   );

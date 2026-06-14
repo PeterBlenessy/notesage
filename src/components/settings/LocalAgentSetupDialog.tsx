@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { useLocalAgentSetup } from '@/hooks/useLocalAgentSetup';
 import { recommendToolCallingModel } from '@/lib/ai/local-agent-model';
 import { GooseAttribution } from './GooseAttribution';
@@ -71,6 +73,16 @@ export function LocalAgentSetupDialog() {
   const open = useLocalAIStore((s) => s.localAgentSetupDialogOpen);
   const onOpenChange = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
   const { setup, start, reset } = useLocalAgentSetup();
+  const hasPresetConnection = useConnectionsStore((s) => s.connections.some(isLocalAgentPreset));
+  // Defensive: if the persisted setup state says `ready` but the preset
+  // connection no longer exists (removed here, or absent after an iCloud sync /
+  // reinstall that carried the persisted state), the state is stale — reset to
+  // idle so opening the dialog re-runs setup instead of showing a dead "Done".
+  useEffect(() => {
+    if (open && setup.stage === 'ready' && !hasPresetConnection) {
+      reset();
+    }
+  }, [open, setup.stage, hasPresetConnection, reset]);
   const models = useLocalAIStore((s) => s.models);
   const downloads = useLocalAIStore((s) => s.downloads);
   const systemMemory = useLocalAIStore((s) => s.systemMemory);
