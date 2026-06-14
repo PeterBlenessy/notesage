@@ -2574,9 +2574,13 @@ function ExpandedContent({
                     aria-label="Stop generation"
                     className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                      "bg-destructive/10 text-destructive hover:bg-destructive/20",
+                      // Neutral, not destructive: `text-foreground` is near-black in
+                      // light mode and near-white in dark mode (stopping a stream is
+                      // not an error/danger action). Subtle muted fill keeps the
+                      // affordance shape the red version had.
+                      "bg-muted text-foreground hover:bg-muted/70",
                       "transition-colors",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                     )}
                   >
                     <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />

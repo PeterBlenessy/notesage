@@ -1,8 +1,7 @@
 // M2 integration sweep (task #14) — ties the Local Agent preset pieces together
 // against the mocked Tauri IPC: a preset connection regenerates its config (#8)
 // and spawns with the isolation env + llama port (#9/#10), then opens a session
-// that carries the scope-matched, capability-gated MCP servers (#11). Also
-// covers the degraded → Path-4 fallback routing decision (#13).
+// that carries the scope-matched, capability-gated MCP servers (#11).
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
@@ -10,7 +9,6 @@ import { setMockInvokeHandler, clearMockInvokeHandlers } from '@/test/tauri-mock
 import { useMcpStore, type McpServerEntry } from '@/stores/mcp-store';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
-import { resolveInteractiveConnection } from '@/lib/ai/local-agent-routing';
 import type { Connection } from '@/lib/ai/connections';
 import type { AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 
@@ -23,17 +21,6 @@ const presetConn: Connection = {
   credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
   capabilities: ['interactive'],
   config: { binaryPath: '/opt/goose', binaryArgs: ['acp'], localAgentPreset: 'goose' },
-  createdAt: 0,
-};
-
-const localBundledConn: Connection = {
-  id: 'lb',
-  provider: 'local_ai',
-  authMethod: 'local_bundled',
-  status: 'connected',
-  label: 'Local (bundled)',
-  credentials: { type: 'local_bundled' },
-  capabilities: ['interactive'],
   createdAt: 0,
 };
 
@@ -123,11 +110,5 @@ describe('Local Agent M2 integration (task #14)', () => {
     });
     const inputs = buildAcpMcpServerInputs(stdioCaps, []);
     expect(inputs.map((s) => s.id)).toEqual(['fs']);
-  });
-
-  it('degraded preset routes to the local_bundled connection (#13 fallback)', () => {
-    const conns = [presetConn, localBundledConn];
-    expect(resolveInteractiveConnection(presetConn, conns, false)?.id).toBe('preset');
-    expect(resolveInteractiveConnection(presetConn, conns, true)?.id).toBe('lb');
   });
 });

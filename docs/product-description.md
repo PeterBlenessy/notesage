@@ -102,10 +102,10 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 **Goal:** Bring agentic chat (tool calls, MCP, multi-step) to fully-offline local models — no API keys, no network.
 
 - Custom ACP agent connections (`custom_acp`): bring any ACP-compatible binary; probe-on-add, maximal-confinement sandbox defaults
-- Local Agent preset: bundled OpenCode binary wired to the local llama-server (Path 2 over the bundled model), with isolated config generation, endpoint-change respawn, and the llama port allowed through the kernel network sandbox
+- Local Agent preset: bundled Goose binary wired to the local llama-server (Path 2 over the bundled model), with isolated config generation, endpoint-change respawn, and the llama port allowed through the kernel network sandbox
 - MCP pass-through: the user's enabled, scope-matching MCP servers are attached to every ACP session (capability-gated; keychain secrets resolved backend-side)
-- Bounded smoke test gating setup; routing falls back to direct local chat (Path 4) when the agent is unhealthy so chat never dead-ends
-- Staged setup flow (detect → download → configure → verify) with a setup dialog, command-bar empty-state + Add-Connection entry points, and an Offline / degraded-Fix notice
+- Bounded smoke test gating setup; a failed add is rolled back so a broken Local Agent never appears in the provider dropdown. Once added, an agent that later becomes unhealthy surfaces a proper error in the chat message when used — no silent fallback, no header "Fix" pill
+- Staged setup flow (detect → download → configure → verify) with a setup dialog and command-bar empty-state + Add-Connection entry points
 - PRD: `docs/prds/2026-06-12-local-ai-agents.md`
 
 ### Beyond — Ideas

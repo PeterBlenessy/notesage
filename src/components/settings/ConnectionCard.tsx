@@ -10,9 +10,11 @@ import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield
 import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
-import { canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
-import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
+import { tauriApi } from '@/lib/tauri';
+import { canReauthenticate } from '@/lib/ai/reauth';
+import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
 import { GooseAttribution } from './GooseAttribution';
+import { ReauthDialog } from './ReauthDialog';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -67,6 +69,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState('');
   const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
+  const [reauthOpen, setReauthOpen] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
@@ -95,7 +98,35 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         const creds = connection.credentials as { agentBinary: string; agentArgs?: string[] };
         const isLsp = creds.agentBinary === 'copilot-language-server';
 
-        if (isLsp) {
+        if (isLocalAgentPreset(connection)) {
+          // The generic ACP health check below spawns from `credentials.agentBinary`
+          // /`agentArgs` with NO env. The Local Agent preset keeps its `acp` arg in
+          // `config.binaryArgs` and needs the Goose env (GOOSE_PROVIDER/OPENAI_HOST/
+          // GOOSE_MODEL/GOOSE_DISABLE_KEYRING) + the bundled llama-server port — without
+          // them Goose falls into its interactive `goose configure` flow and dies in the
+          // non-TTY subprocess ("goose configure requires an interactive terminal"), so
+          // the heartbeat failed even though chat works. Run the same smoke test the
+          // setup uses (correct binary+args, live-regenerated env, llama port, preset
+          // sandbox) so the heartbeat reflects what chat actually does.
+          const launch = resolveAgentLaunch(connection);
+          const endpoint = await resolveLocalAgentEndpoint(connection);
+          const report = await tauriApi.acpAgentSmokeTest({
+            agentBinary: launch.agentBinary,
+            agentArgs: launch.agentArgs,
+            workingDirectory: '/tmp',
+            envVars: endpoint?.env ?? null,
+            sandboxEnabled: true,
+            sandboxPaths: ['/tmp'],
+            networkSandboxEnabled: true,
+            networkAllowedDomains: [],
+            kernelNetworkDeny: true,
+            extraLocalhostPorts: endpoint ? [endpoint.port] : null,
+            requireLocalServer: true,
+          });
+          if (!report.ok) {
+            throw new Error(report.error ?? `Verification failed at the ${report.stage} stage`);
+          }
+        } else if (isLsp) {
           // Copilot LSP: check status via LSP protocol (don't use ACP)
           let status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
             'copilot_lsp_status'
@@ -350,12 +381,17 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
           {connection.authMethod === 'agent_managed' && (() => {
             const creds = connection.credentials as { agentBinary: string };
             if (!canReauthenticate(creds.agentBinary)) return null;
+            // Only surface the key icon when the connection actually needs
+            // re-auth — i.e. its status is `expired` (set on a 401 during use) or
+            // `error` (a failed heartbeat). When `connected`, the icon would just
+            // read as a permanent "needs attention" badge on a healthy provider.
+            if (connection.status !== 'expired' && connection.status !== 'error') return null;
             return (
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                onClick={() => reauthenticateAgent(creds.agentBinary, connection.label)}
+                onClick={() => setReauthOpen(true)}
                 title="Re-authenticate"
               >
                 <KeyRound className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -412,6 +448,13 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         <LocalAIModelsDialog
           open={modelsDialogOpen}
           onOpenChange={setModelsDialogOpen}
+        />
+      )}
+      {connection.authMethod === 'agent_managed' && (
+        <ReauthDialog
+          connection={connection}
+          open={reauthOpen}
+          onOpenChange={setReauthOpen}
         />
       )}
     </div>

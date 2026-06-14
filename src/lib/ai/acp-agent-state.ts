@@ -5,7 +5,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { useLocalAIStore } from '@/stores/local-ai-store';
 import { PROVIDER_OPTIONS, getCapabilities } from '@/lib/ai/connections';
 import type { Connection, ConnectionCredentials, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
@@ -297,7 +296,13 @@ export function resolveAgentLaunch(connection: Connection): AgentLaunchSpec {
     return keys.length > 0 ? keys : null;
   })();
   if (connection.provider === 'custom_acp') {
-    const binaryPath = connection.config?.binaryPath;
+    // Prefer `config.binaryPath`, but fall back to `credentials.agentBinary` —
+    // both the Local Agent preset (`createPresetConnection`) and the custom-agent
+    // form store the binary there too. This self-heals a connection whose
+    // `config` was dropped/never-persisted (observed on a 0.46.0-alpha.28 prod
+    // connection: `credentials.agentBinary` held the goose path but `config` was
+    // absent, so the old config-only read threw "has no binary path configured").
+    const binaryPath = connection.config?.binaryPath || managedCreds?.agentBinary;
     if (!binaryPath) {
       throw new Error(`Custom agent connection '${connection.label}' has no binary path configured`);
     }
@@ -421,23 +426,12 @@ export async function ensureAcpAgent(
   // server restart on a new port (or a model switch) changes this key, so the
   // existing agent is torn down and respawned against the fresh config — same
   // mechanism as `sandboxScopeKey`. Non-preset connections get `configKey=''`.
-  let endpoint: LocalAgentEndpoint | null;
-  try {
-    endpoint = await resolveLocalAgentEndpoint(connection);
-  } catch (err) {
-    // Preset endpoint resolution throws when the bundled llama-server isn't
-    // running / has no model. That's an agent-health failure — flip the degraded
-    // flag HERE (not only in the send-path `runPresetGuarded`) so EVERY caller,
-    // including the eager session-creation effect that previously swallowed this
-    // as "non-fatal", surfaces the "Offline / Fix" notice and routes the next
-    // send to Path 4 (review High #1).
-    if (isLocalAgentPreset(connection)) {
-      useLocalAIStore.getState().setLocalAgentDegraded(
-        `Local Agent unavailable: ${String((err as Error)?.message ?? err)}`,
-      );
-    }
-    throw err;
-  }
+  //
+  // Preset endpoint resolution throws when the bundled llama-server isn't
+  // running / has no model. We let that propagate: the caller's send path
+  // surfaces it as a proper error in the chat message (user decision — no
+  // silent Path-4 fallback, no header "Fix" pill).
+  const endpoint = await resolveLocalAgentEndpoint(connection);
   const configKey = endpoint?.configKey ?? '';
 
   log.info(

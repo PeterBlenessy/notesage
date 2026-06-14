@@ -5,7 +5,6 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { AIProviderType, ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import { resolveConnectionCredentials } from '@/lib/ai/credentials';
 import { useAIContext } from '@/hooks/useAIContext';
@@ -13,8 +12,6 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
-import { resolveInteractiveConnection, isAgentHealthError } from '@/lib/ai/local-agent-routing';
-import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { track, providerKind, type AiPath } from '@/lib/telemetry';
 import type { Connection } from '@/lib/ai/connections';
 
@@ -69,12 +66,13 @@ export function useAIOperations() {
   // All connections (for reactivity when a connection referenced by project override is added/removed)
   const connections = useConnectionsStore((s) => s.connections);
 
-  // Local Agent preset degraded state (task #13) drives the Path-4 fallback.
-  const localAgentDegraded = useLocalAIStore((s) => s.localAgentDegraded);
-  const setLocalAgentDegraded = useLocalAIStore((s) => s.setLocalAgentDegraded);
-
-  // Resolve the effective connection: project override takes priority over global routing
-  const overrideConnection = useMemo(() => {
+  // Resolve the effective connection: project override takes priority over
+  // global routing. The Local Agent preset (when selected) is used as-is — if it
+  // has become unhealthy, the send path surfaces a proper error in the chat
+  // message rather than silently falling back to direct local chat (user
+  // decision). A failed *setup* is rolled back so a broken agent never reaches
+  // the dropdown in the first place.
+  const effectiveConnection = useMemo(() => {
     const projectProviderOverride = singleMetadata?.ai.provider ?? null;
     if (projectProviderOverride) {
       const conn = connections.find((c) => c.id === projectProviderOverride);
@@ -82,15 +80,6 @@ export function useAIOperations() {
     }
     return interactiveConnection;
   }, [singleMetadata, interactiveConnection, connections]);
-
-  // Apply the Local Agent degraded → Path-4 fallback (task #13). When the preset
-  // is healthy (or this isn't a preset) `effectiveConnection === overrideConnection`,
-  // so all existing routing is unchanged; when degraded it becomes the
-  // local_bundled fallback so chat routes to direct local chat instead.
-  const effectiveConnection = useMemo(
-    () => resolveInteractiveConnection(overrideConnection, connections, localAgentDegraded),
-    [overrideConnection, connections, localAgentDegraded],
-  );
 
   // Resolve effective provider + credentials from the (post-fallback) connection.
   const resolved = useMemo(() => {
@@ -160,23 +149,6 @@ export function useAIOperations() {
     throw new ProjectLockViolation(conflict.projectPath, conflict.lockedConnectionId, attemptedId);
   }, [effectiveConnection, selectedProjectPaths, metadataMap, connections]);
 
-  // Run a Local Agent preset operation, flipping the degraded flag (task #13) on
-  // an agent-health failure so the NEXT send/generate falls back to Path 4. The
-  // current call still surfaces the error — the user retries onto local chat.
-  const runPresetGuarded = useCallback(
-    async <T,>(op: () => Promise<T>): Promise<T> => {
-      try {
-        return await op();
-      } catch (err) {
-        if (isAgentHealthError(err)) {
-          setLocalAgentDegraded(`Local Agent unavailable: ${String((err as Error)?.message ?? err)}`);
-        }
-        throw err;
-      }
-    },
-    [setLocalAgentDegraded],
-  );
-
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
       assertLockAllowsSend();
@@ -184,13 +156,11 @@ export function useAIOperations() {
         return copilotGenerateText(prompt);
       }
       if (effectiveConnection?.authMethod === 'agent_managed') {
-        return isLocalAgentPreset(effectiveConnection)
-          ? runPresetGuarded(() => acpGenerateText(prompt))
-          : acpGenerateText(prompt);
+        return acpGenerateText(prompt);
       }
       return directGenerateText(prompt);
     },
-    [effectiveConnection, copilotGenerateText, acpGenerateText, directGenerateText, assertLockAllowsSend, runPresetGuarded]
+    [effectiveConnection, copilotGenerateText, acpGenerateText, directGenerateText, assertLockAllowsSend]
   );
 
   const sendChatMessage = useCallback(
@@ -214,13 +184,11 @@ export function useAIOperations() {
         return copilotSendChatMessage(content, messages, opts);
       }
       if (effectiveConnection?.authMethod === 'agent_managed') {
-        return isLocalAgentPreset(effectiveConnection)
-          ? runPresetGuarded(() => acpSendChatMessage(content, messages, opts))
-          : acpSendChatMessage(content, messages, opts);
+        return acpSendChatMessage(content, messages, opts);
       }
       return directSendChatMessage(content, messages, opts);
     },
-    [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend, runPresetGuarded]
+    [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );
 
   // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed

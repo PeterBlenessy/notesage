@@ -1,7 +1,6 @@
 /**
  * Tests for the Local Agent setup-flow slice of local-ai-store (task #15):
- * the stage machine, degraded flag, persistence (stage+model, no transient
- * error), and the `selectLocalAgentNotice` selector.
+ * the stage machine and persistence (stage+model, never the transient error).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -31,12 +30,11 @@ vi.mock('@/lib/tauri', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
-import { useLocalAIStore, selectLocalAgentNotice } from '../local-ai-store';
+import { useLocalAIStore } from '../local-ai-store';
 
 describe('local-ai-store — Local Agent setup slice (task #15)', () => {
   beforeEach(() => {
     useLocalAIStore.getState().resetLocalAgentSetup();
-    useLocalAIStore.getState().setLocalAgentDegraded(null);
     storageBacking.clear();
   });
 
@@ -78,25 +76,5 @@ describe('local-ai-store — Local Agent setup slice (task #15)', () => {
     const persisted = JSON.parse(storageBacking.get('notesage-local-ai') ?? '{}');
     expect(persisted.state.localAgentSetup).toEqual({ stage: 'failed', modelId: 'm1' });
     expect(persisted.state.localAgentSetup.error).toBeUndefined();
-  });
-
-  describe('selectLocalAgentNotice', () => {
-    it('returns null when healthy', () => {
-      expect(selectLocalAgentNotice(useLocalAIStore.getState())).toBeNull();
-    });
-
-    it('reports the degraded reason (runtime fallback)', () => {
-      useLocalAIStore.getState().setLocalAgentDegraded('Local AI server is not running');
-      const notice = selectLocalAgentNotice(useLocalAIStore.getState());
-      expect(notice?.reason).toBe('Local AI server is not running');
-    });
-
-    it('reports the failed setup stage so Fix can reopen at that stage', () => {
-      useLocalAIStore.getState().setLocalAgentSetup({
-        stage: 'failed', failedStage: 'verifying', error: 'smoke failed',
-      });
-      const notice = selectLocalAgentNotice(useLocalAIStore.getState());
-      expect(notice).toEqual({ reason: 'smoke failed', failedStage: 'verifying' });
-    });
   });
 });
