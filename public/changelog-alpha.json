@@ -27,6 +27,16 @@
       }
     },
     {
+      "version": "0.46.0-alpha.30",
+      "date": "2026-06-14",
+      "previousVersion": "0.46.0-alpha.29",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): pin esbuild >=0.28.1 (security) (#463)",
+        "chore(deps): pin esbuild >=0.28.1 to clear two Dependabot alerts (#463)"
+      ]
+    },
+    {
       "version": "0.46.0-alpha.29",
       "date": "2026-06-14",
       "previousVersion": "0.46.0-alpha.28",
