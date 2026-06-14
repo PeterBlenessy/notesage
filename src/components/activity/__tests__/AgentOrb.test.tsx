@@ -27,6 +27,8 @@ import {
   waitFor,
 } from '@/test/component-harness';
 import type { AgentTask } from '@/stores/activity-store';
+import { useRefinementStore } from '@/stores/refinement-store';
+import type { RefinementEntry, RefinementVerdict } from '@/lib/ai/refinement';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom
@@ -182,6 +184,58 @@ describe('AgentOrb (#29)', () => {
     mockCmdBarPinned = false;
     logInfoMock.mockReset();
     mockRemoveTask.mockReset();
+    // refinement-store is NOT mocked (real, non-persisted store) — reset it so
+    // the pending-refinement orb signal starts clean each test.
+    useRefinementStore.setState({ entries: [], seen: new Set<string>() });
+  });
+
+  function seedRefinement(verdict: RefinementVerdict = 'sharpen'): void {
+    const entry: RefinementEntry = {
+      id: `r-${Math.random()}`,
+      docPath: '/d.md',
+      anchor: { from: 0, to: 1 },
+      srcHash: 'h',
+      originalText: 'x',
+      result: { verdict, outcome: 'sharper', steps: [], rationale: 'r' },
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    useRefinementStore.getState().upsertEntry(entry);
+  }
+
+  it('shows a refinement count badge + pulse when idle but refinements are pending', () => {
+    mockTasks = [];
+    seedRefinement('sharpen');
+    seedRefinement('split');
+    renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('agent-orb-refinement-badge').textContent).toBe('2');
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).toContain('orb-pulsing');
+    expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
+      'Agent — 2 refinements ready',
+    );
+  });
+
+  it('ignores keep-verdict refinements for the orb signal', () => {
+    mockTasks = [];
+    seedRefinement('keep');
+    renderWithProviders(<AgentOrb />);
+    expect(screen.queryByTestId('agent-orb-refinement-badge')).toBeNull();
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).not.toContain('orb-pulsing');
+  });
+
+  it('suppresses the refinement pulse under reduced motion but keeps the badge', () => {
+    useReducedMotionMock.mockReturnValue(true);
+    mockTasks = [];
+    seedRefinement('sharpen');
+    renderWithProviders(<AgentOrb />);
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).not.toContain('orb-pulsing');
+    expect(screen.getByTestId('agent-orb-refinement-badge').textContent).toBe('1');
   });
 
   it('renders a count badge when running tasks > 0', () => {

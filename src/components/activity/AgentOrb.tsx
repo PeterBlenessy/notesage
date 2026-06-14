@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useActivityStore } from '@/stores/activity-store';
 import { useRecordingStore } from '@/stores/recording-store';
+import { useRefinementStore, selectPendingCount } from '@/stores/refinement-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { recordedElapsedMs, formatStopwatchMs } from '@/lib/recording-time';
@@ -85,7 +86,12 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
     (t) => t.status === 'running' && t.kind !== 'recording',
   ).length;
   const recordingPausedStore = useRecordingStore((s) => s.isPaused);
-  const shouldPulse = runningNonRecordingCount > 0 && !reducedMotion;
+  // Pending refinements (PRD 2026-06-13) share the ambient signal: the orb
+  // flashes on arrival and then carries a steady count badge when idle, so the
+  // user notices a sharpened action item is waiting without being interrupted.
+  const pendingRefinements = useRefinementStore(selectPendingCount);
+  const shouldPulse =
+    (runningNonRecordingCount > 0 || pendingRefinements > 0) && !reducedMotion;
 
   // Recording state — the orb narrates the live-capture leg of the
   // Recording → Transcribing → Ready story. We surface the EARLIEST active
@@ -121,9 +127,13 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
     ? isPaused
       ? `Recording paused — ${recordingElapsed}`
       : `Recording — ${recordingElapsed}`
-    : runningCount === 1
-      ? 'Agent — 1 task running'
-      : `Agent — ${runningCount} tasks running`;
+    : runningCount === 0 && pendingRefinements > 0
+      ? pendingRefinements === 1
+        ? 'Agent — 1 refinement ready'
+        : `Agent — ${pendingRefinements} refinements ready`
+      : runningCount === 1
+        ? 'Agent — 1 task running'
+        : `Agent — ${runningCount} tasks running`;
 
   // Log when the panel opens — keeps the perf:orb breadcrumb that existed on
   // the pre-#79 click stub. Only fires on the open transition, not on close.
@@ -247,6 +257,16 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
                 className="font-mono text-[10px] font-medium leading-none tabular-nums"
               >
                 {runningCount}
+              </span>
+            ) : pendingRefinements > 0 ? (
+              // Idle, but refinements are waiting — show the count so the user
+              // knows to open the panel. Same neutral badge styling as the
+              // running-task count (no chromatic shift).
+              <span
+                data-testid="agent-orb-refinement-badge"
+                className="font-mono text-[10px] font-medium leading-none tabular-nums"
+              >
+                {pendingRefinements}
               </span>
             ) : (
               // Idle: subtle Bot glyph — keeps the orb feeling intentional rather
