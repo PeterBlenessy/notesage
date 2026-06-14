@@ -1,5 +1,5 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -245,6 +245,26 @@ export function applyRefinement(view: EditorView, id: string): boolean {
   return false;
 }
 
+/**
+ * Move the editor selection to the refinement's anchor and scroll it into view.
+ * Exposed so the panel (task #12) can "Jump to line" without an editor-view
+ * reference (it dispatches a window event the plugin listens for). Returns
+ * false on a stale/out-of-range anchor.
+ */
+export function jumpToRefinement(view: EditorView, id: string): boolean {
+  const entry = useRefinementStore.getState().entries.find((e) => e.id === id);
+  if (!entry) return false;
+  const size = view.state.doc.content.size;
+  const pos = Math.min(Math.max(entry.anchor.from, 0), size);
+  if (pos > size) return false;
+  const tr = view.state.tr.setSelection(
+    TextSelection.create(view.state.doc, pos),
+  );
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Extension
 // ---------------------------------------------------------------------------
@@ -307,10 +327,26 @@ export const RefinementApply = Extension.create({
           // shell evicts/swaps), so track the editor store too.
           const unsubEditor = useEditorStore.subscribe(rebuild);
 
+          // Panel → editor bridge (task #12): the AgentPanel has no editor-view
+          // reference, so its Apply/Jump buttons dispatch window CustomEvents
+          // (the `notesage:open-tag-search` pattern). Handle them here.
+          const onApply = (e: Event) => {
+            const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+            if (id) applyRefinement(editorView, id);
+          };
+          const onJump = (e: Event) => {
+            const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+            if (id) jumpToRefinement(editorView, id);
+          };
+          window.addEventListener("notesage:apply-refinement", onApply);
+          window.addEventListener("notesage:jump-to-refinement", onJump);
+
           return {
             destroy() {
               unsubRefine();
               unsubEditor();
+              window.removeEventListener("notesage:apply-refinement", onApply);
+              window.removeEventListener("notesage:jump-to-refinement", onJump);
             },
           };
         },
