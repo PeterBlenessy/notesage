@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -88,9 +89,14 @@ export function ReauthDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px] p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-4 pt-4">
+      <DialogContent className="sm:max-w-[420px] p-0 gap-0 max-h-[85vh] overflow-y-auto">
+        {/* `pr-10` keeps the title clear of the absolute close (X) button for
+            longer labels (e.g. "Re-authenticate GitHub Copilot"). */}
+        <DialogHeader className="px-4 pt-4 pr-10">
           <DialogTitle className="text-sm">Re-authenticate {connection.label}</DialogTitle>
+          <DialogDescription className="text-xs">
+            Sign in again to restore access to {connection.label}.
+          </DialogDescription>
         </DialogHeader>
         {isLsp ? (
           <ConnectCopilotLsp
