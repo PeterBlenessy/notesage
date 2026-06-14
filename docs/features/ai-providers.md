@@ -376,13 +376,19 @@ Chat messages can include up to 5 image attachments, enabling multimodal convers
 
 ## Re-authentication
 
-Every ACP connection and the Copilot LSP connection expose a key-icon button in the connection card (Settings > Connections) that opens Terminal.app with the agent's sign-in command pre-filled — same command `getAuthGuide()` drives initial registration with, so there's a single source of truth per agent. For `claude-agent-acp` it's `claude auth login`; for `codex-acp` it's `codex login --device-auth`; for `copilot` it's `copilot auth login`; for `gemini` it's `cd /tmp && gemini`.
+Re-auth is **in-app and identical to initial sign-in** — it reuses the same registration components, not a terminal hand-off. The key-icon button on a subscription connection card (Settings > Connections) opens a `ReauthDialog` (`src/components/settings/ReauthDialog.tsx`) that renders `ConnectAgent` (ACP agents) or `ConnectCopilotLsp` (Copilot LSP) for the existing connection:
 
-Chat send errors that match an auth-failure pattern (`401`, `Unauthorized`, `Authentication required`, `Invalid authentication`, `Invalid api key`) fire a sonner toast with a "Re-authenticate" action button alongside the inline error on the assistant message. The action runs the same Terminal flow. Deduped per connection id via the toast's stable id so repeated failures don't stack.
+- **Claude Code / Codex** → spawn → `acp_agent_authenticate` → the agent opens a **browser OAuth** window ("a browser window will open, finish sign-in, return here").
+- **Copilot LSP** → the in-app GitHub **device-code** flow (`copilot_lsp_sign_in` / `copilot_lsp_finish_auth`, code shown + auto-copied + "Open GitHub").
+- **Gemini** → the in-app **credential form** (it genuinely can't open a browser from a subprocess).
 
-**Why this exists:** ACP agents read OAuth tokens from OS keychain at spawn time. Tokens can go stale asynchronously while other Claude/Copilot processes on the host refresh them, leaving Notesage's spawned agent with a cached-but-rejected token until respawn. The re-auth path handles both the stale-token and the truly-expired-token cases.
+Each reused component keeps a **terminal sign-in only as its own last-resort fallback** (shown when the in-app `authenticate` errors), never the primary path. On success no new connection is created — the OAuth token was refreshed on disk (or fresh env vars were entered), so the existing connection is marked `connected` and any new env vars persist through the keychain via `updateConnection`.
 
-Graceful fallback: if `run_in_terminal` fails (non-macOS, permission denied, etc.), the command is copied to the clipboard with a toast showing what to run.
+**Auth-method preference:** an ACP agent can advertise both an interactive `agent` (OAuth) method and an `env_var` (API key) method — Codex offers ChatGPT login *and* `OPENAI_API_KEY`. `ConnectAgent` prefers the OAuth method (passing its method id explicitly to `acp_agent_authenticate`, since with no id the backend picks whichever is listed first) and only shows the API-key form when `env_var` is the **sole** method (Gemini).
+
+**The key icon reflects real need:** it is shown only when the connection's status is `expired` or `error`, and hidden when `connected` — so a healthy provider carries no permanent "needs attention" badge. A chat send that hits an auth failure (`401`, `Unauthorized`, `Authentication required`, `Invalid authentication`, `Invalid api key`) flips the connection to `expired` (the only reliable needs-reauth signal — neither heartbeat nor session-create validates the OAuth token) and fires a sonner toast with a "Re-authenticate" action, deduped per connection id. A successful reauth or heartbeat flips the status back to `connected`. (The chat-error toast's action still uses the terminal `reauthenticateAgent` fallback — a separate, rarer surface than the settings card.)
+
+**Why this exists:** ACP agents read OAuth tokens from the OS keychain at spawn time. Tokens can go stale asynchronously while other Claude/Copilot processes on the host refresh them, leaving Notesage's spawned agent with a cached-but-rejected token until respawn. The re-auth path handles both the stale-token and the truly-expired-token cases.
 
 ## Web Search
 
@@ -429,7 +435,8 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/hooks/useDirectApiChat.ts` | Direct API chat with tool execution loop (scope-gated FS tools via #8) |
 | `src/lib/tool-executor.ts` | Tool call routing + scope gate (`ToolCallScope`, `FILESYSTEM_TOOLS`) |
 | `src/stores/skill-store.ts` | Skills registry, agents, skill tool definitions, `getToolDefinitions()`. Per-project registry (`byProject`) merged with `global` on demand |
-| `src/lib/ai/reauth.ts` | `canReauthenticate` + `reauthenticateAgent` — user-friendly re-auth flow |
+| `src/components/settings/ReauthDialog.tsx` | In-app re-auth dialog — reuses `ConnectAgent` / `ConnectCopilotLsp` for an existing connection (key icon entry point) |
+| `src/lib/ai/reauth.ts` | `canReauthenticate`, `isAuthError`, + `reauthenticateAgent` (terminal fallback, used by the chat-error toast) |
 | `src/lib/ai/uri-scope.ts` | `isUriInScope(uri, scope)` — used by Copilot LSP doc sync, inline completion gate, active-tab auto-attach |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` error + `getProjectLock` / `findLockConflict` utilities |
 | `src/lib/ai/acp-utils.ts` | `getChatSandboxScope`, `buildAttachmentActivities`, `formatToolLabel`, `normalizeToolCallContent` |
