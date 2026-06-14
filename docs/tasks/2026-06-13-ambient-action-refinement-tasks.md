@@ -28,13 +28,16 @@ Built via orchestrated sub-agents (Waves 1–2) + direct implementation (Wave 3,
 | #12 panel section | ✅ done | |
 | #13 Top-5 rank | ✅ done | per active document |
 | #14 settings toggle | ✅ done | persist v22→23 migration |
-| #15 wire-up | ⚠️ partial | watcher mounted + gating done. **Deferred:** persisting `ns-refine` comments into saved markdown + rebuilding the store from them on open — so v1 refinements are **session-only** (lost on doc close). The codec (#3) exists; only the markdown.ts save/load wiring is missing |
+| #15 wire-up | ⚠️ partial | watcher mounted + gating done. Persistence **helpers built + tested** (`refinement-persist.ts`: `injectRefinements`/`extractRefinements`/`rebuildEntriesFromDoc`). **Still un-wired:** calling inject on save + extract/rebuild on load — so v1 refinements are **session-only** (lost on doc close). See the wiring plan + hazard below |
 | #16 engine tests | ✅ done | |
 | #17 foundation tests | ✅ done | hash / comment / store |
 | #18 tests | ⚠️ partial | watcher-gating tests ✅ (`refinement-run`, `refinement-plan`), apply round-trip ✅ (`refinement-apply`). **Deferred:** the dedicated `[perf:typing]`-not-regressed benchmark |
 
 **Three known deferrals to close before this is "done" done:**
-1. **Markdown persistence of refinements (#15)** — wire the `#3` codec into `markdown.ts` serialize (inject `ns-refine` comments) + parse (rebuild store on open). Without it, refinements don't survive a reopen.
+1. **Markdown persistence wiring (#15)** — the pure helpers (`refinement-persist.ts`) are built + tested; what remains is wiring them into the editor's save/load, which is **invasive** (not a single seam) and needs a live editor to verify:
+   - **Save:** call `injectRefinements(markdown, pendingEntriesForDoc)` on the serialized markdown in the autosave path (`useEditor.ts` ~line 285) — and ONLY there (not the `useFileWatcherIntegration` diff-comparison serializes).
+   - **Load:** call `extractRefinements(raw)` at the disk-read chokepoint (`useFileOperations` openFile) so every parse path (`useEditorTabSwitch`'s ~8 `loadRawMarkdownIntoEditor` sites + streaming-hydrate + worker-parse) gets clean markdown; stash the `persisted[]` per path; after the editor hydrates, call `rebuildEntriesFromDoc(editor.state.doc, persisted, docPath)` → `refinement-store.rebuildForDoc`.
+   - **⚠️ Hazard found:** the external-change watcher compares `getMarkdownFromEditor` (clean) against the on-disk file (now commented). Writing comments to disk will make disk ≠ editor and trigger a false external-change/reload loop. The comparator in `useFileWatcherIntegration` must strip `ns-refine` comments (via `extractRefinements`) before comparing, or compare against the injected output. This coupling is why the wiring wasn't landed blind.
 2. **ACP one-shot runner (#9)** — let `agent_managed` connections drive refinement (engine already supports it; only the hook injection is missing).
 3. **Typing perf benchmark (#18)** — add a `src/perf/` bench asserting per-keystroke cost is unchanged with the watcher mounted.
 
