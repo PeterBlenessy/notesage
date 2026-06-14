@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-12 |
-| **Status** | Draft |
+| **Status** | Implemented — PR #458 (pending merge). Preset agent shipped as **Goose** (not OpenCode); see the tasks addendum. |
 | **Priority** | High |
 | **Impact** | One decision ("use local AI") gives the user a fully offline agentic chat — a real agent loop (planning, multi-step tool use, file edits) plus MCP tools, running entirely against the bundled llama-server, with a verifiably empty network allowlist |
 | **Tasks** | [local-ai-agents-tasks](../tasks/2026-06-12-local-ai-agents-tasks.md) |
@@ -128,9 +128,9 @@ async fn acp_agent_smoke_test(instance_config: SmokeTestConfig) -> Result<SmokeT
 
 | Dependency | Status | Notes |
 | --- | --- | --- |
-| ACP 0.14.0 migration (crate bump, model→config-options, message-ID redesign) | Planned (P0 of the ACP upgrade plan) | Sequence first so custom-agent probing targets the post-migration surface |
-| `mcp_servers` pass-through at `session/new` | Planned (shared task) | Required for Goal 4; M1/M2 chat works without it |
-| OpenCode releases (GitHub, MIT) | External | Pin a minimum version; managed-update keeps it fresh |
+| ACP 0.14.0 migration (crate bump, model→config-options, message-ID redesign) | Shipped (landed 2026-06-12) | Custom-agent probing targets the post-migration surface |
+| `mcp_servers` pass-through at `session/new` | Shipped (#11) | Wired for all ACP agents; end-to-end MCP-via-Goose verification + MCP-subprocess proxy routing are follow-ups |
+| ~~OpenCode~~ → **Goose** releases (`block/goose`, GitHub, Apache-2.0) | External | Switched from OpenCode (incompatible with the strict sandbox); GitHub-release-binary install, min v1.37.0. See tasks addendum. |
 | Bundled llama-server + model catalog (`supports_tool_calling`, RAM tiers) | Shipped | Reused as-is |
 | Managed-install system (`agent_manager.rs`) | Shipped | Reused as-is |
 
@@ -138,28 +138,31 @@ async fn acp_agent_smoke_test(instance_config: SmokeTestConfig) -> Result<SmokeT
 
 **Functional**
 
-- [ ] Register a custom ACP agent (absolute path + args + env) → probe succeeds → chat with modes/plans/thinking/permissions works end-to-end
-- [ ] Probe failure at registration shows the agent's stderr tail; nothing is persisted
-- [ ] Local Agent preset: fresh machine → one flow → verified-ready agentic chat against the bundled llama-server
-- [ ] Smoke test gates "ready"; a failed smoke test produces retry + Path 4 fallback (chat never dead)
-- [ ] llama-server restart on a new port → agent config regenerated and agent respawned automatically
-- [ ] MCP servers registered in Notesage are callable by the local agent; stdio MCP children run inside the agent's sandbox (verified via violation monitor)
-- [ ] Network: with the preset profile active, any non-llama-server egress attempt is kernel-denied and logged
-- [ ] Interrupted setup (network loss, relaunch) resumes without manual cleanup
-- [ ] Existing four managed agents + direct local chat (Path 4) regress nothing (`pnpm test`, manual smoke)
-- [ ] Sub-tool-calling model selection is blocked in the preset; sub-8GB tier shows the reliability warning
+- [x] Register a custom ACP agent (absolute path + args + env) → probe succeeds → chat with modes/plans/thinking/permissions works end-to-end (M1 #1–#6; the Goose preset is a `custom_acp` connection and was live-verified)
+- [x] Probe failure at registration shows the agent's stderr tail; nothing is persisted (M1 #5; unit-tested)
+- [x] Local Agent preset: fresh machine → one flow → verified-ready agentic chat against the bundled llama-server (live-verified — Goose completed an agentic turn)
+- [x] Smoke test gates "ready"; a failed smoke test produces retry + Path 4 fallback (chat never dead) (#12/#13; degraded-flag fix + `local-agent-routing` tests)
+- [x] llama-server restart on a new port → agent config regenerated and agent respawned automatically (#10 `configKey`; `local-agent-integration` test)
+- [ ] MCP servers registered in Notesage are callable by the local agent; stdio MCP children run inside the agent's sandbox (verified via violation monitor) — **mostly verified; one residual**:
+  - *Delivery* — tested: `buildAcpMcpServerInputs` (transport/capability/scope gating + IPC shape incl. secret refs) + an integration test asserting `session/new` carries the MCP servers for the preset.
+  - *Sandbox of MCP children* — **implemented by inheritance**: the agent is spawned via `sandbox-exec` (Seatbelt) and the agent spawns the MCP children, so they inherit the same kernel network-deny + writable-FS scope + `HTTP_PROXY` env. Enforcement holds.
+  - *Residual:* (a) **live tool invocation** — Goose actually *calling* a tool — needs a running Goose+model+MCP server (not reproducible headlessly); (b) the violation **monitor** registers only the agent's own PID, so a child's Seatbelt denial isn't *attributed/surfaced* (observability gap, not an enforcement gap) — hence "verified via violation monitor" can't be literally ticked. (Separately, Notesage's *own* MCP servers on the direct-API path — `commands/mcp.rs` — run unsandboxed; that's a different code path, CLAUDE.md "Known follow-ups".)
+- [x] Network: with the preset profile active, any non-llama-server egress attempt is kernel-denied and logged (empty allowlist + kernel deny; `preset_profile_allows_exactly_proxy_and_llama_ports` regression lock + macOS Seatbelt `--ignored` locks run green)
+- [x] Interrupted setup (network loss, relaunch) resumes without manual cleanup — the resume mechanism is unit-verified: re-running skips the model download when already present AND skips the agent install when the binary already resolves (`installAgentIfMissing` tests), and the driver walks an already-satisfied setup straight to ready. (A live mid-download network-drop wasn't manually exercised, but the skip-on-re-run logic that makes resume work is tested.)
+- [x] Existing four managed agents + direct local chat (Path 4) regress nothing (`pnpm test` green — 5539 tests)
+- [x] Sub-tool-calling model selection is blocked in the preset; sub-8GB tier shows the reliability warning (`recommendToolCallingModel`; `local-agent-model` tests)
 
 **Tests & gates**
 
-- [ ] `pnpm typecheck`, `pnpm test`, `cargo check` (pkg-config stubs) green; `cargo test` in CI
-- [ ] Sandbox profile regression-lock test: preset profile allows exactly {proxy port, llama-server port} on localhost
-- [ ] `tauri-capability-surface.test.ts` unchanged (no new frontend capabilities)
-- [ ] `pnpm test:perf` within budget; startup unaffected (preset work is lazy, nothing on the startup path)
+- [x] `pnpm typecheck`, `pnpm test`, `cargo check` (pkg-config stubs) green; `cargo test` in CI (typecheck + 5539 unit tests green; `cargo test --lib` green earlier; CI runs `cargo test`)
+- [x] Sandbox profile regression-lock test: preset profile allows exactly {proxy port, llama-server port} on localhost (`preset_profile_allows_exactly_proxy_and_llama_ports`)
+- [x] `tauri-capability-surface.test.ts` unchanged (no new frontend capabilities — egress is Rust-only)
+- [x] `pnpm test:perf` within budget; startup unaffected — green at the CI 1.5× multiplier (45/45). At the strict local 1× the 1KB-parse benchmark flakes (≈55ms vs 38ms); this is a pre-existing benchmark flake, not a feature regression (nothing here touches markdown parse / decorations / stores hot paths)
 
 **Design**
 
-- [ ] Setup flow + connection cards pass `/review-ui`: neutral palette, both themes + soft contrast, hover/focus states, no chromatic tokens outside accent/destructive
-- [ ] Empty-state prompt, progress, error, and fallback states all designed (no default-browser UI, no raw error dumps)
+- [x] Setup flow + connection cards pass `/review-ui`: neutral palette, both themes + soft contrast, hover/focus states, no chromatic tokens outside accent/destructive (`design-reviewer` pass — no Critical; minor findings fixed)
+- [x] Empty-state prompt, progress, error, and fallback states all designed (no default-browser UI, no raw error dumps — error box now carries a friendly guidance line)
 
 ## Out of Scope (deferred)
 

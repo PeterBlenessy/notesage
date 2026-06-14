@@ -129,3 +129,24 @@ function fail(
   deps.setStage({ stage: 'failed', failedStage: stage, error, modelId });
   return { ok: false, failedStage: stage, error };
 }
+
+/**
+ * Install the agent binary only if it isn't already present — the setup-flow
+ * "resume" guard. The GitHub-binary install re-downloads the whole tarball every
+ * run, so re-running setup after an interruption (or just re-opening the dialog)
+ * must NOT re-download when the binary already resolves. Pure + dep-injected so
+ * the skip behaviour is unit-testable without the Tauri/store harness. (Updates
+ * deliberately bypass this — they go through `agent_update`, which forces a
+ * fresh download.) Returns whether it skipped or installed.
+ */
+export async function installAgentIfMissing(deps: {
+  /** Resolve the installed binary path, or `null` if not installed. */
+  resolveBinaryPath: () => Promise<string | null>;
+  /** Perform the (re)install. */
+  install: () => Promise<void>;
+}): Promise<'skipped' | 'installed'> {
+  const existing = await deps.resolveBinaryPath();
+  if (existing) return 'skipped';
+  await deps.install();
+  return 'installed';
+}

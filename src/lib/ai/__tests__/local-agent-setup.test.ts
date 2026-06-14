@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runLocalAgentSetup, type LocalAgentSetupDeps } from '../local-agent-setup';
+import { runLocalAgentSetup, installAgentIfMissing, type LocalAgentSetupDeps } from '../local-agent-setup';
 import type { SmokeTestReport } from '@/lib/tauri';
 
 function makeDeps(overrides: Partial<LocalAgentSetupDeps> = {}): {
@@ -87,5 +87,27 @@ describe('runLocalAgentSetup', () => {
     await runLocalAgentSetup(deps);
     const downloadingCall = setStage.mock.calls.find((c) => c[0].stage === 'downloading');
     expect(downloadingCall?.[0].modelId).toBe('qwen2.5-coder-7b');
+  });
+});
+
+describe('installAgentIfMissing (setup-flow resume guard)', () => {
+  it('skips the install when the binary already resolves (no re-download on re-run)', async () => {
+    const install = vi.fn().mockResolvedValue(undefined);
+    const result = await installAgentIfMissing({
+      resolveBinaryPath: async () => '/Users/me/.notesage/agents/bin/goose',
+      install,
+    });
+    expect(result).toBe('skipped');
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it('installs when no binary resolves', async () => {
+    const install = vi.fn().mockResolvedValue(undefined);
+    const result = await installAgentIfMissing({
+      resolveBinaryPath: async () => null,
+      install,
+    });
+    expect(result).toBe('installed');
+    expect(install).toHaveBeenCalledOnce();
   });
 });
