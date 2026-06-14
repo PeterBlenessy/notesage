@@ -488,7 +488,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // but we never tear down the bar itself.
     if (isPinned) return;
     setExpanded(false);
-    setInputValue("");
+    // Preserve the typed draft across collapse (Esc, blur, opening Settings) so
+    // reopening restores what the user was writing — only an actual send (or the
+    // explicit X dismiss) clears it. The prefix MODE is still reset; if the draft
+    // begins with a prefix char it re-engages on the next keystroke.
     setActivePrefix(null);
     // Reset the typed-prefix dismissal suppression so the next time the
     // bar expands, the picker is willing to open again on the next `/`.

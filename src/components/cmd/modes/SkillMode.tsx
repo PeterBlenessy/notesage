@@ -12,9 +12,10 @@ import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
  *
  * Behaviour:
  *   - Reads available skills via `useSkillStore.getActiveSkills()`.
- *   - Filters by `filter` prop (case-insensitive substring on name; falls
- *     back to description match if the name doesn't hit).
- *   - Renders up to 8 results in a vertical list.
+ *   - `/` (empty filter) lists EVERY skill, alphabetically. `/s` lists every
+ *     skill whose name starts with "s", alphabetically. No cap — the parent
+ *     picker tray (`flex-1 min-h-0 overflow-y-auto`) scrolls, and the parent's
+ *     `onActiveOptionChange` → scrollIntoView keeps the highlight visible.
  *   - Auto-highlights the first result so Enter on the first keystroke fires
  *     `onPick` without needing arrow keys.
  *   - Keyboard nav: ArrowDown / ArrowUp move the highlight, Enter fires
@@ -22,8 +23,6 @@ import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
  *   - Empty results show "No skills match" muted text.
  *   - Esc handling lives on the parent — this component does not own dismiss.
  */
-
-const MAX_RESULTS = 8;
 
 export interface SkillModeProps {
   /** Text typed after the / prefix (e.g. "web" for /web). */
@@ -59,20 +58,15 @@ export interface SkillModeProps {
 
 function filterSkills(skills: SkillEntry[], filter: string): SkillEntry[] {
   const trimmed = filter.trim().toLowerCase();
-  if (!trimmed) return skills.slice(0, MAX_RESULTS);
-
-  // Two-pass match: name first, then fall back to description hits the name
-  // pass missed. Preserves source order within each bucket.
-  const nameHits: SkillEntry[] = [];
-  const descHits: SkillEntry[] = [];
-  for (const s of skills) {
-    if (s.name.toLowerCase().includes(trimmed)) {
-      nameHits.push(s);
-    } else if (s.description.toLowerCase().includes(trimmed)) {
-      descHits.push(s);
-    }
-  }
-  return [...nameHits, ...descHits].slice(0, MAX_RESULTS);
+  // `/` → all skills; `/s` → skills whose name starts with "s".
+  const matched = trimmed
+    ? skills.filter((s) => s.name.toLowerCase().startsWith(trimmed))
+    : skills;
+  // Alphabetical by name. The store's source order (global ∪ project merge) is
+  // otherwise arbitrary — which made the list look random and, with the old
+  // 8-item cap, hid skills that only surfaced once a filter narrowed the set.
+  // Copy before sorting; never mutate the store array.
+  return [...matched].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function SkillMode({

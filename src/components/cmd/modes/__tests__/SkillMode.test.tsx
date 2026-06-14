@@ -78,7 +78,7 @@ describe('SkillMode', () => {
     expect(screen.getByText('tag-cloud')).toBeTruthy();
   });
 
-  it('filters by name (case-insensitive substring)', () => {
+  it('filters by name PREFIX (case-insensitive), not substring', () => {
     renderWithProviders(<SkillMode filter="web" onPick={vi.fn()} />);
 
     expect(screen.getByText('web-search')).toBeTruthy();
@@ -86,7 +86,15 @@ describe('SkillMode', () => {
     expect(screen.queryByText('tag-cloud')).toBeNull();
   });
 
-  it('filters by description when name does not match', () => {
+  it('does NOT match a substring that is not a prefix', () => {
+    // "search" appears inside "web-search" but is not a prefix → no match.
+    renderWithProviders(<SkillMode filter="search" onPick={vi.fn()} />);
+
+    expect(screen.queryByText('web-search')).toBeNull();
+    expect(screen.getByText('No skills match')).toBeTruthy();
+  });
+
+  it('does NOT match on description (name prefix only)', () => {
     activeSkills = [
       {
         name: 'random-name',
@@ -96,20 +104,22 @@ describe('SkillMode', () => {
         has_scripts: false,
         has_references: false,
       },
-      {
-        name: 'other-thing',
-        description: 'Something unrelated',
-        path: '/skills/other',
-        source: 'notesage-global',
-        has_scripts: false,
-        has_references: false,
-      },
     ];
 
     renderWithProviders(<SkillMode filter="web" onPick={vi.fn()} />);
 
-    expect(screen.getByText('random-name')).toBeTruthy();
-    expect(screen.queryByText('other-thing')).toBeNull();
+    // "web" is in the description but the name doesn't start with it → no match.
+    expect(screen.queryByText('random-name')).toBeNull();
+    expect(screen.getByText('No skills match')).toBeTruthy();
+  });
+
+  it('sorts results alphabetically by name', () => {
+    renderWithProviders(<SkillMode filter="" onPick={vi.fn()} />);
+    const rendered = screen
+      .getAllByRole('option')
+      .map((el) => el.querySelector('.font-medium')?.textContent);
+    // Source order is web-search, save-research, tag-cloud → sorted A→Z.
+    expect(rendered).toEqual(['save-research', 'tag-cloud', 'web-search']);
   });
 
   it('calls onPick exactly once with the right name when a result is clicked', () => {
@@ -137,8 +147,10 @@ describe('SkillMode', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     });
 
+    // Sorted order is [save-research, tag-cloud, web-search]; ArrowDown moves
+    // from the first to the second row.
     expect(onPick).toHaveBeenCalledTimes(1);
-    expect(onPick).toHaveBeenCalledWith('save-research');
+    expect(onPick).toHaveBeenCalledWith('tag-cloud');
   });
 
   it('shows "No skills match" when filter matches nothing', () => {
