@@ -309,6 +309,52 @@ describe('useDirectApiChat — concurrent streams', () => {
     expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
     expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
   });
+
+  it('two conversations stream concurrently without cross-contamination (task #3)', async () => {
+    // Both streams hang open; capture each send's streamId in order.
+    const streamIds: string[] = [];
+    setMockInvokeHandler('ai_chat_stream', async (args) => { streamIds.push(sidOf(args)); });
+
+    const { result } = renderDirectApiChat();
+    const assistantTs = (convId: string): number =>
+      useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.role === 'assistant')!.timestamp ?? 0;
+    const textOf = (convId: string, ts: number) => {
+      const msg = useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.timestamp === ts)!;
+      return (msg.segments ?? []).filter((s) => s.type === 'text')
+        .map((s) => (s as { content: string }).content).join('');
+    };
+
+    // Conversation A — send, then it becomes the BACKGROUND once B opens.
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+    await act(async () => { await result.current.sendChatMessage('a-msg', []); });
+    const aTs = assistantTs(a);
+
+    // Conversation B — now the foreground.
+    const b = useChatStore.getState().createConversation({ title: 'B' });
+    await act(async () => { await result.current.sendChatMessage('b-msg', []); });
+    const bTs = assistantTs(b);
+
+    // Interleave chunks for both streams while B is foreground. A's chunk must
+    // land on A's message (segments update synchronously), not on the active B.
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), 'alpha');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), 'beta');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), '-A');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), '-B');
+    });
+
+    expect(textOf(a, aTs)).toBe('alpha-A');
+    expect(textOf(b, bTs)).toBe('beta-B');
+
+    // Cancelling the foreground (B) leaves A's stream intact.
+    act(() => { result.current.cancelDirectChat(b); });
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[0]))).toBeGreaterThan(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[1]))).toBe(0);
+
+    act(() => { result.current.cancelDirectChat(a); });
+  });
 });
 
 describe('useDirectApiChat — abort mid-stream', () => {

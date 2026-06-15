@@ -869,7 +869,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         eagerUnlistenRef.current = null;
 
         const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted);
+        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted, conversationId ?? null);
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -924,7 +924,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             if (failedAgent) {
               usePermissionStore.getState().clearRequestsForInstance(failedAgent.instanceId);
             }
-            setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel));
+            setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel), conversationId ?? null);
             setLoading(false);
             setActiveTool(null);
             return;
@@ -940,7 +940,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           if (staleAgent) {
             staleAgent.chatSessionId = null;
           }
-          setMessageError(assistantMessageId, 'Session expired. Please send your message again.');
+          setMessageError(assistantMessageId, 'Session expired. Please send your message again.', conversationId ?? null);
           setLoading(false);
           setActiveTool(null);
           return;
@@ -953,7 +953,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
         stopAcpAgent(conversationId);
         log.error('ai', 'ACP chat error', error);
-        setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel));
+        setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
 
         // Offer an actionable Re-authenticate toast when the provider rejected
         // our token (401 / auth-failed). Tokens in keychain can go stale while
@@ -1009,7 +1009,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     useAgentStatusStore.getState().clearStatus();
 
     // Reset the existing assistant message (clear partial content/segments)
-    resetAssistantMessage(prompt.assistantMessageId);
+    resetAssistantMessage(prompt.assistantMessageId, conversationId ?? null);
     setLoading(true);
     setActiveTool(null);
 
@@ -1131,7 +1131,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       // Set up listeners
       const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, prompt.assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted);
+      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, prompt.assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted, conversationId ?? null);
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -1169,7 +1169,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       }
       stopAcpAgent(conversationId);
       log.error('ai', 'ACP retry failed', error);
-      setMessageError(prompt.assistantMessageId, friendlyAcpError(error, agentLabel));
+      setMessageError(prompt.assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
       setLoading(false);
       setActiveTool(null);
     }

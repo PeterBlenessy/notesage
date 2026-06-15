@@ -49,6 +49,9 @@ interface PendingToolCall {
 /** Maximum tool calls allowed per user turn to prevent runaway loops. */
 const MAX_TOOL_CALLS_PER_TURN = 20;
 
+/** Stream-registry key for a send with no active conversation id (defensive). */
+const NO_CONVERSATION_KEY = '__no_conversation__';
+
 /** Map ChatMessage attachments to the Rust `images` field format for ai_chat_stream. */
 function mapMessagesForRust(messages: ChatMessage[]): Array<Record<string, unknown>> {
   return messages.map(m => {
@@ -75,10 +78,12 @@ export function useDirectApiChat({
 }: DirectApiChatParams) {
   const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
   const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
-  const cleanupRef = useRef<(() => void) | null>(null);
-  // streamId of the in-flight turn, so cancelDirectChat can abort the backend
-  // stream (ai_chat_stream_cancel) — not just tear down frontend listeners.
-  const currentStreamIdRef = useRef<string | null>(null);
+  // In-flight direct-API streams keyed by conversation id, so multiple
+  // conversations can stream concurrently without tearing each other down
+  // (PRD `2026-06-14-command-bar-session-multitasking`, task #3). Each handle
+  // carries its backend `streamId` (so `cancelDirectChat` aborts the right
+  // backend stream via `ai_chat_stream_cancel`) and its listener `cleanup`.
+  const streamsRef = useRef<Map<string, { streamId: string; cleanup: () => void }>>(new Map());
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -107,12 +112,6 @@ export function useDirectApiChat({
 
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: SendChatOpts) => {
-      // Clean up any stale listeners from a previous streaming call
-      if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
-      }
-
       if (!resolved) {
         throw new Error('No AI provider configured. Set up a provider in Settings.');
       }
@@ -138,12 +137,24 @@ export function useDirectApiChat({
       };
       addMessage(userMessage);
 
+      // The conversation this send belongs to — read AFTER `addMessage`, which
+      // CREATES (and activates) a conversation when there was none. Captured once
+      // so every message/segment/activity write targets the OWNING conversation
+      // even after the user switches away mid-stream (task #3). Also the
+      // stream-registry key.
+      const conversationId = useChatStore.getState().activeConversationId ?? null;
+      const convKey = conversationId ?? NO_CONVERSATION_KEY;
+
+      // Tear down only THIS conversation's stale stream (a re-send in the same
+      // chat). Other conversations' in-flight streams are left running.
+      streamsRef.current.get(convKey)?.cleanup();
+
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
       // byte attachments are visible as thumbnails already (intentionally not
       // logged here).
       for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
-        addActivity(userTimestamp, activity);
+        addActivity(userTimestamp, activity, conversationId);
       }
 
       const assistantMessageId = userTimestamp + 1;
@@ -171,17 +182,16 @@ export function useDirectApiChat({
         // concurrent structured/agent stream can't bleed into this message —
         // and stale chunks from a cancelled turn land on a dead channel.
         const streamId = newStreamId();
-        currentStreamIdRef.current = streamId;
 
         let contentDirty = false;
         let thinkingDirty = false;
         flushInterval = setInterval(() => {
           if (thinkingDirty) {
-            updateMessageThinking(assistantMessageId, streamedThinking);
+            updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
             thinkingDirty = false;
           }
           if (contentDirty) {
-            updateMessage(assistantMessageId, streamedContent);
+            updateMessage(assistantMessageId, streamedContent, undefined, conversationId);
             contentDirty = false;
           }
         }, 50);
@@ -270,7 +280,7 @@ export function useDirectApiChat({
                 detail: 'Tool call limit reached',
                 status: 'done',
                 timestamp: Date.now(),
-              });
+              }, conversationId);
               pushSegment(assistantMessageId, {
                 type: 'tool_call',
                 kind: call.name,
@@ -278,7 +288,7 @@ export function useDirectApiChat({
                 detail: 'Tool call limit reached',
                 status: 'error',
                 timestamp: Date.now(),
-              } as ToolCallSegment);
+              } as ToolCallSegment, conversationId);
               toolResultMessages.push({
                 role: 'tool' as const,
                 content: 'Tool call limit reached (20 per turn). Please respond with text.',
@@ -317,7 +327,7 @@ export function useDirectApiChat({
                   status: 'done',
                   timestamp: Date.now(),
                   approvalMode: 'denied',
-                });
+                }, conversationId);
                 pushSegment(assistantMessageId, {
                   type: 'tool_call',
                   kind: call.name,
@@ -325,7 +335,7 @@ export function useDirectApiChat({
                   detail: 'Permission denied',
                   status: 'error',
                   timestamp: Date.now(),
-                } as ToolCallSegment);
+                } as ToolCallSegment, conversationId);
                 toolResultMessages.push({
                   role: 'tool' as const,
                   content: buildToolResultContent({
@@ -362,14 +372,16 @@ export function useDirectApiChat({
               status: 'running',
               timestamp: Date.now(),
               approvalMode,
-            });
+            }, conversationId);
 
-            // Push tool call segment (running)
+            // Push tool call segment (running). Read the segment count from THIS
+            // send's own conversation (not the foreground one) so the index is
+            // correct when a background stream is mid-flight (task #3).
             const toolLabel = formatToolLabel(call.name, call.arguments);
             const toolDetail = Object.keys(call.arguments).length > 0
               ? JSON.stringify(call.arguments, null, 2) : undefined;
             const convForIdx = useChatStore.getState().conversations
-              .find(c => c.id === useChatStore.getState().activeConversationId);
+              .find(c => c.id === (conversationId ?? useChatStore.getState().activeConversationId));
             const msgForIdx = convForIdx?.messages.find(m => m.timestamp === assistantMessageId);
             const toolSegIdx = msgForIdx?.segments?.length ?? 0;
             pushSegment(assistantMessageId, {
@@ -379,7 +391,7 @@ export function useDirectApiChat({
               detail: toolDetail,
               status: 'running',
               timestamp: Date.now(),
-            } as ToolCallSegment);
+            } as ToolCallSegment, conversationId);
 
             const scopeRoots = opts?.sandboxPaths ?? selectProjectPaths(useChatStore.getState());
             const scopeHomeDir = useSettingsStore.getState().homeDir ?? '';
@@ -396,10 +408,10 @@ export function useDirectApiChat({
               status: 'done',
               timestamp: Date.now(),
               approvalMode,
-            });
+            }, conversationId);
 
             // Update tool call segment to done and push tool result segment
-            updateSegment(assistantMessageId, toolSegIdx, { status: result.is_error ? 'error' : 'done' });
+            updateSegment(assistantMessageId, toolSegIdx, { status: result.is_error ? 'error' : 'done' }, conversationId);
             pushSegment(assistantMessageId, {
               type: 'tool_result',
               toolCallId: call.id,
@@ -407,7 +419,7 @@ export function useDirectApiChat({
               error: result.is_error ? result.content : undefined,
               collapsed: true,
               timestamp: Date.now(),
-            });
+            }, conversationId);
 
             toolResultMessages.push({
               role: 'tool' as const,
@@ -470,7 +482,7 @@ export function useDirectApiChat({
             if (cancelled) return;
             streamedContent += event.payload;
             contentDirty = true;
-            appendTextSegment(assistantMessageId, event.payload);
+            appendTextSegment(assistantMessageId, event.payload, conversationId);
           }),
           listen<string>(streamEvent('ai-stream-thinking-chunk', streamId), (event) => {
             if (cancelled) return;
@@ -483,7 +495,7 @@ export function useDirectApiChat({
             thinkingSegmentContent += event.payload;
             if (thinkingSegmentIndex === -1) {
               const conv = useChatStore.getState().conversations
-                .find(c => c.id === useChatStore.getState().activeConversationId);
+                .find(c => c.id === (conversationId ?? useChatStore.getState().activeConversationId));
               const msg = conv?.messages.find(m => m.timestamp === assistantMessageId);
               thinkingSegmentIndex = msg?.segments?.length ?? 0;
               pushSegment(assistantMessageId, {
@@ -491,11 +503,11 @@ export function useDirectApiChat({
                 content: thinkingSegmentContent,
                 collapsed: false,
                 timestamp: Date.now(),
-              });
+              }, conversationId);
             } else {
               updateSegment(assistantMessageId, thinkingSegmentIndex, {
                 content: thinkingSegmentContent,
-              });
+              }, conversationId);
             }
           }),
           listen<{ data: string; mimeType: string }>(streamEvent('ai-stream-image', streamId), (event) => {
@@ -505,7 +517,7 @@ export function useDirectApiChat({
               data: event.payload.data,
               mimeType: event.payload.mimeType,
               timestamp: Date.now(),
-            });
+            }, conversationId);
           }),
           listen<{ tool: string; status: string }>(streamEvent('ai-tool-use', streamId), (event) => {
             if (cancelled) return;
@@ -533,11 +545,12 @@ export function useDirectApiChat({
               log.error('ai', 'Tool call execution failed', err);
               // On error, finalize the message with whatever content we have
               if (streamedContent) {
-                updateMessage(assistantMessageId, streamedContent);
+                updateMessage(assistantMessageId, streamedContent, undefined, conversationId);
               }
               setMessageError(
                 assistantMessageId,
-                friendlyAIError(err, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id)
+                friendlyAIError(err, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id),
+                conversationId,
               );
               setLoading(false);
               setActiveTool(null);
@@ -562,19 +575,22 @@ export function useDirectApiChat({
           unlistenToolCallsDone();
           unlistenDone();
           if (streamedThinking) {
-            updateMessageThinking(assistantMessageId, streamedThinking);
+            updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
           }
           if (collectedCitations.length > 0 || streamedContent) {
-            updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined);
+            updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined, conversationId);
           }
-          finalizeSegments(assistantMessageId);
+          finalizeSegments(assistantMessageId, conversationId);
           setLoading(false);
           setActiveTool(null);
-          cleanupRef.current = null;
-          currentStreamIdRef.current = null;
+          // Drop this conversation's stream from the registry (only if it's still
+          // the one we registered — a re-send may have replaced it).
+          if (streamsRef.current.get(convKey)?.streamId === streamId) {
+            streamsRef.current.delete(convKey);
+          }
         };
 
-        cleanupRef.current = cleanup;
+        streamsRef.current.set(convKey, { streamId, cleanup });
 
         // Build tools array if tool calling is enabled
         let tools: ToolDefinition[] | undefined;
@@ -601,11 +617,11 @@ export function useDirectApiChat({
         });
       } catch (error) {
         clearInterval(flushInterval);
-        if (cleanupRef.current) {
-          cleanupRef.current();
-        }
+        // Tear down this conversation's stream (the cleanup defined above, if it
+        // was registered before the throw).
+        streamsRef.current.get(convKey)?.cleanup();
         log.error('ai', 'Stream error', error);
-        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id));
+        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id), conversationId);
         setLoading(false);
         setActiveTool(null);
       }
@@ -613,18 +629,19 @@ export function useDirectApiChat({
     [resolved, buildComposedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments, effectiveConnection]
   );
 
-  const cancelDirectChat = useCallback(() => {
-    // Abort the backend stream so the provider stops generating (and billing) —
-    // best-effort, before we tear down local listeners. Captured before cleanup
-    // because cleanup clears currentStreamIdRef.
-    const sid = currentStreamIdRef.current;
-    if (sid) {
-      invoke('ai_chat_stream_cancel', { streamId: sid }).catch(() => {
+  const cancelDirectChat = useCallback((convId?: string | null) => {
+    // Cancel the stream for a specific conversation, defaulting to the foreground
+    // one (the user pressing Stop cancels what they're watching). Other
+    // conversations' streams keep running.
+    const targetKey = (convId ?? useChatStore.getState().activeConversationId) ?? NO_CONVERSATION_KEY;
+    const handle = streamsRef.current.get(targetKey);
+    if (handle) {
+      // Abort the backend stream so the provider stops generating (and billing) —
+      // best-effort, before we tear down local listeners.
+      invoke('ai_chat_stream_cancel', { streamId: handle.streamId }).catch(() => {
         // Best-effort: the stream may have already finished server-side.
       });
-    }
-    if (cleanupRef.current) {
-      cleanupRef.current();
+      handle.cleanup();
     }
     setLoading(false);
     setActiveTool(null);

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1, #2 done) |
+| **Status** | In progress (#1, #2, #3 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -30,10 +30,12 @@
 - **Complexity:** L · **Category:** frontend · **Depends on:** #1
 - **Files:** `src/lib/ai/acp-agent-state.ts`, `src/hooks/useAcpLifecycle.ts`, `src/hooks/useAcpSessionListeners.ts`, `src/hooks/useAgentTaskOperations.ts`
 
-### #3 — Per-conversation direct-API stream tracking
+### #3 — Per-conversation direct-API stream tracking ✅
 - **Description:** Track the in-flight `stream_id` per running conversation so multiple direct-API streams run independently, each writing to its own conversation's messages/segments. Cancel targets the right `stream_id`. **Acceptance:** two direct-API conversations stream concurrently without segment cross-contamination (extends the existing `stream_id` suffixed-event isolation).
 - **Complexity:** M · **Category:** frontend · **Depends on:** #1
 - **Files:** `src/hooks/useDirectApiChat.ts`, `src/hooks/useAIOperations.ts`
+  - **Landed:** The root cause was deeper than stream-id tracking — every streaming-write store action funnelled through `updateActiveConv`, so a background stream wrote into whichever chat was foregrounded. Prior-art research (Zed/Claude Code/Codex/Cline) confirmed the fix: **address writes by conversation id; treat `activeConversationId` as a pure view selector.** Added `updateConv(state, convId, updater)` to `chat-store` and an optional trailing `convId` to the ~18 streaming-write actions (defaults to active → byte-identical for single-session). `useDirectApiChat` now tracks in-flight streams in a `Map<convId, {streamId, cleanup}>` (captured AFTER `addMessage`, which creates the conversation), threads `conversationId` to every write, fixes the two `activeConversationId` segment-index lookups, and `cancelDirectChat(convId?)` targets the right stream. **Bonus (closes the matching ACP gap from #2):** `useAcpSessionListeners` + `buildAcpChatCleanup` + the ACP error/retry writes in `useAcpLifecycle` all thread `conversationId` too. Tests: chat-store owner-aware routing + `useDirectApiChat` two-conversation concurrent-stream isolation. Full suite green (5553).
+  - **Deferred to #4:** `setSegmentSessionId` (ACP session-setup write) still targets the active conversation; only reachable once #4 lifts ACP streaming out of the bar. `isLoading`/`activeTool` remain global (per-session status is the session-run-store's job in #4/#5).
 
 ### #4 — Always-mounted session manager (decouple streaming from the bar)
 - **Description:** Move session ownership (streaming listeners + run-state writes) out of `FloatingCommandBar`'s expanded subtree into an always-mounted `useSessionManager` hook mounted at the `App.tsx` root (per the "mount lifecycle hooks in App.tsx" rule). The command bar becomes a pure view that attaches to the foreground conversation. **Acceptance:** starting a send then collapsing/closing the bar (Esc, Settings, switch) leaves the run going; reopening shows it mid-stream with no lost output.
