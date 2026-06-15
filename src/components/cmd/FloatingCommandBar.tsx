@@ -16,6 +16,7 @@ import { ContextPill } from "@/components/chat/ContextPill";
 import { useChatContext } from "@/hooks/useChatContext";
 import { FILE_DRAG_MIME } from "@/components/sidebar/quiet/file-drag";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { useForegroundLoading } from "@/hooks/useSessionManager";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { toast } from "sonner";
@@ -265,7 +266,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // checks, segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Per-conversation loading: the bar reflects the WATCHED conversation's run
+  // state, not the global flag — so switching to an idle chat while another
+  // streams in the background shows the right send/stop affordance (task #4).
+  const isLoading = useForegroundLoading();
 
   // Live-test 2026-04-26 audit gap #10 — input + send must be disabled
   // while either an AgentSwitchCard or a pending-project-switch prompt

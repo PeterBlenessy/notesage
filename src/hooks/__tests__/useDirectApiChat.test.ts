@@ -12,6 +12,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { streamEvent } from '@/lib/ai/stream-events';
+import { useSessionRunStore } from '@/stores/session-run-store';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 
 // The hook generates a unique per-request streamId and emits/listens on
@@ -354,6 +355,36 @@ describe('useDirectApiChat — concurrent streams', () => {
     expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[1]))).toBe(0);
 
     act(() => { result.current.cancelDirectChat(a); });
+  });
+
+  it('writes per-conversation run-state to session-run-store (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    // Stream that completes on demand.
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    // Running while the stream is open, with the direct path recorded.
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('running');
+    expect(useSessionRunStore.getState().runs[a]?.path).toBe('direct');
+    expect(useSessionRunStore.getState().runs[a]?.streamId).toBe(lastStreamId);
+
+    // Completion clears the run.
+    act(() => { emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null); });
+    expect(useSessionRunStore.getState().runs[a]).toBeUndefined();
+  });
+
+  it('marks the run errored when the stream invoke rejects (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    setMockInvokeHandler('ai_chat_stream', async () => { throw new Error('boom'); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('error');
   });
 });
 

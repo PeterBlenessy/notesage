@@ -23,6 +23,7 @@ import {
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
+import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,6 +103,11 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     if (event.payload.instanceId !== deps.instanceId) return;
     // Reset unresponsiveness timer — agent is still alive
     resetUnresponsiveTimer();
+    // Any session activity means the agent is working again — if it had been
+    // blocked on a permission decision, flip the run back to `running` (task #4).
+    // The guard inside `runRunning` makes this a no-op unless that transition
+    // actually applies, so it's cheap to call per event.
+    runRunning(cid);
     // Clear any "unresponsive" banner — agent is alive
     if (useAgentStatusStore.getState().status === 'unresponsive') {
       useAgentStatusStore.getState().clearStatus();
@@ -374,6 +380,10 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       // user is being prompted. (If they later deny, the tool result/error
       // conveys that outcome; the 'user' badge reflects "user had to approve".)
       deps.setLastActivityApprovalMode(deps.assistantMessageId, 'user', cid);
+      // Run is blocked on the user's decision — drives the orb "needs you" pulse
+      // (#13) and the foreground-aware auto-deny timeout (#7). The next session
+      // update flips it back to `running` via `runRunning` above (task #4).
+      runAwaitingPermission(cid, payload.requestId);
 
       const options = Array.isArray(rawOptions)
         ? rawOptions.map((o) => {
@@ -460,5 +470,8 @@ export function buildAcpChatCleanup(
     }
     setLoading(false);
     setActiveTool(null);
+    // Turn ended (completed or cancelled) — clear the run. Error paths in
+    // useAcpLifecycle override this with `runError` afterwards (task #4).
+    runIdle(conversationId);
   };
 }

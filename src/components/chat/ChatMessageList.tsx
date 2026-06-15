@@ -26,6 +26,7 @@ import { AgentStatusBanner } from './AgentStatusBanner';
 import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { getRetryCallback, getKeepWaitingCallback } from '@/hooks/useAcpLifecycle';
+import { useForegroundLoading } from '@/hooks/useSessionManager';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
@@ -56,7 +57,9 @@ interface ChatMessageListProps {
 }
 
 export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit, onPrefill }: ChatMessageListProps) {
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Foreground-conversation loading (task #4) — the list renders the watched
+  // conversation, so it reflects that conversation's run, not the global flag.
+  const isLoading = useForegroundLoading();
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const branchFromMessage = useChatStore((s) => s.branchFromMessage);

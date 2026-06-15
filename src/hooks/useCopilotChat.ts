@@ -12,6 +12,7 @@ import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-per
 import { executeToolCall } from '@/lib/tool-executor';
 import { formatToolLabel } from '@/lib/ai/acp-utils';
 import { friendlyAIError } from '@/lib/ai/errors';
+import { runStarted, runIdle, runError } from '@/lib/ai/session-run';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -345,6 +346,12 @@ export function useCopilotChat({
           : {}),
       });
 
+      // Record this conversation's run so per-conversation foreground loading
+      // works for Copilot LSP chats too (task #4). Captured AFTER addMessage,
+      // which activates a conversation for a fresh chat.
+      const runConvId = useChatStore.getState().activeConversationId ?? null;
+      runStarted(runConvId, 'copilot_lsp');
+
       let flushInterval: ReturnType<typeof setInterval> | undefined;
 
       try {
@@ -464,6 +471,8 @@ export function useCopilotChat({
               setMessageError(assistantMessageId, errorMsg);
             }
             cleanup();
+            // cleanup() cleared the run; if the turn ended in error, override it.
+            if (event.payload.error) runError(runConvId);
           }),
           listen<{ requestId: string; id: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>(
             'copilot-tool-call',
@@ -577,6 +586,7 @@ export function useCopilotChat({
           finalizeSegments(assistantMessageId);
           setLoading(false);
           setActiveTool(null);
+          runIdle(runConvId);
           cleanupRef.current = null;
         };
 
@@ -645,6 +655,7 @@ export function useCopilotChat({
         );
         setLoading(false);
         setActiveTool(null);
+        runError(runConvId);
       }
     },
     [

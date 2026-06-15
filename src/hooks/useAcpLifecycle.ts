@@ -36,6 +36,7 @@ function foregroundAgent() {
 }
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
+import { runStarted, runAttachInstance, runError } from '@/lib/ai/session-run';
 
 /**
  * Re-apply the conversation's remembered ACP permission mode (or, for a fresh
@@ -749,6 +750,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionProvider: effectiveConnection.provider,
       });
 
+      // Conversation that owns this run for session-run-store tracking (task #4).
+      // For a brand-new chat, `conversationId` (captured before addMessage) is
+      // undefined — `addMessage` has now created/activated the conversation.
+      const runConvId = conversationId ?? useChatStore.getState().activeConversationId ?? null;
+      // Mark the run active NOW (before the agent-spawn await below) so the
+      // command bar shows "working" during a cold spawn; the instance id is
+      // attached once `ensureAcpAgent` resolves.
+      runStarted(runConvId, 'acp');
+
       // Sandbox scope: comment-sourced chats stick to the source project (`opts.sandboxPaths`);
       // regular chats use selected projects unless the user opted into cross-project mode.
       // The path filter mirrors the kernel sandbox so denials match what Seatbelt would block.
@@ -805,6 +815,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'send-chat', { conversationId });
         // The registry entry this send owns — non-null right after a successful ensure.
         const agent = getAcpAgent(conversationId)!;
+
+        // Spawn resolved — attach the instance handle to the already-active run.
+        runAttachInstance(runConvId, instanceId);
 
         // Block sending if a project switch is pending user decision
         const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
@@ -927,6 +940,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel), conversationId ?? null);
             setLoading(false);
             setActiveTool(null);
+            runError(runConvId);
             return;
           }
         }
@@ -943,6 +957,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           setMessageError(assistantMessageId, 'Session expired. Please send your message again.', conversationId ?? null);
           setLoading(false);
           setActiveTool(null);
+          runError(runConvId);
           return;
         }
 
@@ -954,6 +969,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         stopAcpAgent(conversationId);
         log.error('ai', 'ACP chat error', error);
         setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
+        runError(runConvId);
 
         // Offer an actionable Re-authenticate toast when the provider rejected
         // our token (401 / auth-failed). Tokens in keychain can go stale while
@@ -1069,6 +1085,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // the old one, so `agent` may be stale; reconnect keeps the same object.
       const liveAgent = getAcpAgent(conversationId)!;
 
+      // Re-mark the run active — the pre-retry cleanup cleared it (task #4).
+      runStarted(conversationId ?? useChatStore.getState().activeConversationId ?? null, 'acp', { instanceId });
+
       const listenerDeps = {
         assistantMessageId: prompt.assistantMessageId,
         conversationId: conversationId ?? null,
@@ -1172,6 +1191,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setMessageError(prompt.assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
       setLoading(false);
       setActiveTool(null);
+      runError(conversationId ?? useChatStore.getState().activeConversationId ?? null);
     }
   }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage]);
 

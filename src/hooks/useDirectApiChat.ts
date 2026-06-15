@@ -18,6 +18,7 @@ import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback'
 import { trimMessagesToBudget, localBundledTrimBudget } from '@/lib/ai/context-trim';
 import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { runStarted, runRunning, runAwaitingPermission, runIdle, runError } from '@/lib/ai/session-run';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,6 +183,10 @@ export function useDirectApiChat({
         // concurrent structured/agent stream can't bleed into this message —
         // and stale chunks from a cancelled turn land on a dead channel.
         const streamId = newStreamId();
+        // Record this conversation's run in the session-run-store so the orb,
+        // history badges, and per-conversation foreground loading can read it
+        // independently of the command-bar view (task #4).
+        runStarted(conversationId, 'direct', { streamId });
 
         let contentDirty = false;
         let thinkingDirty = false;
@@ -308,6 +313,7 @@ export function useDirectApiChat({
             if (tier === 'none') {
               // Show permission card and wait for user decision
               log.info('ai', `Requesting permission for tool: ${call.name}`);
+              runAwaitingPermission(conversationId, call.id);
               const decision = await new Promise<ToolCallDecision>((resolve) => {
                 useToolPermissionStore.getState().setPending({
                   id: call.id,
@@ -317,6 +323,8 @@ export function useDirectApiChat({
                 });
               });
               useToolPermissionStore.getState().setPending(null);
+              // Decision in (allow or deny) — the turn resumes streaming either way.
+              runRunning(conversationId);
 
               if (decision === 'deny') {
                 log.info('ai', `Tool call denied by user: ${call.name}`);
@@ -554,6 +562,7 @@ export function useDirectApiChat({
               );
               setLoading(false);
               setActiveTool(null);
+              runError(conversationId);
             });
           }),
           listen(streamEvent('ai-stream-done', streamId), () => {
@@ -583,6 +592,8 @@ export function useDirectApiChat({
           finalizeSegments(assistantMessageId, conversationId);
           setLoading(false);
           setActiveTool(null);
+          // Run reached a clean end (completed or cancelled) — clear its run state.
+          runIdle(conversationId);
           // Drop this conversation's stream from the registry (only if it's still
           // the one we registered — a re-send may have replaced it).
           if (streamsRef.current.get(convKey)?.streamId === streamId) {
@@ -624,6 +635,7 @@ export function useDirectApiChat({
         setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id), conversationId);
         setLoading(false);
         setActiveTool(null);
+        runError(conversationId);
       }
     },
     [resolved, buildComposedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments, effectiveConnection]
