@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.47.0-alpha.1",
+      "date": "2026-06-15",
+      "previousVersion": "0.46.0-alpha.30",
+      "sections": {
+        "fixes": [
+          "fix(cmd-bar): sort skill list + preserve input draft on close (#466)"
+        ]
+      },
+      "underTheHood": [
+        "fix(cmd-bar): sort the skill list and preserve the input draft on close (#466)"
+      ]
+    },
+    {
       "version": "0.46.0",
       "date": "2026-06-14",
       "previousVersion": "0.45.0",
