@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
-import { stopAcpAgent } from '@/hooks/useAIOperations';
+import { stopAllAcpAgents } from '@/hooks/useAIOperations';
 import { probeAcpCapabilities, isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -281,7 +281,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const handleDisconnect = useCallback(
     (connection: Connection) => {
       if (connection.authMethod === 'agent_managed') {
-        stopAcpAgent();
+        // Removing a connection invalidates every per-conversation agent that
+        // used it — stop the whole registry (task #2). They respawn on next send.
+        stopAllAcpAgents();
       }
       clearRoutingForConnection(connection.id);
       removeConnection(connection.id);

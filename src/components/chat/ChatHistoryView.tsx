@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { getThread, getThreadResilient, getLeaves } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
-import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 
 /**
@@ -20,8 +20,12 @@ import { hasSessionCapability } from '@/lib/ai/acp-utils';
  * (the shared `acpSessionId` plus any per-branch sessions from `session/fork`) so
  * the agent can release resources. Errors are swallowed — the conversation is being
  * deleted regardless. Skipped when the agent doesn't advertise `session.close`.
+ *
+ * Resolves the agent from the registry by the conversation's own id (task #2) —
+ * each conversation owns a distinct ACP agent.
  */
 function closeAgentSessionsAndDelete(conv: Conversation): void {
+  const acpAgent = getAcpAgent(conv.id);
   if (!acpAgent || !hasSessionCapability(acpAgent.capabilities, 'close')) return;
   const instanceId = acpAgent.instanceId;
   const sessionIds = new Set<string>();

@@ -40,7 +40,10 @@ vi.mock('@/hooks/useAcpSessionListeners', () => ({
 
 vi.mock('@/lib/ai/acp-agent-state', () => ({
   acpAgent: null,
+  getAcpAgent: vi.fn(() => null),
+  getAllAcpAgents: vi.fn(() => []),
   stopAcpAgent: vi.fn(),
+  stopAllAcpAgents: vi.fn(),
   ensureAcpAgent: vi.fn().mockResolvedValue('test-instance-id'),
   updateAcpAgentInstanceId: vi.fn(),
   clearAcpAgent: vi.fn(),
@@ -55,6 +58,18 @@ import type { Connection } from '@/lib/ai/connections';
 
 // Get mutable reference to the mocked module
 import * as acpAgentState from '@/lib/ai/acp-agent-state';
+
+/**
+ * Configure the per-conversation ACP registry mock to behave as if a single
+ * agent is registered (or none, when `agent` is null) — `getAcpAgent` returns it
+ * for any conversation key and `getAllAcpAgents` reports the live set. Replaces
+ * the old `acpAgentState.acpAgent = …` singleton poke now that the hook reads the
+ * registry accessors (task #2).
+ */
+function setMockAgent(agent: acpAgentState.AcpAgentState | null): void {
+  vi.mocked(acpAgentState.getAcpAgent).mockReturnValue(agent);
+  vi.mocked(acpAgentState.getAllAcpAgents).mockReturnValue(agent ? [agent] : []);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,8 +104,8 @@ describe('useAcpLifecycle', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    // Reset the mocked acpAgent state
-    (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = null;
+    // Reset the mocked ACP registry state
+    setMockAgent(null);
     // Reset stores so workspace/chat/permission state doesn't leak between tests
     useWorkspaceStore.setState({ projects: [], explorerFolders: [] } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
     useChatStore.setState({ isLoading: false });
@@ -102,13 +117,13 @@ describe('useAcpLifecycle', () => {
   describe('acpCancelChat — cancel escalation listener leak', () => {
     it('should not leak event listener when 5s escalation timeout fires before listen resolves', async () => {
       // Set up acpAgent with an active session so the cancel path is entered
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'test-instance-id',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
         configKey: '',
         chatSessionId: 'session-123',
-      };
+      });
 
       const connection = makeConnection();
 
@@ -153,13 +168,13 @@ describe('useAcpLifecycle', () => {
         explorerFolders: [],
       } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
 
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'inst-workspace-29',
         connectionId: 'conn-test',
         sandboxScopeKey: '/work/projA',
         configKey: '',
         chatSessionId: 'sess-active-29',
-      };
+      });
 
       // Simulate a pending permission card for this instance.
       usePermissionStore.getState().addRequest({
@@ -220,8 +235,8 @@ describe('useAcpLifecycle', () => {
         expect.objectContaining({ id: 'acp-workspace-context-reset' }),
       );
 
-      // Agent is then torn down.
-      expect(acpAgentState.stopAcpAgent).toHaveBeenCalled();
+      // Every agent is then torn down (the registry, not a single singleton).
+      expect(acpAgentState.stopAllAcpAgents).toHaveBeenCalled();
 
       // Chat loading flag cleared so the UI exits the streaming state.
       expect(useChatStore.getState().isLoading).toBe(false);
@@ -233,13 +248,13 @@ describe('useAcpLifecycle', () => {
         explorerFolders: [],
       } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
 
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'inst-workspace-idle',
         connectionId: 'conn-test',
         sandboxScopeKey: '/work/projA',
         configKey: '',
         chatSessionId: 'sess-idle',
-      };
+      });
 
       // No pending permissions, chat not loading.
       act(() => { useChatStore.getState().setLoading(false); });
@@ -263,23 +278,23 @@ describe('useAcpLifecycle', () => {
         } as Partial<ReturnType<typeof useWorkspaceStore.getState>>);
       });
 
-      // No cancel, no deny, no toast — only stopAcpAgent ran.
+      // No cancel, no deny, no toast — only the agent teardown ran.
       const cancelCalls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'acp_session_cancel');
       const denyCalls = invokeMock.mock.calls.filter(([cmd]) => cmd === 'acp_permission_respond');
       expect(cancelCalls).toHaveLength(0);
       expect(denyCalls).toHaveLength(0);
       expect(toast.info).not.toHaveBeenCalled();
-      expect(acpAgentState.stopAcpAgent).toHaveBeenCalled();
+      expect(acpAgentState.stopAllAcpAgents).toHaveBeenCalled();
     });
 
     it('should clean up listener when cancel confirmation arrives before 5s timeout', async () => {
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'test-instance-id',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
         configKey: '',
         chatSessionId: 'session-123',
-      };
+      });
 
       const connection = makeConnection();
 
@@ -338,13 +353,13 @@ describe('useAcpLifecycle', () => {
       useChatStore.getState().clearMessages();
 
       // Attach an already-initialized acpAgent so the hook reuses the session.
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'inst-attach-test',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
         configKey: '',
         chatSessionId: null, // forces session_new path
-      };
+      });
 
       const connection = makeConnection();
       const { result } = renderHook(() =>
@@ -403,13 +418,13 @@ describe('useAcpLifecycle', () => {
 
       useChatStore.getState().clearMessages();
 
-      (acpAgentState as { acpAgent: typeof acpAgentState.acpAgent }).acpAgent = {
+      setMockAgent({
         instanceId: 'inst-attach-empty',
         connectionId: 'conn-test',
         sandboxScopeKey: '',
         configKey: '',
         chatSessionId: null,
-      };
+      });
 
       const connection = makeConnection();
       const { result } = renderHook(() =>

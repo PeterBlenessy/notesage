@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1 done) |
+| **Status** | In progress (#1, #2 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -24,8 +24,9 @@
 - **Complexity:** M · **Category:** frontend · **Depends on:** —
 - **Files:** `src/stores/session-run-store.ts` (new), `src/lib/ai/types.ts`
 
-### #2 — ACP agent registry (singleton → per-conversation map)
+### #2 — ACP agent registry (singleton → per-conversation map) ✅
 - **Description:** Convert the module-level `acpAgent` singleton to a `Map<conversationId, AcpAgentState>`. Make the in-flight spawn-promise guard, scope-respawn, and liveness check (`acp_agent_exists`) **per-key**. Thread `conversationId` through `ensureAcpAgent` and the `useAcpLifecycle` / `useAcpSessionListeners` call paths; route inbound `acp-session-update` events to the owning conversation by session id. Generalize the proven `taskAgent` pattern (`useAgentTaskOperations`) into the same registry. **Acceptance:** two distinct conversations each spawn and keep a distinct `instance_id` with no cross-wiring of session updates; existing single-session + comment-delegation behavior unchanged. **High blast radius.**
+  - **Landed:** registry + per-key guard/respawn/liveness in `acp-agent-state.ts`; `conversationId` threaded through `useAcpLifecycle` and every consumer (`AcpSessionControls`, `ChatHistoryView`, `ChatMessageList`). Fixed a tool-call segment **cross-wiring bug** in `useAcpSessionListeners.ts` (it indexed segments against `activeConversationId` instead of the listener's own conversation). Folded the `taskAgent` singleton into the registry under a reserved `TASK_AGENT_KEY` with `role: 'task'` (added a `role` option to `ensureAcpAgent`); `useAgentTaskOperations` now reads its agent from the shared registry. Tests: registry `role`/`TASK_AGENT_KEY` coverage added; isolation fixes in `useAcpLifecycle.custom-agent.test.ts` (full registry reset) and `CommandBarContext.test.tsx` (mock `getAcpAgent`). Full suite green (5549).
 - **Complexity:** L · **Category:** frontend · **Depends on:** #1
 - **Files:** `src/lib/ai/acp-agent-state.ts`, `src/hooks/useAcpLifecycle.ts`, `src/hooks/useAcpSessionListeners.ts`, `src/hooks/useAgentTaskOperations.ts`
 

@@ -7,7 +7,7 @@ import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
-import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -202,6 +202,8 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     const branchPoint = conv?.messages.find((m) => m.timestamp === timestamp);
     const isLeafBranch = !!(conv && branchPoint?.id && branchPoint.id === conv.activeLeafId);
 
+    // The active conversation's ACP agent (registry keyed by conversation id, task #2).
+    const acpAgent = getAcpAgent(state.activeConversationId ?? undefined);
     let forkedSessionId: string | undefined;
     if (isLeafBranch && acpAgent?.capabilities && hasSessionCapability(acpAgent.capabilities, 'fork')) {
       const currentSessionId = conv ? getSessionIdForLeaf(conv, conv.activeLeafId) : undefined;

@@ -16,7 +16,7 @@ import { track, providerKind, type AiPath } from '@/lib/telemetry';
 import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
-export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
+export { stopAcpAgent, stopAllAcpAgents } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 export { ProjectLockViolation };
 

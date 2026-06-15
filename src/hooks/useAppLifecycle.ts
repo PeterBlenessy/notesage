@@ -15,7 +15,7 @@ import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-pa
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
-import { stopAcpAgent } from "@/hooks/useAIOperations";
+import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { track, coarseOs } from "@/lib/telemetry";
@@ -113,7 +113,7 @@ export function useAppLifecycle() {
   // --- Stop ACP agent processes on window close ---
   useEffect(() => {
     const handleBeforeUnload = () => {
-      stopAcpAgent();
+      stopAllAcpAgents();
       stopTaskAgent();
       tauriApi.stopLocalServer().catch(() => {}); // Expected: best-effort cleanup on window close
     };

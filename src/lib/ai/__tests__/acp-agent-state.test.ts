@@ -147,20 +147,10 @@ describe('ensureAcpAgent', () => {
     const mod = await import('../acp-agent-state');
     mod.clearAcpAgent();
 
-    // After the fix, ensureAcpAgent accepts an optional depth parameter.
+    // ensureAcpAgent carries its recursion depth in the trailing opts bag.
     // Calling with depth > MAX_RETRIES (3) should throw immediately.
-    // Before the fix, this parameter doesn't exist and the function signature
-    // only accepts 3 args, so this test will fail.
-    const ensureFn = mod.ensureAcpAgent as (
-      conn: Connection,
-      cwd: string,
-      sandboxPaths?: string[],
-      callerTag?: string,
-      depth?: number,
-    ) => Promise<string>;
-
     await expect(
-      ensureFn(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'test', 4),
+      mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'test', { depth: 4 }),
     ).rejects.toThrow('Agent spawn failed after multiple retries');
   });
 
@@ -174,15 +164,7 @@ describe('ensureAcpAgent', () => {
     mod.clearAcpAgent();
 
     // Calling with depth=0 (default) should work fine
-    const ensureFn = mod.ensureAcpAgent as (
-      conn: Connection,
-      cwd: string,
-      sandboxPaths?: string[],
-      callerTag?: string,
-      depth?: number,
-    ) => Promise<string>;
-
-    const result = await ensureFn(makeConnection(), '/tmp', undefined, 'test', 0);
+    const result = await mod.ensureAcpAgent(makeConnection(), '/tmp', undefined, 'test', { depth: 0 });
     expect(result).toBe('inst-ok');
   });
 
@@ -479,6 +461,209 @@ describe('ensureAcpAgent', () => {
 
     mod.updateAcpAgentInstanceId('new-id');
     expect(mod.acpAgent!.instanceId).toBe('new-id');
+  });
+});
+
+describe('ACP agent registry (per-conversation, task #2)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('two distinct conversations each spawn and keep a distinct instance_id', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    const connA = makeConnection({ id: 'conn-a' });
+    const connB = makeConnection({ id: 'conn-b' });
+
+    const idA = await mod.ensureAcpAgent(connA, '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    const idB = await mod.ensureAcpAgent(connB, '/tmp', undefined, 'send', { conversationId: 'conv-B' });
+
+    // Distinct processes — no cross-wiring.
+    expect(idA).toBe('inst-1');
+    expect(idB).toBe('inst-2');
+    expect(spawnCount).toBe(2);
+    expect(mod.getAcpAgent('conv-A')!.instanceId).toBe('inst-1');
+    expect(mod.getAcpAgent('conv-B')!.instanceId).toBe('inst-2');
+    expect(mod.getAcpAgent('conv-A')!.connectionId).toBe('conn-a');
+    expect(mod.getAcpAgent('conv-B')!.connectionId).toBe('conn-b');
+  });
+
+  it('reuses the per-conversation entry on a second send (one spawn per key)', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    const conn = makeConnection({ id: 'conn-a' });
+
+    const first = await mod.ensureAcpAgent(conn, '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    const second = await mod.ensureAcpAgent(conn, '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+
+    expect(first).toBe('inst-1');
+    expect(second).toBe('inst-1');
+    expect(spawnCount).toBe(1);
+  });
+
+  it('the per-key spawn guard collapses concurrent sends for the same conversation', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', async () => {
+      spawnCount++;
+      // Yield so both callers reach the in-flight guard before this resolves.
+      await Promise.resolve();
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    const conn = makeConnection({ id: 'conn-a' });
+
+    const [a, b] = await Promise.all([
+      mod.ensureAcpAgent(conn, '/tmp', undefined, 'send', { conversationId: 'conv-A' }),
+      mod.ensureAcpAgent(conn, '/tmp', undefined, 'send', { conversationId: 'conv-A' }),
+    ]);
+
+    expect(a).toBe('inst-1');
+    expect(b).toBe('inst-1');
+    expect(spawnCount).toBe(1);
+  });
+
+  it('respawn for one conversation does not disturb another', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-a' }), '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'send', { conversationId: 'conv-B' });
+
+    // conv-B switches its connection → respawns only conv-B.
+    const reB = await mod.ensureAcpAgent(makeConnection({ id: 'conn-c' }), '/tmp', undefined, 'send', { conversationId: 'conv-B' });
+
+    expect(reB).toBe('inst-3');
+    expect(mod.getAcpAgent('conv-A')!.instanceId).toBe('inst-1'); // untouched
+    expect(mod.getAcpAgent('conv-B')!.instanceId).toBe('inst-3');
+  });
+
+  it('stopAcpAgent(conversationId) clears only that conversation', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-a' }), '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'send', { conversationId: 'conv-B' });
+
+    mod.stopAcpAgent('conv-A');
+
+    expect(mod.getAcpAgent('conv-A')).toBeNull();
+    expect(mod.getAcpAgent('conv-B')!.instanceId).toBe('inst-2');
+  });
+
+  it('stopAllAcpAgents tears down every registry entry', async () => {
+    setupDefaultHandlers();
+    let stops = 0;
+    setMockInvokeHandler('acp_agent_stop', () => {
+      stops++;
+      return undefined;
+    });
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-a' }), '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'send', { conversationId: 'conv-B' });
+    expect(mod.getAllAcpAgents()).toHaveLength(2);
+
+    mod.stopAllAcpAgents();
+
+    expect(stops).toBe(2);
+    expect(mod.getAllAcpAgents()).toHaveLength(0);
+    expect(mod.getAcpAgent('conv-A')).toBeNull();
+    expect(mod.getAcpAgent('conv-B')).toBeNull();
+  });
+
+  it('the default key mirrors the exported acpAgent binding (back-compat)', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-default' }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    // No conversationId → default key → mirrors `acpAgent`.
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-a' }), '/tmp');
+    expect(mod.acpAgent!.instanceId).toBe('inst-default');
+    expect(mod.getAcpAgent()).toBe(mod.acpAgent);
+
+    // A keyed conversation does NOT touch the default mirror.
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-keyed' }));
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'send', { conversationId: 'conv-X' });
+    expect(mod.acpAgent!.instanceId).toBe('inst-default');
+    expect(mod.getAcpAgent('conv-X')!.instanceId).toBe('inst-keyed');
+  });
+
+  it('spawns with role "interactive" by default and forwards an explicit role', async () => {
+    setupDefaultHandlers();
+    const roles: string[] = [];
+    setMockInvokeHandler('acp_agent_spawn', (args) => {
+      roles.push(String((args as { role?: string })?.role));
+      return { instance_id: `inst-${roles.length}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    // Default — chat agent.
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-a' }), '/tmp', undefined, 'send', { conversationId: 'conv-A' });
+    // Explicit task role — background delegation agent.
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'task', { conversationId: 'conv-B', role: 'task' });
+
+    expect(roles).toEqual(['interactive', 'task']);
+  });
+
+  it('the delegation agent (TASK_AGENT_KEY) is a registry entry, visible to getAllAcpAgents and not the default mirror', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await mod.ensureAcpAgent(makeConnection({ id: 'conn-task' }), '/project', ['/project'], 'task', {
+      conversationId: mod.TASK_AGENT_KEY,
+      role: 'task',
+    });
+
+    // Folded into the shared registry — reachable by its reserved key and listed
+    // for teardown, without populating the foreground `acpAgent` mirror.
+    expect(mod.getAcpAgent(mod.TASK_AGENT_KEY)!.connectionId).toBe('conn-task');
+    expect(mod.getAllAcpAgents()).toHaveLength(1);
+    expect(mod.acpAgent).toBeNull();
+
+    // stopAcpAgent on the reserved key clears only the delegation entry.
+    mod.stopAcpAgent(mod.TASK_AGENT_KEY);
+    expect(mod.getAcpAgent(mod.TASK_AGENT_KEY)).toBeNull();
+    expect(mod.getAllAcpAgents()).toHaveLength(0);
   });
 });
 

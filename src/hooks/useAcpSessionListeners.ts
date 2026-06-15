@@ -176,8 +176,15 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       // Segment: push tool call with descriptive label
       const parsedArgs = parseRawInput(update.rawInput);
       const segmentLabel = formatToolLabel(update.kind || 'unknown', parsedArgs, update.title);
+      // Locate the message in THIS listener's own conversation, not the foreground
+      // one. Under concurrent sessions (task #2) a background agent's tool_call must
+      // compute its pending-segment index against its own conversation; reading
+      // `activeConversationId` here would index into whichever chat the user is
+      // currently watching and cross-wire the segment. Fall back to the active
+      // conversation only when this listener has no bound id (legacy callers).
+      const ownerConvId = deps.conversationId ?? useChatStore.getState().activeConversationId;
       const conv = useChatStore.getState().conversations
-        .find(c => c.id === useChatStore.getState().activeConversationId);
+        .find(c => c.id === ownerConvId);
       const msg = conv?.messages.find(m => m.timestamp === deps.assistantMessageId);
       pendingToolCallIndices.push(msg?.segments?.length ?? 0);
       deps.pushSegment(deps.assistantMessageId, {

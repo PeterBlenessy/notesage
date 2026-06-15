@@ -71,7 +71,7 @@ vi.mock('@/lib/ai/acp-session-restore', () => ({
 // ---------------------------------------------------------------------------
 
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
-import { clearAcpAgent, registerCustomAcpConnection, resolveAgentLaunch } from '@/lib/ai/acp-agent-state';
+import { stopAllAcpAgents, registerCustomAcpConnection, resolveAgentLaunch } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,11 +164,11 @@ describe('custom_acp — spawn wiring', () => {
   beforeEach(() => {
     installBaselineHandlers();
     resetStores();
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   afterEach(() => {
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   it('chat send spawns with config.binaryPath as binary, config.binaryArgs as args, credentials.envVars as env', async () => {
@@ -268,11 +268,11 @@ describe('custom_acp — registration probe', () => {
   beforeEach(() => {
     installBaselineHandlers();
     resetStores();
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   afterEach(() => {
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   it('probe failure → rejection includes stderr tail AND no connection is persisted', async () => {
@@ -354,11 +354,11 @@ describe('custom_acp — managed-provider lookups degrade safely', () => {
   beforeEach(() => {
     installBaselineHandlers();
     resetStores();
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   afterEach(() => {
-    clearAcpAgent();
+    stopAllAcpAgents();
   });
 
   it('network sandbox on → built-in domain allowlist is EMPTY (no provider match)', async () => {

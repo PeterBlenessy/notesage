@@ -102,6 +102,19 @@ vi.mock('@/lib/ai/acp-agent-state', async () => {
           }
         : null;
     },
+    // After the per-conversation registry migration (task #2) the mode picker
+    // resolves its agent via `getAcpAgent(activeConversationId)` instead of the
+    // `acpAgent` binding. Mirror the same controllable mock value here (the key
+    // arg is irrelevant in-test — there is only one mock agent).
+    getAcpAgent: () =>
+      mockAcpAgent.instanceId
+        ? {
+            instanceId: mockAcpAgent.instanceId,
+            connectionId: mockAcpAgent.connectionId!,
+            chatSessionId: mockAcpAgent.chatSessionId,
+            sandboxScopeKey: '',
+          }
+        : null,
     getSessionInfo: () => mockSessionInfo,
     subscribeSessionInfo: (fn: () => void) => {
       sessionInfoListeners.add(fn);
