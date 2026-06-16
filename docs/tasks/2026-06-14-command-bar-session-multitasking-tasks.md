@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1–#15 done; #16 remaining) |
+| **Status** | ✅ Complete — all 16 tasks done |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -136,7 +136,8 @@
 
 ## Integration tests
 
-### #16 — Cross-cutting integration tests
+### #16 — Cross-cutting integration tests ✅
 - **Description:** Beyond each task's unit tests, add integration coverage for: session-survives-close (#4), concurrency + queue auto-start (#5), ACP registry isolation / no cross-wiring (#2), concurrent direct-API streams (#3), permission routing + foreground-aware timeout (#6/#7), orb running-and-unwatched set (#12), and inline history approval (#10). **Acceptance:** full `pnpm test` + `pnpm test:e2e` green; no coverage regression on changed files; `pnpm test:perf` within budget.
 - **Complexity:** L · **Category:** frontend · **Depends on:** all
 - **Files:** `src/**/__tests__/`, `e2e/tests/`
+  - **Landed:** Each scenario carries its own focused unit/integration test (added per task above). Added `src/hooks/__tests__/session-multitasking.integration.test.ts` — a single cross-cutting flow through the always-mounted `useSessionManager` + `session-run-store` + queue primitives that asserts the engine pieces **compose**: two concurrent runs (#3) → orb unwatched set excludes the foreground (#12) → a 3rd send queues at the cap (#5) → background permission notifies + the foreground does not (#15) → a completion frees a slot and auto-starts the queued send (#5) → switching foreground moves a session in/out of the orb set (#11). **Gates (all green):** `pnpm typecheck`; `pnpm test` 5610; `pnpm test:perf` 45 at the CI `PERF_BUDGET_MULTIPLIER=1.5`; `pnpm coverage:check` 0 regressions; `pnpm test:e2e` 160 (Playwright).

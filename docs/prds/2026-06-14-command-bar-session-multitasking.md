@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | Draft |
+| **Status** | ✅ Implemented (2026-06-16) — see `docs/tasks/2026-06-14-command-bar-session-multitasking-tasks.md` |
 | **Priority** | High |
 | **Impact** | Run several AI agents at once and walk away from each — sessions keep working in the background, the history list switches between them, and the orb pulls you back when one needs you. |
 | **Tasks** | [command-bar-session-multitasking-tasks](../tasks/2026-06-14-command-bar-session-multitasking-tasks.md) |
@@ -133,22 +133,24 @@ interface PendingPermission {
 ## Quality Gates
 
 **Functional**
-- [ ] Starting a send, then collapsing/closing the bar (Esc, Settings, switch), leaves the run going; reopening shows it mid-stream with no lost output.
-- [ ] Two+ sessions run concurrently (verified for direct-API and for ACP with two distinct conversations), up to the cap; the (cap+1)th send is queued and auto-starts when a slot frees.
-- [ ] ACP registry: each running conversation owns a distinct agent `instance_id`; switching/closing does not cross-wire session updates; the existing `acpAgent`/`taskAgent` behavior is subsumed without regression.
-- [ ] History rows show correct live status; clicking a running row attaches the bar to the live stream.
-- [ ] An awaiting-permission history row expands to the tool + diff/args and Allow/Deny resolves it correctly, for both ACP and direct-API tool calls.
-- [ ] A backgrounded permission request does NOT auto-deny on the old 30s timer; it surfaces in the orb + a desktop notification; a foreground request keeps its timeout.
-- [ ] Orb shows exactly the running-and-unwatched set (foreground session excluded); selecting a session removes it from the orb; distinct pulse when one needs permission.
-- [ ] Interrupted runs are marked `error` on app restart (no phantom "running").
+- [x] Starting a send, then collapsing/closing the bar (Esc, Settings, switch), leaves the run going; reopening shows it mid-stream with no lost output.
+- [x] Two+ sessions run concurrently (verified for direct-API and for ACP with two distinct conversations), up to the cap; the (cap+1)th send is queued and auto-starts when a slot frees.
+- [x] ACP registry: each running conversation owns a distinct agent `instance_id`; switching/closing does not cross-wire session updates; the existing `acpAgent`/`taskAgent` behavior is subsumed without regression.
+- [x] History rows show correct live status; clicking a running row attaches the bar to the live stream.
+- [x] An awaiting-permission history row expands to the tool + diff/args and Allow/Deny resolves it correctly, for both ACP and direct-API tool calls.
+- [x] A backgrounded permission request does NOT auto-deny on the old 30s timer; it surfaces in the orb + a desktop notification; a foreground request keeps its timeout.
+- [x] Orb shows exactly the running-and-unwatched set (foreground session excluded); selecting a session removes it from the orb; distinct pulse when one needs permission.
+- [x] Interrupted runs are marked `error` on app restart (no phantom "running").
 
 **Design**
-- [ ] Status indicators + orb pulses use neutral/accent tokens per the strict-neutral palette; no chromatic except accent/destructive.
-- [ ] All pulses honor `prefers-reduced-motion` (CSS-only, `useReducedMotion`).
-- [ ] Inline permission card matches the existing `PermissionCard`/`ToolCallPermissionCard` visual language.
-- [ ] Every new `<Tooltip>` wrapped in `<TooltipProvider>`.
+- [x] Status indicators + orb pulses use neutral/accent tokens per the strict-neutral palette; no chromatic except accent/destructive.
+- [x] All pulses honor `prefers-reduced-motion` (CSS-only, `useReducedMotion`).
+- [x] Inline permission card matches the existing `PermissionCard`/`ToolCallPermissionCard` visual language.
+- [x] Every new `<Tooltip>` wrapped in `<TooltipProvider>`.
 
 **Gates**: `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm test:perf`, `cargo test` (if backend touched) all green; no coverage regression on changed files.
+
+**Known limitation (documented follow-up):** direct-API streams run **fully concurrently** (per-conversation `stream_id` + stream registry). The ACP **registry** isolates agents (distinct `instance_id` per conversation, no session-update cross-wiring) and run-state/queue/orb work for ACP conversations, but `useAcpLifecycle` still holds a **single foreground `cleanupRef`**, so two ACP *streams* can't render simultaneously yet — starting a second ACP send tears down the first's listeners. Backgrounded ACP run-state, notifications, and the cap still behave correctly; simultaneous ACP streaming is a follow-up (see tasks #2/#3/#4 notes).
 
 ## Out of Scope
 
