@@ -657,7 +657,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    * Send a chat message via ACP agent (multi-turn with permission handling).
    */
   const acpSendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[]; conversationId?: string }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -668,6 +668,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       setLoading(true);
       setError(null);
+
+      // When routing to a specific conversation (queued send), derive project paths
+      // from that conversation to avoid stale closure reads across await boundaries.
+      const targetConvId = opts?.conversationId;
+      const effectiveProjectPaths = targetConvId
+        ? (useChatStore.getState().conversations.find((c) => c.id === targetConvId)?.projectPaths ?? selectedProjectPaths)
+        : selectedProjectPaths;
 
       const userTimestamp = Date.now();
       // Stamp the target connection on the user message so later resend/edit
@@ -684,7 +691,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
         connectionId: effectiveConnection.id,
       };
-      addMessage(userMessage);
+      addMessage(userMessage, targetConvId);
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
       // byte attachments are visible as thumbnails already (intentionally not
@@ -700,13 +707,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionId: effectiveConnection.id,
         connectionLabel: effectiveConnection.label,
         connectionProvider: effectiveConnection.provider,
-      });
+      }, targetConvId);
 
       // Sandbox scope: comment-sourced chats stick to the source project (`opts.sandboxPaths`);
       // regular chats use selected projects unless the user opted into cross-project mode.
       // The path filter mirrors the kernel sandbox so denials match what Seatbelt would block.
       const sandboxScope = opts?.sandboxPaths ?? getChatSandboxScope(
-        { projectPaths: selectedProjectPaths },
+        { projectPaths: effectiveProjectPaths },
         effectiveConnection,
         useSettingsStore.getState().crossProjectMode,
       );
@@ -715,7 +722,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Active project for scoped auto-allow lookup (#6b). Use the first selected
       // project — multi-select edge cases (where the tool acts on a file in one of
       // several roots) are an open question; first-selected is a reasonable default.
-      const activeProjectRoot = selectedProjectPaths[0] ?? null;
+      const activeProjectRoot = effectiveProjectPaths[0] ?? null;
 
       const listenerDeps = {
         assistantMessageId,
@@ -752,8 +759,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       };
 
       try {
-        const cwd = selectedProjectPaths[0] || '/tmp';
-        log.info('ai', `[send-chat] selectedProjectPaths=[${selectedProjectPaths.join('|')}] sandboxScope=[${sandboxScope.join('|')}] optsSandboxPaths=${opts?.sandboxPaths ? `[${opts.sandboxPaths.join('|')}]` : 'undef'}`);
+        const cwd = effectiveProjectPaths[0] || '/tmp';
+        log.info('ai', `[send-chat] effectiveProjectPaths=[${effectiveProjectPaths.join('|')}] sandboxScope=[${sandboxScope.join('|')}] optsSandboxPaths=${opts?.sandboxPaths ? `[${opts.sandboxPaths.join('|')}]` : 'undef'}`);
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'send-chat');
 
         // Block sending if a project switch is pending user decision
@@ -779,7 +786,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const session = await invoke<AcpSessionResult>('acp_session_new', {
             instanceId,
             workingDirectory: cwd,
-            mcpServers: buildAcpMcpServerInputs(acpAgent!.capabilities, selectedProjectPaths),
+            mcpServers: buildAcpMcpServerInputs(acpAgent!.capabilities, effectiveProjectPaths),
           });
           acpAgent!.chatSessionId = session.session_id;
           isNewSession = true;

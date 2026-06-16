@@ -31,13 +31,19 @@ interface DirectApiChatParams {
   localSystemMessage: string;
 }
 
-interface SendChatOpts {
+export interface SendChatOpts {
   displayContent?: string;
   skillName?: string;
   attachedFilePaths?: string[];
   sandboxPaths?: string[];
   parentId?: string | null;
   attachments?: ImageAttachment[];
+  /**
+   * When provided, routes messages and context derivation to this conversation
+   * instead of the active one. Used by queued sends so a draining send targets
+   * the correct conversation even if the user has navigated elsewhere (issue #468).
+   */
+  conversationId?: string;
 }
 
 interface PendingToolCall {
@@ -120,6 +126,14 @@ export function useDirectApiChat({
       setLoading(true);
       setError(null);
 
+      // When a conversationId is passed (queued send — issue #468), derive project
+      // paths from that conversation instead of the active one to prevent stale
+      // closure reads across await boundaries.
+      const targetConvId = opts?.conversationId;
+      const effectiveProjectPaths = targetConvId
+        ? (useChatStore.getState().conversations.find((c) => c.id === targetConvId)?.projectPaths ?? [])
+        : null; // null → use the hook-level selectedProjectPaths
+
       const userTimestamp = Date.now();
       // Stamp the target connection on the user message so later resend/edit
       // actions in `FloatingCommandBar` can detect provider mismatch and
@@ -136,7 +150,7 @@ export function useDirectApiChat({
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
         ...(effectiveConnection ? { connectionId: effectiveConnection.id } : {}),
       };
-      addMessage(userMessage);
+      addMessage(userMessage, targetConvId);
 
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
@@ -158,7 +172,7 @@ export function useDirectApiChat({
         } : resolved ? {
           connectionProvider: resolved.provider,
         } : {}),
-      });
+      }, targetConvId);
 
       let flushInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -381,7 +395,9 @@ export function useDirectApiChat({
               timestamp: Date.now(),
             } as ToolCallSegment);
 
-            const scopeRoots = opts?.sandboxPaths ?? selectProjectPaths(useChatStore.getState());
+            const scopeRoots = opts?.sandboxPaths
+              ?? effectiveProjectPaths
+              ?? selectProjectPaths(useChatStore.getState());
             const scopeHomeDir = useSettingsStore.getState().homeDir ?? '';
             const result = await executeToolCall(call.id, call.name, call.arguments, {
               projectRoots: scopeRoots,

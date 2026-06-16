@@ -14,6 +14,7 @@ import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { track, providerKind, type AiPath } from '@/lib/telemetry';
 import type { Connection } from '@/lib/ai/connections';
+import { sessionRunQueue } from '@/lib/ai/session-run';
 
 // Re-export ACP utilities for external consumers
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
@@ -164,8 +165,15 @@ export function useAIOperations() {
   );
 
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+    (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }): void => {
       assertLockAllowsSend();
+
+      // Capture the target conversation synchronously (before any awaits) so
+      // that a draining queued send always writes to the conversation that was
+      // active at the moment the user hit send — not wherever they have
+      // navigated by the time a slot opens up (issue #468).
+      const targetConversationId = useChatStore.getState().activeConversationId ?? '';
+
       const chatPath = aiPathFor(effectiveConnection);
       track('ai_chat_sent', {
         path: chatPath,
@@ -180,13 +188,20 @@ export function useAIOperations() {
                 effectiveConnection?.authMethod ?? '',
               ),
       });
-      if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
-        return copilotSendChatMessage(content, messages, opts);
-      }
-      if (effectiveConnection?.authMethod === 'agent_managed') {
-        return acpSendChatMessage(content, messages, opts);
-      }
-      return directSendChatMessage(content, messages, opts);
+
+      const enrichedOpts = { ...opts, conversationId: targetConversationId };
+
+      sessionRunQueue.run(targetConversationId, async () => {
+        if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
+          await copilotSendChatMessage(content, messages, enrichedOpts);
+          return;
+        }
+        if (effectiveConnection?.authMethod === 'agent_managed') {
+          await acpSendChatMessage(content, messages, enrichedOpts);
+          return;
+        }
+        await directSendChatMessage(content, messages, enrichedOpts);
+      });
     },
     [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );

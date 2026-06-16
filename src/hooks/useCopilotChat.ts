@@ -35,6 +35,7 @@ interface SendChatOpts {
   sandboxPaths?: string[];
   parentId?: string | null;
   attachments?: ImageAttachment[];
+  conversationId?: string;
 }
 
 /** Maximum tool calls allowed per user turn to prevent runaway loops. */
@@ -329,7 +330,8 @@ export function useCopilotChat({
         attachments: opts?.attachments,
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
       };
-      addMessage(userMessage);
+      const targetConvId = opts?.conversationId;
+      addMessage(userMessage, targetConvId);
 
       const assistantMessageId = userTimestamp + 1;
       addMessage({
@@ -343,7 +345,7 @@ export function useCopilotChat({
               connectionProvider: effectiveConnection.provider,
             }
           : {}),
-      });
+      }, targetConvId);
 
       let flushInterval: ReturnType<typeof setInterval> | undefined;
 

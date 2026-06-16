@@ -1682,3 +1682,72 @@ describe('Migration v4 → v5 (task #28)', () => {
     expect(() => migrate(v4State, 4)).not.toThrow();
   });
 });
+
+// ===========================================================================
+// addMessage — targetConversationId routing (issue #468)
+// ===========================================================================
+
+describe('addMessage — targetConversationId routing', () => {
+  it('routes to the specified conversation, not the active one', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'Conv A' });
+    const idB = useChatStore.getState().createConversation({ title: 'Conv B' });
+    useChatStore.getState().setActiveConversation(idA);
+
+    // Add a message targeting B while A is active
+    useChatStore.getState().addMessage({ role: 'user', content: 'For B', timestamp: 9001 }, idB);
+
+    expect(getConv(idB)!.messages.some((m) => m.content === 'For B')).toBe(true);
+    expect(getConv(idA)!.messages.some((m) => m.content === 'For B')).toBe(false);
+  });
+
+  it('does not navigate (active conversation stays the same) when routing to a different conv', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'Conv A' });
+    const idB = useChatStore.getState().createConversation({ title: 'Conv B' });
+    useChatStore.getState().setActiveConversation(idA);
+
+    useChatStore.getState().addMessage({ role: 'user', content: 'Silent B', timestamp: 9002 }, idB);
+
+    expect(useChatStore.getState().activeConversationId).toBe(idA);
+  });
+
+  it('routes to active conversation when targetConversationId is omitted (no regression)', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'Conv A' });
+    useChatStore.getState().addMessage({ role: 'user', content: 'Default routing', timestamp: 9003 });
+    expect(getConv(idA)!.messages.some((m) => m.content === 'Default routing')).toBe(true);
+  });
+
+  it('updateMessage routes to the conversation that owns the message timestamp, not the active one', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'Conv A' });
+    const idB = useChatStore.getState().createConversation({ title: 'Conv B' });
+    useChatStore.getState().setActiveConversation(idA);
+
+    // Add an assistant message to B via targetConversationId
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: 'initial', timestamp: 9010 },
+      idB,
+    );
+
+    // updateMessage with that timestamp — must update the message in B, not look in A
+    useChatStore.getState().updateMessage(9010, 'streamed content');
+
+    expect(getConv(idB)!.messages.find((m) => m.timestamp === 9010)?.content).toBe('streamed content');
+    expect(getConv(idA)!.messages.find((m) => m.timestamp === 9010)).toBeUndefined();
+  });
+
+  it('appendTextSegment routes to the conversation that owns the message timestamp', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'Conv A' });
+    const idB = useChatStore.getState().createConversation({ title: 'Conv B' });
+    useChatStore.getState().setActiveConversation(idA);
+
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: '', timestamp: 9020 },
+      idB,
+    );
+
+    useChatStore.getState().appendTextSegment(9020, 'hello from B');
+    useChatStore.getState().finalizeSegments(9020);
+
+    const msgInB = getConv(idB)!.messages.find((m) => m.timestamp === 9020);
+    expect(msgInB?.segments?.some((s) => s.type === 'text' && s.content === 'hello from B')).toBe(true);
+  });
+});

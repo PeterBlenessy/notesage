@@ -691,15 +691,21 @@ describe('useAIOperations', () => {
       expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
 
-    it('surfaces an agent error to the caller instead of silently falling back to direct local chat', async () => {
+    it('does NOT fall back to direct local chat when the preset agent fails', async () => {
       // User decision: a broken Local Agent must NOT silently route to Path 4.
-      // The error propagates so the chat message shows the real failure.
+      // sendChatMessage is fire-and-forget (returns void); the send pipeline
+      // handles errors internally via setMessageError so the chat message shows
+      // the failure. The key invariant is that directSendChatMessage is never
+      // called — no silent fallback.
       useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
       routeTo('preset');
       mockAcpSendChatMessage.mockRejectedValueOnce(new Error('Local AI server is not running'));
       const { result } = renderHook(() => useAIOperations());
       await act(async () => {
-        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow(/not running/);
+        result.current.sendChatMessage('hi', []);
+        // Wait for the queued send to drain (the queue runs immediately since
+        // we're under the concurrent cap).
+        await vi.waitFor(() => expect(mockAcpSendChatMessage).toHaveBeenCalled());
       });
       expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
