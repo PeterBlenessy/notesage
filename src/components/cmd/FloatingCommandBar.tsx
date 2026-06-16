@@ -492,9 +492,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // but we never tear down the bar itself.
     if (isPinned) return;
     setExpanded(false);
-    // Preserve the typed draft across collapse (Esc, blur, opening Settings) so
-    // reopening restores what the user was writing — only an actual send (or the
-    // explicit X dismiss) clears it. The prefix MODE is still reset; if the draft
+    // Preserve the typed draft across collapse (Esc, blur, opening Settings, and
+    // the X close button) so reopening restores what the user was writing — only
+    // an actual send clears it. The prefix MODE is still reset; if the draft
     // begins with a prefix char it re-engages on the next keystroke.
     setActivePrefix(null);
     // Reset the typed-prefix dismissal suppression so the next time the
@@ -690,8 +690,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // both the pin guard in `collapse()` and the multi-stage prefix
         // semantics in `dismiss`. The trigger is responsible for
         // unpinning before firing; this just tears the bar down.
+        //
+        // The X is the MOUSE equivalent of Esc-to-collapse, so it must
+        // PRESERVE the typed draft exactly like `collapse()` does —
+        // reopening restores what the user was writing. Only an actual send
+        // clears the input. (Earlier this wiped the draft, which read as a
+        // bug: closing then reopening lost the prompt.)
         setExpanded(false);
-        setInputValue("");
         setActivePrefix(null);
         setActiveVerb(null);
         dismissedPrefixRef.current = null;

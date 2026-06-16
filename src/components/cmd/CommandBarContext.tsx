@@ -418,7 +418,8 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
           always done this from the keyboard, but click-to-close was
           missing. Unpin first so the bar has a non-pinned state to
           collapse to, then fire the bus `close` event for a forced
-          collapse that bypasses the prefix / pin guards in `dismiss`. */}
+          collapse that bypasses the prefix / pin guards in `dismiss`.
+          Like Esc, it PRESERVES the typed draft — only a send clears it. */}
       <IconButton
         ariaLabel="Close command bar"
         icon={X}
