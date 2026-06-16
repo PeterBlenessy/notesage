@@ -112,7 +112,7 @@ vi.mock('@/lib/logger', () => ({
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   setLogLevel: vi.fn(),
 }));
-vi.mock('@/hooks/useAIOperations', () => ({ stopAcpAgent: vi.fn() }));
+vi.mock('@/hooks/useAIOperations', () => ({ stopAcpAgent: vi.fn(), stopAllAcpAgents: vi.fn() }));
 vi.mock('@/hooks/useAgentTaskOperations', () => ({ stopTaskAgent: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
 

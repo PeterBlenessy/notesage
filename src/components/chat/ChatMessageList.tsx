@@ -7,7 +7,7 @@ import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
-import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -23,9 +23,10 @@ import { PermissionCard } from './PermissionCard';
 import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ToolCallPermissionCard } from './ToolCallPermissionCard';
 import { AgentStatusBanner } from './AgentStatusBanner';
-import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { useToolPermissionStore, selectForegroundPending } from '@/stores/tool-permission-store';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { getRetryCallback, getKeepWaitingCallback } from '@/hooks/useAcpLifecycle';
+import { useForegroundLoading } from '@/hooks/useSessionManager';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
@@ -56,7 +57,9 @@ interface ChatMessageListProps {
 }
 
 export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit, onPrefill }: ChatMessageListProps) {
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Foreground-conversation loading (task #4) — the list renders the watched
+  // conversation, so it reflects that conversation's run, not the global flag.
+  const isLoading = useForegroundLoading();
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const branchFromMessage = useChatStore((s) => s.branchFromMessage);
@@ -66,7 +69,9 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const permissionRequests = usePermissionStore((s) => s.requests);
-  const toolPermission = useToolPermissionStore((s) => s.pending);
+  // Only the foreground conversation's pending request renders here (review #4);
+  // background conversations surface theirs in their history row instead.
+  const toolPermission = useToolPermissionStore(selectForegroundPending(activeConversationId));
 
   // Detect if the user is at a branch point (last visible message has children in the full tree)
   const branchPointInfo = useMemo(() => {
@@ -202,6 +207,8 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     const branchPoint = conv?.messages.find((m) => m.timestamp === timestamp);
     const isLeafBranch = !!(conv && branchPoint?.id && branchPoint.id === conv.activeLeafId);
 
+    // The active conversation's ACP agent (registry keyed by conversation id, task #2).
+    const acpAgent = getAcpAgent(state.activeConversationId ?? undefined);
     let forkedSessionId: string | undefined;
     if (isLeafBranch && acpAgent?.capabilities && hasSessionCapability(acpAgent.capabilities, 'fork')) {
       const currentSessionId = conv ? getSessionIdForLeaf(conv, conv.activeLeafId) : undefined;

@@ -21,6 +21,7 @@ import {
   type TaskMeta,
   type TaskActivityEvent,
 } from '@/hooks/useAgentTaskOperations';
+import { getAcpAgent, getAllAcpAgents, TASK_AGENT_KEY } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Mock modules
@@ -1658,6 +1659,31 @@ describe('useAgentTaskOperations', () => {
       await expect(
         ensureTaskAgent(conn, '/project', undefined, 4),
       ).rejects.toThrow('Task agent spawn failed after multiple retries.');
+    });
+  });
+
+  // ---- registry fold (task #2) ----
+
+  describe('delegation agent is registry-backed', () => {
+    it('ensureTaskAgent registers under TASK_AGENT_KEY and stopTaskAgent clears it', async () => {
+      stopTaskAgent();
+      expect(getAcpAgent(TASK_AGENT_KEY)).toBeNull();
+
+      const conn = makeAgentConnection();
+      registerAcpHandlers();
+
+      const instanceId = await ensureTaskAgent(conn, '/project');
+
+      // Folded into the shared registry (no standalone `taskAgent` singleton).
+      const entry = getAcpAgent(TASK_AGENT_KEY);
+      expect(entry).not.toBeNull();
+      expect(entry!.instanceId).toBe(instanceId);
+      expect(entry!.connectionId).toBe(conn.id);
+      // Visible to the shared teardown set alongside chat agents.
+      expect(getAllAcpAgents().some((a) => a.instanceId === instanceId)).toBe(true);
+
+      stopTaskAgent();
+      expect(getAcpAgent(TASK_AGENT_KEY)).toBeNull();
     });
   });
 

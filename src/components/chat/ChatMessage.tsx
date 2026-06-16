@@ -6,6 +6,7 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { BranchSwitcher } from './BranchSwitcher';
 import { ReconnectCard } from './ReconnectCard';
 import { useChatStore } from '@/stores/chat-store';
+import { useForegroundLoading } from '@/hooks/useSessionManager';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -643,7 +644,9 @@ interface ChatMessageProps {
 
 export const ChatMessage = memo(function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Foreground-conversation loading (task #4) — the message renders inside the
+  // watched conversation, so its streaming affordances reflect that run.
+  const isLoading = useForegroundLoading();
   const deleteMessage = useChatStore((s) => s.deleteMessage);
 
   // Auto-expand thinking while streaming, collapse after completion. User toggle overrides.

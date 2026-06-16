@@ -14,6 +14,13 @@ vi.mock('@/stores/chat-store', () => ({
   ),
 }));
 
+// Loading is now sourced from the foreground-conversation run state (task #4),
+// not the global `chat-store.isLoading`. Drive it via a controllable mock.
+const mockForegroundLoading = { value: false };
+vi.mock('@/hooks/useSessionManager', () => ({
+  useForegroundLoading: () => mockForegroundLoading.value,
+}));
+
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(),
 }));
@@ -37,6 +44,7 @@ const makeMessage = (overrides: Partial<ChatMessageType> = {}): ChatMessageType 
 describe('ChatMessage — resend/edit buttons', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockForegroundLoading.value = false;
   });
 
   it('shows edit and resend buttons for user messages (non-collapsed)', () => {
@@ -117,7 +125,7 @@ describe('ChatMessage — resend/edit buttons', () => {
   });
 
   it('does not show action buttons while loading', () => {
-    mockChatState.isLoading = true;
+    mockForegroundLoading.value = true;
 
     render(
       <ChatMessage
@@ -130,6 +138,6 @@ describe('ChatMessage — resend/edit buttons', () => {
     expect(screen.queryByLabelText('Edit message')).toBeNull();
     expect(screen.queryByLabelText('Resend message')).toBeNull();
 
-    mockChatState.isLoading = false;
+    mockForegroundLoading.value = false;
   });
 });

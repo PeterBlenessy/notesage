@@ -228,6 +228,14 @@ interface SettingsStore {
   // Notification settings
   notifyAgentCompletion: boolean;
   notifyExternalChanges: boolean;
+  /** Desktop notification when a BACKGROUNDED session hits a permission request
+   *  (task #15). Default on — the notification is the time-sensitive signal for
+   *  an unwatched session. */
+  notifyPermissionRequest: boolean;
+  /** Max concurrent live AI sessions before further sends queue (task #5).
+   *  Clamped to [3, 5]; default 4. Protects RAM / agent process count and, for
+   *  `local_bundled`, the single llama-server that serializes requests. */
+  maxConcurrentSessions: number;
   // Runtime-only (not persisted) — detected on startup
   homeDir: string | null; // Resolved once on startup, used by skill pipeline to avoid IPC
   skillsReady: boolean; // Set early — after home dir resolution, before tree validation
@@ -317,6 +325,8 @@ interface SettingsStore {
   setStartAtLogin: (start: boolean) => void;
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
+  setNotifyPermissionRequest: (notify: boolean) => void;
+  setMaxConcurrentSessions: (n: number) => void;
   /**
    * When true, the HTML viewer bypasses DOMPurify and renders content in an
    * isolated iframe with `sandbox="allow-scripts"` (no `allow-same-origin`).
@@ -432,6 +442,8 @@ export const useSettingsStore = create<SettingsStore>()(
       startAtLogin: false,
       notifyAgentCompletion: true,
       notifyExternalChanges: false,
+      notifyPermissionRequest: true,
+      maxConcurrentSessions: 4,
       homeDir: null,
       skillsReady: false,
       startupReady: false,
@@ -818,6 +830,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ notifyExternalChanges: notify });
       },
 
+      setNotifyPermissionRequest: (notify: boolean) => {
+        set({ notifyPermissionRequest: notify });
+      },
+
+      setMaxConcurrentSessions: (n: number) => {
+        set({ maxConcurrentSessions: Math.round(Math.max(3, Math.min(5, n))) });
+      },
+
       htmlViewerAllowScripts: false,
 
       setHtmlViewerAllowScripts: (enabled: boolean) => {
@@ -838,7 +858,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 22,
+      version: 23,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1071,6 +1091,20 @@ export const useSettingsStore = create<SettingsStore>()(
           // are no longer auto-loaded as live <img> beacons unless opted in.
           if (typeof state.linkPreviewRemoteImages !== 'boolean') {
             state.linkPreviewRemoteImages = false;
+          }
+        }
+        if (version < 23) {
+          // Command-bar session multitasking (#8) — concurrency cap + the
+          // backgrounded-permission notification toggle.
+          if (typeof state.maxConcurrentSessions !== 'number') {
+            state.maxConcurrentSessions = 4;
+          } else {
+            state.maxConcurrentSessions = Math.round(
+              Math.max(3, Math.min(5, state.maxConcurrentSessions)),
+            );
+          }
+          if (typeof state.notifyPermissionRequest !== 'boolean') {
+            state.notifyPermissionRequest = true;
           }
         }
         return state;

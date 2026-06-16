@@ -71,6 +71,8 @@ import {
   selectPendingAgentSwitch,
   selectSegments,
   selectActiveSegmentIndex,
+  selectConversationTitle,
+  DEFAULT_CONVERSATION_TITLE,
   sliceThreadBySegment,
 } from '../chat-store';
 import type { Conversation, ConversationSegment } from '../chat-store';
@@ -371,6 +373,57 @@ describe('Message metadata', () => {
 // ===========================================================================
 // Segments
 // ===========================================================================
+
+describe('Owner-aware streaming writes (task #3)', () => {
+  // Two conversations, A active and B backgrounded. Streaming writes that carry
+  // an explicit convId must land on THAT conversation — not the active one — so
+  // concurrent sessions don't cross-contaminate each other's messages/segments.
+  function twoConversations() {
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+    useChatStore.getState().addMessage({ role: 'assistant', content: '', timestamp: 100 });
+    const b = useChatStore.getState().createConversation({ title: 'B' });
+    useChatStore.getState().addMessage({ role: 'assistant', content: '', timestamp: 200 });
+    // B is active now (most recent createConversation). Switch the foreground to A
+    // so B is the BACKGROUND conversation we'll write to by id.
+    useChatStore.getState().setActiveConversation(a);
+    return { a, b };
+  }
+
+  it('appendTextSegment with convId targets the owning conversation, not the active one', () => {
+    const { a, b } = twoConversations();
+    // Write to background B by id while A is foreground.
+    useChatStore.getState().appendTextSegment(200, 'from B', b);
+    // Foreground write to A by id.
+    useChatStore.getState().appendTextSegment(100, 'from A', a);
+
+    const msgA = getConv(a)!.messages.find((m) => m.timestamp === 100)!;
+    const msgB = getConv(b)!.messages.find((m) => m.timestamp === 200)!;
+    const textOf = (m: typeof msgA) => (m.segments ?? []).filter((s) => s.type === 'text').map((s) => (s as { content: string }).content).join('');
+    expect(textOf(msgA)).toBe('from A');
+    expect(textOf(msgB)).toBe('from B');
+  });
+
+  it('updateMessage / addActivity / finalizeSegments route by convId', () => {
+    const { a, b } = twoConversations();
+    useChatStore.getState().updateMessage(200, 'B content', undefined, b);
+    useChatStore.getState().addActivity(200, { kind: 'tool', label: 'b-tool', status: 'running', timestamp: 1 }, b);
+
+    // A (foreground) is untouched by the background writes.
+    expect(getConv(a)!.messages.find((m) => m.timestamp === 100)!.content).toBe('');
+    expect(getConv(a)!.messages.find((m) => m.timestamp === 100)!.activities ?? []).toHaveLength(0);
+    // B received them.
+    expect(getConv(b)!.messages.find((m) => m.timestamp === 200)!.content).toBe('B content');
+    expect(getConv(b)!.messages.find((m) => m.timestamp === 200)!.activities).toHaveLength(1);
+  });
+
+  it('omitting convId falls back to the active conversation (backward compat)', () => {
+    const { a, b } = twoConversations(); // A is active
+    useChatStore.getState().appendTextSegment(100, 'active write');
+    const textOf = (id: string, ts: number) => (getConv(id)!.messages.find((m) => m.timestamp === ts)!.segments ?? []).filter((s) => s.type === 'text').map((s) => (s as { content: string }).content).join('');
+    expect(textOf(a, 100)).toBe('active write');
+    expect(textOf(b, 200)).toBe('');
+  });
+});
 
 describe('Segments', () => {
   it('getActiveSegment returns the segment at activeSegmentIndex', () => {
@@ -1680,5 +1733,33 @@ describe('Migration v4 → v5 (task #28)', () => {
       webSearchEnabled: false,
     };
     expect(() => migrate(v4State, 4)).not.toThrow();
+  });
+});
+
+describe('selectConversationTitle (review #8)', () => {
+  const conv = (id: string, title?: string): Conversation => ({
+    id,
+    title: title ?? '',
+    messages: [],
+    createdAt: 0,
+    updatedAt: 0,
+    activeLeafId: null,
+  } as unknown as Conversation);
+
+  it('returns the conversation title when set', () => {
+    const state = { conversations: [conv('c1', 'My chat')] };
+    expect(selectConversationTitle(state, 'c1')).toBe('My chat');
+  });
+
+  it('falls back to the default for a blank or unset title', () => {
+    const state = { conversations: [conv('c1', '')] };
+    expect(selectConversationTitle(state, 'c1')).toBe(DEFAULT_CONVERSATION_TITLE);
+    expect(DEFAULT_CONVERSATION_TITLE).toBe('New Chat');
+  });
+
+  it('returns the default for null/unknown ids without throwing', () => {
+    const state = { conversations: [conv('c1', 'My chat')] };
+    expect(selectConversationTitle(state, null)).toBe(DEFAULT_CONVERSATION_TITLE);
+    expect(selectConversationTitle(state, 'missing')).toBe(DEFAULT_CONVERSATION_TITLE);
   });
 });

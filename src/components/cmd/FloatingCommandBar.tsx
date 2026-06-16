@@ -16,6 +16,7 @@ import { ContextPill } from "@/components/chat/ContextPill";
 import { useChatContext } from "@/hooks/useChatContext";
 import { FILE_DRAG_MIME } from "@/components/sidebar/quiet/file-drag";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { useForegroundLoading } from "@/hooks/useSessionManager";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { toast } from "sonner";
@@ -265,7 +266,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // checks, segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Per-conversation loading: the bar reflects the WATCHED conversation's run
+  // state, not the global flag — so switching to an idle chat while another
+  // streams in the background shows the right send/stop affordance (task #4).
+  const isLoading = useForegroundLoading();
 
   // Live-test 2026-04-26 audit gap #10 — input + send must be disabled
   // while either an AgentSwitchCard or a pending-project-switch prompt
@@ -488,9 +492,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // but we never tear down the bar itself.
     if (isPinned) return;
     setExpanded(false);
-    // Preserve the typed draft across collapse (Esc, blur, opening Settings) so
-    // reopening restores what the user was writing — only an actual send (or the
-    // explicit X dismiss) clears it. The prefix MODE is still reset; if the draft
+    // Preserve the typed draft across collapse (Esc, blur, opening Settings, and
+    // the X close button) so reopening restores what the user was writing — only
+    // an actual send clears it. The prefix MODE is still reset; if the draft
     // begins with a prefix char it re-engages on the next keystroke.
     setActivePrefix(null);
     // Reset the typed-prefix dismissal suppression so the next time the
@@ -686,8 +690,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // both the pin guard in `collapse()` and the multi-stage prefix
         // semantics in `dismiss`. The trigger is responsible for
         // unpinning before firing; this just tears the bar down.
+        //
+        // The X is the MOUSE equivalent of Esc-to-collapse, so it must
+        // PRESERVE the typed draft exactly like `collapse()` does —
+        // reopening restores what the user was writing. Only an actual send
+        // clears the input. (Earlier this wiped the draft, which read as a
+        // bug: closing then reopening lost the prompt.)
         setExpanded(false);
-        setInputValue("");
         setActivePrefix(null);
         setActiveVerb(null);
         dismissedPrefixRef.current = null;

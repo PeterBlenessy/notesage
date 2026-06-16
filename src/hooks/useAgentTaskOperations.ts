@@ -2,12 +2,10 @@ import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
-import { usePermissionStore } from '@/stores/permission-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
-import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -16,7 +14,7 @@ import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSession
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
-import { resolveAgentLaunch } from '@/lib/ai/acp-agent-state';
+import { ensureAcpAgent, getAcpAgent, stopAcpAgent, TASK_AGENT_KEY } from '@/lib/ai/acp-agent-state';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { getProjectLock, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { log } from '@/lib/logger';
@@ -31,157 +29,52 @@ async function getHomeDir(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Task agent state (module-level singleton, survives re-renders)
+// Task agent — the background comment-delegation agent.
 //
-// Only one task agent runs at a time. This module-level state is intentional:
-// useAgentTaskOperations is called from useCommentDelegation, which is wired
-// in a single place (Editor.tsx). If the hook were ever used in multiple
-// component trees, they would share this agent instance.
+// Only one delegation agent runs at a time. After the singleton → registry
+// migration (PRD `2026-06-14-command-bar-session-multitasking`, task #2) it is
+// no longer a standalone module global: it lives in the shared ACP agent
+// registry (`acp-agent-state.ts`) under the reserved {@link TASK_AGENT_KEY},
+// spawned with `role: 'task'`. This unifies spawn/respawn/liveness/teardown with
+// the chat agents — `getAllAcpAgents()` now sees the task agent too, and the
+// per-key spawn-promise guard / scope-respawn / `acp_agent_exists` liveness
+// check come from the registry instead of a parallel implementation here.
 // ---------------------------------------------------------------------------
 
-interface TaskAgentState {
-  instanceId: string;
-  connectionId: string;
-  /** Project root the agent was spawned for (sandbox scope). */
-  projectRoot: string;
-  sessionId: string | null;
-  /** Agent-advertised capabilities from the spawn result (for session/resume, session/close, etc.). */
-  capabilities: AcpAgentCapabilities | null;
+/** Read the delegation agent's advertised capabilities (or null when not spawned). */
+function taskCapabilities(): AcpAgentCapabilities | null {
+  return (getAcpAgent(TASK_AGENT_KEY)?.capabilities ?? null) as AcpAgentCapabilities | null;
 }
 
-let taskAgent: TaskAgentState | null = null;
-
-/** Read `taskAgent` without TS narrowing it to `never` after early-return checks. */
-function getTaskAgent(): TaskAgentState | null { return taskAgent; }
-
-/** In-flight spawn promise — prevents concurrent callers from double-spawning. */
-let taskSpawnPromise: Promise<string> | null = null;
-
 export function stopTaskAgent(): void {
-  if (taskAgent) {
-    tauriApi.acpAgentStop(taskAgent.instanceId).catch(() => {}); // Expected: best-effort cleanup, agent may already be stopped
-    taskAgent = null;
-  }
-  taskSpawnPromise = null;
+  stopAcpAgent(TASK_AGENT_KEY);
 }
 
 /** Maximum recursion depth for ensureTaskAgent to prevent infinite loops. */
 const MAX_ENSURE_AGENT_DEPTH = 3;
 
-/** @internal Exported for testing only. */
+/**
+ * Ensure the shared delegation agent is spawned for `connection` + `cwd`, tracked
+ * in the registry under {@link TASK_AGENT_KEY}. Thin wrapper over the registry's
+ * `ensureAcpAgent` (with `role: 'task'`); the registry owns the spawn-promise
+ * guard, sandbox-scope respawn, and liveness check.
+ *
+ * @internal Exported for testing only.
+ * @param _depth Internal recursion counter — callers should not set this.
+ */
 export async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[], _depth = 0): Promise<string> {
   if (_depth > MAX_ENSURE_AGENT_DEPTH) {
     throw new Error('Task agent spawn failed after multiple retries.');
   }
-  // Respawn if connection changed OR project changed (different sandbox scope)
-  if (taskAgent && (taskAgent.connectionId !== connection.id || taskAgent.projectRoot !== cwd)) {
-    try {
-      await tauriApi.acpAgentStop(taskAgent.instanceId);
-    } catch {
-      // Expected: agent may already be stopped or crashed
-    }
-    taskAgent = null;
-    taskSpawnPromise = null;
-  }
-
-  // Verify the backend still has this agent (may be gone after app restart or crash)
-  if (taskAgent) {
-    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: taskAgent.instanceId });
-    if (!alive) {
-      log.info('ai', `Task agent ${taskAgent.instanceId} no longer exists in backend, respawning`);
-      taskAgent = null;
-      taskSpawnPromise = null;
-    }
-  }
-
-  if (taskAgent) {
-    return taskAgent.instanceId;
-  }
-
-  // If a spawn is already in progress, await it then verify the result
-  if (taskSpawnPromise) {
-    const instanceId = await taskSpawnPromise;
-    // Re-read module-level state after await (may have changed during suspension)
-    const current = getTaskAgent();
-    // Verify the spawned agent matches our connection (another caller may have changed it)
-    if (current?.instanceId === instanceId && current.connectionId === connection.id && current.projectRoot === cwd) {
-      return instanceId;
-    }
-    // Agent changed or was replaced during await — restart the entire check
-    return ensureTaskAgent(connection, cwd, sandboxPaths, _depth + 1);
-  }
-
-  // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
-  taskSpawnPromise = (async () => {
-    try {
-      // Custom agents (`custom_acp`) launch from config.binaryPath/binaryArgs;
-      // managed agents from credentials — one resolver for both paths.
-      const launch = resolveAgentLaunch(connection);
-      // Inject model flag — codex-acp uses -c model="...", others use --model
-      const args = [...launch.agentArgs];
-      if (connection.config?.model) {
-        let modelId = connection.config.model;
-        if (launch.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
-          modelId = `${modelId}/${connection.config.reasoningEffort}`;
-        }
-        if (launch.agentBinary === 'codex-acp') {
-          args.push('-c', `model="${modelId}"`);
-        } else {
-          args.push('--model', modelId);
-        }
-      }
-      // Build network sandbox config if enabled
-      const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
-      let networkAllowedDomains: string[] | null = null;
-      if (networkSandboxEnabled) {
-        // Custom binaries match no PROVIDER_OPTIONS entry → built-in allowlist stays empty.
-        const providerOption = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === launch.agentBinary || o.lspBinary === launch.agentBinary
-        );
-        const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
-        const permStore = usePermissionStore.getState();
-        const userDomains = permStore.getDomainAllowedList(connection.id, null);
-        networkAllowedDomains = [...builtIn, ...userDomains];
-      }
-
-      // Delegation: sandbox to single folder only
-      const result = await tauriApi.acpAgentSpawn(
-        launch.agentBinary,
-        args.length > 0 ? args : null,
-        'task',
-        cwd,
-        connection.sandboxEnabled ?? null,
-        [...(sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : [])), ...(connection.extraWritablePaths ?? [])],
-        networkSandboxEnabled || null,
-        networkAllowedDomains,
-        connection.kernelNetworkDeny ?? null,
-        connection.id,
-        launch.envVarKeys,
-      );
-
-      // Try to authenticate — some agents handle auth internally
-      try {
-        await tauriApi.acpAgentAuthenticate(result.instance_id);
-      } catch (authErr) {
-        const msg = String(authErr);
-        if (!msg.toLowerCase().includes('not implemented')) throw authErr;
-      }
-
-      taskAgent = {
-        instanceId: result.instance_id,
-        connectionId: connection.id,
-        projectRoot: cwd,
-        sessionId: null,
-        capabilities: (result.capabilities ?? null) as AcpAgentCapabilities | null,
-      };
-
-      return result.instance_id;
-    } finally {
-      taskSpawnPromise = null;
-    }
-  })();
-
-  return taskSpawnPromise;
+  // Delegation sandboxes to the task's single project folder. Passing it as the
+  // scope makes the registry's `sandboxScopeKey` track the project, so a switch to
+  // a different delegation project respawns — matching the old projectRoot check.
+  const scopePaths = sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : []);
+  return ensureAcpAgent(connection, cwd, scopePaths, 'task', {
+    conversationId: TASK_AGENT_KEY,
+    role: 'task',
+    depth: _depth,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -319,8 +212,8 @@ async function startAcpTask(
     instanceId,
     cwd,
     storedSessionId,
-    capabilities: taskAgent?.capabilities ?? null,
-    mcpServers: buildAcpMcpServerInputs(taskAgent?.capabilities ?? null, mcpScopePaths),
+    capabilities: taskCapabilities(),
+    mcpServers: buildAcpMcpServerInputs(taskCapabilities(), mcpScopePaths),
   });
 
   // Persist the (possibly new) session ID back onto the conversation so a subsequent
@@ -335,7 +228,7 @@ async function startAcpTask(
 
   /** Fire a best-effort `session/close` when the task reaches a terminal state. */
   const closeSessionIfSupported = () => {
-    if (hasSessionCapability(taskAgent?.capabilities ?? null, 'close')) {
+    if (hasSessionCapability(taskCapabilities(), 'close')) {
       tauriApi.acpSessionClose(instanceId, session.session_id).catch(() => {}); // Expected: best-effort cleanup
     }
   };
@@ -893,7 +786,7 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
           // Expected: agent session may have already completed or agent crashed
         }
         // Best-effort session close so the agent can free resources.
-        if (hasSessionCapability(taskAgent?.capabilities ?? null, 'close')) {
+        if (hasSessionCapability(taskCapabilities(), 'close')) {
           tauriApi.acpSessionClose(task.instanceId, task.sessionId).catch(() => {}); // Expected: best-effort cleanup
         }
       }

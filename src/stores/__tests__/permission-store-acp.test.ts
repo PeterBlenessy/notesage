@@ -1,5 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { usePermissionStore } from '../permission-store';
+import { usePermissionStore, pendingForConversation, type PermissionRequest } from '../permission-store';
+
+function makeRequest(overrides: Partial<PermissionRequest> = {}): PermissionRequest {
+  return {
+    id: `req-${Math.round(overrides.timestamp ?? 1)}`,
+    instanceId: 'inst-1',
+    sessionId: 'sess-1',
+    requestId: 'rq-1',
+    toolKind: 'write',
+    toolTitle: 'Write file',
+    toolInput: '/p/x',
+    options: [],
+    timestamp: 1,
+    ...overrides,
+  };
+}
 
 describe('permission-store ACP tool permissions', () => {
   beforeEach(() => {
@@ -124,6 +139,27 @@ describe('permission-store ACP tool permissions', () => {
       usePermissionStore.getState().allowSkillScriptAlways('other-skill', null, null);
       expect(usePermissionStore.getState().getToolTier('my-skill', null, null)).toBe('none');
       expect(usePermissionStore.getState().getToolTier('other-skill', null, null)).toBe('none');
+    });
+  });
+
+  describe('request conversation attribution (task #6)', () => {
+    beforeEach(() => usePermissionStore.setState({ requests: [] }));
+
+    it('addRequest preserves conversationId; pendingForConversation filters by it', () => {
+      usePermissionStore.getState().addRequest(makeRequest({ id: 'a', requestId: 'a', conversationId: 'conv-A' }));
+      usePermissionStore.getState().addRequest(makeRequest({ id: 'b', requestId: 'b', conversationId: 'conv-B' }));
+      usePermissionStore.getState().addRequest(makeRequest({ id: 'c', requestId: 'c', conversationId: 'conv-A' }));
+
+      const state = usePermissionStore.getState();
+      const forA = pendingForConversation(state, 'conv-A');
+      expect(forA.map((r) => r.id).sort()).toEqual(['a', 'c']);
+      expect(pendingForConversation(state, 'conv-B').map((r) => r.id)).toEqual(['b']);
+      expect(pendingForConversation(state, 'conv-Z')).toEqual([]);
+    });
+
+    it('a request without conversationId is not matched by pendingForConversation', () => {
+      usePermissionStore.getState().addRequest(makeRequest({ id: 'legacy', requestId: 'legacy' }));
+      expect(pendingForConversation(usePermissionStore.getState(), 'conv-A')).toEqual([]);
     });
   });
 

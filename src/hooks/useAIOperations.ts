@@ -13,10 +13,13 @@ import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { track, providerKind, type AiPath } from '@/lib/telemetry';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
+import { hasSessionCapacity, enqueueSend, dropQueuedSend } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
-export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
+export { stopAcpAgent, stopAllAcpAgents } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 export { ProjectLockViolation };
 
@@ -180,13 +183,34 @@ export function useAIOperations() {
                 effectiveConnection?.authMethod ?? '',
               ),
       });
-      if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
-        return copilotSendChatMessage(content, messages, opts);
+      // Route to the path that owns this connection's streaming.
+      const route = () => {
+        if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
+          return copilotSendChatMessage(content, messages, opts);
+        }
+        if (effectiveConnection?.authMethod === 'agent_managed') {
+          return acpSendChatMessage(content, messages, opts);
+        }
+        return directSendChatMessage(content, messages, opts);
+      };
+
+      // Concurrency cap (task #5). When the live-session count is at the cap,
+      // defer this send: mark its conversation `queued` and park a start-thunk
+      // that `useSessionManager` runs FIFO once a slot frees. The thunk sets the
+      // queued conversation active before routing so the deferred send targets
+      // the right conversation (and the view follows the session that starts).
+      // A brand-new chat with no conversation yet (`targetConv` null) can't be
+      // keyed, so it proceeds immediately — an acceptable rare over-cap edge.
+      const targetConv = useChatStore.getState().activeConversationId;
+      const cap = useSettingsStore.getState().maxConcurrentSessions;
+      if (targetConv && !hasSessionCapacity(cap)) {
+        enqueueSend(targetConv, () => {
+          useChatStore.getState().setActiveConversation(targetConv);
+          void route();
+        });
+        return;
       }
-      if (effectiveConnection?.authMethod === 'agent_managed') {
-        return acpSendChatMessage(content, messages, opts);
-      }
-      return directSendChatMessage(content, messages, opts);
+      return route();
     },
     [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );
@@ -197,6 +221,13 @@ export function useAIOperations() {
     && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
 
   const cancelChat = useCallback(() => {
+    // If the foreground conversation is only QUEUED (not yet streaming), drop it
+    // from the queue and clear its run — there are no listeners to tear down.
+    const activeConv = useChatStore.getState().activeConversationId;
+    if (activeConv && dropQueuedSend(activeConv)) {
+      useSessionRunStore.getState().clearRun(activeConv);
+      return;
+    }
     cancelDirectChat();
     cancelCopilotChat();
     if (effectiveConnection?.authMethod === 'agent_managed' && !isCopilotLsp) {

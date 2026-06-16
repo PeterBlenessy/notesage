@@ -33,6 +33,7 @@ import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
+import { useSessionManager } from "@/hooks/useSessionManager";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
@@ -163,6 +164,11 @@ function App() {
 
   // Consolidated startup effects and event listeners
   useAppLifecycle();
+
+  // Cross-conversation session run-state owner (task #4) — keeps the orb /
+  // history / foreground-loading reading per-session status independently of
+  // the command-bar view. Must stay mounted here at the App root.
+  useSessionManager();
 
   // Activity panel — cancel handler and navigation (forwarded to QuietLayout/AgentPanel)
   const { cancelTask } = useAgentTaskOperations();

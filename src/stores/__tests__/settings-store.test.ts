@@ -554,6 +554,36 @@ describe('number setters', () => {
 // Sidebar width clamping
 // ===========================================================================
 
+describe('setMaxConcurrentSessions clamping (task #8)', () => {
+  it('defaults to 4', () => {
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(4);
+  });
+  it('accepts values within [3, 5]', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(5);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+  it('clamps below the minimum (3)', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(1);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(3);
+  });
+  it('clamps above the maximum (5)', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(99);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(4.6);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+});
+
+describe('setNotifyPermissionRequest (task #8)', () => {
+  it('defaults to true and toggles', () => {
+    expect(useSettingsStore.getState().notifyPermissionRequest).toBe(true);
+    useSettingsStore.getState().setNotifyPermissionRequest(false);
+    expect(useSettingsStore.getState().notifyPermissionRequest).toBe(false);
+  });
+});
+
 describe('setSidebarWidth clamping', () => {
   it('sets width within valid range', () => {
     useSettingsStore.getState().setSidebarWidth(300);
@@ -1386,7 +1416,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(22);
+    expect(parsed.version).toBe(23);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2473,7 +2503,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(22);
+    expect(parsed.version).toBe(23);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {

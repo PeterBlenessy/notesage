@@ -12,6 +12,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { streamEvent } from '@/lib/ai/stream-events';
+import { useSessionRunStore } from '@/stores/session-run-store';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 
 // The hook generates a unique per-request streamId and emits/listens on
@@ -309,6 +310,82 @@ describe('useDirectApiChat — concurrent streams', () => {
     expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
     expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
   });
+
+  it('two conversations stream concurrently without cross-contamination (task #3)', async () => {
+    // Both streams hang open; capture each send's streamId in order.
+    const streamIds: string[] = [];
+    setMockInvokeHandler('ai_chat_stream', async (args) => { streamIds.push(sidOf(args)); });
+
+    const { result } = renderDirectApiChat();
+    const assistantTs = (convId: string): number =>
+      useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.role === 'assistant')!.timestamp ?? 0;
+    const textOf = (convId: string, ts: number) => {
+      const msg = useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.timestamp === ts)!;
+      return (msg.segments ?? []).filter((s) => s.type === 'text')
+        .map((s) => (s as { content: string }).content).join('');
+    };
+
+    // Conversation A — send, then it becomes the BACKGROUND once B opens.
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+    await act(async () => { await result.current.sendChatMessage('a-msg', []); });
+    const aTs = assistantTs(a);
+
+    // Conversation B — now the foreground.
+    const b = useChatStore.getState().createConversation({ title: 'B' });
+    await act(async () => { await result.current.sendChatMessage('b-msg', []); });
+    const bTs = assistantTs(b);
+
+    // Interleave chunks for both streams while B is foreground. A's chunk must
+    // land on A's message (segments update synchronously), not on the active B.
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), 'alpha');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), 'beta');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), '-A');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), '-B');
+    });
+
+    expect(textOf(a, aTs)).toBe('alpha-A');
+    expect(textOf(b, bTs)).toBe('beta-B');
+
+    // Cancelling the foreground (B) leaves A's stream intact.
+    act(() => { result.current.cancelDirectChat(b); });
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[0]))).toBeGreaterThan(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[1]))).toBe(0);
+
+    act(() => { result.current.cancelDirectChat(a); });
+  });
+
+  it('writes per-conversation run-state to session-run-store (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    // Stream that completes on demand.
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    // Running while the stream is open, with the direct path recorded.
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('running');
+    expect(useSessionRunStore.getState().runs[a]?.path).toBe('direct');
+    expect(useSessionRunStore.getState().runs[a]?.streamId).toBe(lastStreamId);
+
+    // Completion clears the run.
+    act(() => { emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null); });
+    expect(useSessionRunStore.getState().runs[a]).toBeUndefined();
+  });
+
+  it('marks the run errored when the stream invoke rejects (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    setMockInvokeHandler('ai_chat_stream', async () => { throw new Error('boom'); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('error');
+  });
 });
 
 describe('useDirectApiChat — abort mid-stream', () => {
@@ -373,7 +450,7 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
       toolCallSession: new Set(),
       toolCallAlways: [],
     });
-    useToolPermissionStore.getState().setPending(null);
+    useToolPermissionStore.setState({ pending: {} });
     vi.mocked(invoke).mockClear();
 
     // Mock web_search tool call emit + result
@@ -444,7 +521,9 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // Allow the tool_call event and microtasks to settle so setPending fires.
     await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 
-    const pending = useToolPermissionStore.getState().pending;
+    // Per-conversation map (review #4) — exactly one request pending here.
+    const pendingMap = useToolPermissionStore.getState().pending;
+    const pending = Object.values(pendingMap)[0] ?? null;
     expect(pending).not.toBeNull();
     expect(pending!.name).toBe('web_search');
 

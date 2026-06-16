@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
-import { stopAcpAgent } from '@/hooks/useAIOperations';
+import { stopAllAcpAgents } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig, ReasoningEffort } from '@/lib/ai/connections';
 import { DEFAULT_MODELS } from '@/lib/ai/connections';
@@ -226,9 +226,10 @@ export function ConnectionConfigDialog({
       updates.credentials = { type: 'api_key', credentialStored: true };
     }
 
-    // Stop running agents so they re-spawn with new config (e.g. --model flag)
+    // Stop running agents so they re-spawn with new config (e.g. --model flag).
+    // Every per-conversation agent on this connection must respawn (task #2).
     if (isAgentManaged) {
-      stopAcpAgent();
+      stopAllAcpAgents();
       stopTaskAgent();
     }
 

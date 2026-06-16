@@ -1,8 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
 import { FileEdit, Pencil, Terminal, Shield, ChevronDown } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
-import { log } from '@/lib/logger';
-import { useChatStore } from '@/stores/chat-store';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -10,7 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { usePermissionStore, type PermissionRequest } from '@/stores/permission-store';
+import { type PermissionRequest } from '@/stores/permission-store';
+import { resolveAcpPermission } from '@/lib/ai/permission-resolve';
 import { formatAcpToolName } from '@/hooks/useAIOperations';
 
 function getToolIcon(kind: string) {
@@ -99,7 +97,6 @@ interface PermissionCardProps {
 }
 
 export function PermissionCard({ request }: PermissionCardProps) {
-  const removeRequest = usePermissionStore((s) => s.removeRequest);
   const Icon = getToolIcon(request.toolKind);
   const label = formatAcpToolName(request.toolKind, request.toolTitle);
   const labelId = useId();
@@ -128,52 +125,12 @@ export function PermissionCard({ request }: PermissionCardProps) {
   // See docs/features/ai-providers.md → "Permission model" (no auto-deny today)
   // and docs/tasks/2026-04-21-ui-refresh-phase1-tasks.md #83.
 
-  const approveRequest = (req: PermissionRequest) => {
-    const firstOptionId = req.options.length > 0 ? req.options[0].optionId : null;
-    invoke('acp_permission_respond', {
-      instanceId: req.instanceId,
-      requestId: req.requestId,
-      optionId: firstOptionId,
-    }).catch((err) => log.warn('ai', 'Failed to send permission approval', err));
-    removeRequest(req.requestId);
-  };
-
-  const handleAllow = () => {
-    approveRequest(request);
-  };
-
-  const handleAllowSession = () => {
-    const store = usePermissionStore.getState();
-    store.allowSession(request.toolKind);
-    // Approve this request + any other pending requests of the same kind
-    const pending = store.requests.filter((r) => r.toolKind === request.toolKind);
-    for (const req of pending) {
-      approveRequest(req);
-    }
-  };
-
-  const handleAllowAlways = () => {
-    const store = usePermissionStore.getState();
-    store.allowAlways(request.toolKind, null, null);
-    // Approve this request + any other pending requests of the same kind
-    const pending = store.requests.filter((r) => r.toolKind === request.toolKind);
-    for (const req of pending) {
-      approveRequest(req);
-    }
-  };
-
-  const handleDeny = () => {
-    invoke('acp_permission_respond', {
-      instanceId: request.instanceId,
-      requestId: request.requestId,
-      optionId: null,
-    }).catch((err) => log.warn('ai', 'Failed to send permission denial', err));
-    useChatStore.getState().addMessage({
-      role: 'assistant',
-      content: `Tool call "${label}" was denied.`,
-    });
-    removeRequest(request.requestId);
-  };
+  // Resolution is shared with the inline history-row card (task #10) via
+  // `permission-resolve` so the two approval surfaces never drift.
+  const handleAllow = () => resolveAcpPermission(request, 'allow', label);
+  const handleAllowSession = () => resolveAcpPermission(request, 'session', label);
+  const handleAllowAlways = () => resolveAcpPermission(request, 'always', label);
+  const handleDeny = () => resolveAcpPermission(request, 'deny', label);
 
   return (
     <div

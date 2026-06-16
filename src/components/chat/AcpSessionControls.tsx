@@ -34,7 +34,7 @@ import {
   resolveConfiguredModeId,
   updateCurrentMode,
   updateConfigOptionValue,
-  acpAgent,
+  getAcpAgent,
   isLocalAgentPreset,
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -120,6 +120,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   const [open, setOpen] = useState(false);
 
   const applyMode = useCallback(async (modeId: string) => {
+    const acpAgent = getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
     if (!acpAgent?.instanceId || !acpAgent.chatSessionId) {
       log.warn('ai', 'Cannot set mode: no active ACP session');
       toast.error('No active session — send a message first');
@@ -138,6 +139,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   }, []);
 
   const handleSetMode = useCallback((modeId: string, modeName: string) => {
+    const acpAgent = getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
     if (isUnrestrictedMode(connection, modeId) && acpAgent?.connectionId && hasActiveRestrictions(acpAgent.connectionId)) {
       setConflictMode({ id: modeId, name: modeName });
       return;
@@ -153,6 +155,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
   }, [conflictMode, applyMode]);
 
   const handleConflictRemovePermanent = useCallback(() => {
+    const acpAgent = getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
     if (!acpAgent?.connectionId) { setConflictMode(null); return; }
     useConnectionsStore.getState().updateConnection(acpAgent.connectionId, {
       sandboxEnabled: false,
@@ -342,6 +345,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
   const [open, setOpen] = useState(false);
 
   const handleSetValue = useCallback(async (value: string) => {
+    const acpAgent = getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
     if (!acpAgent?.instanceId || !acpAgent.chatSessionId) {
       toast.error('No active session — send a message first');
       return;

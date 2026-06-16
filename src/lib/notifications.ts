@@ -44,6 +44,41 @@ export async function notify(
   }
 }
 
+/**
+ * Desktop notification for a BACKGROUNDED chat session (PRD
+ * `2026-06-14-command-bar-session-multitasking`, task #15) — a session the user
+ * isn't currently watching that needs a permission decision or has completed.
+ * Gated on the matching setting (`notifyPermissionRequest` /
+ * `notifyAgentCompletion`). The `conversationId` rides along in `extra` so the
+ * notification-click handler (registered in `useSessionManager`) can foreground
+ * the right session.
+ */
+export async function notifyBackgroundSession(
+  kind: "permission" | "completion",
+  title: string,
+  body: string,
+  conversationId: string,
+): Promise<void> {
+  const settings = useSettingsStore.getState();
+  const enabled =
+    kind === "permission"
+      ? settings.notifyPermissionRequest
+      : settings.notifyAgentCompletion;
+  if (!enabled) return;
+
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      granted = (await requestPermission()) === "granted";
+    }
+    if (!granted) return;
+
+    sendNotification({ title, body, extra: { conversationId } });
+  } catch {
+    // Notification not supported or permission denied — silent degradation
+  }
+}
+
 // ---------------------------------------------------------------------------
 // External-change toast helpers
 // ---------------------------------------------------------------------------

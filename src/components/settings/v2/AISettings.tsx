@@ -2,6 +2,7 @@ import { ConnectionsSettings } from '@/components/settings/ConnectionsSettings';
 import { UseCaseRoutingSettings } from '@/components/settings/UseCaseRoutingSettings';
 import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/settings/ApprovalsSettings';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { useSettingsStore } from '@/stores/settings-store';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
@@ -29,6 +30,10 @@ export function AISettings() {
   const setCrossProjectMode = useSettingsStore((s) => s.setCrossProjectMode);
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
   const setShowAgentModePicker = useSettingsStore((s) => s.setShowAgentModePicker);
+  const maxConcurrentSessions = useSettingsStore((s) => s.maxConcurrentSessions);
+  const setMaxConcurrentSessions = useSettingsStore((s) => s.setMaxConcurrentSessions);
+  const notifyPermissionRequest = useSettingsStore((s) => s.notifyPermissionRequest);
+  const setNotifyPermissionRequest = useSettingsStore((s) => s.setNotifyPermissionRequest);
 
   return (
     <div data-slot="ai-settings">
@@ -145,6 +150,43 @@ export function AISettings() {
               id="show-agent-mode-picker"
               checked={showAgentModePicker}
               onCheckedChange={setShowAgentModePicker}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Sessions"
+        description="Running multiple AI conversations at once."
+        searchKeywords={['concurrent', 'queue', 'multitask', 'parallel']}
+      >
+        <SettingsRow
+          label="Max concurrent sessions"
+          description="How many AI conversations can run at the same time. Further sends wait in a queue and start automatically as sessions finish. Lower this if your machine struggles with several agents at once."
+          control={
+            <div className="w-[180px]">
+              <Slider
+                value={[maxConcurrentSessions]}
+                onValueChange={([v]) => setMaxConcurrentSessions(v)}
+                min={3}
+                max={5}
+                step={1}
+                aria-label="Max concurrent sessions"
+              />
+            </div>
+          }
+          controlSublabel={String(maxConcurrentSessions)}
+        />
+        <SettingsRow
+          label="Notify on background permission requests"
+          description="Show a desktop notification when a session you're not currently watching needs your approval to continue."
+          htmlFor="notify-permission-request"
+          control={
+            <Switch
+              id="notify-permission-request"
+              checked={notifyPermissionRequest}
+              onCheckedChange={setNotifyPermissionRequest}
+              aria-label="Notify on background permission requests"
             />
           }
         />

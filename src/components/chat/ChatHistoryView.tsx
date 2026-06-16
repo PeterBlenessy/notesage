@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
-import { Trash2, MessageSquare, Clock, Download, GitBranch } from 'lucide-react';
-import { useChatStore, type Conversation } from '@/stores/chat-store';
+import { Trash2, Clock, Download, GitBranch } from 'lucide-react';
+import { useChatStore, DEFAULT_CONVERSATION_TITLE, type Conversation } from '@/stores/chat-store';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,16 +12,21 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { getThread, getThreadResilient, getLeaves } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
-import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
+import { HistoryRowLeadingIcon } from '@/components/cmd/SessionStatusBadge';
 
 /**
  * Fire best-effort `session/close` for every ACP session owned by the conversation
  * (the shared `acpSessionId` plus any per-branch sessions from `session/fork`) so
  * the agent can release resources. Errors are swallowed — the conversation is being
  * deleted regardless. Skipped when the agent doesn't advertise `session.close`.
+ *
+ * Resolves the agent from the registry by the conversation's own id (task #2) —
+ * each conversation owns a distinct ACP agent.
  */
 function closeAgentSessionsAndDelete(conv: Conversation): void {
+  const acpAgent = getAcpAgent(conv.id);
   if (!acpAgent || !hasSessionCapability(acpAgent.capabilities, 'close')) return;
   const instanceId = acpAgent.instanceId;
   const sessionIds = new Set<string>();
@@ -245,9 +250,9 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                   conv.id === activeConversationId ? 'bg-accent/30' : ''
                 }`}
               >
-                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+                <HistoryRowLeadingIcon conversationId={conv.id} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{conv.title || 'New Chat'}</p>
+                  <p className="text-sm font-medium truncate">{conv.title || DEFAULT_CONVERSATION_TITLE}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />

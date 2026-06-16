@@ -428,6 +428,25 @@ describe('FloatingCommandBar', () => {
     expect(reopened.value).toBe('half-written thought');
   });
 
+  it('preserves the typed draft across the X close button too (not just Esc)', () => {
+    // The X "Close command bar" button is the mouse equivalent of Esc-collapse,
+    // so it must preserve the draft like Esc — closing then reopening must not
+    // lose the prompt. (It used to wipe the input via the `close` event.)
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'half-written thought' } });
+
+    // The X button fires a `close` event on the bus.
+    act(() => emitCmdBarEvent({ type: 'close' }));
+    expect(screen.queryByRole('combobox')).toBeNull();
+
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+    const reopened = screen.getByRole('combobox') as HTMLInputElement;
+    expect(reopened.value).toBe('half-written thought');
+  });
+
   it.each([
     ['/', 'skill-mode-stub'],
     ['@', 'reference-mode-stub'],

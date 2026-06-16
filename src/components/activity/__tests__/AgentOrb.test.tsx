@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import '@/test/tauri-mock';
 import {
   renderWithProviders,
   screen,
@@ -27,6 +28,7 @@ import {
   waitFor,
 } from '@/test/component-harness';
 import type { AgentTask } from '@/stores/activity-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom
@@ -330,14 +332,14 @@ describe('AgentOrb (#29)', () => {
     ];
     renderWithProviders(<AgentOrb />);
     const orb = screen.getByTestId('agent-orb');
-    expect(orb.getAttribute('aria-label')).toBe('Agent — 3 tasks running');
+    expect(orb.getAttribute('aria-label')).toBe('Agent — 3 running');
   });
 
   it('uses singular "task" in aria-label when exactly one is running', () => {
     mockTasks = [makeTask('t1', 'running')];
     renderWithProviders(<AgentOrb />);
     expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
-      'Agent — 1 task running',
+      'Agent — 1 running',
     );
   });
 
@@ -345,7 +347,7 @@ describe('AgentOrb (#29)', () => {
     mockTasks = [];
     renderWithProviders(<AgentOrb />);
     expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
-      'Agent — 0 tasks running',
+      'Agent — 0 running',
     );
   });
 
@@ -556,5 +558,52 @@ describe('AgentOrb (#79) — panel popover', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(orb);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #12 / #13 — unwatched chat sessions fold into the orb
+// ---------------------------------------------------------------------------
+
+describe('AgentOrb (#12, #13) — unwatched sessions', () => {
+  beforeEach(() => {
+    useReducedMotionMock.mockReturnValue(false);
+    mockTasks = [];
+    mockCmdBarPinned = false;
+    logInfoMock.mockReset();
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+  });
+
+  it('counts unwatched running sessions in the badge alongside tasks (#12)', () => {
+    // 1 running task + 2 running sessions, one of which is the foreground (excluded).
+    mockTasks = [makeTask('t1', 'running')];
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('A', { status: 'running' }); // foreground
+    useSessionRunStore.getState().setRun('B', { status: 'running' }); // unwatched
+    useSessionRunStore.getState().setRun('C', { status: 'running' }); // unwatched
+
+    renderWithProviders(<AgentOrb />);
+    // 1 task + 2 unwatched (B, C) = 3.
+    expect(screen.getByTestId('agent-orb-badge').textContent).toBe('3');
+  });
+
+  it('shows the distinct needs-you state when an unwatched session awaits permission (#13)', () => {
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('B', { status: 'awaiting_permission' });
+
+    renderWithProviders(<AgentOrb />);
+    const orb = screen.getByTestId('agent-orb');
+    expect(orb.getAttribute('data-needs-attention')).toBe('true');
+    expect(orb.getAttribute('aria-label')).toMatch(/needs your approval/i);
+    expect(screen.getByTestId('agent-orb-pulse').className).toContain('orb-pulsing-attention');
+  });
+
+  it('strips the attention pulse class under reduced motion (#13)', () => {
+    useReducedMotionMock.mockReturnValue(true);
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('B', { status: 'awaiting_permission' });
+
+    renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('agent-orb-pulse').className).not.toContain('orb-pulsing-attention');
   });
 });

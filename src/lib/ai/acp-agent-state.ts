@@ -359,40 +359,126 @@ export async function resolveLocalAgentEndpoint(
   return { env: cfg.env, configKey: cfg.configKey, port: cfg.port };
 }
 
-/** Persistent ACP agent state — survives re-renders, reset on connection change. */
+// ---------------------------------------------------------------------------
+// ACP agent registry — keyed by chat-store conversation id
+// (PRD `2026-06-14-command-bar-session-multitasking`, task #2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Replaces the former single `acpAgent` module global so multiple conversations
+ * can each own a distinct, concurrently-live ACP agent process. The per-key
+ * spawn-promise guard, scope/endpoint respawn, and liveness check all operate on
+ * a single registry entry, so two conversations never share or clobber each
+ * other's `instance_id` / `chatSessionId`.
+ *
+ * Call sites that don't (yet) carry a conversation id — inline bubble-menu
+ * actions, the legacy single-foreground chat path, settings probes — resolve to
+ * the reserved {@link DEFAULT_AGENT_KEY}, preserving today's single-agent
+ * behavior. The exported `acpAgent` binding mirrors that default-key entry (same
+ * object reference) so existing readers — including those that directly mutate
+ * `acpAgent.chatSessionId` — keep working unchanged until they are threaded with
+ * a real conversation id.
+ */
+
+/** Reserved registry key for callers without a conversation id (the foreground/default agent). */
+export const DEFAULT_AGENT_KEY = '__default__';
+
+/**
+ * Reserved registry key for the background comment-delegation agent (formerly the
+ * standalone `taskAgent` singleton in `useAgentTaskOperations`). Delegation tasks
+ * share a single agent process — they all resolve to this one entry, spawned with
+ * `role: 'task'`. Folding it into the registry (task #2) means one spawn/respawn/
+ * liveness path and one teardown set (`getAllAcpAgents`) for every ACP agent.
+ */
+export const TASK_AGENT_KEY = '__task__';
+
+/** Per-conversation ACP agent registry. */
+const agents = new Map<string, AcpAgentState>();
+
+/** Per-conversation in-flight spawn promises — prevents double-spawning per key. */
+const spawnPromises = new Map<string, Promise<string>>();
+
+/**
+ * Back-compat mirror of the default-key entry. Holds the SAME object reference
+ * stored in the registry under {@link DEFAULT_AGENT_KEY}, so existing readers
+ * (and the few sites that mutate `acpAgent.chatSessionId` directly) stay in sync
+ * with the map. Threaded call sites use {@link getAcpAgent} + a real conversation
+ * id and never touch this binding.
+ */
 export let acpAgent: AcpAgentState | null = null;
 
-/** In-flight spawn promise — prevents concurrent callers from double-spawning. */
-let acpSpawnPromise: Promise<string> | null = null;
-
-/** Read the current agent state — bypasses TypeScript control-flow narrowing. */
-function getAcpAgent(): AcpAgentState | null {
-  return acpAgent;
+/** Resolve a registry key, defaulting to the reserved foreground key. */
+function keyFor(conversationId?: string): string {
+  return conversationId ?? DEFAULT_AGENT_KEY;
 }
 
-/** Update the instance ID of the current agent (used by recovery). */
-export function updateAcpAgentInstanceId(newInstanceId: string): void {
-  if (acpAgent) {
-    acpAgent.instanceId = newInstanceId;
+/** Store (or clear) a registry entry, keeping the default-key `acpAgent` mirror in sync. */
+function setAgent(key: string, state: AcpAgentState | null): void {
+  if (state) agents.set(key, state);
+  else agents.delete(key);
+  if (key === DEFAULT_AGENT_KEY) acpAgent = state;
+}
+
+/** Read the agent state for a conversation (or the default/foreground key). */
+export function getAcpAgent(conversationId?: string): AcpAgentState | null {
+  return agents.get(keyFor(conversationId)) ?? null;
+}
+
+/** Every live registry entry — used by teardown and orb "running" derivations. */
+export function getAllAcpAgents(): AcpAgentState[] {
+  return [...agents.values()];
+}
+
+/**
+ * Every live registry entry paired with its registry key (conversation id, or
+ * {@link DEFAULT_AGENT_KEY}/{@link TASK_AGENT_KEY} for the reserved keys). Lets
+ * callers map an agent back to the conversation that owns it — e.g. the
+ * workspace-change respawn checking per-conversation run-state instead of the
+ * global `isLoading`.
+ */
+export function getAllAcpAgentEntries(): Array<[key: string, agent: AcpAgentState]> {
+  return [...agents.entries()];
+}
+
+/** Update the instance ID of a conversation's agent (used by recovery). */
+export function updateAcpAgentInstanceId(newInstanceId: string, conversationId?: string): void {
+  const agent = agents.get(keyFor(conversationId));
+  if (agent) {
+    agent.instanceId = newInstanceId;
   }
 }
 
-/** Clear agent state without sending stop command (used after recovery failure). */
-export function clearAcpAgent(): void {
-  acpAgent = null;
-  acpSpawnPromise = null;
-  clearSessionInfo();
+/** Clear a conversation's agent state without sending stop (used after recovery failure). */
+export function clearAcpAgent(conversationId?: string): void {
+  const key = keyFor(conversationId);
+  setAgent(key, null);
+  spawnPromises.delete(key);
+  if (key === DEFAULT_AGENT_KEY) clearSessionInfo();
 }
 
-/** Stop any running ACP agent and clear state. Called on disconnect. */
-export function stopAcpAgent(): void {
-  if (acpAgent) {
-    invoke('acp_agent_stop', { instanceId: acpAgent.instanceId }).catch(() => {
+/** Stop a conversation's running ACP agent and clear its state. Called on disconnect / close. */
+export function stopAcpAgent(conversationId?: string): void {
+  const key = keyFor(conversationId);
+  const agent = agents.get(key);
+  if (agent) {
+    invoke('acp_agent_stop', { instanceId: agent.instanceId }).catch(() => {
       // Expected: fire-and-forget cleanup — agent may already be stopped or crashed
     });
-    acpAgent = null;
+    setAgent(key, null);
   }
-  acpSpawnPromise = null;
+  spawnPromises.delete(key);
+  if (key === DEFAULT_AGENT_KEY) clearSessionInfo();
+}
+
+/** Stop every registered ACP agent (app teardown / connection-wide reset). */
+export function stopAllAcpAgents(): void {
+  for (const key of [...agents.keys()]) {
+    stopAcpAgent(key);
+  }
+  // Belt-and-braces: clear the default mirror + session info even if the default
+  // key was never populated.
+  acpAgent = null;
+  spawnPromises.clear();
   clearSessionInfo();
 }
 
@@ -400,22 +486,30 @@ export function stopAcpAgent(): void {
 const MAX_ENSURE_DEPTH = 3;
 
 /**
- * Ensure an ACP agent is spawned and authenticated for the given connection.
- * Reuses the existing agent if the connection matches. Stops and replaces
- * if the connection changed.
+ * Ensure an ACP agent is spawned and authenticated for the given connection,
+ * tracked under `opts.conversationId` (or the reserved {@link DEFAULT_AGENT_KEY}).
+ * Reuses the registry entry for that key when the connection / sandbox scope /
+ * endpoint config all match; stops and replaces it otherwise. Distinct
+ * conversation ids spawn and keep distinct agent processes concurrently.
  *
  * @param callerTag Short identifier for the call site (e.g. 'eager', 'send-chat',
  *   'retry-reconnect-failed'). Used only for structured diagnostic logging; does
  *   not affect behavior. Present so we can trace respawn cascades without guessing.
- * @param depth Internal recursion counter — callers should not set this.
+ * @param opts.conversationId Registry key — omit for the foreground/default agent.
+ *   Pass {@link TASK_AGENT_KEY} for the shared comment-delegation agent.
+ * @param opts.role Backend agent role tag — `'interactive'` (chat, default) or
+ *   `'task'` (background delegation). Forwarded verbatim to `acp_agent_spawn`.
+ * @param opts.depth Internal recursion counter — callers should not set this.
  */
 export async function ensureAcpAgent(
   connection: Connection,
   cwd: string,
   sandboxPaths?: string[],
   callerTag: string = 'unknown',
-  depth = 0,
+  opts: { conversationId?: string; role?: 'interactive' | 'task'; depth?: number } = {},
 ): Promise<string> {
+  const { conversationId, role = 'interactive', depth = 0 } = opts;
+  const key = keyFor(conversationId);
   if (depth > MAX_ENSURE_DEPTH) {
     throw new Error('Agent spawn failed after multiple retries');
   }
@@ -434,77 +528,86 @@ export async function ensureAcpAgent(
   const endpoint = await resolveLocalAgentEndpoint(connection);
   const configKey = endpoint?.configKey ?? '';
 
+  const existing = agents.get(key);
   log.info(
     'ai',
-    `[ensureAcpAgent:${callerTag}] conn=${connection.id} scope=[${scopeKey}] cwd=${cwd} currentAgent=${acpAgent ? `conn=${acpAgent.connectionId} scope=[${acpAgent.sandboxScopeKey}] session=${acpAgent.chatSessionId ?? 'none'}` : 'none'}`,
+    `[ensureAcpAgent:${callerTag}] key=${key} conn=${connection.id} scope=[${scopeKey}] cwd=${cwd} currentAgent=${existing ? `conn=${existing.connectionId} scope=[${existing.sandboxScopeKey}] session=${existing.chatSessionId ?? 'none'}` : 'none'}`,
   );
 
   // Respawn if connection changed OR sandbox scope changed OR endpoint config changed
   if (
-    acpAgent &&
-    (acpAgent.connectionId !== connection.id ||
-      acpAgent.sandboxScopeKey !== scopeKey ||
-      acpAgent.configKey !== configKey)
+    existing &&
+    (existing.connectionId !== connection.id ||
+      existing.sandboxScopeKey !== scopeKey ||
+      existing.configKey !== configKey)
   ) {
-    const connectionChanged = acpAgent.connectionId !== connection.id;
-    if (acpAgent.sandboxScopeKey !== scopeKey) {
+    const connectionChanged = existing.connectionId !== connection.id;
+    if (existing.sandboxScopeKey !== scopeKey) {
       log.info(
         'ai',
-        `[ensureAcpAgent:${callerTag}] sandbox scope changed, respawning. old=[${acpAgent.sandboxScopeKey}] new=[${scopeKey}]`,
+        `[ensureAcpAgent:${callerTag}] sandbox scope changed, respawning. old=[${existing.sandboxScopeKey}] new=[${scopeKey}]`,
       );
     }
-    if (acpAgent.configKey !== configKey) {
+    if (existing.configKey !== configKey) {
       log.info(
         'ai',
-        `[ensureAcpAgent:${callerTag}] endpoint config changed, respawning. old=[${acpAgent.configKey}] new=[${configKey}]`,
+        `[ensureAcpAgent:${callerTag}] endpoint config changed, respawning. old=[${existing.configKey}] new=[${configKey}]`,
       );
     }
     try {
-      await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
+      await invoke('acp_agent_stop', { instanceId: existing.instanceId });
     } catch {
       // Expected: agent may already be stopped or crashed — proceed with cleanup
     }
-    acpAgent = null;
-    acpSpawnPromise = null;
+    setAgent(key, null);
+    spawnPromises.delete(key);
     // When the connection itself changed, the previous agent's sessionInfo
-    // (modes, currentModeId, configOptions, usage, commands) no longer
-    // applies. Clearing here ensures the picker's "currently selected"
-    // state falls back to the new connection's defaults instead of showing
-    // the previous agent's values until session/new completes.
-    if (connectionChanged) {
+    // (modes, currentModeId, configOptions, usage, commands) no longer applies.
+    // Clearing here ensures the picker's "currently selected" state falls back
+    // to the new connection's defaults instead of showing the previous agent's
+    // values until session/new completes. Scoped to the default (foreground) key
+    // since sessionInfo is still the foreground singleton until it is per-keyed.
+    if (connectionChanged && key === DEFAULT_AGENT_KEY) {
       clearSessionInfo();
     }
   }
 
   // Verify the backend still has this agent (may be gone after app restart or crash)
-  if (acpAgent) {
-    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: acpAgent.instanceId });
+  const afterRespawn = agents.get(key);
+  if (afterRespawn) {
+    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: afterRespawn.instanceId });
     if (!alive) {
-      log.info('ai', `ACP agent ${acpAgent.instanceId} no longer exists in backend, respawning`);
-      acpAgent = null;
-      acpSpawnPromise = null;
+      log.info('ai', `ACP agent ${afterRespawn.instanceId} no longer exists in backend, respawning`);
+      setAgent(key, null);
+      spawnPromises.delete(key);
     }
   }
 
-  if (acpAgent) {
-    return acpAgent.instanceId;
+  const ready = agents.get(key);
+  if (ready) {
+    return ready.instanceId;
   }
 
-  // If a spawn is already in progress, await it then verify the result
-  if (acpSpawnPromise) {
-    const instanceId = await acpSpawnPromise;
-    // Re-read module-level state after await (may have changed during suspension)
-    const current = getAcpAgent();
+  // If a spawn is already in progress for this key, await it then verify the result
+  const pending = spawnPromises.get(key);
+  if (pending) {
+    const instanceId = await pending;
+    // Re-read registry state after await (may have changed during suspension)
+    const current = agents.get(key);
     // Verify the spawned agent matches our connection (another caller may have changed it)
     if (current?.instanceId === instanceId && current.connectionId === connection.id) {
       return instanceId;
     }
     // Agent changed or was replaced during await — restart the entire check
-    return ensureAcpAgent(connection, cwd, sandboxPaths, `${callerTag}-retry`, depth + 1);
+    return ensureAcpAgent(connection, cwd, sandboxPaths, `${callerTag}-retry`, {
+      conversationId,
+      role,
+      depth: depth + 1,
+    });
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
-  acpSpawnPromise = (async () => {
+  const spawn = (async () => {
     try {
       const launch = resolveAgentLaunch(connection);
 
@@ -538,7 +641,7 @@ export async function ensureAcpAgent(
       const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
         agentBinary: launch.agentBinary,
         agentArgs: args.length > 0 ? args : null,
-        role: 'interactive',
+        role,
         workingDirectory: cwd,
         envVars: spawnEnvVars,
         connectionId: connection.id,
@@ -578,7 +681,7 @@ export async function ensureAcpAgent(
         log.info('ai', `ACP auth skipped (agent handles internally): ${String(authErr)}`);
       }
 
-      acpAgent = {
+      setAgent(key, {
         instanceId: result.instance_id,
         connectionId: connection.id,
         sandboxScopeKey: scopeKey,
@@ -586,14 +689,15 @@ export async function ensureAcpAgent(
         chatSessionId: null,
         agentBinary: launch.agentBinary,
         capabilities: result.capabilities,
-      };
+      });
       return result.instance_id;
     } finally {
-      acpSpawnPromise = null;
+      spawnPromises.delete(key);
     }
   })();
 
-  return acpSpawnPromise;
+  spawnPromises.set(key, spawn);
+  return spawn;
 }
 
 // ---------------------------------------------------------------------------
