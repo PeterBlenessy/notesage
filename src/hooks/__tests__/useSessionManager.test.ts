@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useChatStore } from '@/stores/chat-store';
@@ -9,10 +9,23 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { enqueueSend, isSendQueued, __resetSendQueue } from '@/lib/ai/session-run';
 import { useSessionManager, useForegroundLoading } from '@/hooks/useSessionManager';
 
+const notifyBackgroundSession = vi.fn();
+vi.mock('@/lib/notifications', () => ({
+  notifyBackgroundSession: (...args: unknown[]) => notifyBackgroundSession(...args),
+}));
+
+function seedConversations(ids: string[], active: string | null = null) {
+  useChatStore.setState({
+    conversations: ids.map((id) => ({ id, title: `Chat ${id}`, messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null })) as never,
+    activeConversationId: active,
+  });
+}
+
 beforeEach(() => {
   useChatStore.setState({ conversations: [], activeConversationId: null });
   useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
   __resetSendQueue();
+  notifyBackgroundSession.mockClear();
 });
 
 describe('useSessionManager — foreground tracking', () => {
@@ -117,6 +130,50 @@ describe('history switcher (task #11) — foregrounding follows the active conve
     act(() => { useChatStore.setState({ activeConversationId: 'B' }); });
     expect(useSessionRunStore.getState().foregroundConversationId).toBe('B');
     expect(selectUnwatchedRunning(useSessionRunStore.getState()).map((r) => r.conversationId)).toEqual(['A']);
+  });
+});
+
+describe('useSessionManager — backgrounded notifications (task #15)', () => {
+  it('notifies when a BACKGROUND session becomes awaiting-permission', () => {
+    seedConversations(['A', 'B'], 'A'); // A is foreground
+    renderHook(() => useSessionManager());
+
+    act(() => { useSessionRunStore.getState().setRun('B', { status: 'awaiting_permission' }); });
+
+    expect(notifyBackgroundSession).toHaveBeenCalledTimes(1);
+    expect(notifyBackgroundSession.mock.calls[0][0]).toBe('permission');
+    expect(notifyBackgroundSession.mock.calls[0][3]).toBe('B');
+  });
+
+  it('does NOT notify when the FOREGROUND session needs permission', () => {
+    seedConversations(['A'], 'A');
+    renderHook(() => useSessionManager());
+
+    act(() => { useSessionRunStore.getState().setRun('A', { status: 'awaiting_permission' }); });
+    expect(notifyBackgroundSession).not.toHaveBeenCalled();
+  });
+
+  it('notifies on background completion (active → cleared)', () => {
+    seedConversations(['A', 'B'], 'A');
+    useSessionRunStore.getState().setRun('B', { status: 'running' });
+    renderHook(() => useSessionManager());
+    notifyBackgroundSession.mockClear();
+
+    act(() => { useSessionRunStore.getState().clearRun('B'); });
+
+    expect(notifyBackgroundSession).toHaveBeenCalledTimes(1);
+    expect(notifyBackgroundSession.mock.calls[0][0]).toBe('completion');
+    expect(notifyBackgroundSession.mock.calls[0][3]).toBe('B');
+  });
+
+  it('does not notify on queued → running (not a completion or permission event)', () => {
+    seedConversations(['A', 'B'], 'A');
+    useSessionRunStore.getState().setStatus('B', 'queued');
+    renderHook(() => useSessionManager());
+    notifyBackgroundSession.mockClear();
+
+    act(() => { useSessionRunStore.getState().setStatus('B', 'running'); });
+    expect(notifyBackgroundSession).not.toHaveBeenCalled();
   });
 });
 

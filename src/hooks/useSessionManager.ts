@@ -1,8 +1,21 @@
 import { useEffect } from 'react';
+import { onAction } from '@tauri-apps/plugin-notification';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store';
+import { useSessionRunStore, ACTIVE_STATUSES, type SessionRunStatus } from '@/stores/session-run-store';
 import { processSendQueue, dropQueuedSend } from '@/lib/ai/session-run';
+import { notifyBackgroundSession } from '@/lib/notifications';
+
+const isActiveStatus = (s: SessionRunStatus | undefined): boolean =>
+  s !== undefined && ACTIVE_STATUSES.includes(s);
+
+function conversationTitle(conversationId: string): string {
+  return (
+    useChatStore.getState().conversations.find((c) => c.id === conversationId)?.title ||
+    'Chat'
+  );
+}
 
 /**
  * Whether the WATCHED (foreground) conversation is actively streaming —
@@ -99,5 +112,64 @@ export function useSessionManager(): void {
       }
     });
     return unsub;
+  }, []);
+
+  // 4. Desktop notifications for BACKGROUNDED sessions (task #15). Diff each
+  //    run-state change: a non-foreground session that BECOMES awaiting-permission,
+  //    or that finishes (active → terminal), fires a notification (gated on the
+  //    matching setting). The foreground session never notifies — its card /
+  //    stream is already visible. `subscribe` hands us prev + next state.
+  useEffect(() => {
+    return useSessionRunStore.subscribe((state, prev) => {
+      const foreground = state.foregroundConversationId;
+      const ids = new Set([...Object.keys(prev.runs), ...Object.keys(state.runs)]);
+      for (const id of ids) {
+        if (id === foreground) continue; // foreground is watched — no notification
+        const before = prev.runs[id]?.status;
+        const after = state.runs[id]?.status;
+        if (before === after) continue;
+
+        // Newly blocked on a permission decision.
+        if (after === 'awaiting_permission' && before !== 'awaiting_permission') {
+          void notifyBackgroundSession(
+            'permission',
+            conversationTitle(id),
+            'A background session needs your approval to continue.',
+            id,
+          );
+          continue;
+        }
+        // Finished: was actively working, now terminal (idle/cleared/error).
+        if (isActiveStatus(before) && !isActiveStatus(after)) {
+          void notifyBackgroundSession(
+            'completion',
+            conversationTitle(id),
+            after === 'error' ? 'A background session ended with an error.' : 'A background session finished.',
+            id,
+          );
+        }
+      }
+    });
+  }, []);
+
+  // 5. Clicking a session notification foregrounds that conversation and focuses
+  //    the window (task #15). Defensive — the notification plugin / window API
+  //    may be unavailable (headless/tests); failures are swallowed.
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    onAction((notification) => {
+      const convId = notification.extra?.conversationId;
+      if (typeof convId === 'string') {
+        useChatStore.getState().setActiveConversation(convId);
+        getCurrentWindow().setFocus().catch(() => {});
+      }
+    })
+      .then((handle) => {
+        cleanup = () => handle.unregister();
+      })
+      .catch(() => {
+        // Plugin unavailable — no click-to-foreground, notifications still fire.
+      });
+    return () => cleanup?.();
   }, []);
 }

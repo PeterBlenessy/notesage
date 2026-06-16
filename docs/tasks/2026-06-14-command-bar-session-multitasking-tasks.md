@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1–#14 done) |
+| **Status** | In progress (#1–#15 done; #16 remaining) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -128,10 +128,11 @@
 
 ## Notifications
 
-### #15 — Notifications for backgrounded permission/completion
+### #15 — Notifications for backgrounded permission/completion ✅
 - **Description:** When a **backgrounded** session hits a permission request, or completes, fire a desktop notification (`tauri-plugin-notification`, gated on `notifyAgentCompletion` for completion / `notifyPermissionRequest` for permission) **plus** the orb badge/pulse. Clicking the notification focuses the window and foregrounds that session. **Acceptance:** backgrounded permission/completion notifies; foreground does not double-notify; click selects the session.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #6, #8, #12
 - **Files:** `src/hooks/useSessionManager.ts`, `src/lib/notifications.ts`
+  - **Landed:** `notifyBackgroundSession(kind, title, body, conversationId)` in `notifications.ts` — gated on `notifyPermissionRequest` / `notifyAgentCompletion`, sends with `extra: { conversationId }`. `useSessionManager` adds a run-state diff subscription (`subscribe` gives prev+next): a non-foreground session that **becomes** `awaiting_permission` notifies (permission); one that goes active→terminal (idle/cleared/error) notifies (completion). The foreground session never notifies (no double-notify — its card/stream is visible). A second effect registers the plugin's `onAction` handler → reads `extra.conversationId` → `setActiveConversation` + `getCurrentWindow().setFocus()` (defensive; plugin/window may be absent in tests). The orb badge/pulse part is already done by #12/#13. Tests: background permission/completion notify, foreground doesn't, queued→running doesn't.
 
 ## Integration tests
 
