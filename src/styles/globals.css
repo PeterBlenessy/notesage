@@ -585,6 +585,32 @@ body {
   }
 }
 
+/* Distinct "needs you" pulse for the AgentOrb when an unwatched session is
+ * awaiting a permission decision (task #13) — a faster, more insistent accent
+ * ring than the ambient `orb-pulse`, so "needs you" reads differently from
+ * "merely running". CSS-only; reduced-motion strips it (here + the component
+ * omits the class via `useReducedMotion`). */
+@keyframes orb-pulse-attention {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--color-accent-primary);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+.orb-pulsing-attention {
+  animation: orb-pulse-attention 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-pulsing-attention {
+    animation: none;
+  }
+}
+
 /* Session run-state status dot (history rows, task #9). A gentle opacity pulse
  * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
  * components also strip the class under `useReducedMotion()` as defence-in-depth. */

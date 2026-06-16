@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1–#11 done) |
+| **Status** | In progress (#1–#14 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -108,20 +108,23 @@
 
 ## Orb UI
 
-### #12 — Orb "running and unwatched" set
+### #12 — Orb "running and unwatched" set ✅
 - **Description:** Derive the orb's set as running sessions whose `conversationId ≠ foregroundConversationId`; the orb counts them. Switching/closing the bar auto-adds the left session; selecting it removes it. **Acceptance:** with N running and 1 foregrounded, the orb shows N−1.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #4
 - **Files:** `src/components/activity/AgentOrb.tsx`, `src/stores/session-run-store.ts` (selector)
+  - **Landed:** `selectUnwatchedRunning(state)` already existed (running/awaiting sessions whose `conversationId ≠ foregroundConversationId`). `AgentOrb` now counts unwatched chat sessions alongside background agent tasks via scalar selectors (`.length` / `.some()` — primitive returns avoid array-identity re-render churn); the badge/active state is the union. Switching/closing the bar moves a session in/out of the set automatically (the foreground mirror from #4). Test: badge = tasks + unwatched (foreground excluded).
 
-### #13 — Orb distinct pulse for needs-permission
+### #13 — Orb distinct pulse for needs-permission ✅
 - **Description:** A distinct pulse/badge when ≥1 unwatched session awaits permission (vs merely running). CSS-only keyframe; `useReducedMotion` + `prefers-reduced-motion` guard. **Acceptance:** visual distinction between "running" and "needs you"; static under reduced motion.
 - **Complexity:** S · **Category:** frontend · **Depends on:** #6, #12
 - **Files:** `src/components/activity/AgentOrb.tsx`, `src/styles/globals.css`
+  - **Landed:** Distinct `orb-pulsing-attention` keyframe (faster, more insistent accent ring) in `globals.css`, applied when an unwatched session is `awaiting_permission` (takes precedence over the ambient `orb-pulsing`). CSS-only; stripped under `useReducedMotion` + a `prefers-reduced-motion` media query. `data-needs-attention` + a "needs your approval" aria-label surface it. Tests: needs-you class present, reduced-motion strips it.
 
-### #14 — AgentPanel: list unwatched sessions, click to foreground
+### #14 — AgentPanel: list unwatched sessions, click to foreground ✅
 - **Description:** `AgentPanel` lists the unwatched running sessions (label, provider, status; needs-you first). Clicking one brings it into the bar (and removes it from the orb via #12). **Acceptance:** panel reflects the orb set; click foregrounds the session.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #11, #12
 - **Files:** `src/components/activity/AgentPanel.tsx`
+  - **Landed:** `AgentPanel` renders a **Sessions** section above the task list — the unwatched running/awaiting sessions (conversation title + status; **needs-you sorted first**), derived via `useMemo` over the raw store slices (NOT `useSessionRunStore(selectUnwatchedRunning)` directly, which returns a fresh array each render → infinite re-render). Clicking a row calls `onSelectSession`, which `AgentOrb` wires to `setActiveConversation` + close-popover — #4's foreground mirror then drops it out of the orb set. Empty state now keys on tasks AND sessions both empty. Tests: lists N−1 (foreground excluded, needs-you first), click foregrounds.
 
 ## Notifications
 
