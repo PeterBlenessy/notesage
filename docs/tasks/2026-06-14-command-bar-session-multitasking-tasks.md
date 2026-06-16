@@ -141,3 +141,61 @@
 - **Complexity:** L · **Category:** frontend · **Depends on:** all
 - **Files:** `src/**/__tests__/`, `e2e/tests/`
   - **Landed:** Each scenario carries its own focused unit/integration test (added per task above). Added `src/hooks/__tests__/session-multitasking.integration.test.ts` — a single cross-cutting flow through the always-mounted `useSessionManager` + `session-run-store` + queue primitives that asserts the engine pieces **compose**: two concurrent runs (#3) → orb unwatched set excludes the foreground (#12) → a 3rd send queues at the cap (#5) → background permission notifies + the foreground does not (#15) → a completion frees a slot and auto-starts the queued send (#5) → switching foreground moves a session in/out of the orb set (#11). **Gates (all green):** `pnpm typecheck`; `pnpm test` 5610; `pnpm test:perf` 45 at the CI `PERF_BUDGET_MULTIPLIER=1.5`; `pnpm coverage:check` 0 regressions; `pnpm test:e2e` 160 (Playwright).
+
+## Post-review hardening (high-effort code review)
+
+After the feature landed it was run through a high-effort code review; the
+findings were fixed in four commits on `feat/cmd-bar-session-multitasking`.
+Concurrency findings here matter because the feature's whole point is concurrent
+sessions — several issues that read as "edge cases" are reachable in normal
+single-session use too (#1, #2).
+
+- **#1 phantom `running` (`108fa336`):** the ACP send captured `conversationId`
+  *before* `addMessage`, which creates+activates the conversation for a brand-new
+  chat — so a first send stranded its run as `running` on a `null` id (the
+  listener/cleanup `runIdle` no-ops on null). Capture moved after `addMessage`;
+  redundant `runConvId` dropped.
+- **#2 Copilot cross-contamination (`108fa336`):** `useCopilotChat` threaded the
+  owning `conversationId` through every `handleToolCall` + stream write and the
+  segment-index lookups, so a mid-stream view switch can't land segments on the
+  wrong conversation.
+- **#5 spawn-race + workspace-change (`108fa336`):** `ensureAcpAgent` retry now
+  forwards `role`; the workspace-change respawn decides turn-active from
+  per-conversation run-state (`getAllAcpAgentEntries()`) instead of the global
+  `isLoading`.
+- **#4 per-conversation tool-permission map (`505bb626`):** `tool-permission-store`'s
+  single `pending` slot became a `Record<conversationId, …>` — two concurrent
+  direct-API/Copilot turns each await their own decision; the second no longer
+  clobbers (and strands) the first.
+- **#6/#7/#8/#9 dedup (`505bb626`):** `ToolCallPermissionCard` resolves through the
+  shared `resolveDirectPermission` + `TieredApprovalButtons`; one
+  `selectConversationTitle` / `DEFAULT_CONVERSATION_TITLE` (fixes `'Chat'` vs
+  `'New Chat'`); one `formatToolArgsPreview`.
+- **#3 per-conversation ACP cleanup (`b3cfc910`):** the single `cleanupRef`
+  (which let one conversation's send overwrite another's cleanup — leaking the
+  first's listeners and running the wrong cleanup on completion) became a
+  per-conversation map keyed to the agent registry; adds an unmount teardown.
+- **#13 targeted cancel (`b3cfc910`):** `acpCancelChat(targetConversationId?)`
+  cancels a specific conversation and clears its run even in the cold-spawn window.
+- **perf (`a76b15c3`):** single-pass `selectUnwatchedRunning` in `AgentOrb`; one
+  per-row store subscription in `HistoryRowLeadingIcon`; `useForegroundLoading`
+  reuses `isActiveStatus`.
+
+**#12 (single run-state owner):** already satisfied — `src/lib/ai/session-run.ts`
+is the single owner of transition logic; call sites legitimately signal their
+own conversation's transitions.
+
+**`isLoading` vestigial:** confirmed no UI reads `chat-store.isLoading` (all use
+`useForegroundLoading`); left as a harmless dead write — removing it touches ~28
+files for zero behavioral change, deliberately not bundled here.
+
+**#11 queue-drain view-yank — DEFERRED → issue #468.** When the queue drains, the
+start-thunk calls `setActiveConversation(targetConv)`, yanking the view to the
+dequeued conversation. That activation is load-bearing (the send pipeline reads
+the *active* conversation for project paths / sandbox scope / system prompt /
+`addMessage`), so the proper fix is decoupling the pipeline from active-conversation
+— a sizeable, higher-risk refactor tracked separately. Trigger is rare (4+
+concurrent live sessions) and there's no data-correctness impact.
+
+**Gates after hardening (all green):** `pnpm typecheck`; `pnpm test` 5619 (334
+files); `pnpm test:perf` cmd-bar within budget at `PERF_BUDGET_MULTIPLIER=1.5`.

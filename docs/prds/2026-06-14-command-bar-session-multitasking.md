@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | ✅ Implemented (2026-06-16) — see `docs/tasks/2026-06-14-command-bar-session-multitasking-tasks.md` |
+| **Status** | ✅ Implemented (2026-06-16) — see `docs/tasks/2026-06-14-command-bar-session-multitasking-tasks.md`. Post-review hardening pass landed (review #1–#10, #12, #13, perf); #11 (queue-drain view-yank) deferred → issue #468. |
 | **Priority** | High |
 | **Impact** | Run several AI agents at once and walk away from each — sessions keep working in the background, the history list switches between them, and the orb pulls you back when one needs you. |
 | **Tasks** | [command-bar-session-multitasking-tasks](../tasks/2026-06-14-command-bar-session-multitasking-tasks.md) |
