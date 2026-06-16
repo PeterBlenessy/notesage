@@ -4,6 +4,7 @@ import { useChatStore, type Conversation } from '@/stores/chat-store';
 import { getLeaves } from '@/lib/chat-tree';
 import { formatRelativeTime } from '@/components/editor/CommentThread';
 import { HistoryRowLeadingIcon } from './SessionStatusBadge';
+import { InlineHistoryPermission } from './InlineHistoryPermission';
 
 export interface CommandBarHistoryProps {
   /**
@@ -154,8 +155,13 @@ export const CommandBarHistory = memo(function CommandBarHistory({
             const provider = getProviderLabel(conv);
             const isHighlighted = index === highlight;
             return (
+              // Wrap so the awaiting-permission inline card (task #10) can expand
+              // BELOW the clickable row button (interactive controls can't nest
+              // inside a <button>). `InlineHistoryPermission` renders null unless
+              // this conversation has a pending request, so normal rows are
+              // visually unchanged.
+              <div key={conv.id}>
               <button
-                key={conv.id}
                 ref={(el) => {
                   rowRefs.current[index] = el;
                 }}
@@ -201,6 +207,8 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                   </div>
                 </div>
               </button>
+              <InlineHistoryPermission conversationId={conv.id} />
+              </div>
             );
           })}
         </div>

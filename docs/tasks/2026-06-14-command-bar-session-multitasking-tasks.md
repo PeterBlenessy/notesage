@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1–#9, #11 done) |
+| **Status** | In progress (#1–#11 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -93,10 +93,12 @@
 - **Files:** `src/components/cmd/CommandBarHistory.tsx`, `src/components/chat/ChatHistoryView.tsx`
   - **Landed:** New `SessionStatusBadge` (running = neutral dot with CSS `session-status-pulse`, stripped under `useReducedMotion` + a `prefers-reduced-motion` media query; awaiting = accent Pause; queued = muted Hourglass; error = destructive AlertTriangle; idle/none → null). Shared `HistoryRowLeadingIcon` swaps the default `MessageSquare` glyph for the badge when a conversation has a live run; used by both `CommandBarHistory` and `ChatHistoryView`. Badges are live (subscribe to `session-run-store`). Tests: per-status render + leading-icon swap.
 
-### #10 — History inline permission card
+### #10 — History inline permission card ✅
 - **Description:** An awaiting-permission history row **expands in place** to show the request — tool label (`formatToolLabel`) + `Diff`/`Content` preview (`normalizeToolCallContent`) — with tiered Allow / Deny (allow-once/session/always). Resolves without opening the full session. Reuse the visual language of `PermissionCard` / `ToolCallPermissionCard`. **Acceptance:** approving/denying inline resolves the request for both ACP and direct-API tool calls.
 - **Complexity:** L · **Category:** frontend · **Depends on:** #6, #9
 - **Files:** `src/components/cmd/CommandBarHistory.tsx`, `src/components/chat/PermissionCard.tsx` / `ToolCallPermissionCard.tsx` (extract shared inline form)
+  - **Landed:** Extracted the resolution logic into `src/lib/ai/permission-resolve.ts` (`resolveAcpPermission` — allow/session/always/deny, mirroring `PermissionCard`; `resolveDirectPermission` — forwards the tier to the pending `resolve`) and **refactored `PermissionCard` to use it**, so the two surfaces can't drift. New shared `TieredApprovalButtons` (Allow split-dropdown + Deny). New `InlineHistoryPermission` reads the conversation's pending request (ACP via `permission-store`, direct via `tool-permission-store` matched by `conversationId` from #6) and expands in place under the history row, resolving via the shared helpers. Wired into `CommandBarHistory` rows (each row wrapped so the inline card mounts below the clickable button; renders null when no pending request). Tests: helper resolution (allow/deny/session for ACP, tier forward for direct) + the inline card (renders/none, Allow resolves direct, Deny resolves ACP, ignores other conversations).
+  - **Note:** the request only carries `toolInput` (a string), so the preview is the tool label + truncated args — the richer `Diff`/`Content` (`normalizeToolCallContent`) lives on `tool_call_update` events, not the permission request, so it's the same preview `PermissionCard` shows. `ToolCallPermissionCard`'s own button JSX was left as-is (its `resolved`-state/countdown dance is bespoke); the shared form is used by the inline card + `TieredApprovalButtons`.
 
 ### #11 — History row → foreground session (the switcher) ✅
 - **Description:** Clicking a history row attaches the command bar to that session **live** (mid-stream if running) and sets it as the foreground conversation. **Acceptance:** clicking a running row shows its live stream; the previously-foreground running session moves to the orb set.
