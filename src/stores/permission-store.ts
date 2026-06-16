@@ -12,6 +12,12 @@ export interface PermissionRequest {
   toolInput: string;
   options: { optionId: string; kind: string; name: string }[];
   timestamp: number;
+  /**
+   * Conversation that owns this request (task #6). Lets the UI attribute the
+   * request to its session and drive the foreground-aware auto-deny timeout
+   * (task #7). `null`/absent for legacy callers (treated as foreground).
+   */
+  conversationId?: string | null;
 }
 
 export type PermissionTier = 'none' | 'session' | 'always';
@@ -699,3 +705,17 @@ export const usePermissionStore = create<PermissionStore>()(
     },
   ),
 );
+
+// ---------------------------------------------------------------------------
+// Pure selectors (task #6)
+// ---------------------------------------------------------------------------
+
+/** ACP permission requests owned by a given conversation. A request with no
+ *  `conversationId` (legacy) matches nothing here — callers that need the
+ *  unattributed ones read `requests` directly. */
+export function pendingForConversation(
+  state: Pick<PermissionState, 'requests'>,
+  conversationId: string,
+): PermissionRequest[] {
+  return state.requests.filter((r) => r.conversationId === conversationId);
+}

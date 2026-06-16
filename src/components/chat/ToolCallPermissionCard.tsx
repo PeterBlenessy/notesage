@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { PendingToolPermission } from '@/stores/tool-permission-store';
+import { useIsRequestForeground } from '@/hooks/useSessionManager';
 
 interface ToolCallPermissionCardProps {
   request: PendingToolPermission;
@@ -26,9 +27,17 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
   const resolvedRef = useRef(false);
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
+  // Foreground-aware auto-deny (task #7): only count down while this request's
+  // session is the one being watched. A backgrounded request never auto-denies
+  // — the desktop notification (task #15) is its time-sensitive signal.
+  const isForeground = useIsRequestForeground(request.conversationId);
 
-  // Auto-deny after 30 seconds
+  // Auto-deny after 30 seconds — only while foreground.
   useEffect(() => {
+    if (!isForeground) {
+      setCountdown(30); // frozen while backgrounded; restarts on foreground
+      return;
+    }
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -45,7 +54,7 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
     }, 1000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request.id]);
+  }, [request.id, isForeground]);
 
   const handleAllow = () => {
     if (resolvedRef.current) return;

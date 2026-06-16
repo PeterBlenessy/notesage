@@ -7,6 +7,13 @@ export interface PendingToolPermission {
   name: string;
   arguments: Record<string, unknown>;
   resolve: (decision: ToolCallDecision) => void;
+  /**
+   * Conversation that owns this request (task #6) — lets the permission card
+   * tell whether it belongs to the watched session, which drives the
+   * foreground-aware auto-deny timeout (task #7). `null`/absent for legacy
+   * callers (treated as foreground).
+   */
+  conversationId?: string | null;
 }
 
 interface ToolPermissionStore {

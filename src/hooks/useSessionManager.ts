@@ -21,6 +21,20 @@ export function useForegroundLoading(): boolean {
 }
 
 /**
+ * Whether a permission request's conversation is the one currently watched in
+ * the command bar (task #7). Drives the foreground-aware auto-deny timeout: a
+ * request from a backgrounded session must NOT count down on the old 30 s timer
+ * (the desktop notification is the time-sensitive signal). A request with no
+ * conversation attribution (legacy) is treated as foreground so behavior is
+ * unchanged.
+ */
+export function useIsRequestForeground(conversationId: string | null | undefined): boolean {
+  const foreground = useSessionRunStore((s) => s.foregroundConversationId);
+  if (conversationId == null) return true;
+  return conversationId === foreground;
+}
+
+/**
  * Always-mounted owner of cross-conversation session run-state (PRD
  * `2026-06-14-command-bar-session-multitasking`, task #4).
  *

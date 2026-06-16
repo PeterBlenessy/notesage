@@ -320,6 +320,7 @@ export function useDirectApiChat({
                   name: call.name,
                   arguments: call.arguments,
                   resolve,
+                  conversationId,
                 });
               });
               useToolPermissionStore.getState().setPending(null);

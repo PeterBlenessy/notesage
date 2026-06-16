@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1, #2, #3, #4, #5, #8 done) |
+| **Status** | In progress (#1–#8 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -60,10 +60,18 @@
 
 ## Permissions
 
-### #6 — Permission request ownership (conversationId)
+### #6 — Permission request ownership (conversationId) ✅
 - **Description:** Add `conversationId` (+ a `foreground` flag) to every pending permission request in `permission-store` (ACP) and `tool-permission-store` (direct-API); populate it where requests are created. Selector: `pendingForConversation(id)`. **Acceptance:** a request is attributable to its session; foreground flag reflects whether that session is currently watched.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #1
 - **Files:** `src/stores/permission-store.ts`, `src/stores/tool-permission-store.ts`, `src/hooks/useAcpSessionListeners.ts`, `src/hooks/useDirectApiChat.ts`
+  - **Landed:** `conversationId?: string | null` added to `PermissionRequest` (ACP) and `PendingToolPermission` (direct-API); populated at creation (`useAcpSessionListeners` addRequest with `cid`, `useDirectApiChat` setPending with `conversationId`). Selector `pendingForConversation(state, id)` in `permission-store`. The "foreground flag" is **derived, not stored** (`useIsRequestForeground(conversationId)` compares against `session-run-store.foregroundConversationId`) so it never goes stale. Legacy requests (no `conversationId`) are treated as foreground. Tests: selector filtering + attribution.
+
+### #7 — Foreground-aware permission auto-deny timeout ✅
+- **Description:** Rework the 30s auto-deny: a request from a **non-foreground** session gets a long/no auto-deny (the notification is the time-sensitive signal); foreground requests keep today's timeout. **Acceptance:** backgrounded request does not auto-deny on the old timer; foreground behavior unchanged.
+- **Complexity:** M · **Category:** frontend · **Depends on:** #6
+- **Files:** `src/stores/permission-store.ts`, `src/stores/tool-permission-store.ts`, `src/components/chat/PermissionCard.tsx`, `src/components/chat/ToolCallPermissionCard.tsx`
+  - **Landed:** Only `ToolCallPermissionCard` (direct-API) actually has a 30s auto-deny — the ACP `PermissionCard` has **no** auto-deny timer (confirmed by its own comment; ACP relies on the unresponsive flow). So the rework is in `ToolCallPermissionCard`: its countdown effect now gates on `useIsRequestForeground(request.conversationId)` — it only ticks while the request's session is watched, and freezes (no auto-deny) while backgrounded; switching to that session restarts the 30s. Foreground/legacy behavior unchanged. Tests: auto-denies foreground, does NOT background, legacy (null conv) = foreground.
+  - **Out of scope:** `DomainApprovalCard` (network domain approvals) also has a 30s timer but is a separate per-instance flow not in the task's file list and carries no `conversationId` — left as-is.
 
 ### #7 — Foreground-aware permission auto-deny timeout
 - **Description:** Rework the 30s auto-deny: a request from a **non-foreground** session gets a long/no auto-deny (the notification is the time-sensitive signal); foreground requests keep today's timeout. **Acceptance:** backgrounded request does not auto-deny on the old timer; foreground behavior unchanged.

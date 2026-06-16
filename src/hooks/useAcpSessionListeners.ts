@@ -406,6 +406,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         toolInput: truncateDetail(toolInfo.input, 200),
         options,
         timestamp: Date.now(),
+        conversationId: cid,
       });
     }
   });
