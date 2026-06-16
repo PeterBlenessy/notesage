@@ -5,11 +5,14 @@ import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useChatStore } from '@/stores/chat-store';
 import { useSessionRunStore } from '@/stores/session-run-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { enqueueSend, isSendQueued, __resetSendQueue } from '@/lib/ai/session-run';
 import { useSessionManager, useForegroundLoading } from '@/hooks/useSessionManager';
 
 beforeEach(() => {
   useChatStore.setState({ conversations: [], activeConversationId: null });
   useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+  __resetSendQueue();
 });
 
 describe('useSessionManager — foreground tracking', () => {
@@ -54,6 +57,44 @@ describe('useSessionManager — orphan pruning', () => {
       });
     });
     expect(Object.keys(useSessionRunStore.getState().runs)).toEqual(['conv-A']);
+  });
+});
+
+describe('useSessionManager — concurrency queue drain (task #5)', () => {
+  it('auto-starts a parked send when a run-state change frees a slot', () => {
+    useSettingsStore.setState({ maxConcurrentSessions: 2 });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    // Seed conversations for every run id so the orphan-prune effect doesn't
+    // clear these runs at mount (in production a run always has a conversation).
+    const ids = ['R1', 'R2', 'R3', 'R4', 'R5', 'Q'];
+    useChatStore.setState({
+      conversations: ids.map((id) => ({ id, title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null })) as never,
+      activeConversationId: null,
+    });
+    // Fill clearly OVER any plausible cap (the persisted setting can race in
+    // tests) so the parked send stays queued at mount regardless of the exact
+    // cap value; then free down clearly UNDER it.
+    for (const id of ['R1', 'R2', 'R3', 'R4', 'R5']) {
+      useSessionRunStore.getState().setRun(id, { status: 'running' });
+    }
+
+    let started = false;
+    enqueueSend('Q', () => { started = true; useSessionRunStore.getState().setStatus('Q', 'running'); });
+
+    renderHook(() => useSessionManager());
+    // Still over capacity on mount — nothing starts.
+    expect(started).toBe(false);
+    expect(isSendQueued('Q')).toBe(true);
+
+    // Free every running slot → the store subscription drains the queue.
+    act(() => {
+      for (const id of ['R1', 'R2', 'R3', 'R4', 'R5']) {
+        useSessionRunStore.getState().clearRun(id);
+      }
+    });
+    expect(started).toBe(true);
+    expect(isSendQueued('Q')).toBe(false);
+    expect(useSessionRunStore.getState().runs.Q?.status).toBe('running');
   });
 });
 

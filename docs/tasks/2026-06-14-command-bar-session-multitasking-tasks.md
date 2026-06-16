@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1, #2, #3, #4 done) |
+| **Status** | In progress (#1, #2, #3, #4, #5, #8 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -45,10 +45,18 @@
   - **Landed:** New `src/lib/ai/session-run.ts` transition helpers (`runStarted`/`runRunning`/`runAwaitingPermission`/`runAttachInstance`/`runIdle`/`runError`) wired into ALL four send paths — `useDirectApiChat`, `useAcpLifecycle` (+ `useAcpSessionListeners` cleanup/permission), and `useCopilotChat` — keyed by conversation id, with the run marked active *before* the ACP spawn await so the bar shows "working" during a cold spawn. New always-mounted `useSessionManager()` (`App.tsx`) mirrors `activeConversationId → setForeground` and prunes runs for deleted conversations (gated on a conversation-count decrease, not per-chunk). New `useForegroundLoading()` hook replaces the global `isLoading` in `FloatingCommandBar`, `ChatMessageList`, and `ChatMessage` so loading reflects the **watched** conversation. Tests: `useSessionManager` (foreground sync + orphan prune + `useForegroundLoading` foreground/background), `useDirectApiChat` run-state transitions (running→idle, error). Full suite green (5559); perf green.
   - **Deferred:** `setSegmentSessionId` (ACP session-setup) still writes to the active conversation (from #3) — only matters once true concurrent ACP sends land (#5+; ACP still has a single foreground `cleanupRef`). Copilot streaming writes remain active-conversation-scoped (Copilot was never threaded in #3); only its run-state is per-conversation here.
 
-### #5 — Concurrency cap + queue
+### #5 — Concurrency cap + queue ✅
 - **Description:** Session manager enforces `≤ maxConcurrentSessions` (default 4) live runs; a send beyond the cap enters `queued` and auto-starts when a slot frees (FIFO). **Acceptance:** (cap+1)th send queues and starts on the next completion; verified for both paths.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #4, #8
 - **Files:** `src/hooks/useSessionManager.ts`, `src/stores/session-run-store.ts`
+  - **Landed:** Cap enforced at a **single chokepoint** — `useAIOperations.sendChatMessage` (path-agnostic, so "both paths" covered uniformly) — rather than per-path before each streaming invoke. The per-path "defer the invoke" approach would have duplicated each path's error/cleanup handling across three async functions; the chokepoint is far safer for the same acceptance. Queue primitives live in `src/lib/ai/session-run.ts` (module-level FIFO of start-thunks + `hasSessionCapacity` / `enqueueSend` / `processSendQueue` / `dropQueuedSend`); `session-run-store`'s `queued` status is what UI badges read. `useSessionManager` subscribes to run-state and drains FIFO when a slot frees (re-entrancy-guarded). `cancelChat` drops a still-queued send; the orphan-prune drops a parked send for a deleted conversation. Tests: queue primitives (FIFO, cap, supersede, drop), the `useAIOperations` gate (queues at cap / sends under cap), and `useSessionManager` auto-drain on completion. Full suite green (5576).
+  - **One tradeoff (deferred UX):** when a queued send starts after a slot frees, the thunk sets its conversation active and routes — so if you'd navigated to a *different* conversation while it was queued, the view follows the session that just started. In the common rapid-fire case (you stay on the conversation you queued) there's no jump. Showing the queued message before it starts, and "queued in the orb," are explicitly deferred per the PRD's open-questions note.
+
+### #8 — Settings: maxConcurrentSessions + notifyPermissionRequest ✅
+- **Description:** Add `maxConcurrentSessions` (clamp 3–5, default 4) and `notifyPermissionRequest` (bool) to `settings-store`; surface in the Settings v2 AI/Advanced panel. **Acceptance:** persisted, clamped, consumed by #5 and #15.
+- **Complexity:** M · **Category:** frontend · **Depends on:** —
+- **Files:** `src/stores/settings-store.ts`, `src/components/settings/v2/` (AI/Advanced panel)
+  - **Landed:** Both settings added with setters (`setMaxConcurrentSessions` clamps `[3,5]` + rounds; `setNotifyPermissionRequest`), defaults (4 / true), persist version bumped 22→23 with a defensive migration. Surfaced in `AISettings` as a new "Sessions" group — a 3–5 Slider for the cap + a Switch for background-permission notifications. `maxConcurrentSessions` is consumed by #5; `notifyPermissionRequest` awaits #15. Tests: clamp/default/round + toggle, plus the AISettings render (ResizeObserver polyfill added for the Slider).
 
 ## Permissions
 

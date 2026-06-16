@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { useChatStore } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store';
+import { processSendQueue, dropQueuedSend } from '@/lib/ai/session-run';
 
 /**
  * Whether the WATCHED (foreground) conversation is actively streaming —
@@ -48,7 +50,17 @@ export function useSessionManager(): void {
     useSessionRunStore.getState().setForeground(activeConversationId);
   }, [activeConversationId]);
 
-  // 2. Prune run entries whose conversation has been deleted. Subscribe to the
+  // 2. Drain the concurrency queue (task #5): whenever run-state changes (a
+  //    session completed / errored / was cancelled, freeing a slot), start as
+  //    many parked sends as the cap now allows. `processSendQueue` is FIFO and
+  //    re-entrancy-safe.
+  useEffect(() => {
+    const drain = () => processSendQueue(useSettingsStore.getState().maxConcurrentSessions);
+    drain(); // in case runs already have free capacity at mount
+    return useSessionRunStore.subscribe(drain);
+  }, []);
+
+  // 3. Prune run entries whose conversation has been deleted. Subscribe to the
   //    chat store directly (not via a render selector) so a delete anywhere
   //    reconciles without coupling this hook to conversation-list renders.
   useEffect(() => {
@@ -56,7 +68,10 @@ export function useSessionManager(): void {
       const live = new Set(conversations.map((c) => c.id));
       const runStore = useSessionRunStore.getState();
       for (const id of Object.keys(runStore.runs)) {
-        if (!live.has(id)) runStore.clearRun(id);
+        if (!live.has(id)) {
+          dropQueuedSend(id); // also drop a parked send for a deleted conversation
+          runStore.clearRun(id);
+        }
       }
     };
     // Reconcile once on mount, then only when a conversation is removed — a

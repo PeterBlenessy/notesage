@@ -10,6 +10,9 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
+import { processSendQueue, __resetSendQueue } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -210,6 +213,69 @@ describe('useAIOperations', () => {
 
       expect(mockAcpSendChatMessage).toHaveBeenCalled();
       expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- concurrency cap + queue (task #5) ----
+
+  describe('concurrency cap', () => {
+    beforeEach(() => {
+      useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+      __resetSendQueue();
+      useSettingsStore.setState({ maxConcurrentSessions: 2 });
+    });
+
+    const routeInteractive = (connId: string) =>
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: connId },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+
+    it('queues a send when at the cap, then starts it when a slot frees', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      useChatStore.setState({
+        conversations: [{ id: 'conv-E', title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: 'conv-E',
+      });
+      // Fill the cap (2) with running sessions.
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' });
+      useSessionRunStore.getState().setRun('conv-B', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      // At cap → parked, the path send is NOT invoked and the run is `queued`.
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBe('queued');
+
+      // A slot frees → draining starts the parked send.
+      act(() => {
+        useSessionRunStore.getState().clearRun('conv-A');
+        processSendQueue(2);
+      });
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends immediately when under the cap', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      useChatStore.setState({
+        conversations: [{ id: 'conv-E', title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: 'conv-E',
+      });
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' }); // 1 < cap 2
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBeUndefined();
     });
   });
 

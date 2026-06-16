@@ -7,7 +7,7 @@
 // resolved conversation (e.g. a send before a conversation exists) simply don't
 // participate in run tracking, which is harmless.
 
-import { useSessionRunStore, type SessionRunPath } from '@/stores/session-run-store';
+import { useSessionRunStore, selectLiveCount, type SessionRunPath } from '@/stores/session-run-store';
 
 /** Mark a conversation's run as actively streaming. Records the send path and
  *  the transient runtime handle (`streamId` for direct, `instanceId` for ACP). */
@@ -71,4 +71,81 @@ export function runIdle(conversationId: string | null | undefined): void {
 export function runError(conversationId: string | null | undefined): void {
   if (!conversationId) return;
   useSessionRunStore.getState().setStatus(conversationId, 'error');
+}
+
+// ---------------------------------------------------------------------------
+// Concurrency cap + FIFO queue (task #5)
+//
+// When the live-session count is at the cap, a new send is deferred: its run is
+// marked `queued` and a start-thunk is parked here (module-level, so it survives
+// command-bar re-renders). `processSendQueue` drains the queue FIFO whenever a
+// slot frees — driven by `useSessionManager`'s subscription to run-state. The
+// start-thunk, not the store, holds the deferred work (thunks aren't
+// serializable); the store's `queued` status is what the UI badges read.
+// ---------------------------------------------------------------------------
+
+interface QueuedSend {
+  conversationId: string;
+  /** Resumes the deferred send (sets it active + routes the actual stream). */
+  start: () => void;
+}
+
+const sendQueue: QueuedSend[] = [];
+let draining = false;
+
+/** True when another live session may start without exceeding the cap. */
+export function hasSessionCapacity(maxConcurrent: number): boolean {
+  return selectLiveCount(useSessionRunStore.getState()) < maxConcurrent;
+}
+
+/** Park a send behind the cap: mark its run `queued` (FIFO). Replaces any prior
+ *  queued thunk for the same conversation (a re-send supersedes). */
+export function enqueueSend(conversationId: string, start: () => void): void {
+  const existing = sendQueue.findIndex((q) => q.conversationId === conversationId);
+  if (existing !== -1) sendQueue.splice(existing, 1);
+  sendQueue.push({ conversationId, start });
+  useSessionRunStore.getState().setStatus(conversationId, 'queued');
+}
+
+/** Drop a conversation's queued send without starting it (cancel / delete). */
+export function dropQueuedSend(conversationId: string): boolean {
+  const idx = sendQueue.findIndex((q) => q.conversationId === conversationId);
+  if (idx === -1) return false;
+  sendQueue.splice(idx, 1);
+  return true;
+}
+
+/** Whether a conversation currently has a parked (queued) send. */
+export function isSendQueued(conversationId: string): boolean {
+  return sendQueue.some((q) => q.conversationId === conversationId);
+}
+
+/** Start as many queued sends as the cap allows, oldest first. Re-entrancy-safe:
+ *  starting a send flips it to `running` and re-notifies the subscription, but
+ *  the `draining` guard collapses the nested calls into the running loop. */
+export function processSendQueue(maxConcurrent: number): void {
+  if (draining) return;
+  draining = true;
+  try {
+    while (sendQueue.length > 0 && hasSessionCapacity(maxConcurrent)) {
+      const next = sendQueue.shift()!;
+      // `start` synchronously marks the run `running` (via the send path's
+      // `runStarted`), so the next capacity check sees the new live session.
+      // Guard so one bad start can't wedge the whole queue — clear its run so it
+      // doesn't linger as a phantom `queued` entry.
+      try {
+        next.start();
+      } catch {
+        useSessionRunStore.getState().clearRun(next.conversationId);
+      }
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+/** Test-only: clear the module-level queue between cases. */
+export function __resetSendQueue(): void {
+  sendQueue.length = 0;
+  draining = false;
 }
