@@ -19,7 +19,7 @@ import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPay
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { getAcpAgent, getAllAcpAgents, getAllAcpAgentEntries, stopAcpAgent, stopAllAcpAgents, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent, getAllAcpAgentEntries, stopAcpAgent, stopAllAcpAgents, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId, DEFAULT_AGENT_KEY } from '@/lib/ai/acp-agent-state';
 import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store';
 
 /**
@@ -37,7 +37,7 @@ function foregroundAgent() {
 }
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
-import { runStarted, runAttachInstance, runError } from '@/lib/ai/session-run';
+import { runStarted, runAttachInstance, runError, runIdle } from '@/lib/ai/session-run';
 
 /**
  * Re-apply the conversation's remembered ACP permission mode (or, for a fresh
@@ -224,6 +224,44 @@ export function clearUnresponsiveTimer(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Per-conversation stream cleanups (review #3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Registry key for a conversation's stream-cleanup closure. Mirrors the ACP
+ * agent registry's own key (`conversationId ?? DEFAULT_AGENT_KEY`) so the
+ * cleanup map and the agent map share keys — the agent-exited handler can map an
+ * exited instance back to its registry key and clean up the matching stream.
+ *
+ * A single `cleanupRef` previously let a second conversation's send overwrite
+ * the first's cleanup: the first's listeners leaked, and the first's completion
+ * ran the second's cleanup, tearing down the second's live stream. A
+ * per-conversation map keyed by this fixes it (review #3).
+ */
+export function cleanupKeyFor(conversationId: string | null | undefined): string {
+  return conversationId ?? DEFAULT_AGENT_KEY;
+}
+
+export type CleanupMap = Map<string, (cancelled?: boolean) => void>;
+
+/** Run + deregister the cleanup for one conversation (no-op if none registered). */
+export function runConvCleanup(map: CleanupMap, conversationId: string | null | undefined, cancelled?: boolean): void {
+  const key = cleanupKeyFor(conversationId);
+  const fn = map.get(key);
+  if (fn) {
+    map.delete(key);
+    fn(cancelled);
+  }
+}
+
+/** Run + deregister every conversation's cleanup (unmount / agent-stop-all). */
+export function runAllConvCleanups(map: CleanupMap, cancelled?: boolean): void {
+  const fns = [...map.values()];
+  map.clear();
+  for (const fn of fns) fn(cancelled);
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -237,8 +275,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  const cleanupRef = useRef<(() => void) | null>(null);
+  // Per-conversation stream cleanups (review #3) — one entry per in-flight ACP
+  // turn, keyed by `cleanupKeyFor(conversationId)`. Replaces the single
+  // `cleanupRef` that corrupted under concurrent sessions.
+  const cleanupRefs = useRef<CleanupMap>(new Map());
   const eagerUnlistenRef = useRef<(() => void) | null>(null);
+
+  // Tear down every in-flight stream on unmount so concurrent sessions don't
+  // leak listeners when the hook is destroyed (the old single `cleanupRef` had
+  // no unmount teardown at all). Ref-only, so this runs exactly once.
+  useEffect(() => {
+    const map = cleanupRefs.current;
+    return () => { runAllConvCleanups(map); };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Unresponsive agent detection — check if alive, then show banner
@@ -248,12 +297,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     const agent = foregroundAgent();
     if (!agent) return;
 
-    // Clean up listeners from the stuck prompt
+    // Clean up listeners from the stuck prompt (the foreground conversation —
+    // the unresponsive timer tracks the active turn).
     clearUnresponsiveTimer();
-    if (cleanupRef.current) {
-      cleanupRef.current();
-      cleanupRef.current = null;
-    }
+    runConvCleanup(cleanupRefs.current, useChatStore.getState().activeConversationId);
 
     try {
       const alive = await invoke<boolean>('acp_is_agent_alive', {
@@ -369,22 +416,22 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           });
         }
         permStore.clearRequestsForInstance(instanceId);
+
+        // 3. Tear down THIS conversation's in-flight chat listeners (review #3 —
+        //    each affected conversation, not just whatever the old single
+        //    cleanupRef happened to hold). `cancelled` marks its message
+        //    interrupted and clears its run.
+        runConvCleanup(cleanupRefs.current, conversationId, true);
       }
 
       if (anyTurnActive) {
-        // 3. Surface a toast so the user knows why the stream stopped. The
+        // 4. Surface a toast so the user knows why the stream stopped. The
         //    stable id prevents duplicate toasts if two workspace changes
         //    fire back-to-back.
         toast.info('Context reset: workspace changed, previous turn cancelled', {
           id: 'acp-workspace-context-reset',
         });
 
-        // Tear down any in-flight chat listeners and clear the loading flag
-        // so the chat UI exits its streaming state cleanly.
-        if (cleanupRef.current) {
-          (cleanupRef.current as (cancelled?: boolean) => void)(true);
-          cleanupRef.current = null;
-        }
         clearUnresponsiveTimer();
         setLoading(false);
         setActiveTool(null);
@@ -401,19 +448,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
     listen<{ instanceId: string; exitCode: number | null }>('acp-agent-exited', (event) => {
       // Match the exited process against any registered agent — the registry
-      // may hold several concurrent instances (task #2), not just one.
-      const owner = getAllAcpAgents().find((a) => a.instanceId === event.payload.instanceId);
+      // may hold several concurrent instances (task #2), not just one. Pair it
+      // with its conversation key so we tear down only THAT conversation's
+      // stream (review #3), not whatever the old single cleanupRef held.
+      const owner = getAllAcpAgentEntries().find(([, a]) => a.instanceId === event.payload.instanceId);
       if (!owner) return;
+      const [ownerConversationId] = owner;
 
       log.warn('ai', `ACP agent process exited (code: ${event.payload.exitCode})`);
       useAgentStatusStore.getState().setStatus('exited', event.payload.exitCode);
 
       // Clean up if we're mid-prompt
       clearUnresponsiveTimer();
-      if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
-      }
+      runConvCleanup(cleanupRefs.current, ownerConversationId);
     }).then((fn) => { unlisten = fn; });
 
     return () => { unlisten?.(); };
@@ -706,12 +753,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    */
   const acpSendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
-      // Clean up any stale listeners from a previous streaming call
-      if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
-      }
-
       if (!effectiveConnection) throw new Error('No ACP connection');
 
       setLoading(true);
@@ -742,6 +783,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // listener/cleanup `runIdle` would no-op on the null id). Mirrors the
       // direct-API + Copilot paths.
       const conversationId = useChatStore.getState().activeConversationId ?? undefined;
+
+      // Clean up any stale listeners from a previous streaming call IN THIS
+      // conversation only (review #3) — a concurrent stream in another
+      // conversation keeps its own listeners. Done after the id is known so we
+      // target the right entry.
+      runConvCleanup(cleanupRefs.current, conversationId);
 
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
@@ -888,7 +935,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         eagerUnlistenRef.current = null;
 
         const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted, conversationId ?? null);
+        cleanupRefs.current.set(
+          cleanupKeyFor(conversationId),
+          buildAcpChatCleanup(
+            listeners,
+            instanceId,
+            assistantMessageId,
+            () => cleanupRefs.current.delete(cleanupKeyFor(conversationId)),
+            setLoading,
+            setActiveTool,
+            finalizeSegments,
+            setMessageInterrupted,
+            conversationId ?? null,
+          ),
+        );
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -919,15 +979,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           });
         } finally {
           clearUnresponsiveTimer();
-          if (cleanupRef.current) {
-            cleanupRef.current();
-          }
+          runConvCleanup(cleanupRefs.current, conversationId);
         }
       } catch (error) {
         clearUnresponsiveTimer();
-        if (cleanupRef.current) {
-          cleanupRef.current();
-        }
+        runConvCleanup(cleanupRefs.current, conversationId);
 
         const agentLabel = effectiveConnection?.label || effectiveConnection?.provider || 'the agent';
 
@@ -1156,7 +1212,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       // Set up listeners
       const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, prompt.assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted, conversationId ?? null);
+      cleanupRefs.current.set(
+        cleanupKeyFor(conversationId),
+        buildAcpChatCleanup(
+          listeners,
+          instanceId,
+          prompt.assistantMessageId,
+          () => cleanupRefs.current.delete(cleanupKeyFor(conversationId)),
+          setLoading,
+          setActiveTool,
+          finalizeSegments,
+          setMessageInterrupted,
+          conversationId ?? null,
+        ),
+      );
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -1183,15 +1252,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         });
       } finally {
         clearUnresponsiveTimer();
-        if (cleanupRef.current) {
-          cleanupRef.current();
-        }
+        runConvCleanup(cleanupRefs.current, conversationId);
       }
     } catch (error) {
       clearUnresponsiveTimer();
-      if (cleanupRef.current) {
-        cleanupRef.current();
-      }
+      runConvCleanup(cleanupRefs.current, conversationId);
       stopAcpAgent(conversationId);
       log.error('ai', 'ACP retry failed', error);
       setMessageError(prompt.assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
@@ -1208,17 +1273,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const cancelEscalationRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelEscalationListenerRef = useRef<(() => void) | null>(null);
 
-  const acpCancelChat = useCallback(() => {
+  const acpCancelChat = useCallback((targetConversationId?: string | null) => {
+    // Cancel a SPECIFIC conversation (review #13) — defaults to the foreground
+    // one. A single `cleanupRef` + active-only agent lookup meant cancelling
+    // could only ever target the foreground turn (and could tear down a
+    // background stream via the shared ref).
+    const conversationId = targetConversationId ?? useChatStore.getState().activeConversationId ?? undefined;
+
     // Clear unresponsiveness timer
     clearUnresponsiveTimer();
 
-    // Clean up listeners, finalize segments, and mark message as interrupted
-    if (cleanupRef.current) {
-      (cleanupRef.current as (cancelled?: boolean) => void)(true);
-    }
+    // Clean up THIS conversation's listeners, finalize segments, and mark its
+    // message interrupted.
+    runConvCleanup(cleanupRefs.current, conversationId, true);
 
-    // Cancel ACP session if active — operates on the foreground conversation's agent.
-    const conversationId = useChatStore.getState().activeConversationId ?? undefined;
+    // Cancel ACP session if active — the cancelled conversation's agent.
     const agent = getAcpAgent(conversationId);
     if (agent?.chatSessionId && agent?.instanceId) {
       // Deny any pending permission requests before cancelling
@@ -1289,6 +1358,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       agent.chatSessionId = null;
     }
 
+    // Clear the cancelled conversation's run even if no cleanup was registered
+    // yet (cancel during the cold-spawn window, before listeners attach) — else
+    // its run-state would stay `running`/`queued` forever (review #13).
+    runIdle(conversationId);
     setLoading(false);
     setActiveTool(null);
   }, [setLoading, setActiveTool]);

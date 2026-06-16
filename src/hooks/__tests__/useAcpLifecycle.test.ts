@@ -40,6 +40,7 @@ vi.mock('@/hooks/useAcpSessionListeners', () => ({
 
 vi.mock('@/lib/ai/acp-agent-state', () => ({
   acpAgent: null,
+  DEFAULT_AGENT_KEY: '__default__',
   getAcpAgent: vi.fn(() => null),
   getAllAcpAgents: vi.fn(() => []),
   getAllAcpAgentEntries: vi.fn(() => []),

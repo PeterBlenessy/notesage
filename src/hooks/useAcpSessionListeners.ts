@@ -434,7 +434,10 @@ export function buildAcpChatCleanup(
   listeners: AcpChatListeners,
   instanceId: string,
   assistantMessageId: number,
-  cleanupRef: React.MutableRefObject<(() => void) | null>,
+  // Remove this cleanup from the owner's registry so a re-entrant or external
+  // trigger can't run it twice (review #3 — was a single `cleanupRef`; now a
+  // per-conversation map, so the closure deregisters itself by key).
+  clearSelf: () => void,
   setLoading: (loading: boolean) => void,
   setActiveTool: (tool: string | null) => void,
   finalizeSegments: (messageId: number, convId?: string | null) => void,
@@ -442,13 +445,13 @@ export function buildAcpChatCleanup(
   // Conversation that owns the message, so a background session's cleanup
   // finalizes/interrupts its OWN message, not the foreground one (task #3).
   conversationId: string | null = null,
-): () => void {
+): (cancelled?: boolean) => void {
   let cleaned = false;
   return (cancelled?: boolean) => {
     if (cleaned) return;
     cleaned = true;
-    // Null the ref first to prevent re-entrant calls
-    cleanupRef.current = null;
+    // Deregister first to prevent re-entrant calls
+    clearSelf();
     listeners.unlisten();
     listeners.unlistenPermission();
     // Deny any pending permission requests for this agent and clear from store
