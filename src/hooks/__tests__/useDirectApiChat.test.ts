@@ -450,7 +450,7 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
       toolCallSession: new Set(),
       toolCallAlways: [],
     });
-    useToolPermissionStore.getState().setPending(null);
+    useToolPermissionStore.setState({ pending: {} });
     vi.mocked(invoke).mockClear();
 
     // Mock web_search tool call emit + result
@@ -521,7 +521,9 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // Allow the tool_call event and microtasks to settle so setPending fires.
     await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 
-    const pending = useToolPermissionStore.getState().pending;
+    // Per-conversation map (review #4) — exactly one request pending here.
+    const pendingMap = useToolPermissionStore.getState().pending;
+    const pending = Object.values(pendingMap)[0] ?? null;
     expect(pending).not.toBeNull();
     expect(pending!.name).toBe('web_search');
 

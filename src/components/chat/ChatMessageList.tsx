@@ -23,7 +23,7 @@ import { PermissionCard } from './PermissionCard';
 import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ToolCallPermissionCard } from './ToolCallPermissionCard';
 import { AgentStatusBanner } from './AgentStatusBanner';
-import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { useToolPermissionStore, selectForegroundPending } from '@/stores/tool-permission-store';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { getRetryCallback, getKeepWaitingCallback } from '@/hooks/useAcpLifecycle';
 import { useForegroundLoading } from '@/hooks/useSessionManager';
@@ -69,7 +69,9 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const permissionRequests = usePermissionStore((s) => s.requests);
-  const toolPermission = useToolPermissionStore((s) => s.pending);
+  // Only the foreground conversation's pending request renders here (review #4);
+  // background conversations surface theirs in their history row instead.
+  const toolPermission = useToolPermissionStore(selectForegroundPending(activeConversationId));
 
   // Detect if the user is at a branch point (last visible message has children in the full tree)
   const branchPointInfo = useMemo(() => {

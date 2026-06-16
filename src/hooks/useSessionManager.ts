@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { onAction } from '@tauri-apps/plugin-notification';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionRunStore, ACTIVE_STATUSES, type SessionRunStatus } from '@/stores/session-run-store';
 import { processSendQueue, dropQueuedSend } from '@/lib/ai/session-run';
@@ -10,12 +10,8 @@ import { notifyBackgroundSession } from '@/lib/notifications';
 const isActiveStatus = (s: SessionRunStatus | undefined): boolean =>
   s !== undefined && ACTIVE_STATUSES.includes(s);
 
-function conversationTitle(conversationId: string): string {
-  return (
-    useChatStore.getState().conversations.find((c) => c.id === conversationId)?.title ||
-    'Chat'
-  );
-}
+const conversationTitle = (conversationId: string): string =>
+  selectConversationTitle(useChatStore.getState(), conversationId);
 
 /**
  * Whether the WATCHED (foreground) conversation is actively streaming —

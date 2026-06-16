@@ -219,7 +219,7 @@ export function useCopilotChat({
             conversationId,
           });
         });
-        useToolPermissionStore.getState().setPending(null);
+        useToolPermissionStore.getState().setPending(null, conversationId);
 
         if (decision === 'deny') {
           log.info('ai', `Tool call denied by user: ${name}`);
@@ -523,11 +523,12 @@ export function useCopilotChat({
                   name,
                   arguments: args,
                   resolve,
+                  conversationId: runConvId,
                 });
               });
 
               decision$.then((decision) => {
-                useToolPermissionStore.getState().setPending(null);
+                useToolPermissionStore.getState().setPending(null, runConvId);
                 const accepted = decision !== 'deny';
 
                 if (decision === 'session') {

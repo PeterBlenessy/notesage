@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock, GitBranch } from 'lucide-react';
-import { useChatStore, type Conversation } from '@/stores/chat-store';
+import { useChatStore, DEFAULT_CONVERSATION_TITLE, type Conversation } from '@/stores/chat-store';
 import { getLeaves } from '@/lib/chat-tree';
 import { formatRelativeTime } from '@/components/editor/CommentThread';
 import { HistoryRowLeadingIcon } from './SessionStatusBadge';
@@ -180,7 +180,7 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                     data-testid="cmd-history-row-title"
                     className="truncate text-sm font-medium"
                   >
-                    {conv.title || 'New Chat'}
+                    {conv.title || DEFAULT_CONVERSATION_TITLE}
                   </p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span

@@ -71,6 +71,8 @@ import {
   selectPendingAgentSwitch,
   selectSegments,
   selectActiveSegmentIndex,
+  selectConversationTitle,
+  DEFAULT_CONVERSATION_TITLE,
   sliceThreadBySegment,
 } from '../chat-store';
 import type { Conversation, ConversationSegment } from '../chat-store';
@@ -1731,5 +1733,33 @@ describe('Migration v4 → v5 (task #28)', () => {
       webSearchEnabled: false,
     };
     expect(() => migrate(v4State, 4)).not.toThrow();
+  });
+});
+
+describe('selectConversationTitle (review #8)', () => {
+  const conv = (id: string, title?: string): Conversation => ({
+    id,
+    title: title ?? '',
+    messages: [],
+    createdAt: 0,
+    updatedAt: 0,
+    activeLeafId: null,
+  } as unknown as Conversation);
+
+  it('returns the conversation title when set', () => {
+    const state = { conversations: [conv('c1', 'My chat')] };
+    expect(selectConversationTitle(state, 'c1')).toBe('My chat');
+  });
+
+  it('falls back to the default for a blank or unset title', () => {
+    const state = { conversations: [conv('c1', '')] };
+    expect(selectConversationTitle(state, 'c1')).toBe(DEFAULT_CONVERSATION_TITLE);
+    expect(DEFAULT_CONVERSATION_TITLE).toBe('New Chat');
+  });
+
+  it('returns the default for null/unknown ids without throwing', () => {
+    const state = { conversations: [conv('c1', 'My chat')] };
+    expect(selectConversationTitle(state, null)).toBe(DEFAULT_CONVERSATION_TITLE);
+    expect(selectConversationTitle(state, 'missing')).toBe(DEFAULT_CONVERSATION_TITLE);
   });
 });

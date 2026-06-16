@@ -11,7 +11,7 @@ import { useChatStore } from '@/stores/chat-store';
 
 beforeEach(() => {
   usePermissionStore.setState({ requests: [], sessionAllowed: new Set(), alwaysAllowed: [] });
-  useToolPermissionStore.setState({ pending: null });
+  useToolPermissionStore.setState({ pending: {} });
   useChatStore.setState({ conversations: [], activeConversationId: null });
 });
 
@@ -24,7 +24,7 @@ describe('InlineHistoryPermission (task #10)', () => {
   it('resolves a direct-API request inline via Allow', () => {
     const resolve = vi.fn();
     useToolPermissionStore.setState({
-      pending: { id: 't1', name: 'write_file', arguments: { path: '/p/x' }, resolve, conversationId: 'conv-A' },
+      pending: { 'conv-A': { id: 't1', name: 'write_file', arguments: { path: '/p/x' }, resolve, conversationId: 'conv-A' } },
     });
     render(<InlineHistoryPermission conversationId="conv-A" />);
     expect(screen.getByTestId('inline-history-permission')).toBeTruthy();
@@ -35,7 +35,7 @@ describe('InlineHistoryPermission (task #10)', () => {
 
   it('does not show a direct request that belongs to another conversation', () => {
     useToolPermissionStore.setState({
-      pending: { id: 't1', name: 'write_file', arguments: {}, resolve: vi.fn(), conversationId: 'conv-OTHER' },
+      pending: { 'conv-OTHER': { id: 't1', name: 'write_file', arguments: {}, resolve: vi.fn(), conversationId: 'conv-OTHER' } },
     });
     const { container } = render(<InlineHistoryPermission conversationId="conv-A" />);
     expect(container.firstChild).toBeNull();

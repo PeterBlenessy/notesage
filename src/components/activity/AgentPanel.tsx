@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Bot } from 'lucide-react';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run-store';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
 import { SessionStatusBadge } from '@/components/cmd/SessionStatusBadge';
 import { ActivityTaskCard } from './ActivityTaskCard';
 
@@ -44,8 +44,7 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
       ),
     [runs, foregroundConversationId],
   );
-  const titleFor = (id: string) =>
-    conversations.find((c) => c.id === id)?.title || 'New Chat';
+  const titleFor = (id: string) => selectConversationTitle({ conversations }, id);
 
   const isEmpty = tasks.length === 0 && sessions.length === 0;
 

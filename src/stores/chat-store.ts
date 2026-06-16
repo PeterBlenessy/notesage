@@ -1190,6 +1190,27 @@ export function selectProjectPaths(state: Pick<ChatStore, 'conversations' | 'act
   return state.conversations.find((c) => c.id === state.activeConversationId)?.projectPaths ?? EMPTY_PATHS;
 }
 
+/**
+ * Display title shown for a conversation that has no user/auto-assigned title
+ * yet. Single source of truth (review #8) — `CommandBarHistory`, `ChatHistoryView`,
+ * `AgentPanel`, and `useSessionManager` all resolved this inline and one used
+ * `'Chat'` while the rest used `'New Chat'`.
+ */
+export const DEFAULT_CONVERSATION_TITLE = 'New Chat';
+
+/**
+ * The display title for a conversation by id — its own `title`, or
+ * {@link DEFAULT_CONVERSATION_TITLE} when unset/blank. Returns the default for an
+ * unknown id too, so callers can render without a presence check.
+ */
+export function selectConversationTitle(
+  state: Pick<ChatStore, 'conversations'>,
+  conversationId: string | null | undefined,
+): string {
+  if (!conversationId) return DEFAULT_CONVERSATION_TITLE;
+  return state.conversations.find((c) => c.id === conversationId)?.title || DEFAULT_CONVERSATION_TITLE;
+}
+
 /** Pending project switch from the active conversation. */
 export function selectPendingProjectSwitch(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): Conversation['pendingProjectSwitch'] {
   if (!state.activeConversationId) return null;

@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { Trash2, Clock, Download, GitBranch } from 'lucide-react';
-import { useChatStore, type Conversation } from '@/stores/chat-store';
+import { useChatStore, DEFAULT_CONVERSATION_TITLE, type Conversation } from '@/stores/chat-store';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -252,7 +252,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
               >
                 <HistoryRowLeadingIcon conversationId={conv.id} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{conv.title || 'New Chat'}</p>
+                  <p className="text-sm font-medium truncate">{conv.title || DEFAULT_CONVERSATION_TITLE}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />

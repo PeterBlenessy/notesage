@@ -323,7 +323,7 @@ export function useDirectApiChat({
                   conversationId,
                 });
               });
-              useToolPermissionStore.getState().setPending(null);
+              useToolPermissionStore.getState().setPending(null, conversationId);
               // Decision in (allow or deny) — the turn resumes streaming either way.
               runRunning(conversationId);
 

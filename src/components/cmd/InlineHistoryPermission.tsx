@@ -1,6 +1,6 @@
 import { Shield } from 'lucide-react';
 import { usePermissionStore } from '@/stores/permission-store';
-import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { useToolPermissionStore, selectPendingForConversation } from '@/stores/tool-permission-store';
 import { formatAcpToolName } from '@/lib/ai/acp-utils';
 import {
   resolveAcpPermission,
@@ -8,17 +8,7 @@ import {
   type ApprovalTier,
 } from '@/lib/ai/permission-resolve';
 import { TieredApprovalButtons } from '@/components/chat/TieredApprovalButtons';
-
-function previewArgs(args: Record<string, unknown>): string | null {
-  const entries = Object.entries(args);
-  if (entries.length === 0) return null;
-  return entries
-    .map(([k, v]) => {
-      const s = typeof v === 'string' ? v : JSON.stringify(v);
-      return `${k}: ${s.length > 80 ? s.slice(0, 80) + '…' : s}`;
-    })
-    .join('\n');
-}
+import { formatToolArgsPreview } from '@/lib/ai/tool-args';
 
 /**
  * Inline permission approval for an awaiting-permission history row (PRD
@@ -34,10 +24,9 @@ export function InlineHistoryPermission({ conversationId }: { conversationId: st
   const acpRequest = usePermissionStore((s) =>
     s.requests.find((r) => r.conversationId === conversationId),
   );
-  // Direct-API request: the single global pending, if it belongs here.
-  const directPending = useToolPermissionStore((s) =>
-    s.pending && s.pending.conversationId === conversationId ? s.pending : null,
-  );
+  // Direct-API request owned by this conversation (review #4 — per-conversation
+  // map; no foreground fallback so a row only shows its own pending).
+  const directPending = useToolPermissionStore(selectPendingForConversation(conversationId));
 
   if (acpRequest) {
     const label = formatAcpToolName(acpRequest.toolKind, acpRequest.toolTitle);
@@ -51,7 +40,7 @@ export function InlineHistoryPermission({ conversationId }: { conversationId: st
     const label = `Tool call: ${directPending.name}`;
     const onDecide = (tier: ApprovalTier) => resolveDirectPermission(directPending, tier);
     return (
-      <Shell label={label} preview={previewArgs(directPending.arguments)} onDecide={onDecide} />
+      <Shell label={label} preview={formatToolArgsPreview(directPending.arguments)} onDecide={onDecide} />
     );
   }
 
