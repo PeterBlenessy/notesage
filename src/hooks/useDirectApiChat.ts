@@ -382,10 +382,10 @@ export function useDirectApiChat({
             const toolLabel = formatToolLabel(call.name, call.arguments);
             const toolDetail = Object.keys(call.arguments).length > 0
               ? JSON.stringify(call.arguments, null, 2) : undefined;
-            const convForIdx = useChatStore.getState().conversations
-              .find(c => c.id === useChatStore.getState().activeConversationId);
-            const msgForIdx = convForIdx?.messages.find(m => m.timestamp === assistantMessageId);
-            const toolSegIdx = msgForIdx?.segments?.length ?? 0;
+            const toolSegIdx = useChatStore.getState().getNextSegmentIndex(
+              assistantMessageId,
+              targetConvId,
+            );
             pushSegment(assistantMessageId, {
               type: 'tool_call',
               kind: call.name,
@@ -498,10 +498,10 @@ export function useDirectApiChat({
             // Segment: accumulate thinking content
             thinkingSegmentContent += event.payload;
             if (thinkingSegmentIndex === -1) {
-              const conv = useChatStore.getState().conversations
-                .find(c => c.id === useChatStore.getState().activeConversationId);
-              const msg = conv?.messages.find(m => m.timestamp === assistantMessageId);
-              thinkingSegmentIndex = msg?.segments?.length ?? 0;
+              thinkingSegmentIndex = useChatStore.getState().getNextSegmentIndex(
+                assistantMessageId,
+                targetConvId,
+              );
               pushSegment(assistantMessageId, {
                 type: 'thinking',
                 content: thinkingSegmentContent,

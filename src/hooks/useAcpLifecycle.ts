@@ -567,6 +567,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     attachments?: ImageAttachment[];
     pathFilterRoots: string[];
     homeDir: string;
+    /** Target conversation for queued sends — avoids stale activeConversationId on retry. */
+    conversationId?: string | null;
   } | null>(null);
 
   /**
@@ -726,7 +728,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       const listenerDeps = {
         assistantMessageId,
-        conversationId: useChatStore.getState().activeConversationId,
+        conversationId: targetConvId ?? useChatStore.getState().activeConversationId,
         pathFilterRoots,
         homeDir,
         connectionId: effectiveConnection.id,
@@ -756,6 +758,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         attachments: opts?.attachments,
         pathFilterRoots,
         homeDir,
+        conversationId: targetConvId,
       };
 
       try {
@@ -1018,7 +1021,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       const listenerDeps = {
         assistantMessageId: prompt.assistantMessageId,
-        conversationId: useChatStore.getState().activeConversationId,
+        conversationId: prompt.conversationId ?? useChatStore.getState().activeConversationId,
         pathFilterRoots,
         homeDir: prompt.homeDir,
         connectionId: effectiveConnection.id,

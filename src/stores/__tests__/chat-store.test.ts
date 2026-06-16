@@ -1751,3 +1751,83 @@ describe('addMessage — targetConversationId routing', () => {
     expect(msgInB?.segments?.some((s) => s.type === 'text' && s.content === 'hello from B')).toBe(true);
   });
 });
+
+// ===========================================================================
+// getNextSegmentIndex — segment-slot helper for queued sends (issue #468)
+//
+// The hooks (useDirectApiChat, useCopilotChat, useAcpLifecycle) compute a
+// segment index BEFORE pushing a new segment, then later call updateSegment
+// on that index. If they read activeConversationId instead of the target
+// conversation, the lookup finds the wrong conv → wrong msg → falls back to
+// index 0 → updateSegment overwrites the TEXT segment instead of the TOOL
+// segment.  getNextSegmentIndex(ts, targetConvId) always reads the target.
+// ===========================================================================
+
+describe('getNextSegmentIndex (issue #468 — segment index for queued sends)', () => {
+  it('returns 0 when the target message has no segments yet', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'A' });
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: '', timestamp: 9100 },
+      idA,
+    );
+    expect(useChatStore.getState().getNextSegmentIndex(9100, idA)).toBe(0);
+  });
+
+  it('returns 1 after one segment has been pushed', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'A' });
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: '', timestamp: 9101 },
+      idA,
+    );
+    useChatStore.getState().pushSegment(9101, {
+      type: 'text',
+      content: 'first',
+      timestamp: 9101,
+    });
+    expect(useChatStore.getState().getNextSegmentIndex(9101, idA)).toBe(1);
+  });
+
+  it('reads from the TARGET conversation, not the active one', () => {
+    // Simulates queued send: user navigated to conv A while conv B is
+    // being drained in the background.
+    const idA = useChatStore.getState().createConversation({ title: 'A (active)' });
+    const idB = useChatStore.getState().createConversation({ title: 'B (target)' });
+    useChatStore.getState().setActiveConversation(idA);
+
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: '', timestamp: 9102 },
+      idB,
+    );
+    // B now has 1 segment; A has none.
+    useChatStore.getState().pushSegment(9102, {
+      type: 'text',
+      content: 'streamed',
+      timestamp: 9102,
+    });
+
+    // Correct: reading from B gives index 1 (next slot for tool_call segment)
+    expect(useChatStore.getState().getNextSegmentIndex(9102, idB)).toBe(1);
+
+    // Stale read (what the old code did): reading from A gives 0 (wrong slot)
+    expect(useChatStore.getState().getNextSegmentIndex(9102, idA)).toBe(0);
+  });
+
+  it('falls back to the active conversation when targetConvId is undefined', () => {
+    const idA = useChatStore.getState().createConversation({ title: 'A' });
+    useChatStore.getState().setActiveConversation(idA);
+    useChatStore.getState().addMessage(
+      { role: 'assistant', content: '', timestamp: 9103 },
+      idA,
+    );
+    useChatStore.getState().pushSegment(9103, {
+      type: 'text',
+      content: 'hi',
+      timestamp: 9103,
+    });
+    expect(useChatStore.getState().getNextSegmentIndex(9103, undefined)).toBe(1);
+  });
+
+  it('returns 0 when targetConvId is unknown (defensive)', () => {
+    expect(useChatStore.getState().getNextSegmentIndex(9999, 'no-such-conv')).toBe(0);
+  });
+});

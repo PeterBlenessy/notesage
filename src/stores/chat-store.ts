@@ -167,6 +167,13 @@ interface ChatStore {
   finalizeSegments: (messageTimestamp: number) => void;
   /** Reset an assistant message for retry — clears content, segments, error state */
   resetAssistantMessage: (timestamp: number) => void;
+  /**
+   * Returns the number of segments already on a message — i.e. the index the
+   * *next* pushSegment will occupy.  Always reads from `targetConvId` (or
+   * falls back to `activeConversationId`) so queued sends compute the right
+   * slot even when the user has navigated to a different conversation.
+   */
+  getNextSegmentIndex: (messageTimestamp: number, targetConvId?: string | null) => number;
 
   // ---------------------------------------------------------------------------
   // System status messages (reconnection flow)
@@ -674,6 +681,14 @@ export const useChatStore = create<ChatStore>()(
             msg.timestamp === messageTimestamp ? resetAssistantMessageUtil(msg) : msg
           ),
         }))),
+
+      getNextSegmentIndex: (messageTimestamp, targetConvId) => {
+        const state = get();
+        const convId = targetConvId ?? state.activeConversationId;
+        const conv = state.conversations.find((c) => c.id === convId);
+        const msg = conv?.messages.find((m) => m.timestamp === messageTimestamp);
+        return msg?.segments?.length ?? 0;
+      },
 
       // ----- System status messages -----
 

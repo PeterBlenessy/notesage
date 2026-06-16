@@ -201,6 +201,7 @@ export function useCopilotChat({
       name: string,
       args: Record<string, unknown>,
       assistantMessageId: number,
+      targetConvId?: string | null,
     ) => {
       // Check permission
       const tier = usePermissionStore.getState().isToolAllowed(name, null, null);
@@ -265,11 +266,8 @@ export function useCopilotChat({
       // Read the segment index AFTER pushing — this is safe even under
       // concurrent tool calls because each push appends and we read the
       // latest state immediately after our own push.
-      const updatedConv = useChatStore.getState().conversations.find(
-        (c) => c.id === useChatStore.getState().activeConversationId,
-      );
-      const updatedMsg = updatedConv?.messages.find((m) => m.timestamp === assistantMessageId);
-      const toolSegIdx = (updatedMsg?.segments?.length ?? 1) - 1;
+      // Subtract 1: we just pushed, so length is already +1 past the slot we want.
+      const toolSegIdx = useChatStore.getState().getNextSegmentIndex(assistantMessageId, targetConvId) - 1;
 
       // Execute the tool
       const result = await executeToolCall(toolCallId, name, args);
@@ -433,11 +431,10 @@ export function useCopilotChat({
             if (cancelled || !isOurEvent(event.payload)) return;
             thinkingSegmentContent += event.payload.text;
             if (thinkingSegmentIndex === -1) {
-              const conv = useChatStore.getState().conversations.find(
-                (c) => c.id === useChatStore.getState().activeConversationId,
+              thinkingSegmentIndex = useChatStore.getState().getNextSegmentIndex(
+                assistantMessageId,
+                targetConvId,
               );
-              const msg = conv?.messages.find((m) => m.timestamp === assistantMessageId);
-              thinkingSegmentIndex = msg?.segments?.length ?? 0;
               pushSegment(assistantMessageId, {
                 type: 'thinking',
                 content: thinkingSegmentContent,
@@ -492,7 +489,7 @@ export function useCopilotChat({
               }
 
               // Handle tool call asynchronously
-              handleToolCall(requestId, id, name, args, assistantMessageId).catch((err) => {
+              handleToolCall(requestId, id, name, args, assistantMessageId, targetConvId).catch((err) => {
                 log.error('ai', 'Tool call execution failed', err);
               });
             },
