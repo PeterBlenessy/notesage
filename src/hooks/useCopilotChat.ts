@@ -201,6 +201,10 @@ export function useCopilotChat({
       name: string,
       args: Record<string, unknown>,
       assistantMessageId: number,
+      // Conversation that owns this turn — so tool-call segments/activities land
+      // on the right conversation even if the user switched away mid-stream
+      // (matches the direct-API + ACP paths; task #3 gap for Copilot).
+      conversationId: string | null,
     ) => {
       // Check permission
       const tier = usePermissionStore.getState().isToolAllowed(name, null, null);
@@ -212,6 +216,7 @@ export function useCopilotChat({
             name,
             arguments: args,
             resolve,
+            conversationId,
           });
         });
         useToolPermissionStore.getState().setPending(null);
@@ -225,7 +230,7 @@ export function useCopilotChat({
             detail: 'Permission denied',
             status: 'error',
             timestamp: Date.now(),
-          } as ToolCallSegment);
+          } as ToolCallSegment, conversationId);
           await tauriApi.copilotLspToolResult(requestId, {
             content: `Permission denied for tool: ${name}`,
             is_error: true,
@@ -251,7 +256,7 @@ export function useCopilotChat({
         detail: 'running',
         status: 'running',
         timestamp: Date.now(),
-      });
+      }, conversationId);
 
       useChatStore.getState().pushSegment(assistantMessageId, {
         type: 'tool_call',
@@ -260,13 +265,13 @@ export function useCopilotChat({
         detail: toolDetail,
         status: 'running',
         timestamp: Date.now(),
-      } as ToolCallSegment);
+      } as ToolCallSegment, conversationId);
 
-      // Read the segment index AFTER pushing — this is safe even under
-      // concurrent tool calls because each push appends and we read the
-      // latest state immediately after our own push.
+      // Read the segment index AFTER pushing — from THIS turn's conversation
+      // (not whatever is foregrounded), safe under concurrent tool calls because
+      // each push appends and we read the latest state immediately after.
       const updatedConv = useChatStore.getState().conversations.find(
-        (c) => c.id === useChatStore.getState().activeConversationId,
+        (c) => c.id === (conversationId ?? useChatStore.getState().activeConversationId),
       );
       const updatedMsg = updatedConv?.messages.find((m) => m.timestamp === assistantMessageId);
       const toolSegIdx = (updatedMsg?.segments?.length ?? 1) - 1;
@@ -281,12 +286,12 @@ export function useCopilotChat({
         detail: result.is_error ? result.content : 'completed',
         status: 'done',
         timestamp: Date.now(),
-      });
+      }, conversationId);
 
       // Update tool call segment to done and push tool result segment
       useChatStore.getState().updateSegment(assistantMessageId, toolSegIdx, {
         status: result.is_error ? 'error' : 'done',
-      });
+      }, conversationId);
       useChatStore.getState().pushSegment(assistantMessageId, {
         type: 'tool_result',
         toolCallId,
@@ -294,7 +299,7 @@ export function useCopilotChat({
         error: result.is_error ? result.content : undefined,
         collapsed: true,
         timestamp: Date.now(),
-      });
+      }, conversationId);
 
       // Send result back to the LSP
       await tauriApi.copilotLspToolResult(requestId, {
@@ -360,7 +365,7 @@ export function useCopilotChat({
 
         flushInterval = setInterval(() => {
           if (contentDirty) {
-            updateMessage(assistantMessageId, streamedContent);
+            updateMessage(assistantMessageId, streamedContent, undefined, runConvId);
             contentDirty = false;
           }
         }, 50);
@@ -432,14 +437,14 @@ export function useCopilotChat({
             if (cancelled || !isOurEvent(event.payload)) return;
             streamedContent += event.payload.text;
             contentDirty = true;
-            appendTextSegment(assistantMessageId, event.payload.text);
+            appendTextSegment(assistantMessageId, event.payload.text, runConvId);
           }),
           listen<{ text: string; conversationId?: string }>('copilot-chat-thinking', (event) => {
             if (cancelled || !isOurEvent(event.payload)) return;
             thinkingSegmentContent += event.payload.text;
             if (thinkingSegmentIndex === -1) {
               const conv = useChatStore.getState().conversations.find(
-                (c) => c.id === useChatStore.getState().activeConversationId,
+                (c) => c.id === (runConvId ?? useChatStore.getState().activeConversationId),
               );
               const msg = conv?.messages.find((m) => m.timestamp === assistantMessageId);
               thinkingSegmentIndex = msg?.segments?.length ?? 0;
@@ -448,11 +453,11 @@ export function useCopilotChat({
                 content: thinkingSegmentContent,
                 collapsed: false,
                 timestamp: Date.now(),
-              });
+              }, runConvId);
             } else {
               updateSegment(assistantMessageId, thinkingSegmentIndex, {
                 content: thinkingSegmentContent,
-              });
+              }, runConvId);
             }
           }),
           listen<{ conversationId?: string; error?: { message?: string; reason?: string; modelName?: string; code?: number } }>('copilot-chat-done', (event) => {
@@ -468,7 +473,7 @@ export function useCopilotChat({
               } else {
                 toast.error(errorMsg);
               }
-              setMessageError(assistantMessageId, errorMsg);
+              setMessageError(assistantMessageId, errorMsg, runConvId);
             }
             cleanup();
             // cleanup() cleared the run; if the turn ended in error, override it.
@@ -494,12 +499,12 @@ export function useCopilotChat({
                   detail: 'Tool call limit reached',
                   status: 'error',
                   timestamp: Date.now(),
-                } as ToolCallSegment);
+                } as ToolCallSegment, runConvId);
                 return;
               }
 
               // Handle tool call asynchronously
-              handleToolCall(requestId, id, name, args, assistantMessageId).catch((err) => {
+              handleToolCall(requestId, id, name, args, assistantMessageId, runConvId).catch((err) => {
                 log.error('ai', 'Tool call execution failed', err);
               });
             },
@@ -581,9 +586,9 @@ export function useCopilotChat({
           unlistenToolConfirmation();
           unlistenContextRequest();
           if (streamedContent) {
-            updateMessage(assistantMessageId, streamedContent);
+            updateMessage(assistantMessageId, streamedContent, undefined, runConvId);
           }
-          finalizeSegments(assistantMessageId);
+          finalizeSegments(assistantMessageId, runConvId);
           setLoading(false);
           setActiveTool(null);
           runIdle(runConvId);
@@ -652,6 +657,7 @@ export function useCopilotChat({
         setMessageError(
           assistantMessageId,
           friendlyAIError(error, effectiveConnection?.label || 'Copilot', effectiveConnection?.id),
+          runConvId,
         );
         setLoading(false);
         setActiveTool(null);

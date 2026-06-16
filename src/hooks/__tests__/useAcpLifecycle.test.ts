@@ -42,6 +42,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   acpAgent: null,
   getAcpAgent: vi.fn(() => null),
   getAllAcpAgents: vi.fn(() => []),
+  getAllAcpAgentEntries: vi.fn(() => []),
   stopAcpAgent: vi.fn(),
   stopAllAcpAgents: vi.fn(),
   ensureAcpAgent: vi.fn().mockResolvedValue('test-instance-id'),
@@ -69,6 +70,9 @@ import * as acpAgentState from '@/lib/ai/acp-agent-state';
 function setMockAgent(agent: acpAgentState.AcpAgentState | null): void {
   vi.mocked(acpAgentState.getAcpAgent).mockReturnValue(agent);
   vi.mocked(acpAgentState.getAllAcpAgents).mockReturnValue(agent ? [agent] : []);
+  vi.mocked(acpAgentState.getAllAcpAgentEntries).mockReturnValue(
+    agent ? [['conv-test', agent]] : [],
+  );
 }
 
 // ---------------------------------------------------------------------------

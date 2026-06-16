@@ -19,7 +19,8 @@ import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPay
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { getAcpAgent, getAllAcpAgents, stopAcpAgent, stopAllAcpAgents, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent, getAllAcpAgents, getAllAcpAgentEntries, stopAcpAgent, stopAllAcpAgents, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId } from '@/lib/ai/acp-agent-state';
+import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store';
 
 /**
  * The ACP agent bound to the foreground (active) conversation, if any.
@@ -327,19 +328,23 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     // agent (each writable scope is derived from the workspace), so every
     // registry entry must be torn down and respawned — not just the foreground
     // one (task #2: the registry may now hold several concurrent agents).
-    const liveAgents = getAllAcpAgents();
-    if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== key && liveAgents.length > 0) {
-      log.info('ai', `Workspace folders changed — restarting ${liveAgents.length} agent(s) for updated sandbox`);
+    const liveEntries = getAllAcpAgentEntries();
+    if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== key && liveEntries.length > 0) {
+      log.info('ai', `Workspace folders changed — restarting ${liveEntries.length} agent(s) for updated sandbox`);
 
       const permStore = usePermissionStore.getState();
-      const chatLoading = useChatStore.getState().isLoading;
+      const runs = useSessionRunStore.getState().runs;
       let anyTurnActive = false;
 
-      for (const agent of liveAgents) {
+      for (const [conversationId, agent] of liveEntries) {
         const instanceId = agent.instanceId;
         const sessionId = agent.chatSessionId;
         const pendingForInstance = permStore.requests.filter((r) => r.instanceId === instanceId);
-        const turnActive = chatLoading || pendingForInstance.length > 0;
+        // Per-conversation run-state, NOT the global `isLoading` (which a
+        // background completion could have just cleared, so it no longer tells us
+        // whether THIS agent's turn is active under concurrency).
+        const runStatus = runs[conversationId]?.status;
+        const turnActive = (runStatus !== undefined && ACTIVE_STATUSES.includes(runStatus)) || pendingForInstance.length > 0;
         if (!turnActive) continue;
         anyTurnActive = true;
 
@@ -712,11 +717,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setLoading(true);
       setError(null);
 
-      // The conversation this send belongs to — the registry key for its ACP
-      // agent and the routing key for its listeners (task #2). Captured once so
-      // every step below targets the same conversation even if the user switches.
-      const conversationId = useChatStore.getState().activeConversationId ?? undefined;
-
       const userTimestamp = Date.now();
       // Stamp the target connection on the user message so later resend/edit
       // actions in `FloatingCommandBar` can detect provider mismatch
@@ -733,12 +733,22 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionId: effectiveConnection.id,
       };
       addMessage(userMessage);
+
+      // The conversation this send belongs to — the registry key for its ACP
+      // agent, the routing key for its listeners + run-state, and the owner of
+      // every store write below. Captured AFTER `addMessage`, which CREATES (and
+      // activates) the conversation for a brand-new chat — capturing it before
+      // would be `undefined` and strand the run as a phantom `running` (the
+      // listener/cleanup `runIdle` would no-op on the null id). Mirrors the
+      // direct-API + Copilot paths.
+      const conversationId = useChatStore.getState().activeConversationId ?? undefined;
+
       // Task #30 — log every file-path attachment on the user message so the
       // user has a visible trail of what was shipped to the provider. Image
       // byte attachments are visible as thumbnails already (intentionally not
       // logged here).
       for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
-        addActivity(userTimestamp, activity);
+        addActivity(userTimestamp, activity, conversationId);
       }
       const assistantMessageId = userTimestamp + 1;
       addMessage({
@@ -750,14 +760,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionProvider: effectiveConnection.provider,
       });
 
-      // Conversation that owns this run for session-run-store tracking (task #4).
-      // For a brand-new chat, `conversationId` (captured before addMessage) is
-      // undefined — `addMessage` has now created/activated the conversation.
-      const runConvId = conversationId ?? useChatStore.getState().activeConversationId ?? null;
       // Mark the run active NOW (before the agent-spawn await below) so the
       // command bar shows "working" during a cold spawn; the instance id is
       // attached once `ensureAcpAgent` resolves.
-      runStarted(runConvId, 'acp');
+      runStarted(conversationId, 'acp');
 
       // Sandbox scope: comment-sourced chats stick to the source project (`opts.sandboxPaths`);
       // regular chats use selected projects unless the user opted into cross-project mode.
@@ -817,7 +823,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const agent = getAcpAgent(conversationId)!;
 
         // Spawn resolved — attach the instance handle to the already-active run.
-        runAttachInstance(runConvId, instanceId);
+        runAttachInstance(conversationId, instanceId);
 
         // Block sending if a project switch is pending user decision
         const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
@@ -940,7 +946,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel), conversationId ?? null);
             setLoading(false);
             setActiveTool(null);
-            runError(runConvId);
+            runError(conversationId);
             return;
           }
         }
@@ -957,7 +963,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           setMessageError(assistantMessageId, 'Session expired. Please send your message again.', conversationId ?? null);
           setLoading(false);
           setActiveTool(null);
-          runError(runConvId);
+          runError(conversationId);
           return;
         }
 
@@ -969,7 +975,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         stopAcpAgent(conversationId);
         log.error('ai', 'ACP chat error', error);
         setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel), conversationId ?? null);
-        runError(runConvId);
+        runError(conversationId);
 
         // Offer an actionable Re-authenticate toast when the provider rejected
         // our token (401 / auth-failed). Tokens in keychain can go stale while

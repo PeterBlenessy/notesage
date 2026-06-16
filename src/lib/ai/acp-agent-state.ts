@@ -429,6 +429,17 @@ export function getAllAcpAgents(): AcpAgentState[] {
   return [...agents.values()];
 }
 
+/**
+ * Every live registry entry paired with its registry key (conversation id, or
+ * {@link DEFAULT_AGENT_KEY}/{@link TASK_AGENT_KEY} for the reserved keys). Lets
+ * callers map an agent back to the conversation that owns it — e.g. the
+ * workspace-change respawn checking per-conversation run-state instead of the
+ * global `isLoading`.
+ */
+export function getAllAcpAgentEntries(): Array<[key: string, agent: AcpAgentState]> {
+  return [...agents.entries()];
+}
+
 /** Update the instance ID of a conversation's agent (used by recovery). */
 export function updateAcpAgentInstanceId(newInstanceId: string, conversationId?: string): void {
   const agent = agents.get(keyFor(conversationId));
@@ -590,6 +601,7 @@ export async function ensureAcpAgent(
     // Agent changed or was replaced during await — restart the entire check
     return ensureAcpAgent(connection, cwd, sandboxPaths, `${callerTag}-retry`, {
       conversationId,
+      role,
       depth: depth + 1,
     });
   }
