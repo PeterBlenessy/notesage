@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 
 import '@/test/tauri-mock';
+// Radix Slider (the Max concurrent sessions control) uses ResizeObserver.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderWithProviders, screen, fireEvent } from '@/test/component-harness';
 import { useSettingsStore } from '@/stores/settings-store';
