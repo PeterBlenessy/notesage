@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bot, Mic } from 'lucide-react';
 import {
   Popover,
@@ -79,12 +79,18 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
 
   // Unwatched chat sessions (task #12): running/awaiting sessions in conversations
   // the user is NOT currently watching. The orb's "background work" set is the
-  // union of these with the background agent tasks below. Scalar selectors keep
-  // identity stable (no array-churn re-renders).
-  const unwatchedCount = useSessionRunStore((s) => selectUnwatchedRunning(s).length);
-  const unwatchedNeedsPermission = useSessionRunStore((s) =>
-    selectUnwatchedRunning(s).some((r) => r.status === 'awaiting_permission'),
-  );
+  // union of these with the background agent tasks below. Subscribe to the raw
+  // slices and derive both scalars from ONE filter pass (review perf — the two
+  // scalar selectors recomputed `selectUnwatchedRunning` twice per render).
+  const runs = useSessionRunStore((s) => s.runs);
+  const foregroundConversationId = useSessionRunStore((s) => s.foregroundConversationId);
+  const { unwatchedCount, unwatchedNeedsPermission } = useMemo(() => {
+    const unwatched = selectUnwatchedRunning({ runs, foregroundConversationId });
+    return {
+      unwatchedCount: unwatched.length,
+      unwatchedNeedsPermission: unwatched.some((r) => r.status === 'awaiting_permission'),
+    };
+  }, [runs, foregroundConversationId]);
 
   const runningTaskCount = tasks.filter((t) => t.status === 'running').length;
   // The badge / "active" state count background agent tasks AND unwatched chat

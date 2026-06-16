@@ -1,5 +1,5 @@
 import { Pause, Hourglass, AlertTriangle, MessageSquare } from 'lucide-react';
-import { useSessionRunStore } from '@/stores/session-run-store';
+import { useSessionRunStore, type SessionRunStatus } from '@/stores/session-run-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 interface SessionStatusBadgeProps {
@@ -7,24 +7,11 @@ interface SessionStatusBadgeProps {
 }
 
 /**
- * Leading status indicator for a conversation's live AI run (PRD
- * `2026-06-14-command-bar-session-multitasking`, task #9), read from
- * `session-run-store`:
- *
- *   ● running — subtle neutral pulse
- *   ⏸ awaiting permission — accent (needs you)
- *   ⧗ queued — muted
- *   ⚠ error — destructive
- *   idle / no run — nothing (the caller renders its default icon)
- *
- * Neutral / accent / destructive tokens only. The running pulse is CSS-only and
- * stripped under `prefers-reduced-motion` (both via the media query in
- * globals.css and by omitting the class here).
+ * Pure status glyph (review perf) — renders the icon for a run status WITHOUT
+ * subscribing to the store, so callers that already hold the status (the history
+ * row) don't pay a second per-row subscription for the same `runs[id].status`.
  */
-export function SessionStatusBadge({ conversationId }: SessionStatusBadgeProps) {
-  const status = useSessionRunStore((s) => s.runs[conversationId]?.status);
-  const reducedMotion = useReducedMotion();
-
+function StatusGlyph({ status, reducedMotion }: { status: SessionRunStatus | undefined; reducedMotion: boolean }) {
   switch (status) {
     case 'running':
       return (
@@ -70,28 +57,42 @@ export function SessionStatusBadge({ conversationId }: SessionStatusBadgeProps) 
   }
 }
 
-/** Whether a conversation has a non-idle run — lets callers swap their default
- *  leading icon for the {@link SessionStatusBadge}. */
-export function useHasSessionStatus(conversationId: string): boolean {
-  return useSessionRunStore((s) => {
-    const status = s.runs[conversationId]?.status;
-    return status !== undefined && status !== 'idle';
-  });
+/**
+ * Leading status indicator for a conversation's live AI run (PRD
+ * `2026-06-14-command-bar-session-multitasking`, task #9), read from
+ * `session-run-store`:
+ *
+ *   ● running — subtle neutral pulse
+ *   ⏸ awaiting permission — accent (needs you)
+ *   ⧗ queued — muted
+ *   ⚠ error — destructive
+ *   idle / no run — nothing (the caller renders its default icon)
+ *
+ * Neutral / accent / destructive tokens only. The running pulse is CSS-only and
+ * stripped under `prefers-reduced-motion` (both via the media query in
+ * globals.css and by omitting the class here).
+ */
+export function SessionStatusBadge({ conversationId }: SessionStatusBadgeProps) {
+  const status = useSessionRunStore((s) => s.runs[conversationId]?.status);
+  const reducedMotion = useReducedMotion();
+  return <StatusGlyph status={status} reducedMotion={reducedMotion} />;
 }
 
 /**
  * Leading icon for a history row (`CommandBarHistory`, `ChatHistoryView`): the
  * live run-state badge when the conversation has an active/errored run,
  * otherwise the default chat glyph. A fixed slot keeps the title baseline
- * aligned across both states. Extracted so the per-row hook isn't called inside
- * a `.map()`.
+ * aligned across both states. Reads the run status with a SINGLE subscription
+ * (review perf) and renders the pure glyph — no nested `SessionStatusBadge`
+ * subscription for the same row.
  */
 export function HistoryRowLeadingIcon({ conversationId }: { conversationId: string }) {
-  const hasStatus = useHasSessionStatus(conversationId);
-  if (hasStatus) {
+  const status = useSessionRunStore((s) => s.runs[conversationId]?.status);
+  const reducedMotion = useReducedMotion();
+  if (status !== undefined && status !== 'idle') {
     return (
       <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-        <SessionStatusBadge conversationId={conversationId} />
+        <StatusGlyph status={status} reducedMotion={reducedMotion} />
       </span>
     );
   }

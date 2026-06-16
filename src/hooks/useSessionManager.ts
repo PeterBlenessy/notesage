@@ -23,10 +23,9 @@ const conversationTitle = (conversationId: string): string =>
  */
 export function useForegroundLoading(): boolean {
   const activeConversationId = useChatStore((s) => s.activeConversationId);
-  return useSessionRunStore((s) => {
-    const status = activeConversationId ? s.runs[activeConversationId]?.status : undefined;
-    return status !== undefined && ACTIVE_STATUSES.includes(status);
-  });
+  return useSessionRunStore((s) =>
+    isActiveStatus(activeConversationId ? s.runs[activeConversationId]?.status : undefined),
+  );
 }
 
 /**
