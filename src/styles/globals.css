@@ -585,6 +585,24 @@ body {
   }
 }
 
+/* Session run-state status dot (history rows, task #9). A gentle opacity pulse
+ * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
+ * components also strip the class under `useReducedMotion()` as defence-in-depth. */
+@keyframes session-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.session-status-pulse {
+  animation: session-status-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-status-pulse {
+    animation: none;
+  }
+}
+
 /* ============================================================================
  * HTML viewer find-bar morph (HtmlViewer.tsx)
  * ============================================================================

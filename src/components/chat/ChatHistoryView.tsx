@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { Trash2, MessageSquare, Clock, Download, GitBranch } from 'lucide-react';
+import { Trash2, Clock, Download, GitBranch } from 'lucide-react';
 import { useChatStore, type Conversation } from '@/stores/chat-store';
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import { getThread, getThreadResilient, getLeaves } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
+import { HistoryRowLeadingIcon } from '@/components/cmd/SessionStatusBadge';
 
 /**
  * Fire best-effort `session/close` for every ACP session owned by the conversation
@@ -249,7 +250,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                   conv.id === activeConversationId ? 'bg-accent/30' : ''
                 }`}
               >
-                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+                <HistoryRowLeadingIcon conversationId={conv.id} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{conv.title || 'New Chat'}</p>
                   <div className="flex items-center gap-2 mt-0.5">

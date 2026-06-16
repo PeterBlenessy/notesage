@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-14 |
-| **Status** | In progress (#1–#8 done) |
+| **Status** | In progress (#1–#9, #11 done) |
 | **PRD** | [command-bar-session-multitasking](../prds/2026-06-14-command-bar-session-multitasking.md) |
 | **Total** | 16 tasks: 1S, 11M, 4L |
 | **Suggested order** | Foundation (#1) → Engine (#2–#5) → Permissions (#6–#7) → Settings (#8) → History UI (#9–#11) → Orb UI (#12–#14) → Notifications (#15) → Integration tests (#16) |
@@ -87,20 +87,22 @@
 
 ## History UI
 
-### #9 — History row status badges
+### #9 — History row status badges ✅
 - **Description:** Each `CommandBarHistory` / `ChatHistoryView` row shows a leading status indicator derived from `session-run-store`: ● running (subtle pulse), ⏸ awaiting-permission (accent), ⧗ queued, ⚠ error, idle (none). Neutral/accent tokens only; reduced-motion safe. **Acceptance:** badges reflect live run state; update as state changes.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #1, #4
 - **Files:** `src/components/cmd/CommandBarHistory.tsx`, `src/components/chat/ChatHistoryView.tsx`
+  - **Landed:** New `SessionStatusBadge` (running = neutral dot with CSS `session-status-pulse`, stripped under `useReducedMotion` + a `prefers-reduced-motion` media query; awaiting = accent Pause; queued = muted Hourglass; error = destructive AlertTriangle; idle/none → null). Shared `HistoryRowLeadingIcon` swaps the default `MessageSquare` glyph for the badge when a conversation has a live run; used by both `CommandBarHistory` and `ChatHistoryView`. Badges are live (subscribe to `session-run-store`). Tests: per-status render + leading-icon swap.
 
 ### #10 — History inline permission card
 - **Description:** An awaiting-permission history row **expands in place** to show the request — tool label (`formatToolLabel`) + `Diff`/`Content` preview (`normalizeToolCallContent`) — with tiered Allow / Deny (allow-once/session/always). Resolves without opening the full session. Reuse the visual language of `PermissionCard` / `ToolCallPermissionCard`. **Acceptance:** approving/denying inline resolves the request for both ACP and direct-API tool calls.
 - **Complexity:** L · **Category:** frontend · **Depends on:** #6, #9
 - **Files:** `src/components/cmd/CommandBarHistory.tsx`, `src/components/chat/PermissionCard.tsx` / `ToolCallPermissionCard.tsx` (extract shared inline form)
 
-### #11 — History row → foreground session (the switcher)
+### #11 — History row → foreground session (the switcher) ✅
 - **Description:** Clicking a history row attaches the command bar to that session **live** (mid-stream if running) and sets it as the foreground conversation. **Acceptance:** clicking a running row shows its live stream; the previously-foreground running session moves to the orb set.
 - **Complexity:** M · **Category:** frontend · **Depends on:** #4, #9
 - **Files:** `src/components/cmd/FloatingCommandBar.tsx`, `src/components/cmd/CommandBarHistory.tsx`, `src/hooks/useSessionManager.ts`
+  - **Satisfied by composition — no new code.** `FloatingCommandBar.handleSelectConversation` already calls `setActiveConversation(id)` + switches to chat view; #4 mirrors `activeConversationId → setForeground`; #3/#4 made streaming writes conversation-keyed, so the chat view renders the now-foreground conversation's **live** in-progress message, and the previously-foreground running session drops into `selectUnwatchedRunning` (the orb set, #12) automatically. Locked with a `useSessionManager` test (switching active conversation flips foreground and moves the prior running session into the unwatched set).
 
 ## Orb UI
 

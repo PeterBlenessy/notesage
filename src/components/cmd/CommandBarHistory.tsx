@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, GitBranch, MessageSquare } from 'lucide-react';
+import { Clock, GitBranch } from 'lucide-react';
 import { useChatStore, type Conversation } from '@/stores/chat-store';
 import { getLeaves } from '@/lib/chat-tree';
 import { formatRelativeTime } from '@/components/editor/CommentThread';
+import { HistoryRowLeadingIcon } from './SessionStatusBadge';
 
 export interface CommandBarHistoryProps {
   /**
@@ -167,10 +168,7 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                   isHighlighted ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]' : 'hover:bg-accent/50'
                 }`}
               >
-                <MessageSquare
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                  strokeWidth={1.5}
-                />
+                <HistoryRowLeadingIcon conversationId={conv.id} />
                 <div className="min-w-0 flex-1">
                   <p
                     data-testid="cmd-history-row-title"

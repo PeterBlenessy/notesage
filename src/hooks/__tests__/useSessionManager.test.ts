@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useChatStore } from '@/stores/chat-store';
-import { useSessionRunStore } from '@/stores/session-run-store';
+import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { enqueueSend, isSendQueued, __resetSendQueue } from '@/lib/ai/session-run';
 import { useSessionManager, useForegroundLoading } from '@/hooks/useSessionManager';
@@ -95,6 +95,28 @@ describe('useSessionManager — concurrency queue drain (task #5)', () => {
     expect(started).toBe(true);
     expect(isSendQueued('Q')).toBe(false);
     expect(useSessionRunStore.getState().runs.Q?.status).toBe('running');
+  });
+});
+
+describe('history switcher (task #11) — foregrounding follows the active conversation', () => {
+  it('switching active conversation moves the prior running session into the orb (unwatched) set', () => {
+    // Two running sessions (with backing conversations so the orphan-prune
+    // doesn't clear them); A is foreground.
+    useChatStore.setState({
+      conversations: ['A', 'B'].map((id) => ({ id, title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null })) as never,
+      activeConversationId: 'A',
+    });
+    useSessionRunStore.getState().setRun('A', { status: 'running' });
+    useSessionRunStore.getState().setRun('B', { status: 'running' });
+    renderHook(() => useSessionManager());
+
+    expect(useSessionRunStore.getState().foregroundConversationId).toBe('A');
+    expect(selectUnwatchedRunning(useSessionRunStore.getState()).map((r) => r.conversationId)).toEqual(['B']);
+
+    // Click B in history → it becomes active → foreground follows → A moves to the orb set.
+    act(() => { useChatStore.setState({ activeConversationId: 'B' }); });
+    expect(useSessionRunStore.getState().foregroundConversationId).toBe('B');
+    expect(selectUnwatchedRunning(useSessionRunStore.getState()).map((r) => r.conversationId)).toEqual(['A']);
   });
 });
 
