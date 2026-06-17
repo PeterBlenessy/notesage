@@ -4,6 +4,7 @@ import { TitleBar } from "@/components/TitleBar";
 import type { AgentTask } from "@/stores/activity-store";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { AgentOrb } from "@/components/activity/AgentOrb";
+import { DomainApprovalStack } from "@/components/chat/DomainApprovalStack";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { Editor } from "@/components/editor/Editor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -489,6 +490,17 @@ export function QuietLayout(props: QuietLayoutProps) {
        */}
       <ErrorBoundary name="Agent orb">
         <AgentOrb onCancelTask={onCancelTask} onClickTask={onClickTask} />
+      </ErrorBoundary>
+
+      {/*
+        Network-domain approval cards. Always-mounted (driven by the
+        `useNetworkDomainApprovals` App-root listener via `domain-request-store`)
+        so an agent's unknown-domain request surfaces whether or not the command
+        bar is expanded — a collapsed bar used to unmount the only listener,
+        wedging sandboxed agents on their startup telemetry calls.
+       */}
+      <ErrorBoundary name="Domain approvals">
+        <DomainApprovalStack />
       </ErrorBoundary>
 
       {/*
