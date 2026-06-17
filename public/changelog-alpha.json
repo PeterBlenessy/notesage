@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.47.0-alpha.5",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.4",
+      "sections": {
+        "fixes": [
+          "fix(editor): images show on first paint, not just after a refresh (#478)",
+          "fix(drawing): bundle Excalidraw's Latin fonts locally (no CDN, no CSP spam) (#479)"
+        ]
+      },
+      "underTheHood": [
+        "fix(drawing): bundle Excalidraw's Latin fonts locally (no CDN, no CSP spam) (#479)",
+        "fix(editor): images show on first paint, not just after a refresh (#478)"
+      ]
+    },
+    {
       "version": "0.47.0-alpha.4",
       "date": "2026-06-17",
       "previousVersion": "0.47.0-alpha.3",
