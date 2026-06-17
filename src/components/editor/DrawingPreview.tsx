@@ -4,6 +4,7 @@ import { Pencil, Copy, Image as ImageIcon } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { loadSvgPreview, loadDrawing, saveSvgPreview } from "@/lib/drawing-storage";
+import { exportDrawingToSvg, type ExportSvgOpts } from "@/lib/excalidraw-export";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
@@ -46,17 +47,15 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
       const elements = scene.elements ?? [];
       if (elements.length === 0) return null;
 
-      const { exportToSvg } = await import("@excalidraw/excalidraw");
-
       const renderSvg = async (darkMode: boolean) => {
-        const svgEl = await exportToSvg({
-          elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+        const svgEl = await exportDrawingToSvg({
+          elements: elements as ExportSvgOpts["elements"],
           appState: {
             ...(scene.appState ?? {}),
             exportWithDarkMode: darkMode,
             exportBackground: false,
           },
-          files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+          files: (scene.files ?? {}) as ExportSvgOpts["files"],
         });
         svgEl.removeAttribute("width");
         svgEl.removeAttribute("height");
@@ -95,15 +94,14 @@ export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps
           return;
         }
 
-        const { exportToSvg } = await import("@excalidraw/excalidraw");
-        const svgEl = await exportToSvg({
-          elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+        const svgEl = await exportDrawingToSvg({
+          elements: elements as ExportSvgOpts["elements"],
           appState: {
             ...(scene.appState ?? {}),
             exportWithDarkMode: isDark,
             exportBackground: false,
           },
-          files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+          files: (scene.files ?? {}) as ExportSvgOpts["files"],
         });
         svgEl.removeAttribute("width");
         svgEl.removeAttribute("height");
