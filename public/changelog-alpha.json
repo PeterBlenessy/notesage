@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.47.0-alpha.4",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.3",
+      "sections": {
+        "fixes": [
+          "fix(network): always-mounted domain approvals so restrictions don't wedge agents (#474)"
+        ]
+      },
+      "underTheHood": [
+        "fix(network): always-mounted domain approvals so restrictions don't wedge agents (#474)"
+      ]
+    },
+    {
       "version": "0.47.0-alpha.3",
       "date": "2026-06-17",
       "previousVersion": "0.47.0-alpha.2",
