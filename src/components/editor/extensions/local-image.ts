@@ -1,5 +1,6 @@
 import Image from "@tiptap/extension-image";
 import { resolveImageSrc } from "@/lib/image-utils";
+import { tauriApi } from "@/lib/tauri";
 
 /**
  * Extends the Tiptap Image extension with:
@@ -143,6 +144,33 @@ export const LocalImage = Image.extend({
           >
         ).image?.documentDir;
       const resolve = (src: string) => resolveImageSrc(src, getDocDir());
+
+      // Self-heal the startup asset-scope race. On app start the WebView can
+      // render this <img> BEFORE `allow_asset_dir` has granted read scope for the
+      // document's root (`useStartWatchers` grants it async, gated on
+      // `startupReady`), so the asset request is refused and the image shows a
+      // broken placeholder until a manual refresh. On the first failure of an
+      // asset URL, (re)grant the doc-dir scope and reload — making first paint
+      // behave like the refresh that "fixes" it. Bounded to avoid a loop on
+      // genuinely-missing files; remote/data URLs are left alone.
+      let assetHealAttempts = 0;
+      img.addEventListener("error", () => {
+        const failedSrc = img.src;
+        if (assetHealAttempts >= 2 || !failedSrc.includes("asset.localhost")) return;
+        assetHealAttempts++;
+        const reload = () => {
+          // Force a fresh request — re-assigning the same URL alone may not
+          // re-fetch a previously-refused asset.
+          img.src = "";
+          img.src = failedSrc;
+        };
+        const dir = getDocDir();
+        if (dir) {
+          void tauriApi.allowAssetDir(dir).then(reload, reload);
+        } else {
+          setTimeout(reload, 150);
+        }
+      });
 
       // Build the hover toolbar -----------------------------------------------
       // Matches BlockSizeControls.tsx visually: same sizing, CSS-variable tokens
