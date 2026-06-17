@@ -34,6 +34,7 @@ import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSessionManager } from "@/hooks/useSessionManager";
+import { useNetworkDomainApprovals } from "@/hooks/useNetworkDomainApprovals";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
@@ -169,6 +170,12 @@ function App() {
   // history / foreground-loading reading per-session status independently of
   // the command-bar view. Must stay mounted here at the App root.
   useSessionManager();
+
+  // Network-domain approvals — MUST stay mounted at the App root, not inside the
+  // command-bar stream (which unmounts when the bar is collapsed). Otherwise a
+  // sandboxed agent's telemetry/unknown-domain requests hit no handler and block
+  // for the proxy's 30s timeout, wedging the agent ("AI not responding").
+  useNetworkDomainApprovals();
 
   // Activity panel — cancel handler and navigation (forwarded to QuietLayout/AgentPanel)
   const { cancelTask } = useAgentTaskOperations();
