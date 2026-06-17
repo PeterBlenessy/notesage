@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { Editor } from "@tiptap/core";
+import { exportDrawingToSvg, type ExportSvgOpts } from "@/lib/excalidraw-export";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
@@ -206,15 +207,14 @@ export async function renderDrawingSvg(drawingJson: string): Promise<string> {
     const elements = scene.elements ?? [];
     if (elements.length === 0) return "";
 
-    const { exportToSvg } = await import("@excalidraw/excalidraw");
-    const svgEl = await exportToSvg({
-      elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+    const svgEl = await exportDrawingToSvg({
+      elements: elements as ExportSvgOpts["elements"],
       appState: {
         ...(scene.appState ?? {}),
         exportWithDarkMode: false, // always light mode for export
         exportBackground: true,
       },
-      files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+      files: (scene.files ?? {}) as ExportSvgOpts["files"],
     });
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");

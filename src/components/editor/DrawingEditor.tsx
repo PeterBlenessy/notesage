@@ -4,6 +4,7 @@ import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 import { saveDrawing, saveSvgPreview, loadDrawing, loadLibrary, saveLibrary, importLibraryFile } from "@/lib/drawing-storage";
+import { exportDrawingToSvg } from "@/lib/excalidraw-export";
 import { tauriApi } from "@/lib/tauri";
 import type { Editor } from "@tiptap/core";
 
@@ -166,10 +167,8 @@ export function DrawingEditor({
 
     // Export SVG preview
     try {
-      const { exportToSvg } = await import("@excalidraw/excalidraw");
-
       const exportSvg = async (darkMode: boolean) => {
-        const svg = await exportToSvg({
+        const svg = await exportDrawingToSvg({
           elements,
           appState: {
             ...appState,
