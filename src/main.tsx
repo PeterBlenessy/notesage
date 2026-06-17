@@ -12,6 +12,19 @@ import {
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 
+// Point Excalidraw at the locally-bundled Latin font families (copied to
+// /excalidraw-assets/ by the `excalidraw-local-fonts` Vite plugin) so it loads
+// them from the app origin (`font-src 'self'`) instead of the esm.sh CDN, which
+// our CSP blocks. Set before any dynamic `import("@excalidraw/excalidraw")`
+// runs. The 12 MB Xiaolai CJK font is intentionally NOT bundled — it falls back
+// to the CDN and stays CSP-blocked (harmless; Notesage doesn't need CJK).
+declare global {
+  interface Window {
+    EXCALIDRAW_ASSET_PATH?: string;
+  }
+}
+window.EXCALIDRAW_ASSET_PATH = "/excalidraw-assets/";
+
 // Suppress React 19 flushSync warning from Tiptap's ReactNodeViewRenderer.
 // Tiptap creates React-based NodeViews (chart, drawing, link preview) via flushSync
 // during ProseMirror state updates, which may happen inside React commit phases.
