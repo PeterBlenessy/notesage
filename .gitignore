@@ -68,3 +68,4 @@ src-tauri/.pkg-config-stubs/
 # Local env files with telemetry keys/DSN (see .env.example) — never commit
 .env
 .env.local
+public/excalidraw-assets/
