@@ -270,6 +270,19 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     documentDir: activeTab ? getDocumentDir(activeTab.filePath) : undefined,
   });
 
+  // Proactively grant the active document's directory asset-protocol scope so
+  // its images (asset.localhost URLs) load on first paint instead of waiting for
+  // the startup `useStartWatchers` grant to win the race (which left images as
+  // broken placeholders until a manual refresh). Idempotent on the Rust side;
+  // the per-image `error` self-heal in local-image.ts is the safety net for
+  // images that still race or sit outside the doc dir.
+  useEffect(() => {
+    const dir = activeTab ? getDocumentDir(activeTab.filePath) : null;
+    if (dir) void tauriApi.allowAssetDir(dir).catch(() => {});
+    // Keyed on the path only — re-running on every content edit is pointless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab?.filePath]);
+
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);

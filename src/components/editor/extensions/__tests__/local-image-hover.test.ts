@@ -13,7 +13,15 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+
+// local-image self-heals asset-scope races by calling tauriApi.allowAssetDir on
+// an <img> error — mock it so we can assert.
+vi.mock('@/lib/tauri', () => ({
+  tauriApi: { allowAssetDir: vi.fn(() => Promise.resolve()) },
+}));
+
 import { LocalImage } from '../local-image';
+import { tauriApi } from '@/lib/tauri';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -70,6 +78,51 @@ function buildNodeView(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe('LocalImage NodeView — asset-scope self-heal', () => {
+  function editorWithDir(dir: string) {
+    const e = mockEditor();
+    e.storage.image.documentDir = dir;
+    return e;
+  }
+
+  it('re-grants the doc-dir asset scope when an asset-URL image errors', () => {
+    vi.mocked(tauriApi.allowAssetDir).mockClear();
+    const { dom } = buildNodeView(
+      mockImageNode({ src: 'http://asset.localhost/Users/x/doc/photo.png' }),
+      editorWithDir('/Users/x/doc'),
+    );
+    const img = dom.querySelector('img') as HTMLImageElement;
+    expect(img.src).toContain('asset.localhost');
+
+    img.dispatchEvent(new Event('error'));
+    expect(tauriApi.allowAssetDir).toHaveBeenCalledWith('/Users/x/doc');
+  });
+
+  it('does NOT self-heal a remote/data URL that fails (genuinely broken)', () => {
+    vi.mocked(tauriApi.allowAssetDir).mockClear();
+    const { dom } = buildNodeView(
+      mockImageNode({ src: 'https://example.com/missing.png' }),
+      editorWithDir('/Users/x/doc'),
+    );
+    const img = dom.querySelector('img') as HTMLImageElement;
+    img.dispatchEvent(new Event('error'));
+    expect(tauriApi.allowAssetDir).not.toHaveBeenCalled();
+  });
+
+  it('stops re-granting after 2 attempts (no infinite loop on a missing file)', () => {
+    vi.mocked(tauriApi.allowAssetDir).mockClear();
+    const { dom } = buildNodeView(
+      mockImageNode({ src: 'http://asset.localhost/Users/x/doc/photo.png' }),
+      editorWithDir('/Users/x/doc'),
+    );
+    const img = dom.querySelector('img') as HTMLImageElement;
+    img.dispatchEvent(new Event('error'));
+    img.dispatchEvent(new Event('error'));
+    img.dispatchEvent(new Event('error'));
+    expect(tauriApi.allowAssetDir).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('LocalImage NodeView — hover toolbar', () => {
   // --- DOM structure ---
