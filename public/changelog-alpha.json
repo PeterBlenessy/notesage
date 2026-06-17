@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.47.0-alpha.3",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.2",
+      "sections": {
+        "fixes": [
+          "fix(drawing): skip Excalidraw font inlining so drawings don't hang the app (#475)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump the npm_and_yarn group across 2 directories with 5 updates (#473)",
+        "fix(drawing): skip Excalidraw font inlining so drawings don't hang the app",
+        "chore(deps): bump the npm_and_yarn group across 2 directories with 5 updates"
+      ]
+    },
+    {
       "version": "0.47.0-alpha.2",
       "date": "2026-06-16",
       "previousVersion": "0.47.0-alpha.1",
