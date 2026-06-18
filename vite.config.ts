@@ -2,7 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import { readFileSync, cpSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, cpSync, existsSync, mkdirSync, readdirSync, writeFileSync, statSync } from "fs";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -17,13 +17,39 @@ const EXCALIDRAW_LATIN_FONTS = [
   "Lilita", "Cascadia", "Liberation", "Assistant",
 ];
 
+/** The smallest `.woff2` in the bundled Latin families — a tiny valid font used
+ *  to stub the unwanted CJK font (see below). */
+function smallestLatinWoff2(srcBase: string): Buffer | null {
+  let best: { size: number; file: string } | null = null;
+  for (const family of EXCALIDRAW_LATIN_FONTS) {
+    const dir = path.join(srcBase, family);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".woff2")) continue;
+      const size = statSync(path.join(dir, f)).size;
+      if (!best || size < best.size) best = { size, file: path.join(dir, f) };
+    }
+  }
+  return best ? readFileSync(best.file) : null;
+}
+
 /**
- * Copy Excalidraw's Latin font families to a served, gitignored public path so
- * the editor loads them from the app origin (`font-src 'self'`) instead of the
- * `esm.sh` CDN, which the app CSP blocks. Excalidraw always also lists the CDN
- * URL as an extra `@font-face src`, so a missing local font is a harmless
- * no-op fallback — never a hard failure. Runs in both `vite dev` and the
- * `tauri build` Vite pass via the `buildStart` hook.
+ * Make Excalidraw load all its fonts from the app origin (`font-src 'self'`)
+ * instead of the `esm.sh` CDN, which the app CSP blocks. Runs in both `vite dev`
+ * and the `tauri build` Vite pass via `buildStart`. Two parts:
+ *
+ *  1. Copy the small Latin / hand-drawn families verbatim, so they load locally.
+ *  2. STUB the 12 MB Xiaolai CJK font. Excalidraw loads Xiaolai as a blind
+ *     fallback for EVERY text element — even pure-ASCII drawings, with no
+ *     content gate — so without this it fetches ~209 Xiaolai chunks from the
+ *     CDN and floods the console with CSP-refused errors. Notesage never needs
+ *     CJK, so we write a tiny VALID woff2 (the package's own smallest font) at
+ *     each Xiaolai path: the browser loads it (200) and never falls through to
+ *     the CDN. The stub has no CJK glyphs, but no CJK is ever rendered, so it's
+ *     harmless. ~170 KB total instead of 12 MB.
+ *
+ * Excalidraw always lists the CDN URL as an extra `@font-face src`, so a missing
+ * or wrong local path is a harmless no-op fallback — never a hard failure.
  */
 function excalidrawLocalFonts(): Plugin {
   return {
@@ -33,9 +59,22 @@ function excalidrawLocalFonts(): Plugin {
       const destBase = path.resolve(__dirname, "public/excalidraw-assets/fonts");
       if (!existsSync(srcBase)) return;
       mkdirSync(destBase, { recursive: true });
+
+      // 1. Latin / hand-drawn families — copied verbatim.
       for (const family of EXCALIDRAW_LATIN_FONTS) {
         const from = path.join(srcBase, family);
         if (existsSync(from)) cpSync(from, path.join(destBase, family), { recursive: true });
+      }
+
+      // 2. Xiaolai (CJK) — stubbed with a tiny valid woff2 at each expected path.
+      const xiaolaiSrc = path.join(srcBase, "Xiaolai");
+      const stub = smallestLatinWoff2(srcBase);
+      if (existsSync(xiaolaiSrc) && stub) {
+        const xiaolaiDest = path.join(destBase, "Xiaolai");
+        mkdirSync(xiaolaiDest, { recursive: true });
+        for (const name of readdirSync(xiaolaiSrc)) {
+          if (name.endsWith(".woff2")) writeFileSync(path.join(xiaolaiDest, name), stub);
+        }
       }
     },
   };
