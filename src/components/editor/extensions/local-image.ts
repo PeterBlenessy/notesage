@@ -3,6 +3,22 @@ import { resolveImageSrc } from "@/lib/image-utils";
 import { tauriApi } from "@/lib/tauri";
 
 /**
+ * The filesystem directory of an `asset.localhost` URL (`convertFileSrc` output),
+ * e.g. `http://asset.localhost/Users/me/proj/images/a.png` → `/Users/me/proj/images`.
+ * Used by the image self-heal to grant the asset scope for exactly the failing
+ * image's directory. Returns `null` if the URL isn't a parseable asset path.
+ */
+export function assetDirFromUrl(assetUrl: string): string | null {
+  try {
+    const path = decodeURIComponent(new URL(assetUrl).pathname);
+    const slash = path.lastIndexOf("/");
+    return slash > 0 ? path.slice(0, slash) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Extends the Tiptap Image extension with:
  *  - `documentDir` storage (used for resolving relative paths via the Tauri
  *    asset protocol).
@@ -145,18 +161,20 @@ export const LocalImage = Image.extend({
         ).image?.documentDir;
       const resolve = (src: string) => resolveImageSrc(src, getDocDir());
 
-      // Self-heal the startup asset-scope race. On app start the WebView can
-      // render this <img> BEFORE `allow_asset_dir` has granted read scope for the
-      // document's root (`useStartWatchers` grants it async, gated on
-      // `startupReady`), so the asset request is refused and the image shows a
-      // broken placeholder until a manual refresh. On the first failure of an
-      // asset URL, (re)grant the doc-dir scope and reload — making first paint
-      // behave like the refresh that "fixes" it. Bounded to avoid a loop on
-      // genuinely-missing files; remote/data URLs are left alone.
+      // Self-heal the startup asset-scope race (failure-only — zero cost on the
+      // happy path). On a fresh restart the WebView can paint this <img> before
+      // `allow_asset_dir` has granted read scope for the file, so the asset
+      // request is refused and the image shows a broken placeholder until a
+      // manual refresh. On an asset-URL load error we grant the image's OWN
+      // directory (derived from the failed URL, so it's covered regardless of
+      // where the doc lives — the previous version granted only `documentDir`,
+      // missing images in sibling dirs) and reload. Retries with backoff so a
+      // slow (iCloud) startup grant lands within the window; bounded to avoid a
+      // loop on genuinely-missing files. Remote/data URLs are left alone.
       let assetHealAttempts = 0;
       img.addEventListener("error", () => {
         const failedSrc = img.src;
-        if (assetHealAttempts >= 2 || !failedSrc.includes("asset.localhost")) return;
+        if (assetHealAttempts >= 4 || !failedSrc.includes("asset.localhost")) return;
         assetHealAttempts++;
         const reload = () => {
           // Force a fresh request — re-assigning the same URL alone may not
@@ -164,11 +182,15 @@ export const LocalImage = Image.extend({
           img.src = "";
           img.src = failedSrc;
         };
-        const dir = getDocDir();
+        const dir = assetDirFromUrl(failedSrc) ?? getDocDir();
+        const delay = 60 * assetHealAttempts;
         if (dir) {
-          void tauriApi.allowAssetDir(dir).then(reload, reload);
+          void tauriApi.allowAssetDir(dir).then(
+            () => setTimeout(reload, delay),
+            () => setTimeout(reload, delay),
+          );
         } else {
-          setTimeout(reload, 150);
+          setTimeout(reload, delay);
         }
       });
 
