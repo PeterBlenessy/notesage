@@ -1416,7 +1416,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(23);
+    expect(parsed.version).toBe(24);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2503,7 +2503,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(23);
+    expect(parsed.version).toBe(24);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {

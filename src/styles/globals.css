@@ -611,6 +611,31 @@ body {
   }
 }
 
+/* RelationsPanel collapsed-handle pulse (OKF wiki-navigation, ADR 0004). The
+ * slim right-edge handle pulses a soft accent ring when the open document has
+ * any relations, drawing the eye without shouting. CSS-only — zero JS in the
+ * animation loop, mirroring the orb-pulse pattern. The component omits the
+ * `.relations-handle-pulsing` class when `useReducedMotion()` is true; the
+ * @media guard below is defence-in-depth for an OS-preference flip after mount. */
+@keyframes relations-handle-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--color-accent-primary);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.relations-handle-pulsing {
+  animation: relations-handle-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relations-handle-pulsing {
+    animation: none;
+  }
+}
+
 /* Session run-state status dot (history rows, task #9). A gentle opacity pulse
  * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
  * components also strip the class under `useReducedMotion()` as defence-in-depth. */

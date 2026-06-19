@@ -7,6 +7,8 @@ import { AgentOrb } from "@/components/activity/AgentOrb";
 import { DomainApprovalStack } from "@/components/chat/DomainApprovalStack";
 import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { Editor } from "@/components/editor/Editor";
+import { RelationsPanel } from "@/components/editor/RelationsPanel";
+import { EditorLinkHoverPreview } from "@/components/editor/EditorLinkHoverPreview";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
@@ -347,7 +349,7 @@ export function QuietLayout(props: QuietLayoutProps) {
           vertical centerline with the editor (the toolbar pill is
           centred inside its own editor parent). Sidebar pin/unpin no
           longer shifts the document chrome's centerline. */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
         {/*
           TitleBar — renders the document title + dirty dot + close
           button. The FloatingCommandBar and AgentOrb own the chat /
@@ -460,6 +462,30 @@ export function QuietLayout(props: QuietLayoutProps) {
             </div>
           </div>
         </div>
+
+        {/*
+          RelationsPanel (OKF wiki-navigation, ADR 0004). Docked to the RIGHT
+          EDGE OF THE DOCUMENT COLUMN (this `relative` right-column div), NOT the
+          window edge — so it tracks the column as the sidebar resizes and
+          COEXISTS with the pinned command bar by offsetting its handle inward by
+          `--cmd-bar-pinned-width` (it stays available in pinned mode; only the
+          AgentOrb, physically covered at bottom-right, hides). Self-hides when
+          the open document has no relations. Wrapped in its own ErrorBoundary so
+          a render error in the link graph can't unmount the editor.
+         */}
+        <ErrorBoundary name="Relations panel">
+          <RelationsPanel />
+        </ErrorBoundary>
+
+        {/*
+          EditorLinkHoverPreview (OKF wiki-navigation, ADR 0006/0007). Hovering
+          an internal link inside `.ProseMirror` shows a Peek card (target title
+          + type badge + description/snippet; unresolved → "click to create").
+          Self-scopes via DOM event delegation, so the Editor needs no changes.
+         */}
+        <ErrorBoundary name="Link hover preview">
+          <EditorLinkHoverPreview />
+        </ErrorBoundary>
       </div>
 
       {/*
