@@ -62,7 +62,14 @@ export function useEditorKeyBindings({
   // Handle Cmd+S to save
   useEffect(() => {
     const handleSave = async (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+      // `e.key` is the produced character, so Caps Lock makes it "S" — match
+      // case-insensitively (and via code) so ⌘S saves regardless of Caps Lock
+      // or keyboard layout.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        (e.key.toLowerCase() === "s" || e.code === "KeyS")
+      ) {
         e.preventDefault();
         if (activeTab && activeTab.isDirty) {
           try {
@@ -78,26 +85,9 @@ export function useEditorKeyBindings({
     return () => window.removeEventListener("keydown", handleSave);
   }, [activeTab, saveFile]);
 
-  // Handle Cmd+/ to toggle view mode (Shift+7 = / on Nordic keyboards).
-  // NOTE: Do NOT match `e.code === "Slash"` standalone — on Swedish ISO the
-  // `-` key sits at the same physical position as the US `/`, so its event
-  // reports `code === "Slash"` even though `key === "-"`. That collides with
-  // ⌘- (zoom out). Match by `key` (with Nordic Shift+7 fallback) only.
-  useEffect(() => {
-    const handleToggle = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const isSlash =
-        e.key === "/" ||                              // US layout: Cmd+/
-        e.key === "?" ||                              // US layout: Cmd+Shift+/
-        (e.shiftKey && e.code === "Digit7");          // Nordic layout: / = Shift+7
-      if (isSlash) {
-        e.preventDefault();
-        handleToggleViewMode();
-      }
-    };
-    window.addEventListener("keydown", handleToggle);
-    return () => window.removeEventListener("keydown", handleToggle);
-  }, [handleToggleViewMode]);
+  // (⌘/ view-mode toggle chord removed in the keyboard-shortcut overhaul —
+  // view mode is switched via the StatusTray / Toolbar control. The
+  // `handleToggleViewMode` callback below remains the shared toggle action.)
 
   // Print document: extract editor content into a new window and print that.
   // This avoids all the @media print CSS complexity of hiding app chrome.

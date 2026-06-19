@@ -62,9 +62,8 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Summon command bar | `⌘⇧C` | Focuses the FloatingCommandBar when collapsed (third summon path alongside `⌘K` and double-tap `⌘`); when the bar is already expanded+pinned, unpins it back to floating; otherwise no-op (use `Esc` to collapse) |
 | Toggle agent orb | `⌘⇧A` | Open/close the `AgentOrb` popover (the orb IS the agent panel) |
-| Add comment | `⌘⇧M` | Create inline comment on selected text. **Wired through Tiptap, not through `useKeyboardShortcuts`** — see Implementation Notes |
+| Add comment | `⌘⌥C` | Create inline comment on selected text (C = Comment). **Handled by a ProseMirror `handleKeyDown` in `comment-mark.ts` (matched via `event.code === "KeyC"` to dodge the Option+C dead key), not the global dispatcher** — it needs the editor's live selection. See Implementation Notes |
 | Accept suggestion | `⌘Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `⌘Backspace` | Reject AI inline suggestion (when decoration visible) |
 | Toggle meeting recording | `⌘⇧R` | Start/stop meeting recording (capture audio → background transcription on stop) |
@@ -98,13 +97,12 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 ## App Navigation
 
-Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K`, double-tap `⌘`, and `⌘⇧C` (when collapsed).
+Two independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K` and double-tap `⌘`. (`⌘⇧C` was removed as a summon path in the keyboard-shortcut overhaul — unpin a pinned bar via the pin button.)
 
 | Action | Press (chord) | Glyph form (display) | Description |
 | --- | --- | --- | --- |
 | Command palette / Command bar | `⌘K` | `⌘K` | Focus the `FloatingCommandBar` |
 | Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
-| Summon command bar (third path) | `⌘⇧C` | `⌘⇧C` | Focus the bar when collapsed; unpin when expanded+pinned (see AI Features) |
 | Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. Quiet Composer: focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
@@ -116,8 +114,8 @@ Three independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K
 | ~~Tree overlay~~ | ~~`⌘⇧E`~~ | ~~`⌘⇧E`~~ | **REMOVED in sidebar-simplification task #20.** TreeOverlay deleted; the in-sidebar inline-expand pattern (`→` on a project / folder) replaces it. `⌘⇧E` reclaimed by Export above. |
 | Document outline | `⌘⇧O` | `⌘⇧O` | Open document outline (requires active file). Currently uses a legacy modal `Dialog` — has not been migrated to a Quiet Composer popover |
 | Keyboard shortcuts | `⌘⇧K` | `⌘⇧K` | Show keyboard shortcuts reference |
-| Copy path | `⌘⌥C` | `⌘⌥C` | Copy the active document's absolute path to the clipboard |
-| Reveal in Finder | `⌘⌥R` | `⌘⌥R` | Reveal the active document in Finder |
+| Copy path | `⌘⌥P` | `⌘⌥P` | Copy the active document's absolute path to the clipboard (P = Path) |
+| Reveal in Finder | `⌘⌥R` | `⌘⌥R` | Reveal the active document in Finder (R = Reveal) |
 | Open Tauri devtools | `⌘⌥I` | `⌘⌥I` | Open the Tauri WebView devtools |
 | Exit focus mode | `Esc` | `Esc` | Exit focus mode (when active). Falls through if a popover, command bar, or inline edit is open first |
 
@@ -155,7 +153,7 @@ _None at the moment — the previous file-search and Quick Capture entries have 
 
 ### Owner table (Quiet Composer vs Legacy)
 
-The single keyboard hook (`src/hooks/useKeyboardShortcuts.ts`) owns most app-level chords. It composes `useCommandBarShortcuts` (which routes ⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F to the `FloatingCommandBar`) and `useDoubleTapCmd` (the double-tap `⌘` summon path). ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`) so they preempt other listeners. ⌘. (focus mode) is owned by `useFocusMode` at capture phase. Some chords (`⌘S`, `⌘⇧M`) are NOT in this hook — `⌘S` is owned by `Editor.tsx` / `CodeEditor.tsx` so markdown and code-file save paths can diverge; `⌘⇧M` is wired through Tiptap's keymap on the comment mark.
+A single App-root dispatcher (`src/hooks/useGlobalShortcuts.ts`, mounted once in `App.tsx`) owns all app-level chords. It is data-driven: chords come from the manifest (`src/shared/appCommandManifest.json` → `src/lib/appCommandCatalog.ts`), are matched with the layout-safe `matchesChord` (key OR physical `code`), and dispatched to behaviours in `src/hooks/shortcuts/shortcutActions.ts`. Each command declares `firesWhileTyping` (whether it fires while a text surface is focused) and `phase`. The dispatcher absorbed the former `useCommandBarShortcuts` and `useDoubleTapCmd` (double-tap `⌘`). Command-bar summons (⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F / double-tap `⌘`) are written to the durable `cmd-bar-summon-store` so they survive a command-bar crash. A few chords stay outside the dispatcher: ⌘N / ⌘⇧N are owned by `QuietLayout` at capture phase (`stopImmediatePropagation`); ⌘. (focus mode) by `useFocusMode` at capture phase; ⌘S by `Editor.tsx` / `CodeEditor.tsx` (markdown vs code-file save paths diverge); ⌘⌥C (add comment) via a ProseMirror `handleKeyDown` in `comment-mark.ts` (code-based, needs the live selection). The `⌘⌥` family is mnemonic: C = Comment, P = Path, R = Reveal.
 
 ### Shortcut Priority
 
@@ -195,7 +193,7 @@ Currently targeting macOS:
 Any chord using a punctuation key (`,`, `.`, `[`, `]`, `;`, `'`, `\`, `/`, `-`, `=`, etc.) must accept BOTH `event.key === "<char>"` AND `event.code === "<KeyCodeName>"`. The OR keeps the chord layout-tolerant — neither check fights the other. Reference patterns:
 
 - `src/components/sidebar/quiet/useSidebarItemShortcuts.ts` (`isContextMenuKey`) — `Comma` fallback
-- `src/hooks/useKeyboardShortcuts.ts` — `BracketLeft` / `BracketRight`, `Comma`, `Period` fallbacks
+- `src/shared/appCommandManifest.json` + `src/lib/appCommandCatalog.ts` (`matchesChord`) — every chord carries both `key` and physical `code` for layout safety; the matcher accepts either
 - `src/hooks/useFocusMode.ts` — `Period` fallback
 - `src/hooks/useEditorKeyBindings.ts` — `Slash` + Nordic `Shift+Digit7` pattern
 

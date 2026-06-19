@@ -23,6 +23,22 @@ import { act } from "react";
 import { renderWithProviders } from "@/test/component-harness";
 import FloatingCommandBar from "@/components/cmd/FloatingCommandBar";
 import { useFocusMode } from "@/hooks/useFocusMode";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import type { ShortcutCallbacks } from "@/hooks/shortcuts/shortcutActions";
+
+// ⌘. is dispatched by the App-root dispatcher (which toggles focus mode via the
+// controller bridge), so the harness mounts it alongside useFocusMode.
+const STUB_CALLBACKS: ShortcutCallbacks = {
+  onFindOpen: () => {},
+  onFindReplaceOpen: () => {},
+  onOutlineOpen: () => {},
+  onSettingsOpen: () => {},
+  onExportOpen: () => {},
+  onNewProject: () => {},
+  onNewNote: () => {},
+  onOpenFolder: () => {},
+  onShortcutsOpen: () => {},
+};
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 
 // ---------------------------------------------------------------------------
@@ -166,6 +182,7 @@ let focusModeResult: ReturnType<typeof useFocusMode> | null = null;
 
 function Harness({ pinned = false }: { pinned?: boolean } = {}) {
   const focusMode = useFocusMode();
+  useGlobalShortcuts(STUB_CALLBACKS);
   focusModeResult = focusMode;
   return <FloatingCommandBar isPinned={pinned} />;
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { track } from "@/lib/telemetry";
+import { registerFocusModeController } from "@/hooks/shortcuts/focus-mode-controller";
 
 /**
  * useFocusMode — Phase 1 #56.
@@ -192,72 +193,43 @@ export function useFocusMode(): UseFocusModeResult {
     };
   }, [active]);
 
-  // --- Keyboard listeners ------------------------------------------------
+  // --- Esc fall-through predicate ---------------------------------------
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      // ⌘. / Ctrl+. — toggle focus mode. We own this chord while the
-      // QuietLayout is mounted; stopImmediatePropagation keeps the legacy
-      // App-level handler from also firing.
-      // Cross-keyboard layout safety: accept `event.code === "Period"`
-      // alongside `event.key === "."` so future layouts where `.` is
-      // produced by a Shift modifier (e.g. AZERTY where `.` is `Shift+;`)
-      // don't silently lose the chord.
-      const mod = event.metaKey || event.ctrlKey;
-      if (
-        mod &&
-        !event.shiftKey &&
-        !event.altKey &&
-        (event.key === "." || event.code === "Period")
-      ) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        setActive((prev) => !prev);
-        return;
-      }
-
-      // Escape — fall-through chain. Only we act (and only when active);
-      // otherwise we let the event propagate so Radix/command-bar/inline-edit
-      // handlers can claim it.
-      if (event.key !== "Escape") return;
-      if (!activeRef.current) return;
-
-      // 1) Any open popover/dropdown/dialog — let Radix dismiss it first.
-      if (document.querySelector(POPOVER_OPEN_SELECTOR) !== null) {
-        return;
-      }
-      // 2) Command bar expanded state — its own handler collapses it.
-      if (document.querySelector(CMD_BAR_EXPANDED_SELECTOR) !== null) {
-        return;
-      }
-      // 3) Inline edit row active — the owning component commits/cancels.
-      if (document.querySelector(INLINE_EDIT_SELECTOR) !== null) {
-        return;
-      }
-      // Second safety net: if the active element is itself inside a
-      // renaming row (some implementations don't mark the row but do mark
-      // the input), defer. Matches the spec's suggestion to check
-      // `document.activeElement?.closest('[data-renaming="true"]')`.
-      const activeEl = document.activeElement;
-      if (
-        activeEl instanceof Element &&
-        activeEl.closest('[data-renaming="true"]') !== null
-      ) {
-        return;
-      }
-
-      // 4) Nothing else claimed Escape — exit focus mode.
-      event.preventDefault();
-      setActive(false);
-    };
-
-    window.addEventListener("keydown", handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, { capture: true });
-    };
+  // True only when an Esc press should exit focus mode: focus mode is active
+  // AND nothing higher-priority wants Esc first. Used by the dispatcher both
+  // as the `exit-focus-mode` guard (whether to act + preventDefault) and so
+  // the key falls through to Radix / command-bar / inline-edit otherwise.
+  const canExitViaEsc = useCallback((): boolean => {
+    if (typeof document === "undefined") return false;
+    if (!activeRef.current) return false;
+    // 1) Any open popover/dropdown/dialog — let Radix dismiss it first.
+    if (document.querySelector(POPOVER_OPEN_SELECTOR) !== null) return false;
+    // 2) Command bar expanded state — its own handler collapses it.
+    if (document.querySelector(CMD_BAR_EXPANDED_SELECTOR) !== null) return false;
+    // 3) Inline edit row active — the owning component commits/cancels.
+    if (document.querySelector(INLINE_EDIT_SELECTOR) !== null) return false;
+    // Second safety net: the active element is itself inside a renaming row
+    // (some implementations mark the input, not the row).
+    const activeEl = document.activeElement;
+    if (
+      activeEl instanceof Element &&
+      activeEl.closest('[data-renaming="true"]') !== null
+    ) {
+      return false;
+    }
+    return true;
   }, []);
+
+  // --- Register with the App-root dispatcher ----------------------------
+
+  // ⌘. (toggle) and Esc (exit) are dispatched by `useGlobalShortcuts` like
+  // every other chord — matched against the manifest at capture phase. This
+  // hook keeps focus mode's state/announcer/focus-restore and exposes its
+  // imperative actions through the controller bridge.
+  useEffect(() => {
+    registerFocusModeController({ toggle, exit, canExitViaEsc });
+    return () => registerFocusModeController(null);
+  }, [toggle, exit, canExitViaEsc]);
 
   // --- Unmount cleanup: never leave `.focus-mode` on the root ----------
 

@@ -20,7 +20,8 @@ const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").th
 const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { initBuildChannel } from "@/lib/build-channel";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -631,7 +632,12 @@ function App() {
   }, [openFileAtTag]);
 
 
-  useKeyboardShortcuts({
+  // Resolve the build channel once so devtools (⌘⌥I) gates correctly.
+  useEffect(() => {
+    void initBuildChannel();
+  }, []);
+
+  useGlobalShortcuts({
     onFindOpen: () => {
       window.dispatchEvent(new CustomEvent("notesage:find-open"));
     },

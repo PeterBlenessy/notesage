@@ -172,6 +172,18 @@ describe('tauri default capability permissions', () => {
     expect(identifiers).toContain('sentry:default');
   });
 
+  it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {
+    // ⌘⇧V paste-plain reads the OS clipboard via the clipboard-manager plugin
+    // (Rust-side, no WebKit paste-permission menu). Only read-text is needed —
+    // writes still go through `navigator.clipboard`. Lock the surface so a
+    // future edit can't quietly grant clipboard write/clear/read-image.
+    const cap = loadDefaultCapability();
+    const clipboardPerms = cap.permissions
+      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
+      .filter((id) => id.startsWith('clipboard-manager:'));
+    expect(clipboardPerms).toEqual(['clipboard-manager:allow-read-text']);
+  });
+
   it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
     // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
     // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the

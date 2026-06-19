@@ -2,6 +2,32 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useFocusMode } from "../useFocusMode";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import type { ShortcutCallbacks } from "@/hooks/shortcuts/shortcutActions";
+
+// The ⌘. / Esc chords are dispatched by the App-root `useGlobalShortcuts`,
+// which calls focus mode through the controller bridge. Mount both hooks so
+// keyboard tests exercise the real keydown → dispatcher → controller → state
+// path end-to-end. Imperative tests are unaffected (they call toggle/exit).
+const STUB_CALLBACKS: ShortcutCallbacks = {
+  onFindOpen: () => {},
+  onFindReplaceOpen: () => {},
+  onOutlineOpen: () => {},
+  onSettingsOpen: () => {},
+  onExportOpen: () => {},
+  onNewProject: () => {},
+  onNewNote: () => {},
+  onOpenFolder: () => {},
+  onShortcutsOpen: () => {},
+};
+
+function renderFM() {
+  return renderHook(() => {
+    const fm = useFocusMode();
+    useGlobalShortcuts(STUB_CALLBACKS);
+    return fm;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // matchMedia mock — mirrors the `useFadeOnType` test helper. The hook itself
@@ -111,13 +137,13 @@ describe("useFocusMode", () => {
 
   it("starts inactive", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
     expect(result.current.active).toBe(false);
   });
 
   it("toggle() flips active on and off", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -132,7 +158,7 @@ describe("useFocusMode", () => {
 
   it("applies `.focus-mode` on the QuietLayout root while active", () => {
     const root = mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -147,7 +173,7 @@ describe("useFocusMode", () => {
 
   it("⌘. toggles active", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       fireKey(".", { metaKey: true });
@@ -162,7 +188,7 @@ describe("useFocusMode", () => {
 
   it("Escape while active and nothing else open exits focus mode", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -177,7 +203,7 @@ describe("useFocusMode", () => {
 
   it("Escape falls through to an open Radix popover (focus mode stays on)", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -195,7 +221,7 @@ describe("useFocusMode", () => {
 
   it("Escape falls through to an expanded command bar (focus mode stays on)", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -212,7 +238,7 @@ describe("useFocusMode", () => {
 
   it("Escape falls through to an inline-edit row (focus mode stays on)", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -230,7 +256,7 @@ describe("useFocusMode", () => {
   it("appends a polite aria-live announcer on enter and removes it", () => {
     vi.useFakeTimers();
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -252,7 +278,7 @@ describe("useFocusMode", () => {
 
   it("announces an exit message on deactivation", () => {
     mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -275,7 +301,7 @@ describe("useFocusMode", () => {
 
   it("cleans up `.focus-mode` from the root on unmount", () => {
     const root = mountRoot();
-    const { result, unmount } = renderHook(() => useFocusMode());
+    const { result, unmount } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -292,7 +318,7 @@ describe("useFocusMode", () => {
   it("works under prefers-reduced-motion: reduce", () => {
     installMatchMedia(makeMql(true));
     const root = mountRoot();
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       fireKey(".", { metaKey: true });
@@ -308,7 +334,7 @@ describe("useFocusMode", () => {
 
   it("falls back to document.body when the root attribute is missing", () => {
     // Intentionally do NOT mount `[data-quiet-layout-root]`.
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -340,7 +366,7 @@ describe("useFocusMode", () => {
     button.focus();
     expect(document.activeElement).toBe(button);
 
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     // Enter focus mode — previous focus captured.
     act(() => {
@@ -368,7 +394,7 @@ describe("useFocusMode", () => {
     document.body.appendChild(button);
     button.focus();
 
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -395,7 +421,7 @@ describe("useFocusMode", () => {
     const sibling = document.createElement("button");
     document.body.appendChild(sibling);
 
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     act(() => {
       result.current.toggle();
@@ -423,7 +449,7 @@ describe("useFocusMode", () => {
     document.body.appendChild(first);
     document.body.appendChild(second);
 
-    const { result } = renderHook(() => useFocusMode());
+    const { result } = renderFM();
 
     // First cycle: focus `first`, enter, exit → should restore to `first`.
     first.focus();

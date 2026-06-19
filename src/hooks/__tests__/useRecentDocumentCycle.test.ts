@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useEditorStore, type Tab } from "@/stores/editor-store";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
-import { CYCLE_RECENT_EVENT } from "@/hooks/useKeyboardShortcuts";
+import { CYCLE_RECENT_EVENT } from "@/lib/keyboard/shortcut-events";
 
 function mkTab(id: string, filePath: string): Tab {
   return {
