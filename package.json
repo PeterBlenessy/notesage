@@ -91,7 +91,7 @@
     "cmdk": "^1.1.1",
     "diff-match-patch": "^1.0.5",
     "docx-preview": "^0.3.7",
-    "dompurify": "^3.4.9",
+    "dompurify": "^3.4.11",
     "jszip": "^3.10.1",
     "linkedom": "^0.18.12",
     "lowlight": "^3.3.0",
