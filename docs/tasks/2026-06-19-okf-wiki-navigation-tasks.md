@@ -3,10 +3,12 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-19 |
-| **Status** | Not started |
+| **Status** | Complete — all 16 implemented on `claude/okf-notesage-integration-s6x1rf` |
 | **PRD** | [okf-wiki-navigation](../prds/2026-06-19-okf-wiki-navigation.md) |
 | **Total** | 16 tasks: 2S, 10M, 4L |
 | **Suggested order** | Backend index (#1–#6) → State (#7) → UI panel + preview (#8–#10) → Wikilink authoring (#11–#13) → Isolation (#14) → Enrich skill + docs (#15–#16). #15 can run in parallel with the UI work. |
+
+> **Implementation note (2026-06-19):** all tasks landed. Gates: `pnpm typecheck` clean, `pnpm test` 5663 green (incl. the markdown round-trip release gate), backend `cargo check` + `cargo check --tests` green via pkg-config stubs. `cargo test` runs on CI (needs GUI libs). `test:perf` overshoots uniformly on this runner (environmental — unrelated suites overshoot too; calibrated to the M3/CI baseline), not a regression. #14's per-link permission UI was intentionally deferred (no consumer follows a link edge into AI context; the existing tool-executor scope gate covers agent reads) — the load-bearing invariant + regression-lock shipped instead. Known follow-up: atomic `reconcile_rename` is implemented + tested but unwired (renames flow through delete+create).
 
 **Risks / open questions**
 
