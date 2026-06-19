@@ -65,7 +65,15 @@ export const LinkClick = Extension.create({
                 activeFileDir = parts.join('/');
               }
 
-              handleLinkNavigation(href, openTab, roots, activeFileDir);
+              handleLinkNavigation(href, openTab, roots, activeFileDir, (createTargetAbsPath, linkHref) => {
+                // Unresolved internal link → ask the React layer (which owns
+                // useFileOperations) to offer create-on-click (ADR 0007).
+                window.dispatchEvent(
+                  new CustomEvent('notesage:create-unresolved-doc', {
+                    detail: { absPath: createTargetAbsPath, href: linkHref },
+                  }),
+                );
+              });
               return true;
             },
             contextmenu(view, event) {

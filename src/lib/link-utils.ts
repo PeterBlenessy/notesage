@@ -46,6 +46,34 @@ function collectFiles(entries: FileEntry[], results: FileEntry[]): void {
   }
 }
 
+/**
+ * Slugify a wikilink title into a filename-safe `.md` slug used for dangling
+ * link creation (ADR 0007). Lowercases, replaces runs of non-alphanumerics with
+ * a single hyphen, trims leading/trailing hyphens, and appends `.md`.
+ *
+ * `[[Quarterly Plan]]` → `quarterly-plan.md`
+ * `[[Q4 / 2026 Review!]]` → `q4-2026-review.md`
+ */
+export function slugifyTitle(title: string): string {
+  const slug = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${slug || 'untitled'}.md`;
+}
+
+/**
+ * Build the relative href to store for a dangling wikilink — a slugified
+ * filename in the CURRENT document's directory (ADR 0007). Always a `./`-prefixed
+ * relative link so the on-disk form stays canonical.
+ *
+ * `[[Quarterly Plan]]` → `./quarterly-plan.md`
+ */
+export function danglingWikiLinkHref(title: string): string {
+  return `./${slugifyTitle(title)}`;
+}
+
 /** Compute relative path from `fromDir` to `toPath`. */
 export function computeRelativePath(fromDir: string, toPath: string): string {
   const fromParts = fromDir.split('/').filter(Boolean);
@@ -62,6 +90,21 @@ export function computeRelativePath(fromDir: string, toPath: string): string {
 
   if (ups === 0) return './' + rest.join('/');
   return '../'.repeat(ups) + rest.join('/');
+}
+
+/**
+ * Build the relative href for a RESOLVED wikilink target (ADR 0001/0002). The
+ * target's absolute `path` (from the link index) is expressed relative to the
+ * active document's directory so the stored on-disk form is a standard relative
+ * link. With no active directory (untitled / unsaved doc) it falls back to a
+ * `./`-prefixed basename.
+ */
+export function resolvedWikiLinkHref(targetAbsPath: string, activeFileDir?: string): string {
+  if (activeFileDir) {
+    return computeRelativePath(activeFileDir, targetAbsPath);
+  }
+  const base = targetAbsPath.split('/').pop() || targetAbsPath;
+  return `./${base}`;
 }
 
 /** Search all workspace file trees for files matching a query. */
@@ -143,14 +186,33 @@ export async function resolveRelativeAndOpen(
 }
 
 /**
+ * Resolve a relative href to the absolute path it would be CREATED at — the
+ * active file's directory join for relative paths, or the literal path for
+ * absolute ones. Used by the dangling create-on-click flow (ADR 0007), which
+ * always creates in the current document's directory.
+ */
+export function resolveCreateTarget(href: string, activeFileDir?: string): string | null {
+  if (href.startsWith('/') || href.startsWith('~')) return href;
+  if (!activeFileDir) return null;
+  return normalizePath(`${activeFileDir}/${href}`);
+}
+
+/**
  * Handle clicking a link: open external URLs in browser, internal file links as tabs.
  * `activeFileDir` is the directory of the currently active file (for resolving relative paths).
+ *
+ * When an internal link cannot be resolved to an existing file and an
+ * `onUnresolved` callback is supplied, it is invoked with the would-be absolute
+ * create-target path instead of showing an error toast — this drives the
+ * dangling-wikilink create-on-click affordance (ADR 0007). Without the callback
+ * the legacy "could not resolve" error toast is shown.
  */
 export async function handleLinkNavigation(
   href: string,
   openTab: OpenTabFn,
   workspaceRoots: string[],
   activeFileDir?: string,
+  onUnresolved?: (createTargetAbsPath: string, href: string) => void,
 ): Promise<void> {
   // External URLs — open in system browser
   if (isExternalUrl(href)) {
@@ -169,6 +231,10 @@ export async function handleLinkNavigation(
   // Absolute path
   if (href.startsWith('/') || href.startsWith('~')) {
     if (await tryOpenFile(href, openTab)) return;
+    if (onUnresolved) {
+      onUnresolved(href, href);
+      return;
+    }
     toast.error(`File not found: ${href}`);
     return;
   }
@@ -182,6 +248,14 @@ export async function handleLinkNavigation(
 
   // Fall back to workspace roots
   if (await resolveRelativeAndOpen(href, workspaceRoots, openTab)) return;
+
+  // Unresolved internal link — offer create-on-click when wired (ADR 0007),
+  // otherwise fall back to the legacy error toast.
+  const createTarget = resolveCreateTarget(href, activeFileDir);
+  if (onUnresolved && createTarget) {
+    onUnresolved(createTarget, href);
+    return;
+  }
 
   toast.error(`Could not resolve link: ${href}`);
 }
