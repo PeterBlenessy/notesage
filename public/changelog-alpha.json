@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.1",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.8",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): patch undici, js-yaml & @babel/core security advisories (#489)",
+        "chore(deps): patch undici, js-yaml, @babel/core advisories via pnpm overrides (#489)"
+      ]
+    },
+    {
       "version": "0.47.0-alpha.8",
       "date": "2026-06-19",
       "previousVersion": "0.47.0-alpha.7",
