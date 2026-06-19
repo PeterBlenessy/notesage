@@ -28,8 +28,11 @@ worlds, and each direction borrows the convention that fits it.
 
 ## Consequences
 
-- The link-graph store (ADR 0003) keeps a **per-edge context window** — the
-  surrounding block text, or offsets into the source document — exactly as
-  Obsidian / Roam store. This is the price of real backlinks and is accepted.
+- The link-graph store (ADR 0003) keeps a **per-edge context window** as the
+  stored **surrounding block text** (not offsets) — self-contained, so backlink
+  context renders even when the source doc is closed or in a non-open project,
+  with no offset drift between reindexes. This is the price of real backlinks and
+  is accepted. The text is stored only for in-scope docs (projects + `~/Notesage`;
+  explorer folders excluded, per ADR 0003).
 - Backlinks are grouped and deduplicated per source document; multiple mentions
   in one source list as occurrences under that source's header.

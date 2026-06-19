@@ -21,3 +21,6 @@ references can even surface in a target's backlinks before it exists.
   targets; no `[[ ]]` ever leaks to disk (consistent with ADR 0001).
 - Type-aware placement of the new doc (e.g. an OKF `[[Orders]]` of type Table →
   `tables/orders.md`) is deferred — v1 always uses the current directory.
+- Intentional asymmetry: resolving an *existing* target is workspace-global
+  (ADR 0002), but *creating* a dangling target is local (current directory). You
+  can link to anything anywhere; a brand-new doc lands next to where you wrote it.

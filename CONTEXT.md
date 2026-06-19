@@ -36,8 +36,9 @@ _Avoid_: entity, node, card
 
 **Relations panel**:
 The floating, document-scoped surface that presents the open document's links
-(Links to / Linked from). Anchored to the right, partial height (~40–60% of the
-page, draggable taller), collapsed by default with an attention cue when the
+(Links to / Linked from). Anchored to the right edge of the document column,
+partial height (~40–60% of the page, draggable taller), collapsed by default
+with an attention cue when the
 document has relations, rolls out on click and closes again. Not a full-height
 sidebar.
 _Avoid_: backlinks pane, right sidebar (it is not full-height), drawer

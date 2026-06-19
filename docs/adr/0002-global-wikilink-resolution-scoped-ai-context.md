@@ -15,6 +15,14 @@ The bright line: *a link is a navigation edge for a human, not a context-
 inclusion grant for an agent.* Crossing it for AI requires the user to approve,
 per request.
 
+**Interaction with `crossProjectMode`:** the two controls form one hierarchy.
+When the global `crossProjectMode` toggle is ON, an agent following a
+cross-project link needs no per-link prompt — the user has already opted into
+full workspace exposure. When it is OFF (the default), each cross-project context
+request gets the tiered permission card. The per-link prompt is the granular,
+default path; `crossProjectMode` is the blanket override — there is no third,
+independent gate.
+
 ## Considered Options
 
 - **Global all the way down (D2)** — let cross-project linked concepts flow into
