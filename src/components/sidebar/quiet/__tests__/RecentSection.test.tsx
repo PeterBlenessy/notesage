@@ -225,13 +225,13 @@ describe('RecentSection — activation', () => {
     expect(inactiveRow.getAttribute('aria-current')).toBeNull();
   });
 
-  it('copies the path to the clipboard on ⌘⌥C when a row is focused (#46)', async () => {
+  it('copies the path to the clipboard on ⌘⌥P when a row is focused (#46)', async () => {
     setRecent(makeRecent(2));
     renderWithProviders(<RecentSection />);
 
     const row = screen.getByText('file-1.md').closest('[role="button"]') as HTMLElement;
     row.focus();
-    fireEvent.keyDown(row, { key: 'c', metaKey: true, altKey: true });
+    fireEvent.keyDown(row, { key: 'π', code: 'KeyP', metaKey: true, altKey: true });
 
     await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
     expect(mockClipboardWrite).toHaveBeenCalledWith('/workspace/notes/file-1.md');

@@ -64,7 +64,8 @@ import {
   expandSkillPrefix,
   interpretAgentPrefix,
 } from "@/lib/ai/chat-expansion";
-import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
+import { subscribeToCmdBarEvents, emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { useCmdBarSummonStore } from "@/stores/cmd-bar-summon-store";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
 import {
@@ -520,6 +521,37 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // collapsed the handler is a no-op and the Esc keydown keeps propagating
   // to the editor / popover / focus-mode chain (the hook intentionally
   // does not preventDefault on Esc).
+  // Durable summon path: the App-root dispatcher (`useGlobalShortcuts`) writes
+  // keyboard summons (⌘K, ⌘⇧F, ⌘1–4, ⌘⇧P, double-⌘) to `cmd-bar-summon-store`
+  // rather than the transient bus. Because the intent lives in durable state, a
+  // bar that crashes (ErrorBoundary) and remounts reads the pending summon and
+  // re-applies it via the same bus `focus` handler below — the summon survives
+  // the crash (the old bus-only path dropped it whenever the single subscriber
+  // was unmounted). We translate to the bus here so all the seeding logic stays
+  // in one place.
+  const pendingSummon = useCmdBarSummonStore((s) => s.pending);
+  const consumeSummon = useCmdBarSummonStore((s) => s.consume);
+  useEffect(() => {
+    if (!pendingSummon) return;
+    emitCmdBarEvent({
+      type: "focus",
+      prefix: pendingSummon.prefix,
+      drilldown: pendingSummon.drilldown,
+    });
+    consumeSummon();
+  }, [pendingSummon, consumeSummon]);
+
+  // #114 — Subscribe to the `cmd-bar-events` bus so non-keyboard surfaces
+  // (sidebar rows, toolbar buttons) and the durable summon effect above can
+  // drive the bar's state.
+  //
+  // focus events: expand the bar; if the intent carries a prefix character,
+  // prefill the input and pre-arm the active-prefix state so the mode picker
+  // opens on the same tick.
+  //
+  // dismiss events: if the bar is expanded, collapse; if already collapsed the
+  // handler is a no-op and the Esc keydown keeps propagating to the editor /
+  // popover / focus-mode chain (the dispatcher does not preventDefault on Esc).
   useEffect(() => {
     return subscribeToCmdBarEvents((event) => {
       if (event.type === 'focus') {
@@ -666,14 +698,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // prefix-clearing behaviour in `collapse` (gated internally).
         // Otherwise collapse fully.
         collapse();
-      }
-
-      if (event.type === 'toggle-pin') {
-        // #121 — ⌘⇧C pressed while the bar is expanded AND pinned. Flip the
-        // pin off so the user returns to the floating overlay. The chord's
-        // emit site in `useKeyboardShortcuts` already validated the state,
-        // so we can setCmdBarPinned(false) unconditionally here.
-        useSettingsStore.getState().setCmdBarPinned(false);
       }
 
       if (event.type === 'toggle-history') {

@@ -600,7 +600,7 @@ export function SidebarContextMenu({
           <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleRevealInFinder()}>
             Reveal in Finder
             {/* Shortcut hint only on file rows. The global `⌘⌥R` chord
-                (registered in `useKeyboardShortcuts`) acts on the active
+                (registered in `useGlobalShortcuts`) acts on the active
                 document — file rows get the hint as a confirmation that
                 the same chord works from the editor. Project / folder
                 rows hide it because the chord ignores them. */}
@@ -608,7 +608,7 @@ export function SidebarContextMenu({
           </ContextMenuItem>
           <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyPath}>
             Copy path
-            {isFile && <ContextMenuShortcut>⌘⌥C</ContextMenuShortcut>}
+            {isFile && <ContextMenuShortcut>⌘⌥P</ContextMenuShortcut>}
           </ContextMenuItem>
           <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyFilename}>
             Copy filename

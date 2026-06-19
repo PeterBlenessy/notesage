@@ -20,7 +20,7 @@ vi.mock('@/lib/tauri', () => ({
   tauriApi: { allowAssetDir: vi.fn(() => Promise.resolve()) },
 }));
 
-import { LocalImage } from '../local-image';
+import { LocalImage, assetDirFromUrl } from '../local-image';
 import { tauriApi } from '@/lib/tauri';
 
 // ---------------------------------------------------------------------------
@@ -86,17 +86,19 @@ describe('LocalImage NodeView — asset-scope self-heal', () => {
     return e;
   }
 
-  it('re-grants the doc-dir asset scope when an asset-URL image errors', () => {
+  it("grants the IMAGE's own directory on an asset-URL error (not just documentDir)", () => {
     vi.mocked(tauriApi.allowAssetDir).mockClear();
+    // Image lives in a SIBLING dir of the document — proves we grant the image's
+    // own dir (from the URL), not the doc dir.
     const { dom } = buildNodeView(
-      mockImageNode({ src: 'http://asset.localhost/Users/x/doc/photo.png' }),
+      mockImageNode({ src: 'http://asset.localhost/Users/x/assets/photo.png' }),
       editorWithDir('/Users/x/doc'),
     );
     const img = dom.querySelector('img') as HTMLImageElement;
     expect(img.src).toContain('asset.localhost');
 
     img.dispatchEvent(new Event('error'));
-    expect(tauriApi.allowAssetDir).toHaveBeenCalledWith('/Users/x/doc');
+    expect(tauriApi.allowAssetDir).toHaveBeenCalledWith('/Users/x/assets');
   });
 
   it('does NOT self-heal a remote/data URL that fails (genuinely broken)', () => {
@@ -110,17 +112,31 @@ describe('LocalImage NodeView — asset-scope self-heal', () => {
     expect(tauriApi.allowAssetDir).not.toHaveBeenCalled();
   });
 
-  it('stops re-granting after 2 attempts (no infinite loop on a missing file)', () => {
+  it('stops re-granting after 4 attempts (no infinite loop on a missing file)', () => {
     vi.mocked(tauriApi.allowAssetDir).mockClear();
     const { dom } = buildNodeView(
       mockImageNode({ src: 'http://asset.localhost/Users/x/doc/photo.png' }),
       editorWithDir('/Users/x/doc'),
     );
     const img = dom.querySelector('img') as HTMLImageElement;
-    img.dispatchEvent(new Event('error'));
-    img.dispatchEvent(new Event('error'));
-    img.dispatchEvent(new Event('error'));
-    expect(tauriApi.allowAssetDir).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 6; i++) img.dispatchEvent(new Event('error'));
+    expect(tauriApi.allowAssetDir).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('assetDirFromUrl', () => {
+  it('extracts the directory from an asset.localhost URL', () => {
+    expect(assetDirFromUrl('http://asset.localhost/Users/me/proj/images/a.png')).toBe(
+      '/Users/me/proj/images',
+    );
+  });
+  it('decodes percent-encoded path segments (spaces)', () => {
+    expect(assetDirFromUrl('http://asset.localhost/Users/me/my%20notes/a.png')).toBe(
+      '/Users/me/my notes',
+    );
+  });
+  it('returns null for an unparseable / non-path URL', () => {
+    expect(assetDirFromUrl('not a url')).toBeNull();
   });
 });
 
