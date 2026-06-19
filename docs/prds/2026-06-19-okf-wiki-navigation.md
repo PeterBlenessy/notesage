@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Surfaces the links between documents — backlinks, relations, and link preview — turning a folder of notes (or an OKF bundle) into a navigable wiki without leaving the document you're reading |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [okf-wiki-navigation-tasks](../tasks/2026-06-19-okf-wiki-navigation-tasks.md) |
 | **Phase** | Knowledge base |
 
 > **Source of truth:** this PRD synthesizes the decisions reached in the
