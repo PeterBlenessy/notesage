@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.47.0-alpha.6",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.5",
+      "sections": {
+        "fixes": [
+          "fix(drawing): stub the CJK font so drawings stop spamming font errors (#481)",
+          "fix(editor): grant asset scope early/ungated so doc images load on first paint (#482)"
+        ]
+      },
+      "underTheHood": [
+        "fix(editor): grant asset scope early/ungated so doc images load on first paint (#482)",
+        "fix(drawing): stub the CJK font so drawings stop spamming font errors (#481)"
+      ]
+    },
+    {
       "version": "0.47.0-alpha.5",
       "date": "2026-06-17",
       "previousVersion": "0.47.0-alpha.4",
