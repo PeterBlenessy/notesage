@@ -168,3 +168,4 @@ Chronological log of major implementation milestones and changes.
 | 162 | [Release v0.47.0-alpha.6](162-release-v0.47.0-alpha.6.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 163 | [Release v0.47.0-alpha.7](163-release-v0.47.0-alpha.7.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 164 | [Release v0.47.0-alpha.8](164-release-v0.47.0-alpha.8.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 165 | [Release v0.47.0](165-release-v0.47.0.md) | Stable: concurrent AI sessions, keyboard-shortcut overhaul, editor & drawing first-paint fixes |

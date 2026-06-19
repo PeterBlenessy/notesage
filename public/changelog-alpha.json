@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.47.0",
+      "date": "2026-06-19",
+      "previousVersion": "0.46.0",
+      "sections": {
+        "features": [
+          "**Run several AI sessions at the same time.** Start a chat or agent task, leave it working in the background, and start another — Notesage keeps each conversation's responses, tool permissions, and progress separate. The agent orb shows which sessions are still running and pulses when one needs your attention, and you get a desktop notification when a backgrounded session finishes or asks for permission.",
+          "**A cleaner, more reliable set of keyboard shortcuts.** Shortcuts now work correctly on non-US keyboard layouts (including Swedish), ⌘S saves even with Caps Lock on, and a tidier set of combos has been added: ⌘⌥C to add a comment, ⌘⌥P to copy the current document's path, and ⌘⌥R to reveal it in Finder."
+        ],
+        "improvements": [
+          "**Paste as plain text just works.** ⌘⇧V now pastes the clipboard text directly, without an extra permission prompt getting in the way.",
+          "**The command bar remembers what you were typing.** Closing the bar no longer throws away an unfinished message, and the skill list is sorted so it's easier to scan."
+        ],
+        "fixes": [
+          "**Images appear the first time you open a document** — no more opening a note, seeing blank spots, and having to refresh before pictures show up.",
+          "**Drawings no longer freeze the app.** Opening or exporting documents that contain drawings is now smooth, and drawings stop flooding the logs with font errors.",
+          "**Network restrictions no longer get agents stuck.** When an agent is restricted to certain sites, its requests are handled correctly instead of leaving the conversation hanging."
+        ]
+      }
+    },
+    {
       "version": "0.47.0-alpha.8",
       "date": "2026-06-19",
       "previousVersion": "0.47.0-alpha.7",
