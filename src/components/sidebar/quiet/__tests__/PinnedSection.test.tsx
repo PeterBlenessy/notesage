@@ -163,13 +163,13 @@ describe('PinnedSection', () => {
     expect(otherRow.getAttribute('data-active')).toBeNull();
   });
 
-  it('copies the path to the clipboard on ⌘⌥C when a row is focused (#46)', async () => {
+  it('copies the path to the clipboard on ⌘⌥P when a row is focused (#46)', async () => {
     useWorkspaceStore.setState({ pinnedFiles: ['/notes/gamma.md'] });
 
     renderWithProviders(<PinnedSection />);
     const row = screen.getByText('gamma.md').closest('[role="button"]') as HTMLElement;
     row.focus();
-    fireEvent.keyDown(row, { key: 'c', metaKey: true, altKey: true });
+    fireEvent.keyDown(row, { key: 'π', code: 'KeyP', metaKey: true, altKey: true });
 
     await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
     expect(mockClipboardWrite).toHaveBeenCalledWith('/notes/gamma.md');

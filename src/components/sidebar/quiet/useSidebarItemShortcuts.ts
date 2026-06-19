@@ -64,11 +64,11 @@ export function isContextMenuKey(event: KeyboardEvent<HTMLElement>): boolean {
  * Returns an `onKeyDown` handler that reacts to two combos while a sidebar
  * row has focus:
  *
- *   ⌘⌥C (or Ctrl+Alt+C) → Copy absolute path to clipboard + toast
+ *   ⌘⌥P (or Ctrl+Alt+P) → Copy absolute path to clipboard + toast
  *   ⌘⌥R (or Ctrl+Alt+R) → Reveal in Finder + error toast on failure
  *
  * The handler accepts `metaKey || ctrlKey` to match the rest of the app's
- * keymap (`useKeyboardShortcuts`, `useEditorKeyBindings`), so the same
+ * keymap (`useGlobalShortcuts`, `useEditorKeyBindings`), so the same
  * shortcut works on macOS (Cmd) and non-macOS (Ctrl). The codebase is
  * currently macOS-only but this keeps the door open for Windows/Linux
  * WebView targets without a platform check.
@@ -114,16 +114,18 @@ export function useSidebarItemShortcuts(
       const mod = event.metaKey || event.ctrlKey;
       if (!mod || !event.altKey) return;
 
-      const key = event.key.toLowerCase();
-
-      if (key === "c") {
+      // Match by physical `event.code`, not `event.key`: Option+P / Option+R
+      // produce dead-key characters on macOS (`π` / `®`), so `event.key` never
+      // equals "p"/"r". ⌘⌥P = copy Path (matches the global rebind), ⌘⌥R =
+      // Reveal.
+      if (event.code === "KeyP") {
         event.preventDefault();
         event.stopPropagation();
         void copyToClipboard(filePath, "Path copied");
         return;
       }
 
-      if (key === "r") {
+      if (event.code === "KeyR") {
         event.preventDefault();
         event.stopPropagation();
         void (async () => {

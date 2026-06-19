@@ -69,13 +69,15 @@ afterEach(() => {
 });
 
 describe("useSidebarItemShortcuts", () => {
-  it("copies the path to the clipboard on ⌘⌥C", async () => {
+  it("copies the path to the clipboard on ⌘⌥P (matched by physical code)", async () => {
     renderWithProviders(<Probe filePath="/abs/path/alpha.md" />);
 
     const row = screen.getByTestId("row");
     row.focus();
+    // Option+P produces `π` on macOS, so the handler matches event.code.
     fireEvent.keyDown(row, {
-      key: "c",
+      key: "π",
+      code: "KeyP",
       metaKey: true,
       altKey: true,
     });
@@ -84,13 +86,14 @@ describe("useSidebarItemShortcuts", () => {
     expect(mockClipboardWrite).toHaveBeenCalledWith("/abs/path/alpha.md");
   });
 
-  it("also fires on Ctrl+Alt+C (non-macOS equivalent)", async () => {
+  it("also fires on Ctrl+Alt+P (non-macOS equivalent)", async () => {
     renderWithProviders(<Probe filePath="/abs/path/beta.md" />);
 
     const row = screen.getByTestId("row");
     row.focus();
     fireEvent.keyDown(row, {
-      key: "c",
+      key: "p",
+      code: "KeyP",
       ctrlKey: true,
       altKey: true,
     });
@@ -111,7 +114,8 @@ describe("useSidebarItemShortcuts", () => {
     const row = screen.getByTestId("row");
     row.focus();
     fireEvent.keyDown(row, {
-      key: "r",
+      key: "®",
+      code: "KeyR",
       metaKey: true,
       altKey: true,
     });
@@ -133,6 +137,7 @@ describe("useSidebarItemShortcuts", () => {
     row.focus();
     fireEvent.keyDown(row, {
       key: "r",
+      code: "KeyR",
       ctrlKey: true,
       altKey: true,
     });
@@ -155,7 +160,8 @@ describe("useSidebarItemShortcuts", () => {
     const row = screen.getByTestId("row");
     row.focus();
     fireEvent.keyDown(row, {
-      key: "r",
+      key: "®",
+      code: "KeyR",
       metaKey: true,
       altKey: true,
     });
@@ -207,7 +213,8 @@ describe("useSidebarItemShortcuts", () => {
     const row = screen.getByTestId("row");
     row.focus();
     fireEvent.keyDown(row, {
-      key: "c",
+      key: "π",
+      code: "KeyP",
       metaKey: true,
       altKey: true,
     });

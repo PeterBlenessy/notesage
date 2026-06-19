@@ -23,7 +23,6 @@ const REQUIRED_IDS = [
   "open-document-outline",
   "toggle-sidebar",
   "toggle-activity-agent",
-  "toggle-chat-panel",
   "toggle-recording",
   "keyboard-shortcuts",
   "open-settings",
@@ -35,9 +34,21 @@ const REQUIRED_IDS = [
   "cycle-recent-previous",
   "copy-document-path",
   "reveal-in-finder",
+  "zoom-in",
+  "zoom-out",
+  "zoom-reset",
   "exit-focus-mode",
   "open-devtools",
 ];
+
+// Commands whose chords are KEY-only by design. For the zoom chords the
+// produced character (`+` / `-` / `=` / `0`) is stable across US and Swedish
+// layouts, while the physical `code` is NOT (US `Equal`/`Minus` vs Swedish
+// `Minus`/`Slash`). Binding a `code` here would cause cross-layout FALSE
+// matches — e.g. `code:"Slash"` would make ⌘/ trigger zoom-out on a US
+// keyboard. Key-based matching is therefore the correct layout-safe strategy,
+// so these are exempt from the "punctuation carries both key and code" rule.
+const KEY_ONLY_BY_DESIGN = new Set(["zoom-in", "zoom-out", "zoom-reset"]);
 
 describe("appCommandCatalog structure", () => {
   it("exports a non-empty catalog with at least MIN_COMMANDS entries", () => {
@@ -71,6 +82,7 @@ describe("appCommandCatalog structure", () => {
   it("punctuation chords carry both key and code for layout safety", () => {
     const PUNCTUATION_KEYS = [",", ".", "[", "]", ";", "'", "\\", "/", "-", "="];
     for (const cmd of Object.values(catalog)) {
+      if (KEY_ONLY_BY_DESIGN.has(cmd.id)) continue;
       for (const chord of cmd.chords) {
         if (chord.key !== undefined && PUNCTUATION_KEYS.includes(chord.key)) {
           expect(

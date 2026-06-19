@@ -21,7 +21,7 @@ import {
   renderWithProviders,
   screen,
 } from '@/test/component-harness';
-import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom (copied from AgentOrb.test.tsx — same reason).
@@ -152,7 +152,7 @@ function makeCallbacks() {
 }
 
 function Harness({ callbacks }: { callbacks: ReturnType<typeof makeCallbacks> }) {
-  useKeyboardShortcuts(callbacks);
+  useGlobalShortcuts(callbacks);
   return <AgentOrb />;
 }
 

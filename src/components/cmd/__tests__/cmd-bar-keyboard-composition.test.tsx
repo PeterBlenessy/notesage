@@ -25,7 +25,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act } from 'react';
 import { renderWithProviders, fireEvent } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
-import { useCommandBarShortcuts } from '@/hooks/useCommandBarShortcuts';
+import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
+import type { ShortcutCallbacks } from '@/hooks/shortcuts/shortcutActions';
+
+// Minimal callbacks — the chords exercised here (⌘K, ⌘1–4, ⌘⇧P, Esc) route
+// through the durable summon store / bus, not these dialog callbacks.
+const STUB_CALLBACKS: ShortcutCallbacks = {
+  onFindOpen: () => {},
+  onFindReplaceOpen: () => {},
+  onOutlineOpen: () => {},
+  onSettingsOpen: () => {},
+  onExportOpen: () => {},
+  onNewProject: () => {},
+  onNewNote: () => {},
+  onOpenFolder: () => {},
+  onShortcutsOpen: () => {},
+};
 
 // ---------------------------------------------------------------------------
 // Mocks — only enough to let the real bar + real shortcut hook coexist.
@@ -154,7 +169,7 @@ vi.mock('@/components/chat/ChatHistoryView', () => ({
 // bus connects end-to-end. `data-cmd-bar` is always on a fixed element
 // portal-mounted to document.body; tests read from there.
 function Harness({ pinned = false }: { pinned?: boolean } = {}) {
-  useCommandBarShortcuts();
+  useGlobalShortcuts(STUB_CALLBACKS);
   return <FloatingCommandBar isPinned={pinned} />;
 }
 

@@ -110,6 +110,28 @@ export const CommentMark = Extension.create({
           decorations(state) {
             return this.getState(state)?.decorations;
           },
+          // ⌘⌥C — add a comment on the current selection. Matched via
+          // `event.code === "KeyC"` (not `event.key`) because Option+C
+          // produces the dead-key character `ç` on macOS, so a character-based
+          // keymap ("Mod-Alt-c") would never fire. Lives here (ProseMirror
+          // plugin) rather than the global dispatcher because it needs the
+          // editor's live selection. Part of the ⌘⌥ family: C=Comment,
+          // P=Path, R=Reveal.
+          handleKeyDown(view, event) {
+            const isMod = event.metaKey || event.ctrlKey;
+            if (isMod && event.altKey && !event.shiftKey && event.code === "KeyC") {
+              const { from, to } = view.state.selection;
+              if (from === to) return false; // no selection → let it pass
+              view.dispatch(
+                view.state.tr.setMeta(CommentMarkPluginKey, {
+                  requestCreateComment: { from, to },
+                }),
+              );
+              event.preventDefault();
+              return true;
+            }
+            return false;
+          },
           handleClick(view, pos) {
             const state = CommentMarkPluginKey.getState(view.state);
             if (!state || state.comments.length === 0) return false;
@@ -141,22 +163,6 @@ export const CommentMark = Extension.create({
     ];
   },
 
-  addKeyboardShortcuts() {
-    return {
-      'Mod-Shift-m': () => {
-        const { from, to } = this.editor.state.selection;
-        if (from === to) return false;
-
-        this.editor.chain().command(({ tr }) => {
-          tr.setMeta(CommentMarkPluginKey, {
-            requestCreateComment: { from, to },
-          });
-          return true;
-        }).run();
-        return true;
-      },
-    };
-  },
 });
 
 function buildDecorations(

@@ -76,7 +76,7 @@ async function seedAIProvider(page: import('@playwright/test').Page) {
  * Post-Classic-removal (#325) the chat surface is QuietLayout's
  * FloatingCommandBar — a single composer that doubles as the cmd palette.
  * These tests open it via the documented chord (`Cmd+K` is the canonical
- * focus chord; `Cmd+Shift+C` also works when collapsed) and assert against
+ * focus chord; double-tap `Cmd` also summons) and assert against
  * the bar's selectors: `[data-cmd-bar]` wraps the bar, the input is
  * `textarea[role="combobox"]`, the send button has
  * `aria-label="Send message"`.
@@ -109,14 +109,8 @@ test.describe('Chat (FloatingCommandBar)', () => {
     await expect(input).toBeVisible();
   });
 
-  test('Cmd+Shift+C expands the command bar when collapsed', async ({ page }) => {
-    const bar = page.locator('[data-cmd-bar]');
-    await expect(bar).toHaveAttribute('data-expanded', 'false');
-
-    await page.keyboard.press('Meta+Shift+c');
-
-    await expect(bar).toHaveAttribute('data-expanded', 'true', { timeout: 5000 });
-  });
+  // (⌘⇧C as a summon was removed in the keyboard-shortcut overhaul — ⌘K and
+  // double-tap ⌘ are the summons; the ⌘K expand case is covered above.)
 
   test('can type a message in the command bar input', async ({ page }) => {
     await page.keyboard.press('Meta+k');
@@ -235,7 +229,7 @@ test.describe('Chat (FloatingCommandBar)', () => {
     await expect(bar).toHaveAttribute('data-expanded', 'true', { timeout: 5000 });
 
     // Esc is the documented dismiss path in float mode (the bar's keymap
-    // owns Esc; ⌘⇧C re-press is a no-op in expanded+float).
+    // owns Esc).
     await page.keyboard.press('Escape');
 
     await expect(bar).toHaveAttribute('data-expanded', 'false', { timeout: 5000 });

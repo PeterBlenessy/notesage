@@ -19,7 +19,6 @@ const REQUIRED_IDS = [
   "open-document-outline",
   "toggle-sidebar",
   "toggle-activity-agent",
-  "toggle-chat-panel",
   "toggle-recording",
   "keyboard-shortcuts",
   "open-settings",
@@ -31,6 +30,9 @@ const REQUIRED_IDS = [
   "cycle-recent-previous",
   "copy-document-path",
   "reveal-in-finder",
+  "zoom-in",
+  "zoom-out",
+  "zoom-reset",
   "exit-focus-mode",
   "open-devtools",
 ];

@@ -10,12 +10,34 @@ export interface ChordDef {
   altKey?: boolean;
 }
 
+/** Where a command's chord is dispatched. `global` commands run through the
+ *  App-root dispatcher (`useGlobalShortcuts`); the others are owned by their
+ *  respective surfaces (editor keymaps, the command bar, the sidebar) and are
+ *  listed here only so they appear in the ⌘⇧K reference and generated docs. */
+export type ShortcutScope = "global" | "editor" | "cmd-bar" | "sidebar";
+
+/** Keydown listener phase. `capture` is reserved for the few chords that must
+ *  preempt other handlers (focus mode, new note/project, the Esc fall-through). */
+export type ShortcutPhase = "capture" | "bubble";
+
 export interface AppCommand {
   id: string;
   label: string;
   display: string;
   chords: ChordDef[];
   owner?: string;
+  /** Dispatch scope. Defaults to "global" when omitted. */
+  scope?: ShortcutScope;
+  /** When true, the chord fires even while focus is in an input / textarea /
+   *  contentEditable (e.g. ⌘K). Defaults to false — typed-into surfaces own
+   *  their own keystrokes. Only meaningful for `scope: "global"`. */
+  firesWhileTyping?: boolean;
+  /** Listener phase for global-scope commands. Defaults to "bubble". */
+  phase?: ShortcutPhase;
+  /** Whether the dispatcher calls `preventDefault()` on a match. Defaults to
+   *  true. Set false for chords that must keep propagating (e.g. the Esc
+   *  fall-through chain). Only meaningful for `scope: "global"`. */
+  preventDefault?: boolean;
 }
 
 const commands = rawManifest.commands as AppCommand[];
