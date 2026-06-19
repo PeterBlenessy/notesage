@@ -700,14 +700,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         collapse();
       }
 
-      if (event.type === 'toggle-pin') {
-        // #121 — ⌘⇧C pressed while the bar is expanded AND pinned. Flip the
-        // pin off so the user returns to the floating overlay. The chord's
-        // emit site in `useKeyboardShortcuts` already validated the state,
-        // so we can setCmdBarPinned(false) unconditionally here.
-        useSettingsStore.getState().setCmdBarPinned(false);
-      }
-
       if (event.type === 'toggle-history') {
         // #118 — Clock icon in the context row (and ⌘⇧H when wired)
         // flips the stream area between the chat view and the past-

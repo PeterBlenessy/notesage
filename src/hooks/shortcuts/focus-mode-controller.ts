@@ -25,10 +25,19 @@ export interface FocusModeController {
 
 let controller: FocusModeController | null = null;
 
+/**
+ * Register the active controller. Returns an unregister function that only
+ * clears the slot if it still holds THIS controller — so a stale instance's
+ * cleanup (StrictMode double-invoke, a transient remount) can't null out the
+ * live instance's registration.
+ */
 export function registerFocusModeController(
-  next: FocusModeController | null,
-): void {
+  next: FocusModeController,
+): () => void {
   controller = next;
+  return () => {
+    if (controller === next) controller = null;
+  };
 }
 
 export function getFocusModeController(): FocusModeController | null {

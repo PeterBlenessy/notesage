@@ -10,12 +10,15 @@ import { registerFocusModeController } from "@/hooks/shortcuts/focus-mode-contro
  * Canonical implementation of the "Focus mode — done right" behaviour from
  * the 2026-04-21 UI-refresh PRD:
  *
- *   - `⌘.` (or `Ctrl+.` on non-mac) toggles focus mode from any state.
- *   - `Esc` exits focus mode **with fall-through priority** — open popovers,
- *     the command bar's expanded state, and inline edits all consume `Esc`
- *     before focus mode does. Only when nothing else claims the key do we
- *     exit focus. This mirrors the OS convention that `Esc` always exits
- *     the most-current mode.
+ *   - `⌘.` (toggle) and `Esc` (exit) are dispatched by the App-root
+ *     `useGlobalShortcuts` and routed here via the `focus-mode-controller`
+ *     bridge — this hook no longer installs its own keydown listener. It owns
+ *     the state, DOM class, announcer, focus-restore, and the `canExitViaEsc`
+ *     predicate the dispatcher's Esc guard consults.
+ *   - `Esc` exits **with fall-through priority** — open popovers, the command
+ *     bar's expanded state, and inline edits all consume `Esc` before focus
+ *     mode does (encoded in `canExitViaEsc`). This mirrors the OS convention
+ *     that `Esc` always exits the most-current mode.
  *   - Applies `.focus-mode` to the `[data-quiet-layout-root]` node. The
  *     CSS in `globals.css` (`.app.focus-mode …`) fades the sidebar, hides
  *     doc-head/toolbar/status, dims the orb to 30%, and adds +110px
@@ -30,11 +33,10 @@ import { registerFocusModeController } from "@/hooks/shortcuts/focus-mode-contro
  * `<FocusPill />` overlay) can subscribe. The DOM class is a side-effect
  * that stays in sync via `useEffect`.
  *
- * Intentionally scoped to QuietLayout — the legacy shell still owns its
- * own `focusMode` useState + useKeyboardShortcuts handler in App.tsx. This
- * hook uses a capture-phase, `stopImmediatePropagation` handler for `⌘.`
- * so the legacy bubble-phase listener never fires while QuietLayout is
- * mounted, avoiding double-toggles.
+ * Mount once at the QuietLayout level. The single-slot controller registration
+ * means a second mount would clobber the controller — `registerFocusModeController`
+ * only nulls the slot on unmount when it still owns it (identity-checked) to
+ * survive StrictMode double-invoke and transient remounts.
  */
 
 const ROOT_SELECTOR = "[data-quiet-layout-root]";
@@ -71,11 +73,12 @@ export interface UseFocusModeResult {
 }
 
 /**
- * Returns focus-mode state plus imperative `toggle` / `exit` actions. Installs
- * window-level capture-phase keydown listeners for `⌘.` and `Escape`.
+ * Returns focus-mode state plus imperative `toggle` / `exit` actions, and
+ * registers them (plus `canExitViaEsc`) with the global shortcut dispatcher
+ * via the focus-mode-controller bridge. The ⌘. / Esc keydown handling lives in
+ * `useGlobalShortcuts`, not here.
  *
- * Mount this once, at the QuietLayout level. Mounting twice would install
- * duplicate listeners and double-toggle on every `⌘.` press.
+ * Mount this once, at the QuietLayout level.
  */
 export function useFocusMode(): UseFocusModeResult {
   const [active, setActive] = useState<boolean>(false);
@@ -227,8 +230,7 @@ export function useFocusMode(): UseFocusModeResult {
   // hook keeps focus mode's state/announcer/focus-restore and exposes its
   // imperative actions through the controller bridge.
   useEffect(() => {
-    registerFocusModeController({ toggle, exit, canExitViaEsc });
-    return () => registerFocusModeController(null);
+    return registerFocusModeController({ toggle, exit, canExitViaEsc });
   }, [toggle, exit, canExitViaEsc]);
 
   // --- Unmount cleanup: never leave `.focus-mode` on the root ----------

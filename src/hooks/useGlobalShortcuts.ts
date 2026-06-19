@@ -10,10 +10,12 @@
  *     truth for chords. For each command that has a `shortcutActions[id]`
  *     entry, this dispatcher matches the keydown via the shared, layout-safe
  *     `matchesChord()` and runs the action.
- *   - Commands with NO action are owned by another surface and ignored here:
- *     `toggle-focus-mode` / `exit-focus-mode` live in `useFocusMode` (capture
- *     phase); ⌘N / ⌘⇧N are preempted at capture phase by `QuietLayout` (this
- *     hook only provides their bubble-phase fallback via their actions).
+ *   - ⌘N / ⌘⇧N and focus mode (⌘. / Esc) are dispatched here at CAPTURE phase
+ *     (manifest `phase: "capture"`). ⌘N/⌘⇧N call App's `handleNewNote` /
+ *     `handleNewProject`; focus mode toggles/exits via the controller bridge
+ *     (`focus-mode-controller`) since `useFocusMode` owns the state. `⌘S`
+ *     (editor save) and the Tiptap/CodeMirror editor keymaps are the only
+ *     chords intentionally outside this dispatcher.
  *   - `firesWhileTyping` gates whether a chord fires while focus is in a text
  *     surface (centralizes the guard previously duplicated across components).
  *

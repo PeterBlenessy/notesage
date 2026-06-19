@@ -5,9 +5,9 @@
  * live in serializable JSON.
  *
  * The App-root dispatcher (`useGlobalShortcuts`) looks up `shortcutActions[id]`
- * for each matched manifest command and runs it. Commands with NO entry here
- * are owned by another surface (focus mode lives in `useFocusMode`; ⌘N/⌘⇧N are
- * preempted at capture phase by `QuietLayout`) and are skipped by the dispatcher.
+ * for each matched manifest command and runs it. Every global-scope command has
+ * an action here (incl. ⌘N/⌘⇧N and focus mode, which the dispatcher runs at
+ * capture phase). Editor-owned chords (⌘S, formatting) are not in the manifest.
  *
  * The `shortcutActions` ↔ manifest correspondence is locked by a test
  * (`shortcutActions.test.ts`) so the two can never silently drift.
@@ -16,7 +16,9 @@ import { toast } from "sonner";
 
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useCmdBarSummonStore } from "@/stores/cmd-bar-summon-store";
+import { resolveCreateParent } from "@/lib/workspace/resolve-create-parent";
 import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { fireZoom } from "@/hooks/useEditorZoom";
 import { isAlphaBuild } from "@/lib/build-channel";
@@ -37,7 +39,9 @@ export interface ShortcutCallbacks {
   onSettingsOpen: () => void;
   onExportOpen: () => void;
   onNewProject: () => void;
-  onNewNote: () => void;
+  /** Create a new note. `parentPath` (when provided) is the directory to
+   *  create it in — ⌘N passes the active document's directory. */
+  onNewNote: (parentPath?: string) => void;
   onOpenFolder: () => void;
   onShortcutsOpen: () => void;
   onToggleRecording?: () => void;
@@ -53,6 +57,15 @@ export type ShortcutAction = (ctx: ShortcutActionContext) => void;
 /** Summon the command bar via the durable store (survives a bar crash). */
 function summon(prefix?: string): void {
   useCmdBarSummonStore.getState().summon(prefix ? { prefix } : {});
+}
+
+/** Dispatch the MRU document-cycle event; `useRecentDocumentCycle` consumes it. */
+function emitCycleRecent(direction: "next" | "previous"): void {
+  window.dispatchEvent(
+    new CustomEvent<{ direction: "previous" | "next" }>(CYCLE_RECENT_EVENT, {
+      detail: { direction },
+    }),
+  );
 }
 
 function copyActiveDocumentPath(): void {
@@ -121,25 +134,32 @@ export const shortcutActions: Record<string, ShortcutAction> = {
   "open-document-outline": ({ callbacks }) => {
     if (useEditorStore.getState().activeTabId) callbacks.onOutlineOpen();
   },
-  "new-note": ({ callbacks }) => callbacks.onNewNote(),
+  // ⌘N creates the note in the active document's directory (file-dir-aware).
+  // If the active file isn't inside an open project (or nothing is open), show
+  // the "open a project" hint instead of silently creating elsewhere.
+  "new-note": ({ callbacks }) => {
+    const { activeTabId, openDocuments } = useEditorStore.getState();
+    const active = activeTabId
+      ? openDocuments.find((t) => t.id === activeTabId)
+      : null;
+    const parent = resolveCreateParent(
+      active?.filePath ?? null,
+      useWorkspaceStore.getState().projects,
+    );
+    if (!parent) {
+      toast.info("Open a project to create a note");
+      return;
+    }
+    callbacks.onNewNote(parent);
+  },
   "new-project": ({ callbacks }) => callbacks.onNewProject(),
   "open-folder": ({ callbacks }) => callbacks.onOpenFolder(),
   "copy-document-path": () => copyActiveDocumentPath(),
   "reveal-in-finder": () => revealActiveDocument(),
-  "cycle-recent-next": ({ event }) => {
-    window.dispatchEvent(
-      new CustomEvent<{ direction: "previous" | "next" }>(CYCLE_RECENT_EVENT, {
-        detail: { direction: event.shiftKey ? "previous" : "next" },
-      }),
-    );
-  },
-  "cycle-recent-previous": ({ event }) => {
-    window.dispatchEvent(
-      new CustomEvent<{ direction: "previous" | "next" }>(CYCLE_RECENT_EVENT, {
-        detail: { direction: event.shiftKey ? "previous" : "next" },
-      }),
-    );
-  },
+  // Direction comes from the command identity, not the live event modifier —
+  // each chord owns its direction (⌃Tab → next, ⌃⇧Tab → previous).
+  "cycle-recent-next": () => emitCycleRecent("next"),
+  "cycle-recent-previous": () => emitCycleRecent("previous"),
 
   // ── UI chrome ────────────────────────────────────────────────────────
   "toggle-sidebar": () => {
@@ -181,5 +201,8 @@ export const shortcutActions: Record<string, ShortcutAction> = {
  * Esc when focus mode is active and nothing higher-priority wants the key.
  */
 export const shortcutGuards: Record<string, () => boolean> = {
+  // Only claim ⌘. when focus mode is actually mounted — otherwise let the key
+  // fall through instead of preventDefault-ing it into a no-op.
+  "toggle-focus-mode": () => getFocusModeController() !== null,
   "exit-focus-mode": () => getFocusModeController()?.canExitViaEsc() ?? false,
 };

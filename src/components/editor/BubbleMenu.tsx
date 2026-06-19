@@ -261,7 +261,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
               );
             }}
             disabled={loadingAction !== null}
-            title="Add comment (⌘⇧M)"
+            title="Add comment (⌘⌥C)"
           >
             <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
             Comment

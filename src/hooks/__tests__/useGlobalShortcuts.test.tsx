@@ -14,6 +14,8 @@ import { renderHook } from "@testing-library/react";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import type { ShortcutCallbacks } from "@/hooks/shortcuts/shortcutActions";
 import { useCmdBarSummonStore } from "@/stores/cmd-bar-summon-store";
+import { useEditorStore, type Tab } from "@/stores/editor-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { CYCLE_RECENT_EVENT, COPY_PATH_EVENT } from "@/lib/keyboard/shortcut-events";
 
 const fireZoom = vi.fn();
@@ -54,6 +56,8 @@ beforeEach(() => {
   fireZoom.mockClear();
   alpha = false;
   useCmdBarSummonStore.setState({ pending: null });
+  useEditorStore.setState({ activeTabId: null, openDocuments: [] });
+  useWorkspaceStore.setState({ projects: [] });
   document.body.innerHTML = "";
 });
 
@@ -94,11 +98,26 @@ describe("useGlobalShortcuts", () => {
     expect(useCmdBarSummonStore.getState().pending).not.toBeNull();
   });
 
-  it("⌘N fires when focus is not a typing target (capture phase)", () => {
+  it("⌘N creates a note in the active document's directory (capture phase)", () => {
     const cbs = makeCallbacks();
+    useWorkspaceStore.setState({ projects: [{ path: "/proj", fileTree: [] }] });
+    useEditorStore.setState({
+      activeTabId: "t1",
+      openDocuments: [{ id: "t1", filePath: "/proj/sub/note.md" } as Tab],
+    });
     renderHook(() => useGlobalShortcuts(cbs));
     dispatchOn(document.body, { key: "n", metaKey: true });
-    expect(cbs.onNewNote).toHaveBeenCalledTimes(1);
+    // file-dir-aware: note lands beside the active document, not at root.
+    expect(cbs.onNewNote).toHaveBeenCalledWith("/proj/sub");
+  });
+
+  it("⌘N with no project open does not create (shows the hint instead)", () => {
+    const cbs = makeCallbacks();
+    useWorkspaceStore.setState({ projects: [] });
+    useEditorStore.setState({ activeTabId: null, openDocuments: [] });
+    renderHook(() => useGlobalShortcuts(cbs));
+    dispatchOn(document.body, { key: "n", metaKey: true });
+    expect(cbs.onNewNote).not.toHaveBeenCalled();
   });
 
   it("⌘⇧N fires onNewProject; suppressed while typing", () => {
