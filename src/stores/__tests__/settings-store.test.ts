@@ -73,6 +73,9 @@ import {
   useSettingsStore,
   selectEffectiveTelemetryUsage,
   selectEffectiveTelemetryCrash,
+  RELATIONS_PANEL_DEFAULT_HEIGHT,
+  RELATIONS_PANEL_MIN_HEIGHT,
+  RELATIONS_PANEL_MAX_HEIGHT,
 } from '../settings-store';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -2589,5 +2592,36 @@ describe('telemetry consent', () => {
       usage: true,
       crash: true,
     });
+  });
+});
+
+describe('relationsPanelHeight (OKF wiki-navigation)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('defaults to the mid-band fraction', () => {
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_DEFAULT_HEIGHT,
+    );
+  });
+
+  it('sets an in-band fraction verbatim', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.55);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(0.55);
+  });
+
+  it('clamps below the minimum (e.g. repeated keyboard down-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.1);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MIN_HEIGHT,
+    );
+  });
+
+  it('clamps above the maximum (e.g. repeated keyboard up-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.95);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MAX_HEIGHT,
+    );
   });
 });
