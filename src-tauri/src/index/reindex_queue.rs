@@ -82,22 +82,42 @@ pub fn process_reindex_queue(app: &AppHandle) {
         return;
     }
 
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
+    // Collect link-graph work to run AFTER the content-DB locks are released —
+    // `index_links_for_file` locks `project_dbs` to compute scope roots, so
+    // doing it inside this loop (which already holds that lock) would deadlock
+    // on the non-reentrant parking_lot mutex.
+    let mut link_updates: Vec<String> = Vec::new();
+    let mut link_deletes: Vec<String> = Vec::new();
 
-    for entry in entries {
-        // Apply circuit breaker — skip files being reindexed too rapidly
-        if entry.kind != FileChangeKind::Delete && state.is_reindex_throttled(&entry.path) {
-            continue;
-        }
+    {
+        let global = state.global_db.lock();
+        let projects = state.project_dbs.lock();
 
-        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
-            if entry.kind == FileChangeKind::Delete {
-                let _ = db::remove_file(conn, &entry.path);
-            } else if is_indexable(&entry.path) {
-                let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());
+        for entry in entries {
+            // Apply circuit breaker — skip files being reindexed too rapidly
+            if entry.kind != FileChangeKind::Delete && state.is_reindex_throttled(&entry.path) {
+                continue;
+            }
+
+            if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
+                if entry.kind == FileChangeKind::Delete {
+                    let _ = db::remove_file(conn, &entry.path);
+                    link_deletes.push(entry.path.clone());
+                } else if is_indexable(&entry.path) {
+                    let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());
+                    link_updates.push(entry.path.clone());
+                }
             }
         }
+    }
+
+    // Link-graph reconciliation (scope-gated inside each call — explorer paths
+    // are no-ops, ADR 0003).
+    for path in link_deletes {
+        state.remove_links_for_file(&path);
+    }
+    for path in link_updates {
+        state.index_links_for_file(&path);
     }
 
     *state.processing.lock() = false;
