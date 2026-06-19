@@ -6,7 +6,7 @@
  *   - ⌘K summons (expands) the bar
  *   - double-tap ⌘ also summons it
  *   - Esc collapses it
- *   - pinned mode reflects in the DOM and ⌘⇧C unpins an expanded+pinned bar
+ *   - pinned mode reflects in the DOM and unpinning restores the floating bar
  *
  * The six prefix-mode transitions and the `:file` verb require *typing* a query
  * into the textarea, which WKWebView's WebDriver can't reliably deliver to a
@@ -111,7 +111,7 @@ describe('FloatingCommandBar — summon / collapse / pin', () => {
         );
     });
 
-    it('pinned mode reflects on the bar and ⌘⇧C unpins it', async () => {
+    it('pinned mode reflects on the bar and unpinning restores the floating bar', async () => {
         // Pinning re-renders the bar into the docked side panel (a new DOM
         // node), so read the attribute via a fresh query each poll rather than
         // caching the element handle (which would go stale).
@@ -120,16 +120,17 @@ describe('FloatingCommandBar — summon / collapse / pin', () => {
             return b.getAttribute('data-cmd-bar-pinned');
         };
 
-        // Pin via settings → the bar advertises pinned mode.
+        // Pin → the bar advertises pinned mode.
         await setPinned(true);
         await browser.waitUntil(async () => (await pinnedAttr()) === 'true', {
             timeout: 5000, interval: 50, timeoutMsg: 'Bar did not enter pinned mode',
         });
 
-        // ⌘⇧C unpins back to the floating bar (documented in keyboard-shortcuts).
-        await pressShortcut(['Meta', 'Shift', 'c']);
+        // Unpin (the pin-button path; ⌘⇧C was removed as a summon/unpin chord
+        // in the keyboard-shortcut overhaul) → back to the floating bar.
+        await setPinned(false);
         await browser.waitUntil(async () => (await pinnedAttr()) === 'false', {
-            timeout: 5000, interval: 50, timeoutMsg: '⌘⇧C did not unpin the bar',
+            timeout: 5000, interval: 50, timeoutMsg: 'Bar did not unpin',
         });
     });
 });

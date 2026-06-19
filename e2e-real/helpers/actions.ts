@@ -338,7 +338,7 @@ export async function typeInEditor(text: string): Promise<TimedResult<void>> {
  * @example
  * ```ts
  * await pressShortcut(['Meta', 's']);       // Cmd+S (save)
- * await pressShortcut(['Meta', 'Shift', 'c']); // Cmd+Shift+C (toggle chat)
+ * await pressShortcut(['Meta', 'k']);       // Cmd+K (summon command bar)
  * ```
  */
 export async function pressShortcut(keys: string[]): Promise<void> {

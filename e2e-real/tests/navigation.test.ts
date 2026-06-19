@@ -111,7 +111,7 @@ describe('Navigation and UI', () => {
     // ---------------------------------------------------------------
     // Test 2: FloatingCommandBar expand / collapse
     // ---------------------------------------------------------------
-    it('should expand the FloatingCommandBar with Cmd+Shift+C and collapse with Esc', async () => {
+    it('should expand the FloatingCommandBar with Cmd+K and collapse with Esc', async () => {
         const bar = await browser.$('[data-cmd-bar]');
         await bar.waitForExist({ timeout: 3000, timeoutMsg: 'Cmd bar not found within 3s' });
 
@@ -125,8 +125,8 @@ describe('Navigation and UI', () => {
         console.log(`[nav] Cmd bar initially expanded: ${startState === 'true'}`);
         expect(startState).toBe('false');
 
-        // ⌘⇧C expands the bar — measure how long it takes the attribute to flip.
-        await pressShortcut(['Meta', 'Shift', 'c']);
+        // ⌘K expands the bar — measure how long it takes the attribute to flip.
+        await pressShortcut(['Meta', 'k']);
 
         const { duration } = await measureAction(async () => {
             await browser.waitUntil(
@@ -147,8 +147,7 @@ describe('Navigation and UI', () => {
         console.log(`[nav] Cmd bar textarea present: ${textareaExists}`);
         expect(textareaExists).toBe(true);
 
-        // Escape is the documented collapse path in float mode (a second
-        // ⌘⇧C is a no-op while expanded+floating).
+        // Escape is the documented collapse path in float mode.
         await pressShortcut(['Escape']);
         await browser.waitUntil(
             async () => (await bar.getAttribute('data-expanded')) === 'false',

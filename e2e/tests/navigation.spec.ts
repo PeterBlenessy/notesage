@@ -103,7 +103,7 @@ test.describe('Navigation — Chat Bar Toggle', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('Cmd+Shift+C expands the command bar when collapsed', async ({ page }) => {
+  test('Cmd+K expands the command bar when collapsed, Esc collapses it', async ({ page }) => {
     const bar = page.locator('[data-cmd-bar]');
     await expect(bar).toBeVisible({ timeout: 5000 });
     await expect(bar).toHaveAttribute('data-expanded', 'false');
@@ -111,12 +111,11 @@ test.describe('Navigation — Chat Bar Toggle', () => {
     // Click body to ensure the app has focus.
     await page.locator('body').click();
 
-    await page.keyboard.press('Meta+Shift+c');
+    await page.keyboard.press('Meta+k');
 
     await expect(bar).toHaveAttribute('data-expanded', 'true', { timeout: 5000 });
 
-    // ⌘⇧C in expanded+float is a no-op (documented behaviour); Esc is
-    // the documented collapse path.
+    // Esc is the documented collapse path.
     await page.keyboard.press('Escape');
     await expect(bar).toHaveAttribute('data-expanded', 'false', { timeout: 5000 });
   });
