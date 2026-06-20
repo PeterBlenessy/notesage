@@ -5,15 +5,34 @@
  */
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { handleLinkNavigation } from '@/lib/link-utils';
+import { handleLinkNavigation, isExternalUrl } from '@/lib/link-utils';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
 const linkClickPluginKey = new PluginKey('linkClick');
+const stripTitlePluginKey = new PluginKey('linkStripInternalTitle');
 
 /** Remove any existing link context menu from the DOM. */
 function dismissLinkContextMenu() {
   document.querySelector('.link-context-menu')?.remove();
+}
+
+/**
+ * Strip the native `title` attribute from every INTERNAL link anchor in the
+ * editor DOM. Tiptap's Link mark renders a `title` attribute (parsed from
+ * `[text](url "title")` markdown), which the OS surfaces as a hover tooltip.
+ * For internal document links we own a richer hover affordance —
+ * `EditorLinkHoverPreview` — and the doubled-up OS tooltip is noise. We only
+ * touch the rendered DOM (not the document model / mark attrs), so markdown
+ * round-trip and external-link titles are unaffected.
+ */
+function stripInternalLinkTitles(dom: HTMLElement) {
+  const anchors = dom.querySelectorAll<HTMLAnchorElement>('a[href][title]');
+  anchors.forEach((anchor) => {
+    const href = anchor.getAttribute('href');
+    if (!href || isExternalUrl(href)) return;
+    anchor.removeAttribute('title');
+  });
 }
 
 export const LinkClick = Extension.create({
@@ -23,6 +42,20 @@ export const LinkClick = Extension.create({
     const extensionThis = this;
 
     return [
+      new Plugin({
+        key: stripTitlePluginKey,
+        view(view) {
+          // Initial pass + after every editor DOM update, drop the native
+          // `title` from internal-link anchors so the OS tooltip never competes
+          // with EditorLinkHoverPreview.
+          stripInternalLinkTitles(view.dom as HTMLElement);
+          return {
+            update(updatedView) {
+              stripInternalLinkTitles(updatedView.dom as HTMLElement);
+            },
+          };
+        },
+      }),
       new Plugin({
         key: linkClickPluginKey,
         props: {
