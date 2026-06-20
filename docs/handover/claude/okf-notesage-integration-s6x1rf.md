@@ -1,10 +1,27 @@
 # Testing handover — OKF wiki-navigation (PR #487)
 
+**PR:** https://github.com/PeterBlenessy/notesage/pull/487 — CI green, label `tier:C`
+(awaiting human test + review). **The PR diff + the ADRs are the spec; this doc is only
+the testing orientation** — don't re-derive scope from scratch, read those.
 **Branch:** `claude/okf-notesage-integration-s6x1rf` (merged with `main`).
 **Target platform:** macOS. Everything to date was built/verified **headless on Linux** —
 no part of this feature has run in the real app, so live behaviour is exactly what this
 pass is for. CI is green (`cargo test`, Playwright, frontend, real Tauri E2E), but green
 unit/integration tests are not "it works."
+
+## Suggested skills (invoke these)
+
+- **`run`** — launch and drive the real app; this is the primary tool for the pass
+  (open a project, exercise the panel / hover / `[[` flows, screenshot).
+- **`test-e2e-real`** — real E2E against a live Tauri app (WebDriverIO). Closest thing to
+  automated coverage of the backend↔frontend seam that the headless build couldn't run.
+- **`verify`** — check the implementation against the PRD quality gates
+  (`docs/prds/2026-06-19-okf-wiki-navigation.md`).
+- **`review-ui`** + **`audit-accessibility`** — cover the one open `aw-review` ⚠: visual
+  polish in light/dark/soft-contrast, plus the reduced-motion pulse, focus states, and
+  contrast of the new panel/badges.
+- **`test-markdown-roundtrip`** — back the `[[`-serialization check (no `[[ ]]` on disk).
+- **`test-frontend`** — quick typecheck + vitest sanity if you touch any frontend code.
 
 ---
 
