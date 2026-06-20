@@ -1,7 +1,7 @@
 {
   "name": "notesage",
   "private": true,
-  "version": "0.47.0-alpha.7",
+  "version": "0.48.0-alpha.2",
   "license": "MIT",
   "author": "Peter Blenessy",
   "type": "module",
@@ -160,7 +160,11 @@
       "postcss": ">=8.5.10",
       "fast-xml-parser": ">=5.5.10",
       "ws": ">=8.20.1",
-      "esbuild": ">=0.28.1"
+      "esbuild": ">=0.28.1",
+      "undici@^6": ">=6.27.0 <7",
+      "undici@^7": ">=7.28.0 <8",
+      "js-yaml": ">=4.2.0",
+      "@babel/core": ">=7.29.6 <8"
     }
   }
 }
