@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::file_scanner::is_indexable;
 use super::{db, get_db_for_path, reindex_file_in_db, IndexState};
@@ -112,15 +112,28 @@ pub fn process_reindex_queue(app: &AppHandle) {
     }
 
     // Link-graph reconciliation (scope-gated inside each call — explorer paths
-    // are no-ops, ADR 0003).
+    // are no-ops, ADR 0003). Collect every path whose link edges/meta were
+    // touched so the frontend can refresh anything derived from `links.db`
+    // (the RelationsPanel via `useDocumentRelations`, the wiki-link unresolved
+    // decoration) without busy-polling. This is the single, authoritative
+    // "links settled" signal and fires for ALL write paths — self-write saves
+    // (which are filtered out of `file-changed-batch`) AND external/tool writes
+    // alike, only AFTER the reindex has actually landed.
+    let mut affected: Vec<String> = Vec::new();
     for path in link_deletes {
         state.remove_links_for_file(&path);
+        affected.push(path);
     }
     for path in link_updates {
         state.index_links_for_file(&path);
+        affected.push(path);
     }
 
     *state.processing.lock() = false;
+
+    if !affected.is_empty() {
+        let _ = app.emit("links-reindexed", affected);
+    }
 }
 
 #[cfg(test)]

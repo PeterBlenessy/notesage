@@ -292,6 +292,95 @@ describe('useFileWatcher', () => {
   });
 
   // ==========================================================================
+  // Frontmatter-only external/tool write (BUG 3 — okf-enrich)
+  // ==========================================================================
+
+  describe('modify events -- frontmatter-only change (BUG 3)', () => {
+    it('reloads frontmatter when only frontmatter changed (body identical)', async () => {
+      const tab = makeTab({
+        content: '# Hello\n\nOriginal content',
+        frontmatter: null,
+      });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+      // okf-enrich added type/title/description; the body is byte-identical.
+      setMockInvokeHandler(
+        'read_file',
+        () =>
+          '---\ntype: note\ntitle: Enriched\ndescription: A doc\n---\n# Hello\n\nOriginal content',
+      );
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // No body diff to review → body reload path is NOT used.
+      expect(getExternalChanges()['/project/notes/test.md']).toBeUndefined();
+
+      // The tab's frontmatter now reflects the disk metadata, without dirty.
+      const updated = useEditorStore
+        .getState()
+        .openDocuments.find((t) => t.id === tab.id);
+      expect(updated?.frontmatter).toMatchObject({
+        type: 'note',
+        title: 'Enriched',
+        description: 'A doc',
+      });
+      expect(updated?.isDirty).toBe(false);
+    });
+
+    it('skips entirely when neither body nor frontmatter changed', async () => {
+      const tab = makeTab({
+        content: '# Hello\n\nOriginal content',
+        frontmatter: { type: 'note' },
+      });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+      setMockInvokeHandler(
+        'read_file',
+        () => '---\ntype: note\n---\n# Hello\n\nOriginal content',
+      );
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      expect(getExternalChanges()['/project/notes/test.md']).toBeUndefined();
+      const updated = useEditorStore
+        .getState()
+        .openDocuments.find((t) => t.id === tab.id);
+      expect(updated?.isDirty).toBe(false);
+    });
+
+    it('reloads body AND frontmatter when both changed', async () => {
+      const tab = makeTab({
+        content: '# Hello\n\nOriginal content',
+        frontmatter: { type: 'note' },
+      });
+      useEditorStore.setState({ openDocuments: [tab], activeTabId: tab.id });
+      setMockInvokeHandler(
+        'read_file',
+        () => '---\ntype: spec\n---\n# Hello\n\nDifferent body',
+      );
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Body change routes through the external-change reload path...
+      expect(getExternalChanges()['/project/notes/test.md']).toBe(
+        '# Hello\n\nDifferent body',
+      );
+      // ...and the frontmatter is refreshed alongside it.
+      const updated = useEditorStore
+        .getState()
+        .openDocuments.find((t) => t.id === tab.id);
+      expect(updated?.frontmatter).toMatchObject({ type: 'spec' });
+    });
+  });
+
+  // ==========================================================================
   // Modify events -- dirty tab
   // ==========================================================================
 

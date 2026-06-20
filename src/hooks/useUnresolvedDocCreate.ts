@@ -47,6 +47,11 @@ export function useUnresolvedDocCreate(): void {
               // Reuse the existing create path (tauriApi.createFile under the
               // hood) — refreshes the tree + git status, returns the new path.
               const created = await createFile(parentDir, fileName);
+              // The target now exists — tell the wiki-link decoration to drop
+              // its stale "unresolved" existence answer and re-resolve, so the
+              // dangling link in the open doc re-renders as a normal resolved
+              // link instead of staying dashed (#12, ADR 0007).
+              window.dispatchEvent(new CustomEvent("notesage:wikilink-created"));
               const openTab = useEditorStore.getState().openTab;
               await tryOpenFile(created, openTab);
               toast.success(`Created ${fileName}`);

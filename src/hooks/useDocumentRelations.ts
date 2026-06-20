@@ -14,6 +14,7 @@
  * hover-preview resolver) can pass it explicitly.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { tauriApi } from "@/lib/tauri";
 import type { BacklinkGroup, LinkRow } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
@@ -86,6 +87,43 @@ export function useDocumentRelations(
   // Guards async writes so a stale in-flight request for a previous path (or a
   // request after unmount) never clobbers the current state.
   const requestIdRef = useRef(0);
+
+  // Mirror the current path + known relation paths into a ref so the
+  // `links-reindexed` listener (registered once) can decide whether a reindex
+  // batch is relevant without re-subscribing on every state change.
+  const relevantPathsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const paths = new Set<string>();
+    if (path) paths.add(path);
+    for (const g of backlinks) paths.add(g.source_path);
+    for (const o of outlinks) paths.add(o.target_path);
+    relevantPathsRef.current = paths;
+  }, [path, backlinks, outlinks]);
+
+  // Re-query when the backend finishes reindexing `links.db` for a file that
+  // affects this panel. The `links-reindexed` event carries the affected paths
+  // and fires for ALL write paths — including a self-write save of the
+  // currently-open document (which is filtered out of `file-changed-batch`),
+  // which is the primary stale-panel repro. Coalesce bursts with a short
+  // debounce so a multi-file reindex batch triggers a single refresh.
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    const unlisten = listen<string[]>("links-reindexed", (event) => {
+      const affected = event.payload;
+      if (!Array.isArray(affected) || affected.length === 0) return;
+      const relevant = relevantPathsRef.current;
+      // Refresh if the open doc itself changed (its own outlinks may have
+      // changed) OR a related doc changed (its backlinks to us may have changed).
+      const matches = affected.some((p) => relevant.has(p));
+      if (!matches) return;
+      clearTimeout(debounce);
+      debounce = setTimeout(() => refresh(), 150);
+    });
+    return () => {
+      clearTimeout(debounce);
+      void unlisten.then((fn) => fn());
+    };
+  }, [refresh]);
 
   useEffect(() => {
     // No open document (or a non-path) → clear to the empty state, no IPC.

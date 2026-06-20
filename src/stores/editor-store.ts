@@ -125,6 +125,15 @@ interface EditorStore {
   removeRecent: (path: string) => void;
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
+  /**
+   * Replace a tab's frontmatter from an EXTERNAL/tool write (matched by file
+   * path), WITHOUT marking the tab dirty — the on-disk file already holds this
+   * frontmatter, so it must not be flagged as an unsaved edit. Used by the file
+   * watcher to reflect a frontmatter-only change (e.g. `okf-enrich` adding
+   * `type`/`title`/`description`) that the body-diff path can't see because the
+   * editor body excludes frontmatter.
+   */
+  reloadFrontmatter: (filePath: string, frontmatter: Frontmatter | null) => void;
   setScrollPosition: (filePath: string, ratio: number) => void;
   setExternalChange: (filePath: string, diskContent: string) => void;
   clearExternalChange: (filePath: string) => void;
@@ -400,6 +409,16 @@ export const useEditorStore = create<EditorStore>()(
           openDocuments: state.openDocuments.map((tab) =>
             tab.id === tabId
               ? { ...tab, frontmatter: { ...tab.frontmatter, ...updates }, isDirty: true }
+              : tab
+          ),
+        }));
+      },
+
+      reloadFrontmatter: (filePath: string, frontmatter: Frontmatter | null) => {
+        set((state) => ({
+          openDocuments: state.openDocuments.map((tab) =>
+            tab.filePath === filePath
+              ? { ...tab, frontmatter: frontmatter ?? null }
               : tab
           ),
         }));

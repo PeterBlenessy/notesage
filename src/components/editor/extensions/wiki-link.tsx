@@ -24,6 +24,7 @@ import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import tippy, { type Instance } from "tippy.js";
+import { listen } from "@tauri-apps/api/event";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -377,16 +378,40 @@ export const WikiLink = Extension.create({
       return DecorationSet.create(state.doc, decorations);
     }
 
+    // When a dangling target is created (create-on-click, #12) or the backend
+    // finishes reindexing `links.db`, the cached existence answer for the
+    // affected href(s) is stale — the file now exists, so the link must stop
+    // rendering as unresolved. We can't know which absolute path maps to which
+    // cached href cheaply, so on either signal we drop the whole existence
+    // cache and force a recompute; `scheduleResolve` re-resolves only the
+    // hrefs still present in the doc (debounced), so the cost is bounded.
+    function invalidateExistsCacheAndRecompute() {
+      existsCache.clear();
+      if (view.current) {
+        const v = view.current;
+        v.dispatch(v.state.tr.setMeta(WikiLinkDecorationKey, true));
+      }
+    }
+
     const decorationPlugin = new Plugin<DecorationSet>({
       key: WikiLinkDecorationKey,
       view: (editorView) => {
         view.current = editorView;
+        const onCreated = () => invalidateExistsCacheAndRecompute();
+        const onReindexed = () => invalidateExistsCacheAndRecompute();
+        window.addEventListener("notesage:wikilink-created", onCreated);
+        let unlistenReindex: (() => void) | undefined;
+        void listen("links-reindexed", onReindexed).then((fn) => {
+          unlistenReindex = fn;
+        });
         return {
           update: (v) => {
             view.current = v;
           },
           destroy: () => {
             if (resolveTimer) clearTimeout(resolveTimer);
+            window.removeEventListener("notesage:wikilink-created", onCreated);
+            unlistenReindex?.();
             view.current = null;
           },
         };

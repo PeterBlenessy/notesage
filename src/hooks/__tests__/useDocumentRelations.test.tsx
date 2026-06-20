@@ -10,8 +10,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import "@/test/tauri-mock";
-import { setMockInvokeHandler } from "@/test/tauri-mock";
-import { renderHook, waitFor } from "@testing-library/react";
+import { setMockInvokeHandler, emitMockEvent } from "@/test/tauri-mock";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 import {
   useDocumentRelations,
@@ -143,6 +143,71 @@ describe("useDocumentRelations", () => {
     expect(result.current.error).toContain("db locked");
     expect(result.current.isEmpty).toBe(false);
     expect(result.current.count).toBe(0);
+  });
+
+  it("re-queries when links-reindexed fires for the active document (BUG 1)", async () => {
+    openDoc("/p/active.md");
+    let outlinkCount = 1;
+    const backlinkSpy = vi.fn(() => []);
+    setMockInvokeHandler("get_backlinks", backlinkSpy);
+    setMockInvokeHandler("get_outlinks", () =>
+      Array.from({ length: outlinkCount }, (_, i) => makeOutlink(`/p/x${i}.md`)),
+    );
+
+    const { result } = renderHook(() => useDocumentRelations());
+    await waitFor(() => expect(result.current.outlinks).toHaveLength(1));
+
+    // A save reindexes links.db and the backend emits `links-reindexed` with
+    // the affected paths. The open doc removed a link → now zero outlinks.
+    outlinkCount = 0;
+    act(() => {
+      emitMockEvent("links-reindexed", ["/p/active.md"]);
+    });
+
+    await waitFor(() => expect(result.current.outlinks).toHaveLength(0));
+    expect(result.current.isEmpty).toBe(true);
+  });
+
+  it("ignores links-reindexed for unrelated documents", async () => {
+    openDoc("/p/active.md");
+    const outlinkSpy = vi.fn(() => [makeOutlink("/p/x.md")]);
+    setMockInvokeHandler("get_backlinks", () => []);
+    setMockInvokeHandler("get_outlinks", outlinkSpy);
+
+    const { result } = renderHook(() => useDocumentRelations());
+    await waitFor(() => expect(result.current.outlinks).toHaveLength(1));
+    const callsAfterLoad = outlinkSpy.mock.calls.length;
+
+    act(() => {
+      emitMockEvent("links-reindexed", ["/p/somewhere-else.md"]);
+    });
+
+    // Give the debounce a beat; no re-fetch should occur.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(outlinkSpy.mock.calls.length).toBe(callsAfterLoad);
+  });
+
+  it("re-queries when a related (backlink source) doc is reindexed (BUG 1)", async () => {
+    openDoc("/p/active.md");
+    let backlinkOccurrences = 1;
+    setMockInvokeHandler("get_backlinks", () =>
+      backlinkOccurrences > 0
+        ? [makeBacklink("/p/source.md", backlinkOccurrences)]
+        : [],
+    );
+    setMockInvokeHandler("get_outlinks", () => []);
+
+    const { result } = renderHook(() => useDocumentRelations());
+    await waitFor(() => expect(result.current.backlinks).toHaveLength(1));
+
+    // The source doc dropped its link to us → reindex of the SOURCE path
+    // must refresh our backlinks even though our own file didn't change.
+    backlinkOccurrences = 0;
+    act(() => {
+      emitMockEvent("links-reindexed", ["/p/source.md"]);
+    });
+
+    await waitFor(() => expect(result.current.backlinks).toHaveLength(0));
   });
 
   it("accepts an explicit path override (hover-preview path)", async () => {
