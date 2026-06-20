@@ -133,6 +133,48 @@ describe("RelationsPanel", () => {
     expect(handle.style.right).toBe("var(--cmd-bar-pinned-width, 400px)");
   });
 
+  it("hides entirely when focus mode is active (chrome)", async () => {
+    openDoc("/p/active.md");
+    setMockInvokeHandler("get_backlinks", () => [backlink]);
+    setMockInvokeHandler("get_outlinks", () => [forwardResolved]);
+
+    const { container } = render(<RelationsPanel focusModeActive />);
+    // Even though the doc has relations, focus mode suppresses the whole panel.
+    await waitFor(() => {
+      expect(screen.queryByTestId("relations-handle")).toBeNull();
+    });
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("fades the handle out (non-interactive) while the panel is open", async () => {
+    openDoc("/p/active.md");
+    setMockInvokeHandler("get_backlinks", () => [backlink]);
+    setMockInvokeHandler("get_outlinks", () => [forwardResolved]);
+
+    render(<RelationsPanel />);
+    const handle = await screen.findByTestId("relations-handle");
+    // Closed: handle is visible (no fade-out class).
+    expect(handle.className).not.toContain("opacity-0");
+    fireEvent.click(handle);
+    await screen.findByTestId("relations-panel");
+    // Open: handle fades out and stops blinking.
+    expect(handle.className).toContain("opacity-0");
+    expect(handle.className).toContain("pointer-events-none");
+    expect(handle.className).not.toContain("relations-handle-pulsing");
+  });
+
+  it("has no footer Close button — Esc / click-away closes the panel", async () => {
+    openDoc("/p/active.md");
+    setMockInvokeHandler("get_backlinks", () => [backlink]);
+    setMockInvokeHandler("get_outlinks", () => [forwardResolved]);
+
+    render(<RelationsPanel />);
+    const handle = await screen.findByTestId("relations-handle");
+    fireEvent.click(handle);
+    await screen.findByTestId("relations-panel");
+    expect(screen.queryByText("Close")).toBeNull();
+  });
+
   it("renders grouped Linked-from and Links-to content when opened", async () => {
     openDoc("/p/active.md");
     setMockInvokeHandler("get_backlinks", () => [backlink]);

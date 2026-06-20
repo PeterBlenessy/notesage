@@ -627,7 +627,11 @@ body {
 }
 
 .relations-handle-pulsing {
-  animation: relations-handle-pulse 1.8s ease-in-out infinite;
+  /* Finite run — ~4 iterations of 1.8s (~7.2s total) then it settles calm.
+   * The handle re-mounts on each document switch, so a fresh element naturally
+   * restarts the animation: "attention on new doc, then quiet". `forwards` keeps
+   * the final keyframe state (no abrupt snap when the animation ends). */
+  animation: relations-handle-pulse 1.8s ease-in-out 4 forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1086,6 +1090,15 @@ body {
  * row and the document would still need to clear it.
  */
 .app.focus-mode [data-titlebar-mode="quiet"] {
+  display: none;
+}
+/* RelationsPanel handle (OKF wiki-navigation, ADR 0004) is chrome — hide it in
+ * focus mode like the sidebar/toolbar/orb. Defence-in-depth: the component also
+ * returns null while focus mode is active (which unmounts any open popover), but
+ * this keeps the handle gone even if the reactive flag lags a frame. The open
+ * PopoverContent is portaled to body (outside `.app`) so the component-level
+ * unmount, not CSS, is what closes it. */
+.app.focus-mode [data-testid="relations-handle"] {
   display: none;
 }
 /* AgentOrb doesn't carry a dedicated `data-agent-orb` attribute; it uses

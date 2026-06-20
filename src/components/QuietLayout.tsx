@@ -354,7 +354,11 @@ export function QuietLayout(props: QuietLayoutProps) {
           a render error in the link graph can't unmount the editor.
          */}
         <ErrorBoundary name="Relations panel">
-          <RelationsPanel />
+          {/* Focus mode hides the panel (chrome). Passing the live flag makes
+              the component return null while active — which also unmounts any
+              open PopoverContent (portaled to body, beyond the CSS reach of
+              `.app.focus-mode`). */}
+          <RelationsPanel focusModeActive={focus.active} />
         </ErrorBoundary>
 
         {/*

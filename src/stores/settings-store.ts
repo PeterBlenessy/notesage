@@ -22,6 +22,11 @@ export const SIDEBAR_DEFAULT_WIDTH = 252;
 export const RELATIONS_PANEL_MIN_HEIGHT = 0.4;
 export const RELATIONS_PANEL_MAX_HEIGHT = 0.6;
 export const RELATIONS_PANEL_DEFAULT_HEIGHT = 0.5;
+
+/** RelationsPanel resizable-width band (px). */
+export const RELATIONS_PANEL_MIN_WIDTH = 280;
+export const RELATIONS_PANEL_MAX_WIDTH = 600;
+export const RELATIONS_PANEL_DEFAULT_WIDTH = 340;
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
@@ -175,6 +180,13 @@ interface SettingsStore {
    */
   relationsPanelHeight: number;
   /**
+   * Width (in pixels) of the RelationsPanel (OKF wiki-navigation, ADR 0004).
+   * Persisted across restarts. Clamped to 280–600. Default 340. Drives the
+   * `--relations-panel-width` CSS variable; a left-edge drag mutates the var
+   * live (no React re-render mid-drag) and persists on release.
+   */
+  relationsPanelWidth: number;
+  /**
    * Width (in pixels) of the floating command bar in the expanded state.
    * Persisted across restarts so users on large displays can scale the bar
    * up once and not redo it on every launch. Clamped to 480–1400. Default
@@ -272,6 +284,8 @@ interface SettingsStore {
   setSidebarWidth: (width: number) => void;
   /** Persist the RelationsPanel height fraction (clamped to `[0.4, 0.6]`). */
   setRelationsPanelHeight: (fraction: number) => void;
+  /** Persist the RelationsPanel width in px (clamped to `[280, 600]`). */
+  setRelationsPanelWidth: (width: number) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
   setPrintLayout: (enabled: boolean) => void;
@@ -443,6 +457,7 @@ export const useSettingsStore = create<SettingsStore>()(
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
       relationsPanelHeight: RELATIONS_PANEL_DEFAULT_HEIGHT,
+      relationsPanelWidth: RELATIONS_PANEL_DEFAULT_WIDTH,
       cmdBarExpandedWidth: 640,
       cmdBarExpandedHeight: 480,
       quietChromePreset: "default",
@@ -570,6 +585,17 @@ export const useSettingsStore = create<SettingsStore>()(
           Math.min(RELATIONS_PANEL_MAX_HEIGHT, fraction),
         );
         set({ relationsPanelHeight: clamped });
+      },
+
+      setRelationsPanelWidth: (width: number) => {
+        set({
+          relationsPanelWidth: Math.round(
+            Math.max(
+              RELATIONS_PANEL_MIN_WIDTH,
+              Math.min(RELATIONS_PANEL_MAX_WIDTH, width),
+            ),
+          ),
+        });
       },
 
       setNotesRootPath: (path: string) => {
@@ -1142,6 +1168,20 @@ export const useSettingsStore = create<SettingsStore>()(
             state.relationsPanelHeight = Math.max(
               RELATIONS_PANEL_MIN_HEIGHT,
               Math.min(RELATIONS_PANEL_MAX_HEIGHT, state.relationsPanelHeight),
+            );
+          }
+          // RelationsPanel resizable width (px), clamped to [280, 600].
+          if (
+            typeof state.relationsPanelWidth !== 'number' ||
+            Number.isNaN(state.relationsPanelWidth)
+          ) {
+            state.relationsPanelWidth = RELATIONS_PANEL_DEFAULT_WIDTH;
+          } else {
+            state.relationsPanelWidth = Math.round(
+              Math.max(
+                RELATIONS_PANEL_MIN_WIDTH,
+                Math.min(RELATIONS_PANEL_MAX_WIDTH, state.relationsPanelWidth),
+              ),
             );
           }
         }

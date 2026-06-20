@@ -31,7 +31,7 @@
  * shown inside the rolled-out panel.
  */
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ChevronRight, Link2, CornerUpLeft, CornerDownRight } from "lucide-react";
+import { Link2, CornerUpLeft, CornerDownRight } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -243,7 +243,19 @@ function SectionHeader({
 // RelationsPanel
 // ---------------------------------------------------------------------------
 
-export function RelationsPanel() {
+export function RelationsPanel({
+  focusModeActive = false,
+}: {
+  /**
+   * When focus mode is on, the panel is chrome and must hide — like the
+   * sidebar / toolbar / orb. QuietLayout owns the live focus-mode flag
+   * (`useFocusMode`) and passes it down; this component `return null`s when
+   * active, which also unmounts any open PopoverContent (portaled to body, so
+   * CSS alone couldn't close it). Defaults to false so existing callers /
+   * tests that mount it bare are unaffected.
+   */
+  focusModeActive?: boolean;
+} = {}) {
   const { backlinks, outlinks, loading, error, isEmpty, count, path } =
     useDocumentRelations();
   const reducedMotion = useReducedMotion();
@@ -256,6 +268,10 @@ export function RelationsPanel() {
   const relationsPanelHeight = useSettingsStore((s) => s.relationsPanelHeight);
   const setRelationsPanelHeight = useSettingsStore(
     (s) => s.setRelationsPanelHeight,
+  );
+  const relationsPanelWidth = useSettingsStore((s) => s.relationsPanelWidth);
+  const setRelationsPanelWidth = useSettingsStore(
+    (s) => s.setRelationsPanelWidth,
   );
   // When the command bar is pinned it docks as a fixed full-height right-edge
   // panel. Per ADR 0004 the relations panel COEXISTS with it (that is the whole
@@ -274,6 +290,18 @@ export function RelationsPanel() {
   const dragStateRef = useRef<{ startY: number; startFraction: number } | null>(
     null,
   );
+  // Left-edge width drag — mirrors the cmd-bar's no-handle edge resize. The
+  // width is driven by `--relations-panel-width` so a drag mutates the DOM live
+  // (no React re-render mid-drag) and persists on pointerup.
+  // The width drag mutates the PopoverContent's `--relations-panel-width` var
+  // directly so the resize is jank-free; we stash the element on pointer-down
+  // (resolved from the hit-zone's ancestor — PopoverContent is a non-forwardRef
+  // wrapper, so a React ref wouldn't reach the DOM node).
+  const widthDragRef = useRef<{
+    startX: number;
+    startWidth: number;
+    panel: HTMLElement;
+  } | null>(null);
 
   const navigate = useCallback(
     (targetPath: string) => {
@@ -345,6 +373,50 @@ export function RelationsPanel() {
     [relationsPanelHeight, onResizePointerMove, onResizePointerUp],
   );
 
+  // ---- Width drag (left edge) — clamps to [280, 600] px ----
+  // No visible handle, mirroring the cmd-bar edge resize: a thin transparent
+  // hit-zone at the left edge. Dragging LEFT grows the panel (the panel rolls
+  // out leftward), so a negative deltaX increases width.
+  const onWidthPointerMove = useCallback((e: PointerEvent) => {
+    const drag = widthDragRef.current;
+    if (!drag) return;
+    const deltaX = drag.startX - e.clientX; // drag left → positive → wider
+    const next = Math.max(280, Math.min(600, drag.startWidth + deltaX));
+    drag.panel.style.setProperty("--relations-panel-width", `${next}px`);
+  }, []);
+
+  const onWidthPointerUp = useCallback(() => {
+    const drag = widthDragRef.current;
+    window.removeEventListener("pointermove", onWidthPointerMove);
+    window.removeEventListener("pointerup", onWidthPointerUp);
+    widthDragRef.current = null;
+    if (drag) {
+      const current = parseFloat(
+        drag.panel.style.getPropertyValue("--relations-panel-width") ||
+          String(relationsPanelWidth),
+      );
+      if (!Number.isNaN(current)) setRelationsPanelWidth(current);
+    }
+  }, [onWidthPointerMove, relationsPanelWidth, setRelationsPanelWidth]);
+
+  const onWidthPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      const panel = (e.currentTarget as HTMLElement).closest<HTMLElement>(
+        '[data-testid="relations-panel"]',
+      );
+      if (!panel) return;
+      e.preventDefault();
+      widthDragRef.current = {
+        startX: e.clientX,
+        startWidth: relationsPanelWidth,
+        panel,
+      };
+      window.addEventListener("pointermove", onWidthPointerMove);
+      window.addEventListener("pointerup", onWidthPointerUp);
+    },
+    [relationsPanelWidth, onWidthPointerMove, onWidthPointerUp],
+  );
+
   const backlinkCount = useMemo(
     () => backlinks.reduce((s, g) => s + g.occurrences.length, 0),
     [backlinks],
@@ -354,7 +426,11 @@ export function RelationsPanel() {
   // While loading we keep the handle hidden too — the count is unknown, and a
   // flash of an empty handle on every doc switch would be noise. The handle
   // appears once a non-empty result settles.
-  if (!path || loading || error || isEmpty || count === 0) {
+  //
+  // Focus mode also hides the panel (it's chrome). Returning null unmounts the
+  // whole Popover — closing any open content (which is portaled to body, beyond
+  // CSS reach) — so this is the authoritative close-on-focus-mode path.
+  if (focusModeActive || !path || loading || error || isEmpty || count === 0) {
     return null;
   }
 
@@ -378,10 +454,16 @@ export function RelationsPanel() {
                   "flex flex-col items-center justify-center gap-1",
                   "h-28 w-7 rounded-l-lg border border-r-0 border-border",
                   "bg-popover text-popover-foreground shadow-md",
-                  "transition-colors duration-150 hover:bg-muted/60",
+                  "transition-[color,background-color,opacity] duration-150 hover:bg-muted/60",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  // CSS-only attention pulse — omitted under reduced motion.
-                  !reducedMotion && "relations-handle-pulsing",
+                  // While the panel is open, fade the handle out (and disable it)
+                  // so it doesn't sit blinking next to the open panel — the panel
+                  // visually replaces the handle. Reduced motion snaps instantly.
+                  open && "opacity-0 pointer-events-none",
+                  "motion-reduce:transition-none",
+                  // CSS-only attention pulse — omitted under reduced motion AND
+                  // while open (a faded element shouldn't keep pulsing).
+                  !reducedMotion && !open && "relations-handle-pulsing",
                 )}
               >
                 <Link2
@@ -413,14 +495,37 @@ export function RelationsPanel() {
         // reading surface; keep the caret where the user was. Tab still reaches
         // the rows. Reduced motion handled via motion-reduce variants below.
         onOpenAutoFocus={(e) => e.preventDefault()}
+        style={
+          {
+            "--relations-panel-width": `${relationsPanelWidth}px`,
+            width: "var(--relations-panel-width)",
+          } as React.CSSProperties
+        }
         className={cn(
           // Flush against the column edge (sideOffset 0); rounded LEFT, flat
-          // RIGHT so it reads as docked to the column, not floating.
-          "w-[340px] p-0 rounded-l-xl rounded-r-none",
+          // RIGHT so it reads as docked to the column, not floating. Width is
+          // user-resizable via the left-edge hit-zone below (--relations-panel-width).
+          "p-0 rounded-l-xl rounded-r-none",
           "border-r-0 shadow-xl overflow-hidden",
+          // "Grow from the handle" feel — the handle sits at the right edge, so
+          // the open/close zoom originates there (the popover content already
+          // ships data-state zoom-in-95/zoom-out-95 from @/components/ui/popover).
+          "origin-right",
           "motion-reduce:!animate-none motion-reduce:!duration-0",
         )}
       >
+        {/* Left-edge width resize — invisible full-height hit-zone, no handle
+            indicator, mirroring the command bar's edge resize. Drag left to
+            grow. (Keyboard width adjust is intentionally omitted, matching the
+            cmd-bar's handle-less edge drag.) */}
+        <div
+          aria-hidden="true"
+          onPointerDown={onWidthPointerDown}
+          className={cn(
+            "absolute inset-y-0 left-0 z-10 w-1.5",
+            "cursor-ew-resize",
+          )}
+        />
         <div
           ref={contentRef}
           style={
@@ -509,16 +614,6 @@ export function RelationsPanel() {
               </section>
             ) : null}
           </div>
-
-          {/* Footer affordance — close hint mirrors the handle. */}
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="flex shrink-0 items-center justify-center gap-1 border-t border-border/60 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-            Close
-          </button>
         </div>
       </PopoverContent>
     </Popover>
