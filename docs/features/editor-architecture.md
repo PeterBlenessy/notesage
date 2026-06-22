@@ -36,6 +36,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | LocalImage | `local-image.ts` | Node Extension | Extends Tiptap Image to resolve local file paths via Tauri asset protocol |
 | MentionHighlight | `mention-highlight.ts` | Plugin + Decoration | Decorates `@mention` patterns as styled badge pills |
 | MentionSuggestion | `mention-suggestion.tsx` | Suggestion | Mention autocomplete popup triggered by `@` with cross-file search |
+| WikiLink | `wiki-link.tsx` | Suggestion + Plugin + Decoration | `[[` autocomplete (workspace-global, resolves via `resolve_wikilink`) that inserts a STANDARD relative-path link mark — no `[[ ]]` node is ever persisted, so the markdown round-trip is unchanged (ADR 0001). Dangling targets serialize to a slug in the current dir and get a non-serializing `wikilink-unresolved` inline decoration + create-on-click (ADR 0007) |
 | PageBreaks | `page-breaks.ts` | Plugin + Decoration | Print Layout mode: three widget decorations per page boundary (`page-top-margin` with header zone, `page-gap` separator, `page-bottom-margin` with footer zone). Header/footer zones are clickable for inline editing via React portal. Reads layout state from Zustand stores directly. |
 | TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |

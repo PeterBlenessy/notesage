@@ -18,6 +18,16 @@ export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 500;
 export const SIDEBAR_DEFAULT_WIDTH = 252;
+
+/** RelationsPanel partial-height band (fraction of the document column). */
+export const RELATIONS_PANEL_MIN_HEIGHT = 0.4;
+export const RELATIONS_PANEL_MAX_HEIGHT = 0.6;
+export const RELATIONS_PANEL_DEFAULT_HEIGHT = 0.5;
+
+/** RelationsPanel resizable-width band (px). */
+export const RELATIONS_PANEL_MIN_WIDTH = 280;
+export const RELATIONS_PANEL_MAX_WIDTH = 600;
+export const RELATIONS_PANEL_DEFAULT_WIDTH = 340;
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
@@ -164,6 +174,20 @@ interface SettingsStore {
    */
   cmdBarPinnedWidth: number;
   /**
+   * Height of the RelationsPanel (OKF wiki-navigation, ADR 0004), stored as a
+   * fraction `[0.4, 0.6]` of the document column height — the panel is partial
+   * height by design and the drag handle clamps to that band. Drives the
+   * `--relations-panel-height` CSS variable. Default 0.5.
+   */
+  relationsPanelHeight: number;
+  /**
+   * Width (in pixels) of the RelationsPanel (OKF wiki-navigation, ADR 0004).
+   * Persisted across restarts. Clamped to 280–600. Default 340. Drives the
+   * `--relations-panel-width` CSS variable; a left-edge drag mutates the var
+   * live (no React re-render mid-drag) and persists on release.
+   */
+  relationsPanelWidth: number;
+  /**
    * Width (in pixels) of the floating command bar in the expanded state.
    * Persisted across restarts so users on large displays can scale the bar
    * up once and not redo it on every launch. Clamped to 480–1400. Default
@@ -259,6 +283,10 @@ interface SettingsStore {
   setSidebarOpen: (open: boolean) => void;
   setSidebarPinned: (pinned: boolean) => void;
   setSidebarWidth: (width: number) => void;
+  /** Persist the RelationsPanel height fraction (clamped to `[0.4, 0.6]`). */
+  setRelationsPanelHeight: (fraction: number) => void;
+  /** Persist the RelationsPanel width in px (clamped to `[280, 600]`). */
+  setRelationsPanelWidth: (width: number) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
   setPrintLayout: (enabled: boolean) => void;
@@ -433,6 +461,8 @@ export const useSettingsStore = create<SettingsStore>()(
       crossProjectMode: false,
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
+      relationsPanelHeight: RELATIONS_PANEL_DEFAULT_HEIGHT,
+      relationsPanelWidth: RELATIONS_PANEL_DEFAULT_WIDTH,
       cmdBarExpandedWidth: 640,
       cmdBarExpandedHeight: 480,
       quietChromePreset: "default",
@@ -550,6 +580,25 @@ export const useSettingsStore = create<SettingsStore>()(
         set({
           sidebarWidth: Math.round(
             Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width)),
+          ),
+        });
+      },
+
+      setRelationsPanelHeight: (fraction: number) => {
+        const clamped = Math.max(
+          RELATIONS_PANEL_MIN_HEIGHT,
+          Math.min(RELATIONS_PANEL_MAX_HEIGHT, fraction),
+        );
+        set({ relationsPanelHeight: clamped });
+      },
+
+      setRelationsPanelWidth: (width: number) => {
+        set({
+          relationsPanelWidth: Math.round(
+            Math.max(
+              RELATIONS_PANEL_MIN_WIDTH,
+              Math.min(RELATIONS_PANEL_MAX_WIDTH, width),
+            ),
           ),
         });
       },
@@ -863,7 +912,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 23,
+      version: 24,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1110,6 +1159,35 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (typeof state.notifyPermissionRequest !== 'boolean') {
             state.notifyPermissionRequest = true;
+          }
+        }
+        if (version < 24) {
+          // OKF wiki-navigation (ADR 0004) — RelationsPanel partial height,
+          // stored as a fraction of the document column clamped to [0.4, 0.6].
+          if (
+            typeof state.relationsPanelHeight !== 'number' ||
+            Number.isNaN(state.relationsPanelHeight)
+          ) {
+            state.relationsPanelHeight = RELATIONS_PANEL_DEFAULT_HEIGHT;
+          } else {
+            state.relationsPanelHeight = Math.max(
+              RELATIONS_PANEL_MIN_HEIGHT,
+              Math.min(RELATIONS_PANEL_MAX_HEIGHT, state.relationsPanelHeight),
+            );
+          }
+          // RelationsPanel resizable width (px), clamped to [280, 600].
+          if (
+            typeof state.relationsPanelWidth !== 'number' ||
+            Number.isNaN(state.relationsPanelWidth)
+          ) {
+            state.relationsPanelWidth = RELATIONS_PANEL_DEFAULT_WIDTH;
+          } else {
+            state.relationsPanelWidth = Math.round(
+              Math.max(
+                RELATIONS_PANEL_MIN_WIDTH,
+                Math.min(RELATIONS_PANEL_MAX_WIDTH, state.relationsPanelWidth),
+              ),
+            );
           }
         }
         return state;

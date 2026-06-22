@@ -443,6 +443,30 @@ describe('Dirty tracking', () => {
 
     expect(getTabById(tabId)!.frontmatter).toEqual({ tags: ['test'] });
   });
+
+  it('reloadFrontmatter replaces frontmatter by path WITHOUT marking dirty (BUG 3)', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content');
+    const tabId = getTab('/a.md')!.id;
+
+    // Simulate an external/tool write (okf-enrich) that added metadata.
+    useEditorStore
+      .getState()
+      .reloadFrontmatter('/a.md', { type: 'note', title: 'Enriched' });
+
+    const tab = getTabById(tabId)!;
+    expect(tab.frontmatter).toEqual({ type: 'note', title: 'Enriched' });
+    // The file on disk already holds this — must NOT be flagged unsaved.
+    expect(tab.isDirty).toBe(false);
+  });
+
+  it('reloadFrontmatter is a no-op for an unmatched path', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'content', { type: 'note' });
+    const tabId = getTab('/a.md')!.id;
+
+    useEditorStore.getState().reloadFrontmatter('/other.md', { type: 'spec' });
+
+    expect(getTabById(tabId)!.frontmatter).toEqual({ type: 'note' });
+  });
 });
 
 // ===========================================================================

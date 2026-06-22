@@ -245,6 +245,15 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
             : rows;
         },
 
+        // ---- Link-graph commands (OKF wiki-navigation) ----
+        // Default empty so the Relations panel self-hides; a spec can supply
+        // non-empty relations via `overrides` (e.g. { get_backlinks: [...],
+        // get_outlinks: [...] }) to exercise the panel.
+        get_backlinks: () => [],
+        get_outlinks: () => [],
+        get_broken_links: () => [],
+        resolve_wikilink: () => [],
+
         // Actions
         scan_actions: () => [],
 

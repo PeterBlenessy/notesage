@@ -611,6 +611,35 @@ body {
   }
 }
 
+/* RelationsPanel collapsed-handle pulse (OKF wiki-navigation, ADR 0004). The
+ * slim right-edge handle pulses a soft accent ring when the open document has
+ * any relations, drawing the eye without shouting. CSS-only — zero JS in the
+ * animation loop, mirroring the orb-pulse pattern. The component omits the
+ * `.relations-handle-pulsing` class when `useReducedMotion()` is true; the
+ * @media guard below is defence-in-depth for an OS-preference flip after mount. */
+@keyframes relations-handle-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--color-accent-primary);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.relations-handle-pulsing {
+  /* Finite run — ~4 iterations of 1.8s (~7.2s total) then it settles calm.
+   * The handle re-mounts on each document switch, so a fresh element naturally
+   * restarts the animation: "attention on new doc, then quiet". `forwards` keeps
+   * the final keyframe state (no abrupt snap when the animation ends). */
+  animation: relations-handle-pulse 1.8s ease-in-out 4 forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relations-handle-pulsing {
+    animation: none;
+  }
+}
+
 /* Session run-state status dot (history rows, task #9). A gentle opacity pulse
  * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
  * components also strip the class under `useReducedMotion()` as defence-in-depth. */
@@ -1061,6 +1090,15 @@ body {
  * row and the document would still need to clear it.
  */
 .app.focus-mode [data-titlebar-mode="quiet"] {
+  display: none;
+}
+/* RelationsPanel handle (OKF wiki-navigation, ADR 0004) is chrome — hide it in
+ * focus mode like the sidebar/toolbar/orb. Defence-in-depth: the component also
+ * returns null while focus mode is active (which unmounts any open popover), but
+ * this keeps the handle gone even if the reactive flag lags a frame. The open
+ * PopoverContent is portaled to body (outside `.app`) so the component-level
+ * unmount, not CSS, is what closes it. */
+.app.focus-mode [data-testid="relations-handle"] {
   display: none;
 }
 /* AgentOrb doesn't carry a dedicated `data-agent-orb` attribute; it uses

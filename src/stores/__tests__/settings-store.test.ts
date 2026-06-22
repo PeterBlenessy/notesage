@@ -82,6 +82,9 @@ import {
   useSettingsStore,
   selectEffectiveTelemetryUsage,
   selectEffectiveTelemetryCrash,
+  RELATIONS_PANEL_DEFAULT_HEIGHT,
+  RELATIONS_PANEL_MIN_HEIGHT,
+  RELATIONS_PANEL_MAX_HEIGHT,
 } from '../settings-store';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -1425,7 +1428,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(23);
+    expect(parsed.version).toBe(24);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2512,7 +2515,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(23);
+    expect(parsed.version).toBe(24);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
@@ -2619,5 +2622,36 @@ describe('telemetry consent', () => {
       usage: true,
       crash: false,
     });
+  });
+});
+
+describe('relationsPanelHeight (OKF wiki-navigation)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('defaults to the mid-band fraction', () => {
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_DEFAULT_HEIGHT,
+    );
+  });
+
+  it('sets an in-band fraction verbatim', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.55);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(0.55);
+  });
+
+  it('clamps below the minimum (e.g. repeated keyboard down-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.1);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MIN_HEIGHT,
+    );
+  });
+
+  it('clamps above the maximum (e.g. repeated keyboard up-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.95);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MAX_HEIGHT,
+    );
   });
 });

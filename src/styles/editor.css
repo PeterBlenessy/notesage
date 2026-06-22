@@ -602,6 +602,22 @@
   border-bottom-color: var(--color-accent-primary);
 }
 
+/* Links — unresolved internal / dangling wikilink targets (OKF #12).
+   Applied as an inline ProseMirror decoration (class `wikilink-unresolved`) on
+   internal links whose target file does not exist — freshly-created danglers or
+   links to deleted files. Muted foreground + persistent dashed underline make
+   the "not yet created" state legible, mirroring the Obsidian/Roam red-link
+   convention while staying within the neutral palette. */
+.ProseMirror .wikilink-unresolved {
+  color: var(--color-muted-foreground);
+  border-bottom: 1px dashed var(--color-muted-foreground);
+}
+
+.ProseMirror .wikilink-unresolved:hover {
+  color: var(--color-accent-primary);
+  border-bottom-color: var(--color-accent-primary);
+}
+
 /* Images */
 .ProseMirror img {
   max-width: 100%;
