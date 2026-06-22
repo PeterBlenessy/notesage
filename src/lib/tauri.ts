@@ -278,6 +278,52 @@ export interface IndexStats {
   indexed_at: number;
 }
 
+// ---------------------------------------------------------------------------
+// Link graph (OKF wiki-navigation) — `links.db` query results.
+//
+// IMPORTANT: every field below is SNAKE_CASE on purpose — the Rust IPC structs
+// in `src-tauri/src/index/links.rs` (`BacklinkGroup`, `LinkRow`, `WikiTarget`)
+// serialize snake_case to match the rest of the `index::*` command surface.
+// Do NOT camelCase these — the wire shape must match the backend exactly.
+// ---------------------------------------------------------------------------
+
+/** One occurrence of a backlink: a single edge from a source document. */
+export interface BacklinkOccurrence {
+  link_text: string;
+  context: string;
+}
+
+/** Backlinks ("Linked from") grouped by their source document (ADR 0006). */
+export interface BacklinkGroup {
+  source_path: string;
+  source_title: string | null;
+  source_type: string | null;
+  source_description: string | null;
+  occurrences: BacklinkOccurrence[];
+}
+
+/** One outgoing ("Links to") link row, enriched with the target's frontmatter. */
+export interface LinkRow {
+  source_path: string;
+  target_path: string;
+  link_text: string;
+  context: string;
+  is_internal: boolean;
+  /** `true` when the target resolves to a known in-scope file. */
+  resolved: boolean;
+  target_title: string | null;
+  target_type: string | null;
+  target_description: string | null;
+}
+
+/** A wikilink resolution candidate (filename + title match, ADR 0002). */
+export interface WikiTarget {
+  path: string;
+  title: string | null;
+  doc_type: string | null;
+  description: string | null;
+}
+
 export type ActionSourceType = 'task' | 'comment' | 'agent' | 'goal';
 export type ActionStatus = 'open' | 'done' | 'delegated' | 'pending' | 'running' | 'completed' | 'error';
 
@@ -1220,6 +1266,36 @@ export const tauriApi = {
 
   async indexStats(projectPath?: string): Promise<IndexStats> {
     return await invoke<IndexStats>("index_stats", { projectPath: projectPath ?? null });
+  },
+
+  // --- Link graph (OKF wiki-navigation, ADR 0002–0007) ---
+  // All four query the standalone `links.db`, not the content index.
+
+  /** Backlinks ("Linked from") for `path`, grouped by source document. */
+  async getBacklinks(path: string): Promise<BacklinkGroup[]> {
+    return await invoke<BacklinkGroup[]>("get_backlinks", { path });
+  },
+
+  /** Outgoing ("Links to") links from `path`, enriched with target frontmatter. */
+  async getOutlinks(path: string): Promise<LinkRow[]> {
+    return await invoke<LinkRow[]>("get_outlinks", { path });
+  },
+
+  /** Broken / dangling internal links across `scope` (empty = all). */
+  async getBrokenLinks(scope: string[]): Promise<LinkRow[]> {
+    return await invoke<LinkRow[]>("get_broken_links", { scope });
+  },
+
+  /**
+   * Resolve a wikilink `query` against the link store (filename + title,
+   * workspace-global). The main consumer is the `[[` authoring extension
+   * (#11), but the binding lands here with the rest of the link graph.
+   */
+  async resolveWikilink(query: string, limit?: number): Promise<WikiTarget[]> {
+    return await invoke<WikiTarget[]>("resolve_wikilink", {
+      query,
+      limit: limit ?? null,
+    });
   },
 
   // Skill & agent operations

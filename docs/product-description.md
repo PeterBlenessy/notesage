@@ -108,6 +108,18 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Staged setup flow (detect → download → configure → verify) with a setup dialog and command-bar empty-state + Add-Connection entry points
 - PRD: `docs/prds/2026-06-12-local-ai-agents.md`
 
+### OKF Wiki-Navigation — Backlinks, Relations & Link Preview (In progress)
+
+**Goal:** Surface the links between documents so a folder of notes (or an Open Knowledge Format bundle) reads like a navigable wiki — without leaving the document you're reading.
+
+- Link-graph index: the comrak parser extracts internal-link edges + surrounding context into a standalone `links.db` (separate from `index.db`); generalized `type`/`title`/`description` frontmatter capture
+- Relations panel: a floating popover docked to the document column's right edge — *Linked from* (backlinks grouped by source, with surrounding context) and *Links to* (forward links with the target's description), enriched with OKF `type` badges
+- In-editor link hover preview (read a neighbour without navigating away)
+- `[[wikilink]]` authoring that normalizes to a standard relative link on save (round-trip-safe), with workspace-global resolution and create-on-click for dangling targets
+- OKF recognition is generic (`type` frontmatter consumed wherever it appears — no OKF-specific parser); a bundled `okf-enrich` skill fills missing `type`/`title`/`description` via structured output
+- Isolation: the link graph is global for humans but never auto-widens AI context (regression-locked)
+- ADRs: `docs/adr/0001`–`0008`; PRD: `docs/prds/2026-06-19-okf-wiki-navigation.md`
+
 ### Beyond — Ideas
 
 - **Workflows & Automation:** User-defined YAML workflows as skills
@@ -115,7 +127,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - **Mobile apps:** iOS app (Swift + Tauri Mobile), Android, sync across devices
 - **Plugins:** Plugin API (Rust or WASM), community marketplace
 - **Advanced editor:** Canvas mode, Mermaid diagrams, math equations
-- **Knowledge base:** Backlinks, daily notes, graph view of note connections
+- **Knowledge base:** ~~Backlinks~~ (delivered — see OKF Wiki-Navigation above), daily notes, graph view of note connections
 - **Advanced AI:** Multi-file context, semantic search, knowledge graph visualization
 
 ## Architectural Decisions

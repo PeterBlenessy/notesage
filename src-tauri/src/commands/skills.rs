@@ -617,6 +617,22 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/generate-presentation/scripts/package.json"),
             executable: false,
         },
+        // okf-enrich
+        BundledFile {
+            relative_path: "okf-enrich/SKILL.md",
+            content: include_str!("../../../bundled-skills/okf-enrich/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "okf-enrich/scripts/scan.mjs",
+            content: include_str!("../../../bundled-skills/okf-enrich/scripts/scan.mjs"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "okf-enrich/scripts/apply.mjs",
+            content: include_str!("../../../bundled-skills/okf-enrich/scripts/apply.mjs"),
+            executable: true,
+        },
     ];
 
     // Collect current bundled skill directory names

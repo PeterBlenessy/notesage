@@ -1,6 +1,7 @@
 pub mod db;
 mod file_scanner;
 pub mod icloud;
+pub mod links;
 pub mod parser;
 pub mod queries;
 mod reindex_queue;
@@ -25,6 +26,10 @@ pub struct IndexState {
     pub(super) global_db: Mutex<Option<Connection>>,
     /// Per-project index DB connections (project_path → connection)
     pub(super) project_dbs: Mutex<HashMap<PathBuf, Connection>>,
+    /// Standalone link-graph DB connection (~/.notesage/links.db).
+    /// Deliberately separate from the content index (ADR 0002/0003) — it holds
+    /// the cross-project link graph and must never feed AI context.
+    pub(super) links_db: Mutex<Option<Connection>>,
     /// Pending reindex queue (debounced)
     pub(super) reindex_queue: Mutex<Vec<ReindexEntry>>,
     /// Whether a reindex batch is currently being processed
@@ -38,9 +43,111 @@ impl IndexState {
         Self {
             global_db: Mutex::new(None),
             project_dbs: Mutex::new(HashMap::new()),
+            links_db: Mutex::new(None),
             reindex_queue: Mutex::new(Vec::new()),
             processing: Mutex::new(false),
             reindex_counts: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// In-scope roots for the link graph (ADR 0003): every registered project
+    /// root plus the `~/Notesage` library root. Explorer folders are NOT
+    /// registered as project DBs, so they are excluded here — the load-bearing
+    /// gate that keeps explorer content out of `links.db`.
+    pub(super) fn link_scope_roots(&self) -> Vec<String> {
+        let mut roots: Vec<String> = self
+            .project_dbs
+            .lock()
+            .keys()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home.join("Notesage").to_string_lossy().to_string());
+        }
+        roots
+    }
+
+    /// Ensure the standalone links DB is open, returning early if it can't be
+    /// initialized. Used lazily so the link store comes up alongside the global
+    /// index without a separate init command.
+    fn ensure_links_db(&self) -> Result<(), String> {
+        {
+            if self.links_db.lock().is_some() {
+                return Ok(());
+            }
+        }
+        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+        let db_path = home.join(".notesage").join("links.db");
+        let conn = links::open_or_create(&db_path)?;
+        *self.links_db.lock() = Some(conn);
+        log::info!(target: "notesage::index", "Links DB initialized at {}", db_path.display());
+        Ok(())
+    }
+
+    /// Index (or re-index) the link edges for a single file into `links.db`,
+    /// scope-gated to projects + `~/Notesage` (ADR 0003). A no-op for
+    /// out-of-scope (explorer) paths, non-markdown files, and unreadable files.
+    pub(super) fn index_links_for_file(&self, file_path: &str) {
+        // Only markdown documents participate in the link graph.
+        if !file_path.ends_with(".md") {
+            return;
+        }
+        let scope_roots = self.link_scope_roots();
+        // SECURITY (ADR 0003): bail before any read for out-of-scope paths so
+        // explorer content is never even loaded for link extraction.
+        if !links::is_path_in_scope(file_path, &scope_roots) {
+            return;
+        }
+        if self.ensure_links_db().is_err() {
+            return;
+        }
+
+        let content = match std::fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let file_name = Path::new(file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let parsed = parser::parse_links(&content, file_path, &file_name);
+
+        let guard = self.links_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            let _ = links::replace_source(
+                conn,
+                file_path,
+                &scope_roots,
+                parsed.meta.doc_type.as_deref(),
+                parsed.meta.title.as_deref(),
+                parsed.meta.description.as_deref(),
+                &parsed.edges,
+            );
+        }
+    }
+
+    /// Remove a file's link edges + meta from `links.db` (delete reconcile).
+    pub(super) fn remove_links_for_file(&self, file_path: &str) {
+        let guard = self.links_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            let _ = links::reconcile_delete(conn, file_path);
+        }
+    }
+
+    /// Repoint a file's link edges + meta on rename (rename reconcile).
+    ///
+    /// The watcher currently surfaces same-volume renames to the reindex queue
+    /// as a Delete(old) + Create(new) pair, which `process_reindex_queue`
+    /// reconciles via `remove_links_for_file` + `index_links_for_file` (incoming
+    /// edges to the old path survive as pending references, ADR 0007). This
+    /// atomic-repoint primitive is the alternative the rename-sync path can call
+    /// directly when both paths are known, preserving backlink resolution rather
+    /// than briefly unresolving it. Kept available + tested for that wiring.
+    #[allow(dead_code)]
+    pub(super) fn rename_links_for_file(&self, old_path: &str, new_path: &str) {
+        let guard = self.links_db.lock();
+        if let Some(conn) = guard.as_ref() {
+            let _ = links::reconcile_rename(conn, old_path, new_path);
         }
     }
 
@@ -417,6 +524,24 @@ fn reindex_directory(
     queries::query_stats(conn)
 }
 
+/// Bulk-index the link graph for every markdown file under `dir`.
+///
+/// Called after the content reindex (so the content-DB locks are released —
+/// `index_links_for_file` locks `project_dbs` internally). Scope-gated per
+/// file (ADR 0003); explorer paths never reach here because explorer folders
+/// are never passed to `index_init`/`index_rebuild`.
+fn reindex_links_for_directory(state: &IndexState, dir: &str) {
+    let dir_path = Path::new(dir);
+    let mut files = Vec::new();
+    scan_files(dir_path, &mut files);
+    for file_path in &files {
+        let path_str = file_path.to_string_lossy().to_string();
+        if path_str.ends_with(".md") {
+            state.index_links_for_file(&path_str);
+        }
+    }
+}
+
 /// Remove index entries for files that no longer exist on disk.
 fn prune_deleted_files(conn: &Connection) -> Result<(), String> {
     let mut stmt = conn
@@ -478,30 +603,44 @@ pub async fn index_init(
             }
         }
 
-        let projects = state.project_dbs.lock();
-        if let Some(conn) = projects.get(&PathBuf::from(pp)) {
-            let stats = reindex_directory(conn, pp, Some(pp), Some(&app))?;
-            let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
-            return Ok(stats);
-        }
-        Err("Failed to get project DB after init".to_string())
+        let stats = {
+            let projects = state.project_dbs.lock();
+            match projects.get(&PathBuf::from(pp)) {
+                Some(conn) => reindex_directory(conn, pp, Some(pp), Some(&app))?,
+                None => return Err("Failed to get project DB after init".to_string()),
+            }
+        };
+        // Link-graph pass runs after the content-DB lock is released.
+        reindex_links_for_directory(&state, pp);
+        let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
+        Ok(stats)
     } else {
         init_global_db(&state)?;
+        let _ = state.ensure_links_db();
 
-        let global = state.global_db.lock();
-        if let Some(ref conn) = *global {
-            // For global, index the ~/Notesage directory if it exists
-            let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-            let notesage_dir = home.join("Notesage");
-            if notesage_dir.is_dir() {
-                let stats = reindex_directory(conn, &notesage_dir.to_string_lossy(), None, Some(&app))?;
-                let _ = app.emit("index-ready", serde_json::json!({ "project_path": serde_json::Value::Null }));
-                return Ok(stats);
+        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+        let notesage_dir = home.join("Notesage");
+        let notesage_str = notesage_dir.to_string_lossy().to_string();
+
+        let stats = {
+            let global = state.global_db.lock();
+            match *global {
+                Some(ref conn) => {
+                    if notesage_dir.is_dir() {
+                        reindex_directory(conn, &notesage_str, None, Some(&app))?
+                    } else {
+                        queries::query_stats(conn)?
+                    }
+                }
+                None => return Err("Failed to get global DB after init".to_string()),
             }
-            let _ = app.emit("index-ready", serde_json::json!({ "project_path": serde_json::Value::Null }));
-            return queries::query_stats(conn);
+        };
+        // Link-graph pass for the ~/Notesage library (lock released above).
+        if notesage_dir.is_dir() {
+            reindex_links_for_directory(&state, &notesage_str);
         }
-        Err("Failed to get global DB after init".to_string())
+        let _ = app.emit("index-ready", serde_json::json!({ "project_path": serde_json::Value::Null }));
+        Ok(stats)
     }
 }
 
@@ -511,12 +650,16 @@ pub async fn index_file(
     state: tauri::State<'_, IndexState>,
     path: String,
 ) -> Result<(), String> {
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
+    {
+        let global = state.global_db.lock();
+        let projects = state.project_dbs.lock();
 
-    if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
-        reindex_file_in_db(conn, &path, project_path.as_deref())?;
+        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
+            reindex_file_in_db(conn, &path, project_path.as_deref())?;
+        }
     }
+    // Link-graph pass after content-DB locks are released (scope-gated).
+    state.index_links_for_file(&path);
     Ok(())
 }
 
@@ -528,24 +671,41 @@ pub async fn index_rebuild(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        let projects = state.project_dbs.lock();
-        if let Some(conn) = projects.get(&PathBuf::from(pp)) {
-            db::clear_all(conn)?;
-            return reindex_directory(conn, pp, Some(pp), Some(&app));
-        }
-        Err("Project not initialized".to_string())
-    } else {
-        let global = state.global_db.lock();
-        if let Some(ref conn) = *global {
-            db::clear_all(conn)?;
-            let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-            let notesage_dir = home.join("Notesage");
-            if notesage_dir.is_dir() {
-                return reindex_directory(conn, &notesage_dir.to_string_lossy(), None, Some(&app));
+        let stats = {
+            let projects = state.project_dbs.lock();
+            match projects.get(&PathBuf::from(pp)) {
+                Some(conn) => {
+                    db::clear_all(conn)?;
+                    reindex_directory(conn, pp, Some(pp), Some(&app))?
+                }
+                None => return Err("Project not initialized".to_string()),
             }
-            return queries::query_stats(conn);
+        };
+        // Refresh link edges for the project's current files (lock released).
+        reindex_links_for_directory(&state, pp);
+        Ok(stats)
+    } else {
+        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+        let notesage_dir = home.join("Notesage");
+        let notesage_str = notesage_dir.to_string_lossy().to_string();
+        let stats = {
+            let global = state.global_db.lock();
+            match *global {
+                Some(ref conn) => {
+                    db::clear_all(conn)?;
+                    if notesage_dir.is_dir() {
+                        reindex_directory(conn, &notesage_str, None, Some(&app))?
+                    } else {
+                        queries::query_stats(conn)?
+                    }
+                }
+                None => return Err("Global index not initialized".to_string()),
+            }
+        };
+        if notesage_dir.is_dir() {
+            reindex_links_for_directory(&state, &notesage_str);
         }
-        Err("Global index not initialized".to_string())
+        Ok(stats)
     }
 }
 
@@ -813,11 +973,15 @@ pub async fn index_toggle_task(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     // Reindex the file
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
-    if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
-        reindex_file_in_db(conn, &path, project_path.as_deref())?;
+    {
+        let global = state.global_db.lock();
+        let projects = state.project_dbs.lock();
+        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
+            reindex_file_in_db(conn, &path, project_path.as_deref())?;
+        }
     }
+    // Refresh the file's link edges (lock released; scope-gated).
+    state.index_links_for_file(&path);
 
     Ok(())
 }
@@ -904,6 +1068,104 @@ pub async fn index_stats(
         }
         Err("Global index not initialized".to_string())
     }
+}
+
+// ---- Link-graph commands (OKF wiki-navigation, ADR 0002–0007) ----
+//
+// All four query the standalone `links.db` (NOT the content index), keeping the
+// cross-project link graph physically isolated from anything that feeds AI
+// context (ADR 0002/0003). Each returns `Result<T, String>` per the
+// tauri-commands conventions.
+
+/// Backlinks ("Linked from") for a target document, grouped by source document
+/// with each source's frontmatter (title/type/description) and occurrence
+/// context (ADR 0006).
+#[tauri::command]
+pub async fn get_backlinks(
+    state: tauri::State<'_, IndexState>,
+    path: String,
+) -> Result<Vec<links::BacklinkGroup>, String> {
+    let start = Instant::now();
+    state.ensure_links_db()?;
+    let guard = state.links_db.lock();
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Links DB not initialized".to_string())?;
+    let result = links::query_backlinks(conn, &path)?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=backlinks results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
+}
+
+/// Outgoing ("Links to") links from a source document, enriched with each
+/// target's frontmatter (title/type/description, ADR 0006).
+#[tauri::command]
+pub async fn get_outlinks(
+    state: tauri::State<'_, IndexState>,
+    path: String,
+) -> Result<Vec<links::LinkRow>, String> {
+    let start = Instant::now();
+    state.ensure_links_db()?;
+    let guard = state.links_db.lock();
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Links DB not initialized".to_string())?;
+    let result = links::query_outlinks(conn, &path)?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=outlinks results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
+}
+
+/// Broken / dangling internal links across the given scope (unresolved
+/// internal edges). An empty `scope` returns every broken link.
+#[tauri::command]
+pub async fn get_broken_links(
+    state: tauri::State<'_, IndexState>,
+    scope: Vec<String>,
+) -> Result<Vec<links::LinkRow>, String> {
+    let start = Instant::now();
+    state.ensure_links_db()?;
+    let guard = state.links_db.lock();
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Links DB not initialized".to_string())?;
+    let result = links::query_broken_links(conn, &scope)?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=broken_links results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
+}
+
+/// Resolve a wikilink query against the link store — matches filename + title
+/// workspace-global (ADR 0002).
+#[tauri::command]
+pub async fn resolve_wikilink(
+    state: tauri::State<'_, IndexState>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<links::WikiTarget>, String> {
+    let start = Instant::now();
+    state.ensure_links_db()?;
+    let lim = limit.unwrap_or(20);
+    let guard = state.links_db.lock();
+    let conn = guard
+        .as_ref()
+        .ok_or_else(|| "Links DB not initialized".to_string())?;
+    let result = links::resolve_wikilink(conn, &query, lim)?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=resolve_wikilink results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 #[cfg(test)]

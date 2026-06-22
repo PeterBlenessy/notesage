@@ -82,8 +82,9 @@ note-sage/
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
-│   │   │   ├── parser.rs   # comrak AST walking — tags, mentions, headings, tasks, goals
+│   │   │   ├── parser.rs   # comrak AST walking — tags, mentions, headings, tasks, goals, link edges + type/title/description frontmatter
 │   │   │   ├── queries.rs  # SQL query builders for all search operations
+│   │   │   ├── links.rs    # Standalone link-graph store (links.db): edges, backlinks/outlinks/broken-links, wikilink resolution (OKF wiki-navigation)
 │   │   │   ├── tasks.rs    # Task toggle via context-based matching
 │   │   │   └── icloud.rs   # iCloud exclusion (xattr on macOS)
 │   │   └── export/         # Document export engines (PDF, DOCX, PPTX, HTML)
@@ -221,6 +222,7 @@ A persistent SQLite index provides instant search for tags, mentions, tasks, goa
 - **Incremental updates**: Filesystem watcher triggers reindex of changed files via SHA-256 content hashing
 - **Scope**: Only projects and `~/Notesage` are indexed. Explorer folders are intentionally excluded — this is a data security decision (users may open arbitrary system directories via Explorer; indexing them would persist their content in our SQLite databases)
 - **iCloud safe**: `index.db` excluded from iCloud sync via xattr; each device rebuilds its own index from synced files
+- **Link graph (OKF wiki-navigation)**: a *separate* standalone store `~/.notesage/links.db` (`index/links.rs`) holds every internal document-to-document edge plus a generalized `type`/`title`/`description` frontmatter capture. It is deliberately distinct from `index.db` because the link graph is workspace-global (a *human* navigation primitive — backlinks/relations across projects) whereas `index.db` content can feed AI context; keeping them separate makes it trivial to audit that a link edge never auto-widens AI context (ADR 0002/0003, regression-locked in `src/lib/__tests__/link-graph-ai-isolation.test.ts`). Same scope as the content index (projects + `~/Notesage`; explorer folders excluded), same iCloud exclusion. Surfaced by the Relations panel + link hover preview; the `[[wikilink]]` editor affordance resolves against it but always serializes to a standard relative link (ADR 0001). Commands: `get_backlinks`, `get_outlinks`, `get_broken_links`, `resolve_wikilink`. PRD: `docs/prds/2026-06-19-okf-wiki-navigation.md`
 
 ### State Management (Zustand)
 
