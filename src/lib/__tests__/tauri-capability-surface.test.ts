@@ -172,6 +172,21 @@ describe('tauri default capability permissions', () => {
     expect(identifiers).toContain('sentry:default');
   });
 
+  it('grants aptabase:allow-track-event (telemetry usage invoke bridge)', () => {
+    // `tauri-plugin-aptabase` exposes only the `track_event` command and ships
+    // NO `aptabase:default` set, so the command must be granted explicitly. We
+    // invoke it directly through the v2 IPC (the npm JS binding is pinned to the
+    // Tauri v1 API and can't reach the v2 bridge). Like sentry, this is an
+    // invoke permission, NOT a network permission — egress is Rust-side
+    // `reqwest`, so it does not widen the frontend HTTP surface. Lock that only
+    // `allow-track-event` is granted (never a broader/write aptabase scope).
+    const cap = loadDefaultCapability();
+    const aptabasePerms = cap.permissions
+      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
+      .filter((id) => id.startsWith('aptabase:'));
+    expect(aptabasePerms).toEqual(['aptabase:allow-track-event']);
+  });
+
   it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {
     // ⌘⇧V paste-plain reads the OS clipboard via the clipboard-manager plugin
     // (Rust-side, no WebKit paste-permission menu). Only read-text is needed —
