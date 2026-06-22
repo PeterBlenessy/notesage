@@ -108,7 +108,8 @@ interface SettingsStore {
   releaseChannel: ReleaseChannel;
   /**
    * Telemetry consent — usage analytics (Aptabase). Tri-state:
-   * `null` = follow the release channel (alpha → on, stable → off);
+   * `null` = follow the running build via `buildIsAlpha()` (alpha build → on,
+   * stable build → off — NOT the user's chosen update channel);
    * `true`/`false` = explicit user choice that always wins. The effective
    * value is computed by `selectEffectiveTelemetryUsage`. PRD 2026-06-07-telemetry.
    */
