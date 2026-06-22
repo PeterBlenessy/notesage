@@ -4,6 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
+import { isPrereleaseVersion } from "@/lib/version";
 
 /**
  * Metadata returned by our custom `alpha_check` Tauri command. Shape matches
@@ -28,27 +29,12 @@ interface AlphaUpdateMetadata {
 export const ALPHA_UPDATE_ENDPOINT =
   "https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json";
 
-/**
- * Semver-style prerelease detection: any version that contains a `-` segment
- * after the major.minor.patch triple is considered a prerelease.
- *
- * Examples:
- *   "0.44.0-alpha.2" → true
- *   "0.44.0-beta.1"  → true
- *   "0.44.0-rc.1"    → true
- *   "0.44.0"         → false
- *   "0.44.0+meta"    → false (build metadata, not a prerelease)
- *
- * Used as a HARD GUARANTEE in the stable-channel updater: if an update
- * manifest reports a prerelease version (because a tag was mis-flagged
- * server-side or `releases/latest` resolved to a prerelease), the client
- * refuses to offer it. See feedback_channel_isolation_hard_guarantee.md.
- */
-export function isPrereleaseVersion(version: string): boolean {
-  // Strip build metadata (`+...`) before checking for prerelease suffix.
-  const withoutBuild = version.split("+", 1)[0];
-  return withoutBuild.includes("-");
-}
+// Semver-style prerelease detection (`0.44.0-alpha.2` → true, `0.44.0` → false).
+// Single source of truth lives in `@/lib/version` (pure, import-cycle-safe so the
+// settings store can use it too). Re-exported here for existing importers.
+// Used as a HARD GUARANTEE in the stable-channel updater: a manifest reporting a
+// prerelease version is refused. See feedback_channel_isolation_hard_guarantee.md.
+export { isPrereleaseVersion };
 
 /**
  * Compare two SemVer version triples (major.minor.patch). Ignores any

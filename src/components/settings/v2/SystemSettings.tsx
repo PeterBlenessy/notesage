@@ -46,7 +46,6 @@ import {
   selectEffectiveTelemetryUsage,
   selectEffectiveTelemetryCrash,
 } from '@/stores/settings-store';
-import { toastTelemetryNotice } from '@/lib/notifications';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -176,8 +175,8 @@ export function SystemSettings({
   const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
 
   // Telemetry — switches bind to the *effective* value (explicit override or
-  // channel default) so the toggle reflects what's actually happening; the
-  // setters store the explicit boolean, which overrides the channel default.
+  // build default) so the toggle reflects what's actually happening; the setters
+  // store the explicit boolean, which overrides the build default.
   const telemetryUsageEffective = useSettingsStore(selectEffectiveTelemetryUsage);
   const telemetryCrashEffective = useSettingsStore(selectEffectiveTelemetryCrash);
   const setTelemetryUsageEnabled = useSettingsStore(
@@ -186,7 +185,6 @@ export function SystemSettings({
   const setTelemetryCrashEnabled = useSettingsStore(
     (s) => s.setTelemetryCrashEnabled,
   );
-  const setTelemetryNoticeSeen = useSettingsStore((s) => s.setTelemetryNoticeSeen);
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -304,23 +302,12 @@ export function SystemSettings({
             <Select
               value={releaseChannel ?? 'stable'}
               onValueChange={(v) => {
-                const next = v as 'stable' | 'alpha';
-                const previous = releaseChannel ?? 'stable';
-                setReleaseChannel(next);
-                // On a stable → alpha switch, surface the one-time telemetry
-                // disclosure as a confirming toast and mark the notice seen so
-                // the first-run notice in useAppLifecycle doesn't re-show it.
-                if (next === 'alpha' && previous !== 'alpha') {
-                  toastTelemetryNotice({
-                    onOpenSettings: () =>
-                      window.dispatchEvent(
-                        new CustomEvent('notesage:open-settings', {
-                          detail: { tab: 'system' },
-                        }),
-                      ),
-                  });
-                  setTelemetryNoticeSeen(true);
-                }
+                // Update channel only — this controls which builds the updater
+                // offers, NOT telemetry. Telemetry defaults track the build the
+                // user is actually running (see useAppLifecycle's first-run
+                // disclosure + selectEffectiveTelemetry*), so switching the
+                // update channel no longer turns telemetry on/off.
+                setReleaseChannel(v as 'stable' | 'alpha');
               }}
             >
               <SelectTrigger className="w-[120px] h-8 text-xs">
@@ -337,7 +324,7 @@ export function SystemSettings({
 
       <SettingsGroup
         label="Telemetry"
-        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha defaults these on; Stable defaults them off — your choice here overrides the default."
+        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha builds default these on; stable builds default them off — your choice here overrides the default."
         searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
       >
         <SettingsRow

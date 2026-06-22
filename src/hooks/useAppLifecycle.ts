@@ -19,6 +19,7 @@ import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { track, coarseOs } from "@/lib/telemetry";
+import { buildIsAlpha } from "@/lib/version";
 import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
 
@@ -89,7 +90,10 @@ export function useAppLifecycle() {
     telemetryRanRef.current = true;
 
     const settings = useSettingsStore.getState();
-    const channel = settings.releaseChannel === "alpha" ? "alpha" : "stable";
+    // Telemetry tracks the BUILD, not the chosen update channel: an alpha build
+    // defaults telemetry on (see selectEffectiveTelemetry*), so the analytics
+    // channel dimension and the first-run disclosure both key on the build.
+    const channel = buildIsAlpha() ? "alpha" : "stable";
     const version =
       typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 

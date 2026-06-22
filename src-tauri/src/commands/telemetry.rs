@@ -9,8 +9,8 @@
 //!
 //! Consent is persisted to a small JSON file in the app config dir
 //! (`~/.notesage/telemetry-consent.json`), mirroring the disk-file pattern in
-//! `sync.rs`. The frontend owns the channel-derived defaults (alpha → on,
-//! stable → off) and writes the effective values via `telemetry_apply_consent`;
+//! `sync.rs`. The frontend owns the build-derived defaults (alpha build → on,
+//! stable build → off) and writes the effective values via `telemetry_apply_consent`;
 //! Rust defaults both to `false` when the file is absent, because the backend
 //! cannot know the release channel on its own.
 
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Persisted telemetry consent. Both default to `false` when the file is absent
-/// (see module docs — the frontend writes channel-derived effective values on
+/// (see module docs — the frontend writes build-derived effective values on
 /// first run).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
