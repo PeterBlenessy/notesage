@@ -26,7 +26,6 @@
     "test:e2e-real-full": "./scripts/run-real-e2e.sh"
   },
   "dependencies": {
-    "@aptabase/tauri": "^0.4.1",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",

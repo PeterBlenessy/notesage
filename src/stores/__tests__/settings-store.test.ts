@@ -65,6 +65,15 @@ vi.mock('@/lib/tauri-storage', () => {
   };
 });
 
+// `buildIsAlpha()` reads the Vite-injected `__APP_VERSION__`, which isn't defined
+// under vitest. Mock it so tests can drive the build-derived telemetry default
+// (alpha build → on) deterministically. `isPrereleaseVersion` stays real.
+const buildChannel = vi.hoisted(() => ({ isAlpha: false }));
+vi.mock('@/lib/version', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/version')>();
+  return { ...actual, buildIsAlpha: () => buildChannel.isAlpha };
+});
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
@@ -2525,15 +2534,22 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 // ===========================================================================
 
 describe('telemetry consent', () => {
-  function resetTelemetry(channel: 'stable' | 'alpha' = 'stable') {
+  // `buildAlpha` simulates running an alpha vs stable BUILD (the real signal is
+  // `buildIsAlpha()`, mocked at the top of this file). Telemetry defaults key on
+  // the build, not the update channel.
+  function resetTelemetry(buildAlpha = false) {
+    buildChannel.isAlpha = buildAlpha;
     useSettingsStore.setState({
       ...SETTINGS_DEFAULTS,
-      releaseChannel: channel,
       telemetryUsageEnabled: null,
       telemetryCrashEnabled: null,
       telemetryNoticeSeen: false,
     } as Record<string, unknown>);
   }
+
+  afterEach(() => {
+    buildChannel.isAlpha = false;
+  });
 
   it('defaults: tri-state null, notice unseen', () => {
     resetTelemetry();
@@ -2543,38 +2559,52 @@ describe('telemetry consent', () => {
     expect(s.telemetryNoticeSeen).toBe(false);
   });
 
-  it('effective value follows the channel when not overridden', () => {
-    resetTelemetry('stable');
+  it('effective default follows the BUILD when not overridden', () => {
+    resetTelemetry(false); // stable build → off
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(false);
 
-    resetTelemetry('alpha');
+    resetTelemetry(true); // alpha build → on
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
   });
 
-  it('explicit override wins over the channel default', () => {
-    resetTelemetry('alpha');
+  it('alpha-build default is ON even when the update channel is stable', () => {
+    // The whole point of keying on the build: a user running an alpha build who
+    // never switched the update channel (releaseChannel stays 'stable') still
+    // defaults on. This is the case the channel-derived model missed.
+    resetTelemetry(true);
+    useSettingsStore.setState({ releaseChannel: 'stable' } as Record<string, unknown>);
+    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('explicit override wins over the build default', () => {
+    resetTelemetry(true); // alpha build → default on
     useSettingsStore.getState().setTelemetryUsageEnabled(false);
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
 
-    resetTelemetry('stable');
+    resetTelemetry(false); // stable build → default off
     useSettingsStore.getState().setTelemetryCrashEnabled(true);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
   });
 
-  it('channel switch flips the effective value while the flag is null', () => {
-    resetTelemetry('stable');
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+  it('release channel does NOT affect telemetry defaults or re-sync Rust', () => {
+    resetTelemetry(false); // stable build → off
+    vi.mocked(invoke).mockClear();
     useSettingsStore.getState().setReleaseChannel('alpha');
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+    // Switching the update channel must not flip telemetry...
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+    // ...and must not push a consent change to Rust.
+    expect(invoke).not.toHaveBeenCalledWith('telemetry_apply_consent', expect.anything());
   });
 
-  it('syncs effective consent to Rust via telemetry_apply_consent on change', () => {
-    resetTelemetry('stable');
+  it('syncs effective consent to Rust via telemetry_apply_consent on toggle', () => {
+    resetTelemetry(false); // stable build
     vi.mocked(invoke).mockClear();
 
-    // Explicitly enabling usage → effective usage true, crash still channel (false on stable).
+    // Explicitly enabling usage → usage true, crash still build default (false).
     useSettingsStore.getState().setTelemetryUsageEnabled(true);
     expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
       usage: true,
@@ -2582,15 +2612,15 @@ describe('telemetry consent', () => {
     });
   });
 
-  it('channel change re-syncs effective consent to Rust', () => {
-    resetTelemetry('stable');
+  it('toggle sync reflects the build default for the untouched stream', () => {
+    resetTelemetry(true); // alpha build → both default on
     vi.mocked(invoke).mockClear();
 
-    // stable → alpha with both flags null → both effective true.
-    useSettingsStore.getState().setReleaseChannel('alpha');
+    // Explicitly disabling crash → crash false, usage still build default (true).
+    useSettingsStore.getState().setTelemetryCrashEnabled(false);
     expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
       usage: true,
-      crash: true,
+      crash: false,
     });
   });
 });

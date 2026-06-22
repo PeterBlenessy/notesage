@@ -8,6 +8,7 @@ import {
   type QuietChromePreset,
   type QuietChromeTargets,
 } from '@/lib/quiet-chrome-presets';
+import { buildIsAlpha } from '@/lib/version';
 
 
 type Theme = "light" | "dark" | "system";
@@ -390,20 +391,24 @@ interface SettingsStore {
 
 /**
  * Effective usage-analytics consent. When the user hasn't made an explicit
- * choice (`telemetryUsageEnabled === null`), the value follows the release
- * channel: alpha defaults on, stable defaults off.
+ * choice (`telemetryUsageEnabled === null`), the default follows the BUILD: an
+ * alpha/prerelease build defaults on, a stable build defaults off. Keyed on the
+ * build (`buildIsAlpha()`), NOT the user's chosen update channel, so everyone
+ * running an alpha build defaults on — including those who never opted into the
+ * alpha update channel (a default `releaseChannel: 'stable'`). An explicit
+ * toggle always wins.
  */
 export const selectEffectiveTelemetryUsage = (
-  state: Pick<SettingsStore, 'telemetryUsageEnabled' | 'releaseChannel'>,
-): boolean => state.telemetryUsageEnabled ?? state.releaseChannel === 'alpha';
+  state: Pick<SettingsStore, 'telemetryUsageEnabled'>,
+): boolean => state.telemetryUsageEnabled ?? buildIsAlpha();
 
 /**
- * Effective crash-reporting consent. Same channel-derived default semantics as
+ * Effective crash-reporting consent. Same build-derived default semantics as
  * {@link selectEffectiveTelemetryUsage}.
  */
 export const selectEffectiveTelemetryCrash = (
-  state: Pick<SettingsStore, 'telemetryCrashEnabled' | 'releaseChannel'>,
-): boolean => state.telemetryCrashEnabled ?? state.releaseChannel === 'alpha';
+  state: Pick<SettingsStore, 'telemetryCrashEnabled'>,
+): boolean => state.telemetryCrashEnabled ?? buildIsAlpha();
 
 /**
  * Push the recomputed effective consent booleans to the Rust backend so it can
@@ -687,10 +692,10 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setReleaseChannel: (channel: ReleaseChannel) => {
+        // Update channel only — telemetry defaults track the build
+        // (`buildIsAlpha`), not the chosen channel, so there's nothing to
+        // re-sync here. The two telemetry toggles are the single opt-out.
         set({ releaseChannel: channel });
-        // Channel change can flip the `null`-derived effective consent values,
-        // so re-sync the backend.
-        applyTelemetryConsent(get());
       },
 
       setTelemetryUsageEnabled: (v: boolean | null) => {

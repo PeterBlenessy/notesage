@@ -20,23 +20,26 @@ vi.mock("@/stores/settings-store", () => ({
     s.telemetryUsageEnabled ?? s.releaseChannel === "alpha",
 }));
 
-const trackEvent = vi.fn(
-  (_event: string, _props?: Record<string, string>): Promise<void> => Promise.resolve(),
+// `track()` invokes the Rust `tauri-plugin-aptabase` command directly through
+// the v2 IPC (`plugin:aptabase|track_event`), so the unit boundary is `invoke`.
+const invoke = vi.fn(
+  (_cmd: string, _args?: Record<string, unknown>): Promise<unknown> => Promise.resolve(),
 );
-vi.mock("@aptabase/tauri", () => ({
-  trackEvent: (event: string, props?: Record<string, string>) => trackEvent(event, props),
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args),
 }));
 
 import { track, providerKind, coarseOs } from "../telemetry";
 
+const TRACK_CMD = "plugin:aptabase|track_event";
+
 beforeEach(() => {
-  trackEvent.mockClear();
+  invoke.mockClear();
   mockState.telemetryUsageEnabled = null;
   mockState.releaseChannel = "stable";
 });
 
-// `track()` lazy-imports @aptabase/tauri and calls trackEvent in a microtask,
-// so flush the queue before asserting an emit happened.
+// `track()` fires the invoke in a microtask, so flush the queue before asserting.
 const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 
 describe("track() gating", () => {
@@ -45,7 +48,7 @@ describe("track() gating", () => {
     mockState.telemetryUsageEnabled = null; // → effective false
     track("document_opened", { format: "md" });
     await flush();
-    expect(trackEvent).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("emits when usage is on via channel default (alpha)", async () => {
@@ -53,8 +56,11 @@ describe("track() gating", () => {
     mockState.telemetryUsageEnabled = null; // → effective true
     track("document_opened", { format: "pdf" });
     await flush();
-    expect(trackEvent).toHaveBeenCalledTimes(1);
-    expect(trackEvent).toHaveBeenCalledWith("document_opened", { format: "pdf" });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "document_opened",
+      props: { format: "pdf" },
+    });
   });
 
   it("emits when explicitly enabled even on stable", async () => {
@@ -62,7 +68,10 @@ describe("track() gating", () => {
     mockState.telemetryUsageEnabled = true; // explicit override wins
     track("ai_action_used", { action: "improve" });
     await flush();
-    expect(trackEvent).toHaveBeenCalledWith("ai_action_used", { action: "improve" });
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "ai_action_used",
+      props: { action: "improve" },
+    });
   });
 
   it("no-ops when explicitly disabled even on alpha", async () => {
@@ -70,24 +79,25 @@ describe("track() gating", () => {
     mockState.telemetryUsageEnabled = false; // explicit override wins
     track("ai_action_used", { action: "expand" });
     await flush();
-    expect(trackEvent).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it("sends exactly the typed props — nothing appended (no PII)", async () => {
     mockState.telemetryUsageEnabled = true;
     track("ai_chat_sent", { path: "acp", provider_kind: "agent_managed" });
     await flush();
-    const props = trackEvent.mock.calls[0]?.[1];
-    expect(props).toEqual({ path: "acp", provider_kind: "agent_managed" });
+    const args = invoke.mock.calls[0]?.[1] as
+      | { name: string; props: Record<string, string> }
+      | undefined;
+    expect(args?.name).toBe("ai_chat_sent");
+    expect(args?.props).toEqual({ path: "acp", provider_kind: "agent_managed" });
     // Guard: no install id, no path, no content leaked into the payload.
-    expect(Object.keys(props ?? {}).sort()).toEqual(["path", "provider_kind"]);
+    expect(Object.keys(args?.props ?? {}).sort()).toEqual(["path", "provider_kind"]);
   });
 
-  it("never throws into the caller even if the SDK rejects", async () => {
+  it("never throws into the caller even if the IPC rejects", async () => {
     mockState.telemetryUsageEnabled = true;
-    trackEvent.mockImplementationOnce(() => {
-      throw new Error("transport down");
-    });
+    invoke.mockImplementationOnce(() => Promise.reject(new Error("transport down")));
     expect(() => track("feature_used", { feature: "focus_mode" })).not.toThrow();
     await flush(); // the rejection is swallowed inside track's .catch
   });
