@@ -29,12 +29,27 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args),
 }));
 
+// Mock the logger: track() now emits diagnostic logs (and the real logger would
+// forward them via its own `invoke`, perturbing the assertions above). Spying
+// also lets us assert the diagnostic behavior the user relies on.
+const logMock = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("@/lib/logger", () => ({ log: logMock }));
+
 import { track, providerKind, coarseOs } from "../telemetry";
 
 const TRACK_CMD = "plugin:aptabase|track_event";
 
 beforeEach(() => {
   invoke.mockClear();
+  logMock.debug.mockClear();
+  logMock.info.mockClear();
+  logMock.warn.mockClear();
+  logMock.error.mockClear();
   mockState.telemetryUsageEnabled = null;
   mockState.releaseChannel = "stable";
 });
@@ -100,6 +115,41 @@ describe("track() gating", () => {
     invoke.mockImplementationOnce(() => Promise.reject(new Error("transport down")));
     expect(() => track("feature_used", { feature: "focus_mode" })).not.toThrow();
     await flush(); // the rejection is swallowed inside track's .catch
+  });
+});
+
+describe("track() diagnostic logging", () => {
+  it("logs a debug skip line when usage is off (no event name leaked beyond the enum)", async () => {
+    mockState.telemetryUsageEnabled = false;
+    track("document_opened", { format: "md" });
+    await flush();
+    expect(logMock.debug).toHaveBeenCalledWith(
+      "telemetry",
+      expect.stringContaining("document_opened"),
+    );
+    expect(logMock.info).not.toHaveBeenCalled();
+  });
+
+  it("logs an info line when an event is tracked", async () => {
+    mockState.telemetryUsageEnabled = true;
+    track("ai_chat_sent", { path: "acp", provider_kind: "agent_managed" });
+    await flush();
+    expect(logMock.info).toHaveBeenCalledWith(
+      "telemetry",
+      expect.stringContaining("ai_chat_sent"),
+    );
+  });
+
+  it("logs a warn line when the IPC invoke rejects", async () => {
+    mockState.telemetryUsageEnabled = true;
+    invoke.mockImplementationOnce(() => Promise.reject(new Error("command not found")));
+    track("feature_used", { feature: "focus_mode" });
+    await flush();
+    expect(logMock.warn).toHaveBeenCalledWith(
+      "telemetry",
+      expect.stringContaining("feature_used"),
+      expect.anything(),
+    );
   });
 });
 

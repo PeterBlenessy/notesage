@@ -126,6 +126,10 @@ pub fn set_sentry_enabled(enabled: bool) {
 /// Usage analytics needs no backend action — its gate is the JS `track()` helper.
 #[tauri::command]
 pub async fn telemetry_apply_consent(usage: bool, crash: bool) -> Result<(), String> {
+    log::info!(
+        target: "notesage::telemetry",
+        "Applying telemetry consent: usage={usage} crash={crash}"
+    );
     let consent = TelemetryConsent { usage, crash };
     let path = consent_file_path()?;
     write_consent_to(&path, &consent)?;

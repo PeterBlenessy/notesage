@@ -17,6 +17,7 @@
  * PRD: docs/prds/2026-06-07-telemetry.md
  */
 import { invoke } from "@tauri-apps/api/core";
+import { log } from "@/lib/logger";
 import {
   useSettingsStore,
   selectEffectiveTelemetryUsage,
@@ -167,7 +168,12 @@ export function track<E extends TelemetryEvent>(
   props: TelemetryEventProps[E],
 ): void {
   try {
-    if (!selectEffectiveTelemetryUsage(useSettingsStore.getState())) return;
+    if (!selectEffectiveTelemetryUsage(useSettingsStore.getState())) {
+      // Diagnostic only — never the event props (PII contract); event name is
+      // a fixed enum. Lands in the backend log file too (logger forwards).
+      log.debug("telemetry", `usage off — skipping "${event}"`);
+      return;
+    }
     // Egress is owned by the Rust `tauri-plugin-aptabase` plugin. We invoke its
     // `track_event` command directly through the app's own v2 IPC instead of the
     // `@aptabase/tauri` JS guest binding: the only npm-published binding (0.4.1)
@@ -178,13 +184,21 @@ export function track<E extends TelemetryEvent>(
     // each event with OS + app version Rust-side; we send exactly the typed
     // props — nothing appended — so the PII/allow-list guard stays exact.
     // Requires `aptabase:allow-track-event` in capabilities/default.json.
+    log.info("telemetry", `track "${event}"`);
     void invoke("plugin:aptabase|track_event", {
       name: event,
       props: props as Record<string, string>,
-    }).catch(() => {
-      /* best-effort — telemetry must never surface to the user */
-    });
-  } catch {
-    /* selector/store access failed — ignore */
+    })
+      .then(() => log.debug("telemetry", `queued "${event}" to the plugin`))
+      .catch((e) => {
+        // Reaches here only if the command is missing/denied (plugin not
+        // registered or capability ungranted). The actual HTTP send happens
+        // later inside the plugin's 60s flush — its result is logged Rust-side
+        // by the plugin at debug level (raise Log level to Debug to see it).
+        log.warn("telemetry", `track "${event}" invoke rejected`, e);
+      });
+  } catch (e) {
+    // Selector/store access failed, or invoke threw synchronously.
+    log.warn("telemetry", `track "${event}" threw`, e);
   }
 }
