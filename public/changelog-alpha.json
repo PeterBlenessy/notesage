@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.4",
+      "date": "2026-06-23",
+      "previousVersion": "0.48.0-alpha.3",
+      "sections": {
+        "features": [
+          "feat(telemetry): diagnostic logging on both sides of the Aptabase path (#497)"
+        ]
+      },
+      "underTheHood": [
+        "feat(telemetry): diagnostic logging on both sides of the Aptabase path (#497)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.3",
       "date": "2026-06-22",
       "previousVersion": "0.48.0-alpha.2",
