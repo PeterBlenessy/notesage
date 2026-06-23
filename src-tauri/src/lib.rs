@@ -140,8 +140,43 @@ pub fn run() {
     // build-time key is present; the plugin emits nothing until the frontend
     // calls `trackEvent`, so the consent gate lives at the JS `track()` helper.
     // No key (every local/dev build) → skip registration cleanly, no panic.
-    if let Some(key) = APTABASE_KEY {
-        builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+    match APTABASE_KEY {
+        None => {
+            // Expected on every local/dev build (no build-time key) — info, not warn.
+            log::info!(
+                target: "notesage::telemetry",
+                "Usage telemetry disabled: no build-time Aptabase key."
+            );
+        }
+        Some(key) => {
+            // Diagnose the key WITHOUT logging it (the key is a secret; the region
+            // segment is not). The middle `A-<REGION>-<id>` segment decides the
+            // ingest host inside the plugin's config: US/EU → cloud, DEV →
+            // http://localhost:3000, SH → needs a host we don't pass. A
+            // DEV/SH/malformed key silently routes nowhere, so surface it at warn.
+            let parts: Vec<&str> = key.split('-').collect();
+            let region = parts.get(1).copied().unwrap_or("");
+            match (parts.len(), region) {
+                (3, "US") | (3, "EU") => log::info!(
+                    target: "notesage::telemetry",
+                    "Usage telemetry enabled (Aptabase region {region}, cloud ingest)."
+                ),
+                (3, "DEV") => log::warn!(
+                    target: "notesage::telemetry",
+                    "Aptabase key region is DEV → ingest is http://localhost:3000; \
+                     events will NOT reach the cloud. Set NOTESAGE_APTABASE_KEY to an A-US-/A-EU- key."
+                ),
+                (3, "SH") => log::warn!(
+                    target: "notesage::telemetry",
+                    "Aptabase key is self-hosted (SH) but no host is configured → tracking disabled."
+                ),
+                _ => log::warn!(
+                    target: "notesage::telemetry",
+                    "Aptabase key is malformed (expected A-<REGION>-<id>) → tracking disabled."
+                ),
+            }
+            builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+        }
     }
 
     // Telemetry — crash/error reporting (Sentry). Registered only when the
