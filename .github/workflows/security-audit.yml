@@ -1,0 +1,41 @@
+name: security-audit
+
+# Dogfood the repo-security audit on this repo. Runs the admin-free static
+# checks (risky triggers, missing `permissions:` blocks, action pinning) on
+# every PR and weekly. Advisory on day one — it reports, it doesn't block.
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+  workflow_dispatch:
+
+# Least privilege: the static audit only needs to read this repo.
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # gh and jq are preinstalled on ubuntu-latest runners.
+      - name: Run static security audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true   # advisory while the org cleans up the backlog
+        run: |
+          bash scripts/security-audit.sh --static-only \
+            --output "audit-reports/ci-${GITHUB_SHA}.md" \
+            "${GITHUB_REPOSITORY}"
+          echo "## Security audit (static)" >> "$GITHUB_STEP_SUMMARY"
+          cat "audit-reports/ci-${GITHUB_SHA}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-report
+          path: audit-reports/ci-*.md
+          if-no-files-found: ignore
