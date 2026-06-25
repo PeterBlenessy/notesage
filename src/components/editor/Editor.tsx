@@ -998,6 +998,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onInsert={(src, alt) => {
           if (editor) {
             editor.chain().focus().setImage({ src, alt: alt || undefined }).run();
+            track("block_inserted", { kind: "image" });
           }
         }}
       />

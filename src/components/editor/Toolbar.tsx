@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
+import { track } from "@/lib/telemetry";
 import {
   Bold,
   Italic,
@@ -471,7 +472,10 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                       "cursor-pointer gap-2 text-xs",
                       editor.isActive("codeBlock") && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]",
                     )}
-                    onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                    onClick={() => {
+              editor.chain().focus().toggleCodeBlock().run();
+              track("block_inserted", { kind: "code_block" });
+            }}
                   >
                     <CodeSquare className="size-4 shrink-0" strokeWidth={1.5} />
                     Code block
@@ -735,7 +739,10 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <CalloutPicker editor={editor} />
 
           <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            onClick={() => {
+              editor.chain().focus().toggleCodeBlock().run();
+              track("block_inserted", { kind: "code_block" });
+            }}
             active={editor.isActive("codeBlock")}
             title="Code Block"
           >

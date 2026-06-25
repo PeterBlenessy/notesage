@@ -19,6 +19,7 @@ import { SettingsRow } from './SettingsRow';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
+import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
@@ -221,7 +222,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={theme}
-              onChange={setTheme}
+              onChange={(v) => { setTheme(v); track("setting_changed", { setting: "theme", value: v }); }}
             />
           }
         />
@@ -247,7 +248,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={accent}
-              onChange={setAccent}
+              onChange={(v) => { setAccent(v); track("setting_changed", { setting: "accent", value: v }); }}
               columns={4}
             />
           }
@@ -399,7 +400,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={quietChromePreset === 'custom' ? 'default' : quietChromePreset}
-              onChange={setQuietChromePreset}
+              onChange={(v) => { setQuietChromePreset(v); track("setting_changed", { setting: "quiet_preset", value: v }); }}
             />
           }
           controlSublabel={
@@ -439,7 +440,7 @@ export function AppearanceSettings() {
             <Switch
               id="appearance-show-title-bar"
               checked={showTitleBar}
-              onCheckedChange={setShowTitleBar}
+              onCheckedChange={(v) => { setShowTitleBar(v); trackSettingToggle("title_bar", v); }}
             />
           }
         />

@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { track } from "@/lib/telemetry";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ChartNodeView } from "../charts/ChartNodeView";
 import { deleteChart } from "@/lib/chart-storage";
@@ -175,7 +176,8 @@ export const Chart = Node.create({
     return {
       insertChart:
         (attrs) =>
-        ({ commands }) => {
+        ({ commands, dispatch }) => {
+          if (dispatch) track("block_inserted", { kind: "chart" });
           const chartId = attrs?.chartId || crypto.randomUUID();
           return commands.insertContent({
             type: this.name,

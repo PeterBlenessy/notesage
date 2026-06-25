@@ -40,7 +40,7 @@ const logMock = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/logger", () => ({ log: logMock }));
 
-import { track, providerKind, coarseOs } from "../telemetry";
+import { track, trackSettingToggle, providerKind, coarseOs } from "../telemetry";
 
 const TRACK_CMD = "plugin:aptabase|track_event";
 
@@ -150,6 +150,43 @@ describe("track() diagnostic logging", () => {
       expect.stringContaining("feature_used"),
       expect.anything(),
     );
+  });
+});
+
+describe("block_inserted / setting_changed", () => {
+  it("emits block_inserted with the kind", async () => {
+    mockState.telemetryUsageEnabled = true;
+    track("block_inserted", { kind: "drawing" });
+    await flush();
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "block_inserted",
+      props: { kind: "drawing" },
+    });
+  });
+
+  it("trackSettingToggle maps true → on, false → off", async () => {
+    mockState.telemetryUsageEnabled = true;
+    trackSettingToggle("tool_calling", true);
+    trackSettingToggle("print_layout", false);
+    await flush();
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "setting_changed",
+      props: { setting: "tool_calling", value: "on" },
+    });
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "setting_changed",
+      props: { setting: "print_layout", value: "off" },
+    });
+  });
+
+  it("setting_changed carries enum values verbatim", async () => {
+    mockState.telemetryUsageEnabled = true;
+    track("setting_changed", { setting: "theme", value: "dark" });
+    await flush();
+    expect(invoke).toHaveBeenCalledWith(TRACK_CMD, {
+      name: "setting_changed",
+      props: { setting: "theme", value: "dark" },
+    });
   });
 });
 

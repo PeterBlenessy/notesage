@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useSettingsStore } from "@/stores/settings-store";
+import { trackSettingToggle } from "@/lib/telemetry";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 
@@ -64,6 +65,7 @@ export function CompletionsGroup() {
             setInlineCompletionsDisabled(false);
             setRouting("inline_completion", val);
           }
+          trackSettingToggle("inline_completions", val !== OFF);
         }}
       >
         <SelectTrigger aria-label="Completion provider" className="w-full h-8 text-xs">
