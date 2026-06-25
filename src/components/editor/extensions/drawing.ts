@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
+import { track } from "@/lib/telemetry";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { DrawingPreview } from "../DrawingPreview";
 import { deleteDrawing } from "@/lib/drawing-storage";
@@ -172,7 +173,8 @@ export const Drawing = Node.create({
     return {
       insertDrawing:
         (attrs) =>
-        ({ commands }) => {
+        ({ commands, dispatch }) => {
+          if (dispatch) track("block_inserted", { kind: "drawing" });
           const drawingId = attrs?.drawingId || crypto.randomUUID();
           return commands.insertContent({
             type: this.name,

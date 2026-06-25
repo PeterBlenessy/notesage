@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MermaidPreview } from "../MermaidPreview";
+import { track } from "@/lib/telemetry";
 
 const DEFAULT_MERMAID_SOURCE = `graph TD
     A[Start] --> B{Decision}
@@ -56,7 +57,8 @@ export const MermaidBlock = Node.create({
     return {
       insertMermaidBlock:
         (attrs?: { source?: string }) =>
-        ({ commands }) => {
+        ({ commands, dispatch }) => {
+          if (dispatch) track("block_inserted", { kind: "mermaid" });
           return commands.insertContent({
             type: this.name,
             attrs: {

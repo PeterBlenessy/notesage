@@ -46,6 +46,7 @@ import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { getPasteRules } from "@/lib/editor/paste-rules";
 import { saveImageSidecar, mimeToExt } from "@/lib/image-sidecar";
+import { track } from "@/lib/telemetry";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -134,6 +135,7 @@ async function handleImageFile(
 
   // Insert via the editor command so ProseMirror history works correctly.
   editor.chain().focus().setImage({ src: filePath, alt: altText }).run();
+  track("block_inserted", { kind: "image" });
 
   // Preload the image via the asset protocol so the browser caches it.
   void convertFileSrc(filePath);

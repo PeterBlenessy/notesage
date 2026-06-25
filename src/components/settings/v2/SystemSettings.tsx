@@ -46,6 +46,7 @@ import {
   selectEffectiveTelemetryUsage,
   selectEffectiveTelemetryCrash,
 } from '@/stores/settings-store';
+import { track, trackSettingToggle } from '@/lib/telemetry';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -307,7 +308,9 @@ export function SystemSettings({
                 // user is actually running (see useAppLifecycle's first-run
                 // disclosure + selectEffectiveTelemetry*), so switching the
                 // update channel no longer turns telemetry on/off.
-                setReleaseChannel(v as 'stable' | 'alpha');
+                const next = v as 'stable' | 'alpha';
+                setReleaseChannel(next);
+                track("setting_changed", { setting: "release_channel", value: next });
               }}
             >
               <SelectTrigger className="w-[120px] h-8 text-xs">
@@ -335,7 +338,7 @@ export function SystemSettings({
             <Switch
               id="telemetry-usage"
               checked={telemetryUsageEffective}
-              onCheckedChange={(v) => setTelemetryUsageEnabled(v)}
+              onCheckedChange={(v) => { setTelemetryUsageEnabled(v); trackSettingToggle("telemetry_usage", v); }}
               aria-label="Usage analytics"
             />
           }
@@ -348,7 +351,7 @@ export function SystemSettings({
             <Switch
               id="telemetry-crash"
               checked={telemetryCrashEffective}
-              onCheckedChange={(v) => setTelemetryCrashEnabled(v)}
+              onCheckedChange={(v) => { setTelemetryCrashEnabled(v); trackSettingToggle("telemetry_crash", v); }}
               aria-label="Crash reports"
             />
           }
@@ -608,6 +611,7 @@ export function SystemSettings({
                 setLogLevel(level);
                 setLoggerLevel(level);
                 tauriApi.setLogLevel(level);
+                track("setting_changed", { setting: "log_level", value: level });
               }}
             >
               <SelectTrigger className="w-[140px] h-8 text-xs">

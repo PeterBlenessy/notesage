@@ -86,6 +86,67 @@ export type ItemSource = "user" | "project";
 export type FeatureName = "focus_mode" | "cmd_bar_pin" | "recording";
 
 /**
+ * Rich block kinds (block_inserted). Only rich/embedded blocks are tracked —
+ * markdown basics (tables, lists, HR) are intentionally excluded. Fired on a
+ * deliberate user insert (toolbar / slash / picker / paste), never on parse.
+ */
+export type BlockKind =
+  | "drawing"
+  | "chart"
+  | "mermaid"
+  | "callout"
+  | "code_block"
+  | "image"
+  | "link_preview";
+
+/**
+ * Settings whose changes we track (setting_changed). Closed enum — only
+ * bounded-value settings are instrumented; settings with unbounded/PII values
+ * (paths, widths, margins, numeric caps) are deliberately excluded.
+ */
+export type SettingKey =
+  | "theme"
+  | "accent"
+  | "quiet_preset"
+  | "title_bar"
+  | "inline_completions"
+  | "external_change_review"
+  | "print_layout"
+  | "tool_calling"
+  | "cross_project"
+  | "require_all_tool_confirmations"
+  | "agent_mode_picker"
+  | "release_channel"
+  | "telemetry_usage"
+  | "telemetry_crash"
+  | "log_level";
+
+/**
+ * The value a tracked setting was changed to (setting_changed). Closed
+ * low-cardinality union across all tracked settings: booleans report `on`/`off`;
+ * tri-state telemetry adds `default`; the rest carry each setting's own enum.
+ * Never a path, number, or free text.
+ */
+export type SettingValue =
+  | "on"
+  | "off"
+  | "default"
+  | "light"
+  | "dark"
+  | "system"
+  | "orange"
+  | "blue"
+  | "relaxed"
+  | "aggressive"
+  | "custom"
+  | "stable"
+  | "alpha"
+  | "error"
+  | "warn"
+  | "info"
+  | "debug";
+
+/**
  * The full telemetry taxonomy: event name → its required, typed props.
  * Adding an event means adding a key here; the call site is then type-checked.
  */
@@ -99,6 +160,8 @@ export interface TelemetryEventProps {
   skill_invoked: { source: ItemSource };
   mcp_tool_called: { source: ItemSource };
   feature_used: { feature: FeatureName };
+  block_inserted: { kind: BlockKind };
+  setting_changed: { setting: SettingKey; value: SettingValue };
 }
 
 /** Allowed event names. */
@@ -201,4 +264,13 @@ export function track<E extends TelemetryEvent>(
     // Selector/store access failed, or invoke threw synchronously.
     log.warn("telemetry", `track "${event}" threw`, e);
   }
+}
+
+/**
+ * Convenience wrapper for the common boolean-setting case: emits
+ * `setting_changed { setting, value: "on" | "off" }`. Enum settings (theme,
+ * accent, channel, …) call {@link track} directly with their own value.
+ */
+export function trackSettingToggle(setting: SettingKey, enabled: boolean): void {
+  track("setting_changed", { setting, value: enabled ? "on" : "off" });
 }

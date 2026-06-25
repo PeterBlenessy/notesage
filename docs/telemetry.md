@@ -28,6 +28,8 @@ property is a low-cardinality enum; there is no free text.
 | `connection_added` | provider *kind* |
 | `skill_invoked` / `mcp_tool_called` | source (`user`/`project`) |
 | `feature_used` | feature name (e.g. `focus_mode`, `recording`, `cmd_bar_pin`) |
+| `block_inserted` | rich block kind (`drawing`/`chart`/`mermaid`/`callout`/`code_block`/`image`/`link_preview`) |
+| `setting_changed` | which setting changed + its new value — both low-cardinality enums (e.g. theme → `dark`, a toggle → `on`/`off`). Only bounded-value settings; never paths, sizes, or numbers |
 
 **Crash reports** — exception type and message, and a stack trace with
 **function and module names only**. File paths, the hostname, and any user
