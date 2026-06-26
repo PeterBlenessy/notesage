@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.5",
+      "date": "2026-06-26",
+      "previousVersion": "0.48.0-alpha.4",
+      "sections": {
+        "features": [
+          "feat(telemetry): instrument rich-block inserts + settings changes (#499)"
+        ]
+      },
+      "underTheHood": [
+        "feat(telemetry): instrument rich-block inserts + settings changes (#499)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.4",
       "date": "2026-06-23",
       "previousVersion": "0.48.0-alpha.3",
