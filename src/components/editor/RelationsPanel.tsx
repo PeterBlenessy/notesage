@@ -9,34 +9,33 @@
  * math, and it coexists with the pinned cmd bar (full-height right panel) and
  * the AgentOrb (bottom-right) because all three live in different boxes.
  *
- * Surface: built on the Radix `Popover` primitive (no hand-rolled floating div).
- * The slim right-edge handle IS the `PopoverTrigger` — always visible while the
- * doc has relations — and the content rolls out leftward (`side="left"`), flush
- * against the column edge with rounded LEFT corners and a flat right side. Radix
- * supplies focus trapping, Esc-to-close, click-away, and focus restoration.
+ * Surface (morph): a SINGLE element docked flush to the column's right edge that
+ * morphs between the slim handle (collapsed) and the rolled-out panel (open) —
+ * size + corner radius ease via `.relations-morph`, while the handle / panel
+ * faces crossfade. A true morph needs one element, so this does NOT use Radix
+ * `Popover` (which portals content to `<body>` as a separate node); the a11y
+ * Radix gave us is hand-rolled instead: Esc closes + returns focus to the handle,
+ * a pointerdown outside closes, the collapsed panel face is `inert`, and the
+ * faded-out handle drops from the tab order while open. Per ADR 0004 it keeps
+ * coexisting with the pinned cmd bar (the `right` offset) and the AgentOrb.
  *
- * Partial height (~40–60% of the column, ADR 0004): the content height is driven
- * by `--relations-panel-height` (a fraction persisted in settings-store) and is
- * draggable taller via a top-edge resize handle that writes the CSS var live (no
- * React re-render mid-drag) and persists on release — mirroring the cmd-bar /
- * sidebar resize pattern.
+ * Partial height (~40–60% of the column, ADR 0004): the open height is driven by
+ * `--relations-panel-height` (a fraction persisted in settings-store), draggable
+ * via a top-edge handle that writes the CSS var live (no React re-render
+ * mid-drag) and persists on release; width is the same pattern on the left edge.
  *
- * Attention pulse: the collapsed handle pulses a soft accent ring when the doc
- * has any relations. CSS-only (`.relations-handle-pulsing` keyframe in
- * globals.css), gated on BOTH `prefers-reduced-motion` (the @media guard) AND
- * `useReducedMotion()` (the class is omitted) per the design system.
+ * Attention cue (comet): while collapsed the handle traces a "comet" around its
+ * border — a bright lead dot + a tapering tail of dimmer/smaller dots — for 3
+ * laps, then settles ("announce, then quiet"; re-keyed on each doc-open). CSS in
+ * globals.css (`.relations-comet-dot` + `offset-path`); the dots are omitted
+ * under `useReducedMotion()`, with an @media guard parking a static head.
  *
  * Self-hide: renders `null` when the active document has no relations (or none
  * is open) — no empty handle clutters the column. Loading / error states are
  * shown inside the rolled-out panel.
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link2, CornerUpLeft, CornerDownRight } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -66,6 +65,56 @@ function relationLabel(title: string | null, path: string): string {
 
 /** Truncated context characters before the "show more context" expand kicks in. */
 const CONTEXT_PREVIEW_CHARS = 140;
+
+// ---------------------------------------------------------------------------
+// Comet attention cue — a bright lead dot with a tapering tail of dimmer,
+// smaller dots tracing the collapsed handle's border. The dots overlap near the
+// head into one streak; size + opacity ease down to a thin faint tail. Per-dot
+// size/opacity/delay are computed here and applied inline; the offset-path,
+// keyframe, and 3-lap run live in `.relations-comet-dot` (globals.css). Keyed by
+// document `path` at the call site so the 3 laps restart on each doc-open.
+// ---------------------------------------------------------------------------
+
+const COMET_DOT_COUNT = 18;
+const COMET_DURATION_MS = 3400; // must match the `.relations-comet-dot` animation
+const COMET_TAIL_FRACTION = 0.2; // tail spans ~20% of the border
+
+function RelationsComet() {
+  const dots = useMemo(() => {
+    const delayMax = COMET_DURATION_MS * COMET_TAIL_FRACTION;
+    const step = delayMax / (COMET_DOT_COUNT - 1);
+    // Emit tail→head so the bright head paints last (on top of the tail).
+    return Array.from({ length: COMET_DOT_COUNT }, (_, k) => COMET_DOT_COUNT - 1 - k).map(
+      (i) => {
+        const f = i / (COMET_DOT_COUNT - 1); // 0 = head, 1 = tail
+        return {
+          i,
+          size: 7 - 6 * Math.pow(f, 0.65), // 7px head → ~1px tail
+          opacity: Math.pow(1 - f, 1.25), // fades faster toward the tail
+          delay: -delayMax + i * step, // head furthest along (most negative)
+          head: i === 0,
+        };
+      },
+    );
+  }, []);
+
+  return (
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+      {dots.map(({ i, size, opacity, delay, head }) => (
+        <span
+          key={i}
+          className={cn("relations-comet-dot", head && "relations-comet-head")}
+          style={{
+            width: `${size.toFixed(2)}px`,
+            height: `${size.toFixed(2)}px`,
+            opacity,
+            animationDelay: `${delay.toFixed(0)}ms`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Type badge — neutral by default (design system: no invented chromatic colors)
@@ -250,9 +299,9 @@ export function RelationsPanel({
    * When focus mode is on, the panel is chrome and must hide — like the
    * sidebar / toolbar / orb. QuietLayout owns the live focus-mode flag
    * (`useFocusMode`) and passes it down; this component `return null`s when
-   * active, which also unmounts any open PopoverContent (portaled to body, so
-   * CSS alone couldn't close it). Defaults to false so existing callers /
-   * tests that mount it bare are unaffected.
+   * active, which unmounts the whole morph (handle + panel), so an open panel
+   * is closed too. Defaults to false so existing callers / tests that mount it
+   * bare are unaffected.
    */
   focusModeActive?: boolean;
 } = {}) {
@@ -283,25 +332,18 @@ export function RelationsPanel({
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
   const handleRight = cmdBarPinned ? "var(--cmd-bar-pinned-width, 400px)" : 0;
 
-  // The rolled-out content's height is driven by a CSS variable so a resize
-  // drag mutates the DOM directly (no React re-render mid-drag), mirroring the
-  // cmd-bar / sidebar handle pattern.
-  const contentRef = useRef<HTMLDivElement | null>(null);
+  // The morph container (handle ⇄ panel) is a single element. Refs let
+  // click-away / Esc / focus-return and the resize drags reach it directly. A
+  // resize drag mutates the container's `--relations-panel-width/height` vars
+  // live (no React re-render mid-drag), mirroring the cmd-bar / sidebar pattern.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const handleRef = useRef<HTMLButtonElement | null>(null);
   const dragStateRef = useRef<{ startY: number; startFraction: number } | null>(
     null,
   );
-  // Left-edge width drag — mirrors the cmd-bar's no-handle edge resize. The
-  // width is driven by `--relations-panel-width` so a drag mutates the DOM live
-  // (no React re-render mid-drag) and persists on pointerup.
-  // The width drag mutates the PopoverContent's `--relations-panel-width` var
-  // directly so the resize is jank-free; we stash the element on pointer-down
-  // (resolved from the hit-zone's ancestor — PopoverContent is a non-forwardRef
-  // wrapper, so a React ref wouldn't reach the DOM node).
-  const widthDragRef = useRef<{
-    startX: number;
-    startWidth: number;
-    panel: HTMLElement;
-  } | null>(null);
+  const widthDragRef = useRef<{ startX: number; startWidth: number } | null>(
+    null,
+  );
 
   const navigate = useCallback(
     (targetPath: string) => {
@@ -331,11 +373,39 @@ export function RelationsPanel({
     [openTab, projects, explorerFolders],
   );
 
+  // Hand-rolled a11y for the morph (no Radix Popover, so the handle and panel
+  // can be one morphing element): Esc closes and returns focus to the handle; a
+  // pointerdown outside the container closes. Active only while open. Esc is
+  // captured + stopped so it closes the panel before any global Esc handler
+  // (focus mode can't be active here — it hides the whole panel — so there's no
+  // real contention, but capture keeps the ordering unambiguous).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+        handleRef.current?.focus();
+      }
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [open]);
+
   // ---- Resize drag (top edge) — clamps to the [0.4, 0.6] band ----
   const onResizePointerMove = useCallback(
     (e: PointerEvent) => {
       const drag = dragStateRef.current;
-      const el = contentRef.current;
+      const el = rootRef.current;
       if (!drag || !el) return;
       const columnHeight = el.parentElement?.clientHeight ?? window.innerHeight;
       // Dragging UP (negative deltaY) grows the panel.
@@ -347,11 +417,12 @@ export function RelationsPanel({
   );
 
   const onResizePointerUp = useCallback(() => {
-    const el = contentRef.current;
+    const el = rootRef.current;
     window.removeEventListener("pointermove", onResizePointerMove);
     window.removeEventListener("pointerup", onResizePointerUp);
     dragStateRef.current = null;
     if (el) {
+      el.style.transition = ""; // restore the morph transition (className-driven)
       const current = parseFloat(
         el.style.getPropertyValue("--relations-panel-height") ||
           String(relationsPanelHeight),
@@ -363,6 +434,9 @@ export function RelationsPanel({
   const onResizePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault();
+      // Suppress the morph size-transition during the live drag so it tracks
+      // the pointer instead of easing behind it.
+      if (rootRef.current) rootRef.current.style.transition = "none";
       dragStateRef.current = {
         startY: e.clientY,
         startFraction: relationsPanelHeight,
@@ -375,24 +449,26 @@ export function RelationsPanel({
 
   // ---- Width drag (left edge) — clamps to [280, 600] px ----
   // No visible handle, mirroring the cmd-bar edge resize: a thin transparent
-  // hit-zone at the left edge. Dragging LEFT grows the panel (the panel rolls
-  // out leftward), so a negative deltaX increases width.
+  // hit-zone at the left edge. Dragging LEFT grows the panel (it rolls out
+  // leftward), so a negative deltaX increases width.
   const onWidthPointerMove = useCallback((e: PointerEvent) => {
     const drag = widthDragRef.current;
-    if (!drag) return;
+    const el = rootRef.current;
+    if (!drag || !el) return;
     const deltaX = drag.startX - e.clientX; // drag left → positive → wider
     const next = Math.max(280, Math.min(600, drag.startWidth + deltaX));
-    drag.panel.style.setProperty("--relations-panel-width", `${next}px`);
+    el.style.setProperty("--relations-panel-width", `${next}px`);
   }, []);
 
   const onWidthPointerUp = useCallback(() => {
-    const drag = widthDragRef.current;
+    const el = rootRef.current;
     window.removeEventListener("pointermove", onWidthPointerMove);
     window.removeEventListener("pointerup", onWidthPointerUp);
     widthDragRef.current = null;
-    if (drag) {
+    if (el) {
+      el.style.transition = "";
       const current = parseFloat(
-        drag.panel.style.getPropertyValue("--relations-panel-width") ||
+        el.style.getPropertyValue("--relations-panel-width") ||
           String(relationsPanelWidth),
       );
       if (!Number.isNaN(current)) setRelationsPanelWidth(current);
@@ -401,15 +477,11 @@ export function RelationsPanel({
 
   const onWidthPointerDown = useCallback(
     (e: React.PointerEvent) => {
-      const panel = (e.currentTarget as HTMLElement).closest<HTMLElement>(
-        '[data-testid="relations-panel"]',
-      );
-      if (!panel) return;
       e.preventDefault();
+      if (rootRef.current) rootRef.current.style.transition = "none";
       widthDragRef.current = {
         startX: e.clientX,
         startWidth: relationsPanelWidth,
-        panel,
       };
       window.addEventListener("pointermove", onWidthPointerMove);
       window.addEventListener("pointerup", onWidthPointerUp);
@@ -428,57 +500,83 @@ export function RelationsPanel({
   // appears once a non-empty result settles.
   //
   // Focus mode also hides the panel (it's chrome). Returning null unmounts the
-  // whole Popover — closing any open content (which is portaled to body, beyond
-  // CSS reach) — so this is the authoritative close-on-focus-mode path.
+  // whole morph (handle + panel), so this is the authoritative
+  // close-on-focus-mode path.
   if (focusModeActive || !path || loading || error || isEmpty || count === 0) {
     return null;
   }
 
+  // Morph geometry: collapsed = the 28×112 handle (w-7 h-28, rounded-l-lg);
+  // open = the user-resizable panel (width var, 40–60vh). The single container
+  // eases between the two (`.relations-morph`) while the handle / panel faces
+  // crossfade. `right` is offset by the pinned cmd-bar width so the whole thing
+  // tracks the document column's right edge, not the window edge.
+  const containerStyle: React.CSSProperties = open
+    ? ({
+        right: handleRight,
+        "--relations-panel-width": `${relationsPanelWidth}px`,
+        "--relations-panel-height": String(relationsPanelHeight),
+        width: "var(--relations-panel-width)",
+        height: "calc(var(--relations-panel-height) * 100vh)",
+        maxHeight: "60vh",
+        minHeight: "40vh",
+        borderRadius: "0.75rem 0 0 0.75rem",
+      } as React.CSSProperties)
+    : ({
+        right: handleRight,
+        width: "1.75rem", // w-7
+        height: "7rem", // h-28
+        borderRadius: "0.5rem 0 0 0.5rem",
+      } as React.CSSProperties);
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <div
+      ref={rootRef}
+      data-testid="relations-root"
+      data-state={open ? "open" : "closed"}
+      style={containerStyle}
+      className={cn(
+        "relations-morph absolute top-1/2 z-30 -translate-y-1/2 overflow-hidden",
+        "border border-r-0 border-border bg-popover text-popover-foreground shadow-xl",
+      )}
+    >
+      {/* ---- Handle face (collapsed): comet + icon + count. Click toggles. ---- */}
       <TooltipProvider delayDuration={400}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                data-testid="relations-handle"
-                aria-label={`Relations — ${count} ${count === 1 ? "link" : "links"}`}
-                style={{ right: handleRight }}
-                className={cn(
-                  // Slim vertical handle docked to the document column's right
-                  // edge, vertically centred. Rounded LEFT corners only. `right`
-                  // is offset by the pinned cmd-bar width (see `handleRight`) so
-                  // it tracks the document column edge, not the window edge.
-                  "absolute top-1/2 -translate-y-1/2 z-30",
-                  "flex flex-col items-center justify-center gap-1",
-                  "h-28 w-7 rounded-l-lg border border-r-0 border-border",
-                  "bg-popover text-popover-foreground shadow-md",
-                  "transition-[color,background-color,opacity] duration-150 hover:bg-muted/60",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  // While the panel is open, fade the handle out (and disable it)
-                  // so it doesn't sit blinking next to the open panel — the panel
-                  // visually replaces the handle. Reduced motion snaps instantly.
-                  open && "opacity-0 pointer-events-none",
-                  "motion-reduce:transition-none",
-                  // CSS-only attention pulse — omitted under reduced motion AND
-                  // while open (a faded element shouldn't keep pulsing).
-                  !reducedMotion && !open && "relations-handle-pulsing",
-                )}
+            <button
+              ref={handleRef}
+              type="button"
+              data-testid="relations-handle"
+              aria-label={`Relations — ${count} ${count === 1 ? "link" : "links"}`}
+              aria-expanded={open}
+              aria-hidden={open || undefined}
+              tabIndex={open ? -1 : undefined}
+              onClick={() => setOpen((o) => !o)}
+              className={cn(
+                "absolute inset-0 z-10 flex flex-col items-center justify-center gap-1",
+                "transition-opacity duration-150 hover:bg-muted/60",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                // Fade out + disable once open — the panel face replaces it.
+                open && "opacity-0 pointer-events-none",
+                "motion-reduce:transition-none",
+              )}
+            >
+              {/* Comet attention cue — collapsed only, omitted under reduced
+                  motion. Keyed by `path` so its 3 laps restart on each doc-open. */}
+              {!reducedMotion && !open ? <RelationsComet key={path} /> : null}
+              <Link2
+                className="h-3.5 w-3.5 text-muted-foreground"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+              <span
+                data-testid="relations-handle-count"
+                className="font-mono text-[11px] font-medium tabular-nums"
               >
-                <Link2
-                  className="h-3.5 w-3.5 text-muted-foreground"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-                <span
-                  data-testid="relations-handle-count"
-                  className="font-mono text-[11px] font-medium tabular-nums"
-                >
-                  {count}
-                </span>
-              </button>
-            </PopoverTrigger>
+                {count}
+              </span>
+            </button>
           </TooltipTrigger>
           <TooltipContent side="left" sideOffset={8}>
             Relations — {count} {count === 1 ? "link" : "links"}
@@ -486,137 +584,107 @@ export function RelationsPanel({
         </Tooltip>
       </TooltipProvider>
 
-      <PopoverContent
-        side="left"
-        align="center"
-        sideOffset={0}
+      {/* ---- Panel face (expanded): header + body. Always mounted so the morph
+          can crossfade both ways; inert + faded while collapsed. The container
+          (not this div) owns the size, so this just fills it. ---- */}
+      <div
         data-testid="relations-panel"
-        // Don't yank focus onto the first row when the panel opens — it's a
-        // reading surface; keep the caret where the user was. Tab still reaches
-        // the rows. Reduced motion handled via motion-reduce variants below.
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        style={
-          {
-            "--relations-panel-width": `${relationsPanelWidth}px`,
-            width: "var(--relations-panel-width)",
-          } as React.CSSProperties
-        }
+        role="region"
+        aria-label="Relations"
+        inert={!open}
         className={cn(
-          // Flush against the column edge (sideOffset 0); rounded LEFT, flat
-          // RIGHT so it reads as docked to the column, not floating. Width is
-          // user-resizable via the left-edge hit-zone below (--relations-panel-width).
-          "p-0 rounded-l-xl rounded-r-none",
-          "border-r-0 shadow-xl overflow-hidden",
-          // "Grow from the handle" feel — the handle sits at the right edge, so
-          // the open/close zoom originates there (the popover content already
-          // ships data-state zoom-in-95/zoom-out-95 from @/components/ui/popover).
-          "origin-right",
-          "motion-reduce:!animate-none motion-reduce:!duration-0",
+          "absolute inset-0 flex flex-col",
+          "transition-opacity duration-150",
+          // Fade in only once the box has grown (delay); fade out immediately.
+          open ? "opacity-100 delay-[120ms]" : "pointer-events-none opacity-0",
+          "motion-reduce:!transition-none motion-reduce:!delay-0",
         )}
       >
-        {/* Left-edge width resize — invisible full-height hit-zone, no handle
-            indicator, mirroring the command bar's edge resize. Drag left to
-            grow. (Keyboard width adjust is intentionally omitted, matching the
-            cmd-bar's handle-less edge drag.) */}
+        {/* Left-edge width resize — invisible full-height hit-zone (drag left to
+            grow), mirroring the command bar's handle-less edge drag. */}
         <div
           aria-hidden="true"
           onPointerDown={onWidthPointerDown}
-          className={cn(
-            "absolute inset-y-0 left-0 z-10 w-1.5",
-            "cursor-ew-resize",
-          )}
+          className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-ew-resize"
         />
+
+        {/* Top-edge height resize handle — drag to grow taller (clamped 40–60%). */}
         <div
-          ref={contentRef}
-          style={
-            {
-              "--relations-panel-height": String(relationsPanelHeight),
-              height: "calc(var(--relations-panel-height) * 100vh)",
-              maxHeight: "60vh",
-              minHeight: "40vh",
-            } as React.CSSProperties
-          }
-          className="flex flex-col"
+          role="slider"
+          tabIndex={0}
+          aria-label="Resize relations panel"
+          aria-valuemin={40}
+          aria-valuemax={60}
+          aria-valuenow={Math.round(relationsPanelHeight * 100)}
+          onPointerDown={onResizePointerDown}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setRelationsPanelHeight(relationsPanelHeight + 0.05);
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setRelationsPanelHeight(relationsPanelHeight - 0.05);
+            }
+          }}
+          className={cn(
+            "group h-2 w-full shrink-0 cursor-ns-resize",
+            "flex items-center justify-center focus-visible:outline-none",
+          )}
         >
-          {/* Top-edge resize handle — drag to grow taller (clamped 40–60%). */}
-          <div
-            role="slider"
-            tabIndex={0}
-            aria-label="Resize relations panel"
-            aria-valuemin={40}
-            aria-valuemax={60}
-            aria-valuenow={Math.round(relationsPanelHeight * 100)}
-            onPointerDown={onResizePointerDown}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setRelationsPanelHeight(relationsPanelHeight + 0.05);
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setRelationsPanelHeight(relationsPanelHeight - 0.05);
-              }
-            }}
-            className={cn(
-              "group h-2 w-full shrink-0 cursor-ns-resize",
-              "flex items-center justify-center",
-              "focus-visible:outline-none",
-            )}
-          >
-            <div className="h-0.5 w-8 rounded-full bg-border group-hover:bg-muted-foreground focus-within:bg-muted-foreground transition-colors" />
-          </div>
-
-          {/* Header */}
-          <div className="flex items-center gap-1.5 border-b border-border/60 px-3 pb-2 pt-1">
-            <Link2 className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
-            <span className="text-sm font-semibold">Relations</span>
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {count}
-            </span>
-          </div>
-
-          {/* Scrollable body — two sections (Links to + Linked from). */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
-            {outlinks.length > 0 ? (
-              <section className="mb-3">
-                <SectionHeader
-                  icon={<CornerDownRight className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
-                  label="Links to"
-                  count={outlinks.length}
-                />
-                <ul className="flex flex-col gap-1.5">
-                  {outlinks.map((row, i) => (
-                    <ForwardLinkRow
-                      key={`${row.target_path}-${i}`}
-                      row={row}
-                      onNavigate={navigate}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {backlinks.length > 0 ? (
-              <section>
-                <SectionHeader
-                  icon={<CornerUpLeft className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
-                  label="Linked from"
-                  count={backlinkCount}
-                />
-                <ul className="flex flex-col gap-1.5">
-                  {backlinks.map((group) => (
-                    <BacklinkGroupRow
-                      key={group.source_path}
-                      group={group}
-                      onNavigate={navigate}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-          </div>
+          <div className="h-0.5 w-8 rounded-full bg-border transition-colors group-hover:bg-muted-foreground focus-within:bg-muted-foreground" />
         </div>
-      </PopoverContent>
-    </Popover>
+
+        {/* Header */}
+        <div className="flex items-center gap-1.5 border-b border-border/60 px-3 pb-2 pt-1">
+          <Link2 className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+          <span className="text-sm font-semibold">Relations</span>
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        </div>
+
+        {/* Scrollable body — two sections (Links to + Linked from). */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+          {outlinks.length > 0 ? (
+            <section className="mb-3">
+              <SectionHeader
+                icon={<CornerDownRight className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
+                label="Links to"
+                count={outlinks.length}
+              />
+              <ul className="flex flex-col gap-1.5">
+                {outlinks.map((row, i) => (
+                  <ForwardLinkRow
+                    key={`${row.target_path}-${i}`}
+                    row={row}
+                    onNavigate={navigate}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {backlinks.length > 0 ? (
+            <section>
+              <SectionHeader
+                icon={<CornerUpLeft className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
+                label="Linked from"
+                count={backlinkCount}
+              />
+              <ul className="flex flex-col gap-1.5">
+                {backlinks.map((group) => (
+                  <BacklinkGroupRow
+                    key={group.source_path}
+                    group={group}
+                    onNavigate={navigate}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 

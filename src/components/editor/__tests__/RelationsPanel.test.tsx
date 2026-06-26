@@ -127,10 +127,12 @@ describe("RelationsPanel", () => {
     setMockInvokeHandler("get_outlinks", () => [forwardResolved]);
 
     render(<RelationsPanel />);
-    // The panel coexists with the pinned cmd bar by offsetting the handle by
-    // the pinned width — it is NOT hidden.
-    const handle = await screen.findByTestId("relations-handle");
-    expect(handle.style.right).toBe("var(--cmd-bar-pinned-width, 400px)");
+    // The panel coexists with the pinned cmd bar by offsetting the morph
+    // container by the pinned width — it is NOT hidden. The container (not the
+    // handle face) is the positioned element that carries the offset.
+    await screen.findByTestId("relations-handle");
+    const root = screen.getByTestId("relations-root");
+    expect(root.style.right).toBe("var(--cmd-bar-pinned-width, 400px)");
   });
 
   it("hides entirely when focus mode is active (chrome)", async () => {
@@ -153,14 +155,15 @@ describe("RelationsPanel", () => {
 
     render(<RelationsPanel />);
     const handle = await screen.findByTestId("relations-handle");
-    // Closed: handle is visible (no fade-out class).
+    // Closed: handle is visible (no fade-out class) and the comet cue is drawn.
     expect(handle.className).not.toContain("opacity-0");
+    expect(document.querySelectorAll(".relations-comet-dot").length).toBeGreaterThan(0);
     fireEvent.click(handle);
     await screen.findByTestId("relations-panel");
-    // Open: handle fades out and stops blinking.
+    // Open: handle face fades out and the collapsed-only comet cue is gone.
     expect(handle.className).toContain("opacity-0");
     expect(handle.className).toContain("pointer-events-none");
-    expect(handle.className).not.toContain("relations-handle-pulsing");
+    expect(document.querySelectorAll(".relations-comet-dot").length).toBe(0);
   });
 
   it("has no footer Close button — Esc / click-away closes the panel", async () => {
