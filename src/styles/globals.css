@@ -611,32 +611,66 @@ body {
   }
 }
 
-/* RelationsPanel collapsed-handle pulse (OKF wiki-navigation, ADR 0004). The
- * slim right-edge handle pulses a soft accent ring when the open document has
- * any relations, drawing the eye without shouting. CSS-only — zero JS in the
- * animation loop, mirroring the orb-pulse pattern. The component omits the
- * `.relations-handle-pulsing` class when `useReducedMotion()` is true; the
- * @media guard below is defence-in-depth for an OS-preference flip after mount. */
-@keyframes relations-handle-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 var(--color-accent-primary);
-  }
-  50% {
-    box-shadow: 0 0 0 4px transparent;
-  }
+/* RelationsPanel collapsed-handle "comet" attention cue (OKF wiki-navigation,
+ * ADR 0004). Instead of a pulsing ring, a small comet — a bright lead dot with a
+ * tapering tail of dimmer, smaller dots — traces the handle's border. Calmer
+ * than a pulse: it draws the eye without flashing the whole element. CSS-only
+ * (per-dot size/opacity/delay are set inline by the component); zero JS in the
+ * animation loop. Runs 3 laps then settles (the dots re-key on each doc-open so
+ * a new document restarts it — "announce, then quiet"). The component omits the
+ * dots entirely under `useReducedMotion()`; the @media guard below parks a
+ * single static head as defence-in-depth for an OS-preference flip after mount.
+ *
+ * The `offset-path` is the perimeter of the 28×112 handle box with 8px-rounded
+ * LEFT corners (matches `w-7 h-28 rounded-l-lg`); dots ride it via `offset-anchor:
+ * center`, looping `offset-distance` 0%→100%. */
+@keyframes relations-comet-run {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
 }
 
-.relations-handle-pulsing {
-  /* Finite run — ~4 iterations of 1.8s (~7.2s total) then it settles calm.
-   * The handle re-mounts on each document switch, so a fresh element naturally
-   * restarts the animation: "attention on new doc, then quiet". `forwards` keeps
-   * the final keyframe state (no abrupt snap when the animation ends). */
-  animation: relations-handle-pulse 1.8s ease-in-out 4 forwards;
+.relations-comet-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 9999px;
+  background: var(--color-accent-primary);
+  offset-path: path("M28,0 L28,112 L8,112 A8,8 0 0 1 0,104 L0,8 A8,8 0 0 1 8,0 Z");
+  offset-anchor: center;
+  animation: relations-comet-run 3.4s linear 3 forwards;
+  will-change: offset-distance;
+}
+
+.relations-comet-head {
+  box-shadow: 0 0 7px 1.5px color-mix(in oklch, var(--color-accent-primary) 75%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .relations-handle-pulsing {
+  .relations-comet-dot {
     animation: none;
+    offset-distance: 8%;
+  }
+  /* Keep only the head as a static "has links" dot under reduced motion. */
+  .relations-comet-dot:not(.relations-comet-head) {
+    display: none;
+  }
+}
+
+/* The handle ⇄ panel morph: the single container eases its size + corner radius
+ * between the slim handle and the rolled-out panel. Kept in CSS (not a React
+ * inline style) so the resize drag can imperatively set `transition: none`
+ * during a drag and clear it after without fighting React's style reconciliation.
+ * Reduced motion snaps instantly. */
+.relations-morph {
+  transition:
+    width 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relations-morph {
+    transition: none;
   }
 }
 
