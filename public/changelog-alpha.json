@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.7",
+      "date": "2026-06-27",
+      "previousVersion": "0.48.0-alpha.6",
+      "sections": {
+        "features": [
+          "feat(relations): morph handle⇄panel + comet attention cue (#502)"
+        ]
+      },
+      "underTheHood": [
+        "feat(relations): morph handle⇄panel + comet attention cue (#502)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.6",
       "date": "2026-06-26",
       "previousVersion": "0.48.0-alpha.5",
