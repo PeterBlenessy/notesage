@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.6",
+      "date": "2026-06-26",
+      "previousVersion": "0.48.0-alpha.5",
+      "sections": {},
+      "underTheHood": [
+        "test: run files sequentially to fix order-dependent flaky tests (#501)",
+        "test: run files sequentially to fix order-dependent flaky tests (#501)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.5",
       "date": "2026-06-26",
       "previousVersion": "0.48.0-alpha.4",
