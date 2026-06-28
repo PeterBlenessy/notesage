@@ -7,6 +7,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
 import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
+import { MissedRunsDialog } from "@/components/automations/MissedRunsDialog";
 import { LocalAgentSetupDialog } from "@/components/settings/LocalAgentSetupDialog";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
@@ -798,6 +799,7 @@ function App() {
       </div>
       <McpDeepLinkInstaller />
       <LocalAgentSetupDialog />
+      <MissedRunsDialog />
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useAutomationStore } from '@/stores/automation-store';
+import { usePermissionStore } from '@/stores/permission-store';
 import { runAutomationNow } from '@/lib/automations/run-bridge';
 import { needsArming, isArmed } from '@/lib/automations/arm';
 import type { Automation, RunStatus, TriggerType } from '@/lib/automations/types';
@@ -35,6 +36,7 @@ import {
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { AutomationForm } from './automations/AutomationForm';
+import { ArmDialog } from './automations/ArmDialog';
 
 const TRIGGER_ICON: Record<TriggerType, typeof Clock> = {
   schedule: Clock,
@@ -54,10 +56,20 @@ function scopeLabel(scope: string | undefined): string {
   return scope.split('/').filter(Boolean).pop() ?? scope;
 }
 
-function AutomationItem({ automation, onEdit }: { automation: Automation; onEdit: () => void }) {
+function AutomationItem({
+  automation,
+  onEdit,
+  onArm,
+}: {
+  automation: Automation;
+  onEdit: () => void;
+  onArm: () => void;
+}) {
   const setEnabled = useAutomationStore((s) => s.setEnabled);
   const remove = useAutomationStore((s) => s.remove);
   const lastRun = useAutomationStore((s) => s.runsByAutomation[automation.sourcePath]?.[0]);
+  // Subscribe to the arm record so the badge updates the moment it's armed.
+  const armRecord = usePermissionStore((s) => s.automationArm[automation.sourcePath]);
   const [armed, setArmed] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -73,7 +85,7 @@ function AutomationItem({ automation, onEdit }: { automation: Automation; onEdit
     return () => {
       cancelled = true;
     };
-  }, [automation]);
+  }, [automation, armRecord]);
 
   const Icon = TRIGGER_ICON[automation.trigger.type];
   const disarmed = needsArming(automation) && !armed;
@@ -91,16 +103,18 @@ function AutomationItem({ automation, onEdit }: { automation: Automation; onEdit
           {disarmed && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Badge
-                  variant="outline"
-                  className="shrink-0 gap-1 text-[10px] text-muted-foreground"
-                >
-                  <AlertTriangle className="size-3" strokeWidth={1.5} />
-                  Needs arming
-                </Badge>
+                <button type="button" onClick={onArm} className="shrink-0">
+                  <Badge
+                    variant="outline"
+                    className="cursor-pointer gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                  >
+                    <AlertTriangle className="size-3" strokeWidth={1.5} />
+                    Needs arming
+                  </Badge>
+                </button>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Contains a write step — review &amp; arm it before it can run.
+                Contains a write step — click to review &amp; arm it.
               </TooltipContent>
             </Tooltip>
           )}
@@ -206,6 +220,7 @@ export function AutomationsSettings() {
 
   const [reliabilityPrompt, setReliabilityPrompt] = useState(false);
   const [formTarget, setFormTarget] = useState<Automation | 'new' | null>(null);
+  const [armTarget, setArmTarget] = useState<Automation | null>(null);
 
   const handleMasterToggle = (checked: boolean) => {
     setAutomationsEnabled(checked);
@@ -267,6 +282,7 @@ export function AutomationsSettings() {
                   key={a.sourcePath}
                   automation={a}
                   onEdit={() => setFormTarget(a)}
+                  onArm={() => setArmTarget(a)}
                 />
               ))}
             </ul>
@@ -324,6 +340,8 @@ export function AutomationsSettings() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ArmDialog automation={armTarget} onClose={() => setArmTarget(null)} />
     </TooltipProvider>
   );
 }
