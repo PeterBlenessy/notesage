@@ -57,6 +57,9 @@ sha2 = "0.10"
 # Skills & Agents Platform (Phase 7)
 serde_norway = "0.9"
 
+# Automations — 5-field standard cron parsing + next-time (chrono-native)
+saffron = "0.1"
+
 # Non-poisoning mutexes (replaces std::sync::Mutex for index + watcher)
 parking_lot = "0.12"
 
