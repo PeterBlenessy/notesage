@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Clock, FileText, Workflow, Play, Trash2, AlertTriangle } from 'lucide-react';
+import { Clock, FileText, Workflow, Play, Trash2, AlertTriangle, Plus, Pencil } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,15 @@ import { useAutomationStore } from '@/stores/automation-store';
 import { runAutomationNow } from '@/lib/automations/run-bridge';
 import { needsArming, isArmed } from '@/lib/automations/arm';
 import type { Automation, RunStatus, TriggerType } from '@/lib/automations/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
+import { AutomationForm } from './automations/AutomationForm';
 
 const TRIGGER_ICON: Record<TriggerType, typeof Clock> = {
   schedule: Clock,
@@ -47,7 +54,7 @@ function scopeLabel(scope: string | undefined): string {
   return scope.split('/').filter(Boolean).pop() ?? scope;
 }
 
-function AutomationItem({ automation }: { automation: Automation }) {
+function AutomationItem({ automation, onEdit }: { automation: Automation; onEdit: () => void }) {
   const setEnabled = useAutomationStore((s) => s.setEnabled);
   const remove = useAutomationStore((s) => s.remove);
   const lastRun = useAutomationStore((s) => s.runsByAutomation[automation.sourcePath]?.[0]);
@@ -129,6 +136,21 @@ function AutomationItem({ automation }: { automation: Automation }) {
           <Button
             variant="ghost"
             size="icon"
+            className="size-8 shrink-0"
+            aria-label={`Edit ${automation.name}`}
+            onClick={onEdit}
+          >
+            <Pencil className="size-4" strokeWidth={1.5} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Edit</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
             className="size-8 shrink-0 text-muted-foreground hover:text-[var(--color-destructive)]"
             aria-label={`Delete ${automation.name}`}
             onClick={() => setConfirmDelete(true)}
@@ -183,6 +205,7 @@ export function AutomationsSettings() {
   const invalid = useAutomationStore((s) => s.invalid);
 
   const [reliabilityPrompt, setReliabilityPrompt] = useState(false);
+  const [formTarget, setFormTarget] = useState<Automation | 'new' | null>(null);
 
   const handleMasterToggle = (checked: boolean) => {
     setAutomationsEnabled(checked);
@@ -225,16 +248,26 @@ export function AutomationsSettings() {
 
       <SettingsGroup label="Your automations" bare>
         <div className="py-1">
+          <div className="mb-1 flex justify-end">
+            <Button size="sm" className="h-8 gap-1 text-xs" onClick={() => setFormTarget('new')}>
+              <Plus className="size-3.5" strokeWidth={1.5} />
+              New automation
+            </Button>
+          </div>
           {automations.length === 0 ? (
             <p className="px-1 py-6 text-sm text-muted-foreground">
-              No automations yet. Add a{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">.yaml</code> file under{' '}
+              No automations yet. Click <span className="font-medium">New automation</span> — or add
+              a <code className="rounded bg-muted px-1 py-0.5 text-xs">.yaml</code> file under{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-xs">.notesage/automations/</code>.
             </p>
           ) : (
             <ul className="divide-y divide-border">
               {automations.map((a) => (
-                <AutomationItem key={a.sourcePath} automation={a} />
+                <AutomationItem
+                  key={a.sourcePath}
+                  automation={a}
+                  onEdit={() => setFormTarget(a)}
+                />
               ))}
             </ul>
           )}
@@ -278,6 +311,19 @@ export function AutomationsSettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={formTarget !== null} onOpenChange={(open) => !open && setFormTarget(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {formTarget && formTarget !== 'new' ? 'Edit automation' : 'New automation'}
+            </DialogTitle>
+          </DialogHeader>
+          {formTarget !== null && (
+            <AutomationForm target={formTarget} onClose={() => setFormTarget(null)} />
+          )}
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
