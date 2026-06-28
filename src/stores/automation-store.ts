@@ -6,9 +6,15 @@
 // PRD: docs/prds/2026-06-28-automations.md (Task #3)
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { createTauriStorage } from '@/lib/tauri-storage';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
-import type { Automation } from '@/lib/automations/types';
+import type { Automation, AutomationRun } from '@/lib/automations/types';
+
+/** Per-automation run-history retention. */
+const RUNS_CAP = 20;
+const RUNS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A file that failed to parse/validate — surfaced in the Automations panel. */
 export interface InvalidAutomation {
@@ -25,6 +31,8 @@ interface AutomationStoreState {
   baseDirs: string[];
   isScanning: boolean;
   lastScanTimestamp: number;
+  /** Durable per-automation run history, keyed by `sourcePath` (persisted). */
+  runsByAutomation: Record<string, AutomationRun[]>;
 }
 
 interface AutomationStoreActions {
@@ -39,6 +47,13 @@ interface AutomationStoreActions {
   save: (sourcePath: string, yaml: string) => Promise<void>;
   /** Delete a definition, then re-scan and reload the schedule. */
   remove: (sourcePath: string) => Promise<void>;
+
+  // --- Runs history (written by the runner, Task #7) ---
+  /** Insert a new run (deduped by `runId`), capped + TTL-pruned per automation. */
+  recordRun: (run: AutomationRun) => void;
+  /** Patch an existing run in place (streaming status / step updates). */
+  updateRun: (sourcePath: string, runId: string, patch: Partial<AutomationRun>) => void;
+  getRuns: (sourcePath: string) => AutomationRun[];
 }
 
 type AutomationStore = AutomationStoreState & AutomationStoreActions;
@@ -49,12 +64,15 @@ function inScope(scope: string | undefined, selected?: string[]): boolean {
   return selected.includes(scope);
 }
 
-export const useAutomationStore = create<AutomationStore>()((set, get) => ({
+export const useAutomationStore = create<AutomationStore>()(
+  persist(
+    (set, get) => ({
   automations: [],
   invalid: [],
   baseDirs: [],
   isScanning: false,
   lastScanTimestamp: 0,
+  runsByAutomation: {},
 
   getScopedAutomations: (selectedProjectPaths) =>
     get().automations.filter((a) => inScope(a.scope, selectedProjectPaths)),
@@ -103,4 +121,35 @@ export const useAutomationStore = create<AutomationStore>()((set, get) => ({
       log.error('automations', 'reload after delete failed', e);
     }
   },
-}));
+
+  recordRun: (run) =>
+    set((state) => {
+      const now = Date.now();
+      const existing = state.runsByAutomation[run.sourcePath] ?? [];
+      const next = [run, ...existing.filter((r) => r.runId !== run.runId)]
+        .filter((r) => now - r.startedAt < RUNS_TTL_MS)
+        .slice(0, RUNS_CAP);
+      return {
+        runsByAutomation: { ...state.runsByAutomation, [run.sourcePath]: next },
+      };
+    }),
+
+  updateRun: (sourcePath, runId, patch) =>
+    set((state) => {
+      const list = state.runsByAutomation[sourcePath];
+      if (!list) return {};
+      const next = list.map((r) => (r.runId === runId ? { ...r, ...patch } : r));
+      return { runsByAutomation: { ...state.runsByAutomation, [sourcePath]: next } };
+    }),
+
+  getRuns: (sourcePath) => get().runsByAutomation[sourcePath] ?? [],
+    }),
+    {
+      name: 'notesage-automations',
+      storage: createTauriStorage(),
+      version: 1,
+      // Persist only the durable run history — definitions are re-scanned from disk.
+      partialize: (state) => ({ runsByAutomation: state.runsByAutomation }),
+    }
+  )
+);

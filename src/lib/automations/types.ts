@@ -84,6 +84,8 @@ export type RunStatus = 'running' | 'done' | 'error' | 'skipped';
 export interface AutomationRun {
   runId: string;
   automationId: string;
+  /** Unique key the run is filed under (matches `Automation.sourcePath`). */
+  sourcePath: string;
   startedAt: number;
   completedAt?: number;
   status: RunStatus;

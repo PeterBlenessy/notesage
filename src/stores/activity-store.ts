@@ -16,7 +16,7 @@ export type AgentTaskStatus = 'running' | 'done' | 'error' | 'cancelled';
  * Existing persisted tasks (pre-v2) lack this field; the v1→v2 migration
  * backfills `'agent'` so they render with the unchanged agent treatment.
  */
-export type AgentTaskKind = 'agent' | 'transcription' | 'recording';
+export type AgentTaskKind = 'agent' | 'transcription' | 'recording' | 'automation';
 
 export interface AgentTask {
   id: string;
