@@ -30,6 +30,7 @@ import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useWindowTitle } from "@/hooks/useWindowTitle";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
 import { useAutomationDiscovery } from "@/hooks/useAutomationDiscovery";
+import { useAutomationRunner } from "@/hooks/useAutomationRunner";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
@@ -141,6 +142,7 @@ function App() {
   useWindowTitle();
   useMcpDiscovery();
   useAutomationDiscovery();
+  useAutomationRunner();
   useLocalAI();
   useSandboxViolations();
   useActionScanner();
