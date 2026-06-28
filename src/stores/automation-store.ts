@@ -47,6 +47,10 @@ interface AutomationStoreActions {
   save: (sourcePath: string, yaml: string) => Promise<void>;
   /** Delete a definition, then re-scan and reload the schedule. */
   remove: (sourcePath: string) => Promise<void>;
+  /** Toggle a single automation's `enabled` flag in its YAML, then reload.
+   *  A targeted line-edit (preserves comments/formatting) rather than a
+   *  full re-serialize — the form builder owns full serialization. */
+  setEnabled: (sourcePath: string, enabled: boolean) => Promise<void>;
 
   // --- Runs history (written by the runner, Task #7) ---
   /** Insert a new run (deduped by `runId`), capped + TTL-pruned per automation. */
@@ -120,6 +124,21 @@ export const useAutomationStore = create<AutomationStore>()(
     } catch (e) {
       log.error('automations', 'reload after delete failed', e);
     }
+  },
+
+  setEnabled: async (sourcePath, enabled) => {
+    let raw = '';
+    try {
+      raw = await tauriApi.readFile(sourcePath);
+    } catch (e) {
+      log.error('automations', 'read for enable toggle failed', e);
+      return;
+    }
+    const line = `enabled: ${enabled}`;
+    const next = /^enabled:[ \t]*.*$/m.test(raw)
+      ? raw.replace(/^enabled:[ \t]*.*$/m, line)
+      : `${line}\n${raw}`;
+    await get().save(sourcePath, next);
   },
 
   recordRun: (run) =>
