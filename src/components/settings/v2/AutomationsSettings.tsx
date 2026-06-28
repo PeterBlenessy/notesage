@@ -37,6 +37,7 @@ import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { AutomationForm } from './automations/AutomationForm';
 import { ArmDialog } from './automations/ArmDialog';
+import { RunsHistory } from './automations/RunsHistory';
 
 const TRIGGER_ICON: Record<TriggerType, typeof Clock> = {
   schedule: Clock,
@@ -60,10 +61,12 @@ function AutomationItem({
   automation,
   onEdit,
   onArm,
+  onHistory,
 }: {
   automation: Automation;
   onEdit: () => void;
   onArm: () => void;
+  onHistory: () => void;
 }) {
   const setEnabled = useAutomationStore((s) => s.setEnabled);
   const remove = useAutomationStore((s) => s.remove);
@@ -120,12 +123,16 @@ function AutomationItem({
           )}
         </div>
         {lastRun && (
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onHistory}
+            className="mt-0.5 flex items-center gap-1.5 hover:underline"
+          >
             <span className={cn('size-1.5 rounded-full', STATUS_DOT[lastRun.status])} />
             <span className="text-xs text-muted-foreground">
-              Last run {lastRun.status}
+              Last run {lastRun.status} · history
             </span>
-          </div>
+          </button>
         )}
       </div>
 
@@ -221,6 +228,7 @@ export function AutomationsSettings() {
   const [reliabilityPrompt, setReliabilityPrompt] = useState(false);
   const [formTarget, setFormTarget] = useState<Automation | 'new' | null>(null);
   const [armTarget, setArmTarget] = useState<Automation | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Automation | null>(null);
 
   const handleMasterToggle = (checked: boolean) => {
     setAutomationsEnabled(checked);
@@ -283,6 +291,7 @@ export function AutomationsSettings() {
                   automation={a}
                   onEdit={() => setFormTarget(a)}
                   onArm={() => setArmTarget(a)}
+                  onHistory={() => setHistoryTarget(a)}
                 />
               ))}
             </ul>
@@ -342,6 +351,15 @@ export function AutomationsSettings() {
       </Dialog>
 
       <ArmDialog automation={armTarget} onClose={() => setArmTarget(null)} />
+
+      <Dialog open={historyTarget !== null} onOpenChange={(open) => !open && setHistoryTarget(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{historyTarget?.name} — run history</DialogTitle>
+          </DialogHeader>
+          {historyTarget && <RunsHistory sourcePath={historyTarget.sourcePath} />}
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
