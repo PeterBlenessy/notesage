@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-28 |
-| **Status** | Not started |
+| **Status** | Phase 1 complete — all 13 tasks done on `feat/automations` |
 | **PRD** | [automations](../prds/2026-06-28-automations.md) |
 | **Research** | [automation-formats](../research/automation-formats.md) — schema reflects R1–R4 (condition / output envelope / `mode:` / cron) |
 | **Phase** | Phase 1 — Scheduled foundation + Daily Digest north star |
@@ -22,7 +22,7 @@ Phase 1 ships the **Daily Digest** north star end-to-end: a scheduled automation
 
 ---
 
-## #1 — `commands/automations.rs`: types + YAML CRUD + validation ⏳
+## #1 — `commands/automations.rs`: types + YAML CRUD + validation ✅
 
 **Category:** backend · **Complexity:** L · **Depends on:** —
 
@@ -37,7 +37,7 @@ Create the Rust module backing automation definitions. Add the `cron` crate to `
 
 ---
 
-## #2 — Tokio scheduler + catch-up (`AutomationSchedulerState`) ⏳
+## #2 — Tokio scheduler + catch-up (`AutomationSchedulerState`) ✅
 
 **Category:** backend · **Complexity:** L · **Depends on:** #1
 
@@ -53,7 +53,7 @@ Spawn a single scheduler `tokio` task in `lib.rs` setup.
 
 ---
 
-## #3 — TS types + `automation-store` ⏳
+## #3 — TS types + `automation-store` ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1
 
@@ -66,7 +66,7 @@ Spawn a single scheduler `tokio` task in `lib.rs` setup.
 
 ---
 
-## #4 — `activity-store` kind + Runs history ⏳
+## #4 — `activity-store` kind + Runs history ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3
 
@@ -78,7 +78,7 @@ Spawn a single scheduler `tokio` task in `lib.rs` setup.
 
 ---
 
-## #5 — Settings: master toggle + failure notify + tray/autostart prompt ⏳
+## #5 — Settings: master toggle + failure notify + tray/autostart prompt ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** #3
 
@@ -90,7 +90,7 @@ Spawn a single scheduler `tokio` task in `lib.rs` setup.
 
 ---
 
-## #6 — Template renderer (`{{…}}` tokens) ⏳
+## #6 — Template renderer (`{{…}}` tokens) ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3
 
@@ -101,7 +101,7 @@ Spawn a single scheduler `tokio` task in `lib.rs` setup.
 
 ---
 
-## #7 — Pipeline executor + `useAutomationRunner` (always-mounted) ⏳
+## #7 — Pipeline executor + `useAutomationRunner` (always-mounted) ✅
 
 **Category:** frontend · **Complexity:** L · **Depends on:** #2, #3, #4, #5, #6
 
@@ -121,7 +121,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #8 — Approve-to-arm ⏳
+## #8 — Approve-to-arm ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3, #7
 
@@ -134,7 +134,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #9 — Settings → Automations panel + list view ⏳
+## #9 — Settings → Automations panel + list view ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3
 
@@ -146,7 +146,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #10 — Form builder (create/edit) ⏳
+## #10 — Form builder (create/edit) ✅
 
 **Category:** frontend · **Complexity:** L · **Depends on:** #3, #6, #9
 
@@ -161,7 +161,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #11 — Arm dialog + missed-runs chooser ⏳
+## #11 — Arm dialog + missed-runs chooser ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #7, #8, #9
 
@@ -173,7 +173,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #12 — Runs history view + AgentOrb rendering ⏳
+## #12 — Runs history view + AgentOrb rendering ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #4, #9
 
@@ -185,7 +185,7 @@ The runtime core. Mount `useAutomationRunner` at the **App root** (next to `useS
 
 ---
 
-## #13 — Tests: executor, guardrails, arm, catch-up ⏳
+## #13 — Tests: executor, guardrails, arm, catch-up ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #7, #8
 
