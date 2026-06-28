@@ -29,6 +29,7 @@ import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useWindowTitle } from "@/hooks/useWindowTitle";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
+import { useAutomationDiscovery } from "@/hooks/useAutomationDiscovery";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
@@ -139,6 +140,7 @@ function App() {
   // document is active.
   useWindowTitle();
   useMcpDiscovery();
+  useAutomationDiscovery();
   useLocalAI();
   useSandboxViolations();
   useActionScanner();
