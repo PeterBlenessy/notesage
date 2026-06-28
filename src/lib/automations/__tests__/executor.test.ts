@@ -81,7 +81,7 @@ describe('runAutomation', () => {
     expect(calls.notify[0]).toEqual({ title: 'done', body: 'AGENT_OUT' });
     // persistRun is called at start + after each step + at completion.
     expect(calls.runs.length).toBeGreaterThanOrEqual(4);
-    expect(calls.runs.at(-1)?.status).toBe('done');
+    expect(calls.runs[calls.runs.length - 1]?.status).toBe('done');
   });
 
   it('stops at a failing step and records the error', async () => {

@@ -14,6 +14,7 @@ import {
   type ExecutorDeps,
 } from '@/lib/automations/executor';
 import { registerAutomationRunner } from '@/lib/automations/run-bridge';
+import { needsArming, isArmed } from '@/lib/automations/arm';
 import type {
   Automation,
   AutomationRun,
@@ -140,12 +141,12 @@ export function useAutomationRunner() {
     }
   };
 
-  requestRunRef.current = (automation, trigger) => {
+  requestRunRef.current = async (automation, trigger) => {
     if (!automation.enabled) return;
 
-    // Arm gate (refined in Task #8): a write step requires the automation to be armed.
-    const needsArm = automation.steps.some((s) => s.type === 'document');
-    if (needsArm && !automation.armed) {
+    // Arm gate: a write/script step requires a content-pinned arm record that
+    // matches the current definition (editing the automation auto-disarms it).
+    if (needsArming(automation) && !(await isArmed(automation))) {
       recordSkipped(automation, trigger, 'not armed');
       return;
     }

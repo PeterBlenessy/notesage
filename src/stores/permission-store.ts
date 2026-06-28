@@ -47,6 +47,20 @@ export interface ScopedApproval {
   contentHash?: string | null;
 }
 
+/**
+ * Content-pinned arm record for an automation (Task #8). An automation with a
+ * write/script step is only run when the stored `hash` matches its current
+ * definition hash — editing the automation changes the hash, so it auto-disarms.
+ */
+export interface AutomationArmRecord {
+  /** SHA-256 of the automation's security-relevant definition. */
+  hash: string;
+  /** ms since epoch — for the Settings/Approvals review UI. */
+  armedAt: number;
+  /** Write scope shown in the arm dialog (project root / library + doc paths). */
+  scope: string[];
+}
+
 interface PermissionState {
   /** Pending permission requests awaiting user decision. */
   requests: PermissionRequest[];
@@ -78,6 +92,9 @@ interface PermissionState {
 
   /** Direct-API tool names always allowed (persisted), scoped by connection + project. */
   toolCallAlways: ScopedApproval[];
+
+  /** Per-automation arm records, keyed by `sourcePath` (persisted). Task #8. */
+  automationArm: Record<string, AutomationArmRecord>;
 
   /**
    * Transient: set by the v1→v2 persist migration, indicating how many legacy
@@ -242,6 +259,12 @@ interface PermissionStore extends PermissionState {
     connectionId: string | null,
     projectRoot: string | null,
   ) => PermissionTier;
+
+  /** Arm an automation: content-pin its definition hash + write scope (Task #8). */
+  armAutomation: (sourcePath: string, hash: string, scope: string[]) => void;
+  /** Remove an automation's arm record. */
+  disarmAutomation: (sourcePath: string) => void;
+  getAutomationArm: (sourcePath: string) => AutomationArmRecord | undefined;
 }
 
 /**
@@ -390,6 +413,7 @@ export function _migrateLegacyState(persistedState: unknown, version: number): P
     domainAlwaysAllowed: newDomains,
     toolCallSession: new Set<string>(),
     toolCallAlways,
+    automationArm: {},
     _pendingLegacyToastCount: legacyCount > 0 ? legacyCount : undefined,
   };
   return next;
@@ -407,6 +431,7 @@ export const usePermissionStore = create<PermissionStore>()(
       domainAlwaysAllowed: {},
       toolCallSession: new Set<string>(),
       toolCallAlways: [],
+      automationArm: {},
 
       addRequest: (request) =>
         set((state) => ({
@@ -676,6 +701,24 @@ export const usePermissionStore = create<PermissionStore>()(
           ),
         })),
 
+      armAutomation: (sourcePath, hash, scope) =>
+        set((state) => ({
+          automationArm: {
+            ...state.automationArm,
+            [sourcePath]: { hash, armedAt: Date.now(), scope },
+          },
+        })),
+
+      disarmAutomation: (sourcePath) =>
+        set((state) => {
+          if (!state.automationArm[sourcePath]) return state;
+          const next = { ...state.automationArm };
+          delete next[sourcePath];
+          return { automationArm: next };
+        }),
+
+      getAutomationArm: (sourcePath) => get().automationArm[sourcePath],
+
       isToolAllowed: (toolName, connectionId, projectRoot) => {
         const state = get();
         if (state.isToolAutoAllowed(toolName)) return 'always';
@@ -701,6 +744,7 @@ export const usePermissionStore = create<PermissionStore>()(
         skillScriptAlways: state.skillScriptAlways,
         domainAlwaysAllowed: state.domainAlwaysAllowed,
         toolCallAlways: state.toolCallAlways,
+        automationArm: state.automationArm,
       }),
     },
   ),
