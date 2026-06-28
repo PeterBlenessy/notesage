@@ -15,6 +15,7 @@ import {
 } from '@/lib/automations/executor';
 import { registerAutomationRunner } from '@/lib/automations/run-bridge';
 import { needsArming, isArmed } from '@/lib/automations/arm';
+import { formatToday } from '@/lib/automations/template';
 import type {
   Automation,
   AutomationRun,
@@ -87,18 +88,23 @@ export function useAutomationRunner() {
       automation.scope && automation.scope !== 'global' ? automation.scope : `${homeDir}/Notesage`;
 
     const deps: ExecutorDeps = {
-      runAgent: (prompt, projectRoot) =>
+      // SEC-3: bind the agent's cwd to `base` (project root, or ~/Notesage for a
+      // global automation) deterministically — never the transient command-bar
+      // selection. A non-/tmp cwd also keeps the per-tool path filter ON.
+      runAgent: (prompt) =>
         new Promise<string>((resolve, reject) => {
           startTaskRef
             .current(
               prompt,
               { onComplete: resolve, onError: (e) => reject(new Error(e)) },
-              { type: 'workflow', label: automation.name, projectRoot, trackInActivityStore: false },
+              { type: 'workflow', label: automation.name, projectRoot: base, trackInActivityStore: false },
             )
             .catch(reject);
         }),
       writeDocument: async (path, content, op) => {
-        const abs = path.startsWith('/') ? path : `${base}/${path}`;
+        // SEC-1: resolve via Rust, which rejects absolute paths and `..`
+        // traversal so a template-rendered path can't escape the scope.
+        const abs = await tauriApi.resolveAutomationWritePath(base, path);
         await tauriApi.markSelfWrite(abs);
         if (op === 'append') {
           let existing = '';
@@ -151,11 +157,21 @@ export function useAutomationRunner() {
       return;
     }
 
-    const reason = guardrailsRef.current!.check(
-      automation.sourcePath,
-      automation.guardrails?.maxRunsPerDay ?? 24,
-      new Date(),
-    );
+    // SEC-5: durable daily cap — count today's real (non-skipped) runs from the
+    // persisted history so the limit survives restarts (the in-memory
+    // GuardrailTracker below still enforces the fire-rate circuit breaker).
+    const cap = automation.guardrails?.maxRunsPerDay ?? 24;
+    const today = formatToday(new Date());
+    const runsToday = useAutomationStore
+      .getState()
+      .getRuns(automation.sourcePath)
+      .filter((r) => r.status !== 'skipped' && formatToday(new Date(r.startedAt)) === today).length;
+    if (runsToday >= cap) {
+      recordSkipped(automation, trigger, `daily limit reached (${cap}/day)`);
+      return;
+    }
+
+    const reason = guardrailsRef.current!.check(automation.sourcePath, cap, new Date());
     if (reason) {
       log.info('automations', `skipped ${automation.id}: ${reason}`);
       recordSkipped(automation, trigger, reason);

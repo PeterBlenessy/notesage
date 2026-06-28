@@ -10,6 +10,7 @@ import { persist } from 'zustand/middleware';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
+import { usePermissionStore } from '@/stores/permission-store';
 import type { Automation, AutomationRun } from '@/lib/automations/types';
 
 /** Per-automation run-history retention. */
@@ -117,6 +118,8 @@ export const useAutomationStore = create<AutomationStore>()(
 
   remove: async (sourcePath) => {
     await tauriApi.deleteAutomation(sourcePath);
+    // Clear the arm record so a later automation at the same path can't inherit it.
+    usePermissionStore.getState().disarmAutomation(sourcePath);
     const { baseDirs } = get();
     await get().scan(baseDirs);
     try {

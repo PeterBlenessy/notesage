@@ -249,6 +249,7 @@ pub fn run() {
             save_automation,
             delete_automation,
             validate_automation,
+            resolve_automation_write_path,
             set_automations_enabled,
             reload_automation_schedule,
             delete_path,

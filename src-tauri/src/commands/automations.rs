@@ -432,10 +432,37 @@ pub async fn list_automations(base_dirs: Vec<String>) -> Result<Vec<AutomationFi
     Ok(out)
 }
 
-/// Write a YAML definition (the form builder serializes to this). Validates
-/// before writing so a malformed definition never lands on disk.
+/// True only for `<…>/.notesage/automations/<name>.yaml|yml` — confines
+/// `save_automation` so a crafted path can't write valid-automation YAML
+/// outside the automations dir (defense-in-depth beyond the renderer-trust base).
+fn is_automations_yaml_path(path: &str) -> bool {
+    let p = Path::new(path);
+    let ext_ok = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e == "yaml" || e == "yml")
+        .unwrap_or(false);
+    let parent_ok = p
+        .parent()
+        .and_then(|d| d.file_name())
+        .map(|n| n == "automations")
+        .unwrap_or(false);
+    let grandparent_ok = p
+        .parent()
+        .and_then(|d| d.parent())
+        .and_then(|d| d.file_name())
+        .map(|n| n == ".notesage")
+        .unwrap_or(false);
+    ext_ok && parent_ok && grandparent_ok
+}
+
+/// Write a YAML definition (the form builder serializes to this). Validates the
+/// content AND confines the target to `.notesage/automations/` before writing.
 #[tauri::command]
 pub async fn save_automation(path: String, yaml: String) -> Result<(), String> {
+    if !is_automations_yaml_path(&path) {
+        return Err("Automations can only be saved under .notesage/automations/".to_string());
+    }
     let a = parse_automation(&yaml)?;
     validate_automation_struct(&a)?;
 
@@ -444,6 +471,38 @@ pub async fn save_automation(path: String, yaml: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
     }
     fs::write(&path, yaml).map_err(|e| format!("Failed to write {}: {}", path, e))
+}
+
+/// Resolve a document-step write path, enforcing scope containment. The path is
+/// template-rendered at run time (tokens can include agent output), so an
+/// absolute path or `..` traversal must be rejected HERE — the arm review only
+/// pins the unrendered template. Returns the joined absolute path on success.
+#[tauri::command]
+pub async fn resolve_automation_write_path(base: String, rel_path: String) -> Result<String, String> {
+    contained_join(&base, &rel_path)
+}
+
+fn contained_join(base: &str, rel_path: &str) -> Result<String, String> {
+    use std::path::Component;
+    let rel = Path::new(rel_path);
+    if rel.is_absolute() {
+        return Err("Document path must be relative to the automation scope".to_string());
+    }
+    for comp in rel.components() {
+        match comp {
+            Component::ParentDir => {
+                return Err(
+                    "Document path may not contain '..' (it would escape the automation scope)"
+                        .to_string(),
+                );
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err("Invalid document path".to_string());
+            }
+            _ => {}
+        }
+    }
+    Ok(Path::new(base).join(rel).to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -915,5 +974,22 @@ steps:
         let t = Utc.with_ymd_and_hms(2026, 1, 1, 8, 0, 0).unwrap();
         let occ = missed_occurrences_tz("0 8 * * *", t, t, 50, &Utc).unwrap();
         assert!(occ.is_empty());
+    }
+
+    #[test]
+    fn contained_join_rejects_escapes() {
+        assert_eq!(contained_join("/base", "Daily/x.md").unwrap(), "/base/Daily/x.md");
+        assert!(contained_join("/base", "/etc/passwd").is_err()); // absolute
+        assert!(contained_join("/base", "../../.ssh/authorized_keys").is_err()); // traversal
+        assert!(contained_join("/base", "a/../../b").is_err()); // mid-path traversal
+    }
+
+    #[test]
+    fn save_path_confined_to_automations_dir() {
+        assert!(is_automations_yaml_path("/p/.notesage/automations/x.yaml"));
+        assert!(is_automations_yaml_path("/p/.notesage/automations/x.yml"));
+        assert!(!is_automations_yaml_path("/p/.ssh/x.yaml")); // wrong dir
+        assert!(!is_automations_yaml_path("/p/.notesage/skills/x.yaml")); // sibling dir
+        assert!(!is_automations_yaml_path("/p/.notesage/automations/x.txt")); // wrong ext
     }
 }

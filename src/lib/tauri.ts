@@ -1316,6 +1316,12 @@ export const tauriApi = {
     return await invoke<AutomationValidation>("validate_automation", { yaml });
   },
 
+  /** Resolve a document-step write path within `base`, rejecting absolute paths
+   *  and `..` traversal. Rejects (throws) if the path would escape the scope. */
+  async resolveAutomationWritePath(base: string, relPath: string): Promise<string> {
+    return await invoke<string>("resolve_automation_write_path", { base, relPath });
+  },
+
   /** Master enable flag — also gates the scheduler tick loop. */
   async setAutomationsEnabled(enabled: boolean): Promise<void> {
     await invoke("set_automations_enabled", { enabled });
