@@ -9,7 +9,7 @@ function StatusIcon({ status }: { status: RunStatus }) {
     case 'done':
       return <Check className="size-3.5 text-[var(--color-accent-primary)]" strokeWidth={1.5} />;
     case 'error':
-      return <X className="size-3.5 text-[var(--color-destructive)]" strokeWidth={1.5} />;
+      return <X className="size-3.5 text-destructive" strokeWidth={1.5} />;
     case 'running':
       return <Loader2 className="size-3.5 animate-spin text-muted-foreground" strokeWidth={1.5} />;
     case 'skipped':
@@ -29,13 +29,16 @@ function RunRow({ run }: { run: AutomationRun }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm"
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm outline-none transition-colors duration-150 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
       >
         <StatusIcon status={run.status} />
         <span className="text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</span>
         <span className="text-xs text-muted-foreground">· {duration}</span>
         <ChevronDown
-          className={cn('ml-auto size-4 text-muted-foreground transition-transform', open && 'rotate-180')}
+          className={cn(
+            'ml-auto size-4 text-muted-foreground transition-transform duration-150',
+            open && 'rotate-180',
+          )}
           strokeWidth={1.5}
         />
       </button>
@@ -48,7 +51,7 @@ function RunRow({ run }: { run: AutomationRun }) {
                 {s.id} <span className="text-muted-foreground">({s.type})</span>
               </div>
               {s.result?.error ? (
-                <pre className="whitespace-pre-wrap break-words text-[var(--color-destructive)]">
+                <pre className="whitespace-pre-wrap break-words text-destructive">
                   {s.result.error}
                 </pre>
               ) : s.result?.output ? (

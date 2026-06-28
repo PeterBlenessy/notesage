@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -87,17 +89,25 @@ export function MissedRunsDialog() {
         </div>
 
         <AlertDialogFooter>
-          <Button variant="ghost" onClick={close}>
-            Skip
-          </Button>
-          <Button
-            variant="outline"
-            disabled={selected.size === 0}
-            onClick={() => run(entries.filter((e) => selected.has(e.sourcePath)).map((e) => e.sourcePath))}
-          >
-            Run selected
-          </Button>
-          <Button onClick={() => run(entries.map((e) => e.sourcePath))}>Run all</Button>
+          <AlertDialogCancel asChild>
+            <Button variant="ghost" onClick={close}>
+              Skip
+            </Button>
+          </AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button
+              variant="outline"
+              disabled={selected.size === 0}
+              onClick={() =>
+                run(entries.filter((e) => selected.has(e.sourcePath)).map((e) => e.sourcePath))
+              }
+            >
+              Run selected
+            </Button>
+          </AlertDialogAction>
+          <AlertDialogAction asChild>
+            <Button onClick={() => run(entries.map((e) => e.sourcePath))}>Run all</Button>
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

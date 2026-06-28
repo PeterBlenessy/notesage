@@ -48,7 +48,7 @@ const TRIGGER_ICON: Record<TriggerType, typeof Clock> = {
 const STATUS_DOT: Record<RunStatus, string> = {
   done: 'bg-[var(--color-accent-primary)]',
   error: 'bg-[var(--color-destructive)]',
-  running: 'bg-[var(--color-accent-primary)] animate-pulse',
+  running: 'bg-[var(--color-accent-primary)] animate-pulse motion-reduce:animate-none',
   skipped: 'bg-muted-foreground/40',
 };
 
@@ -106,10 +106,14 @@ function AutomationItem({
           {disarmed && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <button type="button" onClick={onArm} className="shrink-0">
+                <button
+                  type="button"
+                  onClick={onArm}
+                  className="shrink-0 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                >
                   <Badge
                     variant="outline"
-                    className="cursor-pointer gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                    className="cursor-pointer gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   >
                     <AlertTriangle className="size-3" strokeWidth={1.5} />
                     Needs arming
@@ -126,7 +130,7 @@ function AutomationItem({
           <button
             type="button"
             onClick={onHistory}
-            className="mt-0.5 flex items-center gap-1.5 hover:underline"
+            className="mt-0.5 flex items-center gap-1.5 rounded outline-none transition-colors duration-150 hover:underline focus-visible:ring-1 focus-visible:ring-ring"
           >
             <span className={cn('size-1.5 rounded-full', STATUS_DOT[lastRun.status])} />
             <span className="text-xs text-muted-foreground">

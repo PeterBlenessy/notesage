@@ -51,7 +51,7 @@ function TokenField({
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          className="min-h-[72px] text-sm"
+          className="min-h-18 text-sm"
         />
       ) : (
         <Input

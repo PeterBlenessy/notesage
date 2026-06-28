@@ -143,7 +143,7 @@ export function TriggerEditor({
               className={cn(
                 'h-7 w-11 text-xs',
                 weekdays.includes(d) &&
-                  'border-[var(--color-accent-primary)] text-[var(--color-accent-primary)]',
+                  'border-[var(--color-accent-primary)] bg-[var(--color-accent-primary)]/10 text-[var(--color-accent-primary)]',
               )}
             >
               {label}
