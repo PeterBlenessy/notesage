@@ -17,9 +17,18 @@ import { log } from '@/lib/logger';
  */
 export function useAutomationDiscovery() {
   const startupReady = useSettingsStore((s) => s.startupReady);
+  const automationsEnabled = useSettingsStore((s) => s.automationsEnabled);
   const projectPaths = useWorkspaceStore((s) =>
     s.projects.map((p) => p.path).sort().join(',')
   );
+
+  // Keep the Rust scheduler's master flag in sync with the persisted setting
+  // (it defaults off in the backend, so this also applies it on startup).
+  useEffect(() => {
+    tauriApi
+      .setAutomationsEnabled(automationsEnabled)
+      .catch((e) => log.error('automations', 'setAutomationsEnabled failed', e));
+  }, [automationsEnabled]);
 
   useEffect(() => {
     if (!startupReady) return;

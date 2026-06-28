@@ -251,9 +251,13 @@ interface SettingsStore {
   showInTray: boolean;
   closeToTray: boolean;
   startAtLogin: boolean;
+  // Automations — master enable (also gates the Rust scheduler tick loop)
+  automationsEnabled: boolean;
   // Notification settings
   notifyAgentCompletion: boolean;
   notifyExternalChanges: boolean;
+  /** Desktop notification when an automation run fails. Default on. */
+  notifyAutomationFailure: boolean;
   /** Desktop notification when a BACKGROUNDED session hits a permission request
    *  (task #15). Default on — the notification is the time-sensitive signal for
    *  an unwatched session. */
@@ -353,6 +357,8 @@ interface SettingsStore {
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
+  setAutomationsEnabled: (enabled: boolean) => void;
+  setNotifyAutomationFailure: (notify: boolean) => void;
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
   setNotifyPermissionRequest: (notify: boolean) => void;
@@ -476,8 +482,10 @@ export const useSettingsStore = create<SettingsStore>()(
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
+      automationsEnabled: false,
       notifyAgentCompletion: true,
       notifyExternalChanges: false,
+      notifyAutomationFailure: true,
       notifyPermissionRequest: true,
       maxConcurrentSessions: 4,
       homeDir: null,
@@ -875,6 +883,16 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setStartAtLogin: (start: boolean) => {
         set({ startAtLogin: start });
+      },
+
+      // Pure — the Rust master flag is synced by useAutomationDiscovery
+      // (mirrors setCloseToTray, whose invoke happens at the call site).
+      setAutomationsEnabled: (enabled: boolean) => {
+        set({ automationsEnabled: enabled });
+      },
+
+      setNotifyAutomationFailure: (notify: boolean) => {
+        set({ notifyAutomationFailure: notify });
       },
 
       setNotifyAgentCompletion: (notify: boolean) => {
