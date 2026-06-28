@@ -125,6 +125,27 @@ describe('RunManager (overlap mode)', () => {
     release();
   });
 
+  it('mode=restart aborts the in-flight run', async () => {
+    const mgr = new RunManager();
+    let firstAborted = false;
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((r) => {
+      releaseFirst = r;
+    });
+
+    mgr.request('k', 'restart', async (signal) => {
+      signal.addEventListener('abort', () => {
+        firstAborted = true;
+      });
+      await firstPending;
+    });
+    const outcome = mgr.request('k', 'restart', async () => {});
+
+    expect(outcome).toBe('restarting');
+    expect(firstAborted).toBe(true);
+    releaseFirst();
+  });
+
   it('mode=queued serializes runs in order', async () => {
     const mgr = new RunManager();
     const order: string[] = [];
