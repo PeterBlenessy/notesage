@@ -5,7 +5,7 @@
 | **Date** | 2026-06-28 |
 | **Status** | In progress — all in-harness layers done & green (incl. in-app PDF); native iOS wiring + on-device validation pending (needs a Mac) |
 | **PRD** | [ios-mobile-app](../prds/2026-06-28-ios-mobile-app.md) |
-| **Total** | 16 tasks: 3S, 7M, 6L · 10 done, 3 staged, 3 pending |
+| **Total** | 16 tasks: 3S, 7M, 6L · 10 done, 5 staged, 1 partial (only `tauri ios init` + signing + on-device validation need a Mac) |
 | **Suggested order** | iOS scaffold (#1–#2) → native bridge + commands (#3–#8) → share extension (#9) → platform split + state (#10–#11) → mobile UI (#12–#15) → docs (#16) |
 
 ## Task status ledger
@@ -14,15 +14,15 @@ Legend: ✅ done & validated in-harness · 🟡 staged (source committed, needs 
 
 | # | Task | Status |
 | --- | --- | --- |
-| 1 | Initialize Tauri iOS target + project config | ⏳ pending |
-| 2 | iOS entitlements (App Group, iCloud, share ext) | ⏳ pending |
-| 3 | Swift bridge: folder picker + security-scoped bookmark | 🟡 staged (`src-tauri/ios/LibraryAccess.swift`) |
-| 4 | Swift bridge: iCloud-aware reads (NSFileCoordinator) | 🟡 staged (`src-tauri/ios/LibraryAccess.swift`) |
+| 1 | Initialize Tauri iOS target + project config | 🟡 partial — `pnpm tauri:ios:init` script + `tauri.conf.json`/signing recipe staged in `ios/README.md`; running `tauri ios init` needs a Mac |
+| 2 | iOS entitlements (App Group, iCloud, share ext) | 🟡 staged — `Notesage.entitlements`, `ShareExtension.entitlements`, `ShareExtension-Info.plist` authored |
+| 3 | Swift bridge: folder picker + security-scoped bookmark | 🟡 staged (`LibraryAccess.swift` + `NotesagePlugin.swift` Tauri bridge) |
+| 4 | Swift bridge: iCloud-aware reads (NSFileCoordinator) | 🟡 staged (`LibraryAccess.swift` + `NotesagePlugin.swift`) |
 | 5 | iOS Tauri commands: grant lifecycle | ✅ done (`ios_library.rs`) |
 | 6 | iOS Tauri commands: read paths | ✅ done (`ios_library.rs`) |
 | 7 | Capture-note format helper + tests | ✅ done (`capture.rs`) |
 | 8 | iOS command: write capture note | ✅ formatter + command done; 🟡 native write pending wiring |
-| 9 | iOS Share Extension target | 🟡 staged (`src-tauri/ios/ShareViewController.swift`) |
+| 9 | iOS Share Extension target | 🟡 staged (`ShareViewController.swift` + `ShareExtension-Info.plist` + `ShareExtension.entitlements`) |
 | 10 | Platform split + mobile app root | ✅ done (`main.tsx`, `MobileApp.tsx`, `platform.ts`) |
 | 11 | `mobile-store` + grant/navigation state machine | ✅ done (+ tests) |
 | 12 | Onboarding / grant screen | ✅ done (+ tests) |
@@ -43,12 +43,13 @@ Implemented and validated in this environment (`pnpm typecheck`, `pnpm test`,
 - **#12/#13/#14** — `MobileApp` + `Onboarding` / `LibraryBrowser` / `FileRow` / `Reader` / `markdown-components`, all states covered.
 - **#15** — read-only/isolation guard test + component/state tests + store tests (`src/components/mobile/__tests__`, `src/stores/__tests__/mobile-store.test.ts`).
 - **#16** — docs (architecture, tauri-commands, features/mobile, CLAUDE/product-description links).
-- **#3/#4/#9** — reference Swift sources staged under `src-tauri/ios/` (LibraryAccess.swift, ShareViewController.swift, README).
+- **#3/#4/#9** — native layer staged under `src-tauri/ios/`: `LibraryAccess.swift` (logic), `NotesagePlugin.swift` (Tauri plugin bridge), `ShareViewController.swift`, `Notesage.entitlements` / `ShareExtension.entitlements`, `ShareExtension-Info.plist`, and a step-by-step wiring README.
+- **#1/#2 (partial)** — `pnpm tauri:ios:init`/`dev`/`build` scripts; entitlements + Info.plist authored; `tauri.conf.json` iOS block + plugin-registration recipe documented.
 
 Pending — **requires a Mac with Xcode + Apple signing** (cannot run in this Linux/CI container):
 
-- **#1/#2** — `tauri ios init`, entitlements (App Group, iCloud Documents), share-extension target.
-- Integrating the staged Swift bridge: replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with calls into the native plugin, wire the Share Extension target.
+- Run `tauri ios init` to generate `gen/apple/`, set the Development Team, copy in the staged entitlements/plists.
+- Integrate the staged bridge: register `NotesagePlugin` from Rust (`ios_plugin_binding!` + `register_ios_plugin`) and replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with `run_mobile_plugin` calls (mapping table in `ios/README.md`); add the Share Extension target.
 - On-device validation of every native acceptance criterion (grant persistence, iCloud download, capture from Safari / X, read-only behavior).
 - v1 reader fidelity follow-ups: in-app EPUB/DOCX/PPTX and full callout/chart/drawing rendering. Markdown/text/image/**PDF** render in-app (PDF reuses the desktop `PdfViewer`); EPUB/DOCX/PPTX show "open on your Mac".
 

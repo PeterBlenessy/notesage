@@ -77,4 +77,4 @@ share-sheet target for capturing links. PRD:
 | `src/stores/mobile-store.ts` | Grant + navigation state machine |
 | `src-tauri/src/commands/ios_library.rs` | iOS commands (cfg-gated) |
 | `src-tauri/src/commands/capture.rs` | Pure capture-note builder + tests |
-| `src-tauri/ios/` | Reference Swift sources + wiring README |
+| `src-tauri/ios/` | Staged native layer: `LibraryAccess.swift` (logic), `NotesagePlugin.swift` (Tauri bridge), `ShareViewController.swift`, `*.entitlements`, `ShareExtension-Info.plist`, wiring README |

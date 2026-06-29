@@ -103,7 +103,7 @@ note-sage/
 │   │       ├── typography.rs        # Shared typography helpers (font lookup, fallbacks)
 │   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
 │   │       └── templates.rs        # PDF + PPTX template loading and parameterization
-│   ├── ios/                # iOS native wiring (staged): LibraryAccess.swift, ShareViewController.swift, README (integrated by `tauri ios init` on a Mac)
+│   ├── ios/                # iOS native wiring (staged): LibraryAccess.swift, NotesagePlugin.swift (Tauri bridge), ShareViewController.swift, *.entitlements, ShareExtension-Info.plist, README (integrated by `tauri ios init` on a Mac)
 │   ├── binaries/           # llama-server sidecar (dev: downloaded + dylibs; prod: static) — see docs/llama-server-sidecar.md
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
 │   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)

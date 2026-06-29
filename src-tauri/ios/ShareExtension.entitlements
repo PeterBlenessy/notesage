@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Share Extension entitlements (reference). The extension only needs the App
+  Group to read the shared library bookmark written by the app. It writes the
+  capture note into the granted (security-scoped) folder resolved from that
+  bookmark — no iCloud capability required on the extension target.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.notesage.app</string>
+    </array>
+</dict>
+</plist>
