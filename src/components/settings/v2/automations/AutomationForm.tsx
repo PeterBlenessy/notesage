@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Bot, FileText, Bell } from 'lucide-react';
+import { Plus, Bot, FileText, Bell, Terminal } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,13 @@ import { useAutomationStore } from '@/stores/automation-store';
 import { runAutomationNow } from '@/lib/automations/run-bridge';
 import { armAutomation, needsArming } from '@/lib/automations/arm';
 import { serializeAutomation, slugify, buildSourcePath } from '@/lib/automations/serialize';
-import type { Automation, AutomationStep, RunMode, StepType } from '@/lib/automations/types';
+import type {
+  Automation,
+  AutomationStep,
+  FileEventName,
+  RunMode,
+  StepType,
+} from '@/lib/automations/types';
 import { TriggerEditor } from './TriggerEditor';
 import { StepEditor } from './StepEditor';
 import type { TokenOption } from './VariablePicker';
@@ -49,6 +55,7 @@ function newStep(type: StepType, count: number): AutomationStep {
   const id = `step${count + 1}`;
   if (type === 'agent') return { id, type, prompt: '' };
   if (type === 'document') return { id, type, op: 'append', path: '', content: '' };
+  if (type === 'skill') return { id, type, skill: '', script: '', args: [] };
   return { id, type, title: '', body: '' };
 }
 
@@ -166,24 +173,104 @@ export function AutomationForm({
 
       <section className="space-y-2">
         <h4 className="text-sm font-medium">Trigger</h4>
-        <TriggerEditor
-          cron={draft.trigger.cron ?? '0 8 * * *'}
-          catchUp={draft.trigger.catchUp ?? true}
-          onCronChange={(cron) => update({ trigger: { ...draft.trigger, cron } })}
-          onCatchUpChange={(catchUp) => update({ trigger: { ...draft.trigger, catchUp } })}
-        />
+
         <div className="flex items-center gap-2">
-          <Switch
-            id="weekdays-only"
-            checked={weekdaysOnly}
-            onCheckedChange={(c) =>
-              update({ condition: { ...draft.condition, weekdays: c ? [1, 2, 3, 4, 5] : undefined } })
+          <Label className="text-xs text-muted-foreground">When</Label>
+          <Select
+            value={draft.trigger.type === 'file' ? 'file' : 'schedule'}
+            onValueChange={(v) =>
+              update({
+                trigger:
+                  v === 'file'
+                    ? { type: 'file', event: 'file-created', path: '' }
+                    : { type: 'schedule', cron: draft.trigger.cron ?? '0 8 * * *', catchUp: true },
+              })
             }
-          />
-          <Label htmlFor="weekdays-only" className="text-xs text-muted-foreground">
-            Only run on weekdays (Mon–Fri)
-          </Label>
+          >
+            <SelectTrigger className="h-8 w-44 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="schedule">On a schedule</SelectItem>
+              <SelectItem value="file">On a file change</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
+
+        {draft.trigger.type !== 'file' && (
+          <>
+            <TriggerEditor
+              cron={draft.trigger.cron ?? '0 8 * * *'}
+              catchUp={draft.trigger.catchUp ?? true}
+              onCronChange={(cron) => update({ trigger: { ...draft.trigger, cron } })}
+              onCatchUpChange={(catchUp) => update({ trigger: { ...draft.trigger, catchUp } })}
+            />
+            <div className="flex items-center gap-2">
+              <Switch
+                id="weekdays-only"
+                checked={weekdaysOnly}
+                onCheckedChange={(c) =>
+                  update({
+                    condition: { ...draft.condition, weekdays: c ? [1, 2, 3, 4, 5] : undefined },
+                  })
+                }
+              />
+              <Label htmlFor="weekdays-only" className="text-xs text-muted-foreground">
+                Only run on weekdays (Mon–Fri)
+              </Label>
+            </div>
+          </>
+        )}
+
+        {draft.trigger.type === 'file' && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Event</Label>
+              <Select
+                value={draft.trigger.event ?? 'file-created'}
+                onValueChange={(v) =>
+                  update({ trigger: { ...draft.trigger, event: v as FileEventName } })
+                }
+              >
+                <SelectTrigger className="h-8 w-44 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="file-created">File added</SelectItem>
+                  <SelectItem value="file-modified">File modified</SelectItem>
+                  <SelectItem value="file-deleted">File deleted</SelectItem>
+                  <SelectItem value="file-renamed">File renamed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="trigger-path" className="text-xs text-muted-foreground">
+                Watched folder (absolute; defaults to the scope)
+              </Label>
+              <Input
+                id="trigger-path"
+                value={draft.trigger.path ?? ''}
+                onChange={(e) => update({ trigger: { ...draft.trigger, path: e.target.value } })}
+                placeholder={`${home}/Notesage/Inbox`}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="trigger-glob" className="text-xs text-muted-foreground">
+                Only files matching (glob, relative to the watched folder)
+              </Label>
+              <Input
+                id="trigger-glob"
+                value={draft.condition?.glob ?? ''}
+                onChange={(e) =>
+                  update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
+                }
+                placeholder="*.md"
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="space-y-2">
@@ -208,6 +295,10 @@ export function AutomationForm({
               <DropdownMenuItem onSelect={() => addStep('notify')}>
                 <Bell className="mr-2 size-4" strokeWidth={1.5} />
                 Notify
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => addStep('skill')}>
+                <Terminal className="mr-2 size-4" strokeWidth={1.5} />
+                Run skill
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

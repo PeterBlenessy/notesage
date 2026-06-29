@@ -4,6 +4,7 @@ import { useAgentTaskOperations } from '@/hooks/useAgentTaskOperations';
 import { useActivityStore } from '@/stores/activity-store';
 import { useAutomationStore } from '@/stores/automation-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useSkillStore } from '@/stores/skill-store';
 import { tauriApi } from '@/lib/tauri';
 import { notify, notifyAutomation } from '@/lib/notifications';
 import { log } from '@/lib/logger';
@@ -11,15 +12,24 @@ import {
   runAutomation,
   RunManager,
   GuardrailTracker,
+  effectiveDebounceMs,
   type ExecutorDeps,
 } from '@/lib/automations/executor';
 import { registerAutomationRunner } from '@/lib/automations/run-bridge';
 import { needsArming, isArmed } from '@/lib/automations/arm';
 import { formatToday } from '@/lib/automations/template';
+import {
+  fileTriggerMatches,
+  matchesCondition,
+  WATCHER_KIND_TO_EVENT,
+} from '@/lib/automations/file-match';
+import { markAutomationWrite, wasAutomationWrite } from '@/lib/automations/loop-guard';
+import { parseFrontmatter } from '@/lib/frontmatter';
 import type {
   Automation,
   AutomationRun,
   AutomationDuePayload,
+  FileEventName,
   TriggerType,
 } from '@/lib/automations/types';
 
@@ -106,6 +116,7 @@ export function useAutomationRunner() {
         // traversal so a template-rendered path can't escape the scope.
         const abs = await tauriApi.resolveAutomationWritePath(base, path);
         await tauriApi.markSelfWrite(abs);
+        markAutomationWrite(abs); // loop guard: don't re-trigger a file automation
         if (op === 'append') {
           let existing = '';
           try {
@@ -117,6 +128,30 @@ export function useAutomationRunner() {
         } else {
           await tauriApi.writeFile(abs, content);
         }
+      },
+      // Skill step: run the content-pinned, Seatbelt-sandboxed script directly
+      // (the automation's approve-to-arm — verified above — is the authorization,
+      // so it must not re-prompt). Working dir = the automation scope.
+      runSkill: async (skill, script, args) => {
+        const entry = useSkillStore.getState().getSkillByName(skill);
+        if (!entry) throw new Error(`Skill not found: ${skill}`);
+        const expectedHash = await tauriApi.hashSkillScript(entry.path, script).catch(() => null);
+        const result = await tauriApi.executeSkillScript({
+          skillPath: entry.path,
+          script,
+          args,
+          workingDir: base,
+          env: null,
+          timeoutMs: null,
+          expectedHash: expectedHash ?? undefined,
+        });
+        if (result.timed_out) throw new Error('Skill script timed out');
+        if (result.exit_code !== 0) {
+          throw new Error(
+            `Skill script failed (exit ${result.exit_code}): ${(result.stderr || result.stdout).slice(0, 400)}`,
+          );
+        }
+        return result.stdout;
       },
       notify: (title, body) => {
         void notifyAutomation(title, body);
@@ -148,6 +183,8 @@ export function useAutomationRunner() {
   };
 
   requestRunRef.current = async (automation, trigger) => {
+   // Called fire-and-forget by always-mounted listeners — never let it reject.
+   try {
     if (!automation.enabled) return;
 
     // Arm gate: a write/script step requires a content-pinned arm record that
@@ -171,7 +208,10 @@ export function useAutomationRunner() {
       return;
     }
 
-    const reason = guardrailsRef.current!.check(automation.sourcePath, cap, new Date());
+    // Event triggers (file/workflow) debounce a burst of events into one run;
+    // schedule triggers ignore debounce (cron, not a stream).
+    const debounceMs = effectiveDebounceMs(automation.trigger.type, automation.guardrails?.debounceMs);
+    const reason = guardrailsRef.current!.check(automation.sourcePath, cap, new Date(), debounceMs);
     if (reason) {
       log.info('automations', `skipped ${automation.id}: ${reason}`);
       recordSkipped(automation, trigger, reason);
@@ -189,6 +229,9 @@ export function useAutomationRunner() {
     if (outcome === 'dropped') {
       log.info('automations', `mode=single dropped overlapping fire for ${automation.id}`);
     }
+   } catch (e) {
+      log.error('automations', `requestRun failed for ${automation.id}`, e);
+   }
   };
 
   useEffect(() => {
@@ -215,9 +258,58 @@ export function useAutomationRunner() {
       }
     });
 
+    // File-event triggers (Task #3): match enabled file-trigger automations
+    // against watcher events, honoring scope + condition + the loop guard.
+    const readFrontmatter = async (p: string): Promise<Record<string, unknown> | null> => {
+      try {
+        return parseFrontmatter(await tauriApi.readFile(p)).frontmatter as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    };
+    const handleFileEvent = async (file: string, event: FileEventName) => {
+      try {
+        if (wasAutomationWrite(file)) return; // an automation's own write — don't re-fire
+        const autos = useAutomationStore
+          .getState()
+          .automations.filter((a) => a.enabled && fileTriggerMatches(a, event, file));
+        for (const a of autos) {
+          if (await matchesCondition(a, file, readFrontmatter)) {
+            requestRunRef.current(a, { type: 'file', file, event });
+          }
+        }
+      } catch (e) {
+        log.error('automations', 'file-event handling failed', e);
+      }
+    };
+
+    let unlistenBatch: (() => void) | undefined;
+    let unlistenRename: (() => void) | undefined;
+    void listen<{ path: string; kind: 'create' | 'modify' | 'delete' }[]>(
+      'file-changed-batch',
+      (event) => {
+        for (const { path, kind } of event.payload) {
+          const ev = WATCHER_KIND_TO_EVENT[kind];
+          if (ev) void handleFileEvent(path, ev);
+        }
+      },
+    ).then((u) => {
+      unlistenBatch = u;
+    });
+    void listen<{ old_path: string; new_path: string; is_directory: boolean }>(
+      'file-renamed',
+      (event) => {
+        if (!event.payload.is_directory) void handleFileEvent(event.payload.new_path, 'file-renamed');
+      },
+    ).then((u) => {
+      unlistenRename = u;
+    });
+
     return () => {
       unlisten?.();
       unregister();
+      unlistenBatch?.();
+      unlistenRename?.();
     };
   }, []);
 }

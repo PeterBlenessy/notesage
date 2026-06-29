@@ -59,6 +59,52 @@ describe('serializeAutomation', () => {
     expect(parse(noCond)).not.toHaveProperty('condition');
   });
 
+  it('round-trips a file trigger + skill step', () => {
+    const triage: Automation = {
+      id: 'inbox-triage',
+      name: 'Inbox Triage',
+      enabled: true,
+      armed: false,
+      scope: '/proj',
+      mode: 'single',
+      trigger: { type: 'file', event: 'file-created', path: 'Inbox' },
+      condition: { glob: 'Inbox/*.md' },
+      guardrails: { maxRunsPerDay: 50, debounceMs: 60000, maxStepsPerRun: 15 },
+      steps: [
+        { id: 'classify', type: 'agent', prompt: 'Classify {{trigger.file}}.' },
+        {
+          id: 'file-it',
+          type: 'skill',
+          skill: 'file-organizer',
+          script: 'move.sh',
+          args: ['{{trigger.file}}', '{{steps.classify.output}}'],
+        },
+        { id: 'ping', type: 'notify', title: 'Filed', body: '{{trigger.file}} triaged' },
+      ],
+      sourcePath: '/proj/.notesage/automations/inbox-triage.yaml',
+    };
+    const round = parse(serializeAutomation(triage));
+    expect(round).toEqual({
+      name: 'Inbox Triage',
+      enabled: true,
+      mode: 'single',
+      trigger: { type: 'file', event: 'file-created', path: 'Inbox' },
+      condition: { glob: 'Inbox/*.md' },
+      guardrails: { maxRunsPerDay: 50, debounceMs: 60000, maxStepsPerRun: 15 },
+      steps: triage.steps,
+    });
+  });
+
+  it('omits a skill step args field when undefined', () => {
+    const triage: Automation = {
+      ...DIGEST,
+      trigger: { type: 'file', event: 'file-created' },
+      steps: [{ id: 'run', type: 'skill', skill: 's', script: 'go.sh' }],
+    };
+    const round = parse(serializeAutomation(triage)) as { steps: Record<string, unknown>[] };
+    expect(round.steps[0]).not.toHaveProperty('args');
+  });
+
   it('slugify + buildSourcePath', () => {
     expect(slugify('Morning Digest!')).toBe('morning-digest');
     expect(slugify('   ')).toBe('automation');

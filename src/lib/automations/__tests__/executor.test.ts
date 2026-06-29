@@ -3,6 +3,8 @@ import {
   runAutomation,
   RunManager,
   GuardrailTracker,
+  effectiveDebounceMs,
+  DEFAULT_FILE_DEBOUNCE_MS,
   type ExecutorDeps,
 } from '../executor';
 import type { Automation } from '../types';
@@ -36,6 +38,7 @@ function makeDeps(overrides: Partial<ExecutorDeps> = {}) {
   const calls = {
     agent: [] as { prompt: string; projectRoot?: string }[],
     doc: [] as { path: string; content: string; op: string }[],
+    skill: [] as { skill: string; script: string; args: string[] }[],
     notify: [] as { title: string; body: string }[],
     runs: [] as { status: string }[],
   };
@@ -46,6 +49,10 @@ function makeDeps(overrides: Partial<ExecutorDeps> = {}) {
     },
     writeDocument: async (path, content, op) => {
       calls.doc.push({ path, content, op });
+    },
+    runSkill: async (skill, script, args) => {
+      calls.skill.push({ skill, script, args });
+      return 'SKILL_OUT';
     },
     notify: (title, body) => {
       calls.notify.push({ title, body });
@@ -104,6 +111,35 @@ describe('runAutomation', () => {
     const run = await runAutomation(DIGEST, { type: 'schedule' }, deps);
     expect(run.status).toBe('skipped');
     expect(calls.agent).toHaveLength(0);
+  });
+
+  it('runs a skill step with rendered args (Inbox-Triage shape)', async () => {
+    const { deps, calls } = makeDeps();
+    const triage: Automation = {
+      ...DIGEST,
+      trigger: { type: 'file', event: 'file-created' },
+      steps: [
+        { id: 'classify', type: 'agent', prompt: 'Classify {{trigger.file}}' },
+        {
+          id: 'file-it',
+          type: 'skill',
+          skill: 'file-organizer',
+          script: 'move.sh',
+          args: ['{{trigger.file}}', '{{steps.classify.output}}'],
+        },
+        { id: 'ping', type: 'notify', title: 'Filed', body: '{{trigger.file}}' },
+      ],
+    };
+    const run = await runAutomation(triage, { type: 'file', file: '/proj/Inbox/n.md' }, deps);
+
+    expect(run.status).toBe('done');
+    expect(calls.skill[0]).toEqual({
+      skill: 'file-organizer',
+      script: 'move.sh',
+      args: ['/proj/Inbox/n.md', 'AGENT_OUT'],
+    });
+    expect(run.steps[1].result?.output).toBe('SKILL_OUT');
+    expect(calls.notify[0]).toEqual({ title: 'Filed', body: '/proj/Inbox/n.md' });
   });
 });
 
@@ -186,5 +222,54 @@ describe('GuardrailTracker', () => {
     }
     expect(g.check('k', 999, FIXED)).toMatch(/too often/);
     expect(g.isPaused('k')).toBe(true);
+  });
+
+  it('debounces an event re-fire within the debounce window', () => {
+    const g = new GuardrailTracker();
+    const t0 = FIXED;
+    expect(g.check('k', 999, t0, 60_000)).toBeNull();
+    g.record('k', t0);
+
+    // A second event 30s later is suppressed.
+    const t30 = new Date(t0.getTime() + 30_000);
+    expect(g.check('k', 999, t30, 60_000)).toMatch(/debounce/i);
+
+    // After the window elapses, it fires again.
+    const t61 = new Date(t0.getTime() + 61_000);
+    expect(g.check('k', 999, t61, 60_000)).toBeNull();
+  });
+
+  it('does not debounce when debounceMs is 0 (schedule triggers)', () => {
+    const g = new GuardrailTracker();
+    expect(g.check('k', 999, FIXED, 0)).toBeNull();
+    g.record('k', FIXED);
+    // Same instant but debounce disabled → still allowed (cap permitting).
+    expect(g.check('k', 999, FIXED, 0)).toBeNull();
+  });
+
+  it('debounce is per-key', () => {
+    const g = new GuardrailTracker();
+    g.record('a', FIXED);
+    // A different automation is unaffected by a's recent fire.
+    expect(g.check('b', 999, FIXED, 60_000)).toBeNull();
+  });
+});
+
+describe('effectiveDebounceMs', () => {
+  it('returns 0 for schedule triggers regardless of debounceMs', () => {
+    expect(effectiveDebounceMs('schedule', 60_000)).toBe(0);
+    expect(effectiveDebounceMs('schedule', 0)).toBe(0);
+    expect(effectiveDebounceMs('schedule', undefined)).toBe(0);
+  });
+
+  it('defaults to 60s for event triggers when unset/0', () => {
+    expect(effectiveDebounceMs('file', 0)).toBe(DEFAULT_FILE_DEBOUNCE_MS);
+    expect(effectiveDebounceMs('file', undefined)).toBe(DEFAULT_FILE_DEBOUNCE_MS);
+    expect(effectiveDebounceMs('workflow', 0)).toBe(DEFAULT_FILE_DEBOUNCE_MS);
+  });
+
+  it('honours an explicit debounceMs for event triggers', () => {
+    expect(effectiveDebounceMs('file', 5_000)).toBe(5_000);
+    expect(effectiveDebounceMs('workflow', 120_000)).toBe(120_000);
   });
 });

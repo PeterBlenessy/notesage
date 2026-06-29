@@ -8,7 +8,7 @@
 export type RunMode = 'single' | 'restart' | 'queued';
 
 export type TriggerType = 'schedule' | 'file' | 'workflow';
-export type StepType = 'agent' | 'document' | 'notify';
+export type StepType = 'agent' | 'document' | 'notify' | 'skill';
 
 export type FileEventName =
   | 'file-created'
@@ -48,7 +48,10 @@ export interface Guardrails {
 export type AutomationStep =
   | { type: 'agent'; id: string; prompt: string }
   | { type: 'document'; id: string; op: 'create' | 'append'; path: string; content: string }
-  | { type: 'notify'; id: string; title: string; body: string };
+  | { type: 'notify'; id: string; title: string; body: string }
+  // Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
+  // at run time; requires approve-to-arm because it executes code (Task #8/#9).
+  | { type: 'skill'; id: string; skill: string; script: string; args?: string[] };
 
 export interface Automation {
   /** Slug derived from the filename (filled by the loader). */

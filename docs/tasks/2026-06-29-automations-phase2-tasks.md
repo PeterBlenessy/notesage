@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-29 |
-| **Status** | Not started |
+| **Status** | Complete — all 12 tasks done on `feat/automations` |
 | **PRD** | [automations](../prds/2026-06-28-automations.md) |
 | **Phase** | Phase 2 — File/workspace event triggers + skill/script step |
 | **North star** | **Inbox Triage** — a file dropped in `Inbox/` → agent classifies it → a skill/script files it → notify |
@@ -23,7 +23,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #1 — Rust: add `skill` step variant + validation ⏳
+## #1 — Rust: add `skill` step variant + validation ✅
 
 **Category:** backend · **Complexity:** S · **Depends on:** —
 
@@ -36,7 +36,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #2 — TS: `skill` step type + file-event shapes ⏳
+## #2 — TS: `skill` step type + file-event shapes ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** #1
 
@@ -48,7 +48,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #3 — File-event trigger matching in the runner ⏳
+## #3 — File-event trigger matching in the runner ✅
 
 **Category:** frontend · **Complexity:** L · **Depends on:** #2, #4, #5, #6
 
@@ -61,7 +61,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #4 — Condition evaluation (glob + frontmatter) ⏳
+## #4 — Condition evaluation (glob + frontmatter) ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #2
 
@@ -73,7 +73,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #5 — Debounce on event triggers ⏳
+## #5 — Debounce on event triggers ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** #2
 
@@ -84,7 +84,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #6 — Loop-prevention re-entrancy guard ⏳
+## #6 — Loop-prevention re-entrancy guard ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3
 
@@ -95,7 +95,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #7 — Ensure the automation's watched path is watched ⏳
+## #7 — Ensure the automation's watched path is watched ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #2
 
@@ -106,7 +106,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #8 — Executor: run `skill` steps ⏳
+## #8 — Executor: run `skill` steps ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1, #2
 
@@ -118,7 +118,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #9 — Arm machinery covers skill steps ⏳
+## #9 — Arm machinery covers skill steps ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1, #2, #8
 
@@ -129,7 +129,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #10 — TriggerEditor: File-event trigger ⏳
+## #10 — TriggerEditor: File-event trigger ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #2
 
@@ -140,7 +140,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #11 — StepEditor: "Run skill" step ⏳
+## #11 — StepEditor: "Run skill" step ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #2, #8, #9
 
@@ -151,7 +151,7 @@ Phase 1 (scheduled trigger + Daily Digest) shipped on `feat/automations` (PR #50
 
 ---
 
-## #12 — Tests: matching, glob, debounce, loop, skill, arm ⏳
+## #12 — Tests: matching, glob, debounce, loop, skill, arm ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #3–#9
 

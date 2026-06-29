@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useAutomationStore } from '@/stores/automation-store';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
+import { automationBase } from '@/lib/automations/file-match';
 
 /**
  * Discover automations on startup and whenever the open-project set changes,
@@ -53,6 +54,20 @@ export function useAutomationDiscovery() {
         await tauriApi.reloadAutomationSchedule(baseDirs);
       } catch (e) {
         log.error('automations', 'reloadAutomationSchedule failed', e);
+      }
+
+      // Task #7: make sure each enabled file-event automation's watched root is
+      // actually watched (it may target a dir not opened as a project, e.g. a
+      // global ~/Notesage/Inbox). watch_directory is idempotent per path.
+      const watched = new Set<string>();
+      for (const a of useAutomationStore.getState().automations) {
+        if (!a.enabled || a.trigger.type !== 'file') continue;
+        const path = automationBase(a) ?? `${home}/Notesage`;
+        if (watched.has(path)) continue;
+        watched.add(path);
+        tauriApi
+          .watchDirectory(path)
+          .catch((e) => log.error('automations', `watch ${path} failed`, e));
       }
     };
 

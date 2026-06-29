@@ -292,6 +292,6 @@ Deferred to later phases or future PRDs:
 - **Phase 4 / future:** mid-pipeline conditional branching; visual node-graph builder; a `launchd` daemon for true fire-while-fully-quit; cross-platform (Windows/Linux) scheduling; automation sharing/marketplace; per-MCP-server writable scope for skill steps.
 - **Phasing recap** (north star = Daily Digest):
   - **Phase 1** ✅ *(implemented on `feat/automations`, 13 tasks)* — Scheduled foundation + Daily Digest end-to-end (entity + YAML loader, tokio timer + catch-up, tray-resident wiring, linear executor + tokens, steps: agent/document/notify, form builder, approve-to-arm, guardrails, orb + Runs history).
-  - **Phase 2** — File/workspace event triggers (watcher subscription, trigger conditions/glob, debounce, loop-prevention, the **skill/script** step type) → **Inbox Triage** archetype.
+  - **Phase 2** ✅ *(implemented on `feat/automations`)* — File/workspace event triggers (watcher subscription, trigger conditions/glob, debounce, loop-prevention, the **skill/script** step type) → **Inbox Triage** archetype.
   - **Phase 3** — Workflow/app event triggers (new emission points + internal event bus) → **On-save Check** archetype.
   - **Phase 4** — branching, canvas builder, optional launchd firing.

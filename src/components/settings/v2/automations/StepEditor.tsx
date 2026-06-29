@@ -1,4 +1,5 @@
-import { Bot, FileText, Bell, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { useMemo } from 'react';
+import { Bot, FileText, Bell, Terminal, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useSkillStore } from '@/stores/skill-store';
 import type { AutomationStep } from '@/lib/automations/types';
 import { VariablePicker, type TokenOption } from './VariablePicker';
 
@@ -17,6 +19,7 @@ const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: strin
   agent: { icon: Bot, label: 'Agent task' },
   document: { icon: FileText, label: 'Create / append note' },
   notify: { icon: Bell, label: 'Notify' },
+  skill: { icon: Terminal, label: 'Run skill' },
 };
 
 /** A labelled text field with an attached "Insert variable" picker (appends). */
@@ -88,6 +91,8 @@ export function StepEditor({
   const meta = STEP_META[step.type];
   const Icon = meta.icon;
   const idField = `step-${step.id}`;
+  // Read once on mount — the skill set is stable while editing a form.
+  const skills = useMemo(() => useSkillStore.getState().getActiveSkills(), []);
 
   return (
     <div className="rounded-md border border-border p-3 space-y-3">
@@ -202,6 +207,55 @@ export function StepEditor({
             onChange={(v) => onChange({ ...step, body: v })}
             tokens={tokens}
             placeholder="Written to Daily/{{today}}.md"
+          />
+        </>
+      )}
+
+      {step.type === 'skill' && (
+        <>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">Skill</Label>
+            <Select value={step.skill} onValueChange={(v) => onChange({ ...step, skill: v })}>
+              <SelectTrigger className="h-7 w-48 text-xs">
+                <SelectValue placeholder="Pick a skill" />
+              </SelectTrigger>
+              <SelectContent>
+                {skills.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No skills found</div>
+                )}
+                {skills.map((s) => (
+                  <SelectItem key={s.name} value={s.name}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${idField}-script`} className="text-xs text-muted-foreground">
+              Script (path within the skill)
+            </Label>
+            <Input
+              id={`${idField}-script`}
+              value={step.script}
+              onChange={(e) => onChange({ ...step, script: e.target.value })}
+              placeholder="scripts/move.sh"
+              className="text-sm"
+            />
+          </div>
+          <TokenField
+            id={`${idField}-args`}
+            label="Arguments (one per line)"
+            value={(step.args ?? []).join('\n')}
+            onChange={(v) =>
+              onChange({
+                ...step,
+                args: v.split('\n').map((a) => a.trim()).filter(Boolean),
+              })
+            }
+            tokens={tokens}
+            multiline
+            placeholder="{{trigger.file}}"
           />
         </>
       )}

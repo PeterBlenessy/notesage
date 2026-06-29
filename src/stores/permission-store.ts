@@ -59,6 +59,9 @@ export interface AutomationArmRecord {
   armedAt: number;
   /** Write scope shown in the arm dialog (project root / library + doc paths). */
   scope: string[];
+  /** SHA-256 of each skill step's script body, keyed `skill/script` — a rewritten
+   *  script disarms the automation even if its YAML is unchanged (Task #9). */
+  scriptHashes?: Record<string, string>;
 }
 
 interface PermissionState {
@@ -260,8 +263,13 @@ interface PermissionStore extends PermissionState {
     projectRoot: string | null,
   ) => PermissionTier;
 
-  /** Arm an automation: content-pin its definition hash + write scope (Task #8). */
-  armAutomation: (sourcePath: string, hash: string, scope: string[]) => void;
+  /** Arm an automation: content-pin its definition hash + write scope + skill-script SHAs. */
+  armAutomation: (
+    sourcePath: string,
+    hash: string,
+    scope: string[],
+    scriptHashes?: Record<string, string>,
+  ) => void;
   /** Remove an automation's arm record. */
   disarmAutomation: (sourcePath: string) => void;
   getAutomationArm: (sourcePath: string) => AutomationArmRecord | undefined;
@@ -701,11 +709,11 @@ export const usePermissionStore = create<PermissionStore>()(
           ),
         })),
 
-      armAutomation: (sourcePath, hash, scope) =>
+      armAutomation: (sourcePath, hash, scope, scriptHashes) =>
         set((state) => ({
           automationArm: {
             ...state.automationArm,
-            [sourcePath]: { hash, armedAt: Date.now(), scope },
+            [sourcePath]: { hash, armedAt: Date.now(), scope, scriptHashes },
           },
         })),
 

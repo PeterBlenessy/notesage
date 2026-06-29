@@ -24,6 +24,8 @@ export interface ExecutorDeps {
   runAgent: (prompt: string, projectRoot: string | undefined) => Promise<string>;
   /** Write or append a document (the runner adds self-write tagging + path resolution). */
   writeDocument: (path: string, content: string, op: 'create' | 'append') => Promise<void>;
+  /** Run a skill script (content-pinned + sandboxed by the runner); resolves with stdout. */
+  runSkill: (skill: string, script: string, args: string[]) => Promise<string>;
   /** Fire a user-intent notification. */
   notify: (title: string, body: string) => void;
   /** Persist evolving run state (upsert by runId). */
@@ -112,6 +114,11 @@ async function executeStep(
       deps.notify(title, body);
       return { output: `${title}: ${body}` };
     }
+    case 'skill': {
+      const args = (step.args ?? []).map((a) => render(a, ctx));
+      const output = await deps.runSkill(step.skill, step.script, args);
+      return { output };
+    }
   }
 }
 
@@ -184,16 +191,49 @@ const DEFAULT_GUARDRAILS: GuardrailOptions = {
   circuitWindowMs: 60 * 60 * 1000,
 };
 
+/** Default debounce window for event (file/workflow) triggers when unset. */
+export const DEFAULT_FILE_DEBOUNCE_MS = 60 * 1000;
+
+/**
+ * Effective debounce window for a trigger. Schedule triggers ignore debounce
+ * (they fire on a cron, not a stream of events). Event triggers fall back to a
+ * 60s default when `debounceMs` is unset/0, so a burst of filesystem events
+ * (a save that lands as several `modify` events, an editor writing a temp file
+ * then renaming, etc.) coalesces into a single run.
+ */
+export function effectiveDebounceMs(
+  triggerType: TriggerType,
+  debounceMs: number | undefined,
+): number {
+  if (triggerType === 'schedule') return 0;
+  return debounceMs && debounceMs > 0 ? debounceMs : DEFAULT_FILE_DEBOUNCE_MS;
+}
+
 export class GuardrailTracker {
   private runsToday = new Map<string, { date: string; count: number }>();
   private fires = new Map<string, number[]>();
+  private lastFire = new Map<string, number>();
   private paused = new Set<string>();
 
   constructor(private opts: GuardrailOptions = DEFAULT_GUARDRAILS) {}
 
-  /** `null` if the run is allowed, else a human-readable block reason. */
-  check(key: string, maxRunsPerDay: number, now: Date): string | null {
+  /**
+   * `null` if the run is allowed, else a human-readable block reason.
+   *
+   * `debounceMs` (0 = disabled) suppresses an event-triggered re-fire that
+   * arrives within `debounceMs` of the last actual run start — pass it via
+   * `effectiveDebounceMs(trigger.type, guardrails.debounceMs)` so schedule
+   * triggers (debounce 0) are unaffected.
+   */
+  check(key: string, maxRunsPerDay: number, now: Date, debounceMs = 0): string | null {
     if (this.paused.has(key)) return 'paused by circuit breaker';
+
+    if (debounceMs > 0) {
+      const last = this.lastFire.get(key);
+      if (last !== undefined && now.getTime() - last < debounceMs) {
+        return `debounced (${Math.round(debounceMs / 1000)}s)`;
+      }
+    }
 
     const today = formatToday(now);
     const rec = this.runsToday.get(key);
@@ -219,6 +259,7 @@ export class GuardrailTracker {
     const recent = this.recentFires(key, now.getTime());
     recent.push(now.getTime());
     this.fires.set(key, recent);
+    this.lastFire.set(key, now.getTime());
   }
 
   resume(key: string): void {

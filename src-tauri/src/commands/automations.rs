@@ -135,6 +135,15 @@ pub enum AutomationStep {
         title: String,
         body: String,
     },
+    /// Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
+    /// at run time; requires approve-to-arm because it executes code.
+    Skill {
+        id: String,
+        skill: String,
+        script: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        args: Option<Vec<String>>,
+    },
 }
 
 impl AutomationStep {
@@ -142,7 +151,8 @@ impl AutomationStep {
         match self {
             AutomationStep::Agent { id, .. }
             | AutomationStep::Document { id, .. }
-            | AutomationStep::Notify { id, .. } => id,
+            | AutomationStep::Notify { id, .. }
+            | AutomationStep::Skill { id, .. } => id,
         }
     }
 }
@@ -299,6 +309,14 @@ fn validate_automation_struct(a: &Automation) -> Result<Option<String>, String> 
         }
         if !seen.insert(id) {
             return Err(format!("Duplicate step id `{}`", id));
+        }
+        if let AutomationStep::Skill { skill, script, .. } = step {
+            if skill.trim().is_empty() {
+                return Err(format!("Skill step `{}` requires a non-empty `skill`", id));
+            }
+            if script.trim().is_empty() {
+                return Err(format!("Skill step `{}` requires a non-empty `script`", id));
+            }
         }
     }
 
@@ -974,6 +992,69 @@ steps:
         let t = Utc.with_ymd_and_hms(2026, 1, 1, 8, 0, 0).unwrap();
         let occ = missed_occurrences_tz("0 8 * * *", t, t, 50, &Utc).unwrap();
         assert!(occ.is_empty());
+    }
+
+    #[test]
+    fn parses_skill_step() {
+        let yaml = r#"
+name: Inbox Triage
+trigger:
+  type: file
+  event: file-created
+condition:
+  glob: "Inbox/*.md"
+steps:
+  - id: classify
+    type: agent
+    prompt: "Classify the dropped file."
+  - id: file-it
+    type: skill
+    skill: organize-inbox
+    script: move.sh
+    args: ["{{trigger.file}}", "{{steps.classify.output}}"]
+"#;
+        let a = parse_automation(yaml).expect("skill automation should parse");
+        assert_eq!(a.trigger.kind, TriggerType::File);
+        assert_eq!(a.steps.len(), 2);
+        assert_eq!(a.steps[1].id(), "file-it");
+        match &a.steps[1] {
+            AutomationStep::Skill {
+                skill,
+                script,
+                args,
+                ..
+            } => {
+                assert_eq!(skill, "organize-inbox");
+                assert_eq!(script, "move.sh");
+                assert_eq!(
+                    args.as_deref(),
+                    Some(&["{{trigger.file}}".to_string(), "{{steps.classify.output}}".to_string()][..])
+                );
+            }
+            _ => panic!("step 1 should be a skill step"),
+        }
+        assert!(validate_automation_struct(&a).expect("valid").is_none());
+    }
+
+    #[test]
+    fn skill_step_requires_skill_and_script() {
+        let missing_skill = r#"
+name: X
+trigger: { type: file, event: file-created }
+steps:
+  - { id: a, type: skill, skill: "", script: move.sh }
+"#;
+        let a = parse_automation(missing_skill).unwrap();
+        assert!(validate_automation_struct(&a).is_err());
+
+        let missing_script = r#"
+name: X
+trigger: { type: file, event: file-created }
+steps:
+  - { id: a, type: skill, skill: organize, script: "" }
+"#;
+        let a = parse_automation(missing_script).unwrap();
+        assert!(validate_automation_struct(&a).is_err());
     }
 
     #[test]

@@ -8,25 +8,49 @@
 // PRD: docs/prds/2026-06-28-automations.md (Task #8)
 
 import { usePermissionStore } from '@/stores/permission-store';
+import { useSkillStore } from '@/stores/skill-store';
+import { tauriApi } from '@/lib/tauri';
 import type { Automation, AutomationStep } from './types';
 
 /** Steps that mutate the filesystem / run code — require arming. */
 export function armableSteps(automation: Automation): AutomationStep[] {
-  return automation.steps.filter((s) => s.type === 'document');
+  return automation.steps.filter((s) => s.type === 'document' || s.type === 'skill');
 }
 
 export function needsArming(automation: Automation): boolean {
   return armableSteps(automation).length > 0;
 }
 
-/** Human-readable write scope for the arm dialog. */
+/** Human-readable write/exec scope for the arm dialog. */
 export function writeScope(automation: Automation): string[] {
   const base =
     automation.scope && automation.scope !== 'global' ? automation.scope : 'Notesage library';
   const paths = armableSteps(automation)
-    .map((s) => (s.type === 'document' ? s.path : ''))
+    .map((s) =>
+      s.type === 'document'
+        ? s.path
+        : s.type === 'skill'
+          ? `skill: ${s.skill}/${s.script}`
+          : '',
+    )
     .filter(Boolean);
   return [base, ...paths];
+}
+
+/** Content-pin each skill step's script body, keyed by `skill/script`. */
+async function skillScriptHashes(automation: Automation): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const s of automation.steps) {
+    if (s.type !== 'skill') continue;
+    const entry = useSkillStore.getState().getSkillByName(s.skill);
+    if (!entry) continue;
+    try {
+      out[`${s.skill}/${s.script}`] = await tauriApi.hashSkillScript(entry.path, s.script);
+    } catch {
+      /* unhashable (missing script) — leave unpinned; the run will error */
+    }
+  }
+  return out;
 }
 
 // Recursively sort object keys so the hash is independent of property order.
@@ -75,13 +99,23 @@ export async function isArmed(automation: Automation): Promise<boolean> {
   if (!needsArming(automation)) return true;
   const record = usePermissionStore.getState().getAutomationArm(automation.sourcePath);
   if (!record) return false;
-  return record.hash === (await computeAutomationHash(automation));
+  if (record.hash !== (await computeAutomationHash(automation))) return false;
+  // A rewritten skill script (unchanged YAML) must also disarm.
+  const current = await skillScriptHashes(automation);
+  const stored = record.scriptHashes ?? {};
+  for (const [key, h] of Object.entries(current)) {
+    if (stored[key] !== h) return false;
+  }
+  return true;
 }
 
-/** Arm an automation — pin its current hash + write scope. */
+/** Arm an automation — pin its definition hash, write scope, and skill-script SHAs. */
 export async function armAutomation(automation: Automation): Promise<void> {
   const hash = await computeAutomationHash(automation);
-  usePermissionStore.getState().armAutomation(automation.sourcePath, hash, writeScope(automation));
+  const scriptHashes = await skillScriptHashes(automation);
+  usePermissionStore
+    .getState()
+    .armAutomation(automation.sourcePath, hash, writeScope(automation), scriptHashes);
 }
 
 export function disarmAutomation(sourcePath: string): void {
