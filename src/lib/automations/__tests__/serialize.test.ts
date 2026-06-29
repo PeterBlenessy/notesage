@@ -105,6 +105,28 @@ describe('serializeAutomation', () => {
     expect(round.steps[0]).not.toHaveProperty('args');
   });
 
+  it('round-trips a per-step `if` condition (Track A)', () => {
+    const a: Automation = {
+      ...DIGEST,
+      steps: [
+        {
+          id: 'ping',
+          type: 'notify',
+          title: 't',
+          body: 'b',
+          if: 'steps.x.output contains "urgent"',
+        },
+      ],
+    };
+    const round = parse(serializeAutomation(a)) as { steps: Record<string, unknown>[] };
+    expect(round.steps[0].if).toBe('steps.x.output contains "urgent"');
+  });
+
+  it('omits the `if` field when undefined', () => {
+    const round = parse(serializeAutomation(DIGEST)) as { steps: Record<string, unknown>[] };
+    expect(round.steps[0]).not.toHaveProperty('if');
+  });
+
   it('slugify + buildSourcePath', () => {
     expect(slugify('Morning Digest!')).toBe('morning-digest');
     expect(slugify('   ')).toBe('automation');

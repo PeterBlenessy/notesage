@@ -58,10 +58,18 @@ export function buildRunContext(opts: {
   };
 }
 
-function deepGet(root: unknown, path: string): unknown {
+/** Pure dotted-path lookup (`"steps.x.json.field"`). Exported for the condition
+ *  evaluator (condition-expr.ts) so token resolution stays in one place. */
+export function deepGet(root: unknown, path: string): unknown {
   let cur: unknown = root;
   for (const segment of path.split('.')) {
     if (cur == null || typeof cur !== 'object') return undefined;
+    // Never walk the prototype chain — a token/condition path like
+    // `constructor.name` or `__proto__.x` must resolve to nothing, not leak
+    // engine internals (and never enable prototype pollution).
+    if (segment === '__proto__' || segment === 'constructor' || segment === 'prototype') {
+      return undefined;
+    }
     cur = (cur as Record<string, unknown>)[segment];
   }
   return cur;

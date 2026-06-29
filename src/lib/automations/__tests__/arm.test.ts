@@ -62,6 +62,16 @@ describe('automation arming', () => {
     expect(await computeAutomationHash(withDocContent(digest(), 'CHANGED'))).not.toBe(h);
   });
 
+  it('hash changes when a step `if` is added/changed (auto-disarms — Track A)', async () => {
+    const h = await computeAutomationHash(digest());
+    const withIf = digest({
+      steps: digest().steps.map((s) =>
+        s.type === 'document' ? { ...s, if: 'steps.summary.output contains "x"' } : s,
+      ),
+    });
+    expect(await computeAutomationHash(withIf)).not.toBe(h);
+  });
+
   it('writeScope lists the project root and the doc path', () => {
     const scope = writeScope(digest());
     expect(scope).toContain('/proj');

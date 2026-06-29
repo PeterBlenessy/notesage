@@ -123,17 +123,23 @@ pub enum AutomationStep {
     Agent {
         id: String,
         prompt: String,
+        #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+        cond: Option<String>,
     },
     Document {
         id: String,
         op: DocOp,
         path: String,
         content: String,
+        #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+        cond: Option<String>,
     },
     Notify {
         id: String,
         title: String,
         body: String,
+        #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+        cond: Option<String>,
     },
     /// Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
     /// at run time; requires approve-to-arm because it executes code.
@@ -143,7 +149,11 @@ pub enum AutomationStep {
         script: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         args: Option<Vec<String>>,
+        #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
+        cond: Option<String>,
     },
+    // NB: `cond` (serialized as `if`) is preserved on load so the frontend
+    // executor can honor per-step conditions (Track A). Rust does not evaluate it.
 }
 
 impl AutomationStep {
@@ -976,6 +986,25 @@ steps:
 "#;
         let a = parse_automation(yaml).unwrap();
         assert!(validate_automation_struct(&a).is_err());
+    }
+
+    #[test]
+    fn preserves_step_if_condition() {
+        // The frontend evaluates `if`; Rust must round-trip it through load (Track A).
+        let yaml = r#"
+name: X
+trigger: { type: schedule, cron: "0 8 * * *" }
+steps:
+  - { id: a, type: notify, title: t, body: b, if: 'steps.x.output contains "urgent"' }
+"#;
+        let a = parse_automation(yaml).unwrap();
+        assert!(validate_automation_struct(&a).is_ok());
+        match &a.steps[0] {
+            AutomationStep::Notify { cond, .. } => {
+                assert_eq!(cond.as_deref(), Some("steps.x.output contains \"urgent\""));
+            }
+            _ => panic!("expected a notify step"),
+        }
     }
 
     #[test]

@@ -162,6 +162,46 @@ describe('runAutomation', () => {
     expect(calls.notify[0]).toEqual({ title: 'Filed', body: '/proj/Inbox/n.md' });
   });
 
+  it('skips a falsey-`if` step (no output to the context) and continues', async () => {
+    const { deps, calls } = makeDeps();
+    const a: Automation = {
+      ...DIGEST,
+      steps: [
+        { id: 'summary', type: 'agent', prompt: 'go' },
+        {
+          id: 'urgentOnly',
+          type: 'notify',
+          title: 'urgent',
+          body: 'x',
+          if: 'steps.summary.json.urgent == true', // summary has no json → false
+        },
+        { id: 'after', type: 'notify', title: 'after', body: 'got:{{steps.urgentOnly.output}}' },
+      ],
+    };
+    const run = await runAutomation(a, { type: 'schedule' }, deps);
+
+    expect(run.status).toBe('done');
+    expect(run.steps[1].result?.skipped).toBe(true); // urgentOnly skipped
+    expect(calls.notify).toHaveLength(1); // only 'after' fired
+    expect(calls.notify[0]).toEqual({ title: 'after', body: 'got:' }); // skipped output → empty
+  });
+
+  it('runs a truthy-`if` step; no `if` always runs', async () => {
+    const { deps, calls } = makeDeps();
+    const a: Automation = {
+      ...DIGEST,
+      steps: [
+        { id: 'gate', type: 'notify', title: 'a', body: 'b', if: '{{today}}' }, // today is truthy
+        { id: 'plain', type: 'notify', title: 'c', body: 'd' },
+      ],
+    };
+    const run = await runAutomation(a, { type: 'schedule' }, deps);
+
+    expect(run.status).toBe('done');
+    expect(calls.notify).toHaveLength(2);
+    expect(run.steps[0].result?.skipped).toBeUndefined();
+  });
+
   it('runs an On-save Check (workflow document-saved → agent → notify)', async () => {
     const { deps, calls } = makeDeps();
     const onSave: Automation = {

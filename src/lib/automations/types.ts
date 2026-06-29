@@ -83,13 +83,23 @@ export const DEFAULT_AUTOMATION_GUARDRAILS: Guardrails = {
   maxStepsPerRun: 25,
 };
 
+// Every step may carry an optional `if` — a condition expression (see
+// condition-expr.ts) that, when present and falsey at run time, SKIPS the step
+// (the run continues to the next step). Phase 4, Track A.
 export type AutomationStep =
-  | { type: 'agent'; id: string; prompt: string }
-  | { type: 'document'; id: string; op: 'create' | 'append'; path: string; content: string }
-  | { type: 'notify'; id: string; title: string; body: string }
+  | { type: 'agent'; id: string; prompt: string; if?: string }
+  | {
+      type: 'document';
+      id: string;
+      op: 'create' | 'append';
+      path: string;
+      content: string;
+      if?: string;
+    }
+  | { type: 'notify'; id: string; title: string; body: string; if?: string }
   // Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
   // at run time; requires approve-to-arm because it executes code (Task #8/#9).
-  | { type: 'skill'; id: string; skill: string; script: string; args?: string[] };
+  | { type: 'skill'; id: string; skill: string; script: string; args?: string[]; if?: string };
 
 export interface Automation {
   /** Slug derived from the filename (filled by the loader). */
@@ -118,6 +128,8 @@ export interface StepResult {
   output: string;
   json?: unknown;
   error?: string;
+  /** `true` when the step was skipped because its `if` was falsey (Track A). */
+  skipped?: boolean;
 }
 
 export type RunStatus = 'running' | 'done' | 'error' | 'skipped';

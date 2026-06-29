@@ -150,6 +150,15 @@ export function StepEditor({
         </div>
       </div>
 
+      <TokenField
+        id={`${idField}-if`}
+        label="Only run this step if… (optional)"
+        value={step.if ?? ''}
+        onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
+        tokens={tokens}
+        placeholder={'e.g. steps.classify.output contains "urgent"'}
+      />
+
       {step.type === 'agent' && (
         <TokenField
           id={`${idField}-prompt`}

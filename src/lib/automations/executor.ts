@@ -14,6 +14,7 @@ import type {
   TriggerType,
 } from './types';
 import { buildRunContext, render, formatToday, type RunContext } from './template';
+import { evaluateCondition } from './condition-expr';
 
 // ----------------------------------------------------------------------------
 // Single-run execution
@@ -75,6 +76,16 @@ export async function runAutomation(
     const step = automation.steps[i];
     const entry: AutomationRun['steps'][number] = { id: step.id, type: step.type };
     run.steps.push(entry);
+
+    // Per-step `if` (Track A): skip the step when the condition is falsey, and
+    // continue the pipeline. A skipped step writes NO `steps.<id>` to the
+    // context, so a downstream `{{steps.<id>.output}}` resolves to empty.
+    if (step.if !== undefined && !evaluateCondition(step.if, ctx)) {
+      entry.result = { output: '', skipped: true };
+      deps.persistRun(snapshot());
+      continue;
+    }
+
     try {
       const result = await executeStep(step, ctx, projectRoot, deps);
       ctx.steps[step.id] = result;

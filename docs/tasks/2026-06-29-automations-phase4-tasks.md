@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-29 |
-| **Status** | Not started |
+| **Status** | Track A (branching) ✅ done on `feat/automations` · Tracks B (canvas) + C (launchd) not started |
 | **PRD** | [automations](../prds/2026-06-28-automations.md) |
 | **Phase** | Phase 4 — branching · visual canvas · launchd (the optional / "may never ship" phase) |
 | **Total** | 12 tasks across 3 independent tracks: A (4), B (4), C (4) — 2S, 7M, 3L |
@@ -25,7 +25,7 @@ Phases 1–3 (all three trigger classes) shipped on `feat/automations` (PR #505)
 
 *Per-step `if` (a step is skipped when false) — keeps the linear model + the existing executor. Highest value, lowest cost. Do this one first.*
 
-### A1 — Safe condition expression evaluator ⏳
+### A1 — Safe condition expression evaluator ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** —
 
@@ -35,7 +35,7 @@ Phases 1–3 (all three trigger classes) shipped on `feat/automations` (PR #505)
 
 **Files:** `src/lib/automations/condition-expr.ts` (new), `src/lib/automations/__tests__/condition-expr.test.ts` (new)
 
-### A2 — `if?` on AutomationStep (model + round-trip) ⏳
+### A2 — `if?` on AutomationStep (model + round-trip) ✅
 
 **Category:** both · **Complexity:** S · **Depends on:** —
 
@@ -44,7 +44,7 @@ Phases 1–3 (all three trigger classes) shipped on `feat/automations` (PR #505)
 
 **Files:** `src-tauri/src/commands/automations.rs`, `src/lib/automations/types.ts`, `src/lib/automations/serialize.ts` (+ tests)
 
-### A3 — Executor honors `step.if` ⏳
+### A3 — Executor honors `step.if` ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #A1, #A2
 
@@ -53,7 +53,7 @@ Phases 1–3 (all three trigger classes) shipped on `feat/automations` (PR #505)
 
 **Files:** `src/lib/automations/executor.ts`, `src/lib/automations/__tests__/executor.test.ts`
 
-### A4 — StepEditor "only run if" field ⏳
+### A4 — StepEditor "only run if" field ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** #A2
 
