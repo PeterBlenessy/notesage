@@ -307,6 +307,11 @@ fn validate_automation_struct(a: &Automation) -> Result<Option<String>, String> 
         if id.trim().is_empty() {
             return Err("Every step needs a non-empty `id`".to_string());
         }
+        // A `.` in a step id would break `{{steps.<id>.output}}` token lookup
+        // (deepGet splits on `.`), so reject it at the validation boundary (L6).
+        if id.contains('.') {
+            return Err(format!("Step id `{}` must not contain a `.`", id));
+        }
         if !seen.insert(id) {
             return Err(format!("Duplicate step id `{}`", id));
         }
@@ -961,11 +966,68 @@ steps:
     }
 
     #[test]
+    fn step_id_with_a_dot_is_rejected() {
+        // `a.b` would break `{{steps.a.b.output}}` token lookup (deepGet splits on `.`).
+        let yaml = r#"
+name: X
+trigger: { type: schedule, cron: "0 8 * * *" }
+steps:
+  - { id: a.b, type: notify, title: t, body: b }
+"#;
+        let a = parse_automation(yaml).unwrap();
+        assert!(validate_automation_struct(&a).is_err());
+    }
+
+    #[test]
     fn cron_next_after_is_deterministic() {
         // Pin to UTC so the assertion is machine-timezone independent.
         let after = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let next = cron_next_after_tz("0 8 * * *", after, &Utc).unwrap().unwrap();
         assert_eq!(next, Utc.with_ymd_and_hms(2026, 1, 1, 8, 0, 0).unwrap());
+    }
+
+    // --- DST handling (the whole reason resolve_wallclock exists) -------------
+    // Europe/Stockholm: spring-forward 2026-03-29 (02:00→03:00 skips 02:xx),
+    // fall-back 2026-10-25 (03:00→02:00 repeats 02:xx).
+
+    #[test]
+    fn resolve_wallclock_steps_over_a_spring_forward_gap() {
+        use chrono::NaiveDate;
+        use chrono_tz::Europe::Stockholm;
+        // 02:30 does not exist on the spring-forward day → bumped to 03:30 local
+        // (= 01:30 UTC, since post-transition Stockholm is UTC+2).
+        let naive = NaiveDate::from_ymd_opt(2026, 3, 29)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        let utc = resolve_wallclock(&Stockholm, naive).unwrap();
+        assert_eq!(utc, Utc.with_ymd_and_hms(2026, 3, 29, 1, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn resolve_wallclock_resolves_a_fall_back_ambiguity_to_the_earlier_instant() {
+        use chrono::NaiveDate;
+        use chrono_tz::Europe::Stockholm;
+        // 02:30 occurs twice on the fall-back day; we take the earlier (UTC+2 →
+        // 00:30 UTC), not the later (UTC+1 → 01:30 UTC).
+        let naive = NaiveDate::from_ymd_opt(2026, 10, 25)
+            .unwrap()
+            .and_hms_opt(2, 30, 0)
+            .unwrap();
+        let utc = resolve_wallclock(&Stockholm, naive).unwrap();
+        assert_eq!(utc, Utc.with_ymd_and_hms(2026, 10, 25, 0, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn cron_daily_skips_into_the_spring_forward_gap_safely() {
+        use chrono_tz::Europe::Stockholm;
+        // A 02:30 daily job on the spring-forward day still yields a valid instant
+        // (the gap is bridged, not dropped) rather than None.
+        let after = Utc.with_ymd_and_hms(2026, 3, 29, 0, 0, 0).unwrap();
+        let next = cron_next_after_tz("30 2 * * *", after, &Stockholm)
+            .unwrap()
+            .unwrap();
+        assert_eq!(next, Utc.with_ymd_and_hms(2026, 3, 29, 1, 30, 0).unwrap());
     }
 
     #[test]

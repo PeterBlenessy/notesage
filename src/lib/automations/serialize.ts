@@ -33,7 +33,7 @@ export function serializeAutomation(a: Automation): string {
     if (a.trigger.catchUp !== undefined) trigger.catchUp = a.trigger.catchUp;
   } else {
     if (a.trigger.event) trigger.event = a.trigger.event;
-    if (a.trigger.path) trigger.path = a.trigger.path;
+    if (a.trigger.type === 'file' && a.trigger.path) trigger.path = a.trigger.path;
   }
 
   const doc: Record<string, unknown> = {

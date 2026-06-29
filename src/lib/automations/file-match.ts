@@ -11,7 +11,7 @@
 // PRD: docs/prds/2026-06-28-automations.md (Task #4)
 
 import picomatch from 'picomatch';
-import type { Automation, FileEventName } from './types';
+import { triggerPath, type Automation, type FileEventName } from './types';
 
 /** Map a watcher `file-changed-batch` kind to a file-trigger event name. */
 export const WATCHER_KIND_TO_EVENT: Record<'create' | 'modify' | 'delete', FileEventName> = {
@@ -53,7 +53,7 @@ export type FrontmatterReader = (path: string) => Promise<Record<string, unknown
  * as-is, e.g. `**\/*.md`).
  */
 export function automationBase(automation: Automation): string | undefined {
-  const explicit = automation.trigger.path?.trim();
+  const explicit = triggerPath(automation.trigger)?.trim();
   if (explicit) return explicit;
   if (automation.scope && automation.scope !== 'global') return automation.scope;
   return undefined;

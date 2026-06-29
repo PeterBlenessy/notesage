@@ -29,7 +29,7 @@ const noReader = vi.fn(async () => {
 
 describe('automationBase', () => {
   it('prefers trigger.path over scope', () => {
-    expect(automationBase(fileAutomation({ trigger: { type: 'file', path: '/inbox' } }))).toBe(
+    expect(automationBase(fileAutomation({ trigger: { type: 'file', event: 'file-created', path: '/inbox' } }))).toBe(
       '/inbox',
     );
   });
@@ -101,7 +101,7 @@ describe('matchesCondition', () => {
   });
 
   it('honours an explicit trigger.path as the glob root', async () => {
-    const a = withCondition({ glob: '*.md' }, { trigger: { type: 'file', path: '/inbox' } });
+    const a = withCondition({ glob: '*.md' }, { trigger: { type: 'file', event: 'file-created', path: '/inbox' } });
     expect(await matchesCondition(a, '/inbox/note.md', noReader)).toBe(true);
     expect(await matchesCondition(a, '/proj/note.md', noReader)).toBe(false);
   });

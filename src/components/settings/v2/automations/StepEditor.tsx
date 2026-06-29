@@ -91,8 +91,17 @@ export function StepEditor({
   const meta = STEP_META[step.type];
   const Icon = meta.icon;
   const idField = `step-${step.id}`;
-  // Read once on mount — the skill set is stable while editing a form.
-  const skills = useMemo(() => useSkillStore.getState().getActiveSkills(), []);
+  // Reactive: recompute when the skill set or enable overrides change, so a
+  // skill discovered AFTER the form opened still appears (discovery resolves
+  // async after startupReady). getActiveSkills() returns a fresh array each
+  // call, so subscribe to the stable source slices — not the result — to avoid
+  // a re-render loop.
+  const skillsSlice = useSkillStore((s) => s.skills);
+  const enabledOverrides = useSkillStore((s) => s.enabledOverrides);
+  const skills = useMemo(
+    () => useSkillStore.getState().getActiveSkills(),
+    [skillsSlice, enabledOverrides],
+  );
 
   return (
     <div className="rounded-md border border-border p-3 space-y-3">

@@ -10,17 +10,30 @@
 const TTL_MS = 15_000;
 const written = new Map<string, number>();
 
+/**
+ * Normalize so the runner's stored write path and the watcher's reported path
+ * compare equal: macOS FSEvents canonicalizes `/var`→`/private/var`,
+ * `/tmp`→`/private/tmp`, etc., while the runner stores the raw joined path.
+ * Stripping the `/private` prefix aligns both (matches the frontend convention
+ * in `useFileWatcher`). Without this the 15s guard can miss after the 5s
+ * backend `mark_self_write` TTL lapses.
+ */
+function normalize(path: string): string {
+  return path.startsWith('/private/') ? path.slice('/private'.length) : path;
+}
+
 /** Record that an automation just wrote `path` (called by the runner's writeDocument). */
 export function markAutomationWrite(path: string): void {
-  written.set(path, Date.now());
+  written.set(normalize(path), Date.now());
 }
 
 /** True if `path` was written by an automation within the TTL (prunes on read). */
 export function wasAutomationWrite(path: string, now: number = Date.now()): boolean {
-  const t = written.get(path);
+  const key = normalize(path);
+  const t = written.get(key);
   if (t === undefined) return false;
   if (now - t > TTL_MS) {
-    written.delete(path);
+    written.delete(key);
     return false;
   }
   return true;

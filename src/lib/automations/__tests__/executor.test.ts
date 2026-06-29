@@ -113,6 +113,26 @@ describe('runAutomation', () => {
     expect(calls.agent).toHaveLength(0);
   });
 
+  it('observes restart-abort only at the next step boundary (cooperative)', async () => {
+    // The in-flight step runs to completion; abort is observed before the NEXT
+    // step. Pins the cooperative-between-steps semantics (M2) so a future change
+    // claiming mid-step cancellation has to update this test deliberately.
+    let agentCalls = 0;
+    const { deps, calls } = makeDeps({
+      runAgent: async () => {
+        agentCalls++;
+        return 'AGENT_OUT';
+      },
+      isAborted: () => agentCalls >= 1, // becomes aborted once the first step has run
+    });
+    const run = await runAutomation(DIGEST, { type: 'schedule' }, deps);
+
+    expect(agentCalls).toBe(1); // step 1 ran fully despite the abort
+    expect(calls.doc).toHaveLength(0); // step 2 skipped at the boundary
+    expect(calls.notify).toHaveLength(0);
+    expect(run.status).toBe('skipped');
+  });
+
   it('runs a skill step with rendered args (Inbox-Triage shape)', async () => {
     const { deps, calls } = makeDeps();
     const triage: Automation = {
@@ -182,6 +202,9 @@ describe('RunManager (overlap mode)', () => {
     release();
   });
 
+  // NB: this verifies the RunManager fires the AbortController; it does NOT mean
+  // an in-flight STEP is cancelled — runAutomation observes the signal only at
+  // step boundaries (see the cooperative-abort test above).
   it('mode=restart aborts the in-flight run', async () => {
     const mgr = new RunManager();
     let firstAborted = false;

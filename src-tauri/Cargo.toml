@@ -156,4 +156,6 @@ e2e-testing = ["tauri-plugin-webdriver"]
 
 [dev-dependencies]
 tempfile = "3"
+# Test-only: a real DST timezone for the cron wall-clock / resolve_wallclock tests.
+chrono-tz = "0.10"
 

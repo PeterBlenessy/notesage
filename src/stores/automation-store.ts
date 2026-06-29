@@ -13,8 +13,13 @@ import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { Automation, AutomationRun } from '@/lib/automations/types';
 
-/** Per-automation run-history retention. */
-const RUNS_CAP = 20;
+/** Per-automation run-history retention. `RUNS_CAP` is the kept-real-runs limit
+ *  — it MUST exceed the largest sane `maxRunsPerDay` so the durable daily cap
+ *  (which counts today's non-skipped runs from this history) stays accurate
+ *  across restarts (M3). Skipped/blocked entries are capped separately so a
+ *  burst of them can never evict the real runs the cap counts. */
+const RUNS_CAP = 100;
+const SKIPPED_CAP = 15;
 const RUNS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A file that failed to parse/validate — surfaced in the Automations panel. */
@@ -148,9 +153,15 @@ export const useAutomationStore = create<AutomationStore>()(
     set((state) => {
       const now = Date.now();
       const existing = state.runsByAutomation[run.sourcePath] ?? [];
-      const next = [run, ...existing.filter((r) => r.runId !== run.runId)]
-        .filter((r) => now - r.startedAt < RUNS_TTL_MS)
-        .slice(0, RUNS_CAP);
+      const merged = [run, ...existing.filter((r) => r.runId !== run.runId)].filter(
+        (r) => now - r.startedAt < RUNS_TTL_MS,
+      );
+      // Cap real and skipped entries independently (newest-first), then re-merge
+      // by recency — so skipped/blocked records never push real runs out of the
+      // history the durable daily cap counts from (M3).
+      const real = merged.filter((r) => r.status !== 'skipped').slice(0, RUNS_CAP);
+      const skipped = merged.filter((r) => r.status === 'skipped').slice(0, SKIPPED_CAP);
+      const next = [...real, ...skipped].sort((a, b) => b.startedAt - a.startedAt);
       return {
         runsByAutomation: { ...state.runsByAutomation, [run.sourcePath]: next },
       };

@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 import { armAutomation, writeScope } from '@/lib/automations/arm';
 import type { Automation } from '@/lib/automations/types';
 
@@ -48,8 +49,17 @@ export function ArmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={() => {
-              if (automation) void armAutomation(automation);
+            onClick={async () => {
+              if (automation) {
+                try {
+                  await armAutomation(automation);
+                } catch (e) {
+                  // Don't let the dialog close implying success when arming
+                  // (SHA-256 hashing / store write) actually failed.
+                  toast.error(`Couldn't arm automation: ${e instanceof Error ? e.message : e}`);
+                  return;
+                }
+              }
               onClose();
             }}
           >

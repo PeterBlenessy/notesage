@@ -23,6 +23,13 @@ import { useAutomationStore } from '@/stores/automation-store';
 import { runAutomationNow } from '@/lib/automations/run-bridge';
 import { armAutomation, needsArming } from '@/lib/automations/arm';
 import { serializeAutomation, slugify, buildSourcePath } from '@/lib/automations/serialize';
+import {
+  triggerCron,
+  triggerCatchUp,
+  triggerEvent,
+  triggerPath,
+  DEFAULT_AUTOMATION_GUARDRAILS as DEFAULT_GUARDRAILS,
+} from '@/lib/automations/types';
 import type {
   Automation,
   AutomationStep,
@@ -35,7 +42,6 @@ import { TriggerEditor } from './TriggerEditor';
 import { StepEditor } from './StepEditor';
 import type { TokenOption } from './VariablePicker';
 
-const DEFAULT_GUARDRAILS = { maxRunsPerDay: 24, debounceMs: 0, maxStepsPerRun: 25 };
 
 function blankAutomation(): Automation {
   return {
@@ -83,9 +89,24 @@ export function AutomationForm({
       { token: '{{today}}', label: "today's date" },
       { token: '{{now}}', label: 'current date-time' },
     ];
+    // Trigger-payload tokens — depend on the trigger kind (the runner populates
+    // these on the run context; surface them so they're not undiscoverable).
+    const t = draft.trigger;
+    if (t.type === 'file' || (t.type === 'workflow' && t.event === 'document-saved')) {
+      opts.push({ token: '{{trigger.file}}', label: 'triggering file' });
+    }
+    if (t.type === 'workflow' && t.event === 'agent-task-complete') {
+      opts.push({ token: '{{trigger.output}}', label: 'agent task output' });
+    }
+    if (t.type === 'workflow' && t.event === 'transcription-done') {
+      opts.push({ token: '{{trigger.transcriptPath}}', label: 'transcript path' });
+    }
     for (let i = 0; i < index; i++) {
       const s = draft.steps[i];
-      if (s?.id) opts.push({ token: `{{steps.${s.id}.output}}`, label: `${s.id} output` });
+      if (s?.id) {
+        opts.push({ token: `{{steps.${s.id}.output}}`, label: `${s.id} output` });
+        opts.push({ token: `{{steps.${s.id}.json}}`, label: `${s.id} json (if structured)` });
+      }
     }
     return opts;
   };
@@ -186,7 +207,7 @@ export function AutomationForm({
                     ? { type: 'file', event: 'file-created', path: '' }
                     : v === 'workflow'
                       ? { type: 'workflow', event: 'document-saved' }
-                      : { type: 'schedule', cron: draft.trigger.cron ?? '0 8 * * *', catchUp: true },
+                      : { type: 'schedule', cron: triggerCron(draft.trigger) ?? '0 8 * * *', catchUp: true },
               })
             }
           >
@@ -204,10 +225,22 @@ export function AutomationForm({
         {draft.trigger.type === 'schedule' && (
           <>
             <TriggerEditor
-              cron={draft.trigger.cron ?? '0 8 * * *'}
-              catchUp={draft.trigger.catchUp ?? true}
-              onCronChange={(cron) => update({ trigger: { ...draft.trigger, cron } })}
-              onCatchUpChange={(catchUp) => update({ trigger: { ...draft.trigger, catchUp } })}
+              cron={triggerCron(draft.trigger) ?? '0 8 * * *'}
+              catchUp={triggerCatchUp(draft.trigger) ?? true}
+              onCronChange={(cron) =>
+                update({
+                  trigger: { type: 'schedule', cron, catchUp: triggerCatchUp(draft.trigger) ?? true },
+                })
+              }
+              onCatchUpChange={(catchUp) =>
+                update({
+                  trigger: {
+                    type: 'schedule',
+                    cron: triggerCron(draft.trigger) ?? '0 8 * * *',
+                    catchUp,
+                  },
+                })
+              }
             />
             <div className="flex items-center gap-2">
               <Switch
@@ -231,9 +264,11 @@ export function AutomationForm({
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs text-muted-foreground">Event</Label>
               <Select
-                value={draft.trigger.event ?? 'file-created'}
+                value={triggerEvent(draft.trigger) ?? 'file-created'}
                 onValueChange={(v) =>
-                  update({ trigger: { ...draft.trigger, event: v as FileEventName } })
+                  update({
+                    trigger: { type: 'file', event: v as FileEventName, path: triggerPath(draft.trigger) },
+                  })
                 }
               >
                 <SelectTrigger className="h-8 w-44 text-sm">
@@ -253,8 +288,16 @@ export function AutomationForm({
               </Label>
               <Input
                 id="trigger-path"
-                value={draft.trigger.path ?? ''}
-                onChange={(e) => update({ trigger: { ...draft.trigger, path: e.target.value } })}
+                value={triggerPath(draft.trigger) ?? ''}
+                onChange={(e) =>
+                  update({
+                    trigger: {
+                      type: 'file',
+                      event: (triggerEvent(draft.trigger) as FileEventName) ?? 'file-created',
+                      path: e.target.value,
+                    },
+                  })
+                }
                 placeholder={`${home}/Notesage/Inbox`}
                 className="text-sm"
               />
@@ -281,9 +324,9 @@ export function AutomationForm({
             <div className="flex flex-wrap items-center gap-2">
               <Label className="text-xs text-muted-foreground">Event</Label>
               <Select
-                value={draft.trigger.event ?? 'document-saved'}
+                value={triggerEvent(draft.trigger) ?? 'document-saved'}
                 onValueChange={(v) =>
-                  update({ trigger: { ...draft.trigger, event: v as WorkflowEventName } })
+                  update({ trigger: { type: 'workflow', event: v as WorkflowEventName } })
                 }
               >
                 <SelectTrigger className="h-8 w-52 text-sm">
@@ -296,7 +339,7 @@ export function AutomationForm({
                 </SelectContent>
               </Select>
             </div>
-            {draft.trigger.event === 'document-saved' && (
+            {triggerEvent(draft.trigger) === 'document-saved' && (
               <div className="space-y-1">
                 <Label htmlFor="wf-glob" className="text-xs text-muted-foreground">
                   Only documents matching (glob)

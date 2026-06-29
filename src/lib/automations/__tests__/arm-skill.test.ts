@@ -6,7 +6,11 @@ vi.mock('@/lib/tauri', () => ({
 }));
 vi.mock('@/stores/skill-store', () => ({
   useSkillStore: {
-    getState: () => ({ getSkillByName: (n: string) => ({ name: n, path: `/skills/${n}` }) }),
+    getState: () => ({
+      // 'missing' resolves to nothing so the skill-not-found branch is exercised.
+      getSkillByName: (n: string) =>
+        n === 'missing' ? undefined : { name: n, path: `/skills/${n}` },
+    }),
   },
 }));
 
@@ -52,5 +56,17 @@ describe('arm — skill steps', () => {
 
     hashSkillScript.mockResolvedValueOnce('HASH2'); // script body rewritten
     expect(await isArmed(a)).toBe(false);
+  });
+
+  it('leaves an unresolvable skill unpinned without throwing', async () => {
+    const a: Automation = {
+      ...skillAuto(),
+      steps: [{ id: 'run', type: 'skill', skill: 'missing', script: 'x.sh' }],
+    };
+    await armAutomation(a); // must not throw on a skill that resolves to nothing
+
+    const rec = usePermissionStore.getState().getAutomationArm(a.sourcePath);
+    expect(rec?.scriptHashes?.['missing/x.sh']).toBeUndefined(); // never pinned
+    expect(hashSkillScript).not.toHaveBeenCalled(); // not found → never hashed
   });
 });

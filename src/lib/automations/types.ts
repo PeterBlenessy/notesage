@@ -4,7 +4,12 @@
 //
 // PRD: docs/prds/2026-06-28-automations.md · Research: docs/research/automation-formats.md
 
-/** Overlap policy when a run is already active (R3, Home-Assistant style). */
+/**
+ * Overlap policy when a run is already active (R3, Home-Assistant style).
+ * NB: `restart` cancellation is cooperative — it skips the *remaining* steps of
+ * the in-flight run at the next step boundary; an already-executing step
+ * (agent/skill/document) still runs to completion (see executor.ts).
+ */
 export type RunMode = 'single' | 'restart' | 'queued';
 
 export type TriggerType = 'schedule' | 'file' | 'workflow';
@@ -20,17 +25,42 @@ export type WorkflowEventName =
   | 'document-saved'
   | 'transcription-done';
 
-export interface Trigger {
-  type: TriggerType;
-  /** schedule: canonical 5-field cron (`"0 8 * * *"`), interpreted in local time. */
-  cron?: string;
-  /** schedule: include in missed-run reconciliation (default true). */
+/** schedule: canonical 5-field cron (`"0 8 * * *"`), interpreted in local time. */
+export interface ScheduleTrigger {
+  type: 'schedule';
+  cron: string;
+  /** include in missed-run reconciliation (default true). */
   catchUp?: boolean;
-  /** file / workflow: the event name. */
-  event?: FileEventName | WorkflowEventName;
-  /** file: watched root (defaults to the automation's scope). */
+}
+/** file: a watcher event on `path` (defaults to the automation's scope). */
+export interface FileTrigger {
+  type: 'file';
+  event: FileEventName;
   path?: string;
 }
+/** workflow: an in-app event (document-saved / agent-task-complete / transcription-done). */
+export interface WorkflowTrigger {
+  type: 'workflow';
+  event: WorkflowEventName;
+}
+
+/**
+ * Discriminated by `type` so each variant only exposes its own fields — reading
+ * `trigger.cron` on a file trigger is a compile error, not silent `undefined`.
+ * Serializes to the same flat YAML/JSON the Rust `Trigger` struct does.
+ */
+export type Trigger = ScheduleTrigger | FileTrigger | WorkflowTrigger;
+
+// Typed accessors — read a possibly-absent field across variants without
+// scattering `type` guards (callbacks lose narrowing, so these centralize it).
+export const triggerCron = (t: Trigger): string | undefined =>
+  t.type === 'schedule' ? t.cron : undefined;
+export const triggerCatchUp = (t: Trigger): boolean | undefined =>
+  t.type === 'schedule' ? t.catchUp : undefined;
+export const triggerEvent = (t: Trigger): FileEventName | WorkflowEventName | undefined =>
+  t.type === 'file' || t.type === 'workflow' ? t.event : undefined;
+export const triggerPath = (t: Trigger): string | undefined =>
+  t.type === 'file' ? t.path : undefined;
 
 /** Trigger-level gate (R1, was `filter`). Phase 1 ships `weekdays`. */
 export interface Condition {
@@ -44,6 +74,14 @@ export interface Guardrails {
   debounceMs: number;
   maxStepsPerRun: number;
 }
+
+/** Per-automation guardrail defaults — mirror the Rust `default_max_runs()` /
+ *  `default_max_steps()` fns. Single TS source of truth for the form builder. */
+export const DEFAULT_AUTOMATION_GUARDRAILS: Guardrails = {
+  maxRunsPerDay: 24,
+  debounceMs: 0,
+  maxStepsPerRun: 25,
+};
 
 export type AutomationStep =
   | { type: 'agent'; id: string; prompt: string }

@@ -62,6 +62,10 @@ export async function runAutomation(
   const maxSteps = automation.guardrails?.maxStepsPerRun ?? automation.steps.length;
 
   for (let i = 0; i < automation.steps.length; i++) {
+    // Abort (mode:'restart') is COOPERATIVE and observed only here, at step
+    // boundaries — an already-running step (agent/skill/document) is NOT
+    // interrupted and runs to completion; only the remaining steps are skipped.
+    // The injected side effects don't take the signal, so this is by design.
     if (deps.isAborted()) {
       run.status = 'skipped';
       break;
@@ -213,7 +217,8 @@ export class GuardrailTracker {
   private runsToday = new Map<string, { date: string; count: number }>();
   private fires = new Map<string, number[]>();
   private lastFire = new Map<string, number>();
-  private paused = new Set<string>();
+  /** key → ms when the circuit breaker tripped (auto-resumes after the window). */
+  private paused = new Map<string, number>();
 
   constructor(private opts: GuardrailOptions = DEFAULT_GUARDRAILS) {}
 
@@ -226,7 +231,16 @@ export class GuardrailTracker {
    * triggers (debounce 0) are unaffected.
    */
   check(key: string, maxRunsPerDay: number, now: Date, debounceMs = 0): string | null {
-    if (this.paused.has(key)) return 'paused by circuit breaker';
+    const pausedAt = this.paused.get(key);
+    if (pausedAt !== undefined) {
+      // Auto-resume once the circuit window has elapsed since we tripped — by
+      // then recentFires() has decayed below threshold, so the breaker doesn't
+      // permanently disable an automation after a transient burst (M1).
+      if (now.getTime() - pausedAt < this.opts.circuitWindowMs) {
+        return 'paused by circuit breaker';
+      }
+      this.paused.delete(key);
+    }
 
     if (debounceMs > 0) {
       const last = this.lastFire.get(key);
@@ -242,7 +256,7 @@ export class GuardrailTracker {
 
     const recent = this.recentFires(key, now.getTime());
     if (recent.length >= this.opts.circuitThreshold) {
-      this.paused.add(key);
+      this.paused.set(key, now.getTime());
       return 'paused — firing too often';
     }
     return null;

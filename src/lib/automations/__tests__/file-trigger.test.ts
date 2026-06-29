@@ -48,4 +48,11 @@ describe('loop guard', () => {
     markAutomationWrite('/p');
     expect(wasAutomationWrite('/p', Date.now() + 20_000)).toBe(false);
   });
+
+  it('matches across the macOS /private canonicalization (L1)', () => {
+    markAutomationWrite('/var/folders/x/note.md'); // runner stores the raw join
+    expect(wasAutomationWrite('/private/var/folders/x/note.md')).toBe(true); // watcher form
+    markAutomationWrite('/private/tmp/a.md');
+    expect(wasAutomationWrite('/tmp/a.md')).toBe(true);
+  });
 });
