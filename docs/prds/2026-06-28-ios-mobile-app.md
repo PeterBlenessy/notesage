@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-28 |
-| **Status** | Draft |
+| **Status** | In progress — in-harness layers implemented (reader incl. PDF, store, commands, capture, tests, docs); native iOS wiring + on-device validation pending |
 | **Priority** | Medium |
 | **Impact** | Read your Notesage library on iPhone/iPad, and capture links from any app via the iOS share sheet straight into the library |
 | **Tasks** | [ios-mobile-app-tasks](../tasks/2026-06-28-ios-mobile-app-tasks.md) |

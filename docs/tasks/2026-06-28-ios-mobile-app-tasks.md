@@ -3,10 +3,35 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-28 |
-| **Status** | In progress — harness-validated layers done; native iOS wiring pending (needs a Mac) |
+| **Status** | In progress — all in-harness layers done & green (incl. in-app PDF); native iOS wiring + on-device validation pending (needs a Mac) |
 | **PRD** | [ios-mobile-app](../prds/2026-06-28-ios-mobile-app.md) |
-| **Total** | 16 tasks: 3S, 7M, 6L |
+| **Total** | 16 tasks: 3S, 7M, 6L · 10 done, 3 staged, 3 pending |
 | **Suggested order** | iOS scaffold (#1–#2) → native bridge + commands (#3–#8) → share extension (#9) → platform split + state (#10–#11) → mobile UI (#12–#15) → docs (#16) |
+
+## Task status ledger
+
+Legend: ✅ done & validated in-harness · 🟡 staged (source committed, needs Mac to integrate/validate) · ⏳ pending (needs Mac + Apple signing).
+
+| # | Task | Status |
+| --- | --- | --- |
+| 1 | Initialize Tauri iOS target + project config | ⏳ pending |
+| 2 | iOS entitlements (App Group, iCloud, share ext) | ⏳ pending |
+| 3 | Swift bridge: folder picker + security-scoped bookmark | 🟡 staged (`src-tauri/ios/LibraryAccess.swift`) |
+| 4 | Swift bridge: iCloud-aware reads (NSFileCoordinator) | 🟡 staged (`src-tauri/ios/LibraryAccess.swift`) |
+| 5 | iOS Tauri commands: grant lifecycle | ✅ done (`ios_library.rs`) |
+| 6 | iOS Tauri commands: read paths | ✅ done (`ios_library.rs`) |
+| 7 | Capture-note format helper + tests | ✅ done (`capture.rs`) |
+| 8 | iOS command: write capture note | ✅ formatter + command done; 🟡 native write pending wiring |
+| 9 | iOS Share Extension target | 🟡 staged (`src-tauri/ios/ShareViewController.swift`) |
+| 10 | Platform split + mobile app root | ✅ done (`main.tsx`, `MobileApp.tsx`, `platform.ts`) |
+| 11 | `mobile-store` + grant/navigation state machine | ✅ done (+ tests) |
+| 12 | Onboarding / grant screen | ✅ done (+ tests) |
+| 13 | Library browser screen | ✅ done (+ tests) |
+| 14 | Reader screen + viewer integration | ✅ done — markdown/text/image/**PDF** in-app; EPUB/DOCX/PPTX deferred |
+| 15 | Read-only & isolation safety tests | ✅ done |
+| 16 | Documentation | ✅ done |
+
+Verified this session: `pnpm typecheck` ✓ · `pnpm test` (5670) ✓ · `cargo check` ✓ (Rust unit tests run on macOS CI).
 
 ## Progress (2026-06-28)
 
