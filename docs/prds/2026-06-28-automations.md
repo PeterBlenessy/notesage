@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Notes can act on their own — run an agent, script, or file change on a schedule or in response to an event, unattended |
-| **Tasks** | [Phase 1](../tasks/2026-06-28-automations-tasks.md) (done) · [Phase 2](../tasks/2026-06-29-automations-phase2-tasks.md) (done) · [Phase 3](../tasks/2026-06-29-automations-phase3-tasks.md) (done) |
+| **Tasks** | [Phase 1](../tasks/2026-06-28-automations-tasks.md) (done) · [Phase 2](../tasks/2026-06-29-automations-phase2-tasks.md) (done) · [Phase 3](../tasks/2026-06-29-automations-phase3-tasks.md) (done) · [Phase 4](../tasks/2026-06-29-automations-phase4-tasks.md) (optional) |
 | **Research** | [automation-formats](../research/automation-formats.md) — prior-art schema survey |
 | **Phase** | New roadmap initiative — realizes "Workflows & Automation" from `docs/features/ai-workflows.md` |
 
