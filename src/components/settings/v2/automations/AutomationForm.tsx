@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Plus, Bot, FileText, Bell, Terminal } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Plus, Bot, FileText, Bell, Terminal, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
   SelectContent,
@@ -43,6 +45,41 @@ import { StepEditor } from './StepEditor';
 import type { TokenOption } from './VariablePicker';
 
 
+/** A labelled form section with an optional description + right-aligned action. */
+function Section({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <h4 className="text-sm font-medium">{title}</h4>
+          {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** "Steps can use … as `{{token}}`" — surfaces the data a trigger exposes. */
+function TokenHint({ children, token }: { children: ReactNode; token: string }) {
+  return (
+    <p className="text-xs text-muted-foreground">
+      {children} <code className="rounded bg-muted px-1 py-0.5 font-mono">{token}</code>
+    </p>
+  );
+}
+
 function blankAutomation(): Automation {
   return {
     id: '',
@@ -53,7 +90,7 @@ function blankAutomation(): Automation {
     mode: 'single',
     trigger: { type: 'schedule', cron: '0 8 * * *', catchUp: true },
     guardrails: { ...DEFAULT_GUARDRAILS },
-    steps: [{ id: 'notify', type: 'notify', title: '', body: '' }],
+    steps: [],
     sourcePath: '',
   };
 }
@@ -128,6 +165,18 @@ export function AutomationForm({
 
   const weekdaysOnly = draft.condition?.weekdays?.length === 5;
 
+  const triggerHint =
+    draft.trigger.type === 'schedule'
+      ? 'Runs automatically on a recurring schedule.'
+      : draft.trigger.type === 'file'
+        ? 'Runs when a file in the watched folder changes.'
+        : 'Runs in response to an in-app event.';
+
+  const scopeLabel =
+    draft.scope && draft.scope !== 'global'
+      ? (draft.scope.split('/').filter(Boolean).pop() ?? 'project')
+      : 'Notesage library';
+
   const handleSave = async (run: boolean) => {
     setError(null);
     if (!draft.name.trim()) {
@@ -158,10 +207,11 @@ export function AutomationForm({
   };
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="auto-name" className="text-xs text-muted-foreground">
+    <div className="space-y-6">
+      {/* Identity */}
+      <div className="grid gap-4 sm:grid-cols-[1fr_13rem]">
+        <div className="space-y-1.5">
+          <Label htmlFor="auto-name" className="text-xs font-medium">
             Name
           </Label>
           <Input
@@ -171,8 +221,8 @@ export function AutomationForm({
             placeholder="Morning Digest"
           />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Scope</Label>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium">Scope</Label>
           <Select
             value={draft.scope ?? 'global'}
             disabled={!isNew}
@@ -193,11 +243,13 @@ export function AutomationForm({
         </div>
       </div>
 
-      <section className="space-y-2">
-        <h4 className="text-sm font-medium">Trigger</h4>
+      <Separator />
 
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">When</Label>
+      {/* Trigger */}
+      <Section
+        title="Trigger"
+        description={triggerHint}
+        action={
           <Select
             value={draft.trigger.type}
             onValueChange={(v) =>
@@ -214,154 +266,190 @@ export function AutomationForm({
             <SelectTrigger className="h-8 w-44 text-sm">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="end">
               <SelectItem value="schedule">On a schedule</SelectItem>
               <SelectItem value="file">On a file change</SelectItem>
               <SelectItem value="workflow">On an app event</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-
-        {draft.trigger.type === 'schedule' && (
-          <>
-            <TriggerEditor
-              cron={triggerCron(draft.trigger) ?? '0 8 * * *'}
-              catchUp={triggerCatchUp(draft.trigger) ?? true}
-              onCronChange={(cron) =>
-                update({
-                  trigger: { type: 'schedule', cron, catchUp: triggerCatchUp(draft.trigger) ?? true },
-                })
-              }
-              onCatchUpChange={(catchUp) =>
-                update({
-                  trigger: {
-                    type: 'schedule',
-                    cron: triggerCron(draft.trigger) ?? '0 8 * * *',
-                    catchUp,
-                  },
-                })
-              }
-            />
-            <div className="flex items-center gap-2">
-              <Switch
-                id="weekdays-only"
-                checked={weekdaysOnly}
-                onCheckedChange={(c) =>
+        }
+      >
+        <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+          {draft.trigger.type === 'schedule' && (
+            <>
+              <TriggerEditor
+                cron={triggerCron(draft.trigger) ?? '0 8 * * *'}
+                catchUp={triggerCatchUp(draft.trigger) ?? true}
+                onCronChange={(cron) =>
                   update({
-                    condition: { ...draft.condition, weekdays: c ? [1, 2, 3, 4, 5] : undefined },
+                    trigger: { type: 'schedule', cron, catchUp: triggerCatchUp(draft.trigger) ?? true },
                   })
                 }
-              />
-              <Label htmlFor="weekdays-only" className="text-xs text-muted-foreground">
-                Only run on weekdays (Mon–Fri)
-              </Label>
-            </div>
-          </>
-        )}
-
-        {draft.trigger.type === 'file' && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Event</Label>
-              <Select
-                value={triggerEvent(draft.trigger) ?? 'file-created'}
-                onValueChange={(v) =>
-                  update({
-                    trigger: { type: 'file', event: v as FileEventName, path: triggerPath(draft.trigger) },
-                  })
-                }
-              >
-                <SelectTrigger className="h-8 w-44 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="file-created">File added</SelectItem>
-                  <SelectItem value="file-modified">File modified</SelectItem>
-                  <SelectItem value="file-deleted">File deleted</SelectItem>
-                  <SelectItem value="file-renamed">File renamed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="trigger-path" className="text-xs text-muted-foreground">
-                Watched folder (absolute; defaults to the scope)
-              </Label>
-              <Input
-                id="trigger-path"
-                value={triggerPath(draft.trigger) ?? ''}
-                onChange={(e) =>
+                onCatchUpChange={(catchUp) =>
                   update({
                     trigger: {
-                      type: 'file',
-                      event: (triggerEvent(draft.trigger) as FileEventName) ?? 'file-created',
-                      path: e.target.value,
+                      type: 'schedule',
+                      cron: triggerCron(draft.trigger) ?? '0 8 * * *',
+                      catchUp,
                     },
                   })
                 }
-                placeholder={`${home}/Notesage/Inbox`}
-                className="text-sm"
               />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="trigger-glob" className="text-xs text-muted-foreground">
-                Only files matching (glob, relative to the watched folder)
-              </Label>
-              <Input
-                id="trigger-glob"
-                value={draft.condition?.glob ?? ''}
-                onChange={(e) =>
-                  update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
-                }
-                placeholder="*.md"
-                className="font-mono text-sm"
-              />
-            </div>
-          </div>
-        )}
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="weekdays-only" className="text-xs text-muted-foreground">
+                  Only run on weekdays (Mon–Fri)
+                </Label>
+                <Switch
+                  id="weekdays-only"
+                  checked={weekdaysOnly}
+                  onCheckedChange={(c) =>
+                    update({
+                      condition: { ...draft.condition, weekdays: c ? [1, 2, 3, 4, 5] : undefined },
+                    })
+                  }
+                />
+              </div>
+            </>
+          )}
 
-        {draft.trigger.type === 'workflow' && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Event</Label>
-              <Select
-                value={triggerEvent(draft.trigger) ?? 'document-saved'}
-                onValueChange={(v) =>
-                  update({ trigger: { type: 'workflow', event: v as WorkflowEventName } })
-                }
-              >
-                <SelectTrigger className="h-8 w-52 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="document-saved">A document is saved</SelectItem>
-                  <SelectItem value="agent-task-complete">An agent task finishes</SelectItem>
-                  <SelectItem value="transcription-done">A transcription finishes</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {triggerEvent(draft.trigger) === 'document-saved' && (
+          {draft.trigger.type === 'file' && (
+            <>
               <div className="space-y-1">
-                <Label htmlFor="wf-glob" className="text-xs text-muted-foreground">
-                  Only documents matching (glob)
+                <Label className="text-xs text-muted-foreground">When a file is…</Label>
+                <Select
+                  value={triggerEvent(draft.trigger) ?? 'file-created'}
+                  onValueChange={(v) =>
+                    update({
+                      trigger: {
+                        type: 'file',
+                        event: v as FileEventName,
+                        path: triggerPath(draft.trigger),
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="file-created">Added</SelectItem>
+                    <SelectItem value="file-modified">Modified</SelectItem>
+                    <SelectItem value="file-deleted">Deleted</SelectItem>
+                    <SelectItem value="file-renamed">Renamed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="trigger-path" className="text-xs text-muted-foreground">
+                  Watched folder
                 </Label>
                 <Input
-                  id="wf-glob"
+                  id="trigger-path"
+                  value={triggerPath(draft.trigger) ?? ''}
+                  onChange={(e) =>
+                    update({
+                      trigger: {
+                        type: 'file',
+                        event: (triggerEvent(draft.trigger) as FileEventName) ?? 'file-created',
+                        path: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder={`${home}/Notesage/Inbox`}
+                  className="text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Absolute path. Leave blank to watch the whole {scopeLabel}.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="trigger-glob" className="text-xs text-muted-foreground">
+                  Only files matching (optional)
+                </Label>
+                <Input
+                  id="trigger-glob"
                   value={draft.condition?.glob ?? ''}
                   onChange={(e) =>
                     update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
                   }
-                  placeholder="**/*.md"
+                  placeholder="*.md"
                   className="font-mono text-sm"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Glob relative to the watched folder, e.g.{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono">*.md</code> or{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono">Inbox/*.md</code>.
+                </p>
               </div>
-            )}
-          </div>
-        )}
-      </section>
+              <TokenHint token="{{trigger.file}}">Steps can use the changed file as</TokenHint>
+            </>
+          )}
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium">Steps</h4>
+          {draft.trigger.type === 'workflow' && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Event</Label>
+                <Select
+                  value={triggerEvent(draft.trigger) ?? 'document-saved'}
+                  onValueChange={(v) =>
+                    update({ trigger: { type: 'workflow', event: v as WorkflowEventName } })
+                  }
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="document-saved">A document is saved</SelectItem>
+                    <SelectItem value="agent-task-complete">An agent task finishes</SelectItem>
+                    <SelectItem value="transcription-done">A transcription finishes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {triggerEvent(draft.trigger) === 'document-saved' && (
+                <>
+                  <div className="space-y-1">
+                    <Label htmlFor="wf-glob" className="text-xs text-muted-foreground">
+                      Only documents matching (optional)
+                    </Label>
+                    <Input
+                      id="wf-glob"
+                      value={draft.condition?.glob ?? ''}
+                      onChange={(e) =>
+                        update({
+                          condition: { ...draft.condition, glob: e.target.value || undefined },
+                        })
+                      }
+                      placeholder="**/*.md"
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">Glob across the {scopeLabel}.</p>
+                  </div>
+                  <TokenHint token="{{trigger.file}}">Steps can use the saved file as</TokenHint>
+                </>
+              )}
+              {triggerEvent(draft.trigger) === 'agent-task-complete' && (
+                <TokenHint token="{{trigger.output}}">
+                  Steps can use the finished task’s output as
+                </TokenHint>
+              )}
+              {triggerEvent(draft.trigger) === 'transcription-done' && (
+                <TokenHint token="{{trigger.transcriptPath}}">
+                  Steps can use the transcript file path as
+                </TokenHint>
+              )}
+            </>
+          )}
+        </div>
+      </Section>
+
+      <Separator />
+
+      {/* Steps */}
+      <Section
+        title="Steps"
+        description="Run top to bottom. Reference an earlier step with its {{tokens}}."
+        action={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="h-8 gap-1 text-xs">
@@ -369,97 +457,147 @@ export function AutomationForm({
                 Add step
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => addStep('agent')}>
-                <Bot className="mr-2 size-4" strokeWidth={1.5} />
-                Agent task
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuItem onSelect={() => addStep('agent')} className="items-start gap-2">
+                <Bot className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
+                <div className="flex flex-col">
+                  <span>Agent task</span>
+                  <span className="text-xs text-muted-foreground">Ask an AI agent to do the work</span>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addStep('document')}>
-                <FileText className="mr-2 size-4" strokeWidth={1.5} />
-                Create / append note
+              <DropdownMenuItem onSelect={() => addStep('document')} className="items-start gap-2">
+                <FileText className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
+                <div className="flex flex-col">
+                  <span>Create / append note</span>
+                  <span className="text-xs text-muted-foreground">
+                    Write or append to a markdown file
+                  </span>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addStep('notify')}>
-                <Bell className="mr-2 size-4" strokeWidth={1.5} />
-                Notify
+              <DropdownMenuItem onSelect={() => addStep('notify')} className="items-start gap-2">
+                <Bell className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
+                <div className="flex flex-col">
+                  <span>Notify</span>
+                  <span className="text-xs text-muted-foreground">Send a desktop notification</span>
+                </div>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addStep('skill')}>
-                <Terminal className="mr-2 size-4" strokeWidth={1.5} />
-                Run skill
+              <DropdownMenuItem onSelect={() => addStep('skill')} className="items-start gap-2">
+                <Terminal className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
+                <div className="flex flex-col">
+                  <span>Run skill</span>
+                  <span className="text-xs text-muted-foreground">
+                    Execute a skill script (needs approval)
+                  </span>
+                </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-        <div className="space-y-2">
-          {draft.steps.map((s, i) => (
-            <StepEditor
-              key={i}
-              step={s}
-              tokens={tokensFor(i)}
-              onChange={(next) => updateStep(i, next)}
-              onRemove={() => removeStep(i)}
-              onMoveUp={() => move(i, -1)}
-              onMoveDown={() => move(i, 1)}
-              canMoveUp={i > 0}
-              canMoveDown={i < draft.steps.length - 1}
-            />
-          ))}
-        </div>
-      </section>
+        }
+      >
+        {draft.steps.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">No steps yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add a step to define what this automation does.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {draft.steps.map((s, i) => (
+              <div key={i} className="flex gap-2.5">
+                <div className="mt-3 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+                  {i + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <StepEditor
+                    step={s}
+                    tokens={tokensFor(i)}
+                    showId={draft.steps.length > 1}
+                    onChange={(next) => updateStep(i, next)}
+                    onRemove={() => removeStep(i)}
+                    onMoveUp={() => move(i, -1)}
+                    onMoveDown={() => move(i, 1)}
+                    canMoveUp={i > 0}
+                    canMoveDown={i < draft.steps.length - 1}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">If already running</Label>
-          <Select value={draft.mode} onValueChange={(v) => update({ mode: v as RunMode })}>
-            <SelectTrigger className="text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="single">Skip the new run</SelectItem>
-              <SelectItem value="queued">Queue it</SelectItem>
-              <SelectItem value="restart">Restart</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="max-runs" className="text-xs text-muted-foreground">
-            Max runs / day
-          </Label>
-          <Input
-            id="max-runs"
-            type="number"
-            min={1}
-            value={draft.guardrails.maxRunsPerDay}
-            onChange={(e) =>
-              update({
-                guardrails: { ...draft.guardrails, maxRunsPerDay: Math.max(1, Number(e.target.value) || 1) },
-              })
-            }
+      <Separator />
+
+      {/* Advanced — overlap policy + guardrails (collapsed by default) */}
+      <Collapsible>
+        <CollapsibleTrigger className="group -mx-2 flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+          <span>Advanced</span>
+          <ChevronDown
+            className="size-4 text-muted-foreground group-data-[state=open]:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
+            strokeWidth={1.5}
           />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="max-steps" className="text-xs text-muted-foreground">
-            Max steps / run
-          </Label>
-          <Input
-            id="max-steps"
-            type="number"
-            min={1}
-            value={draft.guardrails.maxStepsPerRun}
-            onChange={(e) =>
-              update({
-                guardrails: {
-                  ...draft.guardrails,
-                  maxStepsPerRun: Math.max(1, Number(e.target.value) || 1),
-                },
-              })
-            }
-          />
-        </div>
-      </section>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">If already running</Label>
+              <Select value={draft.mode} onValueChange={(v) => update({ mode: v as RunMode })}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Skip the new run</SelectItem>
+                  <SelectItem value="queued">Queue it</SelectItem>
+                  <SelectItem value="restart">Restart</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="max-runs" className="text-xs text-muted-foreground">
+                Max runs / day
+              </Label>
+              <Input
+                id="max-runs"
+                type="number"
+                min={1}
+                value={draft.guardrails.maxRunsPerDay}
+                onChange={(e) =>
+                  update({
+                    guardrails: {
+                      ...draft.guardrails,
+                      maxRunsPerDay: Math.max(1, Number(e.target.value) || 1),
+                    },
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="max-steps" className="text-xs text-muted-foreground">
+                Max steps / run
+              </Label>
+              <Input
+                id="max-steps"
+                type="number"
+                min={1}
+                value={draft.guardrails.maxStepsPerRun}
+                onChange={(e) =>
+                  update({
+                    guardrails: {
+                      ...draft.guardrails,
+                      maxStepsPerRun: Math.max(1, Number(e.target.value) || 1),
+                    },
+                  })
+                }
+              />
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {error && <p className="text-xs text-[var(--color-destructive)]">{error}</p>}
 
-      <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+      <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>

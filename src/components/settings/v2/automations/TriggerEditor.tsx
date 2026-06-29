@@ -162,15 +162,11 @@ export function TriggerEditor({
         />
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Cron: <code className="rounded bg-muted px-1 py-0.5">{computed || '—'}</code> · local time
-      </p>
-
-      <div className="flex items-center gap-2">
-        <Switch id="trigger-catchup" checked={catchUp} onCheckedChange={onCatchUpChange} />
+      <div className="flex items-center justify-between gap-3">
         <Label htmlFor="trigger-catchup" className="text-xs text-muted-foreground">
-          Offer to catch up runs missed while Notesage was closed
+          Catch up runs missed while Notesage was closed
         </Label>
+        <Switch id="trigger-catchup" checked={catchUp} onCheckedChange={onCatchUpChange} />
       </div>
     </div>
   );

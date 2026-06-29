@@ -30,6 +30,7 @@ import type { Automation, RunStatus, TriggerType } from '@/lib/automations/types
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -347,6 +348,10 @@ export function AutomationsSettings() {
             <DialogTitle>
               {formTarget && formTarget !== 'new' ? 'Edit automation' : 'New automation'}
             </DialogTitle>
+            <DialogDescription>
+              Choose what triggers it, then the steps it runs. Saved as a YAML file you can edit or
+              share.
+            </DialogDescription>
           </DialogHeader>
           {formTarget !== null && (
             <AutomationForm target={formTarget} onClose={() => setFormTarget(null)} />

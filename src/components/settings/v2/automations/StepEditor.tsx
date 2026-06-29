@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Bot, FileText, Bell, Terminal, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -72,6 +72,7 @@ function TokenField({
 export function StepEditor({
   step,
   tokens,
+  showId = true,
   onChange,
   onRemove,
   onMoveUp,
@@ -81,6 +82,8 @@ export function StepEditor({
 }: {
   step: AutomationStep;
   tokens: TokenOption[];
+  /** Show the editable step id (only meaningful when another step references it). */
+  showId?: boolean;
   onChange: (next: AutomationStep) => void;
   onRemove: () => void;
   onMoveUp: () => void;
@@ -91,6 +94,8 @@ export function StepEditor({
   const meta = STEP_META[step.type];
   const Icon = meta.icon;
   const idField = `step-${step.id}`;
+  // The optional `if` condition stays hidden behind a disclosure until used.
+  const [showIf, setShowIf] = useState(!!step.if);
   // Reactive: recompute when the skill set or enable overrides change, so a
   // skill discovered AFTER the form opened still appears (discovery resolves
   // async after startupReady). getActiveSkills() returns a fresh array each
@@ -108,12 +113,17 @@ export function StepEditor({
       <div className="flex items-center gap-2">
         <Icon className="size-4 text-muted-foreground" strokeWidth={1.5} />
         <span className="text-sm font-medium">{meta.label}</span>
-        <Input
-          aria-label="Step id"
-          value={step.id}
-          onChange={(e) => onChange({ ...step, id: e.target.value })}
-          className="h-7 w-32 text-xs"
-        />
+        {showId && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">id</span>
+            <Input
+              aria-label="Step id"
+              value={step.id}
+              onChange={(e) => onChange({ ...step, id: e.target.value })}
+              className="h-7 w-28 font-mono text-xs"
+            />
+          </div>
+        )}
         <div className="ml-auto flex items-center">
           <Button
             type="button"
@@ -150,15 +160,6 @@ export function StepEditor({
         </div>
       </div>
 
-      <TokenField
-        id={`${idField}-if`}
-        label="Only run this step if… (optional)"
-        value={step.if ?? ''}
-        onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
-        tokens={tokens}
-        placeholder={'e.g. steps.classify.output contains "urgent"'}
-      />
-
       {step.type === 'agent' && (
         <TokenField
           id={`${idField}-prompt`}
@@ -173,13 +174,13 @@ export function StepEditor({
 
       {step.type === 'document' && (
         <>
-          <div className="flex items-center gap-2">
+          <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Mode</Label>
             <Select
               value={step.op}
               onValueChange={(v) => onChange({ ...step, op: v as 'create' | 'append' })}
             >
-              <SelectTrigger className="h-7 w-32 text-xs">
+              <SelectTrigger className="text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -231,10 +232,10 @@ export function StepEditor({
 
       {step.type === 'skill' && (
         <>
-          <div className="flex items-center gap-2">
+          <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Skill</Label>
             <Select value={step.skill} onValueChange={(v) => onChange({ ...step, skill: v })}>
-              <SelectTrigger className="h-7 w-48 text-xs">
+              <SelectTrigger className="text-sm">
                 <SelectValue placeholder="Pick a skill" />
               </SelectTrigger>
               <SelectContent>
@@ -276,6 +277,25 @@ export function StepEditor({
             placeholder="{{trigger.file}}"
           />
         </>
+      )}
+
+      {showIf ? (
+        <TokenField
+          id={`${idField}-if`}
+          label="Only run this step if…"
+          value={step.if ?? ''}
+          onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
+          tokens={tokens}
+          placeholder={'e.g. steps.classify.output contains "urgent"'}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowIf(true)}
+          className="text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+        >
+          + Add a condition
+        </button>
       )}
     </div>
   );
