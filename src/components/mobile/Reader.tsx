@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
@@ -8,6 +8,13 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { markdownComponents } from "./markdown-components";
+import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
+
+// Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
+// DOMMatrix), so it's only imported when a PDF is actually opened.
+const PdfViewer = lazy(() =>
+  import("@/components/editor/viewers/PdfViewer").then((m) => ({ default: m.PdfViewer })),
+);
 
 type ReaderState =
   | { status: "loading" }
@@ -16,12 +23,14 @@ type ReaderState =
   | { status: "unsupported" }
   | { status: "text"; content: string }
   | { status: "markdown"; content: string }
-  | { status: "image"; url: string };
+  | { status: "image"; url: string }
+  | { status: "pdf"; filePath: string };
 
 /**
  * Mobile reader (PRD task #14). Renders markdown (react-markdown + GFM), plain
- * text / code, and images inline; other formats (PDF/EPUB/DOCX/PPTX) show an
- * unsupported state in v1. iCloud placeholders are downloaded on demand.
+ * text / code, images, and PDFs (lazy-loaded desktop PdfViewer) inline;
+ * EPUB/DOCX/PPTX show an unsupported state in v1. iCloud placeholders are
+ * downloaded on demand.
  */
 export function Reader() {
   const openDoc = useMobileStore((s) => s.openDoc);
@@ -45,6 +54,15 @@ export function Reader() {
         setState({ status: "image", url: URL.createObjectURL(blob) });
         return;
       }
+      if (kind === "pdf") {
+        // pdf.js renders from in-memory bytes (works in WKWebView). Feed the
+        // shared binary cache the desktop PdfViewer reads from, keyed by the
+        // relative path, then mount the full viewer (zoom / fit / search).
+        const bytes = await iosReadBinary(relPath);
+        setBinaryData(relPath, bytes);
+        setState({ status: "pdf", filePath: relPath });
+        return;
+      }
       if (kind === "markdown" || kind === "text") {
         const raw = await iosReadFile(relPath);
         if (kind === "markdown") {
@@ -56,7 +74,7 @@ export function Reader() {
         }
         return;
       }
-      // PDF / EPUB / DOCX / PPTX / unknown — not previewable in v1.
+      // EPUB / DOCX / PPTX / unknown — not previewable in v1.
       setState({ status: "unsupported" });
     } catch (err) {
       // The file may be an iCloud placeholder — kick off a download and let the
@@ -85,6 +103,13 @@ export function Reader() {
     return () => URL.revokeObjectURL(url);
   }, [state]);
 
+  // Free cached PDF bytes when the open document changes / unmounts.
+  useEffect(() => {
+    if (state.status !== "pdf") return;
+    const path = state.filePath;
+    return () => clearBinaryData(path);
+  }, [state]);
+
   if (!openDoc) return null;
 
   return (
@@ -101,6 +126,15 @@ export function Reader() {
         <h1 className="flex-1 truncate text-base font-medium text-foreground">{name}</h1>
       </header>
 
+      {state.status === "pdf" ? (
+        // The PdfViewer owns its own scroll container + toolbar, so it sits in a
+        // plain flex child (no overflow wrapper).
+        <div className="min-h-0 flex-1">
+          <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
+            <PdfViewer filePath={state.filePath} fileName={name} />
+          </Suspense>
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto">
         {state.status === "loading" && <ReaderMessage spinner>Loading…</ReaderMessage>}
 
@@ -149,6 +183,7 @@ export function Reader() {
           </article>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -25,7 +25,7 @@ Pending — **requires a Mac with Xcode + Apple signing** (cannot run in this Li
 - **#1/#2** — `tauri ios init`, entitlements (App Group, iCloud Documents), share-extension target.
 - Integrating the staged Swift bridge: replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with calls into the native plugin, wire the Share Extension target.
 - On-device validation of every native acceptance criterion (grant persistence, iCloud download, capture from Safari / X, read-only behavior).
-- v1 reader fidelity follow-ups: in-app PDF/EPUB/DOCX and full callout/chart/drawing rendering (currently markdown/text/image only; other formats show "open on your Mac").
+- v1 reader fidelity follow-ups: in-app EPUB/DOCX/PPTX and full callout/chart/drawing rendering. Markdown/text/image/**PDF** render in-app (PDF reuses the desktop `PdfViewer`); EPUB/DOCX/PPTX show "open on your Mac".
 
 ## Risks & open questions
 

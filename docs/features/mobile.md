@@ -15,9 +15,11 @@ share-sheet target for capturing links. PRD:
 ## What it does
 
 - **Read the library on iPhone/iPad.** Browse projects/folders/notes from the
-  iCloud-synced Notesage folder and read them rendered (markdown via
-  `react-markdown` + GFM), plus plain text/code and images. Other formats
-  (PDF/EPUB/DOCX/PPTX) show an "open on your Mac" state in v1.
+  iCloud-synced Notesage folder and read them rendered: markdown (via
+  `react-markdown` + GFM), plain text/code, images, and **PDFs** (the desktop
+  `PdfViewer` — pdf.js canvas with zoom/fit/search — lazy-loaded and fed the
+  iOS bytes via the shared binary cache). EPUB/DOCX/PPTX show an "open on your
+  Mac" state in v1.
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the
@@ -55,7 +57,7 @@ share-sheet target for capturing links. PRD:
 
 ## v1 limitations (deferred)
 
-- PDF/EPUB/DOCX/PPTX in-app rendering (shown as "open on your Mac").
+- EPUB/DOCX/PPTX in-app rendering (shown as "open on your Mac"). PDF renders in-app.
 - Notesage-specific blocks (callouts, charts, drawings, sparklines) render as
   plain markdown/code rather than full-fidelity — full fidelity would reuse the
   desktop comrak `render_html` path.

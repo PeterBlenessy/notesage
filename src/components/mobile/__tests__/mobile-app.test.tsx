@@ -14,6 +14,12 @@ import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
 import { Onboarding } from "@/components/mobile/Onboarding";
 
+// pdf.js needs browser globals (DOMMatrix) absent in jsdom; the Reader
+// lazy-loads the viewer, so stub it to assert routing without rendering pdf.js.
+vi.mock("@/components/editor/viewers/PdfViewer", () => ({
+  PdfViewer: ({ fileName }: { fileName: string }) => <div>pdf-viewer:{fileName}</div>,
+}));
+
 /** Mirrors MobileApp's screen switch without ThemeProvider (avoids matchMedia). */
 function Shell() {
   const openDoc = useMobileStore((s) => s.openDoc);
@@ -109,8 +115,18 @@ describe("library browser states", () => {
 });
 
 describe("reader states", () => {
-  it("shows an unsupported state for PDF", async () => {
+  it("routes PDFs to the PDF viewer (reads bytes, not the unsupported state)", async () => {
     useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
+    setMockInvokeHandler("ios_read_binary", () => Array.from(new TextEncoder().encode("%PDF-1.4")));
+    renderWithProviders(<Reader />);
+    expect(await screen.findByText("pdf-viewer:doc.pdf")).toBeTruthy();
+    expect(calledCommands()).toContain("ios_read_binary");
+    // It must NOT fall back to the unsupported message for PDF.
+    expect(screen.queryByText("Can't preview this format yet")).toBeNull();
+  });
+
+  it("shows an unsupported state for other binary formats (DOCX)", async () => {
+    useMobileStore.setState({ openDoc: { relPath: "doc.docx", name: "doc.docx" } });
     renderWithProviders(<Reader />);
     expect(await screen.findByText("Can't preview this format yet")).toBeTruthy();
   });

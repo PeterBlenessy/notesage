@@ -2,12 +2,13 @@ import { ChevronRight, Folder, FileText, FileImage, FileType, File } from "lucid
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-/** Classify a file by extension for icon + (later) viewer routing. */
-export function classifyFile(name: string): "markdown" | "image" | "text" | "doc" | "other" {
+/** Classify a file by extension for icon + viewer routing. */
+export function classifyFile(name: string): "markdown" | "image" | "text" | "pdf" | "doc" | "other" {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   if (ext === "md" || ext === "markdown") return "markdown";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return "image";
-  if (["pdf", "epub", "docx", "pptx"].includes(ext)) return "doc";
+  if (ext === "pdf") return "pdf";
+  if (["epub", "docx", "pptx"].includes(ext)) return "doc";
   // Treated as readable text (code files, txt, csv, json, yaml, etc.)
   if (
     [
@@ -28,6 +29,7 @@ function iconFor(entry: FileEntry) {
       return FileText;
     case "image":
       return FileImage;
+    case "pdf":
     case "doc":
       return FileType;
     case "text":
