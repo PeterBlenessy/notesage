@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Read your Notesage library on iPhone/iPad, and capture links from any app via the iOS share sheet straight into the library |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [ios-mobile-app-tasks](../tasks/2026-06-28-ios-mobile-app-tasks.md) |
 | **Phase** | Mobile (first companion app) |
 
 ## Problem
