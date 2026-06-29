@@ -59,13 +59,17 @@ Tauri v2 targets iOS. We reuse the existing `src/` React app but mount a **dedic
 
 ### Library access on iOS (the load-bearing decision)
 
-iOS sandboxing does **not** let an app freely read another app's iCloud Drive folder. The robust, App-Store-compatible pattern is **user-granted, security-scoped access** to the Notesage folder:
+The Notesage library lives at a **fixed, known location** — the desktop app writes it to the *generic* iCloud Drive at `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/`. On macOS an app can open that path directly. On **iOS it cannot**: a sandboxed iOS app has no API to open a hardcoded path inside `com~apple~CloudDocs` (and `NSMetadataQuery` on iOS only searches the app's *own* ubiquity container, not the generic Drive). Apple's only supported way for an iOS app to reach a folder in the generic iCloud Drive is a **user-granted, security-scoped** grant via the document picker.
 
-1. **First-run folder grant.** The app presents `UIDocumentPickerViewController` (folder mode) defaulting to iCloud Drive; the user selects their `Notesage` folder. iOS returns a security-scoped URL.
-2. **Persist a security-scoped bookmark** for that URL so access survives relaunch. Store it where both the app *and* the share extension can read it — an **App Group** shared container (`group.<bundle-id>`), via shared `UserDefaults` (bookmark data) or the shared Keychain.
+So the grant is **not** "tell us where your notes are" — the location is known. It is a **one-time iOS permission handshake** for a folder we already expect:
+
+1. **First-run permission grant.** The app presents `UIDocumentPickerViewController` (folder mode) **pre-navigated to `iCloud Drive/Notesage`**, so for the common case the user just confirms the highlighted folder — a single tap, not a file hunt. (If the desktop hasn't created it yet, the picker still lands in iCloud Drive.) iOS returns a security-scoped URL.
+2. **Persist a security-scoped bookmark** for that URL so access survives relaunch — the user is never asked again unless the grant goes stale. Store it where both the app *and* the share extension can read it — an **App Group** shared container (`group.<bundle-id>`), via shared `UserDefaults` (bookmark data) or the shared Keychain.
 3. **All reads** `startAccessingSecurityScopedResource()` → enumerate/read → `stop...`. iCloud items may be **not-yet-downloaded placeholders**; the layer must trigger/await download (`NSFileCoordinator` / `startDownloadingUbiquitousItem`) and surface a "downloading" state.
 
 This is implemented as a **small iOS Rust/Swift bridge** behind new Tauri commands so the React layer stays platform-agnostic (it still calls `read_file` / `list_directory`-shaped commands; the mobile implementations resolve through the bookmark + file coordinator instead of raw paths). Desktop `file.rs` semantics are mirrored, not reused verbatim.
+
+> **Rejected alternative — shared app iCloud container (zero picker).** Hosting the library in a shared `iCloud.<team>.notesage` container that both apps declare would let iOS open it directly with no picker (and it would still surface as a "Notesage" folder in iCloud Drive via `NSUbiquitousContainerIsDocumentScopePublic`). It was rejected for v1 because it forces the **desktop** to relocate the library out of the generic iCloud Drive into the container path and migrate every existing user's library. The one-time picker confirmation is the cheaper trade-off; the container approach remains a viable future migration if the grant UX proves annoying.
 
 ### Share capture (iOS Share Extension)
 
@@ -110,7 +114,7 @@ Mobile-native patterns, but themed with the existing Notesage tokens (neutral pa
 - States: **loading** (render placeholder via `render_markdown_preview` while content loads), **download-in-progress** for iCloud placeholders, **unsupported format** fallback (offer "Open in…").
 
 **First-run / onboarding**
-- One screen explaining the app reads a folder you choose and only adds capture notes; primary button opens the folder picker. After grant → library browser.
+- One screen explaining that iOS requires a **one-time permission** to read your iCloud `Notesage` folder, and that the app only ever *adds* capture notes. Primary button opens the picker **pre-pointed at `iCloud Drive/Notesage`** so it's a confirm tap. Copy frames it as granting access to a known folder, not choosing where notes live. After grant → library browser; the user is not asked again unless the grant goes stale.
 
 **Share sheet (system UI, our extension)**
 - Minimal extension UI: a compact sheet confirming "Saved to Notesage Inbox" (or a tiny form: optional tag/title), then dismiss. No browsing inside the extension. Errors (no folder granted yet) show a clear "Open Notesage to set up" message.
@@ -170,7 +174,7 @@ pub struct CaptureInput {
 
 ### Functional
 
-- [ ] First run prompts for and persists access to the user's Notesage folder; access survives relaunch.
+- [ ] First run opens the picker pre-pointed at `iCloud Drive/Notesage` so granting is a single confirm; the grant persists (bookmark) and access survives relaunch without re-prompting.
 - [ ] Library browser lists projects/folders/notes from the granted folder; nested navigation works.
 - [ ] Tapping a markdown note opens it **rendered** (headings, lists, tables, code, callouts) — not raw.
 - [ ] iCloud not-yet-downloaded files trigger download and show a downloading state, then open.
