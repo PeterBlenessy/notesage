@@ -1,5 +1,7 @@
 pub mod alpha_update;
+pub mod capture;
 pub mod file;
+pub mod ios_library;
 pub mod dialog;
 pub mod ai;
 pub mod ai_streaming;
@@ -52,6 +54,7 @@ pub mod theme;
 
 pub use alpha_update::*;
 pub use file::*;
+pub use ios_library::*;
 pub use dialog::*;
 pub use ai::*;
 pub use export::*;

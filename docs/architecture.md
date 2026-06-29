@@ -26,6 +26,8 @@ note-sage/
 │   │   ├── commands/       # Tauri IPC commands
 │   │   │   ├── mod.rs
 │   │   │   ├── file.rs     # File read/write/list/copy operations
+│   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads + share capture (cfg-gated; native bridge staged in src-tauri/ios/)
+│   │   │   ├── capture.rs  # Pure, unit-tested `type: capture` note builder (shared by ios_library + the Share Extension)
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
@@ -101,6 +103,7 @@ note-sage/
 │   │       ├── typography.rs        # Shared typography helpers (font lookup, fallbacks)
 │   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
 │   │       └── templates.rs        # PDF + PPTX template loading and parameterization
+│   ├── ios/                # iOS native wiring (staged): LibraryAccess.swift, ShareViewController.swift, README (integrated by `tauri ios init` on a Mac)
 │   ├── binaries/           # llama-server sidecar (dev: downloaded + dylibs; prod: static) — see docs/llama-server-sidecar.md
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
 │   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)
@@ -109,10 +112,12 @@ note-sage/
 │   ├── tauri.conf.json
 │   └── capabilities/
 ├── src/                    # React frontend
-│   ├── main.tsx            # Entry point
-│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders QuietLayout (unconditional) + dialogs
+│   ├── main.tsx            # Entry point — picks the root shell via isIos(): MobileApp (iOS) or App (desktop)
+│   ├── App.tsx             # Desktop root — mounts lifecycle hooks, renders QuietLayout (unconditional) + dialogs
+│   ├── MobileApp.tsx       # iOS root — read-only reader + share capture (Onboarding / LibraryBrowser / Reader); no desktop hooks
 │   ├── components/
-│   │   ├── QuietLayout.tsx # Quiet Composer layout — the only shell (Classic Layout removed in #325; PRD 2026-04-21-ui-refresh / 2026-05-22-classic-layout-removal)
+│   │   ├── mobile/         # iOS shell — Onboarding.tsx, LibraryBrowser.tsx, FileRow.tsx, Reader.tsx, markdown-components.tsx
+│   │   ├── QuietLayout.tsx # Quiet Composer layout — the only desktop shell (Classic Layout removed in #325; PRD 2026-04-21-ui-refresh / 2026-05-22-classic-layout-removal)
 │   │   ├── ErrorBoundary.tsx # Reusable error boundary (wraps editor, chat, sidebar)
 │   │   ├── editor/         # Tiptap editor components
 │   │   │   ├── Editor.tsx, Toolbar.tsx
@@ -270,6 +275,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `message-queue-store` | Per-conversation FIFO of user messages sent while that conversation's run was in flight — sends no longer interrupt ongoing agent work; enqueued by `useAIOperations.sendChatMessage`, rendered as the command bar's queued strip, dispatched by `useMessageQueueDrain` (fresh thread) when the run finishes | None (deliberate — a queued follow-up to a run that died with the app must not auto-fire against stale context on next launch) |
 | `sidebar-status-slot-store` | DOM node of the QuietSidebar footer's status slot so the editor's `StatusBar` can portal itself there (`null` when the sidebar is hidden) | None |
 | `usage-store` | Per-connection `ProviderUsageSnapshot` (context used/size, cost, rate-limit state, per-turn tokens) with `source`/`confidence` provenance. Written through from the ACP `usage_update` / `acp-turn-usage` listeners (`source: 'acp'`) and the local estimation hook (`source: 'estimate'`). Read by the command-bar usage popover and the Settings connection-card detail | None (deliberate — usage is live state; stale persisted quota is worse than none) |
+| `mobile-store` | iOS shell only: library `grantState` (`unknown`/`ungranted`/`granted`/`stale`), `libraryName`, folder breadcrumb (`folderStack`), `openDoc`, `recentlyRead`. The grant is authoritative on the backend (resolved via `refreshGrant` at mount) | Partial (`recentlyRead` only) |
 
 ### Styling
 

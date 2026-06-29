@@ -3,10 +3,29 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-28 |
-| **Status** | Not started |
+| **Status** | In progress — harness-validated layers done; native iOS wiring pending (needs a Mac) |
 | **PRD** | [ios-mobile-app](../prds/2026-06-28-ios-mobile-app.md) |
 | **Total** | 16 tasks: 3S, 7M, 6L |
 | **Suggested order** | iOS scaffold (#1–#2) → native bridge + commands (#3–#8) → share extension (#9) → platform split + state (#10–#11) → mobile UI (#12–#15) → docs (#16) |
+
+## Progress (2026-06-28)
+
+Implemented and validated in this environment (`pnpm typecheck`, `pnpm test`,
+`cargo check`):
+
+- **#5/#6/#8** — iOS Tauri commands (`commands/ios_library.rs`), cfg-gated, registered in `lib.rs`; pure capture formatter (**#7**, `commands/capture.rs`) with Rust unit tests.
+- **#10/#11** — `isIos()` root split in `main.tsx`, `mobile-store` state machine, `ios-api.ts` wrappers — store + flow tests green.
+- **#12/#13/#14** — `MobileApp` + `Onboarding` / `LibraryBrowser` / `FileRow` / `Reader` / `markdown-components`, all states covered.
+- **#15** — read-only/isolation guard test + component/state tests + store tests (`src/components/mobile/__tests__`, `src/stores/__tests__/mobile-store.test.ts`).
+- **#16** — docs (architecture, tauri-commands, features/mobile, CLAUDE/product-description links).
+- **#3/#4/#9** — reference Swift sources staged under `src-tauri/ios/` (LibraryAccess.swift, ShareViewController.swift, README).
+
+Pending — **requires a Mac with Xcode + Apple signing** (cannot run in this Linux/CI container):
+
+- **#1/#2** — `tauri ios init`, entitlements (App Group, iCloud Documents), share-extension target.
+- Integrating the staged Swift bridge: replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with calls into the native plugin, wire the Share Extension target.
+- On-device validation of every native acceptance criterion (grant persistence, iCloud download, capture from Safari / X, read-only behavior).
+- v1 reader fidelity follow-ups: in-app PDF/EPUB/DOCX and full callout/chart/drawing rendering (currently markdown/text/image only; other formats show "open on your Mac").
 
 ## Risks & open questions
 

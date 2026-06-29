@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import * as Sentry from "@sentry/browser";
 import App from "./App";
+import { MobileApp } from "./MobileApp";
+import { isIos } from "@/lib/platform";
 import "@/styles/globals.css";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -77,8 +79,13 @@ window.addEventListener("unhandledrejection", (event) => {
   }
 });
 
+// Choose the shell at the root so desktop lifecycle hooks (AI, ACP, watcher,
+// git, editor) are never called on iOS — the mobile shell is read-only + share
+// capture. See src/lib/platform.ts.
+const Root = isIos() ? MobileApp : App;
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <Root />
   </React.StrictMode>,
 );

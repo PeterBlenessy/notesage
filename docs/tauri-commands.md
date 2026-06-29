@@ -1520,6 +1520,65 @@ const bodyHtml = await invoke<string>('render_markdown_preview', {
 });
 ```
 
+## iOS Library & Capture Operations
+
+Located in `src-tauri/src/commands/ios_library.rs` (with the pure capture-note
+formatter in `commands/capture.rs`). These back the iOS mobile app — a read-only
+reader over the iCloud-synced Notesage library plus share-sheet link capture
+(PRD `docs/prds/2026-06-28-ios-mobile-app.md`). They are registered on every
+platform so the frontend surface is uniform, but the real work is **iOS-only**:
+on non-iOS targets every command returns an error. The native bridge
+(security-scoped bookmark + `NSFileCoordinator`) is wired during `tauri ios
+init` on a Mac — see `src-tauri/ios/README.md`.
+
+**Path contract:** every `relPath` is **relative to the granted library root**
+(`""` = root). The Rust layer (`sanitize_rel_path`) rejects absolute paths and
+`..` traversal before the native bridge runs.
+
+| Command | Signature (abridged) | Purpose |
+| --- | --- | --- |
+| `ios_pick_library_folder` | `() -> LibraryGrant` | Present the folder picker (pre-pointed at `iCloud Drive/Notesage`) and persist a security-scoped bookmark. |
+| `ios_get_library_grant` | `() -> LibraryGrant` | Resolve the persisted grant; `granted: false` when none / stale. |
+| `ios_clear_library_grant` | `() -> ()` | Forget the persisted bookmark (re-grant / sign-out). |
+| `ios_list_directory` | `(relPath) -> Vec<FileEntry>` | List a directory under the granted root. |
+| `ios_read_file` | `(relPath) -> String` | Read a UTF-8 file under the granted root. |
+| `ios_read_binary` | `(relPath) -> Vec<u8>` | Read a binary file (image/PDF/…) under the granted root. |
+| `ios_ensure_downloaded` | `(relPath) -> DownloadState` | Trigger/await iCloud download; returns `ready` \| `downloading` \| `failed`. |
+| `ios_write_capture` | `(input: CaptureInput) -> String` | Write a link-only `type: capture` note into `Inbox/`; returns the relative path. Never overwrites. |
+
+```rust
+#[serde(rename_all = "camelCase")]
+pub struct LibraryGrant { pub display_name: String, pub granted: bool }
+
+#[serde(rename_all = "lowercase")]
+pub enum DownloadState { Ready, Downloading, Failed }
+
+#[serde(rename_all = "camelCase")]
+pub struct CaptureInput {
+    pub url: String,
+    pub title: Option<String>,
+    pub selection_text: Option<String>,
+    pub tags: Vec<String>, // defaults to ["inbox"] when empty
+}
+```
+
+The capture note format (frontmatter `type: capture` / `source_url` / `title` /
+`date_saved` / `tags`, body = the link plus any shared selection, filename
+`Inbox/YYYY-MM-DD-HHmmss-<slug>.md`) is produced by the shared, unit-tested
+`capture::build_capture_note` and mirrored by the Share Extension's Swift path.
+
+**Frontend usage** (via `src/lib/ios-api.ts`):
+
+```typescript
+import { iosGetLibraryGrant, iosListDirectory, iosReadFile } from '@/lib/ios-api';
+
+const grant = await iosGetLibraryGrant();
+if (grant.granted) {
+  const entries = await iosListDirectory('');      // library root
+  const text = await iosReadFile('notes/today.md');
+}
+```
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:
