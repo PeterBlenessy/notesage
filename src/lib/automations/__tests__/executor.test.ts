@@ -141,6 +141,27 @@ describe('runAutomation', () => {
     expect(run.steps[1].result?.output).toBe('SKILL_OUT');
     expect(calls.notify[0]).toEqual({ title: 'Filed', body: '/proj/Inbox/n.md' });
   });
+
+  it('runs an On-save Check (workflow document-saved → agent → notify)', async () => {
+    const { deps, calls } = makeDeps();
+    const onSave: Automation = {
+      ...DIGEST,
+      trigger: { type: 'workflow', event: 'document-saved' },
+      steps: [
+        { id: 'review', type: 'agent', prompt: 'Review {{trigger.file}} for missing tags' },
+        { id: 'ping', type: 'notify', title: 'Reviewed', body: '{{steps.review.output}}' },
+      ],
+    };
+    const run = await runAutomation(
+      onSave,
+      { type: 'workflow', event: 'document-saved', file: '/proj/notes/x.md' },
+      deps,
+    );
+
+    expect(run.status).toBe('done');
+    expect(calls.agent[0].prompt).toBe('Review /proj/notes/x.md for missing tags');
+    expect(calls.notify[0]).toEqual({ title: 'Reviewed', body: 'AGENT_OUT' });
+  });
 });
 
 describe('RunManager (overlap mode)', () => {

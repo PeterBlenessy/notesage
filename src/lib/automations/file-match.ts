@@ -38,6 +38,11 @@ export function fileTriggerMatches(
   return true;
 }
 
+/** Pure pre-filter for workflow/app-event triggers (Phase 3): right type + event. */
+export function workflowEventMatches(automation: Automation, event: string): boolean {
+  return automation.trigger.type === 'workflow' && automation.trigger.event === event;
+}
+
 /** Lazily reads a file's parsed frontmatter (`null` when absent/unreadable). */
 export type FrontmatterReader = (path: string) => Promise<Record<string, unknown> | null>;
 

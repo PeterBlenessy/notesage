@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Notes can act on their own — run an agent, script, or file change on a schedule or in response to an event, unattended |
-| **Tasks** | [Phase 1](../tasks/2026-06-28-automations-tasks.md) (done) · [Phase 2](../tasks/2026-06-29-automations-phase2-tasks.md) (done) · [Phase 3](../tasks/2026-06-29-automations-phase3-tasks.md) |
+| **Tasks** | [Phase 1](../tasks/2026-06-28-automations-tasks.md) (done) · [Phase 2](../tasks/2026-06-29-automations-phase2-tasks.md) (done) · [Phase 3](../tasks/2026-06-29-automations-phase3-tasks.md) (done) |
 | **Research** | [automation-formats](../research/automation-formats.md) — prior-art schema survey |
 | **Phase** | New roadmap initiative — realizes "Workflows & Automation" from `docs/features/ai-workflows.md` |
 
@@ -293,5 +293,5 @@ Deferred to later phases or future PRDs:
 - **Phasing recap** (north star = Daily Digest):
   - **Phase 1** ✅ *(implemented on `feat/automations`, 13 tasks)* — Scheduled foundation + Daily Digest end-to-end (entity + YAML loader, tokio timer + catch-up, tray-resident wiring, linear executor + tokens, steps: agent/document/notify, form builder, approve-to-arm, guardrails, orb + Runs history).
   - **Phase 2** ✅ *(implemented on `feat/automations`)* — File/workspace event triggers (watcher subscription, trigger conditions/glob, debounce, loop-prevention, the **skill/script** step type) → **Inbox Triage** archetype.
-  - **Phase 3** — Workflow/app event triggers (new emission points + internal event bus) → **On-save Check** archetype.
+  - **Phase 3** ✅ *(implemented on `feat/automations`)* — Workflow/app event triggers (new emission points + internal event bus) → **On-save Check** archetype. **All three trigger classes now shipped (scheduled · file · workflow).**
   - **Phase 4** — branching, canvas builder, optional launchd firing.

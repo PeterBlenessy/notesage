@@ -10,6 +10,8 @@ import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
+import { emitWorkflowEvent } from "@/lib/automations/event-bus";
+import { wasAutomationWrite } from "@/lib/automations/loop-guard";
 import { toast } from "sonner";
 import { trackSelfRename } from "@/lib/self-rename-filter";
 
@@ -293,6 +295,11 @@ export function useFileOperations() {
         // (queue_reindex + process_reindex_queue) — do NOT call tauriApi.indexFile()
         // here as it creates lock contention with the watcher's reindex.
         useActionStore.getState().incrementalUpdate(filePath);
+        // Phase 3: surface a document-saved workflow event for automations,
+        // unless this save was an automation's own write (loop prevention).
+        if (!wasAutomationWrite(filePath)) {
+          emitWorkflowEvent({ event: 'document-saved', file: filePath });
+        }
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed

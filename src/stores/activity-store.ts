@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { DelegationActivity } from '@/stores/comment-store';
 import type { ToolCallContentItem, ActivityApprovalMode } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
+import { emitWorkflowEvent } from '@/lib/automations/event-bus';
 
 const MAX_COMPLETED_TASKS = 100;
 const MAX_ACTIVITIES_PER_TASK = 200;
@@ -284,13 +285,26 @@ export const useActivityStore = create<ActivityStore>()(
       },
 
       updateTaskStatus: (id, status) => {
+        let completed: AgentTask | undefined;
         set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === id
-              ? { ...t, status, completedAt: status !== 'running' ? Date.now() : t.completedAt }
-              : t
-          ),
+          tasks: state.tasks.map((t) => {
+            if (t.id !== id) return t;
+            const next = { ...t, status, completedAt: status !== 'running' ? Date.now() : t.completedAt };
+            if (status === 'done') completed = next;
+            return next;
+          }),
         }));
+        // Phase 3: surface agent-task-complete for genuine agent tasks ONLY —
+        // never kind:'automation' (an automation run must not self-trigger an
+        // agent-done automation), nor transcription/recording.
+        if (completed?.kind === 'agent') {
+          emitWorkflowEvent({
+            event: 'agent-task-complete',
+            taskId: id,
+            label: completed.label,
+            output: completed.finalOutput,
+          });
+        }
       },
 
       appendActivity: (id, activity) => {

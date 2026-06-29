@@ -5,6 +5,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useActivityStore } from '@/stores/activity-store';
 import { useRecordingStore } from '@/stores/recording-store';
 import { renderTranscript } from '@/lib/transcription/render-transcript';
+import { emitWorkflowEvent } from '@/lib/automations/event-bus';
 import { writeTranscriptToBundle } from '@/lib/transcription/bundle';
 
 /**
@@ -136,6 +137,8 @@ export function useTranscriptionJob(): void {
         const transcriptPath = await writeTranscriptToBundle(audioPath, markdown);
 
         useActivityStore.getState().setTranscriptionDone(jobId, transcriptPath);
+        // Phase 3: surface a transcription-done workflow event for automations.
+        emitWorkflowEvent({ event: 'transcription-done', transcriptPath });
       } catch (err) {
         useActivityStore.getState().setTranscriptionError(jobId);
         toast.error(`Transcription failed: ${err}`);

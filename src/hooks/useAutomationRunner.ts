@@ -20,9 +20,11 @@ import { needsArming, isArmed } from '@/lib/automations/arm';
 import { formatToday } from '@/lib/automations/template';
 import {
   fileTriggerMatches,
+  workflowEventMatches,
   matchesCondition,
   WATCHER_KIND_TO_EVENT,
 } from '@/lib/automations/file-match';
+import { onWorkflowEvent, type WorkflowEvent } from '@/lib/automations/event-bus';
 import { markAutomationWrite, wasAutomationWrite } from '@/lib/automations/loop-guard';
 import { parseFrontmatter } from '@/lib/frontmatter';
 import type {
@@ -305,11 +307,41 @@ export function useAutomationRunner() {
       unlistenRename = u;
     });
 
+    // Workflow/app-event triggers (Task #2): document-saved / agent-task-complete
+    // / transcription-done, delivered via the in-process event bus.
+    const handleWorkflowEvent = async (e: WorkflowEvent) => {
+      try {
+        const autos = useAutomationStore
+          .getState()
+          .automations.filter((a) => a.enabled && workflowEventMatches(a, e.event));
+        for (const a of autos) {
+          const trigger: Record<string, unknown> = { type: 'workflow', event: e.event };
+          if (e.event === 'document-saved') {
+            // Honor a glob condition against the saved file.
+            if (!(await matchesCondition(a, e.file, readFrontmatter))) continue;
+            trigger.file = e.file;
+          } else if (e.event === 'agent-task-complete') {
+            trigger.taskId = e.taskId;
+            trigger.output = e.output;
+          } else if (e.event === 'transcription-done') {
+            trigger.transcriptPath = e.transcriptPath;
+          }
+          requestRunRef.current(a, trigger);
+        }
+      } catch (err) {
+        log.error('automations', 'workflow-event handling failed', err);
+      }
+    };
+    const offWorkflow = onWorkflowEvent((e) => {
+      void handleWorkflowEvent(e);
+    });
+
     return () => {
       unlisten?.();
       unregister();
       unlistenBatch?.();
       unlistenRename?.();
+      offWorkflow();
     };
   }, []);
 }

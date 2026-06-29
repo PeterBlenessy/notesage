@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-06-29 |
-| **Status** | Not started |
+| **Status** | Complete — all 7 tasks done on `feat/automations` |
 | **PRD** | [automations](../prds/2026-06-28-automations.md) |
 | **Phase** | Phase 3 — Workflow/app-event triggers |
 | **North star** | **On-save Check** — a document is saved → an agent reviews it (lint / suggest tags / flag TODOs) → notify |
@@ -23,7 +23,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #1 — Internal workflow event bus ⏳
+## #1 — Internal workflow event bus ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** —
 
@@ -36,7 +36,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #2 — Runner: workflow-event matching ⏳
+## #2 — Runner: workflow-event matching ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1
 
@@ -49,7 +49,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #3 — Emit `document-saved` (with loop suppression) ⏳
+## #3 — Emit `document-saved` (with loop suppression) ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1
 
@@ -60,7 +60,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #4 — Emit `agent-task-complete` (kind:'agent' only) ⏳
+## #4 — Emit `agent-task-complete` (kind:'agent' only) ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #1
 
@@ -71,7 +71,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #5 — Emit `transcription-done` ⏳
+## #5 — Emit `transcription-done` ✅
 
 **Category:** frontend · **Complexity:** S · **Depends on:** #1
 
@@ -82,7 +82,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #6 — Form/UI: Workflow-event trigger ⏳
+## #6 — Form/UI: Workflow-event trigger ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** —
 
@@ -94,7 +94,7 @@ Phases 1 (scheduled) and 2 (file-event triggers + skill step) shipped on `feat/a
 
 ---
 
-## #7 — Tests: bus, matcher, loop, emit guards, On-save Check ⏳
+## #7 — Tests: bus, matcher, loop, emit guards, On-save Check ✅
 
 **Category:** frontend · **Complexity:** M · **Depends on:** #2–#5
 

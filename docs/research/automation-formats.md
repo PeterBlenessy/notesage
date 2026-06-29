@@ -7,7 +7,7 @@
 | PRD | [automations](../prds/2026-06-28-automations.md) | In Progress |
 | Tasks (Phase 1) | [phase-1](../tasks/2026-06-28-automations-tasks.md) | Complete |
 | Tasks (Phase 2) | [phase-2](../tasks/2026-06-29-automations-phase2-tasks.md) | Complete |
-| Tasks (Phase 3) | [phase-3](../tasks/2026-06-29-automations-phase3-tasks.md) | Not started |
+| Tasks (Phase 3) | [phase-3](../tasks/2026-06-29-automations-phase3-tasks.md) | Complete |
 
 Survey of how established automation tools (Home Assistant, GitHub Actions, n8n, Zapier, Make, Node-RED, Apple Shortcuts/Automator/launchd, Tasker, Raycast/Alfred) model **trigger → condition → action** and pass data between steps — to validate or refine the YAML schema in the Automations PRD.
 

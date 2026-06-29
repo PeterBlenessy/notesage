@@ -29,6 +29,7 @@ import type {
   FileEventName,
   RunMode,
   StepType,
+  WorkflowEventName,
 } from '@/lib/automations/types';
 import { TriggerEditor } from './TriggerEditor';
 import { StepEditor } from './StepEditor';
@@ -177,13 +178,15 @@ export function AutomationForm({
         <div className="flex items-center gap-2">
           <Label className="text-xs text-muted-foreground">When</Label>
           <Select
-            value={draft.trigger.type === 'file' ? 'file' : 'schedule'}
+            value={draft.trigger.type}
             onValueChange={(v) =>
               update({
                 trigger:
                   v === 'file'
                     ? { type: 'file', event: 'file-created', path: '' }
-                    : { type: 'schedule', cron: draft.trigger.cron ?? '0 8 * * *', catchUp: true },
+                    : v === 'workflow'
+                      ? { type: 'workflow', event: 'document-saved' }
+                      : { type: 'schedule', cron: draft.trigger.cron ?? '0 8 * * *', catchUp: true },
               })
             }
           >
@@ -193,11 +196,12 @@ export function AutomationForm({
             <SelectContent>
               <SelectItem value="schedule">On a schedule</SelectItem>
               <SelectItem value="file">On a file change</SelectItem>
+              <SelectItem value="workflow">On an app event</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {draft.trigger.type !== 'file' && (
+        {draft.trigger.type === 'schedule' && (
           <>
             <TriggerEditor
               cron={draft.trigger.cron ?? '0 8 * * *'}
@@ -269,6 +273,45 @@ export function AutomationForm({
                 className="font-mono text-sm"
               />
             </div>
+          </div>
+        )}
+
+        {draft.trigger.type === 'workflow' && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Event</Label>
+              <Select
+                value={draft.trigger.event ?? 'document-saved'}
+                onValueChange={(v) =>
+                  update({ trigger: { ...draft.trigger, event: v as WorkflowEventName } })
+                }
+              >
+                <SelectTrigger className="h-8 w-52 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="document-saved">A document is saved</SelectItem>
+                  <SelectItem value="agent-task-complete">An agent task finishes</SelectItem>
+                  <SelectItem value="transcription-done">A transcription finishes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {draft.trigger.event === 'document-saved' && (
+              <div className="space-y-1">
+                <Label htmlFor="wf-glob" className="text-xs text-muted-foreground">
+                  Only documents matching (glob)
+                </Label>
+                <Input
+                  id="wf-glob"
+                  value={draft.condition?.glob ?? ''}
+                  onChange={(e) =>
+                    update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
+                  }
+                  placeholder="**/*.md"
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
           </div>
         )}
       </section>
