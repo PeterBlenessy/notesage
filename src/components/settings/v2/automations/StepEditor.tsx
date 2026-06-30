@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Bot, FileText, Bell, Terminal, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +12,8 @@ import {
 } from '@/components/ui/select';
 import { useSkillStore } from '@/stores/skill-store';
 import type { AutomationStep } from '@/lib/automations/types';
-import { VariablePicker, type TokenOption } from './VariablePicker';
+import { TokenInput } from './TokenInput';
+import type { TokenOption } from './VariablePicker';
 
 const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: string }> = {
   agent: { icon: Bot, label: 'Agent task' },
@@ -21,53 +21,6 @@ const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: strin
   notify: { icon: Bell, label: 'Notify' },
   skill: { icon: Terminal, label: 'Run skill' },
 };
-
-/** A labelled text field with an attached "Insert variable" picker (appends). */
-function TokenField({
-  id,
-  label,
-  value,
-  onChange,
-  tokens,
-  multiline,
-  placeholder,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  tokens: TokenOption[];
-  multiline?: boolean;
-  placeholder?: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <Label htmlFor={id} className="text-xs text-muted-foreground">
-          {label}
-        </Label>
-        <VariablePicker tokens={tokens} onInsert={(t) => onChange(value + t)} />
-      </div>
-      {multiline ? (
-        <Textarea
-          id={id}
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          className="min-h-18 text-sm"
-        />
-      ) : (
-        <Input
-          id={id}
-          value={value}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          className="text-sm"
-        />
-      )}
-    </div>
-  );
-}
 
 export function StepEditor({
   step,
@@ -161,7 +114,7 @@ export function StepEditor({
       </div>
 
       {step.type === 'agent' && (
-        <TokenField
+        <TokenInput
           id={`${idField}-prompt`}
           label="Prompt"
           value={step.prompt}
@@ -189,7 +142,7 @@ export function StepEditor({
               </SelectContent>
             </Select>
           </div>
-          <TokenField
+          <TokenInput
             id={`${idField}-path`}
             label="Path (relative to the scope)"
             value={step.path}
@@ -197,7 +150,7 @@ export function StepEditor({
             tokens={tokens}
             placeholder="Daily/{{today}}.md"
           />
-          <TokenField
+          <TokenInput
             id={`${idField}-content`}
             label="Content"
             value={step.content}
@@ -211,7 +164,7 @@ export function StepEditor({
 
       {step.type === 'notify' && (
         <>
-          <TokenField
+          <TokenInput
             id={`${idField}-title`}
             label="Title"
             value={step.title}
@@ -219,7 +172,7 @@ export function StepEditor({
             tokens={tokens}
             placeholder="Daily digest ready"
           />
-          <TokenField
+          <TokenInput
             id={`${idField}-body`}
             label="Body"
             value={step.body}
@@ -262,7 +215,7 @@ export function StepEditor({
               className="text-sm"
             />
           </div>
-          <TokenField
+          <TokenInput
             id={`${idField}-args`}
             label="Arguments (one per line)"
             value={(step.args ?? []).join('\n')}
@@ -280,7 +233,7 @@ export function StepEditor({
       )}
 
       {showIf ? (
-        <TokenField
+        <TokenInput
           id={`${idField}-if`}
           label="Only run this step if…"
           value={step.if ?? ''}

@@ -38,15 +38,14 @@ export function VariablePicker({
           <ChevronDown className="size-3" strokeWidth={1.5} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-64 overflow-auto">
+      <DropdownMenuContent align="end" className="max-h-64 w-60 overflow-auto">
+        <div className="px-2 py-1 text-[0.7rem] text-muted-foreground">Click to insert</div>
         {tokens.map((t) => (
-          <DropdownMenuItem
-            key={t.token}
-            onSelect={() => onInsert(t.token)}
-            className="gap-2 text-xs"
-          >
-            <code className="rounded bg-muted px-1 py-0.5">{t.token}</code>
-            <span className="text-muted-foreground">{t.label}</span>
+          <DropdownMenuItem key={t.token} onSelect={() => onInsert(t.token)} className="gap-2 text-xs">
+            <span className="inline-flex items-center rounded bg-[var(--color-accent-primary)]/15 px-1.5 py-0.5 font-medium text-[var(--color-accent-primary)]">
+              {t.label}
+            </span>
+            <code className="ml-auto text-[0.65rem] text-muted-foreground">{t.token}</code>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

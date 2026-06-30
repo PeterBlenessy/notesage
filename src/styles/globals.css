@@ -1205,3 +1205,13 @@ body {
 html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
   transition: none !important;
 }
+
+/* =========================================================================
+ * Magic-variable input (TokenInput) — contenteditable placeholder. Shows the
+ * data-placeholder text only when the field is genuinely empty.
+ * ========================================================================= */
+.token-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  pointer-events: none;
+}
