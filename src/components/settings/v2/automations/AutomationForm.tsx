@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Plus, Bot, FileText, Bell, Terminal, ChevronDown, ChevronLeft } from 'lucide-react';
+import { Plus, Bot, FileText, Bell, ChevronDown, ChevronLeft, FolderOpen } from 'lucide-react';
+import { tauriApi } from '@/lib/tauri';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -91,7 +92,6 @@ function newStep(type: StepType, count: number): AutomationStep {
   const id = `step${count + 1}`;
   if (type === 'agent') return { id, type, prompt: '' };
   if (type === 'document') return { id, type, op: 'append', path: '', content: '' };
-  if (type === 'skill') return { id, type, skill: '', script: '', args: [] };
   return { id, type, title: '', body: '' };
 }
 
@@ -115,6 +115,19 @@ export function AutomationForm({
   const [view, setView] = useState<'recipe' | 'edit'>(isNew ? 'recipe' : 'edit');
 
   const update = (patch: Partial<Automation>) => setDraft((d) => ({ ...d, ...patch }));
+
+  // Native folder picker for the file trigger's watched folder.
+  const pickFolder = async () => {
+    const dir = await tauriApi.openFolderDialog();
+    if (!dir) return;
+    update({
+      trigger: {
+        type: 'file',
+        event: (triggerEvent(draft.trigger) as FileEventName) ?? 'file-created',
+        path: dir,
+      },
+    });
+  };
 
   const tokensFor = (index: number): TokenOption[] => {
     const opts: TokenOption[] = [
@@ -405,6 +418,16 @@ export function AutomationForm({
                   placeholder={`${home}/Notesage/Inbox (defaults to scope)`}
                   className="h-8 flex-1 text-sm"
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  aria-label="Choose folder"
+                  onClick={() => void pickFolder()}
+                >
+                  <FolderOpen className="size-4" strokeWidth={1.5} />
+                </Button>
               </div>
               <div className="flex items-center gap-2">
                 <Label htmlFor="trigger-glob" className="w-20 shrink-0 text-xs text-muted-foreground">
@@ -500,15 +523,6 @@ export function AutomationForm({
                 <div className="flex flex-col">
                   <span>Notify</span>
                   <span className="text-xs text-muted-foreground">Send a desktop notification</span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => addStep('skill')} className="items-start gap-2">
-                <Terminal className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
-                <div className="flex flex-col">
-                  <span>Run skill</span>
-                  <span className="text-xs text-muted-foreground">
-                    Execute a skill script (needs approval)
-                  </span>
                 </div>
               </DropdownMenuItem>
             </DropdownMenuContent>

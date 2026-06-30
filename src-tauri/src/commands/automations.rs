@@ -7,8 +7,8 @@
 // (`useAutomationRunner`) — the backend never runs steps.
 //
 // PRD: docs/prds/2026-06-28-automations.md  ·  Tasks: docs/tasks/2026-06-28-automations-tasks.md
-// Phase 1 supports the `agent` / `document` / `notify` step types; `skill`
-// steps arrive in Phase 2 with the `execute_skill_script` integration.
+// Step types: `agent` / `document` / `notify`. (To run a skill, use an agent
+// step and ask the agent — there is no dedicated skill step.)
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 use log::warn;
@@ -141,17 +141,6 @@ pub enum AutomationStep {
         #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
         cond: Option<String>,
     },
-    /// Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
-    /// at run time; requires approve-to-arm because it executes code.
-    Skill {
-        id: String,
-        skill: String,
-        script: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        args: Option<Vec<String>>,
-        #[serde(rename = "if", default, skip_serializing_if = "Option::is_none")]
-        cond: Option<String>,
-    },
     // NB: `cond` (serialized as `if`) is preserved on load so the frontend
     // executor can honor per-step conditions (Track A). Rust does not evaluate it.
 }
@@ -161,8 +150,7 @@ impl AutomationStep {
         match self {
             AutomationStep::Agent { id, .. }
             | AutomationStep::Document { id, .. }
-            | AutomationStep::Notify { id, .. }
-            | AutomationStep::Skill { id, .. } => id,
+            | AutomationStep::Notify { id, .. } => id,
         }
     }
 }
@@ -324,14 +312,6 @@ fn validate_automation_struct(a: &Automation) -> Result<Option<String>, String> 
         }
         if !seen.insert(id) {
             return Err(format!("Duplicate step id `{}`", id));
-        }
-        if let AutomationStep::Skill { skill, script, .. } = step {
-            if skill.trim().is_empty() {
-                return Err(format!("Skill step `{}` requires a non-empty `skill`", id));
-            }
-            if script.trim().is_empty() {
-                return Err(format!("Skill step `{}` requires a non-empty `script`", id));
-            }
         }
     }
 
@@ -1086,7 +1066,7 @@ steps:
     }
 
     #[test]
-    fn parses_skill_step() {
+    fn parses_file_trigger() {
         let yaml = r#"
 name: Inbox Triage
 trigger:
@@ -1098,54 +1078,16 @@ steps:
   - id: classify
     type: agent
     prompt: "Classify the dropped file."
-  - id: file-it
-    type: skill
-    skill: organize-inbox
-    script: move.sh
-    args: ["{{trigger.file}}", "{{steps.classify.output}}"]
+  - id: ping
+    type: notify
+    title: Filed
+    body: "{{trigger.file}}"
 "#;
-        let a = parse_automation(yaml).expect("skill automation should parse");
+        let a = parse_automation(yaml).expect("file automation should parse");
         assert_eq!(a.trigger.kind, TriggerType::File);
         assert_eq!(a.steps.len(), 2);
-        assert_eq!(a.steps[1].id(), "file-it");
-        match &a.steps[1] {
-            AutomationStep::Skill {
-                skill,
-                script,
-                args,
-                ..
-            } => {
-                assert_eq!(skill, "organize-inbox");
-                assert_eq!(script, "move.sh");
-                assert_eq!(
-                    args.as_deref(),
-                    Some(&["{{trigger.file}}".to_string(), "{{steps.classify.output}}".to_string()][..])
-                );
-            }
-            _ => panic!("step 1 should be a skill step"),
-        }
+        assert_eq!(a.steps[0].id(), "classify");
         assert!(validate_automation_struct(&a).expect("valid").is_none());
-    }
-
-    #[test]
-    fn skill_step_requires_skill_and_script() {
-        let missing_skill = r#"
-name: X
-trigger: { type: file, event: file-created }
-steps:
-  - { id: a, type: skill, skill: "", script: move.sh }
-"#;
-        let a = parse_automation(missing_skill).unwrap();
-        assert!(validate_automation_struct(&a).is_err());
-
-        let missing_script = r#"
-name: X
-trigger: { type: file, event: file-created }
-steps:
-  - { id: a, type: skill, skill: organize, script: "" }
-"#;
-        let a = parse_automation(missing_script).unwrap();
-        assert!(validate_automation_struct(&a).is_err());
     }
 
     #[test]

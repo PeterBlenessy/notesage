@@ -25,8 +25,6 @@ export interface ExecutorDeps {
   runAgent: (prompt: string, projectRoot: string | undefined) => Promise<string>;
   /** Write or append a document (the runner adds self-write tagging + path resolution). */
   writeDocument: (path: string, content: string, op: 'create' | 'append') => Promise<void>;
-  /** Run a skill script (content-pinned + sandboxed by the runner); resolves with stdout. */
-  runSkill: (skill: string, script: string, args: string[]) => Promise<string>;
   /** Fire a user-intent notification. */
   notify: (title: string, body: string) => void;
   /** Persist evolving run state (upsert by runId). */
@@ -128,11 +126,6 @@ async function executeStep(
       const body = render(step.body, ctx);
       deps.notify(title, body);
       return { output: `${title}: ${body}` };
-    }
-    case 'skill': {
-      const args = (step.args ?? []).map((a) => render(a, ctx));
-      const output = await deps.runSkill(step.skill, step.script, args);
-      return { output };
     }
   }
 }

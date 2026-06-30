@@ -13,7 +13,7 @@
 export type RunMode = 'single' | 'restart' | 'queued';
 
 export type TriggerType = 'schedule' | 'file' | 'workflow';
-export type StepType = 'agent' | 'document' | 'notify' | 'skill';
+export type StepType = 'agent' | 'document' | 'notify';
 
 export type FileEventName =
   | 'file-created'
@@ -96,10 +96,7 @@ export type AutomationStep =
       content: string;
       if?: string;
     }
-  | { type: 'notify'; id: string; title: string; body: string; if?: string }
-  // Run a skill script (`execute_skill_script`). Content-pinned + Seatbelt-scoped
-  // at run time; requires approve-to-arm because it executes code (Task #8/#9).
-  | { type: 'skill'; id: string; skill: string; script: string; args?: string[]; if?: string };
+  | { type: 'notify'; id: string; title: string; body: string; if?: string };
 
 export interface Automation {
   /** Slug derived from the filename (filled by the loader). */

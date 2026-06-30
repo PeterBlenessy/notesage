@@ -4,8 +4,6 @@ import { useAgentTaskOperations } from '@/hooks/useAgentTaskOperations';
 import { useActivityStore } from '@/stores/activity-store';
 import { useAutomationStore } from '@/stores/automation-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSkillStore } from '@/stores/skill-store';
-import { usePermissionStore } from '@/stores/permission-store';
 import { tauriApi } from '@/lib/tauri';
 import { notify, notifyAutomation } from '@/lib/notifications';
 import { log } from '@/lib/logger';
@@ -131,41 +129,6 @@ export function useAutomationRunner() {
         } else {
           await tauriApi.writeFile(abs, content);
         }
-      },
-      // Skill step: run the content-pinned, Seatbelt-sandboxed script directly
-      // (the automation's approve-to-arm — verified above — is the authorization,
-      // so it must not re-prompt). Working dir = the automation scope.
-      runSkill: async (skill, script, args) => {
-        const entry = useSkillStore.getState().getSkillByName(skill);
-        if (!entry) throw new Error(`Skill not found: ${skill}`);
-        // SEC (H1): enforce the hash the user APPROVED at arm time — NOT a fresh
-        // hash of the live file (which would be a tautology). The backend refuses
-        // to run if the on-disk script diverges from what was armed, so a script
-        // rewritten between arming and execution (e.g. by an earlier agent step
-        // in the same run) is rejected, not silently executed.
-        const armed = usePermissionStore.getState().getAutomationArm(automation.sourcePath);
-        const expectedHash = armed?.scriptHashes?.[`${skill}/${script}`];
-        if (!expectedHash) {
-          throw new Error(
-            `Skill "${skill}/${script}" is not armed — review and arm the automation to approve its script.`,
-          );
-        }
-        const result = await tauriApi.executeSkillScript({
-          skillPath: entry.path,
-          script,
-          args,
-          workingDir: base,
-          env: null,
-          timeoutMs: null,
-          expectedHash,
-        });
-        if (result.timed_out) throw new Error('Skill script timed out');
-        if (result.exit_code !== 0) {
-          throw new Error(
-            `Skill script failed (exit ${result.exit_code}): ${(result.stderr || result.stdout).slice(0, 400)}`,
-          );
-        }
-        return result.stdout;
       },
       notify: (title, body) => {
         void notifyAutomation(title, body);

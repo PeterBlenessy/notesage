@@ -9,7 +9,16 @@
 // caret offset and re-renders, rather than mutating the live selection (which
 // the focus-stealing picker would lose). Research: docs/research/automation-builder-ux.md
 
-import { useEffect, useRef, type KeyboardEvent, type ClipboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ClipboardEvent,
+  type MouseEvent,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { VariablePicker, type TokenOption } from './VariablePicker';
@@ -62,6 +71,16 @@ function nodeLen(node: Node): number {
   if (node.nodeName === 'BR') return 1;
   if (node instanceof HTMLElement && node.dataset.token) return node.dataset.token.length;
   return node.textContent?.length ?? 0;
+}
+
+/** Serialized-string offset where a given child node starts. */
+function offsetOfNode(el: HTMLElement, target: Node): number {
+  let acc = 0;
+  for (const node of Array.from(el.childNodes)) {
+    if (node === target) return acc;
+    acc += nodeLen(node);
+  }
+  return acc;
 }
 
 /** Current caret as an offset into the serialized string (null if not in `el`). */
@@ -143,6 +162,19 @@ export function TokenInput({
   // restore after a programmatic re-render (insert / newline / paste).
   const caret = useRef<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
+  // The pill the user clicked — opens a Remove / Replace menu anchored to it.
+  const [menu, setMenu] = useState<{ token: string; start: number; end: number; x: number; y: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menu]);
 
   useEffect(() => {
     const el = ref.current;
@@ -196,6 +228,32 @@ export function TokenInput({
 
   const insertToken = (token: string) => spliceAt(token);
 
+  // Click a pill → open a menu over it instead of focusing/placing the caret.
+  const openPillMenu = (e: MouseEvent) => {
+    const el = ref.current;
+    if (!el) return;
+    const pillEl = (e.target as HTMLElement).closest('[data-token]') as HTMLElement | null;
+    if (!pillEl || !el.contains(pillEl)) {
+      if (menu) setMenu(null);
+      return;
+    }
+    e.preventDefault(); // suppress focus/caret — show the variable menu
+    const token = pillEl.dataset.token ?? '';
+    const start = offsetOfNode(el, pillEl);
+    const rect = pillEl.getBoundingClientRect();
+    setMenu({ token, start, end: start + token.length, x: rect.left, y: rect.bottom + 4 });
+  };
+
+  const spliceRange = (start: number, end: number, replacement: string) => {
+    const v = ref.current ? serialize(ref.current) : value;
+    pendingCaret.current = start + replacement.length;
+    onChange(v.slice(0, start) + replacement + v.slice(end));
+    setMenu(null);
+  };
+
+  const removePill = () => menu && spliceRange(menu.start, menu.end, '');
+  const replacePill = (token: string) => menu && spliceRange(menu.start, menu.end, token);
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -207,6 +265,17 @@ export function TokenInput({
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     spliceAt(multiline ? text : text.replace(/\n/g, ' '));
+  };
+
+  // On blur, re-render so any tokens the user TYPED (typing alone doesn't
+  // re-render) turn into pills — same as picker-inserted / recipe tokens.
+  const handleBlur = () => {
+    trackCaret();
+    const el = ref.current;
+    if (!el) return;
+    const v = serialize(el);
+    renderInto(el, v, tokensRef.current);
+    last.current = v;
   };
 
   return (
@@ -231,12 +300,59 @@ export function TokenInput({
         onPaste={handlePaste}
         onKeyUp={trackCaret}
         onMouseUp={trackCaret}
-        onBlur={trackCaret}
+        onMouseDown={openPillMenu}
+        onBlur={handleBlur}
         className={cn(
           'token-input w-full overflow-hidden whitespace-pre-wrap break-words rounded-md border border-border-strong bg-background px-3 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
           multiline ? 'min-h-18' : 'min-h-9 leading-6',
         )}
       />
+
+      {menu &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onMouseDown={() => setMenu(null)} />
+            <div
+              className="fixed z-50 w-56 overflow-hidden rounded-md border border-border bg-popover p-1 shadow-md"
+              style={{ left: menu.x, top: menu.y }}
+            >
+              <div className="px-2 py-1">
+                <span className="inline-flex items-center rounded bg-[var(--color-accent-primary)]/15 px-1.5 py-0.5 text-xs font-medium text-[var(--color-accent-primary)]">
+                  {labelFor(menu.token, tokensRef.current)}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={removePill}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted"
+              >
+                <X className="size-3.5" strokeWidth={1.5} />
+                Remove
+              </button>
+              {tokensRef.current.length > 0 && (
+                <>
+                  <div className="my-1 border-t border-border" />
+                  <div className="px-2 py-0.5 text-[0.7rem] text-muted-foreground">Replace with</div>
+                  <div className="max-h-40 overflow-auto">
+                    {tokensRef.current.map((t) => (
+                      <button
+                        key={t.token}
+                        type="button"
+                        onClick={() => replacePill(t.token)}
+                        className="flex w-full items-center rounded-sm px-2 py-1 text-left text-xs hover:bg-muted"
+                      >
+                        <span className="inline-flex items-center rounded bg-[var(--color-accent-primary)]/15 px-1.5 py-0.5 font-medium text-[var(--color-accent-primary)]">
+                          {t.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

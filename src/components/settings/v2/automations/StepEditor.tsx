@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Bot, FileText, Bell, Terminal, ArrowUp, ArrowDown, X } from 'lucide-react';
+import { useState } from 'react';
+import { Bot, FileText, Bell, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useSkillStore } from '@/stores/skill-store';
 import type { AutomationStep } from '@/lib/automations/types';
 import { TokenInput } from './TokenInput';
 import type { TokenOption } from './VariablePicker';
@@ -19,7 +18,6 @@ const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: strin
   agent: { icon: Bot, label: 'Agent task' },
   document: { icon: FileText, label: 'Create / append note' },
   notify: { icon: Bell, label: 'Notify' },
-  skill: { icon: Terminal, label: 'Run skill' },
 };
 
 export function StepEditor({
@@ -49,17 +47,6 @@ export function StepEditor({
   const idField = `step-${step.id}`;
   // The optional `if` condition stays hidden behind a disclosure until used.
   const [showIf, setShowIf] = useState(!!step.if);
-  // Reactive: recompute when the skill set or enable overrides change, so a
-  // skill discovered AFTER the form opened still appears (discovery resolves
-  // async after startupReady). getActiveSkills() returns a fresh array each
-  // call, so subscribe to the stable source slices — not the result — to avoid
-  // a re-render loop.
-  const skillsSlice = useSkillStore((s) => s.skills);
-  const enabledOverrides = useSkillStore((s) => s.enabledOverrides);
-  const skills = useMemo(
-    () => useSkillStore.getState().getActiveSkills(),
-    [skillsSlice, enabledOverrides],
-  );
 
   return (
     <div className="rounded-md border border-border p-3 space-y-3">
@@ -148,7 +135,7 @@ export function StepEditor({
             value={step.path}
             onChange={(v) => onChange({ ...step, path: v })}
             tokens={tokens}
-            placeholder="Daily/{{today}}.md"
+            placeholder="Daily/notes.md"
           />
           <TokenInput
             id={`${idField}-content`}
@@ -157,7 +144,7 @@ export function StepEditor({
             onChange={(v) => onChange({ ...step, content: v })}
             tokens={tokens}
             multiline
-            placeholder="## {{today}}&#10;&#10;{{steps.summary.output}}"
+            placeholder="Markdown to write…"
           />
         </>
       )}
@@ -178,69 +165,32 @@ export function StepEditor({
             value={step.body}
             onChange={(v) => onChange({ ...step, body: v })}
             tokens={tokens}
-            placeholder="Written to Daily/{{today}}.md"
-          />
-        </>
-      )}
-
-      {step.type === 'skill' && (
-        <>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Skill</Label>
-            <Select value={step.skill} onValueChange={(v) => onChange({ ...step, skill: v })}>
-              <SelectTrigger className="text-sm">
-                <SelectValue placeholder="Pick a skill" />
-              </SelectTrigger>
-              <SelectContent>
-                {skills.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">No skills found</div>
-                )}
-                {skills.map((s) => (
-                  <SelectItem key={s.name} value={s.name}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor={`${idField}-script`} className="text-xs text-muted-foreground">
-              Script (path within the skill)
-            </Label>
-            <Input
-              id={`${idField}-script`}
-              value={step.script}
-              onChange={(e) => onChange({ ...step, script: e.target.value })}
-              placeholder="scripts/move.sh"
-              className="text-sm"
-            />
-          </div>
-          <TokenInput
-            id={`${idField}-args`}
-            label="Arguments (one per line)"
-            value={(step.args ?? []).join('\n')}
-            onChange={(v) =>
-              onChange({
-                ...step,
-                args: v.split('\n').map((a) => a.trim()).filter(Boolean),
-              })
-            }
-            tokens={tokens}
-            multiline
-            placeholder="{{trigger.file}}"
+            placeholder="Notification text"
           />
         </>
       )}
 
       {showIf ? (
-        <TokenInput
-          id={`${idField}-if`}
-          label="Only run this step if…"
-          value={step.if ?? ''}
-          onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
-          tokens={tokens}
-          placeholder={'e.g. steps.classify.output contains "urgent"'}
-        />
+        <div className="space-y-1">
+          <TokenInput
+            id={`${idField}-if`}
+            label="Only run this step if…"
+            value={step.if ?? ''}
+            onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
+            tokens={tokens}
+            placeholder={'e.g. steps.classify.output contains "urgent"'}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ ...step, if: undefined });
+              setShowIf(false);
+            }}
+            className="text-xs text-muted-foreground transition-colors duration-150 hover:text-[var(--color-destructive)]"
+          >
+            Remove condition
+          </button>
+        </div>
       ) : (
         <button
           type="button"

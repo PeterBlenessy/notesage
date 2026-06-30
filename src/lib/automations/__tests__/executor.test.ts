@@ -38,7 +38,6 @@ function makeDeps(overrides: Partial<ExecutorDeps> = {}) {
   const calls = {
     agent: [] as { prompt: string; projectRoot?: string }[],
     doc: [] as { path: string; content: string; op: string }[],
-    skill: [] as { skill: string; script: string; args: string[] }[],
     notify: [] as { title: string; body: string }[],
     runs: [] as { status: string }[],
   };
@@ -49,10 +48,6 @@ function makeDeps(overrides: Partial<ExecutorDeps> = {}) {
     },
     writeDocument: async (path, content, op) => {
       calls.doc.push({ path, content, op });
-    },
-    runSkill: async (skill, script, args) => {
-      calls.skill.push({ skill, script, args });
-      return 'SKILL_OUT';
     },
     notify: (title, body) => {
       calls.notify.push({ title, body });
@@ -131,35 +126,6 @@ describe('runAutomation', () => {
     expect(calls.doc).toHaveLength(0); // step 2 skipped at the boundary
     expect(calls.notify).toHaveLength(0);
     expect(run.status).toBe('skipped');
-  });
-
-  it('runs a skill step with rendered args (Inbox-Triage shape)', async () => {
-    const { deps, calls } = makeDeps();
-    const triage: Automation = {
-      ...DIGEST,
-      trigger: { type: 'file', event: 'file-created' },
-      steps: [
-        { id: 'classify', type: 'agent', prompt: 'Classify {{trigger.file}}' },
-        {
-          id: 'file-it',
-          type: 'skill',
-          skill: 'file-organizer',
-          script: 'move.sh',
-          args: ['{{trigger.file}}', '{{steps.classify.output}}'],
-        },
-        { id: 'ping', type: 'notify', title: 'Filed', body: '{{trigger.file}}' },
-      ],
-    };
-    const run = await runAutomation(triage, { type: 'file', file: '/proj/Inbox/n.md' }, deps);
-
-    expect(run.status).toBe('done');
-    expect(calls.skill[0]).toEqual({
-      skill: 'file-organizer',
-      script: 'move.sh',
-      args: ['/proj/Inbox/n.md', 'AGENT_OUT'],
-    });
-    expect(run.steps[1].result?.output).toBe('SKILL_OUT');
-    expect(calls.notify[0]).toEqual({ title: 'Filed', body: '/proj/Inbox/n.md' });
   });
 
   it('skips a falsey-`if` step (no output to the context) and continues', async () => {
