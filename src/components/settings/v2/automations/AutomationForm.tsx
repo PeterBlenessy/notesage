@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Plus, Bot, FileText, Bell, Terminal, ChevronDown } from 'lucide-react';
+import { Plus, Bot, FileText, Bell, Terminal, ChevronDown, ChevronLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import type {
   StepType,
   WorkflowEventName,
 } from '@/lib/automations/types';
+import { RECIPES } from '@/lib/automations/recipes';
 import { TriggerEditor } from './TriggerEditor';
 import { StepEditor } from './StepEditor';
 import type { TokenOption } from './VariablePicker';
@@ -68,15 +69,6 @@ function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-/** "Steps can use … as `{{token}}`" — surfaces the data a trigger exposes. */
-function TokenHint({ children, token }: { children: ReactNode; token: string }) {
-  return (
-    <p className="text-xs text-muted-foreground">
-      {children} <code className="rounded bg-muted px-1 py-0.5 font-mono">{token}</code>
-    </p>
   );
 }
 
@@ -118,6 +110,9 @@ export function AutomationForm({
   const [draft, setDraft] = useState<Automation>(() => (isNew ? blankAutomation() : { ...target }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // New automations open on a recipe gallery (the blank-canvas fix); editing an
+  // existing one goes straight to the editor.
+  const [view, setView] = useState<'recipe' | 'edit'>(isNew ? 'recipe' : 'edit');
 
   const update = (patch: Partial<Automation>) => setDraft((d) => ({ ...d, ...patch }));
 
@@ -172,11 +167,6 @@ export function AutomationForm({
         ? 'Runs when a file in the watched folder changes.'
         : 'Runs in response to an in-app event.';
 
-  const scopeLabel =
-    draft.scope && draft.scope !== 'global'
-      ? (draft.scope.split('/').filter(Boolean).pop() ?? 'project')
-      : 'Notesage library';
-
   const handleSave = async (run: boolean) => {
     setError(null);
     if (!draft.name.trim()) {
@@ -206,8 +196,65 @@ export function AutomationForm({
     }
   };
 
+  // Recipe gallery — the starter screen for a new automation.
+  if (view === 'recipe') {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Start from a recipe — pick one to pre-fill, then tweak. Or build your own.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {RECIPES.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => {
+                setDraft(r.build(home));
+                setView('edit');
+              }}
+              className="flex flex-col gap-1 rounded-lg border border-border p-3 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <span className="text-sm font-medium">
+                <span className="mr-1.5">{r.icon}</span>
+                {r.name}
+              </span>
+              <span className="text-xs text-muted-foreground">{r.summary}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(blankAutomation());
+              setView('edit');
+            }}
+            className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <Plus className="size-4" strokeWidth={1.5} />
+            Start from scratch
+          </button>
+        </div>
+        <div className="flex justify-end border-t border-border pt-3">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {isNew && (
+        <button
+          type="button"
+          onClick={() => setView('recipe')}
+          className="-ml-1 flex items-center gap-1 rounded px-1 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronLeft className="size-3.5" strokeWidth={1.5} />
+          Recipes
+        </button>
+      )}
+
       {/* Identity */}
       <div className="grid gap-4 sm:grid-cols-[1fr_13rem]">
         <div className="space-y-1.5">
@@ -247,7 +294,7 @@ export function AutomationForm({
 
       {/* Trigger */}
       <Section
-        title="Trigger"
+        title="When"
         description={triggerHint}
         action={
           <Select
@@ -314,8 +361,8 @@ export function AutomationForm({
 
           {draft.trigger.type === 'file' && (
             <>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">When a file is…</Label>
+              <div className="flex items-center gap-2">
+                <Label className="w-20 shrink-0 text-xs text-muted-foreground">Event</Label>
                 <Select
                   value={triggerEvent(draft.trigger) ?? 'file-created'}
                   onValueChange={(v) =>
@@ -328,20 +375,20 @@ export function AutomationForm({
                     })
                   }
                 >
-                  <SelectTrigger className="text-sm">
+                  <SelectTrigger className="h-8 flex-1 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="file-created">Added</SelectItem>
-                    <SelectItem value="file-modified">Modified</SelectItem>
-                    <SelectItem value="file-deleted">Deleted</SelectItem>
-                    <SelectItem value="file-renamed">Renamed</SelectItem>
+                    <SelectItem value="file-created">File added</SelectItem>
+                    <SelectItem value="file-modified">File modified</SelectItem>
+                    <SelectItem value="file-deleted">File deleted</SelectItem>
+                    <SelectItem value="file-renamed">File renamed</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="trigger-path" className="text-xs text-muted-foreground">
-                  Watched folder
+              <div className="flex items-center gap-2">
+                <Label htmlFor="trigger-path" className="w-20 shrink-0 text-xs text-muted-foreground">
+                  Folder
                 </Label>
                 <Input
                   id="trigger-path"
@@ -355,16 +402,13 @@ export function AutomationForm({
                       },
                     })
                   }
-                  placeholder={`${home}/Notesage/Inbox`}
-                  className="text-sm"
+                  placeholder={`${home}/Notesage/Inbox (defaults to scope)`}
+                  className="h-8 flex-1 text-sm"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Absolute path. Leave blank to watch the whole {scopeLabel}.
-                </p>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="trigger-glob" className="text-xs text-muted-foreground">
-                  Only files matching (optional)
+              <div className="flex items-center gap-2">
+                <Label htmlFor="trigger-glob" className="w-20 shrink-0 text-xs text-muted-foreground">
+                  Matching
                 </Label>
                 <Input
                   id="trigger-glob"
@@ -372,30 +416,24 @@ export function AutomationForm({
                   onChange={(e) =>
                     update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
                   }
-                  placeholder="*.md"
-                  className="font-mono text-sm"
+                  placeholder="*.md (optional)"
+                  className="h-8 flex-1 font-mono text-sm"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Glob relative to the watched folder, e.g.{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono">*.md</code> or{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono">Inbox/*.md</code>.
-                </p>
               </div>
-              <TokenHint token="{{trigger.file}}">Steps can use the changed file as</TokenHint>
             </>
           )}
 
           {draft.trigger.type === 'workflow' && (
             <>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Event</Label>
+              <div className="flex items-center gap-2">
+                <Label className="w-20 shrink-0 text-xs text-muted-foreground">Event</Label>
                 <Select
                   value={triggerEvent(draft.trigger) ?? 'document-saved'}
                   onValueChange={(v) =>
                     update({ trigger: { type: 'workflow', event: v as WorkflowEventName } })
                   }
                 >
-                  <SelectTrigger className="text-sm">
+                  <SelectTrigger className="h-8 flex-1 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -405,38 +443,21 @@ export function AutomationForm({
                   </SelectContent>
                 </Select>
               </div>
-
               {triggerEvent(draft.trigger) === 'document-saved' && (
-                <>
-                  <div className="space-y-1">
-                    <Label htmlFor="wf-glob" className="text-xs text-muted-foreground">
-                      Only documents matching (optional)
-                    </Label>
-                    <Input
-                      id="wf-glob"
-                      value={draft.condition?.glob ?? ''}
-                      onChange={(e) =>
-                        update({
-                          condition: { ...draft.condition, glob: e.target.value || undefined },
-                        })
-                      }
-                      placeholder="**/*.md"
-                      className="font-mono text-sm"
-                    />
-                    <p className="text-xs text-muted-foreground">Glob across the {scopeLabel}.</p>
-                  </div>
-                  <TokenHint token="{{trigger.file}}">Steps can use the saved file as</TokenHint>
-                </>
-              )}
-              {triggerEvent(draft.trigger) === 'agent-task-complete' && (
-                <TokenHint token="{{trigger.output}}">
-                  Steps can use the finished task’s output as
-                </TokenHint>
-              )}
-              {triggerEvent(draft.trigger) === 'transcription-done' && (
-                <TokenHint token="{{trigger.transcriptPath}}">
-                  Steps can use the transcript file path as
-                </TokenHint>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="wf-glob" className="w-20 shrink-0 text-xs text-muted-foreground">
+                    Matching
+                  </Label>
+                  <Input
+                    id="wf-glob"
+                    value={draft.condition?.glob ?? ''}
+                    onChange={(e) =>
+                      update({ condition: { ...draft.condition, glob: e.target.value || undefined } })
+                    }
+                    placeholder="**/*.md (optional)"
+                    className="h-8 flex-1 font-mono text-sm"
+                  />
+                </div>
               )}
             </>
           )}
@@ -447,8 +468,8 @@ export function AutomationForm({
 
       {/* Steps */}
       <Section
-        title="Steps"
-        description="Run top to bottom. Reference an earlier step with its {{tokens}}."
+        title="Do this"
+        description="Steps run top to bottom. Reference an earlier step with its {{tokens}}."
         action={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
