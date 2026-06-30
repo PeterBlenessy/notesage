@@ -93,7 +93,7 @@ export const useAutomationStore = create<AutomationStore>()(
   scan: async (baseDirs) => {
     set({ isScanning: true, baseDirs });
     try {
-      const files = await tauriApi.listAutomations(baseDirs);
+      const files = (await tauriApi.listAutomations(baseDirs)) ?? [];
       const automations: Automation[] = [];
       const invalid: InvalidAutomation[] = [];
       for (const f of files) {

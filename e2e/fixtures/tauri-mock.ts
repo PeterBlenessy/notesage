@@ -168,6 +168,11 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         get_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
         read_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
 
+        // Automations
+        list_automations: () => [],
+        set_automations_enabled: () => null,
+        reload_automation_schedule: () => null,
+
         // Git
         git_status: () => ({ branch: 'main', files: [], is_repo: false }),
         git_branch_list: () => [],
