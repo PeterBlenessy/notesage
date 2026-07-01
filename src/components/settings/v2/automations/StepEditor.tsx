@@ -101,15 +101,23 @@ export function StepEditor({
       </div>
 
       {step.type === 'agent' && (
-        <TokenInput
-          id={`${idField}-prompt`}
-          label="Prompt"
-          value={step.prompt}
-          onChange={(v) => onChange({ ...step, prompt: v })}
-          tokens={tokens}
-          multiline
-          placeholder="Summarize my notes edited since yesterday."
-        />
+        <>
+          <TokenInput
+            id={`${idField}-prompt`}
+            label="Prompt"
+            value={step.prompt}
+            onChange={(v) => onChange({ ...step, prompt: v })}
+            tokens={tokens}
+            multiline
+            placeholder="Summarize my notes edited since yesterday."
+          />
+          <p className="text-xs text-muted-foreground">
+            Runs on your <span className="font-medium">Agent Tasks</span> provider (Settings → AI
+            Providers → routing). Tool calls are auto-approved within the automation&apos;s scope, so
+            the run never stops to ask — keep file work in-scope and pre-allow any domains the agent
+            needs.
+          </p>
+        </>
       )}
 
       {step.type === 'document' && (

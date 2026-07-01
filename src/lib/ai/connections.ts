@@ -423,6 +423,6 @@ export const ROUTING_SLOT_LABELS: Record<AICapability, { label: string; descript
   },
   agent_tasks: {
     label: 'Agent Tasks',
-    description: 'Delegated multi-step work with file changes',
+    description: 'Delegated multi-step work with file changes — also runs automation agent steps',
   },
 };
